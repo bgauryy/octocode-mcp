@@ -34,17 +34,17 @@ vi.mock('../../src/tools/local_fetch_content/execution.js', () => ({
   executeFetchContent: (input: unknown) =>
     fixtureExecution('localGetFileContent', input),
 }));
-vi.mock('../../src/tools/local_analyze_graph/execution.js', () => ({
-  executeAnalyzeGraph: (input: unknown) =>
-    fixtureExecution('localAnalyzeGraph', input),
+vi.mock('../../src/tools/ast_search/execution.js', () => ({
+  executeAstSearch: (input: unknown) =>
+    fixtureExecution('astSearch', input),
 }));
 vi.mock('../../src/tools/local_search/execution.js', () => ({
   executeLocalSearch: (input: unknown) =>
     fixtureExecution('localSearch', input),
 }));
 vi.mock('../../src/tools/lsp/semantic_content/execution.js', () => ({
-  executeLspGetSemantics: (input: unknown) =>
-    fixtureExecution('lspGetSemantics', input),
+  executeLspSearch: (input: unknown) =>
+    fixtureExecution('lspSearch', input),
 }));
 
 import { DIRECT_TOOL_SPECIFICATIONS } from '../../src/tools/directToolCatalog/toolSpecifications.js';

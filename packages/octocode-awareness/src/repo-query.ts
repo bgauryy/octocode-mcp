@@ -10,11 +10,14 @@ import { scopeFromParams, withScope } from './repo-scope.js';
 import { renderDeveloperReviewDoc } from './repo-docs.js';
 import { completenessText, escapeHtml, renderHtmlSection, toCsv, toMarkdown, toTable } from './repo-formats.js';
 import { atomicWriteText, resolveWorkspaceOutputPath } from './repo-projection.js';
+import { queryContinuation } from './repo-continuations.js';
+import { getDatabasePath } from './db-runtime.js';
 
 const DEVELOPER_REVIEW_EXPORT_MAX_LINES = 200;
 const QUERY_OPTION_KEYS = [
   'view', 'workspacePath', 'artifact', 'repo', 'ref', 'query', 'limit', 'agentId',
   'preferAgentId', 'preferFiles', 'state', 'label', 'file', 'since', 'includeBodies', 'cwd',
+  'recipientAgentId',
   'out', 'format',
 ] as const;
 
@@ -65,7 +68,8 @@ export function queryAwareness(db: DatabaseSync, params: AwarenessQueryParams = 
         rowsForView(db, section, withScope(params, { limit: probeLimit })),
         requestedLimit,
       );
-      sections[section] = { count: completeness.rows.length, ...completeness };
+      sections[section] = { count: completeness.rows.length, ...completeness,
+        ...queryContinuation(getDatabasePath(db), scope.workspacePath, section, params, requestedLimit, completeness.is_partial) };
     }
     const rows = Object.entries(sections).map(([name, section]) => ({
       section: name,
@@ -124,6 +128,7 @@ export function queryAwareness(db: DatabaseSync, params: AwarenessQueryParams = 
     omitted_count: completeness.omitted_count,
     is_partial: completeness.is_partial,
     continuation: completeness.continuation,
+    ...queryContinuation(getDatabasePath(db), scope.workspacePath, view, params, requestedLimit, completeness.is_partial),
     filters,
   };
 }

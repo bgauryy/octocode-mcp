@@ -11,6 +11,8 @@ read-only query exports. Architecture narrative lives in [HOW_IT_WORKS.md](HOW_I
   and plan folders aren't live state.
 - Agent databases and worker/runtime ledgers are outside Awareness ownership.
 - `schema commands` and JSON schemas own the public command contract.
+- `executeAwarenessCommand` exposes the complete catalog to native hosts and the
+  CLI. Prompt exports and execution context are defined in the [API reference](API.md).
 - Canonical code and Zod contracts live in `src/**` and `bin/**`.
 - Canonical skill guidance lives in package-local `skills/octocode-awareness/**`.
 - Build outputs and `.agents/skills/**` are regenerated, never hand-edited.
@@ -20,7 +22,8 @@ read-only query exports. Architecture narrative lives in [HOW_IT_WORKS.md](HOW_I
 1. A plan task has at most one leased claim/run.
 2. A task claim or explicit `work start` is a reusable work-unit boundary; a host
    session is not.
-3. Every structured write declares advisory `run_files` presence before editing.
+3. Guard/full tracking declares recognized structured writes before editing.
+   Default coordination creates no per-edit work rows.
 4. Advisory peers can share a file. Exclusive acquisition rejects any other live
    presence; exclusive state blocks later presence.
 5. Agent/session/task/plan identity is derived through `task_runs`, not copied into
@@ -36,8 +39,9 @@ read-only query exports. Architecture narrative lives in [HOW_IT_WORKS.md](HOW_I
 - Successful ordinary hooks are silent.
 - Peer and briefing delivery is fingerprinted; unchanged content is not repeated.
 - Bounded outputs include counts and `omitted_count`; full detail is opt-in.
-- Compact attend has a byte-budget test and avoids repeated profile/organ/drive IDs.
-- Signals remain unread until explicitly acknowledged; delivery dedupe is separate.
+- Default attend reads bounded registry presence only; the detailed observer is explicit.
+- Native delivery marks accepted signals read after host persistence. Shell delivery
+  fingerprints do not mark handling. `signal ack` and thread resolution remain separate.
 - Session handoffs are content-deduped.
 
 ## Homeostatic and token invariants
@@ -58,7 +62,7 @@ read-only query exports. Architecture narrative lives in [HOW_IT_WORKS.md](HOW_I
 Host adapters translate their native lifecycle into the shared runner and coordination
 store. They must preserve the same guard-before-presence, edit receipt, changed-state
 briefing, verification, compaction, and session-end invariants where the host exposes an
-equivalent event.
+equivalent event and the selected profile enables that feature.
 
 [`HOOKS.md`](HOOKS.md) is the sole host support matrix. It owns exact event names,
 installation surfaces, platform limitations, runtime-health semantics, and the Pi

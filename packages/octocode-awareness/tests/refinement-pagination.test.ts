@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initDb } from '../src/db-init.js';
 import { getRefinements, insertRefinement } from '../src/refinements.js';
 import type { GetRefinementsParams } from '../src/types/identity-memory.js';
-import { cmdRefineGet } from '../bin/cli-memory.js';
-import { parseArgs } from '../bin/cli-model.js';
+import { cmdRefineGet } from '../src/commands/memory.js';
+import { parseArgs } from '../src/command-parser.js';
 import { operationSchemas } from '../src/schema/definitions-operations.js';
 import { runAwarenessToolOperation } from '../src/tool-operations.js';
 

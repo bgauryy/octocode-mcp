@@ -10,14 +10,14 @@ Workspace output contract: chat-only synthesis stays in chat. Worker packets and
 1. Frame substantial work before fan-out; never broaden intent, permissions, effects, deletion scope, or budget because this skill activated.
 2. Spawn only when delegation changes speed, expertise, isolation, or context quality; default solo and batch known independent reads.
 3. One bounded objective per worker; no nested spawning unless the host explicitly allows it and a new value/cost gate passes.
-4. Workers inherit no parent chat: packets carry goal, scope, context, authority, budget, evidence, acceptance, ownership, and return shape.
+4. Check what context the host passes to workers. Supply the missing goal, scope, evidence, authority, ownership, and acceptance; avoid copying context already available.
 5. Treat worker output as claims; re-check load-bearing anchors in the parent (Ollama: always VERIFY).
 6. Reach the worker barrier before synthesis; keep `partial`, `blocked`, conflicts, and dissent visible.
-7. Parent owns you, integration, irreversible actions, and final verdict unless an explicit handoff transfers user contact within the same authority ceiling.
-8. Pick the smallest capable configured model; challenge techniques use fresh context and agreement is not proof; local Ollama is tool-less one-shot/map-reduce only.
-Stop when solo work finishes, two High options need a winner, three angles add nothing, a user/auth gate is pending, or no live workers remain.
+7. Parent owns user communication, integration, irreversible actions, and the final verdict unless an explicit handoff transfers contact within the same authority ceiling.
+8. Respect the requested model or host default; otherwise select a capable configured model for the work. Challenge techniques use fresh context, and agreement is not proof; local Ollama is tool-less one-shot/map-reduce only.
+Stop when acceptance is met or progress needs missing authority or information. Completed workers trigger parent verification and integration; an empty worker list does not mean the task is done.
 ## Smart routes — load only what the current step needs
-- At FRAME, load `references/orchestration-contract.md` when goal, authority, budget, ownership, or critical path needs definition — bound activity to you-visible outcome.
+- At FRAME, load `references/orchestration-contract.md` when goal, authority, budget, ownership, or critical path needs definition — bound activity to the requested outcome.
 - When deciding solo, batch, specialist, or clean worker, load `references/spawn-gate.md` — delegation must earn its coordination cost.
 - When splitting work, load `references/decompose.md`; when choosing supervisor, pipeline, handoff, or swarm load `references/patterns.md` — create a dependency-aware topology.
 - Before spawning, load `references/packets.md`; when delegating technical research load `references/octocode.md` — make worker context and tool routing self-contained.

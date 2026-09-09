@@ -76,6 +76,40 @@ export const historyRequestSchemas = {
     agent_id: agentId,
     preview_id: operationId,
   }).strict(),
+  history_retention_preview: z.object({
+    workspace: workspacePath,
+    limit: z.number().int().min(1).max(100).default(20),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+  }).strict(),
+  history_retention_prune: z.object({
+    workspace: workspacePath,
+    confirm: z.literal('prune'),
+    limit: z.number().int().min(1).max(100).default(20),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+  }).strict(),
+  history_recovery: z.object({
+    workspace: workspacePath,
+    action: z.enum(['report', 'reconcile']).default('report'),
+    confirm: z.literal('reconcile').optional(),
+    limit: z.number().int().min(1).max(100).default(20),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+  }).strict().superRefine((value, ctx) => {
+    if (value.action === 'reconcile' && value.confirm !== 'reconcile') {
+      ctx.addIssue({ code: 'custom', path: ['confirm'], message: 'Reconciliation requires --confirm reconcile.' });
+    }
+  }),
+  history_evidence: z.object({
+    workspace: workspacePath,
+    action: z.enum(['report', 'reclaim']).default('report'),
+    confirm: z.literal('reclaim').optional(),
+    grace_seconds: z.number().int().min(3600).max(31_536_000).default(86_400),
+    limit: z.number().int().min(1).max(100).default(20),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+  }).strict().superRefine((value, ctx) => {
+    if (value.action === 'reclaim' && value.confirm !== 'reclaim') {
+      ctx.addIssue({ code: 'custom', path: ['confirm'], message: 'Evidence reclamation requires --confirm reclaim.' });
+    }
+  }),
 };
 
 const nullableOid = oid.nullable();
@@ -109,13 +143,16 @@ export const historyEntitySchemas = {
 };
 
 export const historySchemas = { ...historyRequestSchemas, ...historyEntitySchemas };
-export type HistorySchemaName = keyof typeof historySchemas;
 export type HistoryCaptureInput = z.infer<typeof historyRequestSchemas.history_capture>;
 export type HistoryCheckpointInput = z.infer<typeof historyRequestSchemas.history_checkpoint>;
 export type HistoryTimelineInput = z.infer<typeof historyRequestSchemas.history_timeline>;
 export type HistoryReadInput = z.infer<typeof historyRequestSchemas.history_read>;
 export type HistoryRestorePreviewInput = z.infer<typeof historyRequestSchemas.history_restore_preview>;
 export type HistoryRestoreApplyInput = z.infer<typeof historyRequestSchemas.history_restore_apply>;
+export type HistoryRetentionPreviewInput = z.infer<typeof historyRequestSchemas.history_retention_preview>;
+export type HistoryRetentionPruneInput = z.infer<typeof historyRequestSchemas.history_retention_prune>;
+export type HistoryRecoveryInput = z.infer<typeof historyRequestSchemas.history_recovery>;
+export type HistoryEvidenceInput = z.infer<typeof historyRequestSchemas.history_evidence>;
 
 export interface HistoryRouteDescriptor {
   readonly command: string;
@@ -134,6 +171,10 @@ export const HISTORY_ROUTE_DESCRIPTORS = [
   { command: 'history read', schema: 'history_read', use: 'Read an exact bounded before/after file version.', example: 'npx @octocodeai/octocode-awareness history read --workspace "$PWD" --operation-id op_123 --file src/a.ts --side before --compact', required: ['workspace', 'operation_id', 'file', 'side'], allowed: ['workspace', 'operation_id', 'file', 'side', 'offset', 'limit'] },
   { command: 'history restore-preview', schema: 'history_restore_preview', use: 'Preview an explicit local-history restore without changing files.', example: 'npx @octocodeai/octocode-awareness history restore-preview --workspace "$PWD" --agent-id agent --operation-id op_123 --side before --compact', required: ['workspace', 'agent_id', 'operation_id', 'side'], allowed: ['workspace', 'agent_id', 'operation_id', 'side', 'file'] },
   { command: 'history restore-apply', schema: 'history_restore_apply', use: 'Apply a valid unexpired restore preview and record its receipt.', example: 'npx @octocodeai/octocode-awareness history restore-apply --workspace "$PWD" --agent-id agent --preview-id preview_123 --compact', required: ['workspace', 'agent_id', 'preview_id'], allowed: ['workspace', 'agent_id', 'preview_id'] },
+  { command: 'history retention-preview', schema: 'history_retention_preview', use: 'Enumerate expired ready restore previews in bounded pages.', example: 'npx @octocodeai/octocode-awareness history retention-preview --workspace "$PWD" --limit 20 --compact', required: ['workspace'], allowed: ['workspace', 'limit', 'cursor'] },
+  { command: 'history retention-prune', schema: 'history_retention_prune', use: 'Explicitly prune expired ready restore previews after a dry-run.', example: 'npx @octocodeai/octocode-awareness history retention-prune --workspace "$PWD" --confirm prune --limit 20 --compact', required: ['workspace', 'confirm'], allowed: ['workspace', 'confirm', 'limit', 'cursor'] },
+  { command: 'history recovery', schema: 'history_recovery', use: 'Report or reconcile only unambiguous capture/restore journal states.', example: 'npx @octocodeai/octocode-awareness history recovery --workspace "$PWD" --action report --compact', required: ['workspace'], allowed: ['workspace', 'action', 'confirm', 'limit', 'cursor'] },
+  { command: 'history evidence', schema: 'history_evidence', use: 'Report or explicitly reclaim orphan private-Git evidence under quiescent safety conditions.', example: 'npx @octocodeai/octocode-awareness history evidence --workspace "$PWD" --action report --grace-seconds 86400 --compact', required: ['workspace'], allowed: ['workspace', 'action', 'confirm', 'grace_seconds', 'limit', 'cursor'] },
 ] as const satisfies readonly HistoryRouteDescriptor[];
 
 const EXAMPLE_OID = '0123456789abcdef0123456789abcdef01234567';
@@ -145,6 +186,10 @@ export const historyExamples: Record<keyof typeof historySchemas, unknown> = {
   history_read: { workspace: '/repo', operation_id: 'op_123', file: 'src/a.ts', side: 'before', offset: 0, limit: 65_536 },
   history_restore_preview: { workspace: '/repo', agent_id: 'agent', operation_id: 'op_123', side: 'before' },
   history_restore_apply: { workspace: '/repo', agent_id: 'agent', preview_id: 'preview_123' },
+  history_retention_preview: { workspace: '/repo', limit: 20 },
+  history_retention_prune: { workspace: '/repo', confirm: 'prune', limit: 20 },
+  history_recovery: { workspace: '/repo', action: 'report', limit: 20 },
+  history_evidence: { workspace: '/repo', action: 'report', grace_seconds: 86_400, limit: 20 },
   local_history_operation: { operation_id: 'op_123', workspace_path: '/repo', agent_id: 'agent', session_id: null, run_id: null, host: 'codex', kind: 'edit', status: 'complete', outcome: 'success', request_hash: 'request_hash', label: null, before_commit_oid: EXAMPLE_OID, after_commit_oid: EXAMPLE_OID, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:01Z' },
   local_history_version: { operation_id: 'op_123', file_path: 'src/a.ts', ordinal: 0, before_oid: EXAMPLE_OID, after_oid: EXAMPLE_OID, before_mode: '100644', after_mode: '100644', before_status: 'captured', after_status: 'captured', before_reason: null, after_reason: null },
   local_history_restore: { preview_id: 'preview_123', workspace_path: '/repo', agent_id: 'agent', source_operation_id: 'op_123', side: 'before', files_json: '["src/a.ts"]', expected_json: '[{"path":"src/a.ts","status":"missing","digest":"0000000000000000000000000000000000000000000000000000000000000000","size":0}]', target_json: '[{"path":"src/a.ts","status":"missing"}]', undo_operation_id: null, lease_run_id: null, status: 'ready', expires_at: '2026-01-01T00:05:00Z', result_json: null, created_at: '2026-01-01T00:00:00Z' },

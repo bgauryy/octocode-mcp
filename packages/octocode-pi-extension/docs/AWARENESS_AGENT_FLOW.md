@@ -1,13 +1,15 @@
 # Awareness agent flow in Pi
 
-Pi exposes one coordinated task flow over the Awareness ledger. The model uses
+Pi starts with a peer briefing and native message delivery. Work, plans, locks, verification, history and memory are on-demand capabilities.
+
+For work that needs tracking, Pi exposes one coordinated task flow over the Awareness ledger. The model uses
 `plan` for session and shared execution; it does not manually synchronize a local
 checklist with separate plan, task, work-presence, and verification tools.
 
 Awareness remains the cross-host SQLite backend. Other hosts use its canonical CLI
 and library operations. Pi retains its plan UI and exposes one native `awareness`
 facade for model-facing signals, locks, memory, verification, history, bookkeeping,
-and maintenance. The facade consumes the same package-owned command catalog.
+and maintenance. The facade imports `executeAwarenessCommand` and the package-owned command catalog; it passes objects directly and receives structured results.
 
 ## Read claims by evidence level
 
@@ -34,29 +36,25 @@ and [session artifacts](SESSION_ARTIFACTS.md) for Pi-local projections.
 | Exceptional non-mergeable exclusivity | `awareness` calls for `lock` |
 | Necessary peer communication | `awareness` calls for `signal publish`, `signal reply`, `signal ack`, and `signal resolve` |
 | Reusable verified learning | `awareness` calls for `memory`, `reflect`, and `refinement` |
-| Catalog, diagnostics, recovery, and administration | `awareness` list/describe/call; bound CLI only when a descriptor says `external-host-only` |
+| Catalog, diagnostics, recovery, and administration | `awareness` list/describe/call; setup retains approval checks; internal hook callbacks are host-owned |
 
-The catalog is unconditional. Pi uses the full `@octocodeai/octocode-awareness`
-CLI and library. Database opening validates the store; it does not implicitly
+The catalog is unconditional and comes from Awareness. Pi exposes its native routes and keeps the internal hook callbacks owned by the host lifecycle. Use `awareness` list/describe for the current catalog. Database opening validates the store; it does not implicitly
 convert legacy or mixed database layouts. Follow the package's database
 diagnostics when an existing store is rejected.
 
 ## Identity and automatic lifecycle
 
-The system prompt includes Awareness's compact canonical cooperation policy and
-generated capability summary. A separate `awareness-cli-runtime` segment supplies
-host facts from `src/tools/awareness-cli-context.ts`. In Pi, call `awareness` with
-`action:"list"`, `"describe"`, or `"call"`; the host injects the current database,
-workspace, and participant identity. Guarded `bash` inherits the same bindings for
-the external-host-only fallback:
+The system prompt imports `AWARENESS_PI_HOST_PROMPT`, an alias of the canonical
+`EXTERNAL_AGENT_AWARENESS_PROMPT`. A short `awareness_runtime` segment adds host
+bindings. Call `awareness` with `action:"list"`, `"describe"`, or `"call"`; Pi
+injects the database, workspace and participant identity from native context.
+No CLI file, environment construction, child process or stdout parsing is needed.
+API continuations become executable native tool envelopes.
 
-```bash
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" signal list \
-  --workspace "$OCTOCODE_AWARENESS_WORKSPACE" --agent-id "$OCTOCODE_AGENT_ID" --include-bodies --compact
-```
-
-External agents use the same physical SQLite file and normalized absolute workspace
-with their own distinct stable IDs. Identical paths on different machines are not a
+External agents use the same physical SQLite file and their own distinct stable IDs.
+Each agent passes its own physical checkout. Linked Git worktrees share peer discovery,
+messages and memory; work, locks and verification stay in the owning checkout.
+Separate clones remain independent. Identical paths on different machines are not a
 transport. Preserve the database/workspace bindings on every scoped call. The skill
 is bundled and loadable; no extra installation or shell hooks are needed inside Pi.
 
@@ -65,11 +63,9 @@ is bundled and loadable; no extra installation or shell hooks are needed inside 
   forks.
 - Pi joins and leaves the shared peer registry automatically.
 - Spawned workers use child identities derived from their parent session.
-- Routine advisory file presence is created by the mutation gate and cleaned at
-  session shutdown; leases provide crash recovery.
+- Automatic file presence and worker audits require the guard/full workspace profile. Full also enables native file-history capture. The default coordination profile creates no per-edit work records.
 
-Do not add manual join, start-presence, finish-presence, or status calls to a normal
-solo task.
+Reuse a host-provided peer briefing or call `attend` once per workspace/session. Do not add manual join, start-presence, finish-presence, or audit calls to a normal solo task.
 
 ## Signals, not ceremony
 
@@ -79,7 +75,7 @@ policy, and acknowledges delivery only after the message appears in Pi's session
 ledger. A new session must first create its persistent session file; ephemeral sessions
 leave shared events unread. Waiting until the agent finishes avoids queuing a steer
 message while streaming and mistaking the delayed receipt for a delivery failure.
-Status counts are not injected into the frozen system prompt.
+Status counts are not injected into the frozen system prompt. Scheduled status checks are off by default; `OCTOCODE_CRON_STATUS=1` opts in.
 
 The extension retains one active event consumer. Session transitions invalidate
 in-flight deliveries and shutdown cancels scheduled drains. An interrupted event
@@ -97,7 +93,7 @@ When a coordinator needs an idle Pi worker to act, publish the directed signal
 first, then wake that worker through `agent` with `type: message` and
 `delivery: send`. Keep the payload in Awareness and put only the inbox instruction
 in the wake. Waiting for an idle worker does not start another turn. After handling
-the reply, `signal resolve --thread-id <id>` settles the completed conversation;
+the reply, `signal resolve` with `thread_id` settles the completed conversation;
 resolving only the parent signal leaves its replies open.
 
 Prompt source text and the composed system prompt are cached within a session.
@@ -106,8 +102,8 @@ up refreshed instructions. Subsequent turns retain byte-identical system content
 mutable peer, plan and memory state uses attributed context instead.
 
 Peer-authored message bodies and task titles are not injected into the system prompt.
-Use CLI `signal list` with your identity, workspace and `--include-bodies` to inspect
-the inbox. Publish directed signals with `--to-agent`, reply using `--in-reply-to`,
+Use native `signal list` with `include_bodies: true` to inspect
+the inbox. Publish directed signals with `to_agent`, reply using `in_reply_to`,
 acknowledge handled rows and resolve only finished threads. Follow executable
 pagination continuations. A plan count, an agent count, automatic
 presence, or already-read messages alone do not require a coordination call.
@@ -158,7 +154,7 @@ Slash completion, removal, and clear operations cannot bypass mapped shared rece
 unfinished-task safety. Separate submit/verify operations remain backend recovery or a
 configured independent-review workflow, not the normal Pi completion path.
 
-Before the final response, run CLI `verify audit` for your identity/workspace in the
+Before the final response for tracked work, call native `awareness` command `verify audit` in the
 same store. Reuse native task/run IDs and observed receipts; do not create duplicate
 work or mark checks twice. Report unfinished checks honestly and preserve peers'
 debt. A failed check stays FAILED; an unrun check remains pending.
@@ -171,26 +167,24 @@ Before identifiable mutations, Pi:
 2. extracts explicit bash targets recognized by `extractBashWriteTargets` (for example,
    redirects, `tee`, `cp`, `mv`, and in-place editors);
 3. checks all targets for peer-held locks before starting any advisory presence; and
-4. starts or refreshes this session's advisory presence only after the complete lock
-   pass succeeds.
+4. only in guard/full profiles, starts or refreshes this session's advisory presence after the complete lock pass succeeds.
 
 A same-owner lock is allowed and a peer-owned lock blocks the mutation. If no Awareness
 store exists, mutation safety fails open. If a store exists but lock state cannot be
-queried, an identifiable mutation fails closed. Advisory-presence failures warn and
-fail open.
+queried, an identifiable mutation fails closed. Advisory-presence admission failures block the mutation.
 
 Implicit generated output and opaque interpreters with no extracted path cannot be
-preflighted and are not claimed as covered. Use CLI `lock` for sensitive or
+preflighted and are not claimed as covered. Use native `awareness` lock commands for sensitive or
 non-mergeable state when concurrent mutation is unsafe.
 
-## Explicit CLI operations
+## Explicit native Awareness operations
 
 - `lock acquire|wait|release`: only for state that cannot be merged safely. Mutation
   checks already enforce peer-held locks; ordinary source edits do not need one.
 - `signal`: only when a peer needs a blocker, question, decision, evidence, handoff,
   or overlap notice that changes the recipient's next action.
 - `memory`: recall only when prior learning can change the approach; store only
-  verified reusable outcomes that source and docs do not already own.
+  one verified reusable lesson at the end of substantial work or a meaningful event; skip routine edits and repeated lessons.
 
 With `storage.mode=memory`, Pi rejects durable `awareness` calls, omits CLI bindings,
 and directs the model to session state. It does not pretend a lock, signal or memory write succeeded. Session-local
@@ -215,8 +209,8 @@ The same package is available as `npx @octocodeai/octocode-awareness`.
 | Continuation | `handoff add`, `handoff list`, `handoff clear`, `session capture` | `awareness`; Pi also maintains session/compaction artifacts |
 | Durable learning | `memory`, `reflect`, `refinement` | `awareness` list/describe/call |
 | Operational inspection | `attend`, `status`, `query` | Passive status plus structured `awareness` calls |
-| History and recovery | `history` | Native captures plus `awareness`; restore calls retain approval and preview binding |
-| Maintenance and configuration | `maintenance`, `database`, `config`, `hooks`, `hook run` | `awareness` for supported commands; bound CLI for descriptors marked `external-host-only` |
+| History and recovery | `history` | Opt-in native captures (full profile) plus `awareness`; restore calls retain approval and preview binding |
+| Maintenance and configuration | `maintenance`, `database`, `config`, `hooks`, `hook run` | `awareness` calls the package API; internal hook callbacks are invoked by the host |
 
 Full-package availability does not mean Pi automatically captures Awareness
 sessions, runs reflection, or supplies native-runtime sensors to `attend`. Operational
@@ -237,13 +231,13 @@ signals. Unresolved threads, pending verification and live peer work are not clu
 
 ## Final worker audits and context estimates
 
-Terminal handling audits the facade-owned native worker set after the last
+With the guard/full profile, terminal handling audits the facade-owned native worker set after the last
 `agent_end` artifact and again after process close. Explicit inspect/wait refreshes
 this observation. Results expose native identities, pending and stale-active counts,
 at most 20 IDs per category, observation time and an executable `verify audit`
 continuation. This is the current facade's owned worker set, not an inferred ancestry
 graph across other hosts. Exit, a handback or an acknowledgement never marks success.
-The parent still audits after final artifacts and settles only observed checks.
+For tracked work, the parent audits after final artifacts and settles only observed checks. The default coordination profile skips automatic worker audits; explicit verification remains available.
 
 Context assembly exposes payload-free `estimates` by canonical segment kind,
 including embedded Awareness instructions and host bindings. The initial assembly

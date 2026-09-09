@@ -7,6 +7,10 @@ description: "Use when browser work needs multiple Chrome DevTools Protocol phas
 
 Choose the smallest workflow that can produce the required evidence. The skill owns that judgment; `agent` and `chromeDebug` own deterministic execution.
 
+If you are already a browser worker, complete the assigned phase with chromeDebug
+and return evidence to the parent. The spawn, wait, and cleanup recipes below are
+for the parent; they do not grant workers delegation or direct user contact.
+
 ## Choose the execution path
 
 | Need | Action |
@@ -53,7 +57,10 @@ agent({queries:[{reasoning:"Inspect the complete retained result.", type:"inspec
 agent({queries:[{reasoning:"Release the completed browser worker.", type:"kill", agentId:"abc123…", remove:true}]})
 ```
 
-Use `inspect` without `agentId` to list all workers. `wait` returns the current transcript snapshot; repeat it only when fresh output is expected. Use `steer` when the current direction must change before the worker's next model step. Use `message` with `delivery:"followUp"` to queue the next phase.
+Use `inspect` without `agentId` to list workers. Use `wait` to await the current
+turn; a timeout is a snapshot, not completion. Use `steer` to redirect an active
+turn and `message` with `delivery:"followUp"` to queue the next phase. The footer
+already delivers live state; do not poll merely to repeat it.
 
 ## Output protocol
 
@@ -61,7 +68,7 @@ The browser worker prefixes evidence lines:
 
 | Prefix | Meaning |
 |---|---|
-| `[STATUS] …` | Current activity |
+| `[STATUS] …` | A meaningful activity change, when the parent needs it |
 | `[FINDING] …` | Specific issue or discovery |
 | `[ACTION] …` | Recommended next step |
 | `[METRIC] …` | Measurement such as size, count, percentage, or duration |
@@ -76,10 +83,10 @@ If the worker emits `[BLOCKED]`, resolve the missing input and send it through `
 
 ## Long-running work
 
-For monitors or user-interaction flows, use short snapshot checks while other useful work continues:
+Continue useful parent work while a browser phase runs, then wait for its result:
 
 ```
-agent({queries:[{reasoning:"Check browser-monitor progress.", type:"inspect", agentId:"abc123…"}]})
+agent({queries:[{reasoning:"Collect the browser phase.", type:"wait", agentId:"abc123…", timeoutMs:60000}]})
 ```
 
 If a worker is stuck well beyond the expected duration, interrupt its current turn without destroying the process, inspect the result, then either redirect or remove it:

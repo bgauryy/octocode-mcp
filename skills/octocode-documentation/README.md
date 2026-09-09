@@ -27,7 +27,7 @@ The Markdown linter reports ERROR, WARN, and INFO findings. Non-Markdown text st
 ## Install
 
 ```bash
-npx octocode skill install octocode-documentation --platform codex
+npx -y octocode skill install octocode-documentation
 ```
 
 ## Maintainer verification

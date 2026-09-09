@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { beforeAll, test, vi } from 'vitest';
 import { Type } from 'typebox';
 import type { PiContext, PiInstance } from '../src/types.js';
-import { disableBuiltinTools, formatStatus, formatPromptBudget, formatOctocodeDashboard, getInternalErrorLogPath, listExtensionHarness } from '../src/index.js';
+import { disableBuiltinTools, formatStatus, formatPromptBudget, getInternalErrorLogPath, listExtensionHarness } from '../src/index.js';
 import { MANAGED_BLOCK_END, MANAGED_BLOCK_START, SYSTEM_PROMPT_MARKER, DISABLED_BUILTIN_TOOL_NAMES, OCTOCODE_SUPPORT_TOOL_NAMES } from '../src/constants.js';
 import { applyOctocodeUi, getThinkingStatus } from '../src/extension-ui.js';
 import { getAssetPaths, getAwarenessCLIPath, buildAwarenessCommand, getInstallSource, listBundledSkills, readTextIfExists, resolveAwarenessCoordinationScope } from '../src/assets.js';
@@ -18,7 +18,6 @@ import { mergeManagedAppendSystem } from '../src/prompt.js';
 import { cleanupSpawnedAgentsForShutdown } from '../src/tools/agents/process.js';
 import { listWorkerLedgerEntries } from '../src/tools/agents/ledger.js';
 import { setAgentProcessFactoryForTests } from '../src/tools/agents/registry.js';
-import { formatAgentLedgerDetails } from '../src/tools/agents/rendering.js';
 import { normalizeWorkerOutput, evaluateWorkerRecoveryRisk } from '../src/tools/agents/normalization.js';
 import { evaluateSpawnPolicy } from '../src/tools/agents/policy.js';
 import { runHookMiddleware } from '../src/hook-composer.js';
@@ -29,7 +28,7 @@ import { assertPathAllowed } from '../src/tools/path-guard.js';
 import { activePlanScope, clearPlan, getPlan, getPlanReviewState, setPlan } from '../src/tools/planning/plan-store.js';
 import { setPlanDirectoryServerForTests } from '../src/tools/planning/plan-command.js';
 import { setPlanOpenerForTests } from '../src/tools/plan-html.js';
-import { buildFooterSegments, setFooterDensity } from '../src/ui-extras.js';
+import { buildCapabilitySegments, setFooterDensity } from '../src/ui-extras.js';
 import { PI_CONFIG_DIR } from '../src/constants.js';
 import { DIRECT_TOOL_DESCRIPTIONS, getDirectToolContractStats, registerUniqueTool } from '../src/tools/octocode-tools.js';
 import { runtimeStoreFor, setManagedActivity, setManagedStatus } from '../src/tools/runtime-renderer.js';
@@ -651,9 +650,11 @@ test('workers discover research tools and skills with one frozen Awareness guide
 
     assert.ok(result?.systemPrompt?.startsWith('typed specialist prompt from --append-system-prompt'));
     assert.match(result!.systemPrompt!, /<awareness>/);
-    assert.match(result!.systemPrompt!, /Awareness is shared coordination state/);
-    assert.match(result!.systemPrompt!, /highest-ROI command/);
-    assert.match(result!.systemPrompt!, /expired leases orphan work/);
+    assert.match(result!.systemPrompt!, /Start lean: attend once/);
+    assert.match(result!.systemPrompt!, /Recall memory only when prior learning could change the approach/);
+    assert.match(result!.systemPrompt!, /Refresh only an active claim or presence you own/);
+    assert.match(result!.systemPrompt!, /bound CLI when the facade is unavailable/);
+    assert.doesNotMatch(result!.systemPrompt!, /highest-ROI command|Essential loop/);
     assert.match(result!.systemPrompt!, /<awareness_cli_runtime>/);
     assert.match(result!.systemPrompt!, /<mcp_catalog_index>[\s\S]*localSearch/);
     assert.match(result!.systemPrompt!, /<available_skills>[\s\S]*octocode-research/);
@@ -1129,36 +1130,10 @@ test('formatPromptBudget reports per-part and total char/token estimates, flaggi
   assert.match(budget, /- total: 403 chars \(~101 tokens\)/);
 });
 
-test('footer default density surfaces MCP connection and skill counts as separate segments', () => {
-  const segments = buildFooterSegments({
-    tokens: 50_000,
-    contextWindow: 100_000,
-    completedTurns: 1,
-    sessionMs: 1_000,
-    activeWorkers: 0,
-    permissionLevel: 'default',
-    approvedClassCount: 0,
-    overhead: { totalChars: 4_000, sysChars: 2_000, mcpServers: 3, mcpTools: 18, skills: 13 },
-    dirty: false,
-  }, 'default').map((segment) => segment.text);
-  // mcp N and skills N are now merged into a single segment separated by SEP.
-  assert.ok(
-    segments.some((s) => s.includes('mcp 3') && s.includes('skills 13')),
-    'footer shows MCP server count and skill count in one merged segment',
-  );
-  assert.equal(
-    buildFooterSegments({
-      tokens: 50_000,
-      contextWindow: 100_000,
-      completedTurns: 1,
-      sessionMs: 1_000,
-      activeWorkers: 0,
-      overhead: { totalChars: 4_000, sysChars: 2_000, mcpServers: 3, mcpTools: 18, skills: 13 },
-      dirty: false,
-    }, 'compact').some((segment) => segment.text.includes('mcp 3') || segment.text.includes('skills 13')),
-    false,
-    'compact footer remains high-signal only',
-  );
+test('footer diagnostics surface MCP and skill counts when density permits', () => {
+  const metrics = { overhead: { totalChars: 4000, sysChars: 2000, mcpServers: 3, mcpTools: 18, skills: 13 } };
+  assert.ok(buildCapabilitySegments(metrics, 'default').some(segment => segment.text.includes('mcp 3') && segment.text.includes('skills 13')));
+  assert.deepEqual(buildCapabilitySegments(metrics, 'compact'), []);
 });
 
 test('disable built-in read in favor of localGetFileContent (records read state for edit stale-check)', async () => {
@@ -2458,10 +2433,9 @@ test('research tools served via MCPTool — not registered as native Pi tools', 
   // bundled octocode MCP server through MCPTool, not as individually-registered
   // native Pi tools. This keeps the Pi tool palette lean (fewer tokens per turn).
   const nativeResearchTools = [
-    'ghSearch', 'ghGetFileContent', 'ghSearchPullRequests', 'ghSearchIssues',
-    'ghSearchCommits', 'ghListReleases', 'ghSearchDiscussions', 'ghCloneRepo',
-    'npmSearch', 'localSearch', 'localAnalyzeGraph', 'localGetFileContent',
-    'lspGetSemantics',
+    'ghSearch', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem',
+    'ghCloneRepo', 'npmSearch', 'localSearch', 'astSearch',
+    'localGetFileContent', 'lspSearch',
   ];
   for (const toolName of nativeResearchTools) {
     assert.equal(
@@ -2736,7 +2710,7 @@ test('Octocode metrics footer updates on session and turn lifecycle (single surf
   );
   const initial = renderFooter();
   assert.doesNotMatch(initial, /◆ Octocode/, 'footer does not repeat the app brand');
-  assert.match(initial, /ctx 50%/, 'footer shows current context pressure without duplicating diagnostic totals');
+  assert.match(initial, /ctx 50\.0k\/100k 50%/, 'footer shows measured context use and capacity');
   // Pre-first-turn footer carries no `turns 0` / `last —` placeholders.
   assert.doesNotMatch(initial, /turns 0/);
   assert.doesNotMatch(initial, /last —/);
@@ -2745,7 +2719,7 @@ test('Octocode metrics footer updates on session and turn lifecycle (single surf
   assert.match(initial, /config/, 'the settings route survives compact rendering');
   assert.doesNotMatch(initial, /\/commands guide/);
   assert.doesNotMatch(initial, /\/harness inspect|\/now snapshot|\/status dash/);
-  assert.match(initial, /github ✓/);
+  assert.doesNotMatch(initial, /github ✓/i, 'healthy authentication does not occupy the activity footer');
   assert.ok(
     pi.execCalls.some((call) => call.command === 'npx' && call.args.join(' ') === 'octocode auth status --json'),
     'session_start checks GitHub auth through the Octocode CLI',
@@ -2761,7 +2735,7 @@ test('Octocode metrics footer updates on session and turn lifecycle (single surf
   assert.equal(branchChange, undefined);
 
   for (const turnStart of handlers.get('turn_start') ?? []) await turnStart(undefined, ctx);
-  assert.match(renderFooter(), /Thinking/, 'active operation is named without duplicating spinner motion in the footer');
+  assert.match(renderFooter(), /Working/, 'active operation is named without duplicating spinner motion in the footer');
   assert.equal(workingVisibility.at(-1), true, 'active operation keeps Pi\'s animated working row visible');
   assert.equal(
     statusCalls.some(([key, value]) => key === 'octocode-thinking' && /thinking/i.test(value ?? '')),
@@ -2781,29 +2755,6 @@ test('Octocode metrics footer updates on session and turn lifecycle (single surf
   assert.ok(renderRequests >= 1, 'live footer updates go through tui.requestRender, not re-registration');
   // Session uptime rides default density (the one clock users look for).
   assert.match(latest, /session \d/);
-});
-
-test('formatOctocodeDashboard is scan-friendly and includes health warnings', () => {
-  const dashboard = formatOctocodeDashboard({
-    getContextUsage: () => ({ tokens: 92_000, contextWindow: 100_000 }),
-    cwd: packageRoot,
-  });
-
-  assert.match(dashboard, /^◆ Octocode dashboard/m);
-  assert.match(dashboard, /ctx ▓▓▓▓▓▓▓▓▓░ 92%/);
-  assert.match(dashboard, /⚠ context at 92% — Pi compacts in-run at its configured reserve threshold/);
-  assert.match(dashboard, /Management: npx octocode/);
-  assert.match(dashboard, /Awareness: .*octocode-awareness.*octocode-awareness\.js/);
-  assert.match(dashboard, /user CLI: npx -p @octocodeai\/octocode-awareness octocode-awareness/);
-  assert.match(dashboard, /\/configuration/);
-  assert.doesNotMatch(dashboard, /\/octocode-status/);
-
-  const belowBoundary = formatOctocodeDashboard({
-    getContextUsage: () => ({ tokens: 79_500, contextWindow: 100_000 }),
-    cwd: packageRoot,
-  });
-  assert.match(belowBoundary, /ctx ▓▓▓▓▓▓▓▓░░ 79%/);
-  assert.doesNotMatch(belowBoundary, /Pi compacts in-run at its configured reserve threshold/);
 });
 
 test('disableBuiltinTools is defensive and only removes disabled built-ins', () => {
@@ -2986,8 +2937,8 @@ test('generic turn activity never overwrites a specific plan lifecycle', async (
 
 test('extension slash commands expose configuration and explicit file recovery', async () => {
   const { commands } = await captureExtensions();
-  assert.deepEqual([...commands.keys()].sort(), ['configuration', 'octocode-inbox', 'octocode-rewind']);
-  assert.deepEqual(listExtensionHarness().extensionCommands, ['/octocode-rewind', '/octocode-inbox', '/configuration']);
+  assert.deepEqual([...commands.keys()].sort(), ['configuration', 'octocode-inbox', 'octocode-rewind', 'octocode-status']);
+  assert.deepEqual(listExtensionHarness().extensionCommands, ['/octocode-rewind', '/octocode-inbox', '/octocode-status', '/configuration']);
 });
 
 test('input hooks preserve repo-related user prompts without probing Git', async () => {
@@ -3333,14 +3284,13 @@ test('runtime harness reports the exact bundled skill inventory', () => {
 });
 
 test('research tools are NOT registered as native Pi tools — served via MCPTool octocode server', async () => {
-  // MCPTool-first: 13 research tools stay out of the Pi palette to cut per-turn tokens.
+  // MCPTool-first: 10 research tools stay out of the Pi palette to cut per-turn tokens.
   // They are served through an MCPTool queries[] item with action:"call" and server:"octocode".
   const { tools } = await captureExtensions();
   const absent = [
-    'ghSearch', 'ghGetFileContent', 'ghSearchPullRequests', 'ghSearchIssues',
-    'ghSearchCommits', 'ghListReleases', 'ghSearchDiscussions', 'ghCloneRepo',
-    'npmSearch', 'localSearch', 'localAnalyzeGraph', 'localGetFileContent',
-    'lspGetSemantics',
+    'ghSearch', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem',
+    'ghCloneRepo', 'npmSearch', 'localSearch', 'astSearch',
+    'localGetFileContent', 'lspSearch',
   ];
   for (const name of absent) {
     assert.equal(tools.has(name), false, `${name} must not be a native Pi tool`);
@@ -3593,7 +3543,8 @@ test('agent lifecycle followUp shows queued (not running) until the worker start
     const queuedSummary = (queued.details as { agent: { status: string; pendingMessages?: number } }).agent;
     assert.equal(queuedSummary.pendingMessages, 1);
     assert.equal(queuedSummary.status, 'idle', 'raw status stays idle — not faked to running');
-    assert.match(formatAgentLedgerDetails(), /queued/);
+    const workers = await invokeExecute(messageTool, { queries: [{ reasoning: 'Inspect queued worker presentation.', type: 'inspect' }] });
+    assert.match((workers.content[0] as { text: string }).text, /queued/);
 
     // The worker actually begins the queued turn → running, pending cleared.
     spawned[0]!.proc.emitStdout({ type: 'agent_start' });
@@ -4393,7 +4344,7 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
       assert.ok(names.split(',').includes('skill'), 'typed workers can load the Awareness skill');
       assert.doesNotMatch(names, /(?:^|,)(?:memory|lock|message|write)(?:,|$)/, 'typed workers use current registered tools');
     }
-    assert.doesNotMatch(architectTools, /lspGetSemantics/, 'lspGetSemantics served via MCPTool, not natively');
+    assert.doesNotMatch(architectTools, /lspSearch/, 'lspSearch served via MCPTool, not natively');
   } finally {
     setAgentProcessFactoryForTests(null);
   }

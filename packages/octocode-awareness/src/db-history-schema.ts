@@ -42,9 +42,3 @@ export const LOCAL_HISTORY_INDEX_DDL = `
   CREATE INDEX IF NOT EXISTS idx_local_history_restores_source ON local_history_restores(source_operation_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_local_history_restores_expiry ON local_history_restores(status, expires_at);
 `;
-
-export const LOCAL_HISTORY_SCHEMA_OBJECT_NAMES = new Set([
-  'local_history_operations', 'local_history_versions', 'local_history_restores',
-  'idx_local_history_operations_workspace', 'idx_local_history_operations_run', 'idx_local_history_versions_file',
-  'idx_local_history_restores_source', 'idx_local_history_restores_expiry',
-]);

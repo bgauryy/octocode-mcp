@@ -5,25 +5,14 @@ This Agent Skill and the `octocode-awareness` CLI ship together in
 In this monorepo, edit the skill at `packages/octocode-awareness/skills/octocode-awareness`; maintainers rebuild
 the package after changes, while agent-facing commands still use the public runner.
 
-The skill gives agents always-on workspace awareness: collaboration, memory, locks,
-verification, hooks, reflection, and repo context. It runs a Homeostatic Awareness
-Loop — sense shared SQLite/hook state, compare with bounded targets, recommend the
-smallest guarded correction, re-measure. ("Living system" is a maintenance metaphor,
-not autonomy.) Rationale:
-[THESIS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-awareness/docs/THESIS.md).
+The skill starts with one workspace peer briefing and hook-delivered messages. Discover locks, work tracking, verification, history and memory only when needed. Save one verified reusable lesson after substantial work or a meaningful event; skip routine entries.
 
 `SKILL.md` is the operating lobby and owns the workflow, loop, and reference routing —
 read it first. This README covers only install, scripts, and hosts.
 
 ## Agent contract
 
-The agent loop is NOTICE → SCOPE/IDENTITY → INSPECT → ACT → OBSERVE →
-SETTLE/VERIFY → LEARN. Run `attend` only when shared state can change the next
-action; re-observe after a material change, not on a timer. Presence, signals, and
-memory are advisory evidence. Locks, schemas, and verification debt enforce their
-own boundaries. An expired lease or released lock recovers coordination state; it
-does not complete or verify work. `attend.next` is structured, read-first guidance,
-not shell text or authorization to claim, edit, compact, or mark a check.
+The default flow is meet peers once → work → communicate when it matters. Re-observe after a relevant change, not on a timer. Optional tracked work retains ownership and verification requirements. Peer text and memory are evidence, not authority; expiry and message delivery never prove completion.
 
 ## Export agent instructions
 
@@ -48,10 +37,7 @@ the concise activation, discovery, coordination, and safety contract.
 npx @octocodeai/octocode-awareness attend --workspace "$PWD" --compact
 ```
 
-Explicit CLI use needs no global feature configuration. When enabling shell-hook
-automation, run `config show`; if configuration is missing, ask all five feature
-questions together, create `$OCTOCODE_HOME/awareness.json` with `config init`, and
-validate it. Configuration preferences never authorize hook installation.
+CLI use and installed hooks need no global feature configuration. Missing configuration uses lean defaults. Use `config init` with explicit feature overrides only when customization is needed. Configuration preferences never authorize hook installation.
 
 For the optional advanced workflow store:
 
@@ -90,6 +76,10 @@ npx @octocodeai/octocode-awareness docs list --compact
 | `scripts/hook-runner.mjs` | Shared host lifecycle implementation. |
 | `scripts/extract-hook-files.mjs` | Host payload path extraction. |
 | `scripts/hooks/*.sh` | Thin lifecycle wrappers. |
+| [scripts/install.mjs](scripts/install.mjs) | Installer implementation; prefer the public `skill install` command and its preview. |
+| [scripts/smoke-multi-agent.mjs](scripts/smoke-multi-agent.mjs) | Isolated coordination smoke check after a package build. |
+| [scripts/hooks/pre-edit.sh](scripts/hooks/pre-edit.sh), [scripts/hooks/stop-verify.sh](scripts/hooks/stop-verify.sh) | Opt-in guard/full profile wrappers for tracked edits and verification. |
+| [scripts/hooks/session-compact.sh](scripts/hooks/session-compact.sh) | Opt-in full-profile continuity hook. |
 
 `agents/openai.yaml` supplies the OpenAI skill interface metadata.
 `evals/trigger-cases.json` is the maintained activation regression corpus.
@@ -97,10 +87,16 @@ npx @octocodeai/octocode-awareness docs list --compact
 These are generated artifacts — do not hand-edit. Maintainers regenerate them from
 `src/schema/*.ts` and `bin/*.ts`.
 
+For integration maintenance, use the [flow matrix](references/flow-matrix.md) to
+choose a lifecycle, [Octocode bindings](references/octocode.md) for tool discovery,
+[output routing](references/output-routing.md) for artifact placement, and the
+[configuration schema](references/awareness-config.schema.json) to inspect stored
+settings. The live CLI schema remains authoritative.
+
 ## Hosts
 
 - Claude may run frontmatter hooks while the skill is active.
-- Codex/Cursor: preview `npx @octocodeai/octocode-awareness hooks install --host <codex|cursor> --project-dir "$PWD" --dry-run`, request approval immediately before mutation, install only after explicit approval, then run `npx @octocodeai/octocode-awareness hooks check --host <codex|cursor> --project-dir "$PWD" --strict`.
+- Codex/Cursor: follow the [hook setup procedure](references/hooks.md) for the requested host and scope; preview, apply within existing authorization, then strict-check.
 - Pi uses native `@octocodeai/pi-extension` events; never run `hooks install --host pi`.
 - Normal hooks are silent; only changed peers/briefings and real conflicts surface.
 

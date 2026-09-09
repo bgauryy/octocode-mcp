@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Client } from '@modelcontextprotocol/client';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 
@@ -27,9 +27,9 @@ describe('all-tool real SDK catalog parity', () => {
       'npmSearch',
       'ghCloneRepo',
       'localSearch',
-      'localAnalyzeGraph',
+      'astSearch',
       'localGetFileContent',
-      'lspGetSemantics',
+      'lspSearch',
     ];
     const legacyNames = [
       'ghSearchPullRequests',

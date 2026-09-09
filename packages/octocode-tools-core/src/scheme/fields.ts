@@ -43,6 +43,14 @@ const responsePaginationFields = {
   responseCharLength: clampedInt(1, 50_000)
     .optional()
     .describe('Full-response char window.'),
+  responseSnapshot: z
+    .string()
+    .min(1)
+    .max(128)
+    .optional()
+    .describe(
+      'Snapshot token from responsePagination.snapshot; required for later pages.'
+    ),
 } as const;
 
 export function createRelaxedBulkQuerySchema(

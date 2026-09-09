@@ -8,7 +8,7 @@ Trace the behavior as:
 
 `source → parse/validate → transform/decide → boundary → sink/effect → observation`
 
-At each hop, name the data shape, owner, invariant, failure mode, and interface. Types are executable contracts; make invalid states difficult or impossible to represent. Keep core decisions separate from UI, storage, and transport edges.
+At each hop, name the data shape, owner, invariant, failure mode, and interface. Static types document and constrain checked code; runtime schemas and validation are the executable boundary contracts. Make invalid states difficult or impossible to represent, then verify the runtime path. Keep core decisions separate from UI, storage, and transport edges.
 
 ## Cross-check four views
 

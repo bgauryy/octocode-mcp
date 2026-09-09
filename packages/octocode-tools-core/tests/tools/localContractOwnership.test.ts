@@ -24,13 +24,14 @@ describe('tool-contract ownership', () => {
     expect(runtime).not.toContain('@octocodeai/octocode-core/schemas');
   });
 
-  it('uses octocode-core only for the shared system prompt metadata', async () => {
+  it('uses the tools-core canonical instructions for shared metadata', async () => {
     const metadata = await readFile(
       path.join(CONTRACT_ROOT, 'metadata.ts'),
       'utf8'
     );
 
-    expect(metadata).toContain("from '@octocodeai/octocode-core'");
+    expect(metadata).toContain("from './instructions.js'");
+    expect(metadata).toContain('TOOL_RESEARCH_INSTRUCTIONS');
     expect(metadata).toContain('DIRECT_TOOL_DISCOVERY_DEFINITIONS');
   });
 });

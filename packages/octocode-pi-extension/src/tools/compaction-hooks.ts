@@ -6,7 +6,7 @@ import { writeCompactionArtifact } from './compaction-artifacts.js';
 import { clearAllReadStates } from './file-state.js';
 import { contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
 import { createSessionArtifactContext, writeRehydrationLedger } from './session-artifacts.js';
-import { listPendingInteractionIds } from './interaction-broker.js';
+import { listPendingInteractionIds, listPendingInteractions } from './interaction-broker.js';
 import { clearPendingRehydration, runAndRecordRehydration } from './rehydration-orchestrator.js';
 import { captureCurrentContextSources } from './context-source-registry.js';
 import { redactCompactionText } from './compaction-redaction.js';
@@ -139,11 +139,36 @@ function formatFileList(title: string, files: string[]): string {
     .join('\n');
 }
 
+/**
+ * An unanswered question or authorization is the one recovery input the model
+ * cannot rebuild from retained messages: the request lives in broker state, and
+ * the transcript entry that raised it is usually inside the discarded range.
+ * Without it the model re-asks an already-open question or, worse, proceeds as
+ * though a pending authorization had been granted.
+ */
+function formatPendingDecisions(pending: PendingCompactionDecision[]): string | undefined {
+  if (pending.length === 0) return undefined;
+  const lines = pending.slice(0, 10).map(
+    ({ kind, question }) => `- ${kind}: ${truncateText(question, 300)}`,
+  );
+  return [
+    '## Pending decisions (awaiting the user; not granted)',
+    ...lines,
+    pending.length > 10 ? `- …and ${pending.length - 10} more` : undefined,
+  ].filter(Boolean).join('\n');
+}
+
+export interface PendingCompactionDecision {
+  kind: 'question' | 'authorization';
+  question: string;
+}
+
 function buildDeterministicCompaction(
   preparation: Record<string, unknown>,
   reason: string,
   customInstructions: unknown,
   continuationContext?: string,
+  pendingDecisions: PendingCompactionDecision[] = [],
 ): {
   summary: string;
   firstKeptEntryId: string;
@@ -169,7 +194,8 @@ function buildDeterministicCompaction(
     `Reason: ${reason}`,
     `Tokens before compaction: ${tokensBefore}`,
     focus ? `Focus instructions: ${redactCompactionText(focus)}` : undefined,
-    '## Resume instructions\nRe-orient from retained recent messages and the current authoritative sources below. If an active authorized plan remains, resume its next runnable step until the overall request meets acceptance, a real blocker or approval gate is reached, or the user asks to pause. Do not stop merely because one substep passes. If no active work remains, stop and wait for the user.',
+    '## Resume instructions\nRecover the unfinished objective, its constraints, unresolved failures, partial results with the calls that resume them, decisions already made, and evidence pointers from retained messages and current authoritative sources. Resume authorized work, using the next runnable step when a plan exists; routine work needs no new plan. A passed substep does not complete the request. Continue until acceptance, a real blocker or approval gate, or a user pause. If no work remains, stop.',
+    formatPendingDecisions(pendingDecisions),
     continuationContext?.trim()
       ? `## Active plan and authoritative references\n${truncateText(continuationContext, 2_500)}`
       : '## Active plan and authoritative references\n(none)',
@@ -342,11 +368,19 @@ export function registerCompactionHooks(pi: PiInstance, notify: NotifyFn): void 
 
       const planScope = activePlanScope(ctx);
       const continuationContext = renderPlanContext(getCurrentPlanReadModel(ctx, planScope));
+      // Broker reads are best-effort: a missing store must not cost the whole
+      // emergency checkpoint, which is the only thing standing between an
+      // overflow and a lost compaction.
+      let pendingDecisions: PendingCompactionDecision[] = [];
+      try {
+        pendingDecisions = listPendingInteractions(ctx).map(({ kind, question }) => ({ kind, question }));
+      } catch { /* pending decisions are additive context, not a precondition */ }
       const compaction = buildDeterministicCompaction(
         preparation,
         event.reason,
         event.customInstructions,
         continuationContext,
+        pendingDecisions,
       );
       if (!compaction) return;
 

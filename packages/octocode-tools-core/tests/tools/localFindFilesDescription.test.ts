@@ -10,10 +10,8 @@ import { LocalFindFilesQuerySchema } from '../../src/tools/local_find_files/sche
 describe('localSearch excludeDir description contract', () => {
   it('the local contract ships the pruned-by-default truth directly', () => {
     const description = PUBLIC_TOOL_DESCRIPTIONS.localSearch;
-    expect(description).toMatch(
-      /prune common generated and vendor directories by default/i
-    );
-    expect(description).not.toMatch(/Nothing is excluded by default/i);
+    expect(description).toMatch(/matching is lexical/i);
+    expect(description).toMatch(/astSearch for syntax/i);
   });
 
   it('served DESCRIPTIONS are byte-identical to the local contract', () => {

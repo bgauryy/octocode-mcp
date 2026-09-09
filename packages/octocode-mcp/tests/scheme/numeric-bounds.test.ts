@@ -10,7 +10,7 @@ import { LocalFetchContentQuerySchema } from '../../../octocode-tools-core/src/t
 import { LocalFindFilesQuerySchema } from '../../../octocode-tools-core/src/tools/local_find_files/scheme.js';
 import { LocalRipgrepQuerySchema } from '../../../octocode-tools-core/src/tools/local_ripgrep/scheme.js';
 import { LocalViewStructureQuerySchema } from '../../../octocode-tools-core/src/tools/local_view_structure/scheme.js';
-import { LspGetSemanticsQuerySchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
+import { LspSearchQuerySchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
 
 const SENTINEL = 9007199254740991;
 
@@ -25,7 +25,7 @@ const schemas: Record<string, z.ZodTypeAny> = {
   findFiles: LocalFindFilesQuerySchema,
   ripgrep: LocalRipgrepQuerySchema,
   viewStructure: LocalViewStructureQuerySchema,
-  lspSemantic: LspGetSemanticsQuerySchema,
+  lspSemantic: LspSearchQuerySchema,
 };
 
 describe('numeric schema fields are bounded (#C1)', () => {
@@ -70,19 +70,14 @@ describe('numeric schema fields are bounded (#C1)', () => {
     }
   });
 
-  it('clamps a negative line number instead of rejecting it', () => {
-    const r = LspGetSemanticsQuerySchema.safeParse({
+  it('rejects a negative LSP line without changing the observed anchor', () => {
+    const r = LspSearchQuerySchema.safeParse({
       uri: 'a.ts',
-      type: 'definition',
+      operation: 'definition',
       symbolName: 'x',
       lineHint: -5,
     });
-    if (r.success) {
-      expect(r.data.lineHint).toBe(1);
-    } else {
-      const paths = r.error.issues.map(i => i.path.join('.'));
-      expect(paths).not.toContain('lineHint');
-    }
+    expect(r.success).toBe(false);
   });
 
   it('pullRequests: content.patches.ranges line arrays are bounded (reject above the cap)', () => {

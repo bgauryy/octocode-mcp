@@ -64,14 +64,12 @@ describe('localSearch architecture boundary', () => {
     }
   });
 
-  it('adapts the three internal engines without nesting their public bulk wrappers', async () => {
+  it('adapts the lexical engine without nesting its public bulk wrapper', async () => {
     const imports = await moduleImports('tools/local_search/execution.ts');
 
     expect(imports).toEqual(
       expect.arrayContaining([
         '../local_ripgrep/searchContentRipgrep.js',
-        '../local_find_files/findFiles.js',
-        '../local_view_structure/local_view_structure.js',
       ])
     );
     expect(imports).not.toEqual(

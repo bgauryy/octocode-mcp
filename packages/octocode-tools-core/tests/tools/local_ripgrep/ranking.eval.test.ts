@@ -116,7 +116,7 @@ describe('ranking eval — agent off-switch', () => {
 
   it('sort:"path" gives deterministic alphabetical order with no classification', async () => {
     const res = (await executeRipgrepSearchInternal({
-      keywords: 'fallback',
+      searchText: 'fallback',
       path: SRC,
       sort: 'path',
       itemsPerPage: 5,
@@ -125,9 +125,32 @@ describe('ranking eval — agent off-switch', () => {
     };
     const files = res.files ?? [];
     const paths = files.map(f => f.path);
+    expect(paths.length).toBeGreaterThan(0);
     expect(paths).toEqual([...paths].sort((a, b) => a.localeCompare(b)));
     expect(
       files.some(f => (f.matches ?? []).some(m => m.kind !== undefined))
     ).toBe(false);
   });
+});
+
+describe('lexical search stays independent of AST parsing', () => {
+  it.each([undefined, 'relevance'] as const)(
+    'returns lexical matches without syntax classification for sort %s',
+    async sort => {
+      const result = await executeRipgrepSearchInternal({
+        searchText: 'fallback',
+        path: SRC,
+        ...(sort ? { sort } : {}),
+        itemsPerPage: 5,
+      } as never);
+      expect(result.status).not.toBe('error');
+      expect(result.files.length).toBeGreaterThan(0);
+      for (const file of result.files) {
+        for (const match of file.matches ?? []) {
+          expect(match).not.toHaveProperty('kind');
+          expect(match).not.toHaveProperty('scoreHint');
+        }
+      }
+    }
+  );
 });

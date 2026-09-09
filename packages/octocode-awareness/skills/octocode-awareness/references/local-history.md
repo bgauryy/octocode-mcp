@@ -1,6 +1,6 @@
 # Local history
 
-Use local history for observed workspace-file recovery. Awareness SQLite owns the operation and outcome records; the adjacent private object store owns recoverable bytes. Never treat a blob hash as authorship or verification evidence.
+Use local history for observed workspace-file recovery. Awareness SQLite owns the operation and outcome records; the workspace-local private object store owns recoverable bytes. Never treat a blob hash as authorship or verification evidence.
 
 ## Inspect before acting
 
@@ -40,6 +40,26 @@ A completed restore returns `verification_run_id` with its work run `PENDING`. I
 
 ## Storage rules
 
-The sidecar is `<selected-awareness-db>.history/awareness-v1/<sha256(real-workspace)>/repo.git`. It uses bundled `isomorphic-git` and does not require system Git or a network. It never touches the workspace `.git`. Preserve the SQLite database and sidecar together. Database consolidation rejects history-bearing sources until an explicit sidecar-copy and integrity protocol exists. There is no implicit migration or automatic object pruning.
+Private bytes live under `<workspace>/.octocode/.localGit`. Use `history status`
+for the exact database namespace and relocation diagnostics; never edit refs or
+derive storage paths yourself. Preserve the SQLite database and private store
+together. Old sidecars require an explicit offline relocation before new captures;
+an upgrade never moves them. The bundled backend needs neither system Git nor a
+network and never touches workspace `.git`.
 
-See [`docs/LOCAL_HISTORY.md`](../../../docs/LOCAL_HISTORY.md) for the storage, capture, restore, and failure contracts.
+When a peer needs an existing capture, send its workspace, operation ID, side and
+file through a signal; the peer can fetch just the needed `history read` page.
+If the host binds history to another checkout, ask the originating agent for the
+needed excerpt; do not override host workspace bindings.
+Keep intent, decisions, acknowledgements and file/area memory in their existing
+Awareness owners. A capture pointer does not grant restore permission.
+
+An expired restore preview requires a fresh preview. Release owned work leases;
+reacquire an expired lease instead of renewing it. `history status.retention`
+reports recovery pressure, not permission to delete it. Automatic object pruning
+and crash reconciliation are not implemented; never use Git GC or age-based
+deletion to repair an active capture.
+
+Use `schema command history <action> --compact` for the exact capture or restore
+contract. After recovery, return to the [tracked-work recipe](agent-cheatsheet.md)
+to settle the returned verification run.

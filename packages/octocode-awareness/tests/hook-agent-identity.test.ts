@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { agentHost, agentId, agentVendor, INTERNAL_HOOK_HOST } from '../bin/hook-payload.js';
-import { registerHookAgent } from '../bin/hook-peers.js';
-import { runHookCommand } from '../bin/hook-runner.js';
+import { agentHost, agentId, agentVendor, INTERNAL_HOOK_HOST } from '../src/hooks/payload.js';
+import { registerHookAgent } from '../src/hooks/peers.js';
+import { runHookCommand } from '../src/hooks/runner.js';
 import { connectDb } from '../src/db-runtime.js';
 import { listAgents, registerAgent } from '../src/agents.js';
 import { DEFAULT_AWARENESS_CONFIG, writeAwarenessConfig } from '../src/awareness-config.js';
@@ -72,7 +72,7 @@ describe('hook identity labels in the shared registry', () => {
 
   it('rejects two anonymous participants instead of merging them into one host/workspace ID', async () => {
     writeAwarenessConfig(DEFAULT_AWARENESS_CONFIG, { path: join(directory, 'awareness.json') });
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const error = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       for (const agent_name of ['First participant', 'Second participant']) {
         const payload = { agent_name, host: 'codex', cwd: directory };

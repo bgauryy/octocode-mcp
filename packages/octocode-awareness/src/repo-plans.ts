@@ -1,14 +1,14 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { parseJsonList } from './helpers.js';
 import { AwarenessQueryParams, AwarenessQueryRow, BindValue, LESSON_LABELS, MemoryDbRow, limitOf, stringList } from './repo-model.js';
-import { addExactScope, addLabelsFilter, addMemoryFileFilter, addNullableScope, addStateFilter, addTextFilter, referenceHealth, scopeFromParams, withReferences, workspaceArtifactScope } from './repo-scope.js';
+import { addExactScope, addLabelsFilter, addMemoryFileFilter, addNullableScope, addStateFilter, addTextFilter, referenceHealth, repositoryScopeFromParams, scopeFromParams, withReferences, workspaceArtifactScope } from './repo-scope.js';
 
 export function memoryRows(
   db: DatabaseSync,
   params: AwarenessQueryParams,
   options: { gotchas?: boolean; lessons?: boolean } = {},
 ): AwarenessQueryRow[] {
-  const scope = scopeFromParams(params);
+  const scope = repositoryScopeFromParams(params);
   const where = ["state = 'ACTIVE'"];
   const binds: BindValue[] = [];
   addNullableScope(where, binds, scope);

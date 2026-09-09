@@ -26,7 +26,7 @@ vi.mock('../../../src/tools/local_ripgrep/searchContentRipgrep.js', () => ({
   searchContentRipgrep: mocks.warmSearch,
 }));
 
-const { executeLspGetSemantics } =
+const { executeLspSearch } =
   await import('../../../src/tools/lsp/semantic_content/execution.js');
 let dir: string;
 let file: string;
@@ -42,7 +42,7 @@ function location(uri: string, line = 0, character = 16) {
   };
 }
 async function execute(query: Record<string, unknown>) {
-  const result = await executeLspGetSemantics({ queries: [query] } as never);
+  const result = await executeLspSearch({ queries: [query] } as never);
   return (
     result.structuredContent as {
       results: Array<{
@@ -54,14 +54,16 @@ async function execute(query: Record<string, unknown>) {
   ).results[0]!;
 }
 function query(extra: Record<string, unknown> = {}) {
-  return {
-    type: 'references',
+  const base = {
+    operation: 'references',
     uri: file,
-    symbolName: 'target',
-    lineHint: 1,
     workspaceRoot: dir,
     ...extra,
   };
+  if (base.operation === 'documentSymbols' || base.operation === 'diagnostic') {
+    return base;
+  }
+  return { symbolName: 'target', lineHint: 1, ...base };
 }
 
 it('reports oversized semantic source as an error without claiming symbol absence', async () => {
@@ -69,7 +71,7 @@ it('reports oversized semantic source as an error without claiming symbol absenc
     file,
     `export function target() {}\n${' '.repeat(1_000_000)}`
   );
-  const result = await execute(query({ type: 'definition' }));
+  const result = await execute(query({ operation: 'definition' }));
   expect(result.status).toBe('error');
   expect(result.data.error).toContain('[lspSourceTooLarge]');
   expect(result.data.errorType).not.toBe('symbol_not_found');
@@ -118,6 +120,57 @@ beforeEach(async () => {
 });
 
 describe('snapshot-safe semantic pagination', () => {
+  it.each(
+    ['callers', 'callees'].flatMap(type =>
+      ['structured', 'compact'].map(format => ({ type, format }))
+    )
+  )(
+    'recovers every nested call-site range across $type pages ($format)',
+    async ({ type, format }) => {
+      const fromRanges = Array.from({ length: 12 }, (_, line) => ({
+        start: { line, character: 2 },
+        end: { line, character: 8 },
+      }));
+      const targets = ['alpha', 'beta'].map(name => ({
+        name,
+        kind: 12,
+        uri: pathToFileURL(join(dir, `${name}.ts`)).href,
+        range: location(file).range,
+        selectionRange: location(file).range,
+      }));
+      mocks.incomingCalls.mockResolvedValue(
+        targets.map(from => ({ from, fromRanges }))
+      );
+      mocks.outgoingCalls.mockResolvedValue(
+        targets.map(to => ({ to, fromRanges }))
+      );
+      const first = await execute(
+        query({ operation: type, format, pageSize: 1, depth: 1 })
+      );
+      const second = await execute(first.data.next.nextPage.query);
+      expect(second.data.pagination.hasMore).toBe(false);
+      const rows = [...first.data.payload.calls, ...second.data.payload.calls];
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        if (format === 'structured') {
+          expect(row.ranges).toEqual(
+            fromRanges.map(range => ({
+              line: range.start.line + 1,
+              character: 2,
+              endLine: range.end.line + 1,
+              endCharacter: 8,
+            }))
+          );
+          expect(row.rangeCount).toBe(12);
+        } else {
+          for (let line = 1; line <= 12; line++) {
+            expect(row).toContain(`${line}:2-${line}:8`);
+          }
+        }
+      }
+    }
+  );
+
   it('passes explicit Rust context to the provider and preserves it in executable pagination', async () => {
     const rustFile = join(dir, 'main.rs');
     await writeFile(rustFile, 'fn target() {}\n');
@@ -217,7 +270,7 @@ describe('snapshot-safe semantic pagination', () => {
     async ({ type, format }) => {
       await fixture(type);
       const first = await execute(
-        query({ type, format, pageSize: 1, depth: 1 })
+        query({ operation: type, format, pageSize: 1, depth: 1 })
       );
       const snapshot = first.data.pagination.snapshot;
       expect(snapshot).toMatch(/^lsp-v1:[a-f0-9]{64}$/);
@@ -231,7 +284,7 @@ describe('snapshot-safe semantic pagination', () => {
         expect(collected.length).toBeLessThanOrEqual(6);
       }
       const full = await execute(
-        query({ type, format, pageSize: 100, depth: 1 })
+        query({ operation: type, format, pageSize: 100, depth: 1 })
       );
       expect(full.data.pagination.snapshot).toBe(snapshot);
       expect(collected).toEqual(rows(full.data));
@@ -245,7 +298,7 @@ describe('snapshot-safe semantic pagination', () => {
     'returns no stale %s rows on mutation and executes restart recovery',
     async type => {
       const mutate = await fixture(type);
-      const first = await execute(query({ type, pageSize: 1, depth: 1 }));
+      const first = await execute(query({ operation: type, pageSize: 1, depth: 1 }));
       await mutate();
       const changed = await execute(first.data.next.nextPage.query);
       expect(changed.status).toBe('empty');
@@ -324,13 +377,13 @@ describe('semantic execution integrity', () => {
     'classifies unsupported and unresolved results as low-confidence empty evidence (%s)',
     async format => {
       mocks.capability.mockReturnValue(false);
-      const unsupported = await execute(query({ type: 'hover', format }));
+      const unsupported = await execute(query({ operation: 'hover', format }));
       expect(unsupported.status).toBe('empty');
       expect(unsupported.meta?.evidence).toMatchObject({ confidence: 'low' });
       expect(unsupported.data.payload.category).toBe('unsupportedOperation');
 
       const unresolved = await execute(
-        query({ type: 'hover', format, symbolName: 'missingSymbol' })
+        query({ operation: 'hover', format, symbolName: 'missingSymbol' })
       );
       expect(unresolved.status).toBe('empty');
       expect(unresolved.meta?.evidence).toMatchObject({ confidence: 'low' });
@@ -341,7 +394,7 @@ describe('semantic execution integrity', () => {
   it.each(['structured', 'compact'])(
     'preserves high-confidence evidence for a supported semantic result (%s)',
     async format => {
-      const row = await execute(query({ type: 'hover', format }));
+      const row = await execute(query({ operation: 'hover', format }));
       expect(row.meta?.evidence).toMatchObject({ confidence: 'high' });
       expect(row.status).toBeUndefined();
     }
@@ -358,14 +411,14 @@ describe('semantic execution integrity', () => {
         { ...location(pathToFileURL(file).href, 1, 2), content: '  target,' },
       ]);
       const row = await execute(
-        query({ type: 'definition', lineHint: 4, format })
+        query({ operation: 'definition', lineHint: 4, format })
       );
       expect(row.data.payload.locations).toHaveLength(1);
       expect(JSON.stringify(row.data.payload.locations)).toContain('target,');
       expect(row.data.next.verifyDefinition).toMatchObject({
-        tool: 'lspGetSemantics',
+        tool: 'lspSearch',
         query: {
-          type: 'workspaceSymbol',
+          operation: 'workspaceSymbol',
           symbolName: 'target',
           workspaceRoot: dir,
         },
@@ -375,7 +428,6 @@ describe('semantic execution integrity', () => {
         tool: 'localSearch',
         confidence: 'low',
         query: {
-          operation: 'text',
           path: dir,
           searchText: 'target',
           wholeWord: true,
@@ -392,7 +444,7 @@ describe('semantic execution integrity', () => {
   );
 
   it('does not add import verification to a resolved declaration', async () => {
-    const row = await execute(query({ type: 'definition' }));
+    const row = await execute(query({ operation: 'definition' }));
     expect(row.data.next.verifyDefinition).toBeUndefined();
     expect(row.data.next.readSite).toBeDefined();
   });
@@ -408,7 +460,7 @@ describe('semantic execution integrity', () => {
         content: content.split('\n')[0],
       },
     ]);
-    const row = await execute(query({ type: 'definition', lineHint: 2 }));
+    const row = await execute(query({ operation: 'definition', lineHint: 2 }));
     expect(row.data.payload.locations[0].content).toContain(
       'import { actual as target }'
     );
@@ -440,7 +492,7 @@ describe('semantic execution integrity', () => {
             .href
         ),
       ]);
-      const row = await execute(query({ type: 'callees', format, depth }));
+      const row = await execute(query({ operation: 'callees', format, depth }));
       expect(row.data.payload.outgoingCalls).toBe(0);
       expect(row.data.payload.completeness).toMatchObject({
         complete: true,
@@ -469,7 +521,7 @@ describe('semantic execution integrity', () => {
     mocks.outgoingCalls
       .mockResolvedValueOnce([project])
       .mockResolvedValueOnce([stdlib]);
-    const row = await execute(query({ type: 'callees', depth: 2 }));
+    const row = await execute(query({ operation: 'callees', depth: 2 }));
     expect(row.data.payload.outgoingCalls).toBe(1);
     expect(row.data.payload.calls[0].item.name).toBe('helper');
     expect(row.data.payload.completeness).toMatchObject({
@@ -486,7 +538,7 @@ describe('semantic execution integrity', () => {
     mocks.outgoingCalls.mockResolvedValue([
       outgoingCall('helper', pathToFileURL(join(dir, 'helper.ts')).href),
     ]);
-    const row = await execute(query({ type: 'callees', depth: 1 }));
+    const row = await execute(query({ operation: 'callees', depth: 1 }));
     expect(row.data.payload.outgoingCalls).toBe(1);
     expect(row.data.payload.completeness.truncatedByDepth).toBe(true);
     expect(row.data.next.expandDepth.query.depth).toBe(2);
@@ -502,7 +554,7 @@ describe('semantic execution integrity', () => {
         status: 'error',
         error: 'search failed',
       });
-      const row = await execute(query({ type: 'implementation', format }));
+      const row = await execute(query({ operation: 'implementation', format }));
       expect(row.data.payload.kind).toBe('implementation');
       expect(row.data.payload.locations).toHaveLength(1);
       expect(row.data.payload.warmup.possiblyTruncated).toBe(true);
@@ -514,7 +566,7 @@ describe('semantic execution integrity', () => {
   it.each(['callers', 'callees', 'callHierarchy'])(
     'keeps complete consumer coverage complete for %s',
     async type => {
-      const row = await execute(query({ type }));
+      const row = await execute(query({ operation: type }));
       expect(row.data.payload.warmup.possiblyTruncated).toBe(false);
       expect(row.data.payload.completeness.complete).toBe(true);
       expect(
@@ -544,7 +596,7 @@ describe('semantic execution integrity', () => {
         stats: { capped: true },
         pagination: { totalFiles: 101, hasMore: false },
       });
-      const row = await execute(query({ type, format }));
+      const row = await execute(query({ operation: type, format }));
       expect(row.status).not.toBe('error');
       expect(row.data.payload.warmup).toMatchObject({
         candidates: 101,
@@ -553,7 +605,7 @@ describe('semantic execution integrity', () => {
       expect(row.data.truncated).toBe(true);
       expect(row.data.next.verifyCompleteness).toMatchObject({
         tool: 'localSearch',
-        query: { operation: 'text', path: dir, searchText: 'target' },
+        query: { path: dir, searchText: 'target' },
       });
       if (['callers', 'callees', 'callHierarchy'].includes(type)) {
         expect(row.data.payload.completeness).toMatchObject({
@@ -567,7 +619,7 @@ describe('semantic execution integrity', () => {
   it.each(['definition', 'hover'])(
     'does not attach consumer coverage to %s',
     async type => {
-      const row = await execute(query({ type, format: 'compact' }));
+      const row = await execute(query({ operation: type, format: 'compact' }));
       expect(row.status).not.toBe('error');
       expect(mocks.warmSearch).not.toHaveBeenCalled();
       expect(row.data.payload.warmup).toBeUndefined();
@@ -589,7 +641,7 @@ describe('semantic execution integrity', () => {
         status: 'error',
         error: 'warmup failed',
       });
-      const row = await execute(query({ type }));
+      const row = await execute(query({ operation: type }));
       expect(row.data.payload.category).toBe('unsupportedOperation');
       expect(row.data.payload.warmup).toBeUndefined();
       expect(row.data.next?.verifyCompleteness).toBeUndefined();
@@ -612,7 +664,7 @@ describe('semantic execution integrity', () => {
     expect(row.data.truncated).toBe(true);
     expect(row.data.next.verifyCompleteness).toMatchObject({
       tool: 'localSearch',
-      query: { path: dir, operation: 'text', searchText: 'target' },
+      query: { path: dir, searchText: 'target' },
     });
     expect(row.data.next.readSite).toMatchObject({
       tool: 'localGetFileContent',
@@ -626,7 +678,6 @@ describe('semantic execution integrity', () => {
     expect(empty.data.payload.empty.category).toBe('noReferences');
     expect(empty.data.next.textSearch.query).toMatchObject({
       path: file,
-      operation: 'text',
       searchText: 'target',
     });
   });
@@ -634,7 +685,7 @@ describe('semantic execution integrity', () => {
   it.each(['references', 'diagnostic', 'workspaceSymbol'])(
     'returns a typed missing-file error before server selection for %s',
     async type => {
-      const row = await execute(query({ type, uri: join(dir, 'missing.ts') }));
+      const row = await execute(query({ operation: type, uri: join(dir, 'missing.ts') }));
       expect(row.status).toBe('error');
       expect(row.data.errorCode).toBe(LSP_ERROR_CODES.LSP_REQUEST_FAILED);
       expect(row.data.error).toContain('File not found');

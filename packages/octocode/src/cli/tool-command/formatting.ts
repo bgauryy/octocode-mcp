@@ -11,12 +11,12 @@ import {
 import type { loadToolContent } from '@octocodeai/octocode-tools-core/schema';
 import { findToolDefinition } from './registry.js';
 
-export const LSP_TOOL_NAME = 'lspGetSemantics';
+export const LSP_TOOL_NAME = 'lspSearch';
 
 const RAW_LOCAL_PATH_TOOL_NAMES = new Set([
   'localSearch',
   'localGetFileContent',
-  'localAnalyzeGraph',
+  'astSearch',
 ]);
 const RAW_LOCAL_PATH_GUIDANCE =
   'Local path: use an absolute path; relative paths resolve from command cwd.';
@@ -40,11 +40,10 @@ export function truncateDescription(desc: string, maxLen: number): string {
 
 export function formatRequiredFields(toolName: string): string {
   if (toolName === LSP_TOOL_NAME) {
-    // `type` is the only always-required field. `uri` is required for every
-    // type EXCEPT workspaceSymbol (which can start from workspaceRoot +
-    // symbolName), so it is marked optional here to avoid a false `uri*` —
-    // the per-field schema view carries the conditional requirement.
-    return '[type, uri?, symbolName?, lineHint?]';
+    // `operation` is the only always-required field. `uri` is required for
+    // anchored operations; workspace symbols can start from workspaceRoot +
+    // symbolName, so it remains optional here.
+    return '[operation*, uri?, symbolName?, lineHint?]';
   }
 
   const tool = findToolDefinition(toolName);
@@ -141,11 +140,11 @@ function getFieldPreviewLines(
 
 export function getToolPreviewLines(toolName: string): string[] {
   if (toolName === LSP_TOOL_NAME) {
-    return getFieldPreviewLines(toolName, 'type');
+    return getFieldPreviewLines(toolName, 'operation');
   }
 
   if (toolName === 'localSearch') {
-    return ['operation: text|structural|files|tree'];
+    return ['regex: literal|rust|pcre2'];
   }
 
   return [];

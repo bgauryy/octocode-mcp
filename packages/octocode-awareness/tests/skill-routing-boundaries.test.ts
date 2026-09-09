@@ -45,30 +45,24 @@ describe('skill routing boundaries', () => {
     expect(desc.length).toBeLessThanOrEqual(1024);
     expect(desc).not.toContain('dogfood');
     expect(desc).not.toContain('packages/octocode-awareness');
-    expect(text).toContain('NOTICE → SCOPE/IDENTITY → INSPECT → ACT → OBSERVE → SETTLE/VERIFY → LEARN');
-    expect(text).toContain('@octocodeai/octocode-awareness');
+    expect(text).toContain('meet workspace peers once → work → communicate when it matters');
     expect(text).toContain('npx @octocodeai/octocode-awareness');
-    expect(text).toMatch(/runner[^.]*npx @octocodeai\/octocode-awareness/i);
-    expect(text).toContain('`guide` lists all commands');
-    expect(text).toContain('npx @octocodeai/octocode-awareness skill install --platform shared --project-dir "$PWD" --dry-run');
-    expect(text).toContain('skill install --help');
+    expect(text).toContain('`guide` retains the full catalog');
+    expect(text).toContain('references/configuration.md');
     expect(text).not.toContain('npx -p @octocodeai/octocode-awareness octocode-awareness');
     expect(text).not.toContain('node packages/octocode-awareness/out/octocode-awareness.js');
-    expect(text).toMatch(/Default:[\s\S]*\$OCTOCODE_HOME\/awareness\/awareness\.sqlite3/i);
-    expect(text).toMatch(/repo scope:[\s\S]*\.octocode\/awareness\.sqlite3/);
-    expect(text).toContain('$OCTOCODE_HOME/awareness/awareness.sqlite3');
-    expect(text).toMatch(/Never use Agent runtime databases/i);
+    const storage = awarenessSkillFile('references/architecture.md');
+    expect(storage).toContain('$OCTOCODE_HOME/awareness/awareness.sqlite3');
+    expect(storage).toContain('.octocode/awareness.sqlite3');
+    expect(text).toContain('Never use an Agent runtime database');
     expect(text).not.toMatch(/\.octocode\/(?:octocode|agent)\.sqlite3/);
     expect(text).not.toMatch(/octocode-awareness-lite|\/lite\b|Awareness Lite/);
-    expect(text).toMatch(/## Operational rules[\s\S]*Attend when shared state matters/i);
-    expect(text).toContain('Reuse native run/task IDs and receipts');
+    expect(text).toContain('Reuse a host-provided peer briefing');
+    expect(text).toContain('reuse records already owned by the host');
     expect(awarenessSkillFile('references/agent-cheatsheet.md')).toMatch(/CLI[^.]*operational state[^.]*observed records/i);
     expect(text).toContain('npx @octocodeai/octocode-awareness attend');
-    expect(text).toContain('scripts/install.mjs');
-    expect(text).toMatch(/overlap is advisory/i);
-    expect(text).toContain('config schema');
     expect(text).toContain('flow-matrix.md');
-    expect(text).toContain('Load detail only when needed');
+    expect(text).toContain('Load only the relevant reference');
     expect(text).toContain('yarn workspace @octocodeai/octocode-awareness build');
     expect(awarenessSkillFile('references/hooks.md')).toContain('Smoke:');
     expect(existsSync(resolve(PACKAGE_ROOT, 'skills/octocode-awareness/SKILL.md'))).toBe(true);
@@ -77,25 +71,25 @@ describe('skill routing boundaries', () => {
 
   it('teaches the complete agent lifecycle without assigning judgment to hooks', () => {
     const text = skill('octocode-awareness');
-    for (const step of ['Attend when shared state matters', 'Declare paths/check if the host has not', 'Run the check', 'leave a handoff']) {
+    for (const step of ['attend --compact', 'If tracking is used, run the declared check', 'Unrun checks remain PENDING', 'Real continuation']) {
       expect(text).toContain(step);
     }
     const detail = awarenessSkillFile('references/agent-cheatsheet.md');
     expect(text).toContain('references/agent-cheatsheet.md');
     expect(detail).toMatch(/CLI[^.]*advice[^.]*observed records/i);
-    expect(detail).toMatch(/Hooks[^.]*guard edits[^.]*changed pointers/i);
+    expect(detail).toContain('Hooks deliver peer messages; optional guard/full profiles track edits');
     expect(detail).toMatch(/host owns context[^.]*tools[^.]*budgets[^.]*workers/i);
     expect(detail).toMatch(/Unknown sensors stay unknown[^.]*never (?:invent|infer)/i);
     expect(detail).toMatch(/Advice\s+neither authorizes action nor proves success/i);
-    expect(text).toMatch(/Unchanged state needs no repeated attending/i);
-    expect(text).toMatch(/reserve exclusivity for unsafe non-mergeable state/i);
-    expect(awarenessSkillFile('references/hooks.md')).toMatch(/do not choose tasks or replace\s+`attend`\/verify/i);
+    expect(text).toContain('Do not poll an already delivered inbox');
+    expect(text).toContain('use `lock` for non-mergeable work');
+    expect(awarenessSkillFile('references/hooks.md')).toContain('they do not choose tasks. Work tracking and verification are opt-in');
     expect(detail).toMatch(/Search hits, memories, messages, TTLs, and peer claims are leads, not proof/i);
   });
 
   it('shows a lean overview of every Awareness feature family', () => {
     const text = skill('octocode-awareness');
-    expect(text).toContain('Load detail only when needed');
+    expect(text).toContain('Load only the relevant reference');
     for (const feature of [
       'plan', 'task', 'work', 'lock', 'verification', 'Messages', 'handoffs',
       'Memory', 'reflection', 'hooks', 'schema',
@@ -103,9 +97,9 @@ describe('skill routing boundaries', () => {
       expect(text.toLowerCase(), `missing lean feature route: ${feature}`).toContain(feature.toLowerCase());
     }
     expect(text).toMatch(/query|queries/i);
-    expect(text).toMatch(/plans\/tasks/i);
-    expect(awarenessSkillFile('references/hooks.md')).toMatch(/do not choose tasks or replace\s+`attend`\/verify/i);
-    expect(text).toContain('config schema');
+    expect(text).toContain('references/plan-task-workflow.md');
+    expect(awarenessSkillFile('references/hooks.md')).toContain('they do not choose tasks. Work tracking and verification are opt-in');
+    expect(text).toContain('references/configuration.md');
   });
 
   it('keeps held-out repository intent behavior distinct from near misses', () => {
@@ -136,9 +130,9 @@ describe('skill routing boundaries', () => {
   it('routes each fresh-agent feature question to one direct owner', () => {
     const text = skill('octocode-awareness');
     const journeys = [
-      ['When sharing work', 'flow-matrix.md'],
-      ['When storage/ownership matters', 'architecture.md'],
-      ['protocol', 'coordination-protocol.md'],
+      ['Choose an unfamiliar workflow', 'flow-matrix.md'],
+      ['when binding another host', 'architecture.md'],
+      ['exact recipes', 'coordination-protocol.md'],
     ] as const;
     for (const [trigger, owner] of journeys) {
       expect(text).toContain(trigger);

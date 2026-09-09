@@ -19,6 +19,10 @@ Workers never receive the `agent` facade, and worker-process registration omits 
 
 ## Delegate a plan task
 
+Isolated delegation needs no plan. Use plan tracking only for complex dependencies,
+coordinated ownership, consequential risk, substantial work spanning sessions, or
+an explicit planning request.
+
 For work tracked by the parent plan, pass `planStep` with the exact stable task ID from the `Task IDs for agent.planStep` line in a `plan` result. The active plan context also includes `task-id` values. Display indices and task labels aren't valid `planStep` values. Omit `planStep` for independent work that has no parent plan assignment.
 
 1. Start the reviewed revision and each runnable task you intend to delegate. The one Start decision authorizes the displayed revision and begins execution atomically. Independent tasks can run in parallel after their dependencies finish.
@@ -61,11 +65,34 @@ Cancelling a `wait` call releases its timers, listeners, and liveness probes. It
 
 Use `task` for the worker assignment and the `agent` tool for every profile and lifecycle operation. There are no separate spawn or message tool aliases.
 
-The `/octocode-agents` command accepts `help`, `list`, `inspect <id> [full]`, `kill <id>`, `kill-all`, `prune`, and `hide`. Omit the command verb to list workers. Use `list` to restore the footer after `hide`; use `inspect <id> full` for the retained detailed output. Other command spellings return usage guidance.
+Open `/octocode-inbox`, pick a worker, then choose **View output**, **Steer**, or **Stop** when the process supports that action. The output inspector preserves every retained line and supports scrolling. Escape closes the current view.
+
+### Worker states and footer updates
+
+| State | Meaning |
+|---|---|
+| `starting` | Process created and initial prompt sent; no `agent_start` observed yet. |
+| `running` | A turn started and has not ended, including an explicit compaction retry. |
+| `queued` | A follow-up awaits its next `agent_start`; the previous turn has ended. |
+| `idle` | Turn ended without a structured terminal handback; process can accept work. |
+| `done` | Completed handback or clean process exit; parent verification is separate. |
+| `blocked` | Worker reported unresolved work. A clean exit does not erase the blocker. |
+| `failed` | Process failure or a failed handback after the turn ended. |
+| `killed` | Explicit process termination; overrides prior handback text. |
+
+Fresh running or queued work supersedes an old handback. A dead process cannot
+receive follow-ups even when its retained outcome is blocked. The inbox gates
+actions on process liveness and keeps blocked elapsed time fixed at the last
+observation.
+
+The footer shows a bounded, stable list of live worker names, states, and updates.
+A running tool takes precedence over an old message; otherwise the latest output
+or message provides the update. Attention comes first, and the inbox retains the
+full roster and settled results. See [the UI contract](UI.md).
 
 ## Durable peer communication
 
-Awareness `signal` and `handoff` persist cross-host coordination in the shared ledger. Cooperating agents need the same physical database, normalized workspace, and distinct stable agent IDs. Use the host-supplied CLI runner and store bindings; names and vendor labels are self-reported metadata, not routing IDs or authority.
+Awareness `signal` and `handoff` persist cross-host coordination in the shared ledger. Cooperating agents need the same physical database and distinct stable agent IDs. Each uses its physical checkout; linked Git worktrees share peers, signals and memory while work and verification stay local to the checkout. Pi workers use the native `awareness` tool with host-supplied context; external CLI hosts preserve equivalent store bindings. Names and vendor labels are self-reported metadata, not routing IDs or authority.
 
 ```bash
 npx @octocodeai/octocode-awareness signal publish \

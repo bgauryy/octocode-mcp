@@ -24,7 +24,7 @@ Always safety-scan source before install. Prefer Octocode CLI when available (`i
 | `npx skills-installer` | `… install @owner/repo/skill --client <host>` | Pairs with claude-plugins.dev |
 | `npx claude-plugins` | install/list/enable/disable | Plugin marketplace management | <!-- style-lint: ignore-line word-list -->
 | Anthropic native | `/plugin marketplace add` then `/plugin install` | Claude Code |
-| `npx octocode skill` | `--add --path … --platform …` | Preferred in this monorepo |
+| `npx -y octocode skill` | `--add --path … --platform …` | Preferred in this monorepo |
 
 ## Meta-skills
 

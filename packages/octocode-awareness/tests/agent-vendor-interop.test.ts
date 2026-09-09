@@ -38,7 +38,7 @@ describe('cross-vendor agent identity', () => {
       expect.objectContaining({ agent_id: 'codex:session-b', agent_name: 'Reviewer', agent_vendor: 'openai', agent_host: 'codex' }),
     ]));
     expect(store.listAgents().find(agent => agent.agentId === 'codex:session-b')?.metadata).toMatchObject({ vendor: 'openai', host: 'codex' });
-    const sent = call(['signal', 'publish', '--agent-id', 'codex:session-b', '--workspace', root, '--to-agent', 'pi:session-a', '--subject', 'Review', '--body', 'Please review']);
+    const sent = call(['signal', 'publish', '--kind', 'request', '--agent-id', 'codex:session-b', '--workspace', root, '--to-agent', 'pi:session-a', '--subject', 'Review', '--body', 'Please review']);
     const inbox = store.listMessagesPage({ agentId: 'pi:session-a' }).messages;
     expect(inbox).toHaveLength(1);
     expect(inbox[0]?.fromAgentId).toBe('codex:session-b');

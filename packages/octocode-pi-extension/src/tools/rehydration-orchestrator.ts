@@ -89,6 +89,12 @@ interface PendingRehydration {
 
 const pendingBySession = new Map<string, PendingRehydration>();
 
+/** Avoid rebuilding catalogs and hashing retained context on ordinary turns. */
+export function hasPendingRehydration(ctx: PiContext): boolean {
+  return pendingBySession.size > 0
+    && pendingBySession.has(createSessionArtifactContext(ctx).identity.sessionKey);
+}
+
 /**
  * Drop process-local staged recovery state at a session lifecycle boundary.
  * Pi may provide a stale replacement-session context during shutdown, so this

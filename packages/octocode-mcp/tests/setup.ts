@@ -229,12 +229,12 @@ const githubFetchContentSchema = {
   },
 };
 
-const lspGetSemanticsSchema = {
-  name: 'lspGetSemantics',
+const lspSearchSchema = {
+  name: 'lspSearch',
   description: 'Get semantic code intelligence using Language Server Protocol',
   schema: {
     uri: 'File URI',
-    type: 'Semantic content type',
+    operation: 'Semantic search operation',
     symbolName: 'Symbol name to find',
     lineHint: 'Line number hint',
     orderHint: 'Order hint for multiple occurrences',
@@ -273,8 +273,8 @@ const mockContent = {
     GITHUB_CLONE_REPO: 'ghCloneRepo',
     LOCAL_SEARCH: 'localSearch',
     LOCAL_FETCH_CONTENT: 'localGetFileContent',
-    LOCAL_ANALYZE_GRAPH: 'localAnalyzeGraph',
-    LSP_GET_SEMANTIC_CONTENT: 'lspGetSemantics',
+    AST_SEARCH: 'astSearch',
+    LSP_SEARCH: 'lspSearch',
   },
   baseSchema: {
     mainResearchGoal: 'Main research goal description',
@@ -302,8 +302,8 @@ const mockContent = {
     },
     localSearch: localSearchSchema,
     localGetFileContent: localFetchContentSchema,
-    localAnalyzeGraph: mockToolSchema,
-    lspGetSemantics: lspGetSemanticsSchema,
+    astSearch: mockToolSchema,
+    lspSearch: lspSearchSchema,
   },
   bulkOperations: {
     instructions: {
@@ -375,8 +375,8 @@ vi.mock('@octocodeai/octocode-core', async importOriginal => {
     PACKAGE_SEARCH: 'npmSearch',
     LOCAL_SEARCH: 'localSearch',
     LOCAL_FETCH_CONTENT: 'localGetFileContent',
-    LOCAL_ANALYZE_GRAPH: 'localAnalyzeGraph',
-    LSP_GET_SEMANTIC_CONTENT: 'lspGetSemantics',
+    AST_SEARCH: 'astSearch',
+    LSP_SEARCH: 'lspSearch',
     validateRipgrepQuery: identityValidator,
     validateFindFilesQuery: identityValidator,
     validateViewStructureQuery: identityValidator,

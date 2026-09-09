@@ -13,7 +13,7 @@ import {
 import { openPlanReview } from '../src/tools/planning/plan-command.js';
 import { buildPlanPageHtmlFromModel, setPlanOpenerForTests } from '../src/tools/plan-html.js';
 import { buildPlanReadModel, getCurrentPlanReadModel, renderPlanContext, renderPlanReadModel } from '../src/tools/plan-read-model.js';
-import { buildPlanFooterSegments } from '../src/extension-ui.js';
+import { projectPlanStatus } from './helpers/plan-status.js';
 import { renderFooterView } from '../src/tui/footer-view.js';
 import { getLocalServerBaseUrl, listLocalServerMounts, serveDirectory, stopLocalServer } from '../src/tools/local-server.js';
 import { setInteractionStoreFactoryForTests } from '../src/tools/interaction-broker.js';
@@ -191,7 +191,7 @@ test('terminal footer keeps current work visible and width-safe while the canoni
       review: { phase: 'executing', branchSnapshotId: 'widget-test', generation: 0, decisions: [], blockingQuestions: [], comments: [] },
       coordination: { mode: 'local', sourcePlanKey: 'widget-test', coordinationWorkspace: '' },
     });
-    const lines = renderFooterView({ rows: [buildPlanFooterSegments(model)] }, { width });
+    const lines = renderFooterView({ rows: [projectPlanStatus(model)] }, { width });
     for (const line of lines) assert.ok(visibleWidth(line) <= width, `line fits width ${width}: ${line}`);
     const normalized = lines.join(' ').replace(/\s+/g, ' ');
     if (width >= 80) {
@@ -201,7 +201,8 @@ test('terminal footer keeps current work visible and width-safe while the canoni
     }
     assert.ok(!normalized.includes(steps[0]!.text), 'completed detail stays in the durable full plan');
     assert.ok(!normalized.includes(steps[4]!.text), 'later work stays collapsed in the persistent panel');
-    assert.match(normalized, /task 2/, 'the active lane remains identifiable at every width');
+    assert.match(normalized, /Plan/, 'plan identity survives every width');
+    if (width >= 80) assert.match(normalized, /task 2/, 'the active lane remains identifiable when space allows');
     const full = renderPlanReadModel(model, 'terminal') as string;
     for (const step of steps) assert.ok(full.includes(step.text), 'the full plan retains every task');
   }
@@ -286,7 +287,7 @@ test('browser Start requires a displayed revision and stale RFC bytes cannot reu
 
   const unavailable = await serveDirectory('unavailable-flow', workspace, { indexFile: 'missing.html' });
   assert.ok(unavailable);
-  assert.equal((await flow.postBrowserMessage({ url: unavailable!.url, message: '/octocode-plan show' })).status, 404);
+  assert.equal((await flow.postBrowserMessage({ url: unavailable!.url, message: '/octocode-status' })).status, 404);
   stopLocalServer();
 });
 

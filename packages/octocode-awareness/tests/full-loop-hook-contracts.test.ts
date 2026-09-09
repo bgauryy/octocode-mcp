@@ -6,14 +6,14 @@ import { join, resolve } from 'node:path';
 import {
   hookBlockOutcome,
   hookContextEnvelope,
-  runHookCommand,
-} from '../bin/hook-runner.js';
-import { agentId } from '../bin/hook-payload.js';
+} from '../src/hooks/payload.js';
+import { runHookCommand } from '../src/hooks/runner.js';
+import { agentId } from '../src/hooks/payload.js';
 import { connectDb, resolveDbPath } from '../src/db-runtime.js';
 import { runHooksInstall } from '../src/hooks-install-command.js';
 import { auditUnverified } from '../src/verify-audit.js';
 import { markVerified } from '../src/verify-mark.js';
-import { DEFAULT_AWARENESS_CONFIG, writeAwarenessConfig } from '../src/awareness-config.js';
+import { withEnabledAwarenessConfig } from './helpers/enabled-awareness-config.js';
 import { writeWorkspacePolicy } from '../src/workspace-policy.js';
 
 let configHome = '';
@@ -24,7 +24,7 @@ beforeAll(() => {
   configHome = mkdtempSync(join(tmpdir(), 'awareness-hook-config-'));
   process.env.OCTOCODE_HOME = configHome;
   process.env.OCTOCODE_AGENT_DIR = configHome;
-  writeAwarenessConfig(DEFAULT_AWARENESS_CONFIG, { path: join(configHome, 'awareness.json') });
+  withEnabledAwarenessConfig({ OCTOCODE_HOME: configHome });
 });
 
 afterAll(() => {
@@ -36,7 +36,7 @@ afterAll(() => {
 });
 
 function runPreEditChild(payload: Record<string, unknown>, env: NodeJS.ProcessEnv): Promise<void> {
-  const hookRunnerUrl = new URL('../bin/hook-runner.ts', import.meta.url).href;
+  const hookRunnerUrl = new URL('../src/hooks/runner.ts', import.meta.url).href;
   const source = `import { runHookCommand } from ${JSON.stringify(hookRunnerUrl)}; process.exitCode = await runHookCommand('pre-edit', process.env.HOOK_PAYLOAD, { host: 'claude' });`;
   return new Promise((resolvePromise, reject) => {
     const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', source], {
@@ -129,7 +129,7 @@ describe('full-loop host hook contracts', () => {
     writeFileSync(resolve(hookDir, '..', 'hook-runner.mjs'), '#!/usr/bin/env node\n');
     try {
       const installed = runHooksInstall(
-        ['--host', 'codex', '--project-dir', projectDir],
+        ['--host', 'codex', '--project-dir', projectDir, '--profile', 'guard'],
         { cwd: projectDir, hookDir },
       );
       expect(installed.exitCode).toBe(0);
@@ -145,7 +145,7 @@ describe('full-loop host hook contracts', () => {
       expect(commandHook?.commandWindows).toContain('--skill-root');
 
       const checked = runHooksInstall(
-        ['--host', 'codex', '--project-dir', projectDir, '--check', '--strict'],
+        ['--host', 'codex', '--project-dir', projectDir, '--profile', 'guard', '--check', '--strict'],
         { cwd: projectDir, hookDir },
       );
       expect(checked.exitCode).toBe(0);

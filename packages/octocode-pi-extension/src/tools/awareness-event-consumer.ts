@@ -55,6 +55,8 @@ function isPersistedPeerDelivery(entry: unknown, message: AwarenessPeerDelivery)
     && receipt['sequence'] === message.details.sequence;
 }
 
+const registeredAwarenessHosts = new WeakSet<object>();
+
 export function resolvePiEventConsumerId(ctx: PiContext): string | undefined {
   const sessionId = nonEmptyString(ctx.sessionManager?.getSessionId?.());
   const sessionFile = nonEmptyString(ctx.sessionManager?.getSessionFile?.());
@@ -66,6 +68,12 @@ export function resolvePiEventConsumerId(ctx: PiContext): string | undefined {
 
 /** Register event-driven wake points only; there is deliberately no polling loop. */
 export function registerAwarenessEventConsumer(pi: PiInstance, options: RegisterAwarenessEventConsumerOptions = {}): void {
+  // The extension owns one consumer for the host instance. Guard repeated
+  // registration during reload/setup so each event has one drain and one
+  // acknowledgment path; the durable cursor still protects process restarts.
+  const host = pi as unknown as object;
+  if (registeredAwarenessHosts.has(host)) return;
+  registeredAwarenessHosts.add(host);
   const attentionByContext = new WeakMap<object, string>();
   const observe = (stats: AwarenessEventObservability, ctx: PiContext): void => {
     options.onObservability?.(stats, ctx);

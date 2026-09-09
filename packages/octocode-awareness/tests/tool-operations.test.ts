@@ -8,11 +8,11 @@ import { runAwarenessToolOperation, ROUTABLE_OPERATIONS } from '../src/tool-oper
 import { startWork } from '../src/work.js';
 
 describe('runAwarenessToolOperation unsupported-operation error', () => {
-  it('lists routable operations and flags CLI-only nouns for an unrouted noun', () => {
+  it('lists routable operations and points unrouted nouns to the complete API', () => {
     const db = new DatabaseSync(':memory:');
     db.exec('PRAGMA foreign_keys = ON');
     initDb(db);
-    expect(() => runAwarenessToolOperation(db, 'memory' as never, {}, {})).toThrow(/CLI-only/);
+    expect(() => runAwarenessToolOperation(db, 'memory' as never, {}, {})).toThrow(/executeAwarenessCommand/);
     try {
       runAwarenessToolOperation(db, 'memory' as never, {}, {});
     } catch (e) {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   normalizeToolHookPayload,
   toolHookContextEnvelope,
-} from '../bin/hook-tool-protocol.js';
+} from '../src/hooks/tool-protocol.js';
 
 describe('generic hook tool protocol', () => {
   it.each([

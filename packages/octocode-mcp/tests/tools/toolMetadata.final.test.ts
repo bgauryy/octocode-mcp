@@ -11,11 +11,9 @@ const emptyCompleteMetadata = {
     GITHUB_GET_HISTORY_ITEM: 'ghGetHistoryItem',
     GITHUB_VIEW_REPO_STRUCTURE: 'github.tree',
     PACKAGE_SEARCH: 'npmSearch',
-    LOCAL_RIPGREP: 'local.text',
     LOCAL_FETCH_CONTENT: 'localGetFileContent',
-    LOCAL_FIND_FILES: 'local.files',
-    LOCAL_VIEW_STRUCTURE: 'local.tree',
-    LSP_GET_SEMANTIC_CONTENT: 'lspGetSemantics',
+    AST_SEARCH: 'astSearch',
+    LSP_SEARCH: 'lspSearch',
   },
   baseSchema: {
     mainResearchGoal: '',

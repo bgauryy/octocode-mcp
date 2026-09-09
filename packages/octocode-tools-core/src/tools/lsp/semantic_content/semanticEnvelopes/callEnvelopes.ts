@@ -41,7 +41,12 @@ export async function callsEnvelope(
   );
   const root = items[0];
   if (!root) {
-    return emptyEnvelope(query.type, anchor, 'No callable symbol found', true);
+    return emptyEnvelope(
+      query.operation,
+      anchor,
+      'No callable symbol found',
+      true
+    );
   }
 
   const depth = query.depth ?? 1;
@@ -56,7 +61,7 @@ export async function callsEnvelope(
     excludedCallCount: 0,
   } as const;
   const incomingResult =
-    query.type === 'callers' || query.type === 'callHierarchy'
+    query.operation === 'callers' || query.operation === 'callHierarchy'
       ? await gatherIncomingCallsRecursive(
           client,
           root,
@@ -66,7 +71,7 @@ export async function callsEnvelope(
         )
       : emptyTraversal;
   const outgoingResult =
-    query.type === 'callees' || query.type === 'callHierarchy'
+    query.operation === 'callees' || query.operation === 'callHierarchy'
       ? await gatherOutgoingCallsRecursive(
           client,
           root,
@@ -103,9 +108,9 @@ export async function callsEnvelope(
     calls
   );
   const direction =
-    query.type === 'callers'
+    query.operation === 'callers'
       ? 'incoming'
-      : query.type === 'callees'
+      : query.operation === 'callees'
         ? 'outgoing'
         : 'both';
   const traversalComplete =
@@ -115,12 +120,12 @@ export async function callsEnvelope(
     !outgoingResult.truncatedByBudget &&
     incomingResult.failedRequestCount + outgoingResult.failedRequestCount === 0;
   return {
-    type: query.type,
+    type: query.operation,
     uri: anchor.uri,
     resolvedSymbol: compactResolvedSymbol(anchor.resolvedSymbol),
     lsp: { serverAvailable: true, provider: 'callHierarchyProvider' },
     payload: {
-      kind: query.type as 'callers' | 'callees' | 'callHierarchy',
+      kind: query.operation as 'callers' | 'callees' | 'callHierarchy',
       root: compactCallItem(root),
       direction,
       calls: pageItems,
@@ -174,14 +179,15 @@ export async function typeHierarchyEnvelope(
   const root = items[0];
   if (!root) {
     return emptyEnvelope(
-      query.type,
+      query.operation,
       anchor,
       'No type-hierarchy item found at position',
       true
     );
   }
 
-  const direction = query.type === 'supertypes' ? 'supertypes' : 'subtypes';
+  const direction =
+    query.operation === 'supertypes' ? 'supertypes' : 'subtypes';
   const relatives =
     direction === 'supertypes'
       ? await client.typeHierarchySupertypes(root)
@@ -195,7 +201,7 @@ export async function typeHierarchyEnvelope(
   );
 
   return {
-    type: query.type,
+    type: query.operation,
     uri: anchor.uri,
     resolvedSymbol: compactResolvedSymbol(anchor.resolvedSymbol),
     lsp: { serverAvailable: true, provider: 'typeHierarchyProvider' },

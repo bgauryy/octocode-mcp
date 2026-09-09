@@ -5,9 +5,9 @@ import {
 import { resolveWorkspaceRootForFile } from '@octocodeai/octocode-engine/lsp/workspaceRoot';
 import type { LSPRange } from '@octocodeai/octocode-engine/lsp/types';
 import { markdownHeadingOutlineToDocumentSymbols } from '../../../../utils/markdownOutline.js';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../../../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../../../toolNames.js';
 import {
-  type LspGetSemanticsQuery,
+  type LspSearchQuery,
   type LspSemanticEnvelope,
 } from '../../shared/semanticTypes.js';
 import { resolveFileAnchor } from '../../shared/resolveSymbolAnchor.js';
@@ -38,9 +38,9 @@ type LspPositionLike = {
 };
 
 export async function getDocumentSymbols(
-  query: LspGetSemanticsQuery
+  query: LspSearchQuery
 ): Promise<LspSemanticEnvelope | Record<string, unknown>> {
-  const anchor = await resolveFileAnchor(query, LSP_GET_SEMANTICS_TOOL_NAME);
+  const anchor = await resolveFileAnchor(query, LSP_SEARCH_TOOL_NAME);
   if (anchor.ok === false) return anchor.error;
 
   // Source priority:

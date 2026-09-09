@@ -30,7 +30,7 @@ function printUsage(message: string, jsonOutput: boolean): void {
         `\n  ${dim('Flow:')}\n` +
         `    cache fetch checks existing tmp materialization first; use --force-refresh to bypass it.\n` +
         `    Default depth is clone; use --depth file or --depth tree for bounded downloads.\n` +
-        `    Use location.localPath with tools localSearch or tools lspGetSemantics; read the tool schema first.\n`
+        `    Use location.localPath with tools localSearch or tools lspSearch; read the tool schema first.\n`
     );
   }
   process.exitCode = EXIT.USAGE;

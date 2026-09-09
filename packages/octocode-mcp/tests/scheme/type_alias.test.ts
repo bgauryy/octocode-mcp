@@ -1,104 +1,74 @@
 import { describe, it, expect } from 'vitest';
 
 import { LocalSearchQuerySchema } from '../../../octocode-tools-core/src/tools/local_search/scheme.js';
+import { AstSearchQuerySchema } from '../../../octocode-tools-core/src/tools/ast_search/scheme.js';
 
-function rejectedKeys(error: { issues: unknown[] }): string[] {
-  const visit = (issue: unknown): string[] => {
-    if (!issue || typeof issue !== 'object') return [];
-    const value = issue as {
-      code?: string;
-      keys?: string[];
-      errors?: unknown[][];
-    };
-    if (value.code === 'unrecognized_keys') return value.keys ?? [];
-    return (value.errors ?? []).flatMap(branch => branch.flatMap(visit));
-  };
-  return error.issues.flatMap(visit);
-}
+describe('canonical localSearch lexical contract', () => {
+  const base = { searchText: 'foo', path: 'src' };
 
-describe('localSearch text operation aliases', () => {
-  const base = { operation: 'text', searchText: 'foo', path: 'src' };
-
-  it('accepts langType', () => {
-    const result = LocalSearchQuerySchema.safeParse({
-      ...base,
-      langType: 'ts',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect((result.data as { langType?: string }).langType).toBe('ts');
+  it('accepts the explicit regex modes', () => {
+    for (const regex of ['literal', 'rust', 'pcre2']) {
+      expect(LocalSearchQuerySchema.safeParse({ ...base, regex }).success).toBe(
+        true
+      );
     }
   });
 
-  it('rejects the legacy `type` key on the public schema (strict, not honored)', () => {
-    const result = LocalSearchQuerySchema.safeParse({ ...base, type: 'ts' });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const keys = rejectedKeys(result.error);
-      expect(keys).toContain('type');
-    }
-  });
-
-  it('uses resultView and rejects the legacy mode field', () => {
+  it('rejects the removed operation and structural fields', () => {
     expect(
-      LocalSearchQuerySchema.safeParse({ ...base, resultView: 'discovery' })
-        .success
-    ).toBe(true);
+      LocalSearchQuerySchema.safeParse({ ...base, operation: 'text' }).success
+    ).toBe(false);
+    expect(
+      LocalSearchQuerySchema.safeParse({ ...base, operation: 'files' }).success
+    ).toBe(false);
+  });
+
+  it('rejects legacy aliases and structural result fields', () => {
     expect(
       LocalSearchQuerySchema.safeParse({ ...base, mode: 'discovery' }).success
     ).toBe(false);
+    expect(
+      LocalSearchQuerySchema.safeParse({ ...base, langType: 'ts' }).success
+    ).toBe(true);
   });
 });
 
-describe('localSearch files operation aliases', () => {
-  const base = { operation: 'files', path: 'src' };
-
-  it('accepts entryType', () => {
-    const result = LocalSearchQuerySchema.safeParse({
-      ...base,
-      entryType: 'd',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect((result.data as { entryType?: string }).entryType).toBe('d');
-    }
-  });
-
-  it('accepts only supported entryType and sort values', () => {
+describe('canonical astSearch filesystem contract', () => {
+  it('accepts file discovery and filesystem tree operations', () => {
     expect(
-      LocalSearchQuerySchema.safeParse({
-        ...base,
+      AstSearchQuerySchema.safeParse({
+        operation: 'files',
+        path: 'src',
+        names: ['*.ts'],
         entryType: 'f',
-        sort: 'modified',
+        sort: 'path',
       }).success
     ).toBe(true);
     expect(
-      LocalSearchQuerySchema.safeParse({ ...base, entryType: 'file' }).success
-    ).toBe(false);
-    expect(
-      LocalSearchQuerySchema.safeParse({ ...base, sort: 'time' }).success
-    ).toBe(false);
-  });
-
-  it('rejects the legacy `type` key instead of aliasing it', () => {
-    const result = LocalSearchQuerySchema.safeParse({ ...base, type: 'f' });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const keys = rejectedKeys(result.error);
-      expect(keys).toContain('type');
-    }
-  });
-});
-
-describe('localSearch tree sort values', () => {
-  const base = { operation: 'tree', path: 'src' };
-
-  it('accepts only supported sort fields', () => {
-    expect(
-      LocalSearchQuerySchema.safeParse({ ...base, sort: 'time' }).success
+      AstSearchQuerySchema.safeParse({
+        operation: 'tree',
+        treeKind: 'filesystem',
+        path: 'src',
+        sort: 'time',
+      }).success
     ).toBe(true);
+  });
+
+  it('keeps unsupported aliases rejected', () => {
     expect(
-      LocalSearchQuerySchema.safeParse({ ...base, sort: 'modified' }).success
+      AstSearchQuerySchema.safeParse({
+        operation: 'files',
+        path: 'src',
+        entryType: 'file',
+      }).success
+    ).toBe(false);
+    expect(
+      AstSearchQuerySchema.safeParse({
+        operation: 'tree',
+        treeKind: 'filesystem',
+        path: 'src',
+        sort: 'modified',
+      }).success
     ).toBe(false);
   });
 });

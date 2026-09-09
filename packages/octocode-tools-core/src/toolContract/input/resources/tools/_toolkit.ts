@@ -23,33 +23,20 @@ export const MAX_GITHUB_SEARCH_LIMIT = 100;
 export const DEFAULT_GITHUB_SEARCH_LIMIT = 30;
 export const MAX_GITHUB_STRUCTURE_ITEMS_PER_PAGE = 200;
 export const DEFAULT_GITHUB_STRUCTURE_ITEMS_PER_PAGE = 100;
-export const MAX_PR_ITEMS_PER_PAGE = 100;
-export const DEFAULT_PR_ITEMS_PER_PAGE = 20;
 export const MAX_MATCH_CONTENT_LENGTH = 100_000;
 export const DEFAULT_MATCH_CONTENT_LENGTH = 500;
 
 // Count caps for local-search result-limiting knobs (matches, files) and its
-// files-per-page — kept distinct from the char-length / page-number constants
-// they previously borrowed so the bound reads true to what it limits.
+// files-per-page.
 export const MAX_MATCH_COUNT = 100_000;
 export const MAX_SEARCH_ITEMS_PER_PAGE = 1_000;
 
-// lspGetSemantics call-graph depth and page size (own names, not borrowed from
-// the local-depth / PR constants).
+// lspSearch call-graph depth and page size.
 export const MAX_LSP_DEPTH = 20;
 export const MAX_LSP_ITEMS_PER_PAGE = 100;
 
 // GitHub tree recursion depth (not a local tree).
 export const MAX_GITHUB_STRUCTURE_DEPTH = 20;
-
-// localBinaryInspect bounds (were inline literals).
-export const MAX_BINARY_ENTRIES = 10_000;
-export const DEFAULT_BINARY_ENTRIES = 1_000;
-export const MAX_BINARY_ENTRIES_PER_PAGE = 100;
-export const MAX_BINARY_CONTEXT_LINES = 50;
-export const DEFAULT_BINARY_CONTEXT_LINES = 3;
-export const MAX_STRINGS_MIN_LENGTH = 128;
-export const DEFAULT_STRINGS_MIN_LENGTH = 8;
 
 /**
  * Authoring shape for a tool: the three human-written fields plus its schema.

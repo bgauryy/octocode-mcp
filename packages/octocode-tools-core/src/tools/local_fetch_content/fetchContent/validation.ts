@@ -119,22 +119,11 @@ export async function getFileStatsOrError(
   }
 }
 
-/**
- * The effective minify mode a read will use, resolved the same way
- * `fetchContent` resolves it: an explicit `minify` always wins; otherwise
- * `fullContent`/a line range defaults to `'none'` (verbatim), and every other
- * read defaults to `'standard'`. Exposed so the large-file gate can be
- * computed from the *actual* read mode instead of duplicating this ternary.
- */
+/** Exact content is the default; compact views require an explicit request. */
 export function resolveMinifyMode(
   query: FetchContentQuery
 ): 'none' | 'standard' | 'symbols' {
-  const hasLineRange =
-    query.startLine !== undefined && query.endLine !== undefined;
-  return (
-    query.minify ??
-    (query.fullContent === true || hasLineRange ? 'none' : 'standard')
-  );
+  return query.minify ?? 'none';
 }
 
 export function shouldFailForLargeFile(

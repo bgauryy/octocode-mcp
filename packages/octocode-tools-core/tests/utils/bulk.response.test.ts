@@ -157,6 +157,7 @@ describe('executeBulkOperation batch correlation', () => {
             queries: [{ value: 'x'.repeat(200) }],
             responseCharLength: 40,
             responseCharOffset: expect.any(Number),
+            responseSnapshot: expect.stringMatching(/^response-v1:/),
           },
         },
       },

@@ -6,7 +6,7 @@
 
 import path from 'node:path';
 import type { ToolDefinition, ToolCallResult, PiContext, PiTheme, RenderResultOptions } from '../../types.js';
-import type { registerUniqueTool } from '../octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from '../octocode-tools.js';
 import { CLI_STATUS_TEXT } from '../../tui/cli-design.js';
 import { runAskPrompt, type AskOutcome } from '../ask-user-tool.js';
 import { planArtifactsDir } from '../plan-html.js';
@@ -737,17 +737,11 @@ export function registerPlanTool(
   registerFn(pi, registeredToolNames, {
     name: 'plan',
     label: 'Plan',
-    description: [
-      'Definition: maintain the canonical checklist for work whose sequencing, risk, verification, or shared ownership must survive compaction.',
-      'Contrast: use set for already-authorized execution and propose for review; skip the tool for an obvious one-step edit. Start before acting and complete only after an observed check.',
-      'Consequence: stale status or an unverified completion misroutes the parent, workers, and recovery state.',
-      'Principle: one plan owns dependencies, active work, exact RFC revision, and shared verification receipts.',
-      'Action: choose the matching action branch; encode dependencies, keep statuses truthful, and clear the plan when the request is done or abandoned.',
-    ].join('\n'),
-    promptSnippet: 'Track multi-step, risky, or shared work. Use set for authorized execution, propose for review, and start/complete from observed state; skip obvious one-step work.',
+    description: DIRECT_TOOL_DESCRIPTIONS.plan!,
+    promptSnippet: 'Plan only complex work or an explicit planning request. Routine multi-step work and simple delegation need no plan.',
     promptGuidelines: [
       'Every call is {queries:[{reasoning,action,...}]}; select exactly one action branch and keep action fields inside that query.',
-      'Wrong: propose a reversible local edit with a ceremonial RFC. Right: use action:"set" for authorized work, action:"propose" when review is required, or skip plan when no sequencing or recovery state is needed.',
+      'Skip routine work. For complex work, use action:"set" when execution is already authorized and action:"propose" when review is required. Use an RFC only for consequential choices needing review.',
       'Wrong: complete because a worker said DONE. Right: verify the assigned check, then use action:"complete" with the observed receipt.',
       'For independent lanes, encode dependsOn, start each runnable index before delegation, and complete each explicit index.',
       'During execution, action:"start" targets one runnable step with optional index. For a reviewed proposal, action:"start" instead requires revision plus the answered authorizationInteractionId and must omit index; accepted-recovery may omit the interaction. Cancellation never approves it.',

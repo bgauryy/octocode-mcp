@@ -13,7 +13,7 @@ Choose words that leave one interpretation.
 | Concrete verb over catch-all | "handle the file" → "delete the file" | Names the exact action; "handle/process/manage" force a guess |
 | One term per concept | pick `prompt`; never also `instruction`, `input`, `text` | Avoids referring to one concept under multiple labels |
 | Verbatim identifiers | quote tool names, flags, paths, versions exactly (`--no-color`, `SKILL.md`) | An approximate name is a different name to the agent |
-| Plain over latinate/rare | "use" not "use"; "start" not "initialize" | Avoids unnecessary interpretive work |
+| Plain over latinate/rare | "utilize" → "use"; "initialize" → "start" | Avoids unnecessary interpretive work |
 | Name the entity | "the RATE gate" not "it" / "the above" | Avoids unclear references |
 | Constraining phrasing | "return JSON" rather than "structure the output" | The word itself carries the constraint; nothing left to infer |
 
@@ -46,4 +46,4 @@ Rules: descriptive, consistent tag names; nest only for real containment (`<docu
 - Liu et al., [Lost in the Middle](https://arxiv.org/abs/2307.03172) — context position can affect long-context retrieval; validate placement on the target task.
 - Xiao et al., [StreamingLLM](https://arxiv.org/abs/2309.17453) — attention sinks are an internal model/inference mechanism.
 
-Next: pair with `references/conciseness-toolkit.md` — that file cuts tokens, this one makes the survivors distinguishable; when the isolated span is retrieved or user text load `references/untrusted-content.md`; return to `references/fix.md` to record the placement change. <!-- style-lint: ignore-line passive-voice -->
+Next: pair with `references/conciseness-toolkit.md` — that file cuts tokens, this one makes the survivors distinguishable; when the isolated span holds retrieved or user text load `references/untrusted-content.md`; return to `references/fix.md` to record the placement change.

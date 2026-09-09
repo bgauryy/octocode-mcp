@@ -1,3 +1,9 @@
+import {
+  effectiveAgentStatus,
+  type WorkerDisplayState,
+} from './display-state.js';
+import { openScrollInspector } from '../../tui/scroll-inspector.js';
+import { EXTENSION_COMMANDS } from '../../commands.js';
 /**
  * agent-inbox — a 2-stage worker inbox overlay + desktop notifications for
  * spawned Octocode workers.
@@ -22,13 +28,26 @@
  *    active, or when a worker that ran > 30s completes (even mid-turn).
  */
 
-import type { PiContext, PiInstance, WorkerLedgerEntry, WorkerLedgerEventType, NotifyFn } from '../../types.js';
-import { runSelectOverlay, type SelectOverlayItem, type SelectOverlayOptions } from '../ui-overlays.js';
+import type {
+  PiContext,
+  PiInstance,
+  WorkerLedgerEntry,
+  WorkerLedgerEventType,
+  NotifyFn,
+} from '../../types.js';
+import {
+  runSelectOverlay,
+  type SelectOverlayItem,
+  type SelectOverlayOptions,
+} from '../ui-overlays.js';
 import { truncatePlainToWidth } from '../render-helpers.js';
 import { shortId } from '../ids.js';
 import { getWorkerTranscript, steerWorkerById } from './lifecycle.js';
 import { killWorkerById } from './kill.js';
-import { listWorkerLedgerEntries, registerWorkerLedgerListener } from './ledger.js';
+import {
+  listWorkerLedgerEntries,
+  registerWorkerLedgerListener,
+} from './ledger.js';
 import { formatElapsed } from './rendering.js';
 import {
   clearTitleFlashTimer,
@@ -42,14 +61,12 @@ import {
 
 /** Completed workers that ran longer than this always notify, even mid-turn. */
 export const LONG_RUN_NOTIFY_MS = 30_000;
-const TRANSCRIPT_MAX_LINES = 40;
 const SUMMARY_MAX_CHARS = 90;
 
 // ─── Inbox items (pure) ───────────────────────────────────────────────────────
 
-type InboxDisplayState = 'starting' | 'running' | 'idle' | 'done' | 'blocked' | 'failed' | 'killed';
-
-const STATE_GLYPHS: Record<InboxDisplayState, string> = {
+const STATE_GLYPHS: Record<WorkerDisplayState, string> = {
+  queued: '⇥',
   starting: '○', // ○
   running: '⟳', //  ⟳
   idle: '◎', //     ◎
@@ -63,27 +80,17 @@ const STATE_GLYPHS: Record<InboxDisplayState, string> = {
   killed: '⊘', //   ⊘
 };
 
-/** Mirror of agent-tools' display-state derivation (that helper is not exported). */
-export function inboxDisplayState(entry: Pick<WorkerLedgerEntry, 'status' | 'normalizedStatus'>): InboxDisplayState {
-  if (entry.status === 'killed') return 'killed';
-  if (entry.status === 'failed' || entry.normalizedStatus === 'failed') return 'failed';
-  if (entry.status === 'running') return 'running';
-  // Exited beats blocked (mirrors agent-tools): a dead [BLOCKED] worker is not
-  // actionable, so the inbox must not offer it as steerable.
-  if (entry.status === 'exited') return 'done';
-  if (entry.normalizedStatus === 'blocked') return 'blocked';
-  if (entry.normalizedStatus === 'done') return 'done';
-  if (entry.status === 'idle') return 'idle';
-  return 'starting';
-}
-
-function isTerminalState(state: InboxDisplayState): boolean {
+function isTerminalState(state: WorkerDisplayState): boolean {
   return state === 'done' || state === 'failed' || state === 'killed';
 }
 
 /** A live worker's process still accepts steer/followUp/kill RPCs. */
 function isLiveEntry(entry: Pick<WorkerLedgerEntry, 'status'>): boolean {
-  return entry.status === 'starting' || entry.status === 'running' || entry.status === 'idle';
+  return (
+    entry.status === 'starting' ||
+    entry.status === 'running' ||
+    entry.status === 'idle'
+  );
 }
 
 function oneLine(text: string, maxChars = SUMMARY_MAX_CHARS): string {
@@ -105,12 +112,18 @@ export function inboxSummaryLine(entry: WorkerLedgerEntry): string {
  * prefix, age, and a last-result summary as the description. Pure: pass `now`
  * for deterministic ages.
  */
-export function buildInboxItems(entries: WorkerLedgerEntry[], now: number = Date.now()): SelectOverlayItem[] {
-  return entries.map((entry) => {
-    const state = inboxDisplayState(entry);
+export function buildInboxItems(
+  entries: WorkerLedgerEntry[],
+  now: number = Date.now()
+): SelectOverlayItem[] {
+  return entries.map(entry => {
+    const state = effectiveAgentStatus(entry);
     const startedAt = Date.parse(entry.startedAt);
-    const endedAt = isTerminalState(state) ? Date.parse(entry.updatedAt) : now;
-    const age = Number.isFinite(startedAt) ? formatElapsed(startedAt, endedAt) : '?';
+    const endedAt = isTerminalState(state) || state === 'blocked' || !isLiveEntry(entry)
+      ? Date.parse(entry.updatedAt) : now;
+    const age = Number.isFinite(startedAt)
+      ? formatElapsed(startedAt, endedAt)
+      : '?';
     const summary = inboxSummaryLine(entry);
     return {
       value: entry.agentId,
@@ -121,17 +134,31 @@ export function buildInboxItems(entries: WorkerLedgerEntry[], now: number = Date
 }
 
 /** Stage-2 action items for one worker. Steer/kill only offered while the process is live. */
-export function buildInboxActionItems(entry: Pick<WorkerLedgerEntry, 'status'>): SelectOverlayItem[] {
+export function buildInboxActionItems(
+  entry: Pick<WorkerLedgerEntry, 'status'>
+): SelectOverlayItem[] {
   const items: SelectOverlayItem[] = [
-    { value: 'view', label: 'View transcript', description: 'Show the worker’s current state and latest output' },
+    {
+      value: 'view',
+      label: 'View output',
+      description: 'Read the worker’s status, handback, and retained output',
+    },
   ];
   if (isLiveEntry(entry)) {
     items.push(
-      { value: 'steer', label: 'Steer', description: 'Send a mid-flight course correction to this worker' },
-      { value: 'kill', label: 'Kill', description: 'Stop this worker now (SIGTERM, then SIGKILL)' },
+      {
+        value: 'steer',
+        label: 'Steer',
+        description: 'Send a mid-flight course correction to this worker',
+      },
+      { value: 'kill', label: 'Stop', description: 'Stop this worker now' }
     );
   }
-  items.push({ value: 'dismiss', label: 'Dismiss', description: 'Close the inbox' });
+  items.push({
+    value: 'dismiss',
+    label: 'Dismiss',
+    description: 'Close the inbox',
+  });
   return items;
 }
 
@@ -140,10 +167,18 @@ export function buildInboxActionItems(entry: Pick<WorkerLedgerEntry, 'status'>):
 export interface AgentInboxDeps {
   ctx: PiContext | undefined;
   listEntries(): WorkerLedgerEntry[];
-  runOverlay(ctx: PiContext | undefined, opts: SelectOverlayOptions): Promise<string | null | undefined>;
+  runOverlay(
+    ctx: PiContext | undefined,
+    opts: SelectOverlayOptions
+  ): Promise<string | null | undefined>;
   steer(idOrPrefix: string, message: string): boolean;
   kill(idOrPrefix: string): boolean;
-  transcript(idOrPrefix: string, opts?: { maxLines?: number }): string | undefined;
+  transcript(idOrPrefix: string): string | undefined;
+  inspect(
+    ctx: PiContext,
+    title: string,
+    lines: readonly string[]
+  ): Promise<void>;
   notify: NotifyFn;
   now?(): number;
 }
@@ -152,11 +187,17 @@ export interface AgentInboxDeps {
  * Run the 2-stage inbox: stage 1 picks a worker, stage 2 picks an action.
  * Every external effect flows through `deps` so tests drive it with fakes.
  */
-export async function runAgentInboxOverlay(deps: AgentInboxDeps): Promise<void> {
+export async function runAgentInboxOverlay(
+  deps: AgentInboxDeps
+): Promise<void> {
   const { ctx, notify } = deps;
   const entries = deps.listEntries();
   if (entries.length === 0) {
-    notify(ctx, 'Octocode inbox: no spawned workers this session. Use agent with type:"spawn" to delegate work.', 'info');
+    notify(
+      ctx,
+      'Octocode inbox: no spawned workers this session. Use agent with type:"spawn" to delegate work.',
+      'info'
+    );
     return;
   }
 
@@ -166,8 +207,11 @@ export async function runAgentInboxOverlay(deps: AgentInboxDeps): Promise<void> 
   });
   if (!agentId) return; // cancelled or no UI
 
-  const entry = entries.find((e) => e.agentId === agentId);
-  if (!entry) return;
+  const entry = deps.listEntries().find(e => e.agentId === agentId);
+  if (!entry) {
+    notify(ctx, 'This worker is no longer available.', 'info');
+    return;
+  }
 
   const action = await deps.runOverlay(ctx, {
     title: `${entry.name} (${shortId(entry.agentId)})`,
@@ -177,17 +221,25 @@ export async function runAgentInboxOverlay(deps: AgentInboxDeps): Promise<void> 
   if (!action || action === 'dismiss') return;
 
   if (action === 'view') {
-    const text = deps.transcript(entry.agentId, { maxLines: TRANSCRIPT_MAX_LINES });
-    notify(ctx, text ?? `No transcript for worker ${entry.name}.`, 'info');
+    const text = deps.transcript(entry.agentId);
+    if (!text || !ctx)
+      notify(ctx, `No output for worker ${entry.name}.`, 'info');
+    else
+      await deps.inspect(
+        ctx,
+        `${entry.name} · worker output`,
+        text.split('\n')
+      );
     return;
   }
 
   if (action === 'steer') {
     // Prefer the one-line input dialog; fall back to the editor for hosts without input().
     const title = `Steer ${entry.name}`;
-    const message = typeof ctx?.ui?.input === 'function'
-      ? await ctx.ui.input(title, 'course correction for this worker…')
-      : await ctx?.ui?.editor?.(title, '');
+    const message =
+      typeof ctx?.ui?.input === 'function'
+        ? await ctx.ui.input(title, 'course correction for this worker…')
+        : await ctx?.ui?.editor?.(title, '');
     const text = String(message ?? '').trim();
     if (!text) {
       notify(ctx, `Steer cancelled for ${entry.name}.`, 'info');
@@ -199,7 +251,7 @@ export async function runAgentInboxOverlay(deps: AgentInboxDeps): Promise<void> 
       ok
         ? `Steer sent to ${entry.name} (${shortId(entry.agentId)}).`
         : `Could not steer ${entry.name} — the worker process is no longer accepting messages.`,
-      ok ? 'info' : 'warning',
+      ok ? 'info' : 'warning'
     );
     return;
   }
@@ -208,8 +260,10 @@ export async function runAgentInboxOverlay(deps: AgentInboxDeps): Promise<void> 
     const ok = deps.kill(entry.agentId);
     notify(
       ctx,
-      ok ? `Killed worker ${entry.name} (${shortId(entry.agentId)}).` : `No worker found for ${shortId(entry.agentId)}.`,
-      ok ? 'warning' : 'error',
+      ok
+        ? `Stopped worker ${entry.name} (${shortId(entry.agentId)}).`
+        : `No worker found for ${shortId(entry.agentId)}.`,
+      ok ? 'warning' : 'error'
     );
   }
 }
@@ -239,7 +293,7 @@ export interface NotifyDecisionOptions {
 export function shouldNotifyWorkerEvent(
   entry: Pick<WorkerLedgerEntry, 'status' | 'startedAt'>,
   type: WorkerLedgerEventType,
-  opts: NotifyDecisionOptions,
+  opts: NotifyDecisionOptions
 ): boolean {
   if (opts.suppressed) return false;
   if (opts.alreadyNotified) return false;
@@ -264,6 +318,7 @@ export interface AgentInboxSeams {
   steer?: AgentInboxDeps['steer'];
   kill?: AgentInboxDeps['kill'];
   transcript?: AgentInboxDeps['transcript'];
+  inspect?: AgentInboxDeps['inspect'];
   emitOsc9?: (message: string) => void;
   flashTitle?: (ctx: PiContext | undefined, text: string) => void;
   notificationsEnabled?: () => boolean;
@@ -291,17 +346,25 @@ export interface AgentInboxRegistration {
 export function registerAgentInbox(
   pi: PiInstance,
   notify?: NotifyFn,
-  seams: AgentInboxSeams = {},
+  seams: AgentInboxSeams = {}
 ): AgentInboxRegistration {
-  const notifier: NotifyFn = notify ?? ((ctx, message, level) => { ctx?.ui?.notify?.(message, level); });
-  const registerListener = seams.registerListener ?? registerWorkerLedgerListener;
+  const notifier: NotifyFn =
+    notify ??
+    ((ctx, message, level) => {
+      ctx?.ui?.notify?.(message, level);
+    });
+  const registerListener =
+    seams.registerListener ?? registerWorkerLedgerListener;
   const osc9 = seams.emitOsc9 ?? emitOsc9;
-  const flashTitle = seams.flashTitle ?? ((ctx: PiContext | undefined, text: string) => flashTerminalTitle(ctx, text));
+  const flashTitle =
+    seams.flashTitle ??
+    ((ctx: PiContext | undefined, text: string) =>
+      flashTerminalTitle(ctx, text));
   const enabled = seams.notificationsEnabled ?? notificationsEnabled;
   const now = seams.now ?? Date.now;
 
-  pi.registerCommand?.('octocode-inbox', {
-    description: 'Inspect, steer, or stop spawned Octocode workers',
+  pi.registerCommand?.(EXTENSION_COMMANDS.inbox.name, {
+    description: EXTENSION_COMMANDS.inbox.description,
     handler: async (_args, ctx) => {
       await runAgentInboxOverlay({
         ctx,
@@ -310,6 +373,7 @@ export function registerAgentInbox(
         steer: seams.steer ?? steerWorkerById,
         kill: seams.kill ?? killWorkerById,
         transcript: seams.transcript ?? getWorkerTranscript,
+        inspect: seams.inspect ?? openScrollInspector,
         notify: notifier,
         now,
       });
@@ -322,7 +386,10 @@ export function registerAgentInbox(
   let lastCtx: PiContext | undefined;
   const notifiedAgents = new Set<string>();
 
-  const onLedgerEvent = (entry: WorkerLedgerEntry, type: WorkerLedgerEventType): void => {
+  const onLedgerEvent = (
+    entry: WorkerLedgerEntry,
+    type: WorkerLedgerEventType
+  ): void => {
     // Shutdown-ordering race: once the suppress flag is set, teardown emits a burst of
     // killed/exit events for every live worker — ignore them ENTIRELY, don't just mute the OSC.
     if (localSuppressed || desktopNotificationsSuppressed()) return;
@@ -335,9 +402,12 @@ export function registerAgentInbox(
     if (!decision) return;
     notifiedAgents.add(entry.agentId);
 
-    const failed = entry.status === 'failed' || entry.normalizedStatus === 'failed';
+    const failed =
+      entry.status === 'failed' || entry.normalizedStatus === 'failed';
     const startedAt = Date.parse(entry.startedAt);
-    const elapsed = Number.isFinite(startedAt) ? ` · ${formatElapsed(startedAt, now())}` : '';
+    const elapsed = Number.isFinite(startedAt)
+      ? ` · ${formatElapsed(startedAt, now())}`
+      : '';
     const verdict = failed ? 'failed' : 'finished';
     const message = `Octocode worker ${entry.name} ${verdict}${elapsed}`;
     if (enabled()) {
@@ -345,7 +415,11 @@ export function registerAgentInbox(
       flashTitle(lastCtx, message);
     }
     const summary = inboxSummaryLine(entry);
-    notifier(lastCtx, summary ? `${message} — ${summary}` : message, failed ? 'warning' : 'info');
+    notifier(
+      lastCtx,
+      summary ? `${message} — ${summary}` : message,
+      failed ? 'warning' : 'info'
+    );
   };
 
   let unsubscribeLedger = registerListener(onLedgerEvent);
@@ -378,9 +452,17 @@ export function registerAgentInbox(
   };
 
   // Track whether a turn is active + capture the freshest ctx for notifications.
-  pi.on('agent_start', async (_event, ctx) => { turnActive = true; lastCtx = ctx ?? lastCtx; });
-  pi.on('agent_end', async (_event, ctx) => { turnActive = false; lastCtx = ctx ?? lastCtx; });
-  pi.on('session_start', async (_event, ctx) => { lastCtx = ctx ?? lastCtx; });
+  pi.on('agent_start', async (_event, ctx) => {
+    turnActive = true;
+    lastCtx = ctx ?? lastCtx;
+  });
+  pi.on('agent_end', async (_event, ctx) => {
+    turnActive = false;
+    lastCtx = ctx ?? lastCtx;
+  });
+  pi.on('session_start', async (_event, ctx) => {
+    lastCtx = ctx ?? lastCtx;
+  });
 
   return { unsubscribe, shutdown, resume };
 }

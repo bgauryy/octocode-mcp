@@ -2,7 +2,7 @@
 
 Load when you ask to rate, review, improve, or refactor a skill. Why: match the work to the requested mode without assuming write authority.
 
-For the rewrite contract (lobby, dedupe, ≤50, review), load `references/skill-improve.md` — this file only gates the mode.
+For the rewrite contract (ownership, deduplication, navigation, and review), load `references/skill-improve.md` — this file only selects the mode.
 
 ## Choose the mode
 

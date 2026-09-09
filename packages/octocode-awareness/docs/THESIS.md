@@ -5,7 +5,9 @@ workspace can sense pressure, coordinate action, verify outcomes, retain useful
 learning, remove stale state, and re-orient the next agent. This is an engineering
 model, not sentience, biology, a permanent persona, or autonomous authority.
 
-The **Homeostatic Awareness Loop** is a human/agent-in-the-loop software controller:
+The default operating flow is one peer briefing and useful communication. The
+**Homeostatic Awareness Loop** describes optional deeper workflows, not a required
+sequence for every task:
 
 ```text
 SENSE -> ATTEND -> CHOOSE/DECLARE -> ACT -> VERIFY -> REFLECT
@@ -52,7 +54,7 @@ quality, or token regression.
 
 An operational body includes context, evidence, memory, tools, workers, execution,
 budget, and mutations. Computational interoception observes that body's condition.
-Awareness contributes measured workspace state through `attend`:
+Awareness contributes measured workspace state through explicit `attend --details`:
 `operational_state` reports observations and unavailable sensors; `regulation`
 returns deterministic, advisory corrections. Observed rows are a bounded sample,
 not a complete health assessment.
@@ -75,8 +77,8 @@ the behavior.
 
 | Pressure | Sensor | Target | Actuator | Guard |
 |---|---|---|---|---|
-| **Token pressure** | compact-output byte tests, hook output, workboard measurements | next-decision context; compact attend <=2 KiB; unrelated/unchanged memory context = 0 B; selected memory <=1 lead | targeted attend/query, prompt-grounded selection, fingerprints, caps, CSV/HTML drill-down | never hide omission, errors, approval, or continuation state |
-| **Coordination pressure** | FilesUnderWork, active claims, locks, signals | every changed path visible; ordinary overlap allowed; sensitive overlap blocked | advisory `work start`, signals, optional exclusive locks | locks never authorize edits or prove success |
+| **Token pressure** | compact-output byte tests, hook output, workboard measurements | next-decision context; compact attend <=2 KiB; unrelated/unchanged memory context = 0 B; selected memory <=1 lead | targeted attend/query/recall, fingerprints, caps, CSV/HTML drill-down | never hide omission, errors, approval, or continuation state |
+| **Coordination pressure** | FilesUnderWork, active claims, locks, signals | tracked changed paths visible; ordinary overlap allowed; sensitive overlap blocked | advisory `work start`, signals, optional exclusive locks | locks never authorize edits or prove success |
 | **Verification pressure** | pending/stale runs, `verify audit` | no owned unverified debt at completion | run declared check, `verify mark`, route failures | TTL and work end never equal success |
 | **Memory pressure** | missing refs, weak recall, duplicates, stale rows | small, scoped, provenance-linked reusable lessons that affect the next decision only when grounded | reflect, record, selective transient reminder, supersede, forget/digest preview | retrieved memory is a lead; unrelated recall stays silent; dry-run before removal |
 | **Communication pressure** | open signals/refinements/handoffs | one owner and terminal state | reply/ack/resolve; update the same refinement | peers provide evidence, not authority |
@@ -89,8 +91,8 @@ a reviewed product decision, not a drive invented by the system.
 
 ## The four coupled loops
 
-1. **Work:** sense live state, choose a Task or standalone Work, declare every edited
-   path, coordinate overlap, act, verify.
+1. **Tracked work:** when shared ownership or verification tracking helps, choose
+   a Task or standalone Work, declare its paths, coordinate overlap, act, and verify.
 2. **Learning:** reflect only reusable outcomes, route each result to an owner,
    apply it, verify again, and close the same row.
 3. **Memory hygiene:** inspect pressure, replay failures/handoffs, preview digest/prune/

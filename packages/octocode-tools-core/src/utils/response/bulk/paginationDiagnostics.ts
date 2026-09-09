@@ -93,6 +93,7 @@ export function buildPaginationDiagnosticCodes(
     key =>
       key.startsWith('expand') ||
       key.startsWith('retry') ||
+      key.startsWith('restart') ||
       key.startsWith('narrow') ||
       key.startsWith('fallback') ||
       key.startsWith('escalate') ||
@@ -102,7 +103,7 @@ export function buildPaginationDiagnosticCodes(
   );
   const missingContinuation =
     (hasPageableAxis && !hasPageContinuation) ||
-    (hasBound && !hasExpansionContinuation) ||
+    (hasBound && !hasExpansionContinuation && !hasPageContinuation) ||
     (hasPartialContentAxis &&
       !hasPageContinuation &&
       !hasExpansionContinuation);

@@ -28,5 +28,5 @@ Small changes stay brief. Consequential changes use explicit interface, impact, 
 ## Install
 
 ```bash
-npx octocode skill install octocode-architect
+npx -y octocode skill install octocode-architect
 ```

@@ -6,15 +6,15 @@ Inspect the live catalog before constructing requests:
 
 ```bash
 npx octocode tools --json
-npx octocode tools localSearch localAnalyzeGraph localGetFileContent lspGetSemantics --scheme
+npx octocode tools localSearch astSearch localGetFileContent lspSearch --scheme
 ```
 
 ## Research Recipes
 
 ```bash
 # Exact JSON fields come from --scheme; local paths must be absolute.
-npx octocode tools localSearch --queries '{"operation":"tree","path":"/absolute/workspace","maxDepth":2}'
-npx octocode tools localSearch --queries '{"operation":"text","path":"/absolute/workspace","searchText":"term","resultView":"discovery"}'
+npx octocode tools astSearch --queries '{"operation":"tree","path":"/absolute/workspace","maxDepth":2}'
+npx octocode tools localSearch --queries '{"path":"/absolute/workspace","searchText":"term","resultView":"discovery"}'
 npx octocode tools localGetFileContent --queries '{"path":"/absolute/workspace/README.md","minify":"symbols"}'
 
 # Remote/package contracts

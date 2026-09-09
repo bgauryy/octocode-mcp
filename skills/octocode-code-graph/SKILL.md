@@ -12,7 +12,7 @@ Workspace output contract: chat-only findings stay in chat. New saved reports de
 
 ## Rules
 
-- Prefer exposed Octocode MCP tools. In this monorepo use `node packages/octocode/out/octocode.js`; elsewhere use `npx octocode`.
+- Prefer exposed Octocode MCP tools. In this monorepo use `node packages/octocode/out/octocode.js`; elsewhere use `npx -y octocode`.
 - Read `tools <name> --scheme --json --compact` immediately before raw calls; batch independent probes up to the reported limit.
 - Orient cheaply. Use the graph only for dependencies, dependents, paths, cycles, reachability, or dead-code candidates—not symbol lookup.
 - A graph edge is syntactic file evidence, not symbol identity. A graph smell is a hypothesis, not a defect.
@@ -23,7 +23,7 @@ Workspace output contract: chat-only findings stay in chat. New saved reports de
 
 1. **FRAME:** define the question, repository root, language, entrypoints, tests policy, exclusions, budget, and consequence being predicted. <!-- style-lint: ignore-line passive-voice -->
 2. **TRIAGE:** load `references/graph-triage.md` when choosing the cheapest graph operation and turning its signal into hypotheses.
-3. **GRAPH:** run one bounded graph probe. Follow `next.*` and pagination instead of rebuilding queries.
+3. **GRAPH:** start with a bounded `astSearch` topology probe when file relationships are needed. Follow `next.*` and pagination instead of rebuilding queries.
 4. Load `references/false-positive-controls.md` when cycles, reachability, dead code, barrels, or verification might hide scope/runtime alternates.
 5. Load `references/issue-catalog.md` when mapping surviving cycles, fan-in/out, paths, or unreachable nodes to code risks.
 6. **PROVE:** load `references/proof-ladder.md` before any issue, blast-radius, layering, or deletion verdict; upgrade file topology with exact reads, structural search, and LSP.

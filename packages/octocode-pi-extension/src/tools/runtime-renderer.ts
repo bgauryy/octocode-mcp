@@ -1,8 +1,9 @@
 import type { ReadonlyFooterDataProvider, WorkingIndicatorOptions } from '@earendil-works/pi-coding-agent';
 import type { PiContext, PiTheme } from '../types.js';
-import { WORKING_WORD } from '../tui/content.js';
-import type { SemanticToken } from '../tui/palette.js';
-import { createRuntimeStore, type ForegroundActivity, type ForegroundActivityInput, type RuntimeMcpState, type RuntimeState, type RuntimeStore } from './runtime-store.js';
+import { createRuntimeStore, type ForegroundActivityInput, type RuntimeMcpState, type RuntimeState, type RuntimeStore } from './runtime-store.js';
+
+import { runtimeActivityPresentation } from './activity-presentation.js';
+export { activityPresentation, runtimeActivityPresentation } from './activity-presentation.js';
 
 interface RuntimeBinding {
   store: RuntimeStore;
@@ -35,45 +36,6 @@ function mcpStageText(mcp: RuntimeMcpState): string | undefined {
   return `MCP · ready${counts}${mcp.source === 'cache' ? ' · cached' : ''}`;
 }
 
-export function activityPresentation(activity: ForegroundActivity): { visible: boolean; message?: string; status?: string } {
-  switch (activity.kind) {
-    case 'idle': return { visible: false };
-    case 'thinking': return { visible: true, message: `${WORKING_WORD}…`, status: `${WORKING_WORD}…` };
-    case 'researching': return { visible: true, message: `Researching…${activity.detail ? ` ${activity.detail}` : ''}`, status: 'Researching…' };
-    case 'awaiting_input': return { visible: false, status: '⏳ Input needed' };
-    case 'planning': return { visible: true, message: `Planning…${activity.detail ? ` ${activity.detail}` : ''}`, status: 'Planning…' };
-    case 'reviewing': return { visible: false, status: '⏳ Review RFC — approve Start or Request changes' };
-    case 'awaiting_start': return { visible: false, status: '⏳ Plan approved — run /octocode-plan start <revision>' };
-    case 'ready_to_work': return { visible: false, status: `▶ Ready · ${activity.label}` };
-    case 'working': return { visible: true, message: `Working… ${activity.label}`, status: 'Working…' };
-    case 'verifying': return { visible: true, message: `Verifying…${activity.label ? ` ${activity.label}` : ''}`, status: 'Verifying…' };
-    case 'blocked': return { visible: false, status: `Blocked · ${activity.label}` };
-    case 'complete': return { visible: false, status: activity.label ? `Complete · ${activity.label}` : 'Complete' };
-    case 'failed': return { visible: false, status: `Failed · ${activity.label}` };
-  }
-}
-
-/** The footer and motion indicator share execution priority without changing plan state. */
-export function runtimeActivityPresentation(state: RuntimeState): { visible: boolean; status?: string; token: SemanticToken; attention?: boolean } {
-  if (state.footer.compacting) return { visible: true, status: 'Compacting context…', token: 'brand' };
-  const calls = state.footer.toolCalls ?? [];
-  if (calls.some((call) => call.name === 'askUser')) {
-    return { visible: false, status: 'Input needed', token: 'warning', attention: true };
-  }
-  const kind = state.activity.kind;
-  const waiting = kind === 'awaiting_input' || kind === 'reviewing' || kind === 'awaiting_start';
-  const latest = calls.at(-1);
-  if (latest && !waiting) {
-    return { visible: true, status: `Running ${latest.name}${calls.length > 1 ? ` · ${calls.length} tools` : ''}`, token: 'brand' };
-  }
-  const attention = kind === 'failed' || kind === 'blocked' || kind === 'awaiting_input';
-  return {
-    ...activityPresentation(state.activity),
-    token: kind === 'failed' ? 'error' : attention ? 'warning' : kind === 'complete' ? 'success' : 'brand',
-    attention,
-  };
-}
-
 function renderRuntime(ctx: PiContext, state: RuntimeState, rendered: RenderedRuntimeState): void {
   if (!ctx.hasUI || !ctx.ui) return;
   const statuses = { ...state.statuses };
@@ -97,7 +59,7 @@ function renderRuntime(ctx: PiContext, state: RuntimeState, rendered: RenderedRu
   // lifecycle has moved past 'idle' (ready_to_work, reviewing, awaiting_start, etc.).
   // activeTurnStartedAt is set on turn_start and cleared on turn_end.
   const inActiveTurn = !!state.footer.activeTurnStartedAt;
-  const workingVisible = loading || activity.visible || inActiveTurn;
+  const workingVisible = !activity.attention && (loading || activity.visible || inActiveTurn);
   if (rendered.workingVisible !== workingVisible) {
     ctx.ui.setWorkingVisible?.(workingVisible);
     rendered.workingVisible = workingVisible;

@@ -217,7 +217,7 @@ describe('github fetch content finalizer next.continueChars', () => {
     expect(file.next?.cloneForSemantics).toEqual({
       tool: 'ghCloneRepo',
       query: { owner: 'octo', repo: 'engine', sparsePath: 'src/small.ts' },
-      why: expect.stringContaining('lspGetSemantics'),
+      why: expect.stringContaining('lspSearch'),
       confidence: 'exact',
     });
     expect(JSON.stringify(file.next)).not.toContain('local.text');

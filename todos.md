@@ -4,22 +4,22 @@ This file records the verified findings from the MCP v2 and local-tool evaluatio
 
 ## Decision
 
-Replace the former standalone dead-code tool and the proposed the proposed standalone dependency tool surface with one public tool: `localAnalyzeGraph`.
+Replace the former standalone dead-code tool and the proposed standalone dependency tool surface with one public tool: `astSearch` with `operation:"topology"`.
 
-`localAnalyzeGraph` uses a discriminated `operation` contract. Dead-code analysis is an operation over the same repository graph, not a separate tool. The first contract must support `deadCode`, `cycles`, `dependencies`, `dependents`, `path`, and `reachability`. Do not expose an unbounded node-and-edge query language.
+`astSearch` uses a discriminated `operation` contract. Topology analysis is an operation over the same repository graph, not a separate tool. The topology branch supports `deadCode`, `cycles`, `dependencies`, `dependents`, `path`, and `reachability`. Do not expose an unbounded node-and-edge query language.
 
 Why:
 
 - `packages/octocode-tools-core/src/graph/buildFileGraph.ts` builds file-level import edges and records exact syntactic edge provenance.
 - `packages/octocode-tools-core/src/graph/reachability.ts` provides entrypoint reachability and iterative strongly connected component analysis.
-- `packages/octocode-tools-core/src/tools/local_analyze_graph/deadCodeScan.ts` adds one graph operation's policy: entrypoint inference, retention rules, confidence warnings, and dead-export classification.
+- `packages/octocode-tools-core/src/tools/ast_search/topology/deadCodeScan.ts` adds one topology analysis's policy: entrypoint inference, retention rules, confidence warnings, and dead-export classification.
 - `packages/octocode-engine/docs/NATIVE_GRAPH_DOMAIN_SCOPE.md` already defines a graph domain that includes file and symbol nodes, import/call/containment edges, reachability, retainers, strongly connected components, and dead-node analysis.
 - The current TypeScript `FileNode` contains module-import edges, while native graph facts also contain declarations and calls. The unified tool must state which graph and edge kinds each operation uses.
 - Existing graph tools expose concrete operations. The unified tool preserves that clarity through its required discriminator instead of splitting each operation into another MCP tool.
 
 ## P1: Implement the unified graph tool
 
-- [x] Keep `localAnalyzeGraph` metadata in the repository-owned tools-core contract; do not move it to external core.
+- [x] Keep `astSearch` topology metadata in the repository-owned tools-core contract; do not move it to external core.
 - [x] Use a discriminated union keyed by `operation`; do not create one object with every operation's fields optional.
 - [x] Support `deadCode`, `cycles`, `dependencies`, `dependents`, `path`, and `reachability` as bounded projections over one graph builder.
 - [x] Move the existing dead-code query fields under the `deadCode` operation and preserve its candidate-grade output semantics.
@@ -37,7 +37,7 @@ Acceptance criteria:
 - Cycle results match the existing iterative strongly connected component implementation.
 - Reachability results state their entrypoints, truncation state, skipped-file count, and confidence.
 - `operation: "deadCode"` matches the existing dead-code results on frozen fixtures and large-repository smoke cases.
-- The public catalog contains `localAnalyzeGraph` and does not contain the former standalone dead-code tool or the proposed standalone dependency tool.
+- The public catalog contains `astSearch` topology and does not contain the former standalone dead-code tool or the proposed standalone dependency tool.
 
 Evaluation contract:
 
@@ -64,10 +64,10 @@ Evaluation contract:
 
 ## P2: Correct contracts and documentation
 
-- [x] Fix the locally owned `localSearch` text/structural `maxFiles` description: text/regex uses a non-lossy per-page ceiling; structural mode uses a potentially lossy native scan cap and reports truncation evidence.
+- [x] Fix the locally owned `localSearch` lexical `maxFiles` description: lexical text/regex uses a non-lossy per-page ceiling; structural `astSearch` matching uses a potentially lossy native scan cap and reports truncation evidence.
 - [x] Update `docs/OCTOCODE_TOOLS.md`: dead clusters are mutually importing SCCs, not necessarily files that call each other.
 - [x] Restore `docs/context/SEARCH_GUIDE.md` and `docs/context/AGENT_RESEARCH_WORKFLOWS.md` as concise, current references.
-- [x] Document the boundary between `localAnalyzeGraph` syntactic repository topology and `lspGetSemantics` symbol-identity proof.
+- [x] Document the boundary between `astSearch` syntactic repository topology and `lspSearch` symbol-identity proof.
 
 ## Completed during the evaluation
 
@@ -81,8 +81,8 @@ Evaluation contract:
 
 ## Unified graph evaluation result
 
-- **Verdict: ACCEPT.** Primary KPI improved from 0/6 available operations to 6/6 through the public `localAnalyzeGraph` CLI contract.
-- The public catalog contains `localAnalyzeGraph`; querying the retired standalone dead-code schema returns unknown-tool and lists only the unified graph surface.
+- **Verdict: ACCEPT.** Primary KPI improved from 0/6 available operations to 6/6 through the public `astSearch` topology CLI contract.
+- The public catalog contains `astSearch` topology; querying the retired standalone dead-code schema returns unknown-tool and lists only the unified graph surface.
 - The focused graph/dead-code suite passes 22/22 tests, including limit-before-pagination, confidence propagation, retention, dynamic imports, SCCs, traversal, paths, and reachability.
 - Held-out React reconciler: 173 files scanned; dependencies, dependents, path, cycles, and dead-code response shaping completed successfully.
 - Held-out VS Code editor: 863 files scanned; dependencies, dependents, path, cycles, reachability, and dead-code response shaping completed successfully.
@@ -93,7 +93,7 @@ Evaluation contract:
 
 - **Tool rating: 9.5/10 (ACCEPT; up from 8.8).** The discriminated bounded contract now adds exact edge provenance, normalized evidence, request-local graph reuse, frozen parity tests, and two large-repository held-outs.
 - [x] Route all six operations through the canonical `octocode-research` skill: `dependencies`, `dependents`, `path`, `cycles`, `reachability`, and `deadCode`.
-- [x] Define the cross-tool boundary consistently: graph operations provide syntactic file-topology evidence; `lspGetSemantics` provides semantic symbol identity.
+- [x] Define the cross-tool boundary consistently: graph operations provide syntactic file-topology evidence; `lspSearch` provides semantic symbol identity.
 - [x] Update local, local+external, change, refactor, PR-review, general research, and proof-ladder flows.
 - [x] Update `AGENTS.md` and the agent workflow/tool-quality guide with the graph stage and verification path.
 - Verification: canonical and packaged `octocode-research` skills both pass review with 0 errors/0 warnings; the description contract and research evaluator self-test pass; canonical/package searches contain no legacy public graph-tool names; `yarn build`, `yarn docs:verify`, and `yarn verify` pass.
@@ -108,7 +108,7 @@ Evaluation contract:
 - [x] Fix the lean catalog hint from nonexistent the retired local search `keywords` field to `searchText`.
 - [x] Replace relative local command examples with unmistakable `/ABS/...` placeholders.
 - [x] Publish strict-valid examples for all six graph operations and for issue list/detail, releases, and first-page discussions.
-- [x] Align `localAnalyzeGraph` default pagination with the schema maximum (`50`).
+- [x] Align `astSearch` topology default pagination with the schema maximum (`50`).
 - [x] Cap graph `entrypointsResolved` summaries at 50 and publish `entrypointsResolvedCount` plus `entrypointsResolvedTruncated`.
 - [x] Add regression tests proving every published command pattern stays within its strict tool schema.
 - [x] Keep relation text and local graph metadata in the repository-owned tools-core contract.
@@ -118,7 +118,7 @@ Evaluation contract:
 
 ## Live dogfood findings (2026-08-28)
 
-- [x] Fixed `lspGetSemantics` empty-result fallback: `next.textSearch.query` now emits schema-valid `path` + `searchText`, and its regression test strict-prepares the emitted query.
+- [x] Fixed `lspSearch` empty-result fallback: `next.textSearch.query` now emits schema-valid `path` + `searchText`, and its regression test strict-prepares the emitted query.
 - [x] Replaced the invalid `github/community` discussions example with the live-verified, cursor-free `vitejs/vite` plugin search.
 - [x] Preserved the PR-only issue-page explanation through the public response as `hints`; live `status:"empty"` + `pagination.hasMore:true` output now explains why and points to `nextPage`.
 - [x] Refreshed the workspace and shared-agent `octocode-research` mirrors as links to canonical `skills/octocode-research`; all three copies contain no removed graph-tool names and skill review reports zero errors/warnings.
@@ -148,12 +148,12 @@ Rubrics: tools = schema clarity, routing distinctness, response/continuation qua
 | `ghGetFileContent` | 9.5 | Precise extraction modes, pagination, cost controls, and a bounded recorded-response smoke. |
 | `ghSearch` (`operation:"tree"`) | 9.1 | Cheap remote orientation with clean follow-ups and recorded finalization coverage; branch/tree limits remain external. |
 | `ghCloneRepo` | 8.6 | Correct escalation for repeated/semantic work; network, disk, and trust costs are material. |
-| `localSearch` (`operation:"text"` or `"structural"`) | 9.2 | Excellent text/regex/AST breadth plus strict-safe `pattern` and `useRegex` first-contact aliases. |
-| `localSearch` (`operation:"files"`) | 8.9 | Strong metadata discovery plus readable name/type aliases; it still has many metadata knobs. |
-| `localAnalyzeGraph` | 9.5 | Six bounded operations, exact syntactic provenance, request-local reuse, parity tests, and large-repository held-outs. |
+| `localSearch` (lexical) | 9.2 | Excellent text/regex breadth plus strict-safe search fields. |
+| `astSearch` (`match`/`files`) | 8.9 | Structural and metadata discovery through explicit operation variants. |
+| `astSearch` (`topology`) | 9.5 | Bounded analyses with exact syntactic provenance, request-local reuse, parity tests, and large-repository held-outs. |
 | `localGetFileContent` | 9.4 | Exact, ranged, matched, and minified reads with strong mode relations. |
-| `localSearch` (`operation:"tree"`) | 8.8 | Cheapest orientation step; readable entry types and `depth` alias now absorb the live first-contact misses. |
-| `lspGetSemantics` | 8.8 | Unique symbol-identity proof and compact output; server/language availability and anchor requirements add fragility. |
+| `astSearch` (`tree`) | 8.8 | Cheapest orientation step; readable entry types and depth bounds keep first-contact queries clear. |
+| `lspSearch` | 8.8 | Unique symbol-identity proof and compact output; server/language availability and anchor requirements add fragility. |
 | `npmSearch` | 8.3 | Very lean package-to-source bridge; limited filters and registry/provider dependence cap depth. |
 
 Suite average: **8.9/10** after the graph, response, recording, and strict-safe alias changes.
@@ -184,7 +184,7 @@ Current-suite average: **9.2/10**. Baseline skill review: 12/12 clean, 0 errors,
 
 ### End-to-end workflow
 
-Score: **9.0/10**. Best route: discover live catalog and availability → read the selected scheme → orient cheaply → search for anchors → read exact bytes → prove topology with `localAnalyzeGraph` and symbol identity with `lspGetSemantics` → follow returned continuations → run focused tests → build the affected package/interface → dogfood the built local CLI → run repository verification.
+Score: **9.0/10**. Best route: discover live catalog and availability → read the selected scheme → orient cheaply → search for anchors → read exact bytes → prove topology with `astSearch` and symbol identity with `lspSearch` → follow returned continuations → run focused tests → build the affected package/interface → dogfood the built local CLI → run repository verification.
 
 - [x] Replace stale absolute skill-source path with a checkout-relative source-of-truth statement.
 - [x] Align `octocode-research` with the built local CLI and the 17-schema discovery contract.
@@ -211,9 +211,9 @@ Score: **9.0/10**. Best route: discover live catalog and availability → read t
 - Documentation verification passes. Style lint reports no errors; pre-existing informational style debt in the long tools reference remains non-blocking.
 - Coverage is reported honestly: the neutral graph substrate has 91.16% statements and 92.64% lines; tools-core overall remains 66.91% statements because broad legacy provider paths are not unit-covered.
 - All 17 public tool names, schemas, descriptions, relation text, and command patterns now live under `packages/octocode-tools-core/src/toolContract/`; MCP and CLI consume that repository-owned contract instead of `@octocodeai/octocode-core/schemas`.
-- A source-ownership regression test rejects external schema imports and restricts the remaining root `@octocodeai/octocode-core` metadata import to the shared system prompt adapter. External core remains only for the system prompt, CLI command specs, and output/result types.
+- A source-ownership regression test rejects external schema imports and keeps the repository-owned tool contract and instructions in tools-core. External core remains only for reusable output/result types.
 - Rebuilt-CLI dogfood passed each of the 17 individual `tools <name> --scheme --json` contracts: matching identity, non-empty short/full descriptions, executable object schema, command patterns, and explicit availability metadata.
-- Tool-contract score after ownership consolidation: **4.8/5 (A)**, up from **3.2/5 (C)**. The remaining 0.2 reflects the intentionally separate external system-prompt and output-type surfaces, not split tool-schema ownership.
+- Tool-contract score after ownership consolidation: **4.8/5 (A)**, up from **3.2/5 (C)**. The remaining 0.2 reflects the intentionally separate external output-type surface, not split tool-schema ownership.
 
 ## Full tools, flow, security, and efficiency audit (2026-08-28)
 

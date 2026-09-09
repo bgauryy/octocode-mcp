@@ -161,6 +161,34 @@ pub struct SemanticBoundaryOffsetsTask {
     pub file_path: String,
 }
 
+pub struct SyntaxTreeInspectTask {
+    pub content: String,
+    pub file_path: String,
+    pub options: Option<crate::structural::SyntaxTreeInspectOptions>,
+}
+
+impl Task for SyntaxTreeInspectTask {
+    type Output = crate::structural::SyntaxTreeInspectResult;
+    type JsValue = crate::structural::SyntaxTreeInspectResult;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let options = self.options.take();
+        std::panic::catch_unwind(|| {
+            crate::structural::inspect_syntax_tree(&self.content, &self.file_path, options)
+        })
+        .map_err(|_| {
+            Error::new(
+                Status::GenericFailure,
+                "syntax-tree inspection failed on pathological input",
+            )
+        })
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
 impl Task for SemanticBoundaryOffsetsTask {
     type Output = Vec<u32>;
     type JsValue = Vec<u32>;

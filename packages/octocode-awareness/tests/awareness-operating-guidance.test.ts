@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { execCli } from '../src/coordination/cli.js';
 import { EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS, EXTERNAL_AGENT_AWARENESS_PROMPT } from '../src/coordination/external-policy.js';
 import { commandIndex } from '../src/schema/command-catalog.js';
 import { HELP, HELP_COMPACT, ROUTE_EXAMPLE } from '../bin/cli-help-data.js';
@@ -33,8 +32,7 @@ describe('Awareness operating guidance', () => {
       expect(prompt).toMatch(/self-reported[^.]*not authentication/i);
       expect(prompt).toMatch(/route[^.]*agent ID[^.]*not name or vendor/i);
     }
-    const detail = [EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS, read('references/configuration.md'), read('references/coordination-protocol.md')];
-    for (const text of detail) {
+    for (const text of [read('references/configuration.md'), read('references/coordination-protocol.md')]) {
       for (const flag of ['--agent-id', '--agent-name', '--agent-vendor', '--agent-host']) expect(text).toContain(flag);
       expect(text).toContain('OCTOCODE_AGENT_ID');
       expect(text).toContain('OCTOCODE_AGENT_NAME');
@@ -44,41 +42,31 @@ describe('Awareness operating guidance', () => {
     }
     const skill = read('SKILL.md');
     expect(skill).toContain('agent register');
-    expect(skill).toContain('agent list');
-    expect(skill).toContain('--agent-name');
-    expect(skill).toContain('--agent-vendor');
-    expect(skill).toContain('--agent-host');
+    expect(skill).toContain('references/configuration.md');
+    expect(skill).toContain('route by exact agent ID');
   });
 
-  it('carries communication, lifecycle ownership, and closing evidence into every host export', () => {
-    const exported = JSON.parse(execCli(['instructions', 'export', '--format', 'json']).stdout).instructions;
-    expect(exported).toBe(EXTERNAL_AGENT_AWARENESS_PROMPT);
-    for (const prompt of [EXTERNAL_AGENT_AWARENESS_PROMPT, exported]) {
-      expect(prompt).toContain('local and external code research');
-      expect(prompt).toContain('`npx octocode`');
-      expect(prompt).toContain('`octocode-mcp` MCP server');
+  it('supports agents with and without native delivery while retaining physical ownership', () => {
+    for (const policy of [EXTERNAL_AGENT_AWARENESS_PROMPT, read('SKILL.md')]) {
+      expect(policy).toContain('same physical SQLite file');
+      expect(policy).toContain('linked Git worktrees');
+      expect(policy).toContain('own checkout');
+      expect(policy).toMatch(/Without (?:native delivery or installed hooks|either), [^.]*signal list/);
+      expect(policy).toContain('expected reply');
     }
-    for (const text of [
-      'same physical SQLite file', 'same normalized absolute workspace',
-      'distinct stable agent ID', '--to-agent', '--in-reply-to',
-      'signal ack', 'signal resolve', 'Reuse the host-provided run/task IDs',
-      '--status FAILED', 'Before the final response', 'verify audit',
-      'maintenance digest', 'signal prune', '--dry-run',
-    ]) expect(exported).toContain(text);
-    expect(exported).not.toContain('check mark');
-    expect(exported).toContain('signal reply --in-reply-to <signal-id>');
-    expect(exported).toContain('never use `signal publish --kind reply`');
-    expect(exported).not.toContain('Use `--db` only for an explicit isolated path');
+    expect(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS).toContain('locks, recovery and verification tied to the physical checkout');
+    expect(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS).toContain('separate clones and separate databases do not connect automatically');
+    expect(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS).toContain('Existing authorization for that target remains valid');
   });
 
   it('keeps the short skill actionable and delegates complete recipes to supported CLI routes', () => {
     const skill = read('SKILL.md');
     expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(6_400);
     expect(skill).toContain('distinct stable ID');
-    expect(skill).toContain('same SQLite file');
-    expect(skill).toContain('Before the final response');
+    expect(skill).toContain('same physical SQLite file');
+    expect(skill).toContain('Audit owned tracked work after the last artifact or worker write');
     expect(skill).toContain('signal reply --in-reply-to <signal-id>');
-    expect(skill).toContain('never `signal publish --kind reply`');
+    expect(skill).toContain('never publish a fake reply');
     expect(skill).toContain('references/coordination-protocol.md');
     const protocol = read('references/coordination-protocol.md');
     expect(protocol).toContain('--db "$AWARENESS_DB"');

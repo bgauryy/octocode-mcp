@@ -13,9 +13,10 @@ plus a TS orchestration layer. tools-core reaches the Rust core through the
 lazy `contextUtils` proxy (`src/utils/contextUtils.ts`) and the TS wrappers
 through the `./lsp/*` / `./security/*` subpath exports; its own
 `src/security/bridge.ts` is only a thin type adapter (MCP `CallToolResult` ↔
-engine `ToolResult`). Tool descriptions and executable schemas are owned by
-`src/toolContract/`; the external core package supplies the shared system
-prompt and reusable output types.
+engine `ToolResult`). Tool descriptions, executable schemas, and shared
+agent-facing instructions are owned by `src/toolContract/`, including
+`src/toolContract/instructions.ts`; the external core package supplies reusable
+output types.
 
 ## Tool catalog
 
@@ -29,16 +30,28 @@ is the single source of truth.
   `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`,
   and `ghCloneRepo`.
 - **Package**: `npmSearch`.
-- **Local** (`security: 'basic'`): `localSearch`, `localGetFileContent`, and
-  `localAnalyzeGraph`.
-- **LSP**: `lspGetSemantics` (needs server runtime).
+- **Local** (`security: 'basic'`): `localSearch`, `astSearch`, and
+  `localGetFileContent`.
+- **LSP**: `lspSearch` (needs server runtime).
 
 Each tool lives in `src/tools/<tool_name>/` with a common core — `scheme.ts`
 (Zod single + bulk schemas) and `execution.ts` (the bulk-loop `executionFn`) —
-plus `finalizer.ts` / `types.ts` and helper modules as needed (the set varies
-per tool; for example, `local_ripgrep` splits ranking/structural/executor into separate
-files). Next-step hints are generated centrally by
-`src/utils/pagination/hints.ts`, not per tool.
+plus `finalizer.ts` / `types.ts` and helper modules as needed. The public
+`astSearch` dispatcher is `src/tools/ast_search/execution.ts`: it validates the
+operation union and routes `match`, `files`, `tree`, `symbols`, and `topology`.
+Topology execution and graph-analysis policy belong to
+`src/tools/ast_search/topology/`; the dispatcher keeps any lower-level search,
+filesystem, or AST helpers private behind that public contract. Next-step hints
+are generated centrally by `src/utils/pagination/hints.ts`, not per tool.
+
+### Graph ownership
+
+`src/graph/buildFileGraph.ts` owns file-level import-edge construction and
+`src/graph/reachability.ts` owns shared traversal/SCC primitives. The bounded
+topology analyses, dead-code policy, pagination, and response shaping are owned
+by `src/tools/ast_search/topology/`. `astSearch` is the public graph surface;
+private graph helpers and harnesses are implementation details and are not
+separate catalog tools.
 
 ## Execution flow
 
@@ -94,13 +107,16 @@ structure, history) lives in `src/github/`.
 
 - `src/index.ts` — the full re-export barrel (everything above + selected
   `octocode-engine` and `octocode-core` re-exports).
-- Public entries export directly from the owning module. Internal consumers
-  import that owner instead of routing through an unrelated module's exports.
 - `src/direct.ts` — the minimal `./direct` entry: `executeDirectTool` plus the
   catalog/metadata helpers consumers need to drive tools.
-- `src/zod.ts`, `./platform`, `./session`, `./config`, `./credentials`,
+- `src/schema.ts` — the engine-free `./schema` entry for catalog metadata,
+  schema text, relations, and input preparation.
+- `src/zod.ts` — the `./zod` compatibility entry.
+- `./platform`, `./session`, `./config`, `./credentials`,
   `./paths`, `./fs-utils`, `./testing` — focused subpath entries (see
   `package.json#exports`).
+- Public entries export directly from their owning module. Internal consumers
+  import that owner instead of routing through an unrelated module's exports.
 
 ## Distribution
 

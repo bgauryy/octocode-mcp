@@ -41,7 +41,7 @@ provider or the completeness of every operation variant.
 
 | Component | Score | Evidence | Remaining deduction |
 |---|---:|---|---|
-| `@octocodeai/octocode-core` | **9.8/10** | Prompt/output-types-only surface; redundant 13-entry registry, executable schemas, CLI generator, generated resources, and duplicate skill bundle removed; lint, typecheck, build, and focused surface tests pass | The aligned package has not been published and consumed from npm yet |
+| `@octocodeai/octocode-core` | **9.8/10** | Output-types-only surface; redundant 13-entry registry, executable schemas, CLI generator, generated resources, and duplicate skill bundle removed; lint, typecheck, build, and focused surface tests pass | The aligned package has not been published and consumed from npm yet |
 | `octocode-mcp` | **9.8/10** | Exact ten-tool SDK catalog, no output schemas, shared titles/descriptions/input schemas, ten-tool offline execution/continuation parity, real stdio call, full suite and build pass | Live provider drift remains an authenticated smoke concern |
 | `octocode` CLI | **9.8/10** | Exact ten-tool catalog, all ten representative calls pass, local command-spec ownership, ten-tool parity, full suite/build pass, and brief-schema output is 20.5% smaller | Operation-specific runtime shapes and provider drift remain inherent |
 | HTTP MCP host | **9.6/10** | Local canonical five-remote-tool selection, fail-closed catalog guard, 412 tests, lint, and build pass | Requires the aligned tools-core npm release plus deployed authenticated list/call smoke |
@@ -59,10 +59,10 @@ output schemas are intentionally not published.
 | `ghGetHistoryItem` | 9 | 10 | 10 | 9 | 9 | 9.4 | Four operation-specific detail shapes |
 | `ghGetFileContent` | 10 | 10 | 10 | 9 | 9 | 9.6 | Directory materialization remains specialized |
 | `ghCloneRepo` | 9 | 9 | 9 | 9 | 9 | 9.0 | Materialization remains intentionally specialized |
-| `localSearch` | 10 | 10 | 10 | 9 | 9 | 9.6 | Four operation-specific output shapes |
-| `localAnalyzeGraph` | 10 | 9 | 10 | 9 | 9 | 9.4 | Graph edges remain candidate evidence |
+| `localSearch` | 10 | 10 | 10 | 9 | 9 | 9.6 | Lexical matches with bounded output views |
+| `astSearch` | 10 | 9 | 10 | 9 | 9 | 9.4 | Graph edges remain candidate evidence |
 | `localGetFileContent` | 10 | 10 | 10 | 9 | 9 | 9.6 | Local path identity remains specialized |
-| `lspGetSemantics` | 10 | 10 | 10 | 9 | 9 | 9.6 | Workspace inference is cwd-sensitive |
+| `lspSearch` | 10 | 10 | 10 | 9 | 9 | 9.6 | Workspace inference is cwd-sensitive |
 | `npmSearch` | 9 | 10 | 10 | 9 | 9 | 9.4 | Registry/provider availability varies |
 
 ## Alignment gaps
@@ -94,7 +94,7 @@ for GitHub/npm provider drift; it must not weaken or replace offline CI.
 - Tools-core now owns all executable input schemas, relations, validation, names,
   descriptions, titles, availability, and runtime attachments. An architecture
   test rejects imports from the external core's retired schema/MCP surfaces.
-- `@octocodeai/octocode-core` is prompt-and-output-types only. Its 13-entry
+- `@octocodeai/octocode-core` is output-types only. Its 13-entry
   title/schema registry, CLI generator, generated resources, and duplicate skill
   bundle were removed.
 - CLI command-help types and specs now live with the CLI runtime; the retired
@@ -173,7 +173,7 @@ for GitHub/npm provider drift; it must not weaken or replace offline CI.
   caching, path identity, and evidence provenance differ.
 - Keep `ghGetFileContent` and `ghCloneRepo` separate. One is a bounded read; the
   other materializes state for repeated local analysis.
-- Keep `localAnalyzeGraph` and `lspGetSemantics` separate. File topology is
+- Keep `astSearch` topology and `lspSearch` separate. File topology is
   syntactic candidate evidence; LSP resolves symbol identity.
 - Keep `npmSearch` and `ghSearch` separate. Package identity and registry
   metadata are not repository-search semantics.

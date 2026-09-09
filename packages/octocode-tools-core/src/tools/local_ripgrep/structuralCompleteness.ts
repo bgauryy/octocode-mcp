@@ -58,20 +58,3 @@ export function executionLimitDiagnostic(
       'Narrow the source or simplify the query. This execution was incomplete; zero matches does not prove absence.',
   };
 }
-
-export function rewrittenQueryDiagnostic(
-  requestedPattern: string | undefined,
-  executedPattern: string | undefined,
-  path: string
-): StructuralDiagnostic | undefined {
-  if (!executedPattern || executedPattern === requestedPattern)
-    return undefined;
-  return {
-    code: 'structural.query.rewritten',
-    severity: 'info',
-    stage: 'match',
-    message: `Executed pattern ${JSON.stringify(executedPattern)} after the requested pattern ${JSON.stringify(requestedPattern)} returned no matches.`,
-    path,
-    recovery: `Use pattern: ${JSON.stringify(executedPattern)} to repeat this query explicitly.`,
-  };
-}

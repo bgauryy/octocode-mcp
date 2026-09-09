@@ -141,7 +141,7 @@ export function evictConnection(key: string): void {
   cache.delete(key);
 }
 
-/** Snapshot of cached CDP sessions with metrics (for /octocode-chrome + leak checks). */
+/** Snapshot of cached CDP sessions with metrics (for configuration and leak checks). */
 export function listCDPSessions(): CDPSessionInfo[] {
   const t = now();
   const out: CDPSessionInfo[] = [];

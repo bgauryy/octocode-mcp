@@ -21,17 +21,15 @@ function run(home: string, args: string[]) {
 }
 
 describe('awareness config CLI', () => {
-  it('requires all user answers before creating awareness.json', () => {
+  it('uses lean defaults without onboarding and persists explicit optional overrides', () => {
     const home = mkdtempSync(join(tmpdir(), 'awareness-config-cli-'));
     try {
       const shown = run(home, ['config', 'show']);
       expect(shown.status).toBe(0);
-      expect(shown.payload).toMatchObject({ exists: false, source: 'defaults', requires_user_answers: true });
-      expect(shown.payload.questions).toHaveLength(5);
+      expect(shown.payload).toMatchObject({ exists: false, source: 'defaults', requires_user_answers: false });
+      expect(shown.payload.options).toHaveLength(5);
 
-      const incomplete = run(home, ['config', 'init', '--hooks', 'true']);
-      expect(incomplete.status).toBe(1);
-      expect(incomplete.payload).toMatchObject({ ok: false, requires_user_answers: true });
+      expect(run(home, ['config', 'validate'])).toMatchObject({ status: 0, payload: { ok: true, source: 'defaults' } });
 
       const created = run(home, [
         'config', 'init',

@@ -226,7 +226,7 @@ fn parse_tree(language: &Language, content: &str) -> Result<Tree, ExecutionError
     parse_tree_with_deadline(language, content, Instant::now() + AST_EXECUTION_TIMEOUT)
 }
 
-fn parse_tree_with_deadline(
+pub(super) fn parse_tree_with_deadline(
     language: &Language,
     content: &str,
     deadline: Instant,
@@ -1521,7 +1521,7 @@ impl<'a> LineIndex<'a> {
     }
 
     /// Convert a tree-sitter byte column to an LSP-compatible **UTF-16 code-unit**
-    /// column. This is the unit `lspGetSemantics` uses, the JS resolver emits
+    /// column. This is the unit `lspSearch` uses, the JS resolver emits
     /// (`resolver::byte_offset_to_utf16`), and the signatures layer reports
     /// (`char::len_utf16`). Counting Unicode scalar values (`chars().count()`)
     /// instead would disagree with every other layer on any line containing a

@@ -20,7 +20,7 @@ import { buildToolView, makeComponentRenderer } from './render-helpers.js';
 import { assertPathAllowed } from './path-guard.js';
 import { classifySensitiveCommand, requestApproval, type ApprovalRequest } from './approval.js';
 import type { PiContext } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { chunkReadHint, writeEphemeralToolOutput } from './ephemeral-tool-output.js';
 import { buildAwarenessCliEnvironment } from './awareness-cli-context.js';
@@ -642,11 +642,7 @@ export function registerBashTool(
     z.looseObject({
       command: z.string().describe('Bash command to execute'),
       timeout: z.number().int().min(1).optional().describe(
-        'Timeout in seconds. OMITTING THIS FIELD MEANS NO TIMEOUT — commands that block on ' +
-        'stdin, interactive prompts, slow network, or pagers will hang indefinitely without it. ' +
-        `Max enforced ceiling: ${BASH_MAX_TIMEOUT_SEC}s (values above are clamped). ` +
-        'Always set timeout for: build commands, npx/npm/yarn, curl/wget, any command that ' +
-        'may wait for input. Suggested values: 30s for fast ops, 120s for builds, 300s for slow installs.',
+        `Seconds; omitted means no deadline. Set for blocking commands: 30 for fast checks, 120 for builds, 300 for installs. Values above ${BASH_MAX_TIMEOUT_SEC} are clamped.`,
       ),
     }),
     { reasoningDescription: 'Concise reason this shell command is necessary.', allowParallel: false },
@@ -656,27 +652,13 @@ export function registerBashTool(
     name: 'bash',
     label: 'bash (Octocode)',
     description:
-      'Octocode custom bash — same-name override of Pi built-in bash. ' +
-      'Accepts one or more queries (sequential only; never parallel); each query requires concise reasoning. ' +
-      'Adds Octocode path-guard: redirect/tee/cp/mv/sed-i/perl-i write targets must stay inside cwd, home, OS temp, or ALLOWED_PATHS. ' +
-      'Blocks a small set of catastrophic commands (rm -rf /, mkfs, dd to /dev/, shutdown/reboot). ' +
-      'Requires approval for obvious env-variable exfiltration. ' +
-      'Batches are fully preflighted before any command runs, non-transactional, and stop on the first failure. ' +
-      'WARNING — no default timeout: commands that read stdin, show interactive prompts, or open pagers hang indefinitely without a timeout field. ' +
-      'Opaque interpreters (node -e, python -c, ruby -e) can still write arbitrary paths and are not path-guarded — prefer file/write for mutations.',
-    promptSnippet: 'Run shell commands with Octocode path-guard on write targets and guarded timeout.',
+      DIRECT_TOOL_DESCRIPTIONS.bash!,
+    promptSnippet: 'Run bounded builds, tests, package commands, and debugging.',
     promptGuidelines: [
-      'Octocode custom bash replaces Pi built-in bash; prefer file for ordinary creates, edits, and deletes.',
-      'Never use bash for code search or file reads; use MCPTool so Octocode can return structured evidence and record edit freshness.',
-      'Use bash for git, builds, tests, package managers, and bulk mechanical edits (e.g. sed).',
-      'Bash query batches are always sequential: each command completes before the next starts.',
-      'ALWAYS pass timeout for any command that may block: builds, network ops (curl/wget), package installs (npx/npm/yarn/pip), or anything that might prompt. Omitting timeout means an indefinite hang with no recovery except host abort.',
-      'Interactive commands hang without timeout — use non-interactive flags: `npx -y pkg` (not `npx pkg`), pipe pagers through `cat`, avoid `read` in scripts without a timeout.',
-      'On macOS `timeout` is GNU-only and unavailable — use `gtimeout` (brew install coreutils) or `perl -e \'alarm N; exec @ARGV\' -- cmd` instead.',
-      'Isolate slow or network-bound commands in their own single-query bash call — one hang aborts all remaining queries in the batch.',
-      'Commands that obviously print inherited environment variables or secret-like env vars require approval; bash otherwise keeps the inherited environment.',
-      'Redirects (>, >>, tee) and cp/mv destinations must stay inside the working directory, home, OS temp, or ALLOWED_PATHS.',
-      'Do not use bash to bypass the file path-guard.',
+      'Set timeout for commands that can block and use non-interactive flags, e.g. npx -y pkg. Use this timeout field instead of assuming a platform timeout executable exists.',
+      'Batches execute sequentially, stop on failure, and keep prior effects. Isolate slow/network commands so one hang does not strand unrelated work.',
+      'Use file for mutations and MCPTool for search/reads that record edit freshness. Never use an interpreter or shell expansion to bypass path guards.',
+      'Redirect/tee/cp/mv destinations must pass the path guard. Environment exfiltration retains its approval gate; ordinary commands inherit the environment.',
     ],
     parameters,
     async execute(

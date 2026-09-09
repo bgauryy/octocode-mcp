@@ -378,36 +378,38 @@ Pick the cheapest surface that answers the next question. Start with tree/discov
 **1. Find → read → prove (the workhorse)**
 
 ```
-localSearch (operation:"tree" to orient)
-  → localSearch (operation:"files" for paths, "text" for snippets)
+astSearch (operation:"tree" to orient)
+  → astSearch (operation:"files" for paths)
+  → localSearch (searchText for snippets)
   → localGetFileContent (matchString → returns matchRanges line anchors)
-  → lspGetSemantics (references/callers, lineHint from matchRanges)
+  → lspSearch (operation:"references"/"callers", lineHint from matchRanges)
 ```
 
 - Results include ready `next.fetch` / `next.lspReferences` queries — follow them.
 - `matchString` beats line ranges when you know the code but not the line; returned `matchRanges` are valid `lineHint` anchors (LSP tolerates ±2 lines).
-- Never guess `lineHint`. If you only have a file, run `type:"documentSymbols"` first.
+- Never guess `lineHint`. If you only have a file, run `operation:"documentSymbols"` first.
 
 **2. Symbol-first (you know the name, not the place)**
 
 ```
-localSearch (operation:"text", searchText:"<symbol>", sort:"relevance")
-  → lspGetSemantics (references/callers, lineHint from the top hit)
+localSearch (searchText:"<symbol>", sort:"relevance")
+  → lspSearch (operation:"references"/"callers", lineHint from the top hit)
 ```
 
-Use the text operation when definition-vs-caller order matters; the files operation ranks paths, not snippets.
+Use lexical `localSearch` when definition-vs-caller order matters; `astSearch`
+`files` ranks paths, not snippets.
 
 **3. Structural (AST) → semantic proof**
 
 ```
-localSearch (operation:"structural", pattern or YAML rule)
-  → matches carry per-capture metavarRanges → feed straight into lspGetSemantics
+astSearch (operation:"match", pattern or YAML rule)
+  → matches carry per-capture metavarRanges → feed straight into lspSearch
 ```
 
 - Patterns match **complete nodes**: a function needs `{ $$$BODY }`; modifiers count (`function $F` misses `async function`). Statement patterns self-heal a missing `;`.
 - Zero matches return an engine explanation (query kind, literal anchor, pre-filter) — read it before rewriting blind.
 
-**4. Metadata sweep** — `localSearch` with `operation:"files"` (names/time/size, e.g. `time.modifiedWithin:"1d"`) → read/search the returned paths. Nothing is excluded by default; pass `excludeDir`.
+**4. Metadata sweep** — `astSearch` with `operation:"files"` (names/time/size, e.g. `time.modifiedWithin:"1d"`) → read/search the returned paths. Nothing is excluded by default; pass `excludeDir`.
 
 ### External workflows
 
@@ -445,7 +447,7 @@ ghSearchHistory (operation:"commits", path-scoped)       ← who touched this an
 ### When results are empty or wrong
 
 - `status:"empty"` + warnings say what to change — the response self-corrects before you retry.
-- Errors carry the repair path (404s name branch-vs-path; missing files point to `localSearch.operation:"files"`).
+- Errors carry the repair path (404s name branch-vs-path; missing files point to `astSearch.operation:"files"`).
 - LSP `serverUnavailable` means capability absence, not "no usages" — fall back to search.
 
 ### Research patterns — field-tested
@@ -481,7 +483,7 @@ FRAME the claim → pick the cheapest probe → run → record
 The corpus is an evidence graph, not a pile of files — the semantic-extraction answer to the flattening problem (Part 4 §3). Results are **nodes**; `next.*`, `matchRanges`, PR numbers, SHAs, and `localPath` are **typed edges**. Research is a cheapest-edge-first walk:
 
 - Search tools discover nodes; `next.*` proposes edges.
-- `lspGetSemantics` provides the *typed* edges — references, callers/callees, type hierarchy — the only edges that prove identity rather than co-occurrence.
+- `lspSearch` provides the *typed* edges — references, callers/callees, type hierarchy — the only edges that prove identity rather than co-occurrence.
 - `ghSearchHistory`/`ghGetHistoryItem` add the **time axis**: commit → PR → patch edges answer *why* a node looks the way it does.
 - Materialization is the edge *between graphs* (remote → local), unlocking typed edges on remote code.
 

@@ -14,6 +14,7 @@ import {
 } from '../continuity-contracts.js';
 import { CoordinationPlanGraph } from './coordination-plan-graph.js';
 import { id, now, required } from './coordination-shared.js';
+import { repositoryWorkspacePaths } from '../git.js';
 
 export interface OutboxEventV1<T = unknown> extends AgentEventEnvelopeV1<T> { sequence: number }
 export interface StoredInteractionV1 {
@@ -63,6 +64,13 @@ function eventFromRow(row: OutboxRow): OutboxEventV1 {
 }
 
 export class AwarenessStore extends CoordinationPlanGraph {
+  private eventScope() {
+    return {
+      where: "(workspace_path = ? OR (event_type = 'peer.message' AND workspace_path IN (SELECT value FROM json_each(?))))",
+      values: [this.workspace, JSON.stringify(repositoryWorkspacePaths(this.workspace))],
+    };
+  }
+
   appendEvent(input: AgentEventEnvelopeV1): OutboxEventV1 {
     const event = parseAgentEventEnvelopeV1(input);
     if (event.workspace !== this.workspace) throw new Error('event workspace does not match the opened Awareness store');
@@ -74,18 +82,20 @@ export class AwarenessStore extends CoordinationPlanGraph {
     const cursor = this.db.prepare('SELECT sequence FROM event_consumers WHERE workspace_path = ? AND consumer_id = ?')
       .get(this.workspace, consumerId) as { sequence: number } | undefined;
     const limit = Math.min(Math.max(params.limit ?? 100, 1), 1000);
-    const rows = this.db.prepare('SELECT * FROM event_outbox WHERE workspace_path = ? AND sequence > ? ORDER BY sequence ASC LIMIT ?')
-      .all(this.workspace, cursor?.sequence ?? 0, limit) as unknown as OutboxRow[];
+    const scope = this.eventScope();
+    const rows = this.db.prepare(`SELECT * FROM event_outbox WHERE ${scope.where} AND sequence > ? ORDER BY sequence ASC LIMIT ?`)
+      .all(...scope.values, cursor?.sequence ?? 0, limit) as unknown as OutboxRow[];
     return rows.map(eventFromRow);
   }
 
   acknowledgeEvent(params: { consumerId: string; eventId: string; decision: InboundDecision }): { sequence: number; decision: InboundDecision; duplicate: boolean } {
+    const scope = this.eventScope();
     return this.writeTransaction(() => {
       const consumerId = required(params.consumerId, 'consumer-id');
       const eventId = required(params.eventId, 'event-id');
       if (!(['accept', 'hold', 'refuse'] as const).includes(params.decision)) throw new Error('decision is invalid');
-      const event = this.db.prepare('SELECT sequence FROM event_outbox WHERE workspace_path = ? AND event_id = ?')
-        .get(this.workspace, eventId) as { sequence: number } | undefined;
+      const event = this.db.prepare(`SELECT sequence FROM event_outbox WHERE ${scope.where} AND event_id = ?`)
+        .get(...scope.values, eventId) as { sequence: number } | undefined;
       if (!event) throw new Error(`unknown event: ${eventId}`);
       const prior = this.db.prepare('SELECT decision FROM event_acknowledgements WHERE event_id = ? AND consumer_id = ?')
         .get(eventId, consumerId) as { decision: InboundDecision } | undefined;
@@ -95,8 +105,8 @@ export class AwarenessStore extends CoordinationPlanGraph {
       }
       const cursor = this.db.prepare('SELECT sequence FROM event_consumers WHERE workspace_path = ? AND consumer_id = ?')
         .get(this.workspace, consumerId) as { sequence: number } | undefined;
-      const next = this.db.prepare('SELECT MIN(sequence) AS sequence FROM event_outbox WHERE workspace_path = ? AND sequence > ?')
-        .get(this.workspace, cursor?.sequence ?? 0) as { sequence: number | null };
+      const next = this.db.prepare(`SELECT MIN(sequence) AS sequence FROM event_outbox WHERE ${scope.where} AND sequence > ?`)
+        .get(...scope.values, cursor?.sequence ?? 0) as { sequence: number | null };
       if (next.sequence !== event.sequence) throw new Error(`event acknowledgement must be ordered; next sequence is ${next.sequence ?? 'none'}`);
       const stamp = now();
       this.db.prepare('INSERT INTO event_acknowledgements(event_id, consumer_id, decision, decided_at) VALUES (?, ?, ?, ?)')
@@ -115,8 +125,8 @@ export class AwarenessStore extends CoordinationPlanGraph {
 
   pruneEvents(params: { throughSequence: number; dryRun?: boolean }): { matched: number; deleted: number; slowestCursor: number } {
     if (!Number.isInteger(params.throughSequence) || params.throughSequence < 0) throw new Error('throughSequence must be a non-negative integer');
-    const slowest = this.db.prepare('SELECT MIN(sequence) AS sequence FROM event_consumers WHERE workspace_path = ?')
-      .get(this.workspace) as { sequence: number | null };
+    const slowest = this.db.prepare('SELECT MIN(sequence) AS sequence FROM event_consumers WHERE workspace_path IN (SELECT value FROM json_each(?))')
+      .get(JSON.stringify(repositoryWorkspacePaths(this.workspace))) as { sequence: number | null };
     const slowestCursor = slowest.sequence ?? 0;
     if (params.throughSequence > slowestCursor) throw new Error(`cannot prune beyond slowest consumer cursor ${slowestCursor}`);
     const matched = (this.db.prepare('SELECT COUNT(*) AS count FROM event_outbox WHERE workspace_path = ? AND sequence <= ?')

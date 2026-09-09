@@ -3,7 +3,6 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import {
-  execCli,
   runPreEditLockGate,
   storageScopeForCommand,
   type AwarenessStorageScope,
@@ -22,12 +21,6 @@ export interface AwarenessCommandSpec {
   args: string[];
 }
 
-export interface AwarenessRunResult {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
-
 export function resolveAwarenessCliPath(): string {
   return requireFromExtension.resolve(`${AWARENESS_PACKAGE}/bin/awareness`);
 }
@@ -36,20 +29,10 @@ export function resolveAwarenessCliPath(): string {
  * Build a spawn spec (`node cli.js …`) for the Awareness bin. Retained for
  * the surfaces the model/user or a foreign host invokes as a real command:
  * launcher verbs (surfaces.ts) and the `$OCTOCODE_AWARENESS_CLI` env var. The
- * extension's OWN calls run in-process via runAwarenessInProcess instead.
+ * extension's own calls import executeAwarenessCommand directly.
  */
 export function buildAwarenessCommand(args: string[] = []): AwarenessCommandSpec {
   return { cmd: process.execPath, args: [resolveAwarenessCliPath(), ...args] };
-}
-
-/**
- * Run an Awareness command vector IN-PROCESS — no child process — via the
- * library's `execCli`. Returns the same JSON-on-stdout / exit-code contract the
- * `cli.js` bin produced, so callers that already build an argv and parse stdout
- * keep working unchanged (exit 2 still signals a lock-wait/pre-edit block).
- */
-export function runAwarenessInProcess(args: string[]): AwarenessRunResult {
-  return execCli(args);
 }
 
 /** Run the Awareness pre-edit lock gate in-process (library call, no spawn). */

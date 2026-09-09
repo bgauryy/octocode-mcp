@@ -1,7 +1,12 @@
+import { createHash } from 'node:crypto';
 import type {
   BulkToolResponse,
   BulkResponsePagination,
 } from '../../../types/bulk.js';
+
+function responseSnapshot(text: string): string {
+  return `response-v1:${createHash('sha256').update(text).digest('hex')}`;
+}
 
 function chooseLineAwareEndOffset(
   text: string,
@@ -77,8 +82,34 @@ export function paginateBulkText(
   }
 
   const totalChars = text.length;
+  const snapshot = responseSnapshot(text);
   const safeLength = Math.max(1, requestedLength);
   const safeOffset = Math.min(Math.max(0, requestedOffset), totalChars);
+
+  if (requestedOffset > 0 && pagination?.responseSnapshot !== snapshot) {
+    const expectedSnapshot = pagination?.responseSnapshot;
+    const reason = expectedSnapshot
+      ? 'The full response changed since the previous page. Discard earlier pages and restart from responseCharOffset=0.'
+      : 'Later response pages require responseSnapshot from the previous page. Restart from responseCharOffset=0.';
+    return {
+      text: `# Response pagination restart required. ${reason}\n`,
+      pagination: {
+        scope: 'content.text',
+        currentPage: 1,
+        totalPages: calculateLineAwareTotalPages(text, safeLength),
+        hasMore: true,
+        charOffset: safeOffset,
+        charLength: 0,
+        totalChars,
+        snapshot,
+        ...(expectedSnapshot ? { expectedSnapshot } : {}),
+        changed: Boolean(expectedSnapshot),
+        restart: true,
+        nextCharOffset: 0,
+      },
+    };
+  }
+
   const endOffset = chooseLineAwareEndOffset(text, safeOffset, safeLength);
   const hasMore = endOffset < totalChars;
   const currentPage = calculateLineAwarePageNumber(
@@ -103,6 +134,7 @@ export function paginateBulkText(
       charOffset: safeOffset,
       charLength: endOffset - safeOffset,
       totalChars,
+      snapshot,
       ...(hasMore ? { nextCharOffset: endOffset } : {}),
     },
   };
@@ -146,6 +178,7 @@ export function buildResponsePaginationContinuation(
       queries: cleanQueries,
       responseCharLength: request?.responseCharLength,
       responseCharOffset: pagination.nextCharOffset,
+      ...(pagination.restart ? {} : { responseSnapshot: pagination.snapshot }),
     },
   };
 }

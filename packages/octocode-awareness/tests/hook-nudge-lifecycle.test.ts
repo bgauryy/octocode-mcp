@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { runHookCommand } from '../bin/hook-runner.js';
+import { runHookCommand } from '../src/hooks/runner.js';
 import { resolveDbPath } from '../src/db-runtime.js';
 import { writeWorkspacePolicy } from '../src/workspace-policy.js';
 

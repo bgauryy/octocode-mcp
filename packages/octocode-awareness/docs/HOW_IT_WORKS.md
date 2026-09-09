@@ -1,7 +1,7 @@
 # How Octocode Awareness works
 
 This is the canonical end-to-end lifecycle for Awareness. It owns how an agent enters
-through `AGENTS.md`, activates skills, uses the CLI to create and mutate live state,
+through host instructions, uses the native API or CLI to inspect and change live state,
 receives hook automation, verifies work, records learning,
 and exits or hands off. Command recipes live in [SKILLS.md](SKILLS.md); host wiring
 lives in [HOOKS.md](HOOKS.md); schema detail lives in [DB.md](DB.md).
@@ -38,11 +38,11 @@ Each layer has one job:
    claim, declare, coordinate, lock, verify, remember, clean, or project.
    Other workflow skills can add focused research, evaluation, or skill-lifecycle
    guidance when installed separately. Skills do not own live coordination state.
-3. **The Awareness CLI is the only agent-facing control plane for durable Awareness state.**
-   It creates and changes plans, tasks, runs, file presence, locks, verification,
+3. **The Awareness package owns the shared control plane.** Native tools call
+   `executeAwarenessCommand`; the CLI uses the same executor. It creates and changes plans, tasks, runs, file presence, locks, verification,
    signals, refinements, Awareness-specific session captures, memory,
    maintenance, and queries (with optional read-only exports). CLI help and JSON
-   schemas own exact flags and payloads.
+   schemas own exact flags and payloads. See the [API reference](API.md).
 4. **Host hooks automate deterministic edges.** They call the same library used by
    the CLI. They can register sessions, declare writes, heartbeat,
    roll back failed writes, finalize fallback runs, deliver changed context, and
@@ -58,28 +58,32 @@ read-only query exports. A lower layer cannot override a higher one.
 Rows are isolated by normalized `workspace_path` and optional artifact/repo/ref
 scope within the selected Awareness database.
 
-The default agent surface is deliberately small: `attend`, `plan`, `task`, `work`,
-`verify`, `memory`, `signal`, and `query`. `schema commands --compact` groups
-these before advanced recovery/diagnostic nouns; `schema command <noun> [action]`
+The default flow is one peer briefing plus useful communication. Plans, work,
+locks, verification, memory, history, and maintenance are available on demand.
+`schema commands --compact` groups core and advanced nouns; `schema command <noun> [action]`
 returns one action contract with router-injected fields removed. Locks are normally
 requested through `work start --exclusive`. Raw lock, hook, maintenance, refinement, session, docs, and schema
 commands remain available when the lifecycle requires them.
 
 ## Agent decision contract
 
-Use this loop for one task: **NOTICE → SCOPE/IDENTITY → INSPECT → ACT → OBSERVE
-→ SETTLE/VERIFY → LEARN**. A shared-state signal earns one `attend`; an unchanged
-or non-actionable result means continue the authorized task, not a polling loop.
+Attend once per workspace/session, or reuse a host-provided briefing. Default
+`attend` reads only registered peers, with bounded pages and executable continuations.
+It does not query work, memory, or verification. Registration and last-seen timestamps
+do not prove that a process is live. Inspect a message when it changes the next action;
+unchanged or non-actionable state requires no extra coordination call.
 Select the store and stable identity before reading shared state. An explicit
 workspace selects isolation; cwd supplies repository context.
 
-`attend.next` is structured data:
+Explicit `attend --details` or task/file filters select the detailed observer.
+Its `attend.next` includes advisory guidance. In CLI output:
 
 ```text
 { action, reason, target?, command?: { name, args } }
 ```
 
-`name` and `args` identify a canonical root CLI operation without shell
+The API converts suggested commands to `{ command, params }` requests and Pi
+wraps them as native tool calls. In CLI output, `name` and `args` identify a canonical operation without shell
 interpolation. When a durable command is safe to suggest, its arguments retain the
 selected database, workspace, agent, and artifact. Advice remains advisory and
 read-first:
@@ -100,13 +104,12 @@ receipt assertion remains evidence to inspect.
 ## Bootstrap lifecycle
 
 ```text
-INSTALL PACKAGE -> INSTALL SKILL -> INIT STORE -> SET IDENTITY
-       -> CHOOSE HOST HOOK SURFACE -> PREVIEW/INSTALL -> STRICT CHECK -> RUNTIME SMOKE
+HOST INTEGRATION -> STABLE IDENTITY -> ATTEND ONCE -> USEFUL COMMUNICATION
 ```
 
 1. Install the package and the `octocode-awareness` skill for the host.
-2. Run `maintenance init` once. It creates/checks the advanced workflow SQLite store; it does
-   not create repository work.
+2. Select the shared store. Commands open/check it as needed; `maintenance init`
+   is an explicit initialization diagnostic, not a per-session requirement.
 3. Set one stable `OCTOCODE_AGENT_ID` for the main agent. Host-provided child IDs keep
    subagents distinct while the parent CLI and hooks share one identity.
 4. Choose one hook surface: Claude skill frontmatter or Claude settings, or
@@ -114,11 +117,14 @@ INSTALL PACKAGE -> INSTALL SKILL -> INIT STORE -> SET IDENTITY
 5. Preview configuration writes, install after approval, then run strict config
    health. Strict success proves exact entries and existing script targets, not that
    the host executed them or delivered context.
-6. Smoke a harmless write, failure, stop, compaction, and session boundary on the real
-   host. Only runtime evidence upgrades configuration health to operational trust.
+6. Smoke peer registration and message delivery on the real host. For guard/full,
+   also check write, failure, stop, and supported compaction boundaries. Only runtime
+   evidence upgrades configuration health to operational trust.
 
-Hooks are optional. If they are absent or unhealthy, the manual CLI lifecycle below
-remains complete.
+Pi already supplies native lifecycle events and the Awareness tool; it needs no
+shell-hook install. External hosts can install the default coordination profile
+or read the inbox explicitly when hooks are absent. Missing global feature
+configuration uses lean defaults. See [configuration](CONFIGURATION.md).
 
 ## Homeostatic control model
 
@@ -150,7 +156,7 @@ Hook fallback -> TaskRun(origin=HOOK) -> RunFile -> PENDING
 | Plan | Shared objective, lead, members, lifecycle, managed documents. |
 | Task | Durable selectable work with reasoning, acceptance, paths, priority, dependencies. |
 | TaskRun | One attempt and its verification contract. |
-| RunFile | Mandatory advisory path presence; many agents may share a path. |
+| RunFile | Advisory path presence for tracked work; many agents may share a path. |
 | Lock | Optional exclusive protection for sensitive work. |
 | EditLog | Completed edit event history. |
 
@@ -160,35 +166,31 @@ they never copy live task status into a second “today” list.
 ## Lifecycle
 
 ```text
-ENTER -> ACTIVATE -> ATTEND -> CHOOSE -> CLAIM/WORK -> DECLARE -> ACT
-  -> SUBMIT/END -> VERIFY -> LEARN/HANDOFF -> CLEAN/PROJECT -> EXIT
+ATTEND ONCE -> DO THE AUTHORIZED WORK -> COMMUNICATE WHEN NEEDED
+  -> SAVE A REUSABLE LESSON OR HANDOFF ONLY WHEN WARRANTED
 ```
 
-1. **ENTER:** the host loads repository instructions. `AGENTS.md` routes the agent to
-   this package guide and the Awareness skill.
-2. **ACTIVATE:** load `octocode-awareness`; select other skills only for their owned
-   decisions. Export the stable identity and choose the local/installed CLI.
-3. **ATTEND:** `attend --compact --query <task>` returns verification debt, owned or
-   ready work, file overlaps, inbox pressure, relevant evidence, and one `next` action.
-4. **CHOOSE:** follow `next`. Join/inspect a plan, claim one derived-ready task, or open
-   explicit standalone WORK. Do not create a second Markdown task queue.
-5. **CLAIM/WORK:** a task claim or `work start` creates one run with rationale and an
-   exact verification plan. Heartbeat long work.
-6. **DECLARE:** every edited path receives advisory `RunFile` presence, either through
-   hooks or explicit CLI. Ordinary overlap is allowed and visible. Use an exclusive
-   lock only for sensitive, non-mergeable work; never bypass a conflict.
-7. **ACT:** edit/review/test while presence remains active. Inspect peer rationale when
-   overlap matters; use signals only when another agent must know or act.
-8. **SUBMIT/END:** `task submit` or `work end` ends editing and moves the run to
-   `PENDING`. This creates verification debt; it does not claim success.
-9. **VERIFY:** run the declared check, record its receipt with `verify mark`, and finish
-   with `verify audit`. Only `SUCCESS` clears the debt and completes task-backed work.
-10. **LEARN/HANDOFF:** record only reusable, evidence-backed learning. Supersede stale
-    memory. Use signals, refinements, or session capture for unfinished work.
-11. **CLEAN/PROJECT:** only when pressure or a file-reader need exists, preview cleanup
-    or regenerate `.octocode/`. Destructive maintenance remains explicit and scoped.
-12. **EXIT:** stop/end hooks finalize only automatic HOOK fallback runs and capture
-    handoff state. Session exit never marks a task or WORK run successful.
+1. Reuse the host briefing or call `attend` once. Keep a stable workspace and identity.
+2. Continue the authorized task. Discover a capability only when it can change the
+   work: shared ownership, a meaningful overlap, an unsafe concurrent write, or recovery.
+3. Read and reply to relevant peer messages. Preserve thread and sender IDs;
+   acknowledge handled signals and resolve conversations only when finished.
+4. After substantial work or a meaningful event, record a concise verified lesson
+   only if it is reusable. Use a handoff only when someone must continue unfinished work.
+
+### When work needs tracking
+
+For a shared task or explicit standalone WORK, reuse existing task/run IDs. Declare
+the affected paths and check plan, then edit and run the required checks while
+presence remains active. Guard/full hooks can automate recognized file presence;
+the default coordination profile does not create it.
+
+`task submit` or `work end` moves the run to `PENDING`. Record the actual check
+result through `verify mark`, then inspect `verify audit` after final writes.
+A failed check stays `FAILED`; an unrun check remains pending. Settle or disclose
+owned debt and release owned leases without changing peers' records. Expiry and
+session exit never prove success. Ordinary overlap is advisory; use an exclusive
+lock only where concurrent writes cannot be merged safely.
 
 Host sessions are not work-unit boundaries. Only a task claim or explicit
 `work start` may reuse an explicit standalone WORK run; fallback hook writes remain
@@ -201,7 +203,7 @@ isolated.
 | Plan | `DRAFT -> ACTIVE <-> PAUSED -> COMPLETED or CANCELLED` | The lead owns transitions; completion waits for active work to resolve. |
 | Task | `OPEN -> IN_PROGRESS -> VERIFY -> DONE or FAILED`; side paths `BLOCKED`/`CANCELLED` | “Ready” is derived from ACTIVE plan + satisfied dependencies + no live claim. |
 | Run | `ACTIVE -> PENDING -> SUCCESS or FAILED` | Ending edits creates debt; only verification writes a terminal result. |
-| RunFile | declared/active -> heartbeat/extend -> ended or expired | Presence is mandatory and advisory; it is not a lock. |
+| RunFile | declared/active -> heartbeat/extend -> ended or expired | Tracked file presence is advisory; it is not a lock. |
 | Lock | acquire -> renew -> release, expiry, or prune | Only `EXCLUSIVE`; reserved for sensitive work and attached to a run. |
 | Signal | publish -> deliver/read/ack -> resolve -> optional prune | Messages are coordination evidence, not authority or a task queue. |
 | Refinement | `open -> ongoing -> done` | Owned repo-fix follow-up; terminal closure requires a check receipt. Session handoffs are broadcast `kind=handoff` signals, not refinements. |
@@ -219,6 +221,12 @@ Task, WORK, and HOOK are run origins, not interchangeable queues:
 
 ## Hooks
 
+The default coordination profile registers peers, delivers changed messages, and
+ends session presence. It does not create per-edit work records, audit at every
+stop, or recall memory. Guard/full opt into mutation bookkeeping; full adds
+history and compaction boundaries. Verification reminders and session captures
+also require their global feature switches. The following edges apply when enabled:
+
 ```text
 SessionStart / prompt -> register + changed briefing
 PreToolUse(write)     -> guard + resolve owner + declare presence + conflict check
@@ -230,10 +238,10 @@ PreCompact            -> finalize/capture but keep session reusable
 SessionEnd/shutdown   -> finalizes/captures and marks the session ended, never success
 ```
 
-Normal success is silent. Changed peer/briefing fingerprints emit one terse signal;
+Normal success is silent. Changed peer/message fingerprints emit one bounded message packet;
 unchanged state emits nothing. An exclusive conflict blocks before presence. Prompt
-briefing uses transient prompt text to select relevant state or stay silent; selected
-contents remain in the ledger for an explicit read. Stop output is count-only.
+briefing reads peer messages without retrieving memory or refinement state.
+Enabled stop reminders are count-only.
 
 ### Manual CLI and hook parity
 
@@ -247,7 +255,7 @@ contents remain in the ledger for an explicit read. Stop output is count-only.
 | Prove success | reminder/audit only | run check, `verify mark`, `verify audit` |
 | Handoff/exit | compact/end capture | signal, refinement, or `session capture` |
 
-Hooks never replace `attend`, plan/task choice, deliberate exclusivity, verification
+Reuse a host briefing instead of repeating `attend`. Hooks never replace plan/task choice, deliberate exclusivity, verification
 receipts, memory judgment, cleanup approval, or query-export requests.
 
 Host wiring details live in [HOOKS.md](HOOKS.md).
@@ -269,17 +277,22 @@ consumer cursor in sequence. A delivery or acknowledgement error stops that drai
 at the failed event so a later drain can recover without skipping it. Transport
 acknowledgements and signal read receipts remain separate records.
 
+The host supplies lifecycle drains and wake-ups; Awareness has no background
+message-arrival watcher. Pi drains at session start and agent completion, after
+creating a persistent session. A message arriving after the final drain needs a
+host wake or explicit inbox read. Delivery does not imply handling: `signal ack`
+records handling, and `signal resolve` with `thread_id` closes the finished conversation.
+
 ## Context model
 
 Persist everything needed for coordination; prompt only actionable changes:
 
 - ordinary edit: zero injected awareness text;
-- unrelated remembered state: zero injected text; matching changed state emits only
-  `Awareness state changed.`;
+- remembered state: no automatic recall; inspect it when prior learning can change the approach;
 - changed overlap: affected path summary only; inspect peers and ownership explicitly;
 - exclusive conflict: holder, reason, expiry, recovery action;
-- compact attend: bounded action packet, not full organ/drive/profile aliases;
-- full rows: explicit `work show`, query, recall, or noncompact attend.
+- default attend: bounded registry presence;
+- detailed state: explicit `attend --details`, `work show`, query, or recall.
 
 This separates database completeness from token cost.
 
@@ -290,11 +303,12 @@ messages. Refinements are owned follow-up/handoff state, not another task queue.
 
 The memory lifecycle is deliberately conservative:
 
-1. Recall with task query and scope; filters/search/sort narrow candidates.
+1. Recall only when prior learning can change the approach; task and scope filters narrow candidates.
 2. Smart widening may relax low-value filters and reports what changed under
    `--explain`; semantic reranking is optional and safely falls back to lexical FTS.
 3. Treat every hit as a lead and re-check current source/tests/output.
-4. Record only a scoped, reusable, evidence-backed lesson, decision, gotcha, or source.
+4. After substantial work or a meaningful event, record only a scoped, reusable,
+   evidence-backed lesson, decision, gotcha, or source. Skip routine edits and repeated facts.
 5. Correct facts with `--supersedes`; archive reversibly; hard-forget only after a
    narrow dry-run and review.
 
@@ -304,7 +318,7 @@ current source/tests/user instructions always win.
 
 ## Completion contract
 
-Awareness work is complete only when:
+For explicitly tracked work, completion requires:
 
 - no required edited path lacks declared ownership;
 - no unresolved exclusive conflict was bypassed;

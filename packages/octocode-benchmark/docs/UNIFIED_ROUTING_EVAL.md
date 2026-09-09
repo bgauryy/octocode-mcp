@@ -1,132 +1,70 @@
-# Unified routing held-out eval
+# Local-tool removal held-out eval
 
-This deterministic eval decides whether the merged `ghSearch`,
-`ghSearchHistory`, and `localSearch` surface earns its place over the retired
-split public tools. Correctness is evaluated before cost. A smaller catalog
-cannot rescue an invalid route.
+This deterministic eval freezes the post-migration local-tool surface and
+checks behavior through the built CLI. The original remote routing fixture and
+grader remain in place; this local eval is an additional independent gate. It
+covers the four public local tools:
+`localSearch`, `astSearch`, `localGetFileContent`, and `lspSearch`.
 
-## Goal
+## Goal and decision rule
 
-Preserve correct research routing while reducing the public tool-selection
-context carried by agents.
+The goal is to remove `localAnalyzeGraph` and `lspGetSemantics` while retaining
+the behavior they provided through `astSearch` topology and `lspSearch`.
 
-## KPI
+The local fixture is
+[`fixtures/local-tool-removal-held-out.json`](../fixtures/local-tool-removal-held-out.json).
+It is held out from implementation work and records a fixed contract:
 
-- Primary (lagging): total routing bytes (`input schema +
-  name/title/description`), lower is better; baseline 39,318, result 29,467,
-  target at most 39,317.
-- Leading metrics: execution calls, input-schema bytes, and prompt bytes.
-- Correctness guardrail: both surfaces must route all 10 held-out cases.
-- Cost guardrails: execution calls may not increase; schema bytes and prompt
-  bytes must each decrease.
-- Budget: one deterministic trial over 10 frozen cases.
-- Decision: **ACCEPT** only when correctness remains 10/10 and every cost
-  guardrail holds; otherwise **REVERT**.
+- all four local public names are present;
+- both retired names reject as unknown tools;
+- all six topology algorithms remain callable with their graph parameters;
+- all nine `localSearch` result views and three regex modes execute;
+- all three exact-content views execute, with Unicode and CRLF preserved;
+- returned continuation queries are schema-valid and representative page unions
+  are executed;
+- no legacy export or runner module remains in `tools-core` source contracts or
+  built output;
+- anchored LSP is attempted and is skipped only when its provider is absent or
+  not ready.
 
-The executable contract and baseline values are committed in
-[`fixtures/unified-routing-held-out.json`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/fixtures/unified-routing-held-out.json).
+The benchmark does not claim a speedup. It records duration as diagnostic data
+only. Acceptance requires every deterministic behavior and removal guardrail to
+pass; provider-dependent LSP is reported separately when unavailable.
 
-## Loop level
+## Runnable harness
 
-Experiment: measure the already-merged unified catalog against one frozen
-retired-surface fixture. No runtime implementation was changed in this task.
-
-## Budget / trials
-
-One deterministic trial over 10 held-out cases. The same cases, serializer, and
-byte-counting rules apply to both surfaces.
-
-## Surfaces
-
-The retired fixture contains these nine public tools:
-
-- `ghSearchCode`, `ghSearchRepos`, `ghViewRepoStructure`
-- `ghSearchPullRequests`, `ghSearchIssues`, `ghSearchCommits`
-- `localSearchCode`, `localFindFiles`, `localViewStructure`
-
-Their titles and descriptions are frozen from
-`@octocodeai/octocode-core@18.2.0`. Input-schema byte counts were captured from
-the corresponding retained split query schemas with Zod JSON Schema
-serialization. These values are fixture data only; the eval never registers or
-dispatches a retired runtime alias.
-
-The unified candidate is read live from
-`DIRECT_TOOL_DISCOVERY_DEFINITIONS`. The eval therefore fails when a canonical
-route stops accepting its held-out query, when a retired name returns to the
-public catalog, or when the measured candidate exceeds the frozen cost gates.
-
-## Measurement
-
-- Correctness: the current canonical bulk input schema accepts the held-out
-  query and the frozen retired tool owns the same capability.
-- Calls: one execution call per objectively scoped case. Schema-help calls,
-  retries, network calls, latency, and model reasoning are excluded.
-- Schema bytes: UTF-8 bytes of compact `JSON.stringify(z.toJSONSchema(schema,
-  { io: "input" }))` for the three unified tools versus the nine frozen split
-  schemas.
-- Prompt bytes: UTF-8 bytes of `name + "\n" + title + "\n" + description`.
-- Total routing bytes: schema bytes plus prompt bytes. No token approximation
-  is presented.
-
-## Subject changed
-
-None. This task adds only the held-out benchmark, fixture, and documentation;
-the subject under measurement is the existing unified public catalog.
-
-## Harness unchanged?
-
-Yes during measurement. Correctness cases were frozen and passed before the
-cost assertions and KPI thresholds were added. The final candidate measurement
-uses that same case set.
-
-## Frozen result
-
-Observed on 2026-09-01:
-
-| Metric | Retired split | Unified | Change |
-|---|---:|---:|---:|
-| Correct routes | 10/10 | 10/10 | unchanged |
-| Execution calls | 10 | 10 | unchanged |
-| Input-schema bytes | 33,713 | 28,291 | −16.08% |
-| Prompt bytes | 5,605 | 1,176 | −79.02% |
-| Total routing bytes | 39,318 | 29,467 | −25.05% |
-
-## Verdict
-
-**ACCEPT**. Correctness and calls are unchanged while both byte costs improve.
-
-## Run
+Run after building the affected packages and CLI:
 
 ```bash
-node node_modules/vitest/vitest.mjs run \
-  packages/octocode-benchmark/tests/unifiedRoutingBenefit.test.ts \
-  --coverage=false
+node --import tsx \
+  .octocode/octocode-eval-benchmark/2026-09-09-local-tools-removal/run-removal-benchmark.mjs
 ```
 
-## Checks run
+The harness uses a temporary three-file TypeScript fixture, invokes the actual
+`packages/octocode/out/octocode.js` CLI, validates every returned continuation
+against the live direct-tool schemas, and writes:
 
-- Held-out benchmark: 12/12 tests passed.
-- Scoped ESLint: passed.
-- Isolated TypeScript `--noEmit`: passed.
-- Prettier check: passed.
-- Documentation verification: passed.
+- `.octocode/octocode-eval-benchmark/2026-09-09-local-tools-removal/result.json`
+- `.octocode/octocode-eval-benchmark/2026-09-09-local-tools-removal/REPORT.md`
 
-## Transcript note
+The report includes pass/fail/skip counts, exact commands, observations, and
+the real-versus-provider-dependent limitations. The temporary fixture is
+synthetic; the CLI calls and schema checks are real.
 
-No live provider or model transcript is part of this deterministic eval. The
-retired metadata and schema-byte snapshot are committed in the fixture; the
-candidate catalog is loaded directly by the test.
+For repeated frozen trials, set the OCTOCODE_REMOVAL_ROUND environment variable
+to 1, 2, or 3; each run writes a separate result-round-N.json and
+REPORT-round-N.md receipt.
 
-## Scope limits
+## Package regression gate
 
-This is a held-out contract and catalog-cost eval, not an agent-trajectory or
-live provider benchmark. It proves deterministic routing/schema compatibility
-and public-context savings. It does not claim fewer network calls, lower
-latency, or higher model routing accuracy. Add isolated agent trials separately
-before making those claims.
+The package test checks the frozen public names, retired-name absence, route
+schema compatibility, and coverage guardrails:
 
-## Next
+```bash
+yarn workspace @octocodeai/octocode-benchmark test
+yarn workspace @octocodeai/octocode-benchmark lint
+yarn workspace @octocodeai/octocode-benchmark typecheck
+```
 
-Keep this suite as a regression gate. Run separate isolated agent trajectories
-before claiming that unified routing reduces retries or improves model routing
-accuracy.
+This package test is a contract check. The runnable harness is the acceptance
+sensor because it executes the built CLI and its continuations.

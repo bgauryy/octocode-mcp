@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
-  LspGetSemanticsQuery,
+  LspSearchQuery,
   LspSemanticEnvelope,
 } from '../shared/semanticTypes.js';
 
@@ -20,7 +20,7 @@ function localPath(value: string | undefined): string | undefined {
   return path.resolve(value.startsWith('file:') ? fileURLToPath(value) : value);
 }
 
-export function describeRustContext(query: LspGetSemanticsQuery) {
+export function describeRustContext(query: LspSearchQuery) {
   if (!query.rustContext) return undefined;
   const context = query.rustContext;
   const normalized = {
@@ -40,8 +40,8 @@ export function describeRustContext(query: LspGetSemanticsQuery) {
   };
 }
 
-function queryIdentity(query: LspGetSemanticsQuery) {
-  const anchored = query as LspGetSemanticsQuery & {
+function queryIdentity(query: LspSearchQuery) {
+  const anchored = query as LspSearchQuery & {
     symbolName?: string;
     lineHint?: number;
     orderHint?: number;
@@ -51,7 +51,7 @@ function queryIdentity(query: LspGetSemanticsQuery) {
   };
   // Page, pageSize, presentation, and caller metadata do not change the set.
   return {
-    type: query.type,
+    type: query.operation,
     uri: localPath(query.uri),
     workspaceRoot: localPath(query.workspaceRoot) ?? process.cwd(),
     symbolName: anchored.symbolName,
@@ -107,7 +107,7 @@ function ordering(value: unknown): [string, number, number, string] {
 /** Content-addressed guard, independent of process-local caches or server order. */
 export function semanticSnapshotItems<T>(
   items: readonly T[],
-  query: LspGetSemanticsQuery,
+  query: LspSearchQuery,
   identities: readonly unknown[] = items
 ): { items: T[]; snapshot: string } {
   const rows = items.map((item, index) => ({
@@ -131,7 +131,7 @@ export function semanticSnapshotItems<T>(
 }
 
 export function guardSemanticSnapshot(
-  query: LspGetSemanticsQuery,
+  query: LspSearchQuery,
   result: LspSemanticEnvelope | Record<string, unknown>
 ): LspSemanticEnvelope | Record<string, unknown> {
   if (
@@ -170,7 +170,7 @@ export function guardSemanticSnapshot(
     },
     next: {
       restartPagination: {
-        tool: 'lspGetSemantics',
+        tool: 'lspSearch',
         query: { ...restart, page: 1 },
         why: 'Discard earlier pages and restart semantic pagination from the current result set.',
         confidence: 'exact',

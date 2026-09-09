@@ -1,6 +1,6 @@
 import { countSerializedChars } from '../../response/charSavings.js';
 import type { NpmPackageResult } from '../types.js';
-import type { NpmCliSearchItem, NpmViewResult } from './npmRegistry.js';
+import type { NpmViewResult } from './npmRegistry.js';
 
 export function cleanRepoUrl(url: string): string {
   return url.replace(/^git\+/, '').replace(/\.git$/, '');
@@ -164,42 +164,6 @@ export function mapToResult(
     }
   }
 
-  return result;
-}
-
-function getSearchItemRepoUrl(item: NpmCliSearchItem): string | null {
-  if (typeof item.links?.repository === 'string') {
-    return cleanRepoUrl(item.links.repository);
-  }
-  if (typeof item.repository === 'string') {
-    return cleanRepoUrl(item.repository);
-  }
-  if (typeof item.repository?.url === 'string') {
-    return cleanRepoUrl(item.repository.url);
-  }
-  return null;
-}
-
-export function mapSearchItemToResult(
-  item: NpmCliSearchItem
-): NpmPackageResult | null {
-  if (!item.name) return null;
-  const npmUrl =
-    (item.links?.npm ?? '') ||
-    `https://www.npmjs.com/package/${encodeURIComponent(item.name)}`;
-  const homepage = item.links?.homepage ?? undefined;
-  const result: NpmPackageResult = {
-    name: item.name,
-    npmUrl,
-    repoUrl: getSearchItemRepoUrl(item),
-    version: item.version ?? 'unknown',
-    source: 'cli',
-    ...(item.description ? { description: item.description } : {}),
-    ...(homepage ? { homepage } : {}),
-    ...(item.keywords && item.keywords.length > 0
-      ? { keywords: item.keywords }
-      : {}),
-  };
   return result;
 }
 

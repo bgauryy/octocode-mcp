@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runHookCommand } from '../bin/hook-runner.js';
+import { runHookCommand } from '../src/hooks/runner.js';
 import { connectDb, resolveDbPath } from '../src/db-runtime.js';
 import { DEFAULT_AWARENESS_CONFIG, writeAwarenessConfig } from '../src/awareness-config.js';
 import { writeWorkspacePolicy } from '../src/workspace-policy.js';

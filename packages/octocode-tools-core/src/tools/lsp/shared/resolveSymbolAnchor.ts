@@ -115,7 +115,7 @@ export async function resolveFileAnchor(
         error: `File not found: ${absolutePath}.`,
         errorType: 'file_not_found',
         errorCode: LSP_ERROR_CODES.LSP_REQUEST_FAILED,
-        hints: ['Use localSearch with operation:"files" to resolve the path.'],
+        hints: ['Use astSearch with operation:"files" to resolve the path.'],
       },
     };
   }
@@ -154,7 +154,7 @@ export async function resolveSymbolAnchor(
   const file = await resolveFileAnchor(query, toolName);
   if (file.ok === false) return file;
 
-  if (query.type === 'documentSymbols') {
+  if (query.operation === 'documentSymbols') {
     return {
       ok: false,
       error: {
@@ -165,14 +165,78 @@ export async function resolveSymbolAnchor(
   }
 
   const resolver = new SymbolResolver();
+  const exact =
+    'position' in query && query.position
+      ? symbolAtPosition(file.value.content, query.position)
+      : undefined;
+  if ('position' in query && query.position && !exact) {
+    return {
+      ok: false,
+      error: {
+        status: 'empty',
+        error: 'The supplied position is not inside an identifier.',
+        errorType: 'anchor_drift',
+        reanchor: { uri: file.value.uri, position: query.position },
+      },
+    };
+  }
+  const symbolName = exact?.symbolName ?? query.symbolName;
+  const lineHint = exact?.lineHint ?? query.lineHint;
+  const orderHint = exact?.orderHint ?? query.orderHint;
+  if (!symbolName || lineHint === undefined) {
+    return {
+      ok: false,
+      error: {
+        status: 'error',
+        error:
+          'A semantic anchor requires either position or symbolName with lineHint.',
+        errorType: 'anchor_missing',
+      },
+    };
+  }
   try {
     const resolved = resolver.resolvePositionFromContent(file.value.content, {
-      symbolName: query.symbolName,
-      lineHint: query.lineHint,
-      orderHint: query.orderHint ?? 0,
+      symbolName,
+      lineHint,
+      orderHint: orderHint ?? 0,
     });
 
-    const escapedName = query.symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const lineDeviation = Math.abs(resolved.foundAtLine - lineHint);
+    const expectedCharacter = exact?.character;
+    const resolvedCharacter = resolved.position.character;
+    const sameLineOccurrences = countLineOccurrences(
+      file.value.content,
+      symbolName,
+      lineHint
+    );
+    if (
+      lineDeviation > 0 ||
+      (expectedCharacter !== undefined &&
+        resolvedCharacter !== expectedCharacter) ||
+      (exact === undefined &&
+        orderHint === undefined &&
+        sameLineOccurrences > 1)
+    ) {
+      return {
+        ok: false,
+        error: {
+          status: 'empty',
+          error:
+            'The semantic anchor drifted or is ambiguous; refresh the source anchor and retry.',
+          errorType: 'anchor_drift',
+          reanchor: {
+            uri: file.value.uri,
+            symbolName,
+            lineHint: resolved.foundAtLine,
+            orderHint: orderHint ?? 0,
+            position: resolved.position,
+          },
+          ...(lineDeviation > 0 ? { lineDeviation } : {}),
+        },
+      };
+    }
+
+    const escapedName = symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // Match the native resolver's Unicode identifier boundaries; JavaScript's
     // ASCII word boundary miscounts Unicode names and substrings inside them.
     const identifierContinue = '[\\p{ID_Continue}$\\u200C\\u200D]';
@@ -189,12 +253,14 @@ export async function resolveSymbolAnchor(
     // under full confidence (the old threshold of >3 left deviations 1-3 —
     // well inside the radius-5 search — silently unflagged). No hint → no
     // deviation to reason about.
-    const lineDeviation =
-      query.lineHint !== undefined
-        ? Math.abs(resolved.foundAtLine - query.lineHint)
+    const lineDeviationFromHint =
+      lineHint !== undefined
+        ? Math.abs(resolved.foundAtLine - lineHint)
         : undefined;
     const isAmbiguous =
-      totalOccurrences > 1 && lineDeviation !== undefined && lineDeviation > 0
+      totalOccurrences > 1 &&
+      lineDeviationFromHint !== undefined &&
+      lineDeviationFromHint > 0
         ? true
         : undefined;
 
@@ -203,15 +269,15 @@ export async function resolveSymbolAnchor(
       value: {
         ...file.value,
         resolvedSymbol: {
-          name: query.symbolName,
+          name: symbolName,
           uri: file.value.uri,
           range: rangeFromPosition(resolved.position),
           foundAtLine: resolved.foundAtLine,
-          orderHint: query.orderHint,
+          orderHint,
           position: resolved.position,
           ...(isAmbiguous && { isAmbiguous }),
-          ...(lineDeviation !== undefined && lineDeviation > 0
-            ? { lineDeviation }
+          ...(lineDeviationFromHint !== undefined && lineDeviationFromHint > 0
+            ? { lineDeviation: lineDeviationFromHint }
             : {}),
         },
       },
@@ -227,14 +293,59 @@ export async function resolveSymbolAnchor(
           errorCode: LSP_ERROR_CODES.SYMBOL_NOT_FOUND,
           searchRadius: error.searchRadius,
           hints: [
-            `Symbol "${query.symbolName}" was not found near line ${query.lineHint}.`,
-            'Run localSearch with operation:"text" and the exact symbol name to refresh lineHint, then retry.',
+            `Symbol "${symbolName}" was not found near line ${lineHint}.`,
+            'Run localSearch with searchText and the exact symbol name to refresh lineHint, then retry.',
           ],
         },
       };
     }
     throw error;
   }
+}
+
+function symbolAtPosition(
+  content: string,
+  position: { line: number; character: number }
+):
+  | {
+      symbolName: string;
+      lineHint: number;
+      orderHint: number;
+      character: number;
+    }
+  | undefined {
+  const lines = content.split('\n');
+  const text = lines[position.line]?.replace(/\r$/, '');
+  if (text === undefined) return undefined;
+  const tokens = /[\p{L}\p{N}_$\u200C\u200D]+/gu;
+  for (const match of text.matchAll(tokens)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (position.character >= start && position.character < end) {
+      const orderHint = [...text.slice(0, start).matchAll(tokens)].length;
+      return {
+        symbolName: match[0],
+        lineHint: position.line + 1,
+        orderHint,
+        character: start,
+      };
+    }
+  }
+  return undefined;
+}
+
+function countLineOccurrences(
+  content: string,
+  symbolName: string,
+  lineHint: number
+): number {
+  const line = content.split('\n')[lineHint - 1]?.replace(/\r$/, '') ?? '';
+  const escaped = symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(
+    `(?<![\\p{ID_Continue}$\\u200C\\u200D])${escaped}(?![\\p{ID_Continue}$\\u200C\\u200D])`,
+    'gu'
+  );
+  return [...line.matchAll(regex)].length;
 }
 
 function rangeFromPosition(position: ExactPosition): LSPRange {

@@ -18,7 +18,7 @@ import {
   type PreparedEdit,
 } from './edit-tool.js';
 import { commitWrite, resolveWritePath, validateWriteParams } from './write-tool.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch, QUERY_BATCH_MAX_ITEMS, type QueryRecord } from './query-envelope.js';
 
 import { z } from 'zod';
@@ -174,16 +174,15 @@ export function registerFileTool(
   registerFn(pi, registeredToolNames, {
     name: 'file',
     label: FILE_TOOL_DISPLAY_NAME,
-    description: 'Create, edit, or delete files through one guarded mutation boundary. edit uses stale/lost-update checks and diffs; write is atomic; delete rejects directories and rechecks the target before unlinking.',
-    promptSnippet: 'Create, edit, or delete files through one guarded mutation boundary. edit uses stale/lost-update checks and diffs; write is atomic; delete rejects directories and rechecks before unlinking.',
+    description: DIRECT_TOOL_DESCRIPTIONS.file!,
+    promptSnippet: 'Apply scoped file edits, full writes, or deletions.',
     promptGuidelines: [
-      'Prefer file over bash for any file create, edit, or delete — file provides stale-edit guards, diff preview, and atomic writes that bash cannot.',
       'Use type:"edit" for targeted replacements, type:"write" for new files or intentional full rewrites, and type:"delete" only when removal is explicitly in scope.',
-      'Strict per-operation fields: write accepts only path and content; delete accepts only path; edit accepts only path, edits, and requireRecentRead. Any other field (confirm, force, dryRun, etc.) causes a runtime error even though the JSON Schema does not reject it at validation time.',
+      'After reasoning and type, write accepts path+content; delete accepts path; edit accepts path+edits+requireRecentRead. Extra fields such as confirm, force, or dryRun fail preflight.',
       'Read and understand existing files before edit/delete. Use exact oldText by default; normalized or lineRange matching is opt-in.',
       'For requireRecentRead or a lineRange edit without oldText, read through MCPTool localGetFileContent first; shell reads do not refresh the stale-edit guard.',
       'Keep replacements bounded with the smallest unique anchor, and split large mutations across separate calls before the model output limit.',
-      'Each query has one concise reasoning field. Mixed batches are fully preflighted before the first mutation and reject duplicate target paths.',
+      'Batch edits to one path in a single query. All queries are preflighted before mutation; duplicate target paths are rejected.',
     ],
     parameters: buildQueryEnvelopeSchema(fileItemSchema, {
       reasoningDescription: 'Why this file mutation is necessary.',

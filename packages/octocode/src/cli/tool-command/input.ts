@@ -86,7 +86,7 @@ export function validateRawToolFootguns(
   throw new DirectToolInputError(
     'localSearch does not accept keywords; set searchText to one string.',
     [
-      'Use {"operation":"text","path":"/ABS/repo","searchText":"runCLI"} for localSearch.',
+      'Use {"path":"/ABS/repo","searchText":"runCLI"} for localSearch.',
       `Run tools ${toolName} --scheme --brief before raw calls.`,
     ]
   );

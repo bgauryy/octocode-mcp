@@ -184,10 +184,10 @@ task: z
         .array(z.string().trim().min(1).max(128))
         .max(200)
         .default([])
-        .describe("Run ids."),
-      all_pending: z.boolean().default(false).describe("All pending runs."),
-      status: z.enum(["SUCCESS", "FAILED"]).default("SUCCESS").describe("Verification status."),
-      message: z.string().trim().min(1).max(2000).optional().describe("Verification note."),
+        .describe("Exact runs covered by the observed check; required unless all_pending is true."),
+      all_pending: z.boolean().default(false).describe("Select all pending runs in workspace/artifact scope only when the observed check covers every selected run."),
+      status: z.enum(["SUCCESS", "FAILED"]).default("SUCCESS").describe("Observed check result. Unrun checks remain pending; never use SUCCESS to clear debt."),
+      message: z.string().trim().min(1).max(2000).optional().describe("Observed command and result; required for SUCCESS. Worker confidence alone is not a receipt."),
     })
     .strict()
     .superRefine((value, ctx) => {
@@ -201,7 +201,7 @@ task: z
         ctx.addIssue({ code: "custom", path: ["all_pending"], message: "all_pending requires workspace or artifact scope." });
       }
     })
-    .describe("Mark verified."),
+    .describe("Record an observed check against selected runs. Ending work leaves it pending; only evidence establishes SUCCESS or FAILED."),
   verify_audit: z
     .object({
       agent_id: agentId,

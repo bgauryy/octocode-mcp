@@ -1,89 +1,65 @@
 # Awareness learning in Pi
 
-Pi uses the full `@octocodeai/octocode-awareness` package. Durable memory,
-reflection, weakness mining, refinements, verified-memory workflows and harness
-exports use its installed CLI through `bash`. Pi does not register a separate
-model-facing memory tool or automatically run learning workflows at turn end.
+Pi uses the native `awareness` tool for memory, reflection, refinements, and maintenance. The tool imports the Awareness package API directly and supplies the session's database, workspace, and participant identity. Discover an unfamiliar route with `action: "describe"`; do not add shell bindings or host identity fields to `params`.
 
-Use Pi's supplied runner and database bindings for every example below. Scoped
-commands use `--workspace "$OCTOCODE_AWARENESS_WORKSPACE"`; writes use the supplied
-`OCTOCODE_AGENT_ID`. External agents share the physical database and workspace
-with their own stable identities. See [agent flow](AWARENESS_AGENT_FLOW.md).
+Learning is conditional. After substantial work or a meaningful event, save a concise lesson only if verified evidence makes it useful for future work. Pi does not automatically run a reflection workflow at every turn end.
 
-The bundled `octocode-awareness` skill explains when to use each workflow.
-Keep authored improvement proposals in the workspace-root `.octocode/REFLECT.md`,
-normal docs, issues, or reviewed plans. That project file is distinct from
-global Octocode home state. Keep it concise and non-binding.
+## Recall when it can change the approach
 
-## When to record memory
+Recall before unfamiliar or risky work only when earlier learning could affect the decision. For example, call `awareness` with:
 
-Record only reusable, verified facts:
-
-- a root cause or workaround that is likely to recur;
-- a repository convention that changed the implementation path;
-- a decision and the evidence behind it;
-- a command or test gotcha that affects future work.
-
-Skip routine status, raw logs, obvious edits, secrets, and facts already
-authoritative in source/docs.
-
-## Recall before risky work
-
-```bash
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" memory recall \
-  --workspace "$OCTOCODE_AWARENESS_WORKSPACE" --query "tokenization"
+```json
+{
+  "queries": [{
+    "reasoning": "Check whether prior parser findings affect this change",
+    "action": "call",
+    "command": "memory recall",
+    "params": { "query": "tokenization", "limit": 3 }
+  }]
+}
 ```
 
-Treat every result as a lead. Re-read cited source and rerun current checks when
-the fact can affect a change.
+Treat each result as a lead. Re-read cited source and rerun relevant checks before relying on it. Follow returned native continuations when needed; request full rows only for selected evidence.
 
-## Store a verified learning
+## Record one reusable lesson
 
-```bash
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" memory record \
-  --workspace "$OCTOCODE_AWARENESS_WORKSPACE" --agent-id "$OCTOCODE_AGENT_ID" --label DECISION \
-  --task-context "parser validation" --importance 7 \
-  --observation "Malformed escapes are rejected before tokenization"
+Useful candidates include a recurring root cause, a verified workaround, a repository constraint, or a decision with supporting evidence. Skip routine status, raw logs, obvious edits, secrets, and facts already authoritative in source or docs.
+
+After verifying the observation, an example `awareness` call is:
+
+```json
+{
+  "queries": [{
+    "reasoning": "Retain the verified parser decision for future work",
+    "action": "call",
+    "command": "memory record",
+    "params": {
+      "label": "DECISION",
+      "task_context": "parser validation",
+      "importance": 7,
+      "observation": "Malformed escapes are rejected before tokenization; cite the actual source and observed check here."
+    }
+  }]
+}
 ```
 
-Keep the text short and cite source/test evidence in the wording when useful.
-Do not use memory as a task queue; use `plan`/`task` for work and `handoff` for
-continuation notes.
+Replace the example observation with the actual result and evidence. Use `reflect record` when an outcome also needs a lesson or owned improvement follow-up; do not write duplicate memory and reflection rows for the same learning. Its required `outcome` is `worked`, `partial`, or `failed`.
 
-## Reflection and follow-up
+## Follow-up and cleanup
 
-Inspect the live contract before using a broader workflow:
+Use `action: "describe"` for the selected command before a broader workflow:
 
-```bash
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" schema command reflect record --compact
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" schema command refinement set --compact
-```
+| Need | Command |
+|---|---|
+| Record an outcome and route a reusable improvement | `reflect record` |
+| Inspect recurring failure signatures | `reflect mine-weakness` |
+| Export a harness proposal for review | `reflect export-harness` |
+| Inspect instruction improvements | `reflect developer-review` |
+| Track owned improvement work | `refinement set` |
+| Preview removal of one stale memory | `memory forget` with `dry_run: true` |
 
-Record the observed outcome and a reusable lesson after verification:
+Use the existing plan/task for implementation work and a handoff for actual continuation. Reflection and exported proposals do not authorize harness changes or prove that checks passed. Cleanup remains explicit and item-scoped; inspect the preview before applying an authorized removal.
 
-```bash
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" reflect record \
-  --workspace "$OCTOCODE_AWARENESS_WORKSPACE" --agent-id "$OCTOCODE_AGENT_ID" \
-  --task "Validate parser escapes" --outcome worked \
-  --lesson "Validate malformed escapes before tokenization"
-```
+Authored proposals can live in workspace-root `.octocode/REFLECT.md`, normal docs, issues, or reviewed plans. Keep them concise and non-binding. Pi's local session memory is a separate projection, not a replacement for the shared Awareness ledger.
 
-`reflect mine-weakness`, `reflect export-harness`, and
-`reflect developer-review` support broader analysis. `refinement get|set|delete`
-tracks follow-up improvements. Inspect each command's schema for required
-evidence and options. Reflection and exported proposals do not authorize
-harness changes or prove that checks passed.
-
-## Cleanup
-
-Awareness cleanup is explicit and item-scoped:
-
-```bash
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" status --workspace "$OCTOCODE_AWARENESS_WORKSPACE"
-"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" memory forget \
-  --workspace "$OCTOCODE_AWARENESS_WORKSPACE" --memory-id mem_123 --dry-run
-```
-
-Review the preview before removing `--dry-run`. Use `schema commands --all --compact`
-for the installed command inventory and `docs list --compact` for
-the package's detailed learning and maintenance references.
+See [agent flow](AWARENESS_AGENT_FLOW.md), the [Awareness API reference](../../octocode-awareness/docs/API.md), and the package's [reflection guide](../../octocode-awareness/docs/REFLECTION.md). External hosts can use the CLI against the same physical store with distinct stable identities; Pi uses the native tool.

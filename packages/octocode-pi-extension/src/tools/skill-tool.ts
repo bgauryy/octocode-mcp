@@ -3,7 +3,7 @@ import { paint } from '../tui/palette.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, SkillInfo } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 
 import { makeComponentRenderer } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
@@ -249,7 +249,7 @@ export function registerSkillTool(
       'load (default): work with installed SKILL.md skills (load or list). call: manage dynamic skills (reuse, create, enhance, fix, list, delete).',
     ),
     action: z.enum(['load', 'list']).optional().describe(
-      "load (default): return one skill's full SKILL.md + directory + files. list: catalog of every discovered skill.",
+      'load (default): bounded SKILL.md and file preview with continuations when partial. list: discovered skill catalog.',
     ),
     name: z.string().optional().describe('Skill name for type:load action:load (exact name from <available_skills> or action:list).'),
     reason: z.string().optional().describe('Required for type:load action:load. One concise, user-facing clause explaining why this skill matches the current task. Also used as skill creation reason for type:call.'),
@@ -258,8 +258,8 @@ export function registerSkillTool(
       'auto (default) · use (reuse only) · create (after user approval) · enhance/fix (revise existing) · list · delete.',
     ),
     intent: z.string().optional().describe('What the workflow does (type:call). Guides skill-smith authoring and keyword matching.'),
-    approveCreate: z.boolean().optional().describe('Approve creation in auto mode without an extra roundtrip (type:call).'),
-    force: z.boolean().optional().describe('Override the triviality decline gate (type:call).'),
+    approveCreate: z.boolean().optional().describe('type:call: attest existing user approval for creation in auto mode; never self-authorize.'),
+    force: z.boolean().optional().describe('type:call: bypass only the triviality heuristic when reuse is justified; grants no authority.'),
   });
 
   const parameters = buildQueryEnvelopeSchema(itemSchema, {
@@ -336,20 +336,12 @@ export function registerSkillTool(
   registerFn(pi, registeredToolNames, {
     name: 'skill',
     label: 'skill',
-    description: [
-      'Unified skill facade: load installed Agent Skills or manage dynamic workflow skills in a single ordered batch.',
-      '',
-      'type:"load" (default) — Load an installed skill by name and explain why it matches the current task (returns its full SKILL.md, directory, and shipped files), or list every discovered skill. This is THE way to load a skill — do not hunt for SKILL.md paths manually.',
-      '',
-      'type:"call" — Meta-tool for reusable multi-step workflows: resolves an existing dynamic skill in O(1); on a miss it PROPOSES creation (never silently authors). After you research/brainstorm and the user confirms, re-call with mode:"create" and reason; a skill-smith authors the SKILL.md, which is registered ONLY if it passes frontmatter+structure validation. Every call prunes junk skills. Replaces explicit typed fields for intent, reason, approveCreate, and force (no more opaque metadata).',
-    ].join('\n'),
-    promptSnippet: 'Load an installed Agent Skill, or list/manage reusable dynamic workflow skills. Load a matching skill BEFORE acting. type:load for installed skills; type:call for dynamic lifecycle.',
+    description: DIRECT_TOOL_DESCRIPTIONS.skill!,
+    promptSnippet: 'Load a specialized workflow when needed; manage recurring dynamic skills on request.',
     promptGuidelines: [
-      'Routing: skill type:"load" activates an installed SKILL.md workflow; skill type:"call" creates/reuses a dynamic multi-step workflow; callTool for a single deterministic function; agent when independent context and full tool access are needed.',
-      'Load the minimal matching skill BEFORE acting (type:"load"). Pass reason as one concise, user-facing clause explaining why the skill matches the current task.',
-      'Use type:"call" for recurring multi-step workflows; never for a single action a tool/bash/callTool already covers.',
-      'On a creation proposal (type:"call"): research existing skills/tools/commands and brainstorm the smallest workflow, then ASK the user before re-calling with mode:"create".',
-      'Multi-query: run load and call operations in a single skill({queries:[…]}) call when they are logically related.',
+      'type:"load" selects installed instructions by exact catalog name and a short reason. Read required continuation pages before following a partial skill.',
+      'type:"call" owns recurring multi-step workflows; callTool owns reusable functions; agent owns bounded independent work. A routine edit needs none of these by default.',
+      'On a creation proposal, check existing capabilities and prepare the smallest useful workflow. mode:"create" requires user approval; approveCreate records existing approval, not model consent.',
     ],
     parameters,
     execute,

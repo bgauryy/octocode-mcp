@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
 import {
-  BulkLspGetSemanticsQuerySchema,
-  LspGetSemanticsQuerySchema,
+  BulkLspSearchSchema,
+  LspSearchQuerySchema,
 } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
@@ -14,10 +14,10 @@ const removedLspToolNames = [
 ];
 
 describe('new public LSP tools', () => {
-  it('advertises only lspGetSemantics without removed LSP tools', () => {
+  it('advertises only lspSearch without removed LSP tools', () => {
     const names = ALL_TOOLS.map(tool => tool.name);
 
-    expect(names).toContain(LSP_GET_SEMANTICS_TOOL_NAME);
+    expect(names).toContain(LSP_SEARCH_TOOL_NAME);
     for (const removedName of removedLspToolNames) {
       expect(names).not.toContain(removedName);
     }
@@ -26,16 +26,14 @@ describe('new public LSP tools', () => {
 
   it('registers the semantic tool with read-only annotations', () => {
     const server = createMockMcpServer();
-    const lspTool = ALL_TOOLS.find(
-      tool => tool.name === LSP_GET_SEMANTICS_TOOL_NAME
-    );
+    const lspTool = ALL_TOOLS.find(tool => tool.name === LSP_SEARCH_TOOL_NAME);
     expect(lspTool).toBeDefined();
 
     lspTool!.fn(server.server);
 
     expect(server.registrations).toContainEqual(
       expect.objectContaining({
-        name: LSP_GET_SEMANTICS_TOOL_NAME,
+        name: LSP_SEARCH_TOOL_NAME,
         options: expect.objectContaining({
           inputSchema: expect.any(Object),
           annotations: expect.objectContaining({ readOnlyHint: true }),
@@ -47,22 +45,22 @@ describe('new public LSP tools', () => {
 
   it('enforces semantic type anchoring rules', () => {
     expect(
-      LspGetSemanticsQuerySchema.safeParse({
-        type: 'documentSymbols',
+      LspSearchQuerySchema.safeParse({
+        operation: 'documentSymbols',
         uri: '/tmp/a.ts',
       }).success
     ).toBe(true);
     expect(
-      LspGetSemanticsQuerySchema.safeParse({
-        type: 'definition',
+      LspSearchQuerySchema.safeParse({
+        operation: 'definition',
         uri: '/tmp/a.ts',
         symbolName: 'target',
         lineHint: 1,
       }).success
     ).toBe(true);
     expect(
-      LspGetSemanticsQuerySchema.safeParse({
-        type: 'definition',
+      LspSearchQuerySchema.safeParse({
+        operation: 'definition',
         uri: '/tmp/a.ts',
       }).success
     ).toBe(false);
@@ -70,10 +68,10 @@ describe('new public LSP tools', () => {
 
   it('bulk schemas parse minimal valid requests', () => {
     expect(
-      BulkLspGetSemanticsQuerySchema.safeParse({
+      BulkLspSearchSchema.safeParse({
         queries: [
           {
-            type: 'definition',
+            operation: 'definition',
             uri: '/tmp/a.ts',
             symbolName: 'target',
             lineHint: 1,

@@ -1,3 +1,5 @@
+export { executeAwarenessCommand } from './command-api.js';
+export type { AwarenessCommandCall, AwarenessCommandContext, AwarenessCommandResult } from './command-api.js';
 /**
  * @octocodeai/octocode-awareness — public module API.
  *
@@ -6,9 +8,9 @@
  */
 
 // DB layer
-export { runAwarenessHistoryOperation } from './history.js';
+export { runAwarenessHistoryOperation } from './history-api.js';
 export { HistoryError } from './history-store.js';
-export { execHistoryCli } from '../bin/cli-history.js';
+export { execHistoryCli } from './history-api.js';
 export { historyToolEffect } from './history-tool-effects.js';
 export { historyRequestSchemas, historyEntitySchemas, HISTORY_ROUTE_DESCRIPTORS } from './schema/definitions-history.js';
 export { cliCommandSchema, getAwarenessCommandDescriptor, listAwarenessCommandDescriptors } from './schema/cli.js';
@@ -160,6 +162,7 @@ export type { AwarenessQueryFormat, AwarenessQueryParams, AwarenessQueryResult, 
 
 // Agent-native start packet
 export { attendAwareness } from './attend-query.js';
+export { attendWorkspace, type AttendWorkspaceParams } from './attend-presence.js';
 export type { AttendNext } from './attend-flow.js';
 export type { AttendEvidence, AttendParams, AttendResult, AttendUnchangedResult } from './attend-model.js';
 
@@ -229,7 +232,7 @@ export { readExternalAwarenessStatus } from './coordination/external-status.js';
 export { executeExternalMemoryAction, EXTERNAL_MEMORY_ACTIONS, EXTERNAL_MEMORY_RECALL_MODES, validateExternalMemoryParams } from './coordination/external-memory.js';
 export { completeExternalPlanTask, finalizeExternalPlan, projectExternalPlan } from './coordination/external-plan.js';
 export { detectAgentHost, generateAgentName } from './coordination/agent-naming.js';
-export { storageScopeForCommand } from './workspace-policy.js';
+export { storageScopeForCommand, loadWorkspacePolicy } from './workspace-policy.js';
 export {
   generateOpenCodeAwarenessPlugin,
   inspectOpenCodeAwarenessPlugin,

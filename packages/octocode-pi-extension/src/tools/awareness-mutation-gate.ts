@@ -5,6 +5,8 @@ export interface MutationToolEvent { toolName?: string; input?: Record<string, u
 export interface LockQueryResult { blocked: boolean; message?: string }
 export interface AwarenessMutationGateDependencies {
   enabled?(): boolean;
+  /** Optional bookkeeping; lock checks remain active when tracking is disabled. */
+  trackWork?(workspace: string): boolean;
   storeExists(workspace: string): boolean;
   queryTarget(target: string, workspace: string, agentId: string): LockQueryResult;
   /** Null means a pre-existing owned run was refreshed, not created by this gate. */
@@ -75,6 +77,8 @@ export function createAwarenessMutationGate(deps: AwarenessMutationGateDependenc
       } catch (error) {
         return { block: true, reason: `Awareness store query failed: ${errorMessage(error)}` };
       }
+
+      if (deps.trackWork?.(workspace) === false) return undefined;
 
       const acquired: string[] = [];
       for (const target of targets) {

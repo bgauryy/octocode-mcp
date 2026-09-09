@@ -1,6 +1,6 @@
 # Memory Recall and Trust
 
-Load when prior learning, external references, or prompt-time memory could change the approach.
+Load when prior learning could change the approach, or substantial work produced a reusable lesson.
 
 Memory is a ranked lead, never authority. Current user instructions, source, and fresh tests win.
 
@@ -15,7 +15,7 @@ Use compact recall for orientation. Expand only relevant IDs and verify every de
 
 ## Store
 
-Store only verified, reusable facts with narrow scope and references. Prefer a lesson that changes a future decision over status, raw dialogue, or a transcript. Reflect after the check so outcome and evidence remain joined.
+At the end of substantial work or a meaningful event, store one concise verified, reusable lesson with narrow scope and references. Skip routine edits and repeated lessons. Prefer a lesson that changes a future decision over status, raw dialogue, or a transcript. Reflect after the check so outcome and evidence remain joined.
 
 ## Validate declared evidence
 
@@ -44,7 +44,7 @@ Discover exact fields with `schema command memory record --compact` and
 - Preview forget/digest operations and review exact IDs before deletion.
 - Never load a human thesis or large corpus automatically into prompt context.
 
-Prompt-time selection is transient and bounded. A hook may emit `Awareness state changed.` while leaving details in the ledger for targeted reads.
+Default hooks deliver peer messages without recalling memory. Request memory explicitly when prior learning could change a decision.
 
 Before writing, ask: Is it verified? Will it change a later action? Is its scope clear? Can a future agent re-check the cited source? If any answer is no, keep it out of durable memory.
 

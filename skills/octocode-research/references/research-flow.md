@@ -21,8 +21,8 @@ Local: tree/find -> search -> symbols/matchString -> graph when topology matters
 Remote/package: package/repo search -> tree -> code search -> exact read -> history
 Remote as local: directory fetch/clone -> local AST/LSP/search (bridge: references/workflow-combination.md)
 PR intent: PR metadata/comments/selected patches -> exact changed paths -> history
-Graph: dependencies/dependents/path/cycles/reachability → exact edge reads → LSP when symbol identity matters
-Dead code: `localAnalyzeGraph(operation:"deadCode")` candidates → exact read + text/AST + LSP excluding declaration + tests/build
+Graph: `astSearch` topology analyses (dependencies/dependents/path/cycles/reachability) → exact edge reads → LSP when symbol identity matters
+Dead code: `astSearch(operation:"topology", analysis:"deadCode")` candidates → exact read + text/AST + LSP excluding declaration + tests/build
 ```
 
 ## Cross-Pollination

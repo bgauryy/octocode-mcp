@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { executeDirectTool } from '../../src/tools/directToolCatalog.exec.js';
 import {
   LOCAL_SEARCH_TOOL_NAME,
+  AST_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
 } from '../../src/tools/toolNames.js';
 import { cleanup } from '../../src/serverConfig.js';
@@ -50,7 +51,6 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
       queries: [
         {
           path: 'src/shared/config',
-          operation: 'text',
           searchText: 'resolveLocal',
           maxFiles: 3,
           reasoning: 'Regression test: local tools should work by default',
@@ -72,7 +72,6 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
       queries: [
         {
           path: 'src/shared/config',
-          operation: 'text',
           searchText: 'resolveLocal',
           maxFiles: 3,
           reasoning: 'Regression test: ENABLE_LOCAL=false disables local tools',
@@ -96,7 +95,6 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
       queries: [
         {
           path: '.',
-          operation: 'text',
           searchText: 'anything',
           reasoning: 'Regression test for direct CLI local gate',
         },
@@ -138,7 +136,6 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
       queries: [
         {
           path: 'src',
-          operation: 'text',
           searchText: 'executeDirectTool',
           reasoning: 'Verify the direct CLI honors the strict allowlist',
         },
@@ -199,7 +196,7 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
     // parse fails. It must surface as a structured CallToolResult error, not a
     // thrown exception (which diverges from the execution-error path).
     const result = await executeDirectTool(
-      LOCAL_SEARCH_TOOL_NAME,
+      AST_SEARCH_TOOL_NAME,
       'not-an-object'
     );
 
@@ -207,7 +204,7 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
     const structured = result.structuredContent as
       { status?: string; tool?: string } | undefined;
     expect(structured?.status).toBe('error');
-    expect(structured?.tool).toBe(LOCAL_SEARCH_TOOL_NAME);
+    expect(structured?.tool).toBe(AST_SEARCH_TOOL_NAME);
   });
 
   it('returns an error envelope for an unknown tool name', async () => {
@@ -245,7 +242,7 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
     process.env.ENABLE_LOCAL = 'true';
     cleanup();
     const result = await executeDirectTool(
-      LOCAL_SEARCH_TOOL_NAME,
+      AST_SEARCH_TOOL_NAME,
       {
         queries: [
           {

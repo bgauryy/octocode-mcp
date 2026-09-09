@@ -44,16 +44,17 @@ describe('research skill public contract alignment', () => {
 
   it('advertises optional reachability roots consistently with inferred-root support', () => {
     const prepared = prepareDirectToolInput(
-      'localAnalyzeGraph',
-      { operation: 'reachability', path: '/repo' },
+      'astSearch',
+      { operation: 'topology', analysis: 'reachability', path: '/repo' },
       { rejectUnknownFields: true }
     );
     expect(prepared.queries[0]).toMatchObject({
-      operation: 'reachability',
+      operation: 'topology',
+      analysis: 'reachability',
       path: '/repo',
     });
-    const variant = getDirectToolSchemaVariants('localAnalyzeGraph').find(
-      item => item.name === 'reachability'
+    const variant = getDirectToolSchemaVariants('astSearch').find(
+      item => item.name === 'topology'
     );
     expect(variant).toBeDefined();
     expect(variant?.requires).not.toContain('entrypoints');

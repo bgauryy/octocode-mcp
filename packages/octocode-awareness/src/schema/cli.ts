@@ -1,28 +1,17 @@
+import { writeCommandPayload, writeCommandText } from '../command-output.js';
 /* v8 ignore file -- exercised through built CLI and isolated-package subprocess tests */
-import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { memorySchemas } from './definitions-memory.js';
-import { workSchemas } from './definitions-work.js';
-import { operationSchemas } from './definitions-operations.js';
 import { examples as coreExamples } from './examples.js';
 import { integrationExamples } from './examples-integration.js';
 import { awarenessEntityCatalog } from './entities.js';
 import { commandIndex, type AwarenessCommandCatalogEntry } from './command-catalog.js';
 import { adminExamples, adminSchemas } from './definitions-admin.js';
 import { integrationSchemas } from './definitions-integration.js';
-import { CLI_REQUIRED, projectCliProperties } from './cli-contract.js';
-import { historyExamples, historyRequestSchemas, historySchemas } from './definitions-history.js';
+import { projectCommandInput } from './command-input.js';
+import { historyExamples, historyRequestSchemas } from './definitions-history.js';
 
-export const schemas = {
-  ...memorySchemas,
-  ...workSchemas,
-  ...operationSchemas,
-  ...integrationSchemas,
-  ...adminSchemas,
-  ...historySchemas,
-};
+import { schemas, type SchemaName } from './registry.js';
 export const examples = { ...coreExamples, ...integrationExamples, ...adminExamples, ...historyExamples };
-export type SchemaName = keyof typeof schemas;
 
 const listableSchemas = [
   ...Object.keys(integrationSchemas),
@@ -61,7 +50,7 @@ function groupedCommandIndex() {
 }
 
 function printJson(payload: unknown, compact = false): void {
-  console.log(JSON.stringify(payload, null, compact ? 0 : 2));
+  writeCommandPayload(payload, compact);
 }
 
 function usage() {
@@ -87,23 +76,7 @@ export function cliCommandSchema(commandName: string): Record<string, unknown> |
   if (!row?.schema) return null;
   const schema = schemas[row.schema as SchemaName];
   if (!schema) return null;
-  const output = structuredClone(toJsonSchema(schema)) as Record<string, unknown>;
-  const properties = output.properties as Record<string, unknown> | undefined;
-  const action = commandName.split(" ")[1];
-  if (properties && action && properties.action) delete properties.action;
-  let aliases: Record<string, string> = {};
-  if (properties) {
-    aliases = projectCliProperties(properties, commandName);
-  }
-  const existingRequired = Array.isArray(output.required)
-    ? (output.required as string[])
-      .filter((field) => field !== "action")
-      .map((field) => aliases[field] ?? field)
-      .filter((field) => properties?.[field] && !Object.hasOwn(properties[field] as object, "default"))
-    : [];
-  const required = [...new Set([...existingRequired, ...(CLI_REQUIRED[commandName] ?? [])])];
-  if (required.length > 0) output.required = required;
-  else delete output.required;
+  const output = projectCommandInput(commandName, schema);
   output["x-cli-command"] = commandName;
   output["x-cli-example"] = row.example;
   output["x-cli-note"] = "CLI flags use kebab-case; repeat array flags. The router injects the action.";
@@ -128,18 +101,25 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+const descriptorCache = new Map<string, AwarenessCommandDescriptor>();
+let descriptorList: readonly AwarenessCommandDescriptor[] | undefined;
+
 /** Read one immutable command contract without invoking the CLI process. */
 export function getAwarenessCommandDescriptor(commandName: string): AwarenessCommandDescriptor | undefined {
+  const cached = descriptorCache.get(commandName);
+  if (cached) return cached;
   const row = commandIndex.find((candidate) => candidate.command === commandName);
   if (!row) return undefined;
   const inputSchema = cliCommandSchema(commandName);
   if (!inputSchema) return undefined;
-  return deepFreeze({ ...row, inputSchema });
+  const descriptor = deepFreeze({ ...row, inputSchema });
+  descriptorCache.set(commandName, descriptor);
+  return descriptor;
 }
 
 /** Read the complete immutable command contract catalog. */
 export function listAwarenessCommandDescriptors(): readonly AwarenessCommandDescriptor[] {
-  return Object.freeze(commandIndex.map((row) => {
+  return descriptorList ??= Object.freeze(commandIndex.map((row) => {
     const descriptor = getAwarenessCommandDescriptor(row.command);
     if (!descriptor) throw new Error(`Awareness command is missing a schema: ${row.command}`);
     return descriptor;
@@ -163,19 +143,20 @@ function formatZodError(error: z.ZodError) {
 }
 
 function printJsonError(payload: Record<string, unknown>, code = 2, compact = false): number {
-  console.log(JSON.stringify({ ok: false, ...payload }, null, compact ? 0 : 2));
+  writeCommandPayload({ ok: false, ...payload }, compact);
   return code;
 }
 
-export async function runSchemaCli(argv: string[]): Promise<number> {
-  const compact = argv.includes("--compact") || process.env.OCTOCODE_AWARENESS_COMPACT === "1";
-  const includeExamples = argv.includes("--examples");
-  const includeAll = argv.includes("--all");
-  const filteredArgv = argv.filter((arg) => arg !== "--compact" && arg !== "--examples" && arg !== "--all");
-  const [command, schemaName, file] = filteredArgv;
+/** Structured discovery/validation API; only the CLI adapter supplies file/stdin I/O. */
+export async function runSchemaCommand(command: string | undefined, params: Record<string, unknown>, io: { readInput?: (input: string) => Promise<string> } = {}): Promise<number> {
+  const compact = params.compact === true;
+  const includeExamples = params.examples === true;
+  const includeAll = params.all === true;
+  const schemaName = String(params.schema_name ?? params.noun ?? '');
+  const file = params.input ?? params.subcommand;
 
   if (!command || command === "--help" || command === "-h") {
-    console.log(usage());
+    writeCommandText(`${usage()}\n`);
     return 0;
   }
 
@@ -189,7 +170,7 @@ export async function runSchemaCli(argv: string[]): Promise<number> {
       ok: true,
       hint: includeAll
         ? "Flat command detail. Use `<command> --help` or `schema command <noun> [action]` for one exact contract."
-        : "Core first; minimum agent loop is attend -> work start -> work end -> verify mark -> verify audit. Follow attend.next; pass --all for the flat catalog.",
+        : "Attend once; communicate when useful. Other features are on demand. Pass --all for the complete catalog.",
       commands,
     }, compact);
     return 0;
@@ -261,17 +242,17 @@ export async function runSchemaCli(argv: string[]): Promise<number> {
   }
 
   if (command === "validate") {
-    if (!file) {
+    if (file === undefined) {
       return printJsonError({
         error_code: "MISSING_INPUT",
         error: "Missing <json-file|->.",
         hint: "Use `schema validate <schema-name> <json-file|->`.",
       }, 1, compact);
     }
-    const raw = file === "-" ? await readStdin() : await readFile(file, "utf8");
+    const raw = io.readInput ? await io.readInput(String(file)) : file;
     let parsed;
     try {
-      parsed = parseJson(raw);
+      parsed = typeof raw === 'string' ? parseJson(raw) : raw;
     } catch (error) {
       return printJsonError({
         error_code: "INVALID_JSON",
@@ -296,12 +277,4 @@ export async function runSchemaCli(argv: string[]): Promise<number> {
     error: `Unknown command: ${command}`,
     hint: usage(),
   }, 1, compact);
-}
-
-async function readStdin() {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks).toString("utf8");
 }

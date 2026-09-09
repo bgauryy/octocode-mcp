@@ -16,6 +16,8 @@ export interface InlineSegment {
   text: string;
   token?: SemanticToken;
   attention?: boolean;
+  /** Optional footer metadata is omitted when its whole value cannot fit. */
+  keepWhole?: boolean;
 }
 
 function safeWidth(width: number): number {

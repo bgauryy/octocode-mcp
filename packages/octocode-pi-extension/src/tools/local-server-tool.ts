@@ -12,7 +12,7 @@ import {
 import { buildToolView } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import type { ToolCallResult, ToolDefinition, PiContext, PiTheme } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { openLocalUrl, type LocalUrlOpenPreference, type LocalUrlOpenResult } from './local-url-opener.js';
 
 import { z } from 'zod';
@@ -79,14 +79,7 @@ export function registerLocalServerTool(
   );registerFn(pi, registeredToolNames, {
     name: 'localServer',
     label: 'Local Server',
-    description: [
-      'Serve local, agent-authored static artifacts over a shared loopback-only HTTP server.',
-      'Actions: serve (mount a directory), unmount (remove one mount), status (show base URL and mounts), stop (stop server and clear mounts).',
-      'Use for HTML plan/design/report artifacts when a browser view helps. Serving never opens a browser by default; pass open:true only after the user explicitly asks or approves.',
-      'Browser routing: VS Code integrated browser when the extension-host API is available, otherwise Chrome, then the platform default browser.',
-      'Security: static files only, bound to 127.0.0.1, mount names are a single URL segment, and served directories must pass the Octocode path guard (cwd/home/tmp/ALLOWED_PATHS).',
-      'Pass one or more queries[] entries; each requires reasoning and an action.',
-    ].join('\n'),
+    description: DIRECT_TOOL_DESCRIPTIONS.localServer!,
     promptSnippet: 'Serve local static artifacts over a loopback-only, path-guarded local server.',
     promptGuidelines: [
       'Use localServer for generated HTML/Markdown artifacts that are clearer in a browser (plans, design diagrams, reports).',

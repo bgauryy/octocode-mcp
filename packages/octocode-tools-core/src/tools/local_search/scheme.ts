@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import { LocalSearchQuerySchema as SharedLocalSearchQuerySchema } from '../../toolContract/input/resources/tools/localSearch.js';
 import { createRelaxedBulkQuerySchema } from '../../scheme/fields.js';
 
@@ -13,55 +12,43 @@ export type LocalTextResultView =
   | 'countMatches'
   | 'matchOnly';
 
+export const LocalSearchQuerySchema = SharedLocalSearchQuerySchema;
+
+const REGEX_TO_NATIVE = {
+  literal: 'fixed',
+  rust: 'smart',
+  pcre2: 'perl',
+} as const;
+
 export function toLegacyTextQuery(
   query: Record<string, unknown>,
   resultView: LocalTextResultView
 ): Record<string, unknown> {
-  const { pageSize, reverse, ...input } = query;
-  const legacy = {
-    ...input,
-    ...(pageSize !== undefined ? { itemsPerPage: pageSize } : {}),
-    ...(reverse !== undefined ? { sortReverse: reverse } : {}),
-  };
-  if (
+  const { pageSize, reverse, regex, resultView: _resultView, ...input } = query;
+  const mode =
     resultView === 'paginated' ||
     resultView === 'discovery' ||
     resultView === 'detailed'
-  ) {
-    return { ...legacy, mode: resultView };
-  }
-  return { ...legacy, mode: 'paginated', output: resultView };
+      ? resultView
+      : 'paginated';
+  return {
+    ...input,
+    ...(pageSize !== undefined ? { itemsPerPage: pageSize } : {}),
+    ...(reverse !== undefined ? { sortReverse: reverse } : {}),
+    ...(regex !== undefined
+      ? { regex: REGEX_TO_NATIVE[regex as keyof typeof REGEX_TO_NATIVE] }
+      : {}),
+    mode,
+    ...(mode === 'paginated' &&
+    !['paginated', 'discovery', 'detailed'].includes(resultView)
+      ? { output: resultView }
+      : {}),
+  };
 }
 
-const [
-  textQuerySchema,
-  structuralPatternQuerySchema,
-  structuralRuleQuerySchema,
-  filesQuerySchema,
-  treeQuerySchema,
-] = SharedLocalSearchQuerySchema.options;
-
-const structuralResultViewField = z
-  .enum(['content', 'files', 'countMatches'])
-  .optional()
-  .default('content')
-  .describe('Structural result shape; content is the default.');
-
-// The upstream structural branch also exposes text-only result views. Tighten
-// the public schema at this boundary so every advertised value reaches the
-// structural runner successfully.
-export const LocalSearchQuerySchema = z.union([
-  textQuerySchema,
-  structuralPatternQuerySchema.extend({
-    resultView: structuralResultViewField,
-  }),
-  structuralRuleQuerySchema.extend({
-    resultView: structuralResultViewField,
-  }),
-  filesQuerySchema,
-  treeQuerySchema,
-]);
-export type LocalSearchQuery = z.infer<typeof LocalSearchQuerySchema>;
+export type LocalSearchQuery = import('zod').infer<
+  typeof LocalSearchQuerySchema
+>;
 
 export const LocalSearchBulkQuerySchema = createRelaxedBulkQuerySchema(
   LocalSearchQuerySchema,

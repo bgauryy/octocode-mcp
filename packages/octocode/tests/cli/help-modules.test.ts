@@ -23,7 +23,7 @@ describe('main-help', () => {
     expect(output).toContain('ghSearch');
     expect(output).toContain('<AGENT_INSTRUCTIONS>');
     expect(output).toContain('localSearch');
-    expect(output).toContain('lspGetSemantics');
+    expect(output).toContain('lspSearch');
     expect(output).toContain('npmSearch');
     expect(output).not.toContain('[path*');
     expect(output).toContain('install');

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { removeStaleHookRunStateLock } from '../bin/hook-run-state.js';
+import { removeStaleHookRunStateLock } from '../src/hooks/run-state.js';
 import { writeWorkspacePolicy } from '../src/workspace-policy.js';
 import { withEnabledAwarenessConfig } from './helpers/enabled-awareness-config.js';
 import { tsxCli } from './helpers/tsx-cli.js';
@@ -15,7 +15,7 @@ import { tsxCli } from './helpers/tsx-cli.js';
 const TEST_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(TEST_DIR, '..');
 const SOURCE_RUNNER = resolve(PACKAGE_ROOT, 'bin/hook-runner-entry.ts');
-const SOURCE_LIFECYCLE = resolve(PACKAGE_ROOT, 'bin/hook-lifecycle.ts');
+const SOURCE_LIFECYCLE = resolve(PACKAGE_ROOT, 'src/hooks/lifecycle.ts');
 const TSX_CLI = tsxCli;
 
 function hookEnv(memoryHome: string): NodeJS.ProcessEnv {

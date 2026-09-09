@@ -19,7 +19,7 @@ UNDERSTAND identifies the deliverable, audience, approved paths, and facts that 
 
 - Verify commands, paths, APIs, environment variables, and behavioral claims in the repository. Omit unsupported claims or label them "Not verified in repository".
 - Choose one mode and load only its route. A named-file copyedit starts at STYLE.
-- Get approval before creating or overwriting targets unless this turn already names them. Propose edits outside the approved paths.
+- Apply edits within the approved scope. Authorization persists across the current session; ask only when a target or action needs authority that has not been granted.
 - Apply `references/style-index.md`; when changing another writer's wording, identify the rule.
 - For disputed, missing, legal, trademark, product, security, or public-API guidance, check the linked live Google page. The live guide wins; note when verification is unavailable.
 - A style pass changes wording, not claims; a fact change goes back to RESEARCH.

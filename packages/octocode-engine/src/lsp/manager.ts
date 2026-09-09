@@ -25,7 +25,7 @@ export async function isLanguageServerAvailable(
 }
 
 export const LSP_UNAVAILABLE_HINT =
-  'No language server is available for this file, so no semantic results were returned. Install a matching language server or set the relevant OCTOCODE_*_SERVER_PATH environment variable. For a text-based search meanwhile, use localSearch operation:"text".';
+  'No language server is available for this file, so no semantic results were returned. Install a matching language server or set the relevant OCTOCODE_*_SERVER_PATH environment variable. For a text-based search meanwhile, use localSearch.';
 
 // Single source of truth for toolchain-coupled servers — ones that can't be a
 // portable download because they need a host toolchain/runtime to function.

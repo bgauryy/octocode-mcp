@@ -7,10 +7,17 @@ export type InstallableHookHost = Exclude<HookHost, 'opencode'>;
 
 export interface HookSpec {
   event: string;
+  /** Semantic command for generated specs; independent of the installation path. */
+  hookName?: string;
   matcher?: string;
   command: string;
   commandWindows?: string;
   targetPath: string;
+}
+
+export function hookTimeout(host: InstallableHookHost, event: string): number {
+  if (host === 'gemini') return 20_000;
+  return host === 'codex' && event === 'SessionEnd' ? 3 : 20;
 }
 
 export interface NestedHook {
@@ -89,11 +96,15 @@ Options:
   --remove              Remove only npx @octocodeai/octocode-awareness hooks.`;
 }
 
-export function flag(argv: string[], value: string): boolean {
+export type InstallInput = string[] | Record<string, unknown>;
+
+export function flag(argv: InstallInput, value: string): boolean {
+  if (!Array.isArray(argv)) return argv[value.slice(2).replaceAll('-', '_')] === true;
   return argv.includes(value);
 }
 
-export function opt(argv: string[], name: string, fallback: string): string {
+export function opt(argv: InstallInput, name: string, fallback: string): string {
+  if (!Array.isArray(argv)) return String(argv[name.slice(2).replaceAll('-', '_')] ?? fallback);
   const index = argv.indexOf(name);
   return index >= 0 && argv[index + 1] ? argv[index + 1]! : fallback;
 }
@@ -102,7 +113,7 @@ export function fail(message: string, extra: Record<string, unknown> = {}): Hook
   return { exitCode: 1, payload: { ok: false, error: message, ...extra } };
 }
 
-export function requestedHost(argv: string[]): string {
+export function requestedHost(argv: InstallInput): string {
   return opt(argv, '--host', 'claude').toLowerCase();
 }
 

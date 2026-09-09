@@ -1,12 +1,8 @@
-import {
-  approvedClasses,
-  getPermissionLevel,
-} from './tools/approval.js';
+import { getPermissionLevel } from './tools/approval.js';
 import { getCachedAwarenessStatus } from './tools/awareness-status.js';
 import { listVisibleWorkerLedgerEntries } from './tools/agents/ledger.js';
 import { recordSessionTitle } from './tools/desktop-notify.js';
 import { getActiveDialLevel } from './tools/effort-dial.js';
-import { peerWipCount } from './tools/peer-wip.js';
 import { makeComponentRenderer } from './tools/render-helpers.js';
 import {
   runtimeStoreFor,
@@ -14,83 +10,52 @@ import {
   setManagedStatus,
   setManagedWorkingIndicator,
 } from './tools/runtime-renderer.js';
-import type { RuntimeFooterState } from './tools/runtime-store.js';
+import {
+  expireExecutionInteractions,
+  syncExecutionEntities,
+} from './tools/execution-runtime.js';
+import type {
+  RuntimeFooterState,
+  RuntimeState,
+} from './tools/runtime-store.js';
 import { renderFooterView } from './tui/footer-view.js';
-import { contextGauge, paint } from './tui/palette.js';
+import { paint } from './tui/palette.js';
 import type { PiContext, PiInstance, PiTheme } from './types.js';
 import {
-  buildFooterSegments,
+  buildCapabilitySegments,
   buildWorkingIndicator,
   deriveSessionName,
   formatBranchSegment,
-  formatCompact,
+  formatDurationShort,
   getFooterDensity,
 } from './ui-extras.js';
 import { activePlanScope } from './tools/planning/plan-store.js';
-import { getCurrentPlanReadModel, type PlanReadModelV1 } from './tools/plan-read-model.js';
+import {
+  getCurrentPlanReadModel,
+  type PlanReadModelV1,
+} from './tools/plan-read-model.js';
 import type { InlineSegment } from './tui/components.js';
 import { deriveUxSnapshot } from './tools/ux-snapshot.js';
-import { selectStatusRows, type StatusDensity, type StatusDiagnosticV1 } from './tui/status-policy.js';
+import {
+  selectStatusRows,
+  type StatusDensity,
+  type StatusDiagnosticV1,
+} from './tui/status-policy.js';
 
 /**
  * The `octocode-thinking` status text. Pi already renders `model: <id>` in the
  * same status row, so this never repeats the model id — it only carries the
  * thinking level (or its absence).
  */
-export function getThinkingStatus(ctx: PiContext | undefined, level?: string): string {
+export function getThinkingStatus(
+  ctx: PiContext | undefined,
+  level?: string
+): string {
   const model = ctx?.model;
   // Return empty string when the model doesn't support reasoning or no level is set;
   // the chip is hidden when empty, so it never shows 'thinking' permanently at idle.
   if (!model?.reasoning) return '';
   return level ?? '';
-}
-
-
-export function formatContextUsage(ctx: PiContext | undefined): { text: string; percent?: number } {
-  const usage = ctx?.getContextUsage?.();
-  // One placeholder for every "not measurable yet" case — n/a-style variants read as defects.
-  if (!usage || usage.contextWindow <= 0) return { text: 'ctx …' };
-  // tokens is null right after compaction ("unknown", per Pi's ContextUsage).
-  if (usage.tokens == null) return { text: 'ctx …' };
-  // Floor keeps the displayed boundary aligned with the exact >= 80% trigger:
-  // 79.5% must not claim compaction is pending before the trigger can fire.
-  const percent = Math.floor((usage.tokens / usage.contextWindow) * 100);
-  const { bar } = contextGauge(percent, 10);
-  return {
-    // formatCompact from ui-extras — the footer's formatter, so /octocode-now
-    // and the toolbar abbreviate numbers identically ("45M", "1.2k").
-    text: `ctx ${bar} ${percent}% (${formatCompact(usage.tokens)}/${formatCompact(usage.contextWindow)})`,
-    percent,
-  };
-}
-
-export function buildPlanFooterSegments(model: PlanReadModelV1): InlineSegment[] {
-  if (model.summary.total === 0) return [];
-  const planToken = model.summary.blocked > 0
-    ? 'warning'
-    : model.summary.done === model.summary.total
-      ? 'success'
-      : model.summary.running > 0
-        ? 'brand'
-        : 'dim';
-  const segments: InlineSegment[] = [{
-    text: `plan ${model.summary.done}/${model.summary.total}`,
-    token: planToken,
-    attention: model.summary.blocked > 0,
-  }];
-  const task = model.tasks.find((item) => item.status === 'doing')
-    ?? model.tasks.find((item) => item.status === 'todo')
-    ?? model.tasks.find((item) => item.status === 'blocked');
-  if (task) {
-    const state = task.status === 'doing' ? '' : `${task.status} `;
-    const extra = model.summary.running > 1 ? ` (+${model.summary.running - 1} active)` : '';
-    segments.push({
-      text: `task ${task.index} ${state}${task.activeText ?? task.text}${extra}`,
-      token: task.status === 'blocked' ? 'warning' : task.status === 'doing' ? 'brand' : 'muted',
-      attention: task.status === 'blocked',
-    });
-  }
-  return segments;
 }
 
 // Footer registration is idempotent per session context. Pi's documented
@@ -105,22 +70,44 @@ export function buildPlanFooterSegments(model: PlanReadModelV1): InlineSegment[]
 // always re-registers with its own tui/theme.
 const footerRegisteredCtxs = new WeakSet<object>();
 const footerRequestRenderByCtx = new WeakMap<object, () => void>();
+interface FooterFacts {
+  plan: PlanReadModelV1;
+  workers: ReturnType<typeof listVisibleWorkerLedgerEntries>;
+  awareness: ReturnType<typeof getCachedAwarenessStatus>;
+  permissionLevel: ReturnType<typeof getPermissionLevel>;
+  dial: ReturnType<typeof getActiveDialLevel>;
+  density: StatusDensity;
+}
+const footerFactsByCtx = new WeakMap<object, FooterFacts>();
 
 function statusDensity(): StatusDensity {
   const density = getFooterDensity();
-  return density === 'full' ? 'expanded' : density === 'default' ? 'automatic' : 'compact';
+  return density === 'full'
+    ? 'expanded'
+    : density === 'default'
+      ? 'automatic'
+      : 'compact';
 }
 
 function viewportHeight(tui: unknown): number {
-  const candidate = tui as {
-    height?: number;
-    rows?: number;
-    terminal?: { rows?: number };
-    getSize?: () => { height?: number; rows?: number };
-  } | undefined;
+  const candidate = tui as
+    | {
+        height?: number;
+        rows?: number;
+        terminal?: { rows?: number };
+        getSize?: () => { height?: number; rows?: number };
+      }
+    | undefined;
   const size = candidate?.getSize?.();
-  const height = size?.height ?? size?.rows ?? candidate?.height ?? candidate?.rows ?? candidate?.terminal?.rows;
-  return Number.isFinite(height) && (height ?? 0) > 0 ? Math.floor(height!) : 40;
+  const height =
+    size?.height ??
+    size?.rows ??
+    candidate?.height ??
+    candidate?.rows ??
+    candidate?.terminal?.rows;
+  return Number.isFinite(height) && (height ?? 0) > 0
+    ? Math.floor(height!)
+    : 40;
 }
 
 function buildOctocodeFooterLines(
@@ -129,135 +116,254 @@ function buildOctocodeFooterLines(
   width: number,
   height: number,
   theme: PiTheme,
-  footerData: { getGitBranch?: () => string | null | undefined } | undefined,
+  footerData: { getGitBranch?: () => string | null | undefined } | undefined
 ): string[] {
   const now = Date.now();
   const runtimeState = runtimeStoreFor(ctx)?.getState();
   if (!runtimeState) return [];
-  const workers = listVisibleWorkerLedgerEntries();
-  const plan = getCurrentPlanReadModel(ctx, activePlanScope(ctx));
-  const cachedAwareness = getCachedAwarenessStatus(ctx.cwd ?? process.cwd());
-  const currentTask = plan.tasks.find((task) => task.status === 'doing')
-    ?? plan.tasks.find((task) => task.status === 'todo')
-    ?? plan.tasks.find((task) => task.status === 'blocked');
+  const facts = footerFactsByCtx.get(ctx);
+  if (!facts) return [];
+  const { workers, plan, awareness: cachedAwareness } = facts;
+  const currentTask =
+    plan.tasks.find(task => task.status === 'doing') ??
+    plan.tasks.find(task => task.status === 'todo') ??
+    plan.tasks.find(task => task.status === 'blocked');
   const snapshot = deriveUxSnapshot({
     now,
     runtime: runtimeState,
     plan,
     agents: workers,
-    goal: currentTask ? {
-      text: currentTask.text,
-      ...(currentTask.activeText ? { milestone: currentTask.activeText } : {}),
-      nextAction: currentTask.status === 'blocked' ? 'Inspect plan' : 'Continue current task',
-    } : {},
-    ...(cachedAwareness ? {
-      awareness: {
-        unread: cachedAwareness.unreadInbox ?? 0,
-        observedAt: now,
-        staleAfterMs: 16_000,
-        latestSender: cachedAwareness.lastInbound?.from,
-        latestSubject: cachedAwareness.lastInbound?.preview,
-      },
-    } : {}),
+    goal: currentTask
+      ? {
+          text: currentTask.text,
+          ...(currentTask.activeText
+            ? { milestone: currentTask.activeText }
+            : {}),
+          nextAction:
+            currentTask.status === 'blocked'
+              ? 'Inspect plan'
+              : 'Continue current task',
+        }
+      : {},
+    ...(cachedAwareness
+      ? {
+          awareness: {
+            unread: cachedAwareness.unreadInbox ?? 0,
+            observedAt: cachedAwareness.observedAt,
+            staleAfterMs: 16_000,
+            latestSender: cachedAwareness.lastInbound?.from,
+            latestSubject: cachedAwareness.lastInbound?.preview,
+          },
+        }
+      : {}),
   });
 
   const branch = footerData?.getGitBranch?.();
-  // Segment order: stable items first so they are never truncated by variable-length
-  // dynamic segments. renderSemanticRow renders optional segments in insertion order,
-  // so the last segment truncates first. Branch is last because its length varies
-  // (e.g. "updates" vs "updates (2 changed)") and should absorb width pressure.
-  const identity: InlineSegment[] = [{ text: '/configuration', token: 'link' }];
-  // Stable: model only changes when the user switches models.
-  if (ctx.model?.id) {
-    const modelLabel = ctx.model.provider ? `${ctx.model.provider}/${ctx.model.id}` : ctx.model.id;
-    identity.push({ text: `model ${modelLabel}`, token: 'muted' });
-  }
-  // Mostly stable: permission level rarely changes mid-session.
-  const permissionLevel = getPermissionLevel(ctx);
-  if (permissionLevel) {
-    const grants = approvedClasses(ctx).length;
-    identity.push({
-      text: `perm ${permissionLevel}${grants > 0 ? ` +${grants}` : ''}`,
-      token: permissionLevel === 'relaxed' ? 'warning' : 'dim',
-      attention: permissionLevel === 'relaxed',
-    });
-  }
-  // Dynamic: github auth status (short, changes on auth events).
-  if (state.githubAuth.status === 'authenticated') identity.push({ text: 'github ✓', token: 'success' });
-  else if (state.githubAuth.status === 'missing') identity.push({ text: 'github ✗ login', token: 'error', attention: true });
-  else if (state.githubAuth.status === 'error') identity.push({ text: 'github ✗', token: 'error', attention: true });
-  else if (state.githubAuth.status === 'checking') identity.push({ text: 'github …', token: 'dim' });
-  // Dynamic last: branch length varies with dirty-file count — truncates first.
-  if (branch) identity.push({ text: formatBranchSegment(branch, state.gitDirty ?? false, state.gitDirtyFiles), token: 'dim' });
-
-  const metrics = buildFooterSegments({
-    tokens: undefined,
-    contextWindow: 0,
-    completedTurns: state.completedTurns,
-    activeTurnMs: state.activeTurnStartedAt !== undefined ? now - state.activeTurnStartedAt : undefined,
-    lastTurnMs: state.lastTurnMs,
-    sessionMs: now - state.sessionStartedAt,
-    activeWorkers: 0,
-    workerTotal: 0,
-    agentDoing: undefined,
-    awarenessPeers: cachedAwareness?.agentCount ?? 0,
-    awarenessUnread: 0,
-    peerDirty: peerWipCount(),
-    blockedWorkers: 0,
-    failedWorkers: 0,
-    dial: getActiveDialLevel(),
-    permissionLevel: undefined,
-    approvedClassCount: undefined,
-    githubAuth: undefined,
-    overhead: runtimeState.context.status === 'pending' ? undefined : {
-      totalChars: runtimeState.context.providerSubtotalChars,
-      sysChars: runtimeState.context.systemPromptChars,
-      mcpServers: runtimeState.context.mcpServers,
-      mcpTools: runtimeState.context.mcpTools,
-      skills: runtimeState.context.skills,
+  const execution = runtimeState.execution;
+  const permissionLevel = facts.permissionLevel;
+  const identity: InlineSegment[] = [
+    ...(permissionLevel === 'relaxed'
+      ? [{ text: 'perm relaxed', token: 'warning' as const, attention: true }]
+      : []),
+    { text: ctx.model?.id ?? 'model unavailable', token: 'muted' },
+    {
+      text: `${state.activeTurnStartedAt !== undefined ? 'turn' : 'session'} ${formatDurationShort(state.activeTurnStartedAt !== undefined ? now - state.activeTurnStartedAt : now - state.sessionStartedAt)}`,
+      token: 'dim',
     },
-    branch: undefined,
-    dirty: state.gitDirty ?? false,
-    dirtyFiles: state.gitDirtyFiles,
+    { text: `tools ${execution.toolCount}`, token: 'dim' },
+    ...(branch
+      ? [
+          {
+            text: formatBranchSegment(
+              branch,
+              state.gitDirty ?? false,
+              state.gitDirtyFiles
+            ),
+            token: 'dim' as const,
+          },
+        ]
+      : []),
+    ...(state.gitAdditions !== undefined &&
+    state.gitDeletions !== undefined &&
+    (state.gitAdditions > 0 || state.gitDeletions > 0)
+      ? [
+          {
+            text: `tree +${state.gitAdditions} -${state.gitDeletions}`,
+            token: 'path' as const,
+          },
+        ]
+      : []),
+    ...(permissionLevel && permissionLevel !== 'relaxed'
+      ? [{ text: `perm ${permissionLevel}`, token: 'dim' as const }]
+      : []),
+    { text: '/configuration', token: 'link' },
+  ];
+
+  const metrics = buildCapabilitySegments({
+    dial: facts.dial,
+    overhead:
+      runtimeState.context.status === 'pending'
+        ? undefined
+        : {
+            totalChars: runtimeState.context.providerSubtotalChars,
+            sysChars: runtimeState.context.systemPromptChars,
+            mcpServers: runtimeState.context.mcpServers,
+            mcpTools: runtimeState.context.mcpTools,
+            skills: runtimeState.context.skills,
+          },
   });
   const diagnostics: StatusDiagnosticV1[] = [
-    { id: 'identity', priority: state.githubAuth.status === 'missing' || state.githubAuth.status === 'error' ? 'P3' : 'P4', segments: identity },
-    ...(metrics.length > 0 ? [{ id: 'metrics', priority: 'P4' as const, segments: metrics }] : []),
-    ...(cachedAwareness?.verifyTasks ? [{
-      id: 'awareness-checks', priority: 'P1' as const,
-      segments: [
-        { text: `Verify · ${cachedAwareness.verifyTasks} checks pending`, token: 'warning' as const, attention: true },
-        { text: 'awareness', token: 'link' as const, attention: true },
-      ],
-    }] : []),
-    ...(runtimeState.statuses['octocode-awareness-events'] ? [{
-      id: 'awareness-delivery', priority: 'P2' as const,
-      segments: [
-        { text: runtimeState.statuses['octocode-awareness-events']!, token: 'warning' as const, attention: true },
-        { text: '/octocode-inbox', token: 'link' as const, attention: true },
-      ],
-    }] : []),
+    {
+      id: 'session',
+      priority: 'P4',
+      segments: identity.map((segment, index) => ({
+        ...segment,
+        keepWhole: index > 0 && !segment.text.startsWith('/'),
+      })),
+    },
+    ...(runtimeState.statuses['octocode-event-log']
+      ? [
+          {
+            id: 'event-log',
+            priority: 'P1' as const,
+            segments: [
+              {
+                text: runtimeState.statuses['octocode-event-log']!,
+                token: 'warning' as const,
+                attention: true,
+              },
+              {
+                text: '/octocode-status events',
+                token: 'link' as const,
+                attention: true,
+              },
+            ],
+          },
+        ]
+      : []),
+    ...(state.githubAuth.status === 'missing' ||
+    state.githubAuth.status === 'error'
+      ? [
+          {
+            id: 'github',
+            priority: 'P3' as const,
+            segments: [
+              {
+                text: 'GitHub login required',
+                token: 'warning' as const,
+                attention: true,
+              },
+              {
+                text: '/configuration',
+                token: 'link' as const,
+                attention: true,
+              },
+            ],
+          },
+        ]
+      : []),
+    ...(metrics.length > 0
+      ? [{ id: 'metrics', priority: 'P4' as const, segments: metrics }]
+      : []),
+    ...(cachedAwareness?.verifyTasks
+      ? [
+          {
+            id: 'awareness-checks',
+            priority: 'P1' as const,
+            segments: [
+              {
+                text: `Verify · ${cachedAwareness.verifyTasks} checks pending`,
+                token: 'warning' as const,
+                attention: true,
+              },
+              { text: 'awareness', token: 'link' as const, attention: true },
+            ],
+          },
+        ]
+      : []),
+    ...(runtimeState.statuses['octocode-awareness-events']
+      ? [
+          {
+            id: 'awareness-delivery',
+            priority: 'P2' as const,
+            segments: [
+              {
+                text: runtimeState.statuses['octocode-awareness-events']!,
+                token: 'warning' as const,
+                attention: true,
+              },
+              {
+                text: '/octocode-inbox',
+                token: 'link' as const,
+                attention: true,
+              },
+            ],
+          },
+        ]
+      : []),
   ];
-  const selected = selectStatusRows(snapshot, { width, height, density: statusDensity(), diagnostics });
+  const selected = selectStatusRows(snapshot, {
+    width,
+    height,
+    density: facts.density,
+    diagnostics,
+  });
   return renderFooterView({ rows: selected.rows }, { width, theme });
 }
-export function updateOctocodeMetricsUi(ctx: PiContext | undefined, _now = Date.now()): void {
-  if (!ctx?.hasUI) return;
+export function updateOctocodeMetricsUi(
+  ctx: PiContext | undefined,
+  _now = Date.now()
+): void {
+  if (!ctx) return;
   const store = runtimeStoreFor(ctx);
   if (!store) return;
+  const plan = getCurrentPlanReadModel(ctx, activePlanScope(ctx));
+  const workers = listVisibleWorkerLedgerEntries();
+  footerFactsByCtx.set(ctx, {
+    plan,
+    workers,
+    awareness: getCachedAwarenessStatus(ctx.cwd ?? process.cwd()),
+    permissionLevel: getPermissionLevel(ctx),
+    dial: getActiveDialLevel(),
+    density: statusDensity(),
+  });
+  syncExecutionEntities(ctx, plan, workers);
+  expireExecutionInteractions(ctx, _now);
+  if (!ctx.hasUI) return;
   // Sample once per update (event or 1s tick); the render closure only reads.
   try {
     const usage = ctx.getContextUsage?.();
-    if (usage) store.getState().setFooter({ usage: { tokens: usage.tokens ?? undefined, contextWindow: usage.contextWindow ?? 0 } });
-  } catch { /* keep the last sample */ }
+    if (usage)
+      store.getState().setFooter({
+        usage: {
+          tokens: usage.tokens ?? undefined,
+          contextWindow: usage.contextWindow ?? 0,
+        },
+      });
+  } catch {
+    /* keep the last sample */
+  }
 
   // The consolidated branded footer is the SINGLE metrics surface — context /
   // tokens / plan / task / agents / git. No second persistent state panel exists.
   if (!footerRegisteredCtxs.has(ctx)) {
     footerRegisteredCtxs.add(ctx);
     setManagedFooter(ctx, (tui: unknown, theme, footerData) => {
-      footerRequestRenderByCtx.set(ctx, () => (tui as { requestRender?: () => void } | undefined)?.requestRender?.());
-      const renderer = makeComponentRenderer((_props, { width }) => buildOctocodeFooterLines(ctx, store.getState().footer, width, viewportHeight(tui), theme, footerData), undefined);
+      footerRequestRenderByCtx.set(ctx, () =>
+        (tui as { requestRender?: () => void } | undefined)?.requestRender?.()
+      );
+      const renderer = makeComponentRenderer(
+        (_props, { width }) =>
+          buildOctocodeFooterLines(
+            ctx,
+            store.getState().footer,
+            width,
+            viewportHeight(tui),
+            theme,
+            footerData
+          ),
+        undefined
+      );
       const repaint = () => {
         renderer.invalidate();
         footerRequestRenderByCtx.get(ctx)?.();
@@ -266,14 +372,19 @@ export function updateOctocodeMetricsUi(ctx: PiContext | undefined, _now = Date.
       // Smart subscription: only repaint when slices the footer actually reads
       // have changed. Skips irrelevant mutations (tasks, mcp, phase, stage,
       // notice, generation) that never affect buildOctocodeFooterLines output.
-      const unsubscribeRuntime = store.subscribe((state, prevState) => {
-        if (state.activity !== prevState.activity
-          || state.footer !== prevState.footer
-          || state.statuses !== prevState.statuses
-          || state.context !== prevState.context) {
-          repaint();
+      const unsubscribeRuntime = store.subscribe(
+        (state: RuntimeState, prevState: RuntimeState) => {
+          if (
+            state.activity !== prevState.activity ||
+            state.footer !== prevState.footer ||
+            state.statuses !== prevState.statuses ||
+            state.context !== prevState.context ||
+            state.execution !== prevState.execution
+          ) {
+            repaint();
+          }
         }
-      });
+      );
       return {
         ...renderer,
         dispose: () => {
@@ -288,11 +399,21 @@ export function updateOctocodeMetricsUi(ctx: PiContext | undefined, _now = Date.
   footerRequestRenderByCtx.get(ctx)?.();
 }
 
-export function resetOctocodeFooterRegistration(ctx: PiContext | undefined): void {
-  if (ctx) footerRegisteredCtxs.delete(ctx);
+export function resetOctocodeFooterRegistration(
+  ctx: PiContext | undefined
+): void {
+  if (ctx) {
+    footerRegisteredCtxs.delete(ctx);
+    footerFactsByCtx.delete(ctx);
+    footerRequestRenderByCtx.delete(ctx);
+  }
 }
 
-export async function execGitSummary(pi: PiInstance, args: string[], timeout = 1200): Promise<string> {
+export async function execGitSummary(
+  pi: PiInstance,
+  args: string[],
+  timeout = 1200
+): Promise<string> {
   if (!pi.exec) return '';
   try {
     const result = await pi.exec('git', args, { timeout });
@@ -308,12 +429,34 @@ export async function execGitSummary(pi: PiInstance, args: string[], timeout = 1
  * provider owns branch detection/watching, so this keeps our extra `*` marker
  * without duplicating branch probes.
  */
-export async function refreshFooterDirtyState(pi: PiInstance, ctx: PiContext | undefined): Promise<void> {
-  const porcelain = await execGitSummary(pi, ['status', '--porcelain'], 600);
-  runtimeStoreFor(ctx)?.getState().setFooter({
-    gitDirty: porcelain !== '',
-    gitDirtyFiles: porcelain === '' ? 0 : porcelain.split('\n').filter((line) => line.trim()).length,
-  });
+export async function refreshFooterDirtyState(
+  pi: PiInstance,
+  ctx: PiContext | undefined
+): Promise<void> {
+  const [porcelain, numstat] = await Promise.all([
+    execGitSummary(pi, ['status', '--porcelain'], 600),
+    execGitSummary(pi, ['diff', 'HEAD', '--numstat'], 600),
+  ]);
+  const totals = numstat.split('\n').reduce(
+    (sum, line) => {
+      const [added, removed] = line.split('\t');
+      if (/^\d+$/.test(added ?? '')) sum.additions += Number(added);
+      if (/^\d+$/.test(removed ?? '')) sum.deletions += Number(removed);
+      return sum;
+    },
+    { additions: 0, deletions: 0 }
+  );
+  runtimeStoreFor(ctx)
+    ?.getState()
+    .setFooter({
+      gitDirty: porcelain !== '',
+      gitAdditions: totals.additions,
+      gitDeletions: totals.deletions,
+      gitDirtyFiles:
+        porcelain === ''
+          ? 0
+          : porcelain.split('\n').filter(line => line.trim()).length,
+    });
 }
 
 /** CustomEntry type for the fresh-session banner card. */
@@ -326,7 +469,11 @@ export const OCTOCODE_BANNER_ENTRY_TYPE = 'octocode-banner';
  */
 const workingUiInitCtxs = new WeakSet<object>();
 
-export function applyOctocodeUi(ctx: PiContext | undefined, level?: string, contextTitle?: string): void {
+export function applyOctocodeUi(
+  ctx: PiContext | undefined,
+  level?: string,
+  contextTitle?: string
+): void {
   // setStatus / setHiddenThinkingLabel are TUI-only; guard with hasUI.
   if (!ctx?.hasUI) return;
   const ui = ctx.ui;
@@ -349,7 +496,11 @@ export function applyOctocodeUi(ctx: PiContext | undefined, level?: string, cont
   // supports reasoning. Empty → chip is hidden. The chip is hidden while a turn
   // is active (turn_start hook), then restores here on every level/model change.
   const thinkingStatus = getThinkingStatus(ctx, level);
-  setManagedStatus(ctx, 'octocode-thinking', thinkingStatus ? paint(ui.theme, 'dim', thinkingStatus) : undefined);
+  setManagedStatus(
+    ctx,
+    'octocode-thinking',
+    thinkingStatus ? paint(ui.theme, 'dim', thinkingStatus) : undefined
+  );
   // One-time per context: working indicator frames, branded message, and the hidden
   // thinking label. These never change within a session; re-applying them on every
   // model/thinking/input event would cause unnecessary redraws and micro-flicker.

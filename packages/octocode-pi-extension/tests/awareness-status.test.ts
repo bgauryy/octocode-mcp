@@ -1,10 +1,9 @@
 import type { ExternalAwarenessStatus } from '@octocodeai/octocode-awareness';
 import assert from 'node:assert/strict';
-import { afterEach, test } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 import {
   forceAwarenessStatusRefreshForTests,
   formatAwarenessPanel,
-  buildAwarenessFooterSegments,
   getCachedAwarenessStatus,
   hasAwarenessSignal,
   refreshAwarenessPanel,
@@ -26,6 +25,29 @@ const ZERO: ExternalAwarenessStatus = {
   taskActivities: [],
 };
 
+test('cached observation time advances only after a successful source read', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(100_000);
+    const { ctx } = uiCtx();
+    const runner = vi.fn(async () => ZERO);
+    setAwarenessStatusRunnerForTests(runner);
+    refreshAwarenessPanel(ctx);
+    await Promise.resolve();
+    assert.equal(getCachedAwarenessStatus(ctx.cwd!)?.observedAt, 100_000);
+    vi.setSystemTime(104_000);
+    refreshAwarenessPanel(ctx);
+    assert.equal(runner.mock.calls.length, 1);
+    assert.equal(getCachedAwarenessStatus(ctx.cwd!)?.observedAt, 100_000, 'repaint cannot make stale evidence fresh');
+    vi.setSystemTime(112_000);
+    refreshAwarenessPanel(ctx);
+    await Promise.resolve();
+    assert.equal(getCachedAwarenessStatus(ctx.cwd!)?.observedAt, 112_000);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 const FULL: ExternalAwarenessStatus = {
   activePlans: 1,
   readyTasks: 2,
@@ -37,7 +59,12 @@ const FULL: ExternalAwarenessStatus = {
   messageCount: 5,
   unreadInbox: 1,
   taskActivities: [
-    { taskId: 'task-doing', title: 'Implement lifecycle', state: 'doing', agentId: 'octo-worker' },
+    {
+      taskId: 'task-doing',
+      title: 'Implement lifecycle',
+      state: 'doing',
+      agentId: 'octo-worker',
+    },
     { taskId: 'task-ready', title: 'Verify CLI', state: 'ready' },
   ],
   lastMessage: { from: 'planner', to: 'worker', preview: 'take lane' },
@@ -52,16 +79,6 @@ afterEach(() => {
 test('signal detection uses typed status', () => {
   assert.equal(hasAwarenessSignal(ZERO), false);
   assert.equal(hasAwarenessSignal(FULL), true);
-});
-
-test('footer promotes unread messages, verification debt, and delivery failures without peer bodies', () => {
-  const segments = buildAwarenessFooterSegments(FULL, 'peer events · 1 err');
-  assert.ok(segments.some((segment) => segment.text.includes('4 checks pending') && segment.attention));
-  assert.ok(segments.some((segment) => segment.text.includes('1 unread') && segment.attention));
-  assert.ok(segments.some((segment) => segment.text.includes('1 err') && segment.attention));
-  assert.doesNotMatch(JSON.stringify(segments), /take lane/);
-  assert.deepEqual(buildAwarenessFooterSegments(ZERO), []);
-  assert.equal(buildAwarenessFooterSegments(null, 'peer events · 1 err').length, 1);
 });
 
 test('panel composition preserves counts, debt, tasks, messages, and attention state', () => {
@@ -87,7 +104,11 @@ function uiCtx() {
     cwd: '/tmp/aware-ws',
     hasUI: true,
     ui: {
-      setWidget: (_name: string, content: unknown) => widget.push({ cleared: content === undefined, isFn: typeof content === 'function' }),
+      setWidget: (_name: string, content: unknown) =>
+        widget.push({
+          cleared: content === undefined,
+          isFn: typeof content === 'function',
+        }),
       setStatus: () => {},
     },
   } as unknown as PiContext;
@@ -105,36 +126,52 @@ test('refresh caches one typed package snapshot and throttles repeated paints', 
   process.env.OCTOCODE_AGENT_ID = 'agent-current';
   const { ctx, widget } = uiCtx();
   refreshAwarenessPanel(ctx);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise(resolve => setTimeout(resolve, 5));
   refreshAwarenessPanel(ctx);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise(resolve => setTimeout(resolve, 5));
   delete process.env.OCTOCODE_AGENT_ID;
   assert.equal(calls, 1);
-  assert.equal(getCachedAwarenessStatus(ctx.cwd!), FULL);
+  const cached = getCachedAwarenessStatus(ctx.cwd!);
+  assert.ok(cached?.observedAt);
+  const { observedAt: _observedAt, ...status } = cached!;
+  assert.deepEqual(status, FULL);
   // Awareness data is cached but the panel is not registered unless there is an active
   // plan or agent section — awareness-only state no longer drives panel visibility.
-  assert.ok(!widget.some((entry) => entry.isFn && !entry.cleared), 'panel is not registered for awareness-only state');
+  assert.ok(
+    !widget.some(entry => entry.isFn && !entry.cleared),
+    'panel is not registered for awareness-only state'
+  );
 });
 
 test('refresh repaints the unified footer for cached and newly loaded Awareness state', async () => {
   let repaints = 0;
-  setAwarenessMetricsRefreshForUi(() => { repaints++; });
+  setAwarenessMetricsRefreshForUi(() => {
+    repaints++;
+  });
   setAwarenessStatusRunnerForTests(async () => FULL);
   const { ctx } = uiCtx();
   refreshAwarenessPanel(ctx);
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  assert.equal(repaints, 2, 'cached snapshot and async replacement each repaint the footer');
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(
+    repaints,
+    2,
+    'cached snapshot and async replacement each repaint the footer'
+  );
 });
 
 test('refresh clears stale cached status when the package reader fails', async () => {
   let calls = 0;
-  setAwarenessStatusRunnerForTests(async () => calls++ === 0 ? FULL : null);
+  setAwarenessStatusRunnerForTests(async () => (calls++ === 0 ? FULL : null));
   const { ctx, widget } = uiCtx();
   refreshAwarenessPanel(ctx);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise(resolve => setTimeout(resolve, 5));
   forceAwarenessStatusRefreshForTests(ctx.cwd!);
   refreshAwarenessPanel(ctx);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(getCachedAwarenessStatus(ctx.cwd!), null);
-  assert.equal(widget.length, 0, 'an unregistered empty panel is not redundantly cleared');
+  assert.equal(
+    widget.length,
+    0,
+    'an unregistered empty panel is not redundantly cleared'
+  );
 });

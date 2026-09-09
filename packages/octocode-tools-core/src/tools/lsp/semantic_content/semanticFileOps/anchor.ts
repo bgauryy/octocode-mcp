@@ -48,7 +48,7 @@ export function throwLspUnavailable(
   throw new ToolError(
     LOCAL_TOOL_ERROR_CODES.LSP_SERVER_UNAVAILABLE,
     `No ${languageId} language server is available for ${uri}, so "${op}" cannot be answered semantically.${startupDetail} ${hint} ` +
-      `Meanwhile, use localSearch operation:"text" or "structural" to find occurrences, then localGetFileContent for surrounding code.`
+      `Meanwhile, use localSearch for text or astSearch operation:"match" for syntax, then localGetFileContent for surrounding code.`
   );
 }
 
@@ -196,7 +196,7 @@ function isRawLspRange(value: unknown): boolean {
  * extractor (`extractJsSymbols`) declines — notably Flow-typed `.js` (Flow
  * syntax like type annotations/generics can make oxc's default JS grammar
  * fail the whole-file parse, returning an empty body). `extractGraphFacts`
- * uses a more lenient extraction already proven elsewhere (localAnalyzeGraph)
+ * uses the same lenient extraction as astSearch topology
  * to tolerate this exact file class, and its declarations already carry
  * 0-based LSP `range`s — so they slot into the same DocumentSymbol shape
  * `nativeDocumentSymbols` produces, just without a full symbol hierarchy

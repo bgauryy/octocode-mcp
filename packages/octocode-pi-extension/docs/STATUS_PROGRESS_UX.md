@@ -15,7 +15,7 @@ It covers status and progress for the Pi footer, activity indicator, transcript,
 
 Derive one versioned **UX snapshot** from existing authoritative state, then project that snapshot through a **salience- and space-aware policy** to every surface.
 
-The default footer is adaptive: neither exhaustive nor fixed to one physical row per entity. It keeps the current goal, next action, and attention conditions visible. The footer summarizes normal parallel work. Blocked, failed, or input-waiting work can preempt lower-priority metrics. Full detail remains available through the plan page, inbox, transcript, and commands.
+The default footer keeps current work and attention visible within a row budget. It lists active worker names, states, and updates in stable order. Blocked, failed, or input-waiting work can preempt lower-priority metrics. Full detail remains available through the plan page, inbox, transcript, and commands.
 
 This design replaces two brittle extremes:
 
@@ -30,10 +30,10 @@ The existing architecture has strong foundations but an inflexible final project
 |---|---|---|
 | Canonical plan state | `tools/plan-read-model.ts` exposes phase, revision, task states, dependencies, receipts, pending interactions, and summary counts to terminal, browser, RPC, prompt, and Markdown projections. | Keep this owner. Adapt it into the UX snapshot; do not create another plan store. |
 | Footer controller | `extension-ui.ts` is the production owner that reads runtime, plan, worker, Awareness, identity, and context state before calling `tui/footer-view.ts`. | Keep one controller and one registered footer component. |
-| Footer layout | `tui/status-policy.ts` applies automatic, compact, or expanded row budgets; normal workers aggregate by state and blocked/failed workers remain named. `tui/footer-view.ts` renders one physical line per selected row. | Keep selection pure and renderer-only; expand the layout matrix without restoring entity-per-row growth. |
-| Foreground activity | `tools/runtime-store.ts` remains the canonical discriminated activity store. `tools/ux-event-reducer.ts` now provides pure sequence rejection, coalescing, expiry, and canonical reload reconciliation for ephemeral producers. | Wire producer-owned source sequences and leases through every activity publisher before claiming end-to-end stale-completion protection. |
+| Footer layout | `tui/status-policy.ts` applies automatic, compact, or expanded row budgets; active workers have named rows and blocked/failed workers take priority. `tui/footer-view.ts` renders one physical line per selected row. | Keep selection pure and rendering bounded; route overflow to the complete inbox. |
+| Foreground activity | `tools/runtime-store.ts` remains the canonical discriminated activity store. `tools/execution-events.ts` provides typed lifecycle events, sequence rejection, and replay; `tools/execution-runtime.ts` binds the selected Pi branch. | Wire producer-owned source sequences and leases through every activity publisher before claiming end-to-end stale-completion protection. |
 | Progress | `tools/ux-snapshot.ts` classifies linear, graph, dynamic, and indeterminate progress. The policy shows a denominator only for a stable linear plan and uses state counts for graph or dynamic work. | Extend canonical verification/task fields when all plan surfaces can consume the richer states. |
-| Agents | `tools/ux-snapshot.ts` preserves normalized process/result precedence, assignments, active operations, messages, elapsed time, and update time. The policy summarizes normal states and names blocked/failed workers with `/octocode-inbox`. | Keep the inbox as the complete ledger and action route. |
+| Agents | `tools/ux-snapshot.ts` preserves process/result precedence, assignments, active operations, messages, elapsed time, and update time. The footer names live workers and their updates; blocked/failed outcomes remain visible with `/octocode-inbox`. | Keep the inbox as the complete ledger and gate actions on process liveness. |
 | Messages | Worker queued counts and cached Awareness unread counts merge only in the UX snapshot and policy; canonical stores remain separate. Notifications and transcript producers still use their existing wording. | Finish one transition grammar and durable coalescing contract across transcript and notifications. |
 | Detail | `/octocode-inbox`, plan HTML, terminal plan output, Awareness detail, `/configuration`, and transcript routes remain complete drill-down surfaces. The one-line renderer promotes routes before optional tail detail. | Preserve a real detail route before reducing ambient detail further. |
 
@@ -42,7 +42,7 @@ The existing architecture has strong foundations but an inflexible final project
 The current audit used lexical search, AST structural search, LSP references, exact reads, and file-graph paths:
 
 - AST search found 24 `setManagedActivity(...)` call sites and 11 `setManagedStatus(...)` call sites.
-- AST search found one production `renderFooterView(...)` call and one `buildPlanFooterSegments(...)` call, both in `extension-ui.ts`.
+- Current implementation: `extension-ui.ts` owns one production `renderFooterView(...)` call. Plan rows are selected by `status-policy.ts`; the separate legacy plan footer builder was removed. See [UI.md](UI.md) for the current contract.
 - LSP resolved `setManagedActivity` to 32 references across lifecycle, plan, rehydration, and tests.
 - LSP resolved `getCurrentPlanReadModel` to 31 references across 10 files, confirming that it is already the shared plan presentation boundary.
 - LSP resolved the footer renderer to `extension-ui.ts` as its production consumer and resolved agent inbox registration to `index.ts`.
@@ -72,8 +72,9 @@ No renderer mutates workflow state. No notification becomes canonical evidence.
 The footer has a viewport budget. It is not a dashboard squeezed under the editor. The footer can aggregate state when the summary is explicit and reversible:
 
 ```text
-atlas blocked · inspect /octocode-inbox
-Agents 8 · 3 running · 4 done · /octocode-inbox
+blocked · atlas · /octocode-inbox
+running · nova · tool localSearch · /octocode-inbox
+queued · rhea · follow-up ready · /octocode-inbox
 ```
 
 This is more truthful than either eight persistent rows or an unexplained `+7`.
@@ -81,6 +82,8 @@ This is more truthful than either eight persistent rows or an unexplained `+7`.
 ### 4. Attention preempts decoration
 
 Input requests, permission decisions, stale authority, failed checks, blocked active work, and failed workers outrank identity and metrics. Normal completions do not interrupt you unless they complete background work you are waiting for.
+
+Session metadata uses remaining capacity; compact mode does not reserve a row for it. Worker state precedes the name as a separate token. Repainting cached Awareness counts preserves their original observation time.
 
 ### 5. Progress must state its confidence
 
@@ -134,11 +137,11 @@ The snapshot reducer rejects stale sequences and coalesces repeated heartbeats. 
 
 | Plan shape | Footer representation | Do not show |
 |---|---|---|
-| Stable linear sequence | `Plan 3/8 · task 4 Verify restore` | ETA unless measured from comparable completed work. |
+| Stable linear sequence | `Plan 3/8 · task 4 running: Verify restore` | ETA unless measured from comparable completed work. |
 | Parallel dependency graph | `Plan · 3 done · 2 active · 1 ready · 2 waiting` | A single percent that implies serial order. |
 | Conditional or changing plan | `Plan · 3 done · scope changing` | A fixed denominator or step indicator. |
 | Awaiting review/input | `Needs you · Review plan rev 0284e84f` | Motion that suggests implementation is running. |
-| Verifying | `Verify · 4/6 checks passed · 1 running · 1 pending` | “Complete” before observed checks succeed. |
+| Verifying | `Plan verifying · task 4 verifying: Check restore` | “Complete” before observed checks succeed. |
 | Failed or blocked | `Blocked · task 5 · ref publication conflict` | Generic `failed` without cause and next action. |
 
 A task becomes complete only after it satisfies its owning completion contract. A worker saying “done” changes worker state; it does not complete the parent task.
@@ -188,7 +191,7 @@ The footer consumes a soft viewport budget rather than a fixed row count:
 
 1. **P0 — user action or safety:** input, approval, permission, stale authorization, destructive-operation gate.
 2. **P1 — active outcome:** current goal/task, verification, blocked active work, failure.
-3. **P2 — collaboration:** blocked/failed agents, unread messages, parallel-work summary.
+3. **P2 — collaboration:** named live workers and unread messages; blocked/failed workers rank at P1.
 4. **P3 — operational context:** context pressure, degraded runtime, credentials, repository state.
 5. **P4 — diagnostics:** model, session clock, prompt overhead, server/tool counts.
 
@@ -197,8 +200,9 @@ Higher-priority items preempt lower-priority items. Within a priority, prefer ne
 ### Row packing
 
 - Preserve state and required action before labels and elapsed time.
-- Summarize normal agents by state; show individual rows only for attention states or the directly active assignment.
-- Show at most one normal completed-agent summary. Finished worker details belong in the inbox.
+- List live workers by name, state, and current update; use stable worker IDs to order normal rows.
+- Keep finished worker details in the inbox. Count omitted live rows and preserve their inbox route.
+- Combine plan progress, running task, and current tool in compact layouts so worker names have room.
 - Merge duplicate local-plan and shared-Awareness counts by stable task identity.
 - Never truncate `blocked`, `failed`, `input needed`, or the action route.
 - Truncate long labels with an ellipsis; expose the full label in the plan or inbox.
@@ -210,17 +214,18 @@ Higher-priority items preempt lower-priority items. Within a priority, prefer ne
 Wide, active plan:
 
 ```text
-Working · task 4/10 Add bounded restore I/O · 38s
-Plan 2/10 · 1 active · 2 ready · 5 waiting
-Agents 4 · 2 running · 1 blocked (atlas) · 1 done · /octocode-inbox
+blocked · atlas · dependency unavailable · /octocode-inbox
+Plan 2/10 · task 4 running: Add bounded restore I/O · plan
+running · nova · tool localSearch · /octocode-inbox
+queued · rhea · follow-up ready · /octocode-inbox
 ctx 61% · main (12 changed) · perm default
 ```
 
 Narrow:
 
 ```text
-Working · T4/10 · 38s
-! atlas blocked · inbox
+blocked · atlas · inbox
+Plan 2/10 · task 4 running… · plan
 ```
 
 Waiting for you:
@@ -233,7 +238,9 @@ Plan review ready · exact revision pending
 Parallel work without attention:
 
 ```text
-Agents 8 · 3 running · 1 idle · 4 done · /octocode-inbox
+running · atlas · Reading callers · /octocode-inbox
+running · nova · Checking tests · /octocode-inbox
+queued · rhea · follow-up ready · /octocode-inbox
 ```
 
 Verification failure:
@@ -290,7 +297,7 @@ These names are targets, not an instruction to duplicate current owners.
 | Boundary | Responsibility |
 |---|---|
 | `tools/ux-snapshot.ts` | Pure adapters from runtime, plan, worker, and Awareness read models into `UxSnapshotV1`. |
-| `tools/ux-event-reducer.ts` | Sequence, freshness, coalescing, and reload reconciliation for ephemeral events. |
+| `tools/execution-events.ts` | Typed execution events, sequence rejection, and replay of the semantic journal. |
 | `tui/status-policy.ts` | Pure priority, grouping, row-budget, and width policy. |
 | `tui/footer-view.ts` | Render selected semantic rows only; no state reads or ranking. |
 | `extension-ui.ts` | Read one snapshot and register/repaint the one footer component. |
@@ -356,7 +363,7 @@ Track these as test or benchmark outputs rather than visual judgment:
 2. Build `UxSnapshotV1` as a pure projection beside existing models.
 3. Add sequence/freshness reconciliation and prove reload, fork, and out-of-order behavior.
 4. Replace fixed footer row assembly with the pure status policy.
-5. Replace one-row-per-worker rendering with attention-first aggregation.
+5. Bound named worker rows and preserve the full inbox route for overflow.
 6. Normalize transcript and notification wording through the message grammar.
 7. Merge local worker and durable peer attention counts without merging their canonical stores.
 8. Run the full layout/state matrix and a real interactive Pi session.

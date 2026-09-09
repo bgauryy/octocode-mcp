@@ -11,9 +11,9 @@ export const CANONICAL_ADAPTER_TOOL_NAMES = [
   'npmSearch',
   'ghCloneRepo',
   'localSearch',
-  'localAnalyzeGraph',
+  'astSearch',
   'localGetFileContent',
-  'lspGetSemantics',
+  'lspSearch',
 ] as const;
 
 export type CanonicalAdapterToolName =
@@ -65,14 +65,14 @@ const CASE_QUERIES: Readonly<
     sparsePath: 'src',
   },
   localSearch: {
-    operation: 'text',
     path: '/adapter-parity/fixture',
     searchText: 'fixture-token',
-    regex: 'fixed',
+    regex: 'literal',
     pageSize: 1,
   },
-  localAnalyzeGraph: {
-    operation: 'dependencies',
+  astSearch: {
+    operation: 'topology',
+    analysis: 'dependencies',
     path: '/adapter-parity/fixture',
     file: 'src/index.ts',
     depth: 1,
@@ -83,8 +83,8 @@ const CASE_QUERIES: Readonly<
     endLine: 1,
     minify: 'none',
   },
-  lspGetSemantics: {
-    type: 'documentSymbols',
+  lspSearch: {
+    operation: 'documentSymbols',
     uri: '/adapter-parity/fixture.ts',
   },
 };

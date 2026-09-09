@@ -6,7 +6,7 @@ export const SESSION_MEMORY_MAX_BYTES = 4_000;
 
 export const SESSION_MEMORY_TEMPLATE = `# Session memory
 
-Agent-maintained notes for this Pi session. Keep at most 10 one-line entries per section and 200 characters per entry.
+Keep only facts needed to resume after context loss. A pending decision or evidence pointer belongs here; routine progress and raw logs do not. Repetition crowds out unfinished work. Update after a meaningful event, with at most 10 one-line entries total and 200 characters per entry; keep the whole file within 4000 UTF-8 bytes. Preserve the next action first and leave unused sections empty.
 
 ## Gotchas
 

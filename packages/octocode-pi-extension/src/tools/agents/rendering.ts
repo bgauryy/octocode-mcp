@@ -1,3 +1,4 @@
+import { effectiveAgentStatus } from './display-state.js';
 /**
  * rendering.ts — TUI rendering layer for the agent ledger.
  *
@@ -12,8 +13,7 @@ import fs from 'node:fs';
 import { OCTOCODE_SPINNER_FRAMES } from '../../ui-extras.js';
 import { hasUiTickSubscriber, setUiTickSubscriber } from '../../tui/ui-ticker.js';
 import { shortId } from '../ids.js';
-import { SEP } from '../../tui/palette.js';
-import { inspectWorkerAwareness } from '../awareness-worker-audit.js';
+import { inspectWorkerAwarenessAutomatically } from '../awareness-worker-audit.js';
 import { truncateUserVisibleToolOutput } from '../../utils.js';
 import type {
   PiContext,
@@ -22,8 +22,6 @@ import type {
   WorkerWorktreeState,
 } from '../../types.js';
 import { paint } from '../../tui/palette.js';
-import { cliToolTitle } from '../../tui/cli-design.js';
-import { truncateToWidth } from '../../tui/width.js';
 import {
   type AgentRecord,
   type AgentToolCall,
@@ -50,20 +48,11 @@ interface AgentDetails {
 // ─── TUI rendering helpers ────────────────────────────────────────────────────
 
 function getAgentDisplayState(agent: AgentDisplaySource): AgentDisplayState {
-  const workerStatus = agent.normalizedResult?.status;
-  if (agent.status === 'killed') return 'killed';
-  if (agent.status === 'failed' || workerStatus === 'failed') return 'failed';
-  if (agent.status === 'running') return 'running';
-  // A queued-but-unstarted turn takes precedence over an idle/done snapshot so the
-  // ledger never shows 'running' before agent_start, nor 'done' with work pending.
-  if ((agent.pendingMessages ?? 0) > 0) return 'queued';
-  // Exited beats blocked: a dead process that last said [BLOCKED] cannot be
-  // steered/unblocked, so showing "blocked" would advertise a dead-end action.
-  if (agent.status === 'exited') return 'done';
-  if (workerStatus === 'blocked') return 'blocked';
-  if (workerStatus === 'done') return 'done';
-  if (agent.status === 'idle') return 'idle';
-  return 'starting';
+  return effectiveAgentStatus({
+    status: agent.status,
+    normalizedStatus: agent.normalizedResult?.status,
+    pendingMessages: agent.pendingMessages,
+  });
 }
 
 // Live-progress spinner: advanced once per ledger tick while a worker runs.
@@ -143,12 +132,6 @@ function worktreeSnapshot(worktree: WorkerWorktreeState | undefined): WorkerWork
   return worktree ? { ...worktree } : undefined;
 }
 
-function formatWorktreeState(worktree: WorkerWorktreeState | undefined): string {
-  if (!worktree) return '';
-  const branch = worktree.branch.replace(/^octocode\//, '');
-  return ` ⎇ ${branch} +${worktree.aheadCommits}c ~${worktree.dirtyFiles}f ${worktree.mergeState}`;
-}
-
 function getArgValue(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   return index >= 0 ? args[index + 1] : undefined;
@@ -209,7 +192,7 @@ function formatAgentModelLine(summary: ReturnType<typeof summarizeAgent>): strin
 
 export function renderAgentResult(records: AgentRecord[], header: string): ToolCallResult {
   for (const record of records) {
-    if (isTerminal(record)) record.awarenessInspection = inspectWorkerAwareness(record);
+    if (isTerminal(record)) record.awarenessInspection = inspectWorkerAwarenessAutomatically(record);
   }
   const summaries = records.map((record) => summarizeAgent(record));
   const lines: string[] = [`${header} (${records.length}):`];
@@ -240,93 +223,6 @@ export function renderAgentResult(records: AgentRecord[], header: string): ToolC
     content: [{ type: 'text', text: lines.join('\n') }],
     details: { agents: summaries } satisfies AgentDetails,
   };
-}
-
-function countAgentStates(records: AgentDisplaySource[]): Record<AgentDisplayState, number> {
-  const counts: Record<AgentDisplayState, number> = {
-    starting: 0,
-    queued: 0,
-    running: 0,
-    idle: 0,
-    done: 0,
-    blocked: 0,
-    failed: 0,
-    killed: 0,
-  };
-  for (const record of records) counts[getAgentDisplayState(record)] += 1;
-  return counts;
-}
-
-function formatAgentStateCounts(records: AgentDisplaySource[]): string {
-  const counts = countAgentStates(records);
-  const order: AgentDisplayState[] = ['starting', 'queued', 'running', 'idle', 'blocked', 'done', 'failed', 'killed'];
-  const parts = order
-    .filter((state) => counts[state] > 0)
-    .map((state) => `${counts[state]} ${state}`);
-  return [`${records.length} total`, ...parts].join(SEP);
-}
-
-export function formatAgentLedger(): string {
-  const records = [...agents.values()].sort((a, b) => b.updatedAt - a.updatedAt);
-  if (records.length === 0) return 'Octocode agents: none';
-  return `Octocode agents: ${formatAgentStateCounts(records)}`;
-}
-
-function buildAgentLedgerLines(limit = 10, theme?: PiTheme, width?: number): string[] {
-  const records = [...agents.values()].sort((a, b) => b.updatedAt - a.updatedAt);
-  const title = cliToolTitle(theme, 'Octocode agents');
-  if (records.length === 0) return [`${title}: none`];
-
-  const counts = formatAgentStateCounts(records);
-  const lines = [`${title}: ${paint(theme, 'dim', counts)}`];
-  for (const record of records.slice(0, limit)) {
-    const summary = summarizeAgent(record);
-    const state = getAgentDisplayState(summary);
-    const meta = agentDisplayMeta(state, theme);
-    const handback = summary.normalizedResult?.status && summary.normalizedResult.status !== 'unknown'
-      ? ` · ${summary.normalizedResult.status}/${summary.normalizedResult.confidence}`
-      : '';
-    // meta.label already prints "running"; don't repeat it. Show only the tool the
-    // worker is currently in, so the row reads "… · running · bash" not "· running · running bash".
-    const active = summary.activeTool ? ` · ${paint(theme, 'brand', summary.activeTool)}` : '';
-    // Show what the worker is doing: total tool calls + the distinct tools it has used.
-    const callCount = record.toolCalls.length;
-    const toolNames = [...new Set(record.toolCalls.map((call) => call.toolName).filter(Boolean))].slice(0, 4);
-    const toolsInfo = callCount > 0
-      ? ` · ${callCount} call${callCount === 1 ? '' : 's'}${toolNames.length ? ` [${toolNames.join(',')}${new Set(record.toolCalls.map((c) => c.toolName)).size > toolNames.length ? ',…' : ''}]` : ''}`
-      : '';
-    const modelInfo = ` · ${formatAgentModelLine(summary)}`;
-    const taskInfo = summary.task
-      ? ` · ${paint(theme, 'muted', `task ${summary.task.replace(/\s+/g, ' ').slice(0, 64)}`)}`
-      : '';
-    const planInfo = summary.planStep
-      ? ` · ${paint(theme, 'symbol', `plan ${summary.planStep.replace(/\s+/g, ' ').slice(0, 48)}`)}`
-      : '';
-    // Stable queued indicator: reveal turns queued behind a running worker, or a
-    // multi-deep queue. A single queued turn on a non-running worker already shows
-    // via the 'queued' state label, so it is not duplicated here.
-    const pending = summary.pendingMessages ?? 0;
-    const queuedInfo = pending > 0 && (state !== 'queued' || pending > 1)
-      ? ` · ${paint(theme, 'link', `queued ${pending}`)}`
-      : '';
-    const worktreeInfo = formatWorktreeState(summary.worktree);
-    const latestEvent = summary.ledgerEvents.at(-1)?.message;
-    const result = summary.normalizedResult?.result ?? summary.normalizedResult?.next ?? summary.lastOutput ?? latestEvent;
-    const live = !isTerminal(record) && record.deltaSummary ? record.deltaSummary : undefined;
-    const previewText = live ?? result;
-    const preview = previewText ? ` — ${previewText.replace(/\n/g, ' ').slice(0, 90)}${!live && summary.outputTruncated ? '…' : ''}` : '';
-    const name = paint(theme, 'brand', summary.name);
-    const id = paint(theme, 'dim', shortId(summary.agentId));
-    const elapsed = formatElapsed(record.startedAt, isTerminal(record) ? record.updatedAt : undefined);
-    lines.push(`${meta.icon} ${name} (${id}) · ${meta.label}${handback}${queuedInfo}${modelInfo}${taskInfo}${planInfo}${active}${toolsInfo}${worktreeInfo} · ${elapsed}${paint(theme, 'dim', preview)}`);
-  }
-  if (records.length > limit) lines.push(paint(theme, 'muted', `… ${records.length - limit} more; use agent inspect for full details.`));
-  // Clip at the source when a width is known — pi errors on over-wide lines.
-  return width ? lines.map((l) => truncateToWidth(l, width)) : lines;
-}
-
-export function formatAgentLedgerDetails(limit = 10): string {
-  return buildAgentLedgerLines(limit).join('\n');
 }
 
 export function setAgentLedgerMetricsRefreshForUi(cb: ((ctx?: PiContext) => void) | undefined): void {

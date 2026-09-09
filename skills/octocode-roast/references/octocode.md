@@ -11,7 +11,7 @@ This skill does not define Octocode research rules. Use `octocode-research` for 
 3. After consent, install with the Octocode CLI:
 
 ```bash
-npx octocode skill install octocode-research
+npx -y octocode skill install octocode-research
 ```
 
 Add `--platform <target>` after you approve installation for a specific host, such as `codex`, `claude`, `cursor`, or `pi`.

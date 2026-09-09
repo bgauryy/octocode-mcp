@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { SCHEMA_DDL, SCHEMA_INDEX_DDL } from '../src/db-schema.js';
 import { historyExamples, historySchemas, HISTORY_ROUTE_DESCRIPTORS } from '../src/schema/definitions-history.js';
 import { assertCanonicalSchemaFingerprint } from '../src/db-introspection.js';
-import { schemas } from '../src/schema/cli.js';
+import { schemas } from '../src/schema/registry.js';
 import { commandIndex } from '../src/schema/command-catalog.js';
 import { CLI_REQUIRED, cliAllowedFlags } from '../src/schema/cli-contract.js';
 
@@ -40,6 +40,12 @@ describe('local history canonical contracts', () => {
     expect(historySchemas.history_restore_apply.safeParse({
       workspace: '/repo', agent_id: 'agent', preview_id: 'preview_1', side: 'before',
     }).success).toBe(false);
+    expect(historySchemas.history_retention_prune.safeParse({ workspace: '/repo', confirm: 'prune', limit: 2 }).success).toBe(true);
+    expect(historySchemas.history_retention_prune.safeParse({ workspace: '/repo', limit: 2 }).success).toBe(false);
+    expect(historySchemas.history_recovery.safeParse({ workspace: '/repo', action: 'reconcile' }).success).toBe(false);
+    expect(historySchemas.history_recovery.safeParse({ workspace: '/repo', action: 'reconcile', confirm: 'reconcile' }).success).toBe(true);
+    expect(historySchemas.history_evidence.safeParse({ workspace: '/repo', action: 'reclaim' }).success).toBe(false);
+    expect(historySchemas.history_evidence.safeParse({ workspace: '/repo', action: 'reclaim', confirm: 'reclaim', grace_seconds: 3600 }).success).toBe(true);
   });
 
   it('rejects every prior fingerprint instead of recognizing a legacy conversion shape', () => {

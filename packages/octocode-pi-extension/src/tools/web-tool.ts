@@ -8,7 +8,7 @@ import { runWebTool, renderWebResult } from '../web.js';
 import { propagateOctocodeEnv, getOctocodeHome } from '@octocodeai/config';
 import { CLI_STATUS_TEXT } from '../tui/cli-design.js';
 import type { ToolDefinition, PiTheme, ToolCallResult } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { buildToolView } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 
@@ -64,26 +64,14 @@ export function registerWebTool(
     name: 'web',
     label: 'Web',
     description:
-      'Browse the live web. Accepts one or more queries[] (parallel or sequential); each query needs reasoning plus ' +
-      '`url` (fetch a page as readable text) or `query` (web search). If both are given, url takes precedence. ' +
-      'Fetch: converts HTML to plain text, supports page:N pagination, enforces a 15s deadline per request. ' +
-      'Search: uses the best available provider \u2014 Tavily \u2192 Serper \u2192 Exa \u2192 DuckDuckGo (auto by available API key); ' +
-      'returns {title, url, snippet} results plus an AI answer when available; enforces a 30s deadline. ' +
-      'Use engine:"exa" for neural/academic search. ' +
-      'SSRF-hardened: private IPs, loopback, link-local, and metadata addresses (169.254.169.254 etc.) are blocked. ' +
-      'Use for docs, changelogs, error messages, live prices, and current info beyond the codebase and training data.',
+      DIRECT_TOOL_DESCRIPTIONS.web!,
     promptSnippet: 'Search the web or fetch and read a page',
     promptGuidelines: [
-      'Prefer Octocode/local tools for code and packages; use web for external docs, news, and live info. ' +
-        'Search with `query` to discover, then read the best hit with `url`.',
-      'Provide url or query per query item. If both are given, url takes precedence and query is ignored.',
-      'Pagination: when a fetch result shows truncated: true, re-call the same url with page: 2, page: 3 \u2026 to continue. Each page is maxChars chars.',
-      'Blocked or thin pages: if a fetch returns a bot-challenge, 403, or near-empty content, try the URL from a search snippet, a docs-subdomain variant, or search instead of fetching directly.',
-      'DuckDuckGo (the no-key fallback) frequently returns bot-challenge errors. ' +
-        'Set TAVILY_API_KEY, SERPER_API_KEY, or EXA_API_KEY in ~/.octocode/.env for reliable results.',
-      'includeDomains and excludeDomains are Tavily-only \u2014 they are silently ignored by Serper, Exa, and DuckDuckGo.',
-      'Timeouts are built-in and fixed: 15s per fetch (headers + body + all redirects), 30s for search API calls. They cannot be overridden by the agent.',
-      'engine must be one of: tavily, serper, exa, duckduckgo (all lowercase). Omit engine to use the auto-ladder by available key.',
+      'Provide url or query; if both are present, url takes precedence. Fetch a discovered URL before its page contents count as evidence.',
+      'When truncated:true, continue the same URL with the next page and maxChars until the needed evidence is read. A partial page cannot prove absence.',
+      'For a bot challenge, 403, or empty page, use a search-discovered alternative or another provider. Repeating the blocked fetch adds no evidence.',
+      'Omit engine to select automatically by available key. Tavily alone applies includeDomains/excludeDomains; other engines ignore them. A provider key requires authorized configuration.',
+      'Timeouts are fixed: 15s for a fetch including redirects and body, 30s for search. No per-call override.',
     ],
     parameters,
 

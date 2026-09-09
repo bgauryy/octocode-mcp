@@ -6,6 +6,10 @@ For routing decisions, read the [research manifest](OCTOCODE_RESEARCH_MANIFEST.m
 For parameters and defaults, use the [tool reference](OCTOCODE_TOOLS.md) and live
 schemas. Do not use a historical score or backlog entry as release acceptance.
 
+For response fields, path reconstruction, pagination layers, and producer-to-consumer
+handoffs, use the [tool data contract](TOOL_DATA_CONTRACT.md). Keep ratings dated
+and evidence-backed; a documentation correction does not establish a runtime improvement.
+
 Every acceptance run must cover the shared contract as well as tool-specific behavior: a strict `{ queries: [...] }` envelope; 1–5 same-tool query rows; optional per-query `goal` and `reasoning`; zero-based result `index` alignment; isolated row errors; compact `variants` and `relations`; collection/content/whole-response continuations; and typed terminal limits. The [tool reference's base-call section](OCTOCODE_TOOLS.md#how-every-tool-call-works) is the normative prose summary.
 
 ## Inspect the surface being tested
@@ -45,6 +49,10 @@ registration, schema projection, output formatting, or continuation rendering.
 
 - Check row-local `meta.evidence` and `meta.diagnostics` after public response
   shaping. Do not document a separate invented evidence or warning envelope.
+- Inspect the registered descriptor as well as TypeScript interfaces. MCP
+  publishes no `outputSchema`; static output types are not runtime validation.
+- Check `kind` and `confidence`, then the operation's actual completeness fields.
+  Do not require nonexistent universal `answerReady` or `complete` metadata.
 - Verify `none` views against selected source after expected security redaction.
   Test transformed views separately; a short result is not proof of fidelity.
 - Preserve source and revision anchors. Search ranking, AST shape, graph edges,
@@ -92,10 +100,10 @@ for measured comparisons; record commands and artifacts with the result.
 
 | Tool | Routing and schema checks | Content, pagination, and failure checks |
 |---|---|---|
-| `localSearch` | Exercise text, structural, files, and tree operations independently. | Verify file/match/traversal continuations, exclusions, structural fixtures, and zero-result diagnostics. |
+| `localSearch` | Exercise lexical text and regex queries independently. | Verify match continuations, exclusions, and zero-result diagnostics. |
 | `localGetFileContent` | Exercise path-only, full, range, match, and each supported view. | Preserve matched anchors; reconstruct transformed windows; verify effective fallback mode, redaction, and source lines. |
-| `localAnalyzeGraph` | Exercise dependencies, dependents, path, cycles, reachability, and dead-code candidates. | Traverse result and diagnostic pages; expose unresolved/unsupported edges and coverage limits; verify candidates semantically before deletion. |
-| `lspGetSemantics` | Exercise document, workspace, anchored, and hierarchy operations. | Distinguish unavailable server, unsupported capability, failed anchor, and valid empty result; verify server provenance and paginated snapshots. |
+| `astSearch` | Exercise `match`, `files`, filesystem/syntax `tree`, `symbols`, and all six `topology` analyses. | Validate pattern/rule exclusivity and language selection; traverse captures, nodes, results, and diagnostics; expose parser/scan limits and unresolved edges; corroborate deletion candidates. |
+| `lspSearch` | Exercise document, workspace, anchored, and hierarchy operations. | Distinguish unavailable server, unsupported capability, failed anchor, and valid empty result; verify server provenance and paginated snapshots. |
 | `ghSearch` | Exercise code, repository, and tree variants; reject branch selection for indexed code search. | Preserve candidate matches, selected operation, immutable tree identity, metadata pages, indexing uncertainty, and provider-limit diagnostics. |
 | `ghGetFileContent` | Exercise file views and directory materialization separately. | Compare local/remote matching and windows; verify pinned refs, repeated-outline prevention, security redaction, and materialization failures. |
 | `ghSearchHistory` | Exercise PR, issue, and commit discovery with operation-specific scope. | Traverse discovery pages; preserve filters and exact-detail hints; check supported minification modes and provider-incomplete results. |

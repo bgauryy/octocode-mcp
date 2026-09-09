@@ -1,6 +1,6 @@
 # Packets
 
-Load when writing worker briefs or parsing returns. Why: workers see no parent chat.
+Load when writing worker briefs or parsing returns. Check the host's context inheritance and provide what the worker lacks.
 
 ## Request (required)
 - `goal` — one bounded objective
@@ -20,7 +20,7 @@ Load when writing worker briefs or parsing returns. Why: workers see no parent c
 - `confidence` — confirmed | likely | uncertain + gaps
 - `next` — next action or `none`
 
-Empty or missing `return` shape = failed handback — re-ask or replan.
+Re-ask only when a missing return field prevents verification or the next action. Accept an equivalent clear result; do not repeat work solely to enforce a prose template.
 
 ## Message kinds
 `request` · `question` · `status` · `result` · `blocker` · `approval-needed` · `cancel`

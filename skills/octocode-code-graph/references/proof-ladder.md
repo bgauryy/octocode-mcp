@@ -13,9 +13,9 @@ graph candidate
 
 ## Tool roles
 
-- `localGetFileContent`: use `minify:"none"` with `matchString` or a line range to quote exact imports, exports, registrations, and anchors; exhaust returned continuations.
-- `localSearch operation:"structural"`: distinguish code shapes; use `pattern` or YAML `rule`, and prefer `rule: kind: …` when fragment parsing is unreliable.
-- `lspGetSemantics`: prove definitions, references, callers/callees, symbols, and diagnostics. Use `includeDeclaration:false` for unused claims.
+- `localGetFileContent`: exact content is the default; use `minify:"none"` explicitly when documenting the intent, with `matchString` or a line range for bounded imports, exports, registrations, and anchors. Path-only reads are valid; exhaust returned continuations. In match results, `matchedLines` are exact anchors and `matchRanges` include context padding.
+- `astSearch operation:"match"`: distinguish code shapes; use `pattern` or YAML `rule`, and prefer `rule: kind: …` when fragment parsing is unreliable.
+- `lspSearch`: prove definitions, references, callers/callees, symbols, and diagnostics when a semantic provider is available. Check `lsp.source`, completeness, and terminal/partial state; native graph-facts results are syntactic evidence. Use `includeDeclaration:false` for unused claims.
 - Text search: cover configs, strings, scripts, tests, reflection, generated registries, and LSP blind spots; lexical hits do not prove identity.
 
 ## Claim gates
@@ -29,4 +29,4 @@ graph candidate
 - Dead code/delete: explicit entrypoints and tests policy, exact export/re-export chain, LSP excluding declarations, broad text/config search, then tests/build.
 - Coupling/god module: graph breadth plus mixed AST responsibilities and semantic callers/callees; file size alone is insufficient.
 
-If LSP returns unsupported/empty/error, report the lane as unavailable and compensate with AST + exact reads + tests; confidence cannot be `confirmed` for identity-sensitive deletion. Inspect all pagination and graph warnings before a negative claim. Verification is green only when the command exit status is zero. Then load `references/output.md` to keep candidates separate from findings.
+Distinguish a successful empty LSP result from unsupported, error, and partial states. Empty means no results in that completed query scope; the other states leave the semantic question unresolved. Use exact reads, structural/configuration evidence, and relevant checks to address gaps, and retain uncertainty when identity remains unresolved. Inspect pagination and graph warnings before a negative claim. Verification is green only when the command exit status is zero. Then load `references/output.md` to keep candidates separate from findings.

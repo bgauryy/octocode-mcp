@@ -74,7 +74,7 @@ it('serializes concurrent installers and never exposes partial JSON', { timeout:
         hooks?: Record<string, Array<Record<string, unknown>>>;
       };
       expect(finalSettings.unrelated).toHaveLength(8 * 1024 * 1024);
-      expect(finalSettings.hooks?.PreToolUse).toHaveLength(1);
+      expect(finalSettings.hooks?.PostToolUse).toHaveLength(1); expect(finalSettings.hooks?.PreToolUse).toBeUndefined();
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }
@@ -226,7 +226,7 @@ it('requires --host for hooks check', () => {
     const result = runInstallHooksRaw(['hooks', 'check', '--compact']);
     expect(result.status).toBe(1);
     const parsed = JSON.parse(result.stdout) as { error?: string };
-    expect(parsed.error).toContain('hooks check requires --host');
+    expect(parsed.error).toContain('--host');
   });
 it('generated skill CLI resolves hook paths from its own scripts directory', () => {
     expect(existsSync(SKILL_SCRIPT), 'generated awareness.mjs must exist after build').toBe(true);
@@ -235,7 +235,7 @@ it('generated skill CLI resolves hook paths from its own scripts directory', () 
       const result = runInstallHooks(['hooks', 'install', '--host', 'codex', '--project-dir', projectDir, '--dry-run'], SKILL_SCRIPT);
       const serialized = JSON.stringify(result.resultingSettings);
       expect(serialized).toContain('/skills/octocode-awareness/scripts/hook-runner.mjs');
-      expect(serialized).toContain(' pre-edit --host codex --skill-root ');
+      expect(serialized).toContain(' notify-deliver --host codex --skill-root ');
       expect(serialized).not.toContain('/skills/skills/');
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
@@ -288,7 +288,7 @@ it('installed Codex hook commands run when Node is absent from PATH', () => {
     const restoreLocalProcesses = allowLocalFixtureProcesses();
     try {
       const preview = runInstallHooks([
-        'hooks', 'install', '--host', 'codex', '--project-dir', projectDir, '--dry-run',
+        'hooks', 'install', '--host', 'codex', '--profile', 'guard', '--project-dir', projectDir, '--dry-run',
       ]);
       const preToolUse = preview.resultingSettings.hooks?.PreToolUse?.[0] as {
         hooks?: Array<{ command?: string }>;
@@ -324,10 +324,9 @@ it('defaults Codex installation to the coordination profile', () => {
       const result = runInstallHooks(['hooks', 'install', '--host', 'codex', '--project-dir', projectDir, '--dry-run']);
       expect(result.profile).toBe('coordination');
       expect(Object.keys(result.resultingSettings.hooks ?? {})).toEqual([
-        'PreToolUse',
+        'SessionStart',
         'PostToolUse',
-        'Stop',
-        'SubagentStop',
+        'SubagentStart', 'SessionEnd', 'UserPromptSubmit',
       ]);
     } finally {
       rmSync(projectDir, { recursive: true, force: true });

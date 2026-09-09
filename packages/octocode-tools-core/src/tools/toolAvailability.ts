@@ -1,5 +1,5 @@
 import { getConfigSync } from '@octocodeai/config';
-import { STATIC_TOOL_NAMES } from './toolNames.js';
+import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
 
 type AvailabilityConfig = {
   local: { enabled: boolean; enableClone: boolean };
@@ -13,7 +13,7 @@ export function getToolAvailability(
   config: AvailabilityConfig = getConfigSync()
 ): { enabled: boolean; envVar?: string } {
   const clone = name === STATIC_TOOL_NAMES.GITHUB_CLONE_REPO;
-  const local = clone || name.startsWith('local') || name.startsWith('lsp');
+  const local = clone || isLocalTool(name);
   let envVar: string | undefined;
   if (local && !config.local.enabled) envVar = 'ENABLE_LOCAL';
   else if (clone && config.storage.mode !== 'persistent')

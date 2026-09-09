@@ -10,12 +10,6 @@ import {
   createQueryShapeSchema,
   describeQuerySchema,
 } from '../../scheme/coreSchemas.js';
-import type {
-  LocalItemPagination,
-  ToolContinuation,
-} from '../../scheme/pagination.js';
-import type { BulkToolOutput } from '../../types/toolOutput.js';
-
 const queryOverrides = {
   maxDepth: clampedInt(0, 100).optional(),
   minDepth: clampedInt(0, 100).optional(),
@@ -73,33 +67,3 @@ export const LocalFindFilesBulkQuerySchema = createRelaxedBulkQuerySchema(
   FindFilesQueryShape,
   { maxQueries: 5 }
 );
-
-// ---------------------------------------------------------------------------
-// Output TYPES — local files result shape. No zod: the output was never
-// validated at runtime (MCP registers no outputSchema), so it is a plain type.
-// Shared envelope lives in types/toolOutput.ts.
-// ---------------------------------------------------------------------------
-
-export interface LocalFindFilesEntryOutput {
-  name?: string;
-  path?: string;
-  type?: 'file' | 'dir' | 'directory' | 'link' | 'symlink';
-  size?: number | string;
-  sizeFormatted?: string;
-  modified?: string;
-  permissions?: string;
-}
-
-export interface LocalFindFilesData {
-  path?: string;
-  files?: LocalFindFilesEntryOutput[];
-  summary?: string;
-  pagination?: LocalItemPagination;
-  next?: Record<string, ToolContinuation>;
-  terminalLimit?: boolean;
-  truncated?: boolean;
-  partialReasons?: Array<'limit' | 'walkLimit'>;
-  totalAvailable?: number;
-}
-
-export type LocalFindFilesOutput = BulkToolOutput<LocalFindFilesData>;

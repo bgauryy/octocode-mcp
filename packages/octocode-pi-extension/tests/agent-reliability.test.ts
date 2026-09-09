@@ -14,16 +14,14 @@ import path from 'node:path';
 import { test, beforeEach, afterEach, vi } from 'vitest';
 import { spawnRpcAgent } from '../src/tools/agents/process.js';
 import { executeAgentLifecycle, getWorkerTranscript } from '../src/tools/agents/lifecycle.js';
-import { handleOctocodeAgentsCommand } from '../src/tools/agents/command.js';
 import { waitForAgent, waitForAgentTurn } from '../src/tools/agents/wait.js';
 import {
   formatElapsed,
-  formatAgentLedgerDetails,
   refreshAgentLedgerUi,
   isLedgerTickerActiveForTests,
   stopLedgerTickerForTests,
 } from '../src/tools/agents/rendering.js';
-import { setAgentProcessFactoryForTests, isSubagentProcess } from '../src/tools/agents/registry.js';
+import { setAgentProcessFactoryForTests, isSubagentProcess, setLedgerHidden } from '../src/tools/agents/registry.js';
 import { listWorkerLedgerEntries, listVisibleWorkerLedgerEntries, findLivePlanWorker } from '../src/tools/agents/ledger.js';
 import { MAX_AGENT_RECORDS, MAX_ACTIVE_AGENTS, DEFAULT_SPAWN_POLICY } from '../src/tools/agents/types.js';
 import { extractDeltaSummary } from '../src/tools/agents/normalization.js';
@@ -118,22 +116,6 @@ test('agent inspect list exposes the canonical agentId for follow-up lifecycle c
   assert.ok(text.includes(`agentId: ${record.id}`), text);
   const details = result.details as { agents: Array<{ agentId: string }> };
   assert.ok(details.agents.some((agent) => agent.agentId === record.id));
-});
-
-test('agent CLI uses canonical commands and rejects status and clear aliases', async () => {
-  const notices: Array<{ message: string; level?: string }> = [];
-  const ctx = { hasUI: false, ui: { notify: (message: string, level?: string) => notices.push({ message, level }) } } as never;
-  setAgentProcessFactoryForTests(() => makeMockAgentProcess() as never);
-  spawnRpcAgent({ task: 'visible worker' });
-  await handleOctocodeAgentsCommand('hide', ctx);
-  await handleOctocodeAgentsCommand('status', ctx);
-  assert.equal(notices.at(-1)?.level, 'warning');
-  assert.equal(listVisibleWorkerLedgerEntries().length, 0);
-  await handleOctocodeAgentsCommand('list', ctx);
-  assert.equal(listVisibleWorkerLedgerEntries().length, 1);
-  await handleOctocodeAgentsCommand('clear', ctx);
-  assert.equal(notices.at(-1)?.level, 'warning');
-  assert.equal(listVisibleWorkerLedgerEntries().length, 1);
 });
 
 test('H4: waiters are resolved immediately when EPIPE transitions agent to failed', async () => {
@@ -369,15 +351,15 @@ test('L1: ledger elapsed time is frozen for a terminal agent, not growing with w
 
   const mock = makeMockAgentProcess({ stdinThrows: false, exitImmediately: false });
   setAgentProcessFactoryForTests(() => mock as never);
-  spawnRpcAgent({ task: 'finishes quickly', resourceMode: 'lean' });
+  const record = spawnRpcAgent({ task: 'finishes quickly', resourceMode: 'lean' });
 
   // Terminate the agent (status -> 'exited', updatedAt frozen at this moment).
   mock.exitCode = 0;
   mock._emit('close', 0, null);
 
-  const snapshotA = formatAgentLedgerDetails();
+  const snapshotA = getWorkerTranscript(record.id);
   await new Promise((resolve) => setTimeout(resolve, 60));
-  const snapshotB = formatAgentLedgerDetails();
+  const snapshotB = getWorkerTranscript(record.id);
 
   assert.equal(snapshotB, snapshotA, 'elapsed time for a terminal agent must not change after it finished');
 });
@@ -484,6 +466,7 @@ test('agent wait cancellation releases waiters and probes without terminating th
   registerUnifiedAgentTool({}, new Set(), (_pi, _names, definition) => {
     tools.set(definition.name, definition);
   });
+  mock._emit('stdout:data', Buffer.from(JSON.stringify({ type: 'agent_start' }) + '\n'));
   const controller = new AbortController();
   let settled = false;
   const waiting = tools.get('agent')!.execute('cancel-wait', {
@@ -640,7 +623,7 @@ test('L3: refreshAgentLedgerUi with no agents stops the ticker without creating 
   stopLedgerTickerForTests();
 });
 
-test('/octocode-agents hide suppresses unified footer detail until list shows it again', async () => {
+test('ledger visibility suppresses unified footer detail without creating duplicate surfaces', async () => {
   if (isSubagentProcess()) return;
   const statusCalls: unknown[] = [];
   const widgetCalls: unknown[] = [];
@@ -657,12 +640,14 @@ test('/octocode-agents hide suppresses unified footer detail until list shows it
   spawnRpcAgent({ task: 'visible worker', resourceMode: 'lean' }, ctx);
   assert.ok(listVisibleWorkerLedgerEntries().length > 0, 'agent panel starts visible');
 
-  await handleOctocodeAgentsCommand('hide', ctx);
+  setLedgerHidden(true);
+  refreshAgentLedgerUi(ctx);
   assert.equal(listVisibleWorkerLedgerEntries().length, 0, 'hide suppresses the shared visible-ledger row builder');
   assert.deepEqual(statusCalls, [], 'hide does not create a duplicate status surface');
   assert.deepEqual(widgetCalls, [], 'worker state never creates a duplicate below-editor surface');
 
-  await handleOctocodeAgentsCommand('list', ctx);
+  setLedgerHidden(false);
+  refreshAgentLedgerUi(ctx);
   assert.ok(listVisibleWorkerLedgerEntries().length > 0, 'list shows the footer ledger rows again');
 
   stopLedgerTickerForTests();

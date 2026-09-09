@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { captureWorkspaceFiles } from './history-files.js';
 import type { HistoryTreeEntry } from './history-git.js';
 import type { HistoryCaptureInput, HistoryCheckpointInput } from './schema/definitions-history.js';
-import { HistoryError, historyHash, historyOperation, historyPaths, historyReceipt, historyTransaction, historyVersions, type HistoryContext, type HistoryOperation } from './history-store.js';
+import { assertHistoryStorageReady, HistoryError, historyHash, historyOperation, historyPaths, historyReceipt, historyTransaction, historyVersions, type HistoryContext, type HistoryOperation } from './history-store.js';
 
 function assertRun(ctx: HistoryContext, input: HistoryCaptureInput | HistoryCheckpointInput): void {
   if (!input.run_id) return;
@@ -22,6 +22,7 @@ function assertOwner(ctx: HistoryContext, row: HistoryOperation, input: HistoryC
 
 /** Capture is a journaled asynchronous operation; no database transaction spans file or Git I/O. */
 export async function captureHistory(ctx: HistoryContext, input: HistoryCaptureInput | HistoryCheckpointInput) {
+  assertHistoryStorageReady(ctx);
   const checkpoint = !('phase' in input);
   const side = checkpoint ? 'after' : input.phase;
   const id = input.operation_id ?? `history_${randomUUID()}`;
@@ -53,8 +54,6 @@ export async function captureHistory(ctx: HistoryContext, input: HistoryCaptureI
       return historyReceipt(ctx, id);
     }
     assertRun(ctx, input);
-    // Reject memory mode before creating any journal rows or directories.
-    if (ctx.dbPath === ':memory:') throw new HistoryError('HISTORY_DISABLED', 'Local history requires a persistent Awareness database.');
     const now = new Date().toISOString();
     historyTransaction(ctx, () => {
       ctx.db.prepare(`INSERT INTO local_history_operations

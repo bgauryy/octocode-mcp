@@ -9,41 +9,28 @@ import {
   getDirectToolCategory,
 } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
 import {
-  LSP_GET_SEMANTICS_TOOL_NAME,
+  LSP_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
 } from '../../src/tools/toolNames.js';
 
 describe('direct-tool command patterns', () => {
-  it('uses operation-aware patterns for unified localSearch inputs', () => {
+  it('uses lexical patterns for localSearch inputs', () => {
     const patterns = buildDirectToolCommandPatterns(LOCAL_SEARCH_TOOL_NAME);
 
-    expect(patterns).toHaveLength(4);
+    expect(patterns).toHaveLength(1);
     expect(patterns[0]).toMatchObject({
       label: 'text anchors',
       query: {
-        operation: 'text',
         path: '/ABS/repo/src',
         searchText: 'buildDirectToolCommandPatterns',
         maxFiles: 20,
       },
     });
     expect(patterns[0]?.command).toBe(
-      'tools localSearch --queries \'{"operation":"text","path":"/ABS/repo/src","searchText":"buildDirectToolCommandPatterns","maxFiles":20}\''
+      'tools localSearch --queries \'{"path":"/ABS/repo/src","searchText":"buildDirectToolCommandPatterns","maxFiles":20}\''
     );
-    expect(patterns[1]).toMatchObject({
-      label: 'structural matches',
-      query: {
-        operation: 'structural',
-        path: '/ABS/repo/src',
-        pattern: 'eval($X)',
-        langType: 'typescript',
-      },
-    });
-    expect(patterns[2]?.query).toMatchObject({ operation: 'files' });
-    expect(patterns[3]?.query).toMatchObject({ operation: 'tree' });
     expect(buildDirectToolExampleQuery(LOCAL_SEARCH_TOOL_NAME)).toEqual({
-      operation: 'text',
       path: '/ABS/repo/src',
       searchText: 'buildDirectToolCommandPatterns',
       maxFiles: 20,
@@ -79,9 +66,7 @@ describe('direct-tool command patterns', () => {
   });
 
   it('keeps semantic patterns compact for definition and outline flows', () => {
-    const patterns = buildDirectToolCommandPatterns(
-      LSP_GET_SEMANTICS_TOOL_NAME
-    );
+    const patterns = buildDirectToolCommandPatterns(LSP_SEARCH_TOOL_NAME);
 
     expect(patterns.map(pattern => pattern.label)).toEqual([
       'symbol outline (absolute uri)',
@@ -89,11 +74,11 @@ describe('direct-tool command patterns', () => {
     ]);
     expect(patterns[0]?.query).toEqual({
       uri: '/ABS/packages/octocode-tools-core/src/scheme/pagination.ts',
-      type: 'documentSymbols',
+      operation: 'documentSymbols',
     });
     expect(patterns[1]?.query).toMatchObject({
       uri: '/ABS/packages/octocode-tools-core/src/scheme/pagination.ts',
-      type: 'definition',
+      operation: 'definition',
       symbolName: 'buildNextPageContinuation',
       lineHint: 72,
     });
@@ -105,9 +90,7 @@ describe('direct-tool command patterns', () => {
     expect(DIRECT_TOOL_CATEGORIES).toContain('Local Code');
     expect(categoryLabels).not.toContain('LSP');
     expect(getDirectToolCategory(LOCAL_SEARCH_TOOL_NAME)).toBe('Local Code');
-    expect(getDirectToolCategory(LSP_GET_SEMANTICS_TOOL_NAME)).toBe(
-      'Local Code'
-    );
+    expect(getDirectToolCategory(LSP_SEARCH_TOOL_NAME)).toBe('Local Code');
   });
 
   it('returns no patterns for unknown tools', () => {
@@ -129,7 +112,7 @@ describe('direct-tool command patterns', () => {
   it('generates no examples referencing facebook/react', () => {
     const allToolNames = [
       ...Object.values(STATIC_TOOL_NAMES),
-      LSP_GET_SEMANTICS_TOOL_NAME,
+      LSP_SEARCH_TOOL_NAME,
     ];
     for (const name of allToolNames) {
       const patterns = buildDirectToolCommandPatterns(name);

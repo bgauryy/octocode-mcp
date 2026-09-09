@@ -3,6 +3,7 @@
  * Atomic writes record read-state for subsequent edit stale checks.
  */
 import path from 'node:path';
+import { lstat } from 'node:fs/promises';
 import type { ToolCallResult } from '../types.js';
 import { atomicWriteUtf8, recordFileReadStateFromContent, withFileMutationQueue } from './file-state.js';
 import { peerWipNotice, markOwnWrite } from './peer-wip.js';
@@ -35,9 +36,14 @@ export async function commitWrite(
   const absolutePath = resolveWritePath(requestPath, cwd);
   if (signal?.aborted) throw new Error('Operation aborted');
   const peerNotice = peerWipNotice(absolutePath, requestPath);
+  let created = false;
 
   await withFileMutationQueue(absolutePath, async () => {
     if (signal?.aborted) throw new Error('Operation aborted');
+    try { await lstat(absolutePath); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      created = true;
+    }
     await atomicWriteUtf8(absolutePath, content);
     if (signal?.aborted) throw new Error('Operation aborted');
     await recordFileReadStateFromContent(absolutePath, content);
@@ -51,6 +57,7 @@ export async function commitWrite(
     }],
     details: {
       operation: 'write',
+      created,
       path: requestPath,
       absolutePath,
       bytes: Buffer.byteLength(content, 'utf8'),

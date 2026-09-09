@@ -32,7 +32,7 @@ import { buildToolView } from './render-helpers.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { createSessionArtifactContext } from './session-artifacts.js';
 import type { ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 
 import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
@@ -126,10 +126,7 @@ const runFfmpegItemSchema = z.looseObject({
     .describe('Which binary to run. Default: ffmpeg. Use ffprobe for metadata-only queries.')
     .optional(),
   args: z.array(z.string()).min(1).describe(
-    'ffmpeg argv WITHOUT the binary name. ' +
-    'Example: ["-y", "-i", "input.mp4", "-c:v", "h264_videotoolbox", "-b:v", "4M", "out.mp4"]. ' +
-    'File paths are resolved relative to cwd and path-guarded automatically. ' +
-    'See docs/FFMPEG.md#cookbook for copy-paste patterns.',
+    'Argv without binary or shell syntax, e.g. ["-i","input.mp4","out.mp4"]. Paths resolve against cwd; overwrite flags require authorized replacement.',
   ),
   captureStdout: z.boolean().optional().describe(
     'Capture pipe-to-stdout image/data bytes in a private session artifact and return its path. ' +
@@ -148,32 +145,14 @@ export function registerRunFfmpegTool(
     name: 'runFfmpeg',
     label: 'Run FFmpeg',
     description:
-      'Run advanced ffmpeg or ffprobe argv directly with workspace path guards, timeout, ' +
-      'cancellation, and progress. Prefer inspectMedia and media for standard inspection and transforms.' +
-      '\n\n' +
-      'Use for operations media does not expose:\n' +
-      '  • Side-by-side      -filter_complex hstack / vstack\n' +
-      '  • Text watermark    -vf drawtext=…  (needs libfreetype)\n' +
-      '  • Audio normalize   -af loudnorm=I=-16:TP=-1.5:LRA=11\n' +
-      '  • Silence detect    -af silencedetect=noise=-30dB:d=0.5 -f null -\n' +
-      '  • Speed change      -vf setpts=0.5*PTS -af atempo=2.0\n' +
-      '  • Screen record     -f avfoundation -i "1" -t N (Screen Recording perm)\n' +
-      '  • VMAF quality      -lavfi "[0:v][1:v]libvmaf=log_path=vmaf.json" -f null -\n' +
-      '  • ProRes master     -c:v prores_videotoolbox -profile:v 3\n' +
-      '  • Complex concat    -filter_complex "[0][1]concat=n=2:v=1:a=1"\n' +
-      '\n' +
-      'args is argv WITHOUT the binary name. Example:\n' +
-      '  ["-y", "-i", "input.mp4", "-c:v", "h264_videotoolbox", "-b:v", "4M", "out.mp4"]\n' +
-      '📖 Reference + cookbook (16 recipes): docs/FFMPEG.md',
+      DIRECT_TOOL_DESCRIPTIONS.runFfmpeg!,
     promptSnippet:
-      'Run any ffmpeg command directly; use inspectMedia for inspection and media for common transforms.',
+      'Run advanced ffmpeg operations outside the media presets.',
     promptGuidelines: [
-      'Use inspectMedia (inspection) and media (gif/trim/audio/convert/concat) for standard operations.',
-      'Use runFfmpeg for: filter_complex, loudnorm, VMAF, avfoundation, ProRes, drawtext.',
       'args is argv WITHOUT the binary name. -hide_banner and -nostdin are always prepended; paths are auto-resolved and path-guarded.',
-      'Always include -y in args when writing a file that may already exist. Without -y, ffmpeg exits non-zero when output exists (stdin is disabled, so it cannot prompt).',
+      'Use a fresh destination by default. Include -y only for an authorized overwrite; without it an existing output fails because stdin is disabled.',
       'binary:"ffprobe" auto-captures stdout (no need for captureStdout:true). Use captureStdout:true only for ffmpeg commands that write binary/data to stdout (output arg "-").',
-      'See docs/FFMPEG.md#cookbook for 16 copy-paste recipes.',
+      'Use docs/FFMPEG.md#cookbook when a recipe is needed.',
     ],
     parameters: buildQueryEnvelopeSchema(runFfmpegItemSchema, {
       reasoningDescription: 'Why this ffmpeg command is needed and what it produces.',

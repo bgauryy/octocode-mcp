@@ -27,7 +27,7 @@ Use `octocode-rfc-generator` after a Build verdict and `octocode-research` when 
 ## Install
 
 ```bash
-npx octocode skill install octocode-brainstorming --platform codex
+npx -y octocode skill install octocode-brainstorming
 ```
 
 ## Optional search credentials

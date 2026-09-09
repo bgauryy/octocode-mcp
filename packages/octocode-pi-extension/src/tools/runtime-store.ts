@@ -1,5 +1,6 @@
 import type { AssembledContextV1 } from './context-segments.js';
 import { createStore, type StoreApi } from 'zustand/vanilla';
+import { createExecutionState, reduceExecutionEvent, type ExecutionEvent, type ExecutionState } from './execution-events.js';
 
 export type RuntimePhase = 'idle' | 'initializing' | 'ready' | 'degraded' | 'failed' | 'disposing' | 'disposed';
 export type RuntimeTaskStatus = 'idle' | 'running' | 'ready' | 'degraded' | 'failed';
@@ -75,14 +76,13 @@ export interface RuntimeContextState {
 
 export interface RuntimeFooterState {
   sessionStartedAt: number;
-  /** Transient execution only; tool results remain in their transcript rows. */
-  toolCalls?: Array<{ id: string; name: string }>;
-  compacting?: boolean;
   activeTurnStartedAt?: number;
   lastTurnMs?: number;
   completedTurns: number;
   gitDirty?: boolean;
   gitDirtyFiles?: number;
+  gitAdditions?: number;
+  gitDeletions?: number;
   usage?: { tokens?: number; contextWindow: number };
   githubAuth: { status: 'checking' | 'authenticated' | 'missing' | 'error'; source?: string; message?: string };
 }
@@ -99,6 +99,9 @@ export interface RuntimeState {
   context: RuntimeContextState;
   footer: RuntimeFooterState;
   activity: ForegroundActivity;
+  execution: ExecutionState;
+  recordExecution(event: ExecutionEvent): void;
+  restoreExecution(events: readonly ExecutionEvent[]): void;
   notice?: RuntimeNotice;
   begin(stage?: string): number;
   setStage(stage: string): void;
@@ -125,7 +128,7 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function initialState(): Pick<RuntimeState, 'generation' | 'phase' | 'stage' | 'tasks' | 'statuses' | 'mcp' | 'context' | 'footer' | 'activity'> {
+function initialState(): Pick<RuntimeState, 'generation' | 'phase' | 'stage' | 'tasks' | 'statuses' | 'mcp' | 'context' | 'footer' | 'activity' | 'execution'> {
   return {
     generation: 0,
     phase: 'idle',
@@ -159,6 +162,7 @@ function initialState(): Pick<RuntimeState, 'generation' | 'phase' | 'stage' | '
       githubAuth: { status: 'checking' },
     },
     activity: { kind: 'idle' },
+    execution: createExecutionState(),
   };
 }
 
@@ -166,6 +170,26 @@ export function createRuntimeStore(now: () => number = Date.now): RuntimeStore {
   let noticeId = 0;
   return createStore<RuntimeState>()((set, get) => ({
     ...initialState(),
+    restoreExecution: (events) => set((state) => {
+      const execution = events.reduce(reduceExecutionEvent, createExecutionState());
+      return { execution, footer: { ...state.footer,
+        sessionStartedAt: execution.startedAt ?? state.footer.sessionStartedAt,
+        activeTurnStartedAt: execution.activeTurnStartedAt,
+        completedTurns: execution.completedTurns,
+        lastTurnMs: execution.lastTurnMs,
+      } };
+    }),
+    recordExecution: (event) => set((state) => {
+      const execution = reduceExecutionEvent(state.execution, event);
+      if (execution === state.execution) return state;
+      return { execution, footer: {
+        ...state.footer,
+        sessionStartedAt: execution.startedAt ?? state.footer.sessionStartedAt,
+        activeTurnStartedAt: execution.activeTurnStartedAt,
+        completedTurns: execution.completedTurns,
+        lastTurnMs: execution.lastTurnMs,
+      } };
+    }),
     begin: (stage = 'starting') => {
       const generation = get().generation + 1;
       set({

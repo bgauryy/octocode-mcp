@@ -4,8 +4,8 @@ import { buildPlanPrompt as buildSharedPlanPrompt } from '@octocodeai/agent-cont
 export function buildPlanPrompt(goal: string): string {
   return buildSharedPlanPrompt(goal, {
     proposalInstruction:
-      'Show “Creating plan…” while preparing the review, then call plan with queries:[{reasoning:"Propose the reviewed plan.", action:"propose", steps, consequential, reason, rfcPath?}]. Use dependency-ordered, verifiable steps.',
+      'Call plan with queries:[{reasoning:"Propose the reviewed plan.", action:"propose", steps, consequential, reason, rfcPath?}]. The tool shows “Creating plan…” and presents the overview and askUser-backed review.',
     reviewInstruction:
-      'After the plan tool presents its concise overview, use the askUser-backed review once. Do not echo plan steps or file links in your reply — the plan widget shows them.',
+      'Use the returned decision: approved and started means continue implementation; requested changes mean revise; pending means wait for the existing interaction. The plan tool owns the review: do not call askUser again or repeat its progress, steps, or links. Present an inline review only if the tool explicitly reports that interactive review is unavailable.',
   });
 }

@@ -8,10 +8,15 @@ import {
   invokeCallbackSafely,
   withBasicSecurityValidation,
   withSecurityValidation,
+  type BulkResponsePagination,
   type ToolDirectSecurity,
   type ToolExecutionArgs,
   type ToolInvocationCallback,
 } from '@octocodeai/octocode-tools-core';
+
+interface ToolRegistrationInput<TQuery> extends BulkResponsePagination {
+  queries?: TQuery[];
+}
 
 interface ToolRegistrationConfig<TQuery> {
   name: string;
@@ -53,20 +58,14 @@ export function createToolRegistration<TQuery>(
         config.name,
         descriptor,
         withBasicSecurityValidation(
-          async (
-            args: {
-              queries?: TQuery[];
-              responseCharOffset?: number;
-              responseCharLength?: number;
-            },
-            context
-          ) => {
+          async (args: ToolRegistrationInput<TQuery>, context) => {
             const queries = args.queries ?? [];
             await invokeCallbackSafely(callback, config.name, queries);
             return config.executionFn({
               queries,
               responseCharOffset: args.responseCharOffset,
               responseCharLength: args.responseCharLength,
+              responseSnapshot: args.responseSnapshot,
               signal: context.signal,
             });
           },
@@ -82,11 +81,7 @@ export function createToolRegistration<TQuery>(
       withSecurityValidation(
         config.name,
         async (
-          args: {
-            queries: TQuery[];
-            responseCharOffset?: number;
-            responseCharLength?: number;
-          },
+          args: ToolRegistrationInput<TQuery>,
           context
         ): Promise<CallToolResult> => {
           const queries = args.queries || [];
@@ -95,6 +90,7 @@ export function createToolRegistration<TQuery>(
             queries,
             responseCharOffset: args.responseCharOffset,
             responseCharLength: args.responseCharLength,
+            responseSnapshot: args.responseSnapshot,
             authInfo: context.authInfo,
             sessionId: context.sessionId,
             signal: context.signal,

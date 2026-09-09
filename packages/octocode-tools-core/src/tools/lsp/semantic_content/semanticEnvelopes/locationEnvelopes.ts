@@ -37,7 +37,7 @@ export function locationsEnvelope(
     locations
   );
   return {
-    type: query.type,
+    type: query.operation,
     uri: anchor.uri,
     resolvedSymbol: compactResolvedSymbol(anchor.resolvedSymbol),
     lsp: { serverAvailable: true, provider },
@@ -90,7 +90,7 @@ export function referencesEnvelope(
   const warmupWarnings =
     warmupStats?.possiblyTruncated === true
       ? [
-          `Reference warmup opened ${warmupStats.warmedFiles}/${warmupStats.candidates} candidate file(s) and was incomplete (${warmupStats.incompleteReasons?.join(', ') ?? 'file cap'}); narrow workspaceRoot/path or confirm with localSearch operation:"text" before unused/safe-delete claims.`,
+          `Reference warmup opened ${warmupStats.warmedFiles}/${warmupStats.candidates} candidate file(s) and was incomplete (${warmupStats.incompleteReasons?.join(', ') ?? 'file cap'}); narrow workspaceRoot/path or confirm with localSearch before unused/safe-delete claims.`,
         ]
       : [];
 

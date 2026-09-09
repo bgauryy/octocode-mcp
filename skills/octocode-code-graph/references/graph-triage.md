@@ -2,7 +2,7 @@
 
 Load when selecting a graph operation and defining what its result can predict. Why: a narrow question avoids expensive whole-repository scans and smell inflation.
 
-| Question | `localAnalyzeGraph` operation | Required inputs | Candidate signal |
+| Question | `astSearch` topology analysis | Required inputs | Candidate signal |
 |---|---|---|---|
 | What can this file affect? | `dependents` | `path`, `file`, bounded `depth` | change affected scope |
 | What does this file rely on? | `dependencies` | `path`, `file`, bounded `depth` | coupling or boundary crossings |

@@ -24,7 +24,7 @@ import {
 // symbol by name so cross-file relations are visible — otherwise a fresh
 // server reports only same-file results and a zero reads as "unused".
 export const CONSUMER_SCOPED_PROVIDERS: Readonly<
-  Partial<Record<SymbolAnchoredSemanticQuery['type'], string>>
+  Partial<Record<SymbolAnchoredSemanticQuery['operation'], string>>
 > = {
   references: 'referencesProvider',
   callers: 'callHierarchyProvider',
@@ -149,11 +149,11 @@ export async function dispatchAnchoredSemantic(
   client: NonNullable<Awaited<ReturnType<typeof acquirePooledClient>>>,
   warmupStats?: ConsumerWarmupStats
 ): Promise<LspSemanticEnvelope> {
-  switch (query.type) {
+  switch (query.operation) {
     case 'definition':
       if (!client.hasCapability('definitionProvider')) {
         return emptyEnvelope(
-          query.type,
+          query.operation,
           anchor,
           'definitionProvider unsupported',
           true
@@ -173,7 +173,7 @@ export async function dispatchAnchoredSemantic(
     case 'typeDefinition':
       if (!client.hasCapability('typeDefinitionProvider')) {
         return emptyEnvelope(
-          query.type,
+          query.operation,
           anchor,
           'typeDefinitionProvider unsupported',
           true
@@ -193,7 +193,7 @@ export async function dispatchAnchoredSemantic(
     case 'implementation':
       if (!client.hasCapability('implementationProvider')) {
         return emptyEnvelope(
-          query.type,
+          query.operation,
           anchor,
           'implementationProvider unsupported',
           true
@@ -214,7 +214,7 @@ export async function dispatchAnchoredSemantic(
     case 'references':
       if (!client.hasCapability('referencesProvider')) {
         return emptyEnvelope(
-          query.type,
+          query.operation,
           anchor,
           'referencesProvider unsupported',
           true
@@ -234,7 +234,7 @@ export async function dispatchAnchoredSemantic(
     case 'hover':
       if (!client.hasCapability('hoverProvider')) {
         return emptyEnvelope(
-          query.type,
+          query.operation,
           anchor,
           'hoverProvider unsupported',
           true
@@ -254,7 +254,7 @@ export async function dispatchAnchoredSemantic(
     case 'callHierarchy':
       if (!client.hasCapability('callHierarchyProvider')) {
         return emptyEnvelope(
-          query.type,
+          query.operation,
           anchor,
           'callHierarchyProvider unsupported',
           true
@@ -265,7 +265,7 @@ export async function dispatchAnchoredSemantic(
     case 'subtypes':
       if (!client.hasCapability('typeHierarchyProvider')) {
         return emptyEnvelope(
-          query.type,
+          query.operation,
           anchor,
           'typeHierarchyProvider unsupported',
           true

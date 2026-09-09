@@ -18,9 +18,9 @@ vi.mock('@octocodeai/octocode-engine/lsp/manager', () => ({
 vi.mock('../../../src/tools/local_ripgrep/searchContentRipgrep.js', () => ({
   searchContentRipgrep: mocks.warm,
 }));
-const { executeLspGetSemantics } =
+const { executeLspSearch } =
   await import('../../../src/tools/lsp/semantic_content/execution.js');
-const { LspGetSemanticsQuerySchema } =
+const { LspSearchQuerySchema } =
   await import('../../../src/tools/lsp/semantic_content/scheme.js');
 
 // Deliberately independent of dispatch: adding a public operation must update
@@ -119,7 +119,7 @@ afterEach(async () => {
 });
 
 async function execute(query: Record<string, unknown>) {
-  const result = await executeLspGetSemantics({ queries: [query] } as never);
+  const result = await executeLspSearch({ queries: [query] } as never);
   return (
     result.structuredContent as {
       results: Array<{
@@ -131,14 +131,14 @@ async function execute(query: Record<string, unknown>) {
   ).results[0]!;
 }
 function query(type: string, extra: Record<string, unknown> = {}) {
-  return {
-    type,
+  const base = {
+    operation: type,
     uri: file,
     workspaceRoot: dir,
-    symbolName: 'target',
-    lineHint: 1,
     ...extra,
   };
+  if (type === 'documentSymbols' || type === 'diagnostic') return base;
+  return { symbolName: 'target', lineHint: 1, ...base };
 }
 const rows = (data: Record<string, any>) =>
   data.payload.locations ??
@@ -203,7 +203,7 @@ describe('production LSP operation matrix', () => {
       const collected = [...rows(current.data)];
       while (current.data.next?.nextPage) {
         expect(
-          LspGetSemanticsQuerySchema.safeParse(current.data.next.nextPage.query)
+          LspSearchQuerySchema.safeParse(current.data.next.nextPage.query)
             .success
         ).toBe(true);
         current = await execute(current.data.next.nextPage.query);

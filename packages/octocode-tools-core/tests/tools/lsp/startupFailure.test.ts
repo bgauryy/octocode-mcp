@@ -23,7 +23,7 @@ vi.mock('@octocodeai/octocode-engine/lsp/config', () => ({
   detectLanguageId: mocks.detectLanguageId,
 }));
 
-const { executeLspGetSemantics } =
+const { executeLspSearch } =
   await import('../../../src/tools/lsp/semantic_content/execution.js');
 
 const tempDirs: string[] = [];
@@ -35,7 +35,7 @@ afterEach(async () => {
   );
 });
 
-describe('lspGetSemantics startup failures', () => {
+describe('lspSearch startup failures', () => {
   it('surfaces detailed engine startup failures instead of generic unavailable', async () => {
     const dir = await mkdtemp(join(process.cwd(), '.tmp-octocode-lsp-fail-'));
     tempDirs.push(dir);
@@ -56,11 +56,11 @@ describe('lspGetSemantics startup failures', () => {
       workspaceRoot: dir,
     });
 
-    const result = await executeLspGetSemantics({
+    const result = await executeLspSearch({
       queries: [
         {
           uri: filePath,
-          type: 'definition',
+          operation: 'definition',
           symbolName: 'target',
           lineHint: 1,
         },
@@ -75,7 +75,8 @@ describe('lspGetSemantics startup failures', () => {
     expect(row?.status).toBe('error');
     expect(row?.data?.error).toContain('startupFailed');
     expect(row?.data?.error).toContain('invalid server path');
-    expect(row?.data?.error).toContain('localSearch operation:"text"');
+    expect(row?.data?.error).toContain('localSearch for text');
+    expect(row?.data?.error).toContain('astSearch operation:"match"');
     expect(row?.data?.error).not.toContain('local.text');
   });
 });

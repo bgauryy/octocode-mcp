@@ -105,7 +105,7 @@ describe('response YAML formatter contract', () => {
   it('normalizes evidence and diagnostics metadata across tool families', () => {
     expect(
       buildToolResultMeta(
-        'localAnalyzeGraph',
+        'astSearch',
         { operation: 'dependencies' },
         { pagination: { hasMore: true } }
       )
@@ -115,13 +115,13 @@ describe('response YAML formatter contract', () => {
     });
     expect(
       buildToolResultMeta(
-        'localAnalyzeGraph',
+        'astSearch',
         { operation: 'dependencies' },
         {
           pagination: { hasMore: true },
           next: {
             nextPage: {
-              tool: 'localAnalyzeGraph',
+              tool: 'astSearch',
               query: { operation: 'dependencies', page: 2 },
             },
           },
@@ -203,7 +203,7 @@ describe('response YAML formatter contract', () => {
     });
     expect(
       buildToolResultMeta(
-        'localAnalyzeGraph',
+        'astSearch',
         { operation: 'cycles' },
         { truncated: true, terminalLimit: true }
       )
@@ -253,7 +253,7 @@ describe('response YAML formatter contract', () => {
       diagnostics: { partial: true, codes: ['terminalLimitReached'] },
     });
     expect(
-      buildToolResultMeta('lspGetSemantics', { type: 'references' }, {})
+      buildToolResultMeta('lspSearch', { type: 'references' }, {})
     ).toEqual({ evidence: { kind: 'semantic', confidence: 'high' } });
     expect(
       buildToolResultMeta(

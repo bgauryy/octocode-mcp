@@ -1,8 +1,9 @@
 import fs from 'node:fs';
-import { chmod, link, lstat, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, link, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { resolve, sep } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import * as git from 'isomorphic-git';
+import { inspectOrphanObjects, type HistoryMaintenanceResult } from './history-git-maintenance.js';
 
 export function historyGitBackend() {
   return { name: 'isomorphic-git', version: git.version(), bundled: true, system_git_required: false };
@@ -48,17 +49,19 @@ export interface HistoryGitStore {
   verifyObject(oid: string, expectedType?: 'blob' | 'tree' | 'commit'): Promise<boolean>;
   publishRef(ref: string, oid: string): Promise<void>;
   resolveRef(ref: string): Promise<string | null>;
+  inspectOrphanObjects(options: { retainedOids: string[]; graceMs: number; limit: number; cursor?: string }): Promise<HistoryMaintenanceResult>;
 }
 
 export interface OpenHistoryGitStoreOptions {
   historyRoot: string;
   storeId: string;
   workspaceId: string;
+  boundaryRoot?: string;
 }
 
 const OID = /^[0-9a-f]{40}$/;
 const HISTORY_REF = /^refs\/octocode\/[0-9a-f]{64}\/(before|after)$/;
-const refLocks = new Map<string, Promise<void>>();
+const initializationLocks = new Map<string, Promise<void>>();
 
 function validateIdentity(label: string, value: string): void {
   if (!/^(?:[a-z][a-z0-9-]{0,63}|[0-9a-f]{64})$/.test(value)) throw new Error(`invalid ${label}: ${JSON.stringify(value)}`);
@@ -83,18 +86,43 @@ async function privateObject(gitdir: string, oid: string): Promise<void> {
   await chmod(resolve(directory, oid.slice(2)), 0o600);
 }
 
-async function withRefLock(key: string, task: () => Promise<void>): Promise<void> {
-  const previous = refLocks.get(key) ?? Promise.resolve();
+async function withInitializationLock(key: string, task: () => Promise<void>): Promise<void> {
+  const previous = initializationLocks.get(key) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>(resolveLock => { release = resolveLock; });
   const next = previous.then(() => current);
-  refLocks.set(key, next);
+  initializationLocks.set(key, next);
   await previous;
   try {
     await task();
   } finally {
     release();
-    if (refLocks.get(key) === next) refLocks.delete(key);
+    if (initializationLocks.get(key) === next) initializationLocks.delete(key);
+  }
+}
+
+async function assertDirectoryChain(boundaryRoot: string, target: string, label: string): Promise<void> {
+  const boundary = resolve(boundaryRoot);
+  const destination = resolve(target);
+  const remainder = relative(boundary, destination);
+  if (remainder === '..' || remainder.startsWith(`..${sep}`) || resolve(boundary, remainder) !== destination) {
+    throw new Error(`${label} escaped its boundary`);
+  }
+  let cursor = boundary;
+  for (const part of remainder ? remainder.split(sep) : []) {
+    await rejectSymlink(cursor, label);
+    try {
+      if (!(await stat(cursor)).isDirectory()) throw new Error(`${label} must be a directory: ${cursor}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    cursor = resolve(cursor, part);
+  }
+  await rejectSymlink(cursor, label);
+  try {
+    if (!(await stat(cursor)).isDirectory()) throw new Error(`${label} must be a directory: ${cursor}`);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
 }
 
@@ -113,10 +141,13 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
   validateIdentity('store id', options.storeId);
   validateIdentity('workspace id', options.workspaceId);
   const historyRoot = resolve(options.historyRoot);
+  const boundaryRoot = options.boundaryRoot ? resolve(options.boundaryRoot) : undefined;
+  if (boundaryRoot && historyRoot !== boundaryRoot && !historyRoot.startsWith(`${boundaryRoot}${sep}`)) throw new Error('history store escaped its boundary');
   const rootDir = resolve(historyRoot, options.storeId, options.workspaceId);
   if (rootDir !== historyRoot && !rootDir.startsWith(`${historyRoot}${sep}`)) throw new Error('history store escaped its root');
   const storeDir = resolve(historyRoot, options.storeId);
   const gitdir = resolve(rootDir, 'repo.git');
+  if (boundaryRoot) await assertDirectoryChain(boundaryRoot, historyRoot, 'history boundary ancestor');
   await rejectSymlink(historyRoot, 'history root');
   await mkdir(historyRoot, { recursive: true, mode: 0o700 });
   await rejectSymlink(historyRoot, 'history root');
@@ -131,6 +162,7 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
   await chmod(storeDir, 0o700);
   await chmod(rootDir, 0o700);
   const assertMetadataSafe = async (ref?: string): Promise<void> => {
+    if (boundaryRoot) await assertDirectoryChain(boundaryRoot, historyRoot, 'history boundary ancestor');
     for (const [candidate, label] of [[historyRoot, 'history root'], [storeDir, 'history store directory'], [rootDir, 'history workspace directory'], [gitdir, 'Git directory'], [resolve(gitdir, 'objects'), 'Git objects directory'], [resolve(gitdir, 'refs'), 'Git refs directory']] as const) {
       await rejectSymlink(candidate, label);
     }
@@ -173,7 +205,7 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
       await rm(temporary, { force: true });
     }
   };
-  await withRefLock(`init\0${rootDir}`, async () => {
+  await withInitializationLock(rootDir, async () => {
     await assertMetadataSafe();
     await ensureMarker();
     await rejectSymlink(gitdir, 'Git directory');
@@ -295,14 +327,28 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
         return false;
       }
     },
+    async inspectOrphanObjects({ retainedOids, graceMs, limit, cursor }) {
+      return inspectOrphanObjects({ fs, git, rootDir, gitdir, retainedOids, graceMs, limit, cursor, assertMetadataSafe });
+    },
     async publishRef(ref, oid) {
       if (!HISTORY_REF.test(ref)) throw new Error(`invalid history ref: ${JSON.stringify(ref)}`);
       validateOid(oid);
-      await withRefLock(`${gitdir}\0${ref}`, async () => {
-        await assertMetadataSafe(ref);
-        if (await resolveHistoryRef(ref)) throw new Error(`history ref already exists: ${ref}`);
-        await git.writeRef({ fs, dir: rootDir, gitdir, ref, value: oid, force: false });
-      });
+      await assertMetadataSafe(ref);
+      if (await resolveHistoryRef(ref)) throw new Error(`history ref already exists: ${ref}`);
+      const refPath = resolve(gitdir, ...ref.split('/'));
+      const refDirectory = resolve(refPath, '..');
+      await mkdir(refDirectory, { recursive: true, mode: 0o700 });
+      await assertMetadataSafe(ref);
+      const temporary = resolve(gitdir, `.octocode-ref-${randomUUID()}.tmp`);
+      await writeFile(temporary, `${oid}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
+      try {
+        await link(temporary, refPath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`history ref already exists: ${ref}`);
+        throw error;
+      } finally {
+        await rm(temporary, { force: true });
+      }
     },
     resolveRef: resolveHistoryRef,
   };

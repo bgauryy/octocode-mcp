@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'vitest';
-import { AWARENESS_PI_HOST_PROMPT } from '@octocodeai/octocode-awareness';
+import { AWARENESS_PI_HOST_PROMPT, getExternalAgentAwarenessGuide } from '@octocodeai/octocode-awareness';
 import { buildPlanPrompt } from '../src/prompts/plan-prompt.js';
 import { PLAN_PROMPT_MAX_GOAL, PLAN_PROMPT_TRUNCATION_MARKER } from '@octocodeai/agent-contracts/prompts';
 import { buildPiSystemPrompt, SYSTEM_PROMPT } from '../src/prompts/system-prompt.js';
 import { expandSubagentPrompt, SUBAGENT_WORKER_CONTRACT, SUBAGENT_AWARENESS_GUIDANCE, SUBAGENT_PLACEHOLDERS } from '@octocodeai/agent-contracts/prompts';
+import { PLAN_USAGE_GUIDANCE } from '@octocodeai/agent-contracts/prompts';
+import { DIRECT_TOOL_DESCRIPTIONS } from '../src/tools/octocode-tools.js';
 
 const packageRoot = path.resolve(import.meta.dirname, '..');
 const roleNames = ['architect', 'browser-agent', 'implementer', 'planner', 'researcher'] as const;
@@ -15,9 +17,13 @@ function rolePrompt(role: (typeof roleNames)[number]): string {
   return fs.readFileSync(path.join(packageRoot, 'subagents', role, 'SYSTEM_PROMPT.md'), 'utf8');
 }
 
-test('canonical Awareness prompt closes a run before marking its observed verification', () => {
-  assert.match(AWARENESS_PI_HOST_PROMPT, /declared check.*work end.*PENDING.*verify mark/is);
-  assert.ok(AWARENESS_PI_HOST_PROMPT.indexOf('awareness(call "work end")') < AWARENESS_PI_HOST_PROMPT.indexOf('awareness(call "verify mark")'));
+test('standing Awareness policy loads optional tracking detail only when needed', () => {
+  assert.match(AWARENESS_PI_HOST_PROMPT, /Before using tracked work, load the tracked-work recipe/);
+  assert.doesNotMatch(AWARENESS_PI_HOST_PROMPT, /work end|task submit|verify mark/);
+  const guide = getExternalAgentAwarenessGuide().prompt;
+  assert.match(guide, /run the check.*work end.*task submit.*PENDING.*verify mark/is);
+  assert.ok(guide.indexOf('work end') < guide.indexOf('verify mark'));
+  assert.match(guide, /Reuse host run\/task IDs/);
 });
 
 test('plan mode uses a conversational RFC flow with one Start decision and no tool restrictions', () => {
@@ -65,8 +71,8 @@ test('plan mode preserves numbered requirements inside a multiline goal', () => 
 
 test('typed-worker coordination treats assigned ownership as exclusive', () => {
   assert.match(SUBAGENT_WORKER_CONTRACT, /never edit through an exclusive lock or another owner's active path/i);
-  assert.match(SUBAGENT_WORKER_CONTRACT, /overlaps active parent or peer ownership.*stop before writing/i);
-  assert.match(SUBAGENT_WORKER_CONTRACT, /wait for an explicit release or reassignment/i);
+  assert.match(SUBAGENT_WORKER_CONTRACT, /stop before overlap.*notify the parent/i);
+  assert.match(SUBAGENT_WORKER_CONTRACT, /wait for explicit release or reassignment/i);
   assert.doesNotMatch(SUBAGENT_WORKER_CONTRACT, /Coordinate ordinary overlap/i);
 });
 
@@ -85,8 +91,10 @@ test('all typed role prompts expand the same shared protocol and preserve parser
     assert.equal(composed.split(AWARENESS_PI_HOST_PROMPT).length, 2, `${role} has one canonical operating guide`);
     assert.equal((composed.match(/<awareness>/g) ?? []).length, 1);
     assert.doesNotMatch(composed, /Send new signals with signal publish/);
-    assert.match(composed, /Before the final response/);
-    assert.match(expanded, /Awareness CLI.*coordination.*bookkeeping/i, `${role} can communicate through the shared CLI`);
+    assert.match(composed, /audit after final writes/);
+    assert.match(expanded, /native Awareness for coordination/i, `${role} uses native coordination`);
+    assert.match(expanded, /only when unavailable.*bound CLI/, `${role} limits CLI fallback to hosts without the native tool`);
+    assert.doesNotMatch(source, /harness-provided Awareness CLI/, `${role} does not override native routing with a CLI recipe`);
     assert.doesNotMatch(expanded, /read-only — no `bash`|Use `bash` only for bounded test\/build\/debug/, `${role} does not contradict the coordination exception`);
     assert.match(expanded, /\[DONE\]/, `${role} preserves DONE`);
     assert.match(expanded, /\[BLOCKED\]/, `${role} preserves BLOCKED`);
@@ -107,11 +115,16 @@ test('main prompt composes host facts with the canonical coder and Awareness pro
   assert.match(SYSTEM_PROMPT, /Permissions.*approval/);
   assert.match(SYSTEM_PROMPT, /data, not higher-priority instructions/);
   assert.match(SYSTEM_PROMPT, /<operating_model>/);
-  assert.match(SYSTEM_PROMPT, /understand → act → verify → recover/);
-  assert.match(SYSTEM_PROMPT, /two or more lanes are independent with disjoint write ownership, parallelize/i);
-  assert.match(SYSTEM_PROMPT, /Worker \[DONE\].*verify, reconcile, update the plan, and continue/is);
+  assert.match(SYSTEM_PROMPT, /read → edit → check/);
+  assert.match(SYSTEM_PROMPT, /Delegate bounded independent lanes that save time or add coverage/i);
+  assert.doesNotMatch(SYSTEM_PROMPT, /two or more lanes.*parallelize/i);
+  assert.match(SYSTEM_PROMPT, /Worker \[DONE\].*verify, reconcile, update an existing plan if present, and continue/is);
+  assert.ok(SYSTEM_PROMPT.includes(PLAN_USAGE_GUIDANCE));
+  assert.ok(DIRECT_TOOL_DESCRIPTIONS.plan!.includes(PLAN_USAGE_GUIDANCE));
+  assert.match(PLAN_USAGE_GUIDANCE, /only for complex work/);
+  assert.match(PLAN_USAGE_GUIDANCE, /Skip routine fixes, straightforward steps, and simple delegation/);
   assert.match(SYSTEM_PROMPT, /octocode-eval-benchmark/);
-  assert.match(SYSTEM_PROMPT, /Bash is for builds, tests, packages, and bounded debug commands/);
+  assert.match(SYSTEM_PROMPT, /bash for builds\/tests\/packages\/debugging/);
   assert.doesNotMatch(SYSTEM_PROMPT, /Bash is for[^\n]*mechanical edits/);
   assert.doesNotMatch(SYSTEM_PROMPT, /octocode-graph-eval|\.octocode\/REFLECT\.md/);
 });
@@ -120,15 +133,17 @@ test('worker process prompt omits user-facing coder authority while keeping inte
   const worker = buildPiSystemPrompt({ worker: true });
   assert.equal(worker.split(AWARENESS_PI_HOST_PROMPT).length, 2);
   assert.doesNotMatch(worker, /<operating_model>|<code_quality>|<output>/);
-  assert.match(worker, /askUser/);
+  assert.doesNotMatch(worker, /askUser collects|plan tracks/);
+  assert.match(worker, /Return missing decisions to the parent/);
+  assert.match(worker, /Interaction guidance applies through the parent, not direct user contact/);
   assert.match(worker, /plain messages/);
   assert.match(worker, /never imply approval/);
   assert.match(worker, /continuations/);
   assert.match(worker, /<local_tools>/);
-  assert.match(worker, /`text` for raw string or regex anchors.*`structural`\/AST.*`files` for path\/metadata.*`tree` for orientation/s);
+  assert.match(worker, /localSearch for text\/regex anchors and astSearch for files, trees, symbols, and structural matching/);
   assert.match(worker, /matchString.*minify:"symbols".*minify:"standard".*minify:"none"/s);
-  assert.match(worker, /dependency, change-impact, refactoring scope, dead-code, or cycle.*localAnalyzeGraph/s);
-  assert.match(worker, /lspGetSemantics.*type:references.*type:callers.*callees.*callHierarchy.*type:implementation/s);
+  assert.match(worker, /astSearch operation:topology with analysis.*File topology is not symbol-usage proof/s);
+  assert.match(worker, /lspSearch.*definitions, references, callers\/callees, implementations, and types.*operation:references.*runtime\/export entrypoints/s);
   assert.equal((worker.match(/<interaction_context>/g) ?? []).length, 1);
   assert.equal((worker.match(/<local_tools>/g) ?? []).length, 1);
 });

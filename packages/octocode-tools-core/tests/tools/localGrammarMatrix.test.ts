@@ -11,6 +11,8 @@ import {
 } from '@octocodeai/octocode-engine';
 import { executeDirectTool } from '../../src/tools/directToolCatalog.exec.js';
 import { findDirectToolDefinition } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
+import { AstSearchQuerySchema } from '../../src/tools/ast_search/scheme.js';
+import { LocalSearchQuerySchema } from '../../src/tools/local_search/scheme.js';
 
 import { grammarFixtures as fixtures } from '../fixtures/grammarFixtures.js';
 const structuralExtensions = getSupportedStructuralExtensions();
@@ -46,7 +48,12 @@ type Row = {
   };
 };
 async function run(tool: string, query: Record<string, unknown>): Promise<Row> {
-  const parsed = findDirectToolDefinition(tool)?.schema.safeParse(query);
+  const parsed =
+    tool === 'astSearch'
+      ? AstSearchQuerySchema.safeParse(query)
+      : tool === 'localSearch'
+        ? LocalSearchQuerySchema.safeParse(query)
+        : findDirectToolDefinition(tool)?.schema.safeParse(query);
   expect(
     parsed?.success,
     JSON.stringify({
@@ -95,8 +102,8 @@ describe('production grammar matrix through the native and public tool boundarie
       await writeFile(path, source);
       expect(extractSignatures(source, path)).toBeNull();
       expect(extractGraphFacts(source, path)).toBeNull();
-      const result = await executeDirectTool('localSearch', {
-        queries: [{ operation: 'structural', path, pattern: 'target($X)' }],
+      const result = await executeDirectTool('astSearch', {
+        queries: [{ operation: 'match', path, pattern: 'target($X)' }],
       });
       expect(result.structuredContent).toMatchObject({
         results: [
@@ -162,8 +169,8 @@ describe('production grammar matrix through the native and public tool boundarie
           native.matches.some(match => match.metavars.NAME?.includes('target')),
           JSON.stringify(native)
         ).toBe(true);
-        const row = await run('localSearch', {
-          operation: 'structural',
+        const row = await run('astSearch', {
+          operation: 'match',
           path: join(root, `fixture.${extension}`),
           pattern,
           captureText: true,
@@ -177,9 +184,9 @@ describe('production grammar matrix through the native and public tool boundarie
       for (const operation of ['text', 'structural']) {
         const query =
           operation === 'text'
-            ? { operation, path, searchText: 'target', regex: 'fixed' }
-            : { operation, path, pattern: source!.trim() };
-        const row = await run('localSearch', query);
+            ? { path, searchText: 'target', regex: 'literal' }
+            : { operation: 'match', path, pattern: source!.trim() };
+        const row = await run(operation === 'text' ? 'localSearch' : 'astSearch', query);
         expect(row.status, JSON.stringify(row)).not.toBe('empty');
         expect(JSON.stringify(row.data)).toContain('target');
       }
@@ -199,8 +206,8 @@ describe('production grammar matrix through the native and public tool boundarie
     it.each(['content', 'files', 'countMatches'])(
       'preserves AST matches with resultView:%s',
       async resultView => {
-        const row = await run('localSearch', {
-          operation: 'structural',
+        const row = await run('astSearch', {
+          operation: 'match',
           path: join(root, `fixture.${extension}`),
           pattern: source!.trim(),
           resultView,
@@ -221,10 +228,9 @@ describe('production grammar matrix through the native and public tool boundarie
       'matchOnly',
     ])('preserves lexical matches with resultView:%s', async resultView => {
       const row = await run('localSearch', {
-        operation: 'text',
         path: join(root, `fixture.${extension}`),
         searchText: 'target',
-        regex: 'fixed',
+        regex: 'literal',
         resultView,
       });
       expect(row.data.stats?.totalOccurrences).toBe(1);
@@ -262,7 +268,7 @@ describe('production grammar matrix through the native and public tool boundarie
     let pages = 0;
     while (query) {
       expect(++pages).toBeLessThan(20);
-      const row = await run('localSearch', query);
+      const row = await run('astSearch', query);
       paths.push(...row.data.files!.map(file => file.path));
       const next = row.data.next?.nextPage;
       if (next) expect(row.meta?.diagnostics?.partial).toBe(true);
@@ -272,44 +278,46 @@ describe('production grammar matrix through the native and public tool boundarie
     expect(new Set(paths).size).toBe(structuralExtensions.length);
   });
 
-  it.each(['text', 'structural'])(
-    'recovers every grammar in a mixed directory via %s continuations',
-    async operation => {
-      let query: Record<string, unknown> | undefined = {
-        operation,
-        path: root,
-        ...(operation === 'text'
-          ? { searchText: 'target', regex: 'fixed' }
-          : { rule: 'rule:\n  regex: target' }),
-        resultView: 'files',
-        noIgnore: true,
-        hidden: true,
-        pageSize: 7,
-        maxFiles: 7,
-        sort: 'path',
-      };
-      const paths = new Set<string>();
-      let pages = 0;
-      while (query) {
-        expect(++pages).toBeLessThan(30);
-        const row = await run('localSearch', query);
-        for (const file of row.data.files ?? []) paths.add(file.path);
-        const next = row.data.next?.nextPage ?? row.data.next?.expandScan;
-        if (next) expect(row.meta?.diagnostics?.partial).toBe(true);
-        query = next?.query;
-      }
-      expect([...paths].sort()).toEqual(
-        structuralExtensions.map(extension => `fixture.${extension}`).sort()
-      );
+  it('recovers every grammar through lexical and AST public searches', async () => {
+    const lexicalPaths = new Set<string>();
+    const astPaths = new Set<string>();
+    let lexicalQuery: Record<string, unknown> | undefined = {
+      path: root,
+      searchText: 'target',
+      regex: 'literal',
+      resultView: 'files',
+      noIgnore: true,
+      hidden: true,
+      pageSize: 7,
+      maxFiles: 7,
+      sort: 'path',
+    };
+    while (lexicalQuery) {
+      const row = await run('localSearch', lexicalQuery);
+      for (const file of row.data.files ?? []) lexicalPaths.add(file.path);
+      lexicalQuery = row.data.next?.nextPage?.query;
     }
-  );
+    for (const { extension, source } of cases) {
+      const row = await run('astSearch', {
+        operation: 'match',
+        path: join(root, `fixture.${extension}`),
+        pattern: source!.trim(),
+        resultView: 'files',
+      });
+      for (const file of row.data.files ?? []) astPaths.add(file.path);
+    }
+    const expected = structuralExtensions.map(extension => `fixture.${extension}`);
+    expect([...lexicalPaths].sort()).toEqual(expected.sort());
+    expect([...astPaths].sort()).toEqual(expected.sort());
+  });
 
   it('exposes every graph-capable extension as a reachable public graph node', async () => {
     const entrypoints = [...graphExtensions].map(
       extension => `fixture.${extension}`
     );
-    const row = await run('localAnalyzeGraph', {
-      operation: 'reachability',
+    const row = await run('astSearch', {
+      operation: 'topology',
+      analysis: 'reachability',
       path: root,
       entrypoints,
       pageSize: 50,

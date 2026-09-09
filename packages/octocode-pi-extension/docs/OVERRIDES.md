@@ -26,9 +26,9 @@ and does not configure Pi built-ins.
 | Pi built-in | Decision | Octocode owner |
 |---|---|---|
 | `read` | Remove | `MCPTool` → `localGetFileContent`; `readMedia` for visual/audio/video perception |
-| `grep` | Remove | `MCPTool` → `localSearch` with `operation:"text"` |
-| `find` | Remove | `MCPTool` → `localSearch` with `operation:"files"` |
-| `ls` | Remove | `MCPTool` → `localSearch` with `operation:"tree"` |
+| `grep` | Remove | `MCPTool` → `localSearch` with `searchText` |
+| `find` | Remove | `MCPTool` → `astSearch` with `operation:"files"` |
+| `ls` | Remove | `MCPTool` → `astSearch` with `operation:"tree"` |
 | `edit` | Remove | `file({type:"edit"})` |
 | `write` | Remove | `file({type:"write"})` |
 | `bash` | Override | Guarded Octocode `bash` |
@@ -53,7 +53,7 @@ file-mutation route and one schema cost.
 | New file or intentional full rewrite | `file({queries:[{type:"write", path, content, reasoning}]})` |
 | Explicitly scoped file/symlink removal | `file({queries:[{type:"delete", path, reasoning}]})` |
 | Builds, tests, package commands, mechanical work | `bash` |
-| Awareness signals, explicit locks, memory and maintenance | `bash` → installed Awareness CLI |
+| Awareness signals, explicit locks, memory and maintenance | Native `awareness` tool → imported package API |
 
 Pi supplies `OCTOCODE_NODE`, `OCTOCODE_AWARENESS_CLI`, `OCTOCODE_AWARENESS_DB`,
 `OCTOCODE_AWARENESS_WORKSPACE` and `OCTOCODE_AGENT_ID` to guarded shell calls.

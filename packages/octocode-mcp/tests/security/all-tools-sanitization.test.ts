@@ -357,11 +357,11 @@ const TOOL_RESULT_SHAPES: Record<string, () => CallToolResult> = {
     },
   }),
 
-  'local.tree': () => ({
+  astSearch: () => ({
     content: [
       {
         type: 'text',
-        text: `Directory tree:\n  .env.local (${SECRETS.OPENAI_KEY})\n  src/\n    index.ts`,
+        text: `Directory tree:\n  .env.local (${SECRETS.OPENAI_KEY})\n  src/\n    index.ts\nFound files:\n  secrets.json (size: 1024) contains ${SECRETS.GITHUB_TOKEN}\n  .env.production\nDead export candidate:\n  config.ts:5 exportedSecretDefault contains ${SECRETS.GITHUB_TOKEN} in a nearby comment`,
       },
     ],
     structuredContent: {
@@ -372,19 +372,6 @@ const TOOL_RESULT_SHAPES: Record<string, () => CallToolResult> = {
             { name: '.env.local', content: `KEY=${SECRETS.OPENAI_KEY}` },
           ],
         },
-      },
-    },
-  }),
-
-  'local.files': () => ({
-    content: [
-      {
-        type: 'text',
-        text: `Found files:\n  secrets.json (size: 1024) contains ${SECRETS.GITHUB_TOKEN}\n  .env.production`,
-      },
-    ],
-    structuredContent: {
-      data: {
         files: [
           {
             path: 'secrets.json',
@@ -392,19 +379,6 @@ const TOOL_RESULT_SHAPES: Record<string, () => CallToolResult> = {
           },
           { path: '.env.production', preview: `STRIPE=${SECRETS.STRIPE_KEY}` },
         ],
-      },
-    },
-  }),
-
-  localAnalyzeGraph: () => ({
-    content: [
-      {
-        type: 'text',
-        text: `Dead export candidate:\n  config.ts:5 exportedSecretDefault contains ${SECRETS.GITHUB_TOKEN} in a nearby comment`,
-      },
-    ],
-    structuredContent: {
-      data: {
         deadExports: [
           {
             file: 'config.ts',
@@ -418,7 +392,7 @@ const TOOL_RESULT_SHAPES: Record<string, () => CallToolResult> = {
     },
   }),
 
-  lspGetSemantics: () => ({
+  lspSearch: () => ({
     content: [
       {
         type: 'text',

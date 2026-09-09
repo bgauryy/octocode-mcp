@@ -1,7 +1,7 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { parseJsonList } from './helpers.js';
 import { AwarenessQueryParams, AwarenessQueryRow, BindValue, limitOf, stringList } from './repo-model.js';
-import { addExactScope, addNullableScope, addStateFilter, addTextFilter, scopeFromParams, workspaceArtifactScope } from './repo-scope.js';
+import { addExactScope, addNullableScope, addStateFilter, addTextFilter, repositoryScopeFromParams, scopeFromParams, workspaceArtifactScope } from './repo-scope.js';
 import { summarize } from './repo-formats.js';
 import { AGENTS_LIST_SELECT, AGENTS_LIST_ORDER } from './sql/agents.js';
 
@@ -62,7 +62,7 @@ export function lockRows(db: DatabaseSync, params: AwarenessQueryParams): Awaren
 }
 
 export function agentRows(db: DatabaseSync, params: AwarenessQueryParams): AwarenessQueryRow[] {
-  const scope = scopeFromParams(params);
+  const scope = repositoryScopeFromParams(params);
   const where: string[] = [];
   const binds: BindValue[] = [];
   if (scope.workspacePaths.length > 0) {
@@ -88,18 +88,22 @@ export function agentRows(db: DatabaseSync, params: AwarenessQueryParams): Aware
   return rows;
 }
 
+/** Shared signal recipient visibility for list, workboard, profile, and snapshots. */
+export function addSignalVisibility(where: string[], binds: BindValue[], params: AwarenessQueryParams): void {
+  const agentId = params.agentId ?? params.recipientAgentId;
+  if (!agentId) return;
+  where.push('(from_agent = ? OR to_agent = ? OR to_agent IS NULL)');
+  binds.push(agentId, agentId);
+}
+
 export function signalRows(db: DatabaseSync, params: AwarenessQueryParams): AwarenessQueryRow[] {
-  const scope = scopeFromParams(params);
+  const scope = repositoryScopeFromParams(params);
   const where: string[] = [];
   const binds: BindValue[] = [];
   addExactScope(where, binds, scope);
   addTextFilter(where, binds, params.query, ['subject', 'body', 'kind', 'files_json', 'refs_json', 'from_agent', 'to_agent']);
   addStateFilter(where, binds, stringList(params.state), 'status', state => state.toLowerCase());
-  const agentId = params.agentId;
-  if (agentId) {
-    where.push('(from_agent = ? OR to_agent = ? OR to_agent IS NULL)');
-    binds.push(agentId, agentId);
-  }
+  addSignalVisibility(where, binds, params);
   const since = params.since?.trim();
   if (since) {
     where.push('created_at >= ?');

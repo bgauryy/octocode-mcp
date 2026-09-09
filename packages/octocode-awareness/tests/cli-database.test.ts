@@ -25,6 +25,6 @@ describe('database consolidation source CLI', () => {
   it('returns a structured error before opening an incomplete command', () => {
     const result = run('database', 'consolidate', '--source', '/tmp/source.sqlite3', '--compact');
     expect(result.status, result.stderr).toBe(1);
-    expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error_code: 'DATABASE_CONSOLIDATION_ERROR', error: '--destination requires a value' });
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, command: 'database consolidate', issues: [{ path: 'destination', message: expect.stringContaining('--destination') }] });
   });
 });

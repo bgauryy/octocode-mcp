@@ -1,15 +1,26 @@
 # Compact Attend And Workboard Navigation
 
-`attend` is the bounded lobby for a run. It reads live SQLite state and routes the
-agent to one next action; it does not create another memory store.
+`attend` reads a bounded page of registered workspace peers by default. Attend once
+per workspace/session, or reuse the host briefing. `last_seen_at` records activity;
+it does not prove a process is live. Message delivery belongs to host lifecycle
+hooks, not repeated attendance.
 
 ```bash
-npx @octocodeai/octocode-awareness attend --workspace "$PWD" --query "current task" --compact
+npx @octocodeai/octocode-awareness attend --workspace "$PWD" --compact
 ```
 
-## Compact Contract
+Presence pages expose `partial`, `offset`, and an executable `next.list.command`
+when more peers exist. Default limit is 10; the supported range is 1–50. API
+continuations are request objects; CLI continuations retain arguments. Follow them
+with the same store and workspace context. See the [API reference](API.md).
 
-Compact `attend` is action-oriented and byte-budgeted. It includes:
+## Detailed observer
+
+Use `--details` when work, memory, or verification state can change the next action.
+Task queries, file/scope filters, revisions, or explicit body requests also select
+this observer. Presence `offset` pagination is unavailable in detailed mode.
+
+Detailed compact `attend` is action-oriented and byte-budgeted. It includes:
 
 - workspace identity and generated time;
 - actionable counts/rows for Ready, Claimed, Verify, FilesUnderWork, and Inbox;
@@ -20,10 +31,10 @@ Compact `attend` is action-oriented and byte-budgeted. It includes:
 
 It omits clean projection detail, constant team norms, duplicate profile/organ/drive
 aliases, repeated raw IDs, full bodies, and full file lists. Compact FilesUnderWork
-rows keep path/peer_count/locked only — drill with `work list|show`. Noncompact attend
+rows keep path/peer_count/locked only — drill with `work list|show`. Noncompact detailed attend
 remains the explicit deep diagnostic surface.
 
-Representative unit and CLI tests require compact attend to remain at or below 2 KB. Row count alone is
+Representative unit and CLI tests require detailed compact attend to remain at or below 2 KB. Row count alone is
 not sufficient; output-size assertions protect token cost. Workboard columns that are
 empty are omitted; `counts` still reports totals for Ready/Claimed/Verify/FilesUnderWork/Inbox.
 
@@ -33,16 +44,17 @@ and selected lists also reduce fields. `docs show` raw Markdown is the smaller
 agent-readable form; its compact form is a JSON envelope.
 
 For generic `query workboard --limit N`, the limit applies per lane, not to the whole
-response; compact mode defaults to one row per lane. It can still exceed compact attend. Use `attend` for the next action,
+response; compact mode defaults to one row per lane. It can still exceed compact attend. Use detailed `attend` for the next action,
 targeted `verify audit`/`signal list`/`work show` for one concern, and CSV/HTML for
-bulk review. Noncompact `attend` is a deliberate deep diagnostic, not a prompt-safe
+bulk review. Noncompact `attend --details` is a deliberate deep diagnostic, not a prompt-safe
 default.
 
 ## Progressive Disclosure
 
 | Need | Read |
 |---|---|
-| Start/resume | `attend --compact` |
+| Start/resume | Reuse the host briefing or `attend --compact` once |
+| Work/evidence routing | `attend --details --compact` |
 | Shared task choices | `task ready|list|show` |
 | Active file peers | `work list --compact`, then `work show --workspace "$PWD" --file <path>` |
 | Operational counts | `status --compact` |
@@ -67,7 +79,7 @@ surface instead of repeatedly increasing the lane limit.
 
 ## Scoped attend revisions
 
-A full `attend` response includes an opaque `revision` and `unchanged: false`.
+A detailed `attend` response includes an opaque `revision` and `unchanged: false`.
 Repeat the same actor, store, workspace and filters with `--revision <returned-token>`.
 An unchanged response retains the pending `next` action and unavailable sensors;
 retain the previous full packet. Fresh queries still execute, so this saves output
@@ -81,24 +93,19 @@ snapshot. Read current admission state before mutations. See
 [`attend-revision.ts`](../src/attend-revision.ts) and its
 [regressions](../tests/attend-revision.test.ts).
 
-## Delta Delivery
+## Delta delivery
 
-Prompt/session briefings and peer notices use `delivery_state` fingerprints by
-consumer, channel, and scope.
+Peer notices use `delivery_state` fingerprints by consumer, channel, and scope.
+Changed unread messages produce a bounded packet; unchanged messages stay silent.
+Sender, message, and thread IDs are preserved, and clipped bodies expose partial
+state plus executable retrieval. Hook communication does not query memory,
+refinements, or verification. Unsupported response channels do not consume the
+fingerprint needed by a later supported boundary.
 
-- First changed state: emit one bounded summary.
-- Same state on next prompt/edit: emit nothing.
-- Prompt memory: use the transient current prompt to select at most one scoped lead;
-  require two meaningful token matches and emit nothing for unrelated memory.
-- Hook briefing: at most five items and 1 KiB after UTF-8-safe truncation; drill into
-  `signal list`, recall, or targeted queries for full data.
-- Peer/signal/briefing changes: emit the new bounded state.
-- Signal delivery does not mark read; `signal ack` is separate.
-
-In-process hosts also fingerprint unchanged verification sets so repeated agent-end
-events do not repeat the same reminder. They retain the latest `input` text only until
-`before_agent_start`; shell prompt hooks pass the same bounded query directly. Neither
-path stores the prompt.
+Delivery is event-driven. Pi drains at session start and agent completion after
+session persistence is available; it has no message-arrival watcher. Native
+delivery receipts, `signal ack` for handling, and `signal resolve` for completion
+are separate. See [peer event delivery](HOW_IT_WORKS.md#peer-event-delivery).
 
 ## Evidence Rules
 
@@ -135,8 +142,8 @@ The workboard is derived; it has no table. Lanes route actions:
   broadcasts and mark expired ACTIVE runs `FAILED` with an audit receipt, but it
   never marks work successful from age.
 
-Re-run attend after a material task, peer, signal, or verification transition—not
-after every tool call.
+Re-run detailed attend only when a material task, peer, signal, or verification
+transition needs broader inspection. A targeted read is enough for a known concern.
 
 Counts are workspace-wide; routing is actor-safe. For example, `Verify` may count
 other agents' debt while `next` routes only verification owned by the current agent.

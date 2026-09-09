@@ -190,21 +190,22 @@ describe('direct-tool meta catalog parity with ALL_TOOLS (P3)', () => {
       ],
     },
     {
-      tool: 'lspGetSemantics',
+      tool: 'lspSearch',
       valid: [
-        { uri: '/tmp/p.ts', type: 'documentSymbols' },
+        { uri: '/tmp/p.ts', operation: 'documentSymbols' },
         {
           uri: '/tmp/p.ts',
-          type: 'definition',
+          operation: 'definition',
           symbolName: 'run',
           lineHint: 1,
         },
-        { type: 'workspaceSymbol', symbolName: 'run' },
+        { operation: 'workspaceSymbol', symbolName: 'run', workspaceRoot: '/tmp' },
       ],
       invalid: [
-        { type: 'definition' },
-        { uri: '/tmp/p.ts', type: 'definition', symbolName: 'run' },
-        { type: 'workspaceSymbol' },
+        { operation: 'definition' },
+        { uri: '/tmp/p.ts', operation: 'definition', symbolName: 'run' },
+        { operation: 'workspaceSymbol' },
+        { operation: 'workspaceSymbol', symbolName: 'run' },
       ],
     },
   ] as const)(

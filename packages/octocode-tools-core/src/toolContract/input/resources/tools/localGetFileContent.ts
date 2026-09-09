@@ -29,7 +29,7 @@ Choose fullContent, matchString, or startLine+endLine. Partial content cannot pr
     charOffset:
       'Copy the complete returned next query; semantic windows may expand beyond charLength.',
     minify:
-      '"symbols" paginated outline (no range/match selectors), "standard" compact source, "none" unminified. Security redaction applies. Default none for fullContent/ranges, standard otherwise; matches force none.',
+      '"symbols" paginated outline (no range/match selectors), "standard" compact source, "none" unminified. Security redaction applies. Default none; compact views require an explicit request. Matches force none.',
   },
 });
 
@@ -45,5 +45,5 @@ export const FetchContentQuerySchema = buildObject(localGetFileContent.schema, {
   contextLines: intRange(0, MAX_CONTEXT_LINES).default(5),
   charOffset: charOffset(),
   charLength: charLength(),
-  minify: z.enum(['none', 'standard', 'symbols']).default('standard'),
+  minify: z.enum(['none', 'standard', 'symbols']).optional(),
 }).superRefine(validateFileContentExtractionMode);

@@ -4,15 +4,15 @@ Load when improving, refactoring, or rewriting an Agent Skill. Why: preserve its
 
 ## Inspect first
 
-1. Read the full target `SKILL.md` and every behavior-affecting `references/`, `scripts/`, `assets/` file.
+1. Read the target `SKILL.md`, inventory its files, and read the references, scripts, and assets that affect the requested change. For a whole-skill review, inspect every behavioral route; report any unexamined surface.
 2. Run `scripts/skill-review.mjs <skill-dir>` first (`references/skill-review.md`).
 3. Understand real files — never rewrite from a summary.
 
 ## Preserve ownership
 
-- Put every workflow, hard rule, stop condition, and route table in `SKILL.md` — that file is the lobby agents always see.
-- Refs hold one concept of depth only; they never redefine the main flow.
-- Load **one** ref (or script) at a time; follow its `Next:` only when that step needs it.
+- Keep entry decisions and shared constraints in `SKILL.md`; place conditional procedures in their owning references.
+- References add detail without redefining shared rules.
+- Reuse references already read. Batch independent reads when useful; follow a `Next:` route only when it resolves the current question.
 
 - Keep one owner per concept. Cross-link instead of restating workflows or paragraphs.
 - Prefer fewer, sharper references over parallel near-duplicates.
@@ -21,7 +21,7 @@ Load when improving, refactoring, or rewriting an Agent Skill. Why: preserve its
 
 - Description: strong `Use when …` triggers (≤1024 chars; lead with the when-clause).
 - Every capability: same-line **when** + **why** to a ref or script.
-- Refs: one short H1, one concept, ≤50 lines. Skill→ref and ref→ref OK.
+- Refs: one concept with a clear entry condition. Aim for short files; review the 50-line advisory in context instead of splitting a coherent procedure just to meet a count. Skill→ref and ref→ref are valid routes.
 - Scripts: deterministic work; list each with when/why.
 - Outputs: chat stays in chat; generated artifacts stay under `<workspace>/.octocode/`; source/install/config mutations keep their approved targets; no user-level artifact fallback.
 

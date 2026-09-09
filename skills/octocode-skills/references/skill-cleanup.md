@@ -20,13 +20,15 @@ skill-name/
 
 Do not ship: unused or duplicate files, development-only metadata, probes, drafts, scratch notes, old renames, nested `node_modules`, secrets, or files that only make sense inside another repository.
 
+**A skill folder is never an artifact root.** Runtime state, caches, browser profiles, and second copies of a helper belong in the workspace `.octocode/` or the global Octocode home (`$OCTOCODE_HOME`, default `~/.octocode`) — never beside `SKILL.md`. A script that resolves its output base as `process.cwd()/.octocode` writes into whichever directory launched it, so a run started from the skill folder silently fills it; treat a git-ignored `.octocode/` inside a skill as that accident and relocate it.
+
 ## Cleanup checklist
 
 1. **Whole-folder reachability** — every file is reachable from `SKILL.md`, `README.md`, or another used file (`unused-file`); otherwise delete or route it.
 2. **Internal references** — every local file reference resolves inside the skill; vendor required files and name optional sibling skills without file paths (`link-outside-skill`).
 3. **Duplicate content/files** — one owner and one shipped copy per concept; delete restated prose, duplicate assets, development-only metadata, and probes.
-4. **Routes** — every reference and agent-facing script is reachable and listed in the lobby with its use condition.
-5. **Bloat** — `SKILL.md` ≤50 lines; each ref ≤50, one H1; drop authoring metadata from agent files.
+4. **Routes** — each used reference and agent-facing script has a reachable route with its use condition; keep detailed catalogs in one place.
+5. **Bloat** — keep one concept per reference and a lean lobby. Assess line-count warnings for actual duplication or difficult navigation; avoid splitting coherent procedures just to meet a count.
 6. **Dead routes** — lobby links that no longer match a real job → remove the line and the file if unused.
 
 ## Phase

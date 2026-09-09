@@ -96,15 +96,7 @@ export async function fetchContent(
     const sourceBytes = Buffer.byteLength(rawContent, 'utf-8');
     const content = rawContent;
 
-    // Resolve the effective minify mode here rather than via a schema default.
-    // `fullContent` promises the whole file verbatim, so it defaults to 'none'
-    // (otherwise 'standard' would strip comments/blank lines and "reads the
-    // whole file" would be a lie); every other read defaults to 'standard'. An
-    // explicit minify always wins. Resolving here (not at the schema) is what
-    // lets us tell "caller omitted minify" from "caller chose standard":
-    // inputSchema is parsed upstream before execution, applying any schema default.
-    // Same resolution the large-file gate above already applied.
-    //
+    // Explicit compact views use the same mode as the large-file gate above.
     // matchString BLOCKS minification entirely (by design): minify runs AFTER
     // extraction, so a match inside a comment/blank region could be stripped
     // from the very slice whose matchRanges anchor it — evidence contradicting

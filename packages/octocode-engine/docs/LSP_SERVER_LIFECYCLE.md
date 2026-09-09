@@ -18,12 +18,12 @@ These are **not** interchangeable. Tree-sitter cannot resolve a symbol across fi
 When a semantic operation needs a language server and **no server is available**, octocode **throws** — it does *not* fabricate a syntactic or same-file approximation. An honest failure prevents the calling agent from trusting incomplete syntax evidence as a semantic answer.
 
 - The thrown error is the standard typed envelope: `status:"error"`, `errorCode:"lspServerUnavailable"`. In bulk it lands under `errors[]`.
-- The message names the language, says no server is available, gives the install hint, and **directs the agent to `localSearch` (text/structural operation) + `localGetFileContent`** instead.
+- The message names the language, says no server is available, gives the install hint, and **directs the agent to lexical `localSearch` or structural `astSearch` + `localGetFileContent`** instead.
 - octocode never returns a same-file-only `references` result, or a tree-sitter guess, dressed up as a semantic answer.
 
 **Throws when no server:** `definition`, `references`, `hover`, `callers`, `callees`, `callHierarchy`, `typeDefinition`, `implementation`, `workspaceSymbol`, `supertypes`, `subtypes`, `diagnostic`.
 
-**Never throws (genuine tree-sitter features, server-free):** `documentSymbols` (native OXC for JS/TS, Markdown heading outline, or LSP when present) and structural/AST search via `localSearch.operation:"structural"`. These are real syntactic capabilities, not LSP stand-ins. `documentSymbols` only throws for a non-JS/TS language with no server *and* no outline.
+**Never throws (genuine tree-sitter features, server-free):** `documentSymbols` (native OXC for JS/TS, Markdown heading outline, or LSP when present) and structural/AST search via `astSearch` with `operation:"match"`. These are real syntactic capabilities, not LSP stand-ins. `documentSymbols` only throws for a non-JS/TS language with no server *and* no outline.
 
 > A server that *is* running but lacks a capability, or returns zero results, still yields an honest *empty* (`unsupportedOperation` / `noReferences` / …) — that is an accurate answer ("none"), not a missing-server failure.
 

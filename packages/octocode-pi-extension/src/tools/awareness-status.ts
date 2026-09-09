@@ -43,21 +43,17 @@ export function hasAwarenessSignal(s: ExternalAwarenessStatus): boolean {
   );
 }
 
-/** Persistent shared attention belongs in the custom footer, not a hidden host status slot. */
-export function buildAwarenessFooterSegments(status: ExternalAwarenessStatus | null, deliveryStatus?: string): InlineSegment[] {
-  const segments: InlineSegment[] = [];
-  if (deliveryStatus) segments.push({ text: deliveryStatus, token: 'warning', attention: true });
-  if (status?.unreadInbox) segments.push({ text: `Awareness · ${status.unreadInbox} unread`, token: 'warning', attention: true });
-  if (status?.verifyTasks) segments.push({ text: `Awareness · ${status.verifyTasks} checks pending`, token: 'warning', attention: true });
-  return segments;
-}
-
 /**
  * Build explicit Awareness detail lines. Empty array when there is
  * nothing to show; lines clipped at the source when `width` is given.
  */
-export function formatAwarenessPanel(s: ExternalAwarenessStatus, theme?: PiTheme, width?: number): string[] {
-  if (!hasAwarenessSignal(s) && !(s.unreadInbox && s.unreadInbox > 0)) return [];
+export function formatAwarenessPanel(
+  s: ExternalAwarenessStatus,
+  theme?: PiTheme,
+  width?: number
+): string[] {
+  if (!hasAwarenessSignal(s) && !(s.unreadInbox && s.unreadInbox > 0))
+    return [];
   const debt = s.verifyTasks;
   const segs: string[] = [];
   if (s.activePlans > 0) segs.push(`plans ${s.activePlans}`);
@@ -68,38 +64,69 @@ export function formatAwarenessPanel(s: ExternalAwarenessStatus, theme?: PiTheme
   if (s.lockCount > 0) tail.push(`locks ${s.lockCount}`);
   if (s.workCount > 0) tail.push(`work ${s.workCount}`);
   if (s.messageCount > 0) {
-    tail.push(s.lastMessage
-      ? `peer-msgs ${s.messageCount} (last ${s.lastMessage.from}→${s.lastMessage.to}: ${s.lastMessage.preview})`
-      : `peer-msgs ${s.messageCount}`);
+    tail.push(
+      s.lastMessage
+        ? `peer-msgs ${s.messageCount} (last ${s.lastMessage.from}→${s.lastMessage.to}: ${s.lastMessage.preview})`
+        : `peer-msgs ${s.messageCount}`
+    );
   }
 
   const attention: InlineSegment[] = [];
   // Unread inbound messages lead the panel — they are the one awareness event
   // that demands the operator's/agent's attention (a peer is talking to YOU).
   if (s.unreadInbox && s.unreadInbox > 0) {
-    const preview = s.lastInbound ? ` (from ${s.lastInbound.from}: ${s.lastInbound.preview})` : '';
-    attention.push({ text: `✉ ${s.unreadInbox} unread${preview}`, token: 'warning', attention: true });
+    const preview = s.lastInbound
+      ? ` (from ${s.lastInbound.from}: ${s.lastInbound.preview})`
+      : '';
+    attention.push({
+      text: `✉ ${s.unreadInbox} unread${preview}`,
+      token: 'warning',
+      attention: true,
+    });
   }
-  if (debt > 0) attention.push({ text: `verify-debt ${debt}`, token: 'warning', attention: true });
+  if (debt > 0)
+    attention.push({
+      text: `verify-debt ${debt}`,
+      token: 'warning',
+      attention: true,
+    });
   const chunks: InlineSegment[] = [
     ...attention,
-    ...(segs.length ? [{ text: segs.join(SEP_WIDE), token: 'brand' as const }] : []),
-    ...(tail.length ? [{ text: tail.join(SEP_WIDE), token: 'muted' as const }] : []),
+    ...(segs.length
+      ? [{ text: segs.join(SEP_WIDE), token: 'brand' as const }]
+      : []),
+    ...(tail.length
+      ? [{ text: tail.join(SEP_WIDE), token: 'muted' as const }]
+      : []),
   ];
-  if (chunks.length === 0 && !(s.taskActivities?.length)) return [];
+  if (chunks.length === 0 && !s.taskActivities?.length) return [];
   const summaryLines = width
-    ? renderInlineRows({ segments: [{ text: 'Awareness', token: 'title' }, ...chunks], separator: SEP_WIDE }, { width, theme })
-    : [chunks.length > 0
-      ? `${paint(theme, 'title', 'Awareness')}  ${chunks.map((chunk) => paint(theme, chunk.token ?? 'dim', chunk.text)).join(SEP_WIDE)}`
-      : paint(theme, 'title', 'Awareness')];
-  const taskLines = (s.taskActivities ?? []).map((task) => {
-    const state = paint(theme, task.state === 'doing' ? 'brand' : 'link', task.state.toUpperCase());
-    const owner = task.agentId ? `${SEP_WIDE}${paint(theme, 'muted', task.agentId)}` : '';
+    ? renderInlineRows(
+        {
+          segments: [{ text: 'Awareness', token: 'title' }, ...chunks],
+          separator: SEP_WIDE,
+        },
+        { width, theme }
+      )
+    : [
+        chunks.length > 0
+          ? `${paint(theme, 'title', 'Awareness')}  ${chunks.map(chunk => paint(theme, chunk.token ?? 'dim', chunk.text)).join(SEP_WIDE)}`
+          : paint(theme, 'title', 'Awareness'),
+      ];
+  const taskLines = (s.taskActivities ?? []).map(task => {
+    const state = paint(
+      theme,
+      task.state === 'doing' ? 'brand' : 'link',
+      task.state.toUpperCase()
+    );
+    const owner = task.agentId
+      ? `${SEP_WIDE}${paint(theme, 'muted', task.agentId)}`
+      : '';
     const id = paint(theme, 'dim', task.taskId.slice(0, 6));
     return `${paint(theme, 'dim', '  task')}${SEP_WIDE}${state}${SEP_WIDE}${task.title}${owner}${SEP_WIDE}${id}`;
   });
   const lines = [...summaryLines, ...taskLines];
-  return width ? lines.map((line) => truncateToWidth(line, width)) : lines;
+  return width ? lines.map(line => truncateToWidth(line, width)) : lines;
 }
 
 // ─── Async, throttled refresh ────────────────────────────────────────────────
@@ -109,12 +136,16 @@ const MIN_REFRESH_MS = 8000;
 const MAX_CACHED_CWDS = 32;
 
 /** Return the last cached Awareness status for command dashboards. */
-export function getCachedAwarenessStatus(cwd: string): ExternalAwarenessStatus | null {
+export type CachedAwarenessStatus = ExternalAwarenessStatus & { observedAt: number };
+
+export function getCachedAwarenessStatus(
+  cwd: string
+): CachedAwarenessStatus | null {
   return cache.get(cwd)?.status ?? null;
 }
 
 interface CacheEntry {
-  status: ExternalAwarenessStatus | null;
+  status: CachedAwarenessStatus | null;
   lastRunAt: number;
   running: boolean;
   generation: number;
@@ -123,7 +154,10 @@ const cache = new Map<string, CacheEntry>();
 const generations = new Map<string, number>();
 
 /** Typed package reader; injectable without serializing through CLI JSON. */
-export type StatusRunner = (cwd: string, agentId?: string) => Promise<ExternalAwarenessStatus | null>;
+export type StatusRunner = (
+  cwd: string,
+  agentId?: string
+) => Promise<ExternalAwarenessStatus | null>;
 const defaultRunner: StatusRunner = async (cwd, agentId) => {
   if (!isPersistentStorageEnabled()) return null;
   try {
@@ -160,7 +194,9 @@ export function forceAwarenessStatusRefreshForTests(cwd: string): void {
 let awarenessMetricsRefresh: ((ctx?: PiContext) => void) | undefined;
 
 /** Register the host footer refresher without coupling this data source to UI layout. */
-export function setAwarenessMetricsRefreshForUi(cb: ((ctx?: PiContext) => void) | undefined): void {
+export function setAwarenessMetricsRefreshForUi(
+  cb: ((ctx?: PiContext) => void) | undefined
+): void {
   awarenessMetricsRefresh = cb;
 }
 
@@ -191,7 +227,12 @@ export function refreshAwarenessPanel(ctx?: PiContext): void {
   if (!ctx?.hasUI || panelSuppressed) return;
   const cwd = ctx.cwd ?? process.cwd();
   const generation = generations.get(cwd) ?? 0;
-  const entry = cache.get(cwd) ?? { status: null, lastRunAt: 0, running: false, generation };
+  const entry = cache.get(cwd) ?? {
+    status: null,
+    lastRunAt: 0,
+    running: false,
+    generation,
+  };
   // delete-then-set keeps this cwd most-recently-used; cap so a long-lived process
   // visiting many workspaces cannot grow the cache without bound.
   cache.delete(cwd);
@@ -206,19 +247,29 @@ export function refreshAwarenessPanel(ctx?: PiContext): void {
   entry.running = true;
   entry.lastRunAt = now;
   void runner(cwd, process.env.OCTOCODE_AGENT_ID)
-    .then((status) => {
-      if (panelSuppressed || cache.get(cwd) !== entry || entry.generation !== (generations.get(cwd) ?? 0)) return;
+    .then(status => {
+      if (
+        panelSuppressed ||
+        cache.get(cwd) !== entry ||
+        entry.generation !== (generations.get(cwd) ?? 0)
+      )
+        return;
       entry.running = false;
       if (status === null) {
         entry.status = null;
         repaintFooter(ctx);
         return;
       }
-      entry.status = status;
+      entry.status = { ...status, observedAt: Date.now() };
       repaintFooter(ctx);
     })
     .catch(() => {
-      if (panelSuppressed || cache.get(cwd) !== entry || entry.generation !== (generations.get(cwd) ?? 0)) return;
+      if (
+        panelSuppressed ||
+        cache.get(cwd) !== entry ||
+        entry.generation !== (generations.get(cwd) ?? 0)
+      )
+        return;
       entry.running = false;
       entry.status = null;
       repaintFooter(ctx);

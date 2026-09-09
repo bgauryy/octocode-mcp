@@ -2,12 +2,12 @@ import {
   DIRECT_TOOL_SPECIFICATIONS,
   type DirectToolSpecification,
 } from './directToolCatalog/toolSpecifications.js';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from './toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from './toolNames.js';
 import {
   GITHUB_SEARCH_TOOL_NAME,
   GITHUB_GET_HISTORY_ITEM_TOOL_NAME,
   GITHUB_SEARCH_HISTORY_TOOL_NAME,
-  LOCAL_ANALYZE_GRAPH_TOOL_NAME,
+  AST_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
 } from './toolNames.js';
@@ -24,9 +24,9 @@ interface ToolCatalog {
   PACKAGE_SEARCH: ToolConfig;
   GITHUB_CLONE_REPO: ToolConfig;
   LOCAL_SEARCH: ToolConfig;
-  LOCAL_ANALYZE_GRAPH: ToolConfig;
+  AST_SEARCH: ToolConfig;
   LOCAL_FETCH_CONTENT: ToolConfig;
-  LSP_GET_SEMANTIC_CONTENT: ToolConfig;
+  LSP_SEARCH: ToolConfig;
   ALL_TOOLS: ToolConfig[];
 }
 
@@ -129,15 +129,13 @@ const RUNTIME_ATTACHMENT_BY_NAME: Readonly<
       security: 'basic',
     },
   },
-  [LOCAL_ANALYZE_GRAPH_TOOL_NAME]: {
+  [AST_SEARCH_TOOL_NAME]: {
     isDefault: true,
     isLocal: true,
     type: 'search',
     direct: {
       executionFn: async input =>
-        (
-          await import('./local_analyze_graph/execution.js')
-        ).executeAnalyzeGraph(input),
+        (await import('./ast_search/execution.js')).executeAstSearch(input),
       security: 'basic',
     },
   },
@@ -153,15 +151,15 @@ const RUNTIME_ATTACHMENT_BY_NAME: Readonly<
       security: 'basic',
     },
   },
-  [LSP_GET_SEMANTICS_TOOL_NAME]: {
+  [LSP_SEARCH_TOOL_NAME]: {
     isDefault: true,
     isLocal: true,
     type: 'content',
     direct: {
       executionFn: async input =>
-        (
-          await import('./lsp/semantic_content/execution.js')
-        ).executeLspGetSemantics(input),
+        (await import('./lsp/semantic_content/execution.js')).executeLspSearch(
+          input
+        ),
       security: 'basic',
       requiresServerRuntime: true,
     },
@@ -211,9 +209,9 @@ function createToolCatalog(): ToolCatalog {
   const PACKAGE_SEARCH = getTool(STATIC_TOOL_NAMES.PACKAGE_SEARCH);
   const GITHUB_CLONE_REPO = getTool(STATIC_TOOL_NAMES.GITHUB_CLONE_REPO);
   const LOCAL_SEARCH = getTool(LOCAL_SEARCH_TOOL_NAME);
-  const LOCAL_ANALYZE_GRAPH = getTool(LOCAL_ANALYZE_GRAPH_TOOL_NAME);
+  const AST_SEARCH = getTool(AST_SEARCH_TOOL_NAME);
   const LOCAL_FETCH_CONTENT = getTool(STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT);
-  const LSP_GET_SEMANTIC_CONTENT = getTool(LSP_GET_SEMANTICS_TOOL_NAME);
+  const LSP_SEARCH = getTool(LSP_SEARCH_TOOL_NAME);
   const ALL_TOOLS = DIRECT_TOOL_SPECIFICATIONS.map(specification =>
     getTool(specification.name)
   );
@@ -226,9 +224,9 @@ function createToolCatalog(): ToolCatalog {
     PACKAGE_SEARCH,
     GITHUB_CLONE_REPO,
     LOCAL_SEARCH,
-    LOCAL_ANALYZE_GRAPH,
+    AST_SEARCH,
     LOCAL_FETCH_CONTENT,
-    LSP_GET_SEMANTIC_CONTENT,
+    LSP_SEARCH,
     ALL_TOOLS,
   };
 }
@@ -243,8 +241,7 @@ export const GITHUB_GET_HISTORY_ITEM =
 export const PACKAGE_SEARCH = DEFAULT_TOOL_CATALOG.PACKAGE_SEARCH;
 export const GITHUB_CLONE_REPO = DEFAULT_TOOL_CATALOG.GITHUB_CLONE_REPO;
 export const LOCAL_SEARCH = DEFAULT_TOOL_CATALOG.LOCAL_SEARCH;
-export const LOCAL_ANALYZE_GRAPH = DEFAULT_TOOL_CATALOG.LOCAL_ANALYZE_GRAPH;
+export const AST_SEARCH = DEFAULT_TOOL_CATALOG.AST_SEARCH;
 export const LOCAL_FETCH_CONTENT = DEFAULT_TOOL_CATALOG.LOCAL_FETCH_CONTENT;
-export const LSP_GET_SEMANTIC_CONTENT =
-  DEFAULT_TOOL_CATALOG.LSP_GET_SEMANTIC_CONTENT;
+export const LSP_SEARCH = DEFAULT_TOOL_CATALOG.LSP_SEARCH;
 export const ALL_TOOLS = DEFAULT_TOOL_CATALOG.ALL_TOOLS;

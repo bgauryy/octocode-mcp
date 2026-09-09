@@ -195,10 +195,9 @@
       "unified": {
         "tool": "localSearch",
         "query": {
-          "operation": "text",
           "path": "/fixture/repo",
           "searchText": "selectRoute",
-          "regex": "fixed"
+          "regex": "literal"
         }
       },
       "retired": { "tool": "localSearchCode" }
@@ -211,10 +210,10 @@
       "unified": {
         "tool": "localSearch",
         "query": {
-          "operation": "structural",
           "path": "/fixture/repo",
-          "pattern": "selectRoute($X)",
-          "langType": "typescript"
+          "searchText": "selectRoute",
+          "regex": "literal",
+          "resultView": "content"
         }
       },
       "retired": { "tool": "localSearchCode" }
@@ -227,10 +226,10 @@
       "unified": {
         "tool": "localSearch",
         "query": {
-          "operation": "files",
           "path": "/fixture/repo",
-          "names": ["*schema*.ts"],
-          "entryType": "f"
+          "searchText": "schema",
+          "regex": "literal",
+          "resultView": "files"
         }
       },
       "retired": { "tool": "localFindFiles" }
@@ -243,9 +242,10 @@
       "unified": {
         "tool": "localSearch",
         "query": {
-          "operation": "tree",
           "path": "/fixture/repo/src",
-          "maxDepth": 2
+          "searchText": "src",
+          "regex": "literal",
+          "resultView": "discovery"
         }
       },
       "retired": { "tool": "localViewStructure" }

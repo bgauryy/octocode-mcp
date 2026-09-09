@@ -18,12 +18,12 @@ my-skill/
 2. Activation — matching task → full `SKILL.md`.
 3. Execution — load refs/scripts only when the map says so.
 
-`SKILL.md` is the lobby: workflows, hard rules, stop conditions, and the route table live there. Refs never redefine the main flow.
+`SKILL.md` is the lobby: entry decisions, shared constraints, and routes live there. References own conditional procedures without redefining shared rules.
 
 ## Reference discipline
 
-- One short H1, one concept per file, ≤ 50 lines; one owner per concept (no overlaps).
-- Every link states WHEN and WHY; load one ref at a time.
+- One short H1 and one concept per file. Treat 50 lines as a review cue, not a reason to fragment useful instructions.
+- Routes explain when and why to load detail. Reuse prior reads and batch independent references when useful.
 - Ref→ref OK for depth — end with the next load when needed.
 - Gotchas stay in the lobby only if the agent must know them before the trigger.
 - Tabular content → a real markdown table, never prose describing rows/columns.
@@ -32,12 +32,12 @@ my-skill/
 
 ## Map and navigation
 
-- `SKILL.md` lists every reference and runnable script with when and how to use it, plus the workflows. An index can add depth, not replace the listing.
+- `SKILL.md` routes the main capabilities. An index or used reference can route deeper files and scripts; avoid duplicating the same catalog in both places.
 - Each chunk opens with its own entry condition (`Load when … Why: …`) so a route is verifiable from the file itself.
-- Each chunk ends with the next hop, or says the step ends here — never leave the agent guessing where to go.
+- Give a next hop when the procedure depends on another file. A complete reference can end without a ceremonial closing line.
 - Every flow phase in `SKILL.md` appears in a route or gate; a phase named only in the flow line is decoration.
 - Library modules under `scripts/` stay unlisted, but something must import them; nothing imports dead weight.
-- `scripts/skill-review.mjs` gates all of it.
+- Run `scripts/skill-review.mjs`; fix errors and judge advisory layout findings against actual navigation and task needs.
 
 ## Context cut
 

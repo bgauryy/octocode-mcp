@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { contentDigest } from '@octocodeai/octocode-awareness';
 import { createSessionArtifactContext, writeRehydrationLedger } from '../src/tools/session-artifacts.js';
-import { REHYDRATION_RECEIPT_ENTRY_TYPE, consumeValidatedRehydration, rehydrateSession, runAndRecordRehydration } from '../src/tools/rehydration-orchestrator.js';
+import { REHYDRATION_RECEIPT_ENTRY_TYPE, consumeValidatedRehydration, hasPendingRehydration, rehydrateSession, runAndRecordRehydration } from '../src/tools/rehydration-orchestrator.js';
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => fs.rmSync(root, { recursive: true, force: true })));
@@ -41,6 +41,7 @@ describe('production rehydration orchestration', () => {
 
   it('restores digest-valid bounded refs while live plan, pending interactions, and cursors win', () => {
     const { workspace, ctx, artifact } = setup();
+    expect(hasPendingRehydration(ctx as never)).toBe(false);
     const currentPlan = '<active_plan>live</active_plan>';
     const policy = 'frozen policy';
     writeRehydrationLedger(artifact, {
@@ -67,6 +68,7 @@ describe('production rehydration orchestration', () => {
       totalTokenBudget: 100,
     });
     expect(receipt.outcome).toBe('pending-validation');
+    expect(hasPendingRehydration(ctx as never)).toBe(true);
     expect(receipt.present).toEqual(['active-plan', 'policy']);
     expect(receipt.restored).toEqual([]);
     expect(receipt.pendingInteractionIds).toEqual(['pending']);
@@ -85,6 +87,7 @@ describe('production rehydration orchestration', () => {
     expect(projection?.content).toContain(currentPlan);
     expect(projection?.content).not.toContain(policy);
     expect(consumeValidatedRehydration(ctx as never, [], { allowProjection: true })).toBeUndefined();
+    expect(hasPendingRehydration(ctx as never)).toBe(false);
   });
 
   it('validates but does not reproject current content already retained by the host', () => {

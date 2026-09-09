@@ -142,15 +142,23 @@ describe('scoped attend revisions', () => {
       .toMatchObject({ unchanged: false, reset_reason: 'unstable_snapshot' });
   });
 
-  it('returns explicit full fallback for omitted rows instead of hiding changed bounded-out debt', () => {
+  it('keeps unchanged pages lean while detecting omitted debt covered by the snapshot', () => {
     const { db, params, run } = fixture();
     run('run_one'); run('run_two');
     const first = attendAwareness(db, { ...params, limit: 1 });
     const next = attendAwareness(db, { ...params, limit: 1, revision: first.revision });
-    expect(next).toMatchObject({ unchanged: false, reset_reason: 'partial_snapshot' });
-    expect(next).toHaveProperty('workboard');
+    expect(next).toMatchObject({ unchanged: true, partial: true });
+    expect(next.next.continuations).toBeDefined();
     db.prepare("UPDATE task_runs SET rationale = 'changed hidden debt' WHERE run_id = 'run_two'").run();
     expect(attendAwareness(db, { ...params, limit: 1, revision: next.revision }))
+      .toMatchObject({ unchanged: false });
+  });
+
+  it('never reports unchanged when hidden debt exceeds the snapshot cap', () => {
+    const { db, params, run } = fixture();
+    for (let index = 0; index < 51; index++) run(`run_${index}`);
+    const first = attendAwareness(db, { ...params, limit: 1 });
+    expect(attendAwareness(db, { ...params, limit: 1, revision: first.revision }))
       .toMatchObject({ unchanged: false, reset_reason: 'partial_snapshot' });
   });
 
@@ -178,7 +186,7 @@ describe('scoped attend revisions', () => {
     const cli = fileURLToPath(new URL('../bin/awareness.ts', import.meta.url));
     const db = join(workspace, 'persistent.sqlite3');
     const call = (extra: string[] = []) => {
-      const child = spawnSync(process.execPath, [tsxCli, cli, 'attend', '--db', db,
+      const child = spawnSync(process.execPath, [tsxCli, cli, 'attend', '--details', '--db', db,
         '--workspace', workspace, '--agent-id', 'owner', '--compact', ...extra],
       { cwd: workspace, encoding: 'utf8', timeout: 30_000 });
       expect(child.status, child.stderr || child.stdout).toBe(0);

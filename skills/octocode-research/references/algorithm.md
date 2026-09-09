@@ -9,8 +9,8 @@ Load when any research run starts and you need routing, proof grades, triangulat
 | none | tree depth 1-2 + count matches per file; re-enter at hotspots |
 | concept/behavior | synonym regex → symbols view for anchors |
 | identifier | text or workspaceSymbol for a real location, then LSP if identity matters |
-| code shape | structural rule with metavariables |
-| file/repository topology | `localAnalyzeGraph`: dependencies/dependents/path/cycles/reachability |
+| code shape | `astSearch` with `operation:"match"` and structural rules |
+| file/repository topology | `astSearch` with `operation:"topology"`: dependencies/dependents/path/cycles/reachability |
 | installed package | inspect resolved version/source when access permits; compare the matching upstream release |
 | why/history | PR/commit history on the path |
 

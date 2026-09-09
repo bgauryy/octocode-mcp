@@ -23,7 +23,7 @@ Ask before authentication; CAPTCHA or MFA handling; personal data; hosted spend;
 ## Install
 
 ```bash
-npx octocode skill install octocode-scraping --platform codex
+npx -y octocode skill install octocode-scraping
 ```
 
 See [provider setup](docs/PROVIDERS.md) and the [script catalog](scripts/README.md).

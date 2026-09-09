@@ -99,7 +99,7 @@ export function pruneStale(db: DatabaseSync, params: Record<string, unknown> = {
   // Selection must be identical for dry-run and real prune, so previews are honest.
   const conditions: string[] = [];
   const binds: string[] = [];
-  const staleClauses = ['(l.expires_at IS NOT NULL AND l.expires_at < ?)'];
+  const staleClauses = ['(l.expires_at IS NOT NULL AND l.expires_at <= ?)'];
   binds.push(now);
   if (ageCutoff) {
     staleClauses.push('(l.acquired_at < ?)');
@@ -116,13 +116,10 @@ export function pruneStale(db: DatabaseSync, params: Record<string, unknown> = {
   const where = conditions.join(' AND ');
   const from = 'awareness_locks l JOIN task_runs t ON t.run_id = l.run_id';
 
-  let staleLocks: Array<{ lock_id: string; run_id: string; file_path: string; agent_id: string; reason: string; expires_at: string | null }> = [];
-  try {
-    staleLocks = db.prepare(
-      `SELECT l.lock_id, l.run_id, l.file_path, t.agent_id, t.rationale AS reason, l.expires_at
-         FROM ${from} WHERE ${where}`
-    ).all(...binds) as Array<{ lock_id: string; run_id: string; file_path: string; agent_id: string; reason: string; expires_at: string | null }>;
-  } catch { /* non-critical stale-lock scan */ }
+  let staleLocks = db.prepare(
+    `SELECT l.lock_id, l.run_id, l.file_path, t.agent_id, t.rationale AS reason, l.expires_at
+       FROM ${from} WHERE ${where}`
+  ).all(...binds) as Array<{ lock_id: string; run_id: string; file_path: string; agent_id: string; reason: string; expires_at: string | null }>;
 
   if (dryRun) {
     return {

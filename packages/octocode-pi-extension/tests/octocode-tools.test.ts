@@ -55,13 +55,12 @@ test('registerUniqueTool registers a tool and throws on name collision', async (
 });
 
 test('research tools are NOT registered as native Pi tools — served via MCPTool octocode server', async () => {
-  // Verify that the 13 research tools are not registered in the
+  // Verify that the 10 research tools are not registered in the
   // extension's tool palette. They are accessed through MCPTool instead.
   const nativeResearchTools = [
-    'ghSearch', 'ghGetFileContent', 'ghSearchPullRequests', 'ghSearchIssues',
-    'ghSearchCommits', 'ghListReleases', 'ghSearchDiscussions', 'ghCloneRepo',
-    'npmSearch', 'localSearch', 'localAnalyzeGraph', 'localGetFileContent',
-    'lspGetSemantics',
+    'ghSearch', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem',
+    'ghCloneRepo', 'npmSearch', 'localSearch', 'astSearch',
+    'localGetFileContent', 'lspSearch',
   ];
 
   // octocode-tools.ts no longer exports registerOctocodeTools.
@@ -78,5 +77,5 @@ test('research tools are NOT registered as native Pi tools — served via MCPToo
   );
 
   // Confirm the tool names list itself (documentation anchor).
-  assert.equal(nativeResearchTools.length, 13);
+  assert.equal(nativeResearchTools.length, 10);
 });

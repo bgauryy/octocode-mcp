@@ -235,8 +235,9 @@ export function renewWorkLease(
       throw new Error(`run ${params.runId} belongs to ${currentRun.agent_id}`);
     }
     if (currentRun.status !== 'ACTIVE') throw new Error(`run ${params.runId} is not ACTIVE`);
-    const allLockRows = db.prepare('SELECT file_path FROM awareness_locks WHERE run_id = ?')
-      .all(params.runId) as unknown as Array<{ file_path: string }>;
+    const allLockRows = db.prepare(`SELECT file_path FROM awareness_locks
+      WHERE run_id = ? AND (expires_at IS NULL OR expires_at > ?)`)
+      .all(params.runId, now) as unknown as Array<{ file_path: string }>;
     const lockedTargets = new Set(allLockRows.map((row) => row.file_path));
     const targets = options.exclusiveOnly
       ? [...lockedTargets]
@@ -252,9 +253,10 @@ export function renewWorkLease(
     }
 
     const present = db.prepare(`SELECT file_path FROM run_files
-      WHERE run_id = ? AND ended_at IS NULL AND file_path IN (${targets.map(() => '?').join(',')})`)
-      .all(params.runId, ...targets) as unknown as Array<{ file_path: string }>;
-    if (present.length !== targets.length) throw new Error('one or more active file presences were not found for this run');
+      WHERE run_id = ? AND ended_at IS NULL AND expires_at > ?
+        AND file_path IN (${targets.map(() => '?').join(',')})`)
+      .all(params.runId, now, ...targets) as unknown as Array<{ file_path: string }>;
+    if (present.length !== targets.length) throw new Error('work lease conflict: one or more active file presences were not found; expired leases must be reacquired');
 
     db.prepare('DELETE FROM awareness_locks WHERE expires_at IS NOT NULL AND expires_at <= ?').run(now);
     for (const file of targets) {

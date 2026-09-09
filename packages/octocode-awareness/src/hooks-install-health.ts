@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { hookCommand, hookCommandWindows, hookTargetPath, HookEntry, HookSpec, InstallableHookHost, WRITE_MATCHERS } from './hooks-install-specs.js';
-import type { AwarenessHookProfile } from './workspace-policy.js';
+import { hookCommand, hookCommandWindows, hookTargetPath, hookTimeout, HookEntry, HookSpec, InstallableHookHost, WRITE_MATCHERS } from './hooks-install-specs.js';
+import { DEFAULT_WORKSPACE_POLICY, hookCommandEnabled, type AwarenessHookProfile } from './workspace-policy.js';
 
 export function specsFor(host: InstallableHookHost, params: {
   globalMode: boolean;
@@ -10,10 +10,11 @@ export function specsFor(host: InstallableHookHost, params: {
   profile?: AwarenessHookProfile;
 }): HookSpec[] {
   const toolMatcher = (matcher: string): string | undefined => (
-    (params.profile ?? 'full') === 'guard' ? matcher : undefined
+    (params.profile ?? DEFAULT_WORKSPACE_POLICY.hooks.profile) === 'guard' ? matcher : undefined
   );
   const spec = (event: string, name: string, matcher?: string): HookSpec => ({
     event,
+    hookName: name.replace(/\.sh$/, ''),
     ...(matcher ? { matcher } : {}),
     command: hookCommand(name, { host, ...params }),
     ...(hookCommandWindows(name, { host, hookDir: params.hookDir })
@@ -22,16 +23,8 @@ export function specsFor(host: InstallableHookHost, params: {
     targetPath: hookTargetPath(params.hookDir),
   });
   const filterProfile = (specs: HookSpec[]): HookSpec[] => {
-    const profile = params.profile ?? 'full';
-    if (profile === 'full') return specs;
-    const lifecycleEvents = new Set(host === 'cursor'
-      ? ['preToolUse', 'postToolUse', 'postToolUseFailure', 'stop', 'subagentStop']
-      : host === 'copilot'
-        ? ['preToolUse', 'postToolUse', 'postToolUseFailure', 'agentStop', 'subagentStop']
-        : host === 'gemini'
-          ? ['BeforeTool', 'AfterTool', 'AfterAgent']
-          : ['PreToolUse', 'PostToolUse', 'PostToolUseFailure', 'Stop', 'SubagentStop']);
-    return specs.filter((entry) => lifecycleEvents.has(entry.event));
+    const profile = params.profile ?? DEFAULT_WORKSPACE_POLICY.hooks.profile;
+    return specs.filter((entry) => hookCommandEnabled(profile, entry.hookName ?? ''));
   };
   if (host === 'cursor') {
     return filterProfile([
@@ -139,7 +132,7 @@ export function entry(host: InstallableHookHost, spec: HookSpec): HookEntry {
       type: 'command',
       command: spec.command,
       ...(spec.commandWindows ? { commandWindows: spec.commandWindows } : {}),
-      timeout: host === 'gemini' ? 20_000 : 20,
+      timeout: hookTimeout(host, spec.event),
     }],
   };
 }
@@ -191,7 +184,7 @@ export function isExactHookEntry(host: InstallableHookHost, group: HookEntry, sp
       hook.type === 'command'
       && hook.command === spec.command
       && hook.commandWindows === spec.commandWindows
-      && hook.timeout === (host === 'gemini' ? 20_000 : 20)
+      && hook.timeout === hookTimeout(host, spec.event)
     ));
 }
 
@@ -222,7 +215,7 @@ export function hasDriftedCommand(groups: HookEntry[] | undefined, host: Install
       const exact = matcherMatches(group.matcher, spec.matcher)
         && hook.type === 'command'
         && hook.commandWindows === spec.commandWindows
-        && hook.timeout === (host === 'gemini' ? 20_000 : 20);
+        && hook.timeout === hookTimeout(host, spec.event);
       if (!exact) return true;
     }
   }

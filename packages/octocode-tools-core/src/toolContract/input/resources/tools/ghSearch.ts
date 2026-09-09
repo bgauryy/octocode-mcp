@@ -70,5 +70,3 @@ export const GitHubSearchQuerySchema = z.discriminatedUnion('operation', [
   repositoriesQuerySchema,
   treeQuerySchema,
 ]);
-
-export type GitHubSearchQuery = z.infer<typeof GitHubSearchQuerySchema>;

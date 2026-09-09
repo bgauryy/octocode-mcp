@@ -1,7 +1,11 @@
 # Reflection And Self-Improvement
 
 Reflection turns a verified outcome into reusable learning or owned follow-up. It is
-not routine status and never self-authorizes source/instruction changes.
+not routine status and never self-authorizes source/instruction changes. Use it
+after substantial work or a meaningful event when a root cause, constraint,
+decision, or fix is worth reusing. Skip routine edits, repeated facts, and per-turn
+reflection. Native hosts use these commands through the [API](API.md); see
+[Pi learning examples](../../octocode-pi-extension/docs/REFLECT.md).
 
 ## Flow
 

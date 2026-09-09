@@ -1,5 +1,7 @@
 /** Host-neutral no-mutation contract used when an Octocode plan starts. */
 
+export const PLAN_USAGE_GUIDANCE = 'Use a plan only for complex work: coupled dependencies, coordinated owners, consequential risk, or substantial work spanning sessions. Skip routine fixes, straightforward steps, and simple delegation; honor an explicit planning request.';
+
 export const PLAN_PROMPT_MAX_GOAL = 2000;
 export const PLAN_PROMPT_TRUNCATION_MARKER =
   `[Goal truncated at ${PLAN_PROMPT_MAX_GOAL} characters; ask the user to restate omitted constraints before proposing.]`;
@@ -27,11 +29,11 @@ export function buildPlanPrompt(goal: string, adapter: PlanPromptHostAdapter = {
     ?? 'Present the concise proposal and its reviewable artifact through the host review surface.';
 
   return [
-    '[PLAN MODE] Build a reviewable plan collaboratively, then ask once whether to Start implementation.',
+    '[PLAN MODE] Build a reviewable plan collaboratively. The host review owns one Start implementation decision; consume its result without asking again.',
     target,
     '',
     '1. Establish only the evidence that changes scope, dependencies, risk, or acceptance. Use the live Octocode tool catalog for repository, code, history, package, graph, and semantic research; load a matching Octocode skill for specialized research, evaluation, or RFC work. Do not substitute shell search or direct CLI invocations. Keep simple requests brief; for shared or cross-cutting work, trace callers and contracts.',
-    '2. If the work is consequential, architectural, migratory, or changes a public contract, use the RFC workflow and create or update a reviewable RFC. Otherwise state why a lightweight plan is sufficient and do not invent an RFC.',
+    '2. Use the RFC workflow and create or update a reviewable RFC when architecture, migration, or public-contract choices need user review. Otherwise keep a lightweight plan; put its brief rationale in the proposal fields, without a separate explanation or approval round.',
     '3. Ask bounded clarification only when a decision-changing material choice cannot be answered from repository evidence. Do not turn reversible implementation details into questions. Cancellation, timeout, or unavailable interaction never authorizes a default.',
     `4. ${proposalInstruction} A consequential proposal links its exact RFC revision; a lightweight proposal omits the RFC path and retains the reason it is lightweight. ${reviewInstruction}`,
     '5. The review has one decision: Start implementation or Request changes. Start binds the exact displayed revision and begins the first runnable step in one action; there is no separate Accept action. Feedback means revise and re-propose; rejection means stop; unavailable interaction leaves the proposal pending.',

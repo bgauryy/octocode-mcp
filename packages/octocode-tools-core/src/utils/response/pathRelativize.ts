@@ -36,7 +36,7 @@ function collectPathHolders(
   const absolutePath = normalizeLocalAbsolutePath(obj);
   if (absolutePath) {
     // Do NOT persist absolutePath/uri on the row: both are fully derivable from
-    // `base` + the relativized `path` (and lspGetSemantics accepts a plain
+    // `base` + the relativized `path` (and lspSearch accepts a plain
     // path). Emitting them duplicated the full path twice per row and negated
     // the `base` savings. Track the absolute value locally only, to compute base.
     holders.push({ obj, abs: absolutePath });
@@ -93,49 +93,9 @@ export function relativizeResultPaths(
     delete obj.uri;
   }
 
-  stripBaseFromStringElements(results, prefix);
-
+  // Only path metadata is relative to base. Source, captures, snippets and
+  // rendered strings are evidence and must not depend on batch composition.
   return base;
-}
-
-function stripBaseFromStringElements(
-  results: ReadonlyArray<{ data?: unknown } | null | undefined>,
-  prefix: string
-): void {
-  function walk(node: unknown, depth: number): void {
-    if (depth > 8 || !node || typeof node !== 'object') return;
-    if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i++) {
-        const v = node[i];
-        if (typeof v === 'string') {
-          const fileUriPrefix = 'file://' + prefix;
-          if (v.includes(fileUriPrefix))
-            (node as unknown[])[i] = v.replaceAll(fileUriPrefix, '');
-          else if (v.includes(prefix))
-            (node as unknown[])[i] = v.replaceAll(prefix, '');
-        } else {
-          walk(v, depth + 1);
-        }
-      }
-      return;
-    }
-    const obj = node as Record<string, unknown>;
-    for (const key of Object.keys(obj)) {
-      if (SKIP_TRAVERSAL_KEYS.has(key)) continue;
-      const v = obj[key];
-      if (typeof v === 'string') {
-        if (
-          !PATH_LIKE_KEYS.includes(key as (typeof PATH_LIKE_KEYS)[number]) &&
-          v.includes(prefix)
-        ) {
-          obj[key] = v.replaceAll(prefix, '');
-        }
-      } else {
-        walk(v, depth + 1);
-      }
-    }
-  }
-  for (const r of results) walk(r?.data, 0);
 }
 
 function collectLeaves(
@@ -179,7 +139,7 @@ const HOIST_EXCLUDED_KEYS = new Set<string>([
   // validation and killed the whole batch with -32602.
   'type',
   // 'kind' and 'reason' are core per-item semantic data an agent reads on
-  // every row (localAnalyzeGraph deadCode results {kind, reason}; lsp symbols
+  // every row (astSearch topology deadCode results {kind, reason}; lsp symbols
   // {kind}). When a whole list happens to be homogeneous (e.g. a low-confidence
   // dead-code scan where every entry is kind:"function"/reason:"unreachable-file")
   // hoisting them stripped the fields off every row into a stray top-level
@@ -189,6 +149,20 @@ const HOIST_EXCLUDED_KEYS = new Set<string>([
   'reason',
   // Partial state must stay on its row for final diagnostic reconciliation.
   'isPartial',
+  // Source anchors and declaration facts must be independently usable per row.
+  'startLine',
+  'endLine',
+  'startColumn',
+  'endColumn',
+  'startByte',
+  'endByte',
+  'line',
+  'column',
+  'character',
+  'parentId',
+  'parent',
+  'named',
+  'exported',
 ]);
 
 export function hoistSharedFields(

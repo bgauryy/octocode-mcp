@@ -8,7 +8,7 @@ Prefer exposed Octocode MCP tools with current public contracts. If unavailable,
 ```bash
 node packages/octocode/out/octocode.js tools --json --compact
 node packages/octocode/out/octocode.js tools localSearch --scheme --json --compact
-node packages/octocode/out/octocode.js tools localSearch --queries '{"operation":"text","path":"/ABS/repo/src","searchText":"needle","maxFiles":10}' --compact
+node packages/octocode/out/octocode.js tools localSearch --queries '{"path":"/ABS/repo/src","searchText":"needle","maxFiles":10}' --compact
 ```
 
 Use `context --minimal` only for protocol orientation. Inspect an unfamiliar schema once, including relations and operation variants; reuse it until the tool/version changes. Use full schema JSON when compact fields do not resolve a condition. Explicit commands above work in Bash and zsh without splitting a command stored in a scalar.
@@ -16,10 +16,11 @@ Use `context --minimal` only for protocol orientation. Inspect an unfamiliar sch
 ## 10 public tools
 | Need | Tool |
 |---|---|
-| Local text, AST, files, tree | `localSearch` with the corresponding operation |
+| Local text | `localSearch` with `searchText` |
+| Local AST, files, tree, symbols, topology | `astSearch` with the corresponding `operation` |
 | Exact local content | `localGetFileContent` |
-| File dependencies, dependents, paths, cycles, reachability, dead-code candidates | `localAnalyzeGraph` |
-| Symbol identity, references, call/type relationships, capabilities | `lspGetSemantics` |
+| File dependencies, dependents, paths, cycles, reachability, dead-code candidates | `astSearch` topology |
+| Symbol identity, references, call/type relationships, capabilities | `lspSearch` |
 | GitHub code / tree / repositories | `ghSearch` |
 | Exact remote file or directory materialization | `ghGetFileContent` |
 | PR, issue, commit discovery | `ghSearchHistory` |
@@ -37,6 +38,7 @@ The default catalog contains 9 tools; the full discovery catalog includes opt-in
 - `responsePagination` windows `content[].text`; structured content can remain complete. Avoid fetching the same evidence again solely to recover an envelope text window.
 - Copy a continuation query unchanged before adapting a new search. For coverage claims, execute all relevant pages and check their union. For a lookup, stop at sufficient evidence and state material limits.
 - An incomplete response never proves absence. A terminal limit calls for a narrower scope/query or an explicit gap, not an invented cursor. Preserve redaction and never reconstruct secrets.
+- Local contracts: `localSearch` is lexical and has no `operation`; `astSearch` uses `match`, `files`, `tree`, `symbols`, or `topology` (with `analysis` for topology). `localGetFileContent` is exact by default and selectors are optional. LSP anchors are either 1-based `lineHint` with `symbolName` or 0-based UTF-16 `position`; document operations have no symbol anchor, and workspace symbols require a name plus `uri` or `workspaceRoot`.
 - Batch independent probes within the interface's current limit; sequence dependent probes. Respect provider rate-limit/retry guidance rather than repeatedly issuing the same failing request.
 
 Exit codes: `0` command completed · `2` input · `3` not-found · `4` auth · `5` tool · `7` rate-limit. Inspect row errors as well.

@@ -22,17 +22,17 @@ export const DEFAULT_AWARENESS_CONFIG: AwarenessConfig = Object.freeze({
   features: Object.freeze({
     hooks: true,
     notifications: true,
-    verificationGate: true,
-    sessionCapture: true,
+    verificationGate: false,
+    sessionCapture: false,
     maintenanceReminders: false,
   }),
 });
 
 export const AWARENESS_CONFIG_QUESTIONS = Object.freeze([
   { key: 'hooks', question: 'Enable Awareness host-hook automation?', default: true },
-  { key: 'notifications', question: 'Allow hooks to deliver peer, handoff, and relevant memory context?', default: true },
-  { key: 'verificationGate', question: 'Allow stop hooks to remind or block on unverified work?', default: true },
-  { key: 'sessionCapture', question: 'Allow compact/end hooks to capture resumable session context?', default: true },
+  { key: 'notifications', question: 'Allow hooks to deliver new peer messages?', default: true },
+  { key: 'verificationGate', question: 'Enable stop verification for tracked work (guard/full profile)?', default: false },
+  { key: 'sessionCapture', question: 'Enable automatic session handoffs (full profile)?', default: false },
   { key: 'maintenanceReminders', question: 'Allow bounded maintenance-pressure reminders from hooks?', default: false },
 ] as const);
 
@@ -103,5 +103,5 @@ export function awarenessFeatureEnabled(
   options: { env?: NodeJS.ProcessEnv; path?: string } = {},
 ): boolean {
   const loaded = loadAwarenessConfig(options);
-  return loaded.exists && loaded.config.features[feature];
+  return loaded.config.features[feature];
 }

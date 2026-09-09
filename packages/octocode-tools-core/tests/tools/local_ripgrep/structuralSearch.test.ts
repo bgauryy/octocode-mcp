@@ -52,7 +52,7 @@ function makeQuery(overrides: Record<string, unknown> = {}) {
 
 describe('searchContentStructural', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mocks.validateToolPath.mockReturnValue({
       isValid: true,
       sanitizedPath: '/repo',
@@ -85,60 +85,20 @@ describe('searchContentStructural', () => {
   });
 
   it.each([
-    ['target($X)', 'target($X);'],
-    [
-      'function $NAME($$$ARGS) { $$$BODY }',
-      'function $NAME($$$ARGS): $R { $$$BODY }',
-    ],
-  ])(
-    'discloses the executed fallback pattern and continues it: %s',
-    async (pattern, effectivePattern) => {
-      const empty = {
-        status: 'ok',
-        diagnostics: [],
-        files: [],
-        totalMatches: 0,
-        parsedFiles: 1,
-        skippedByPreFilter: 0,
-        skippedUnreadable: 0,
-        skippedLarge: 0,
-        warnings: [],
-      };
-      mocks.structuralSearchFiles
-        .mockResolvedValueOnce(empty)
-        .mockResolvedValueOnce({
-          ...empty,
-          totalMatches: 2,
-          files: [
-            {
-              path: '/repo/a.ts',
-              matches: [1, 2].map(line => ({
-                startLine: line,
-                endLine: line,
-                startCol: 0,
-                endCol: 9,
-                text: 'target(x)',
-                metavars: {},
-              })),
-            },
-          ],
-        });
-      const result = await searchContentStructural(
-        makeQuery({ pattern, maxMatchesPerFile: 1 })
-      );
-      const output = cleanJsonObject(result);
-      expect(output).toMatchObject({
-        diagnostics: [
-          expect.objectContaining({
-            code: 'structural.query.rewritten',
-            message: expect.stringContaining(JSON.stringify(effectivePattern)),
-          }),
-        ],
-        next: { nextMatchPage: { query: { pattern: effectivePattern } } },
-      });
-      expect(output).not.toHaveProperty('warnings');
-    }
-  );
+    'target($X)',
+    'function $NAME($$$ARGS) { $$$BODY }',
+    'int $NAME($$$ARGS) { $$$BODY }',
+  ])('executes the requested pattern exactly once: %s', async pattern => {
+    const query = makeQuery({ pattern });
+    const result = await searchContentStructural(query);
+    expect(result.files).toHaveLength(0);
+    expect(mocks.structuralSearchFiles).toHaveBeenCalledTimes(1);
+    expect(mocks.structuralSearchFiles).toHaveBeenCalledWith(
+      expect.objectContaining({ pattern })
+    );
+    expect(query.pattern).toBe(pattern);
+    expect(JSON.stringify(result)).not.toContain('structural.query.rewritten');
+  });
 
   it('delegates filesystem traversal, reads, and AST matching to native Rust', async () => {
     mocks.structuralSearchFiles.mockReturnValue({
@@ -361,7 +321,8 @@ describe('searchContentStructural', () => {
       expect(result.status).toBe('error');
       expect(result.errorCode).toBe('structural.language.unsupported');
       expect(result.error).toContain(`.${extension}`);
-      expect(result.error).toContain('operation:"text"');
+      expect(result.error).toContain('Use localSearch to search this file.');
+      expect(result.error).not.toContain('operation:"text"');
       expect(result.error).not.toContain('Invalid structural');
       expect(result.error).not.toContain('$$$BODY');
       expect(mocks.structuralSearch).toHaveBeenCalledTimes(1);
@@ -521,74 +482,20 @@ describe('searchContentStructural', () => {
     expect(result.error).toBeUndefined();
   });
 
-  it('keeps an incomplete empty retry instead of falling back to completed absence', async () => {
-    mocks.structuralSearchFiles
-      .mockResolvedValueOnce({
-        status: 'ok',
-        diagnostics: [],
-        files: [],
-        totalMatches: 0,
-        parsedFiles: 1,
-        skippedByPreFilter: 0,
-        skippedUnreadable: 0,
-        skippedLarge: 0,
-        warnings: [],
-      })
-      .mockResolvedValueOnce({
-        status: 'truncated',
-        diagnostics: [
-          {
-            code: 'structural.match.backtrackingLimit',
-            severity: 'warning',
-            stage: 'match',
-            message: 'Attempt budget exhausted.',
-          },
-        ],
-        files: [],
-        totalMatches: 0,
-        parsedFiles: 1,
-        skippedByPreFilter: 0,
-        skippedUnreadable: 0,
-        skippedLarge: 0,
-        warnings: [],
-      });
-    const result = await searchContentStructural(makeQuery());
-    expect(result).toMatchObject({
-      truncated: true,
-      terminalLimit: true,
-      diagnostics: [
-        expect.objectContaining({ code: 'structural.match.backtrackingLimit' }),
-        expect.objectContaining({
-          code: 'structural.query.rewritten',
-          message: expect.stringContaining('"target($X);"'),
-        }),
-      ],
-    });
-    expect(mocks.structuralSearchFiles).toHaveBeenCalledTimes(2);
-    expect(result.warnings?.join('\n') ?? '').not.toContain('Matched after');
-    expect(mocks.structuralSearchFilesDetailed).not.toHaveBeenCalled();
-  });
-
-  it('propagates an execution limit thrown by a single-file retry', async () => {
+  it('keeps a completed single-file absence without retrying a different pattern', async () => {
     mocks.stat.mockResolvedValue({ isFile: () => true });
-    mocks.structuralSearch
-      .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(
-        new Error('[structural.parse.interrupted] Deadline reached.')
-      );
+    mocks.structuralSearch.mockResolvedValue([]);
     const result = await searchContentStructural(makeQuery());
-    expect(result).toMatchObject({
-      truncated: true,
-      terminalLimit: true,
-      diagnostics: [
-        expect.objectContaining({ code: 'structural.parse.interrupted' }),
-        expect.objectContaining({
-          code: 'structural.query.rewritten',
-          message: expect.stringContaining('"target($X);"'),
-        }),
-      ],
-    });
-    expect(mocks.structuralSearch).toHaveBeenCalledTimes(2);
+    expect(result.files).toHaveLength(0);
+    expect(result).not.toHaveProperty('truncated', true);
+    expect(result).not.toHaveProperty('terminalLimit', true);
+    expect(mocks.structuralSearch).toHaveBeenCalledTimes(1);
+    expect(mocks.structuralSearch).toHaveBeenCalledWith(
+      '',
+      '/repo',
+      'target($X)',
+      undefined
+    );
   });
 
   it('does not treat a completed single-file search with maxFiles 1 as scan truncation', async () => {

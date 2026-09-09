@@ -8,25 +8,21 @@ const TOOL_SCHEMA_RELATIONS: Readonly<Record<string, readonly string[]>> = {
     'match: code=file|path; repositories=name|description|readme.',
     "code cannot select branch; it searches GitHub's indexed default branch.",
   ],
-  localSearch: [
-    'text needs searchText.',
-    'structural needs exactly one of pattern or rule.',
-    'Fields from different operations cannot be mixed.',
-  ],
-  localAnalyzeGraph: [
-    'dependencies | dependents -> requires file; depth applies.',
-    'path -> requires file + target.',
-    'deadCode/reachability use entrypoints and includeTests as roots.',
+  localSearch: ['searchText is required.', 'regex is literal, rust, or pcre2.'],
+  astSearch: [
+    'operation is match, files, tree, symbols, or topology.',
+    'match requires exactly one of pattern or rule; langType is required for directory searches and inferred from a single source file.',
+    'topology uses analysis to select dependencies, dependents, path, cycles, reachability, or deadCode.',
   ],
   localGetFileContent: [
     'Choose fullContent, a line range, or matchString.',
     'A line range needs startLine and endLine.',
     'matchString options apply with matchString.',
   ],
-  lspGetSemantics: [
-    'workspaceSymbol needs symbolName and may use workspaceRoot.',
+  lspSearch: [
+    'workspaceSymbol needs symbolName and uri or workspaceRoot.',
     'documentSymbols/diagnostic need uri.',
-    'definition | references | hover | callers | callees | callHierarchy | implementation | typeDefinition | supertypes | subtypes -> requires uri + symbolName + lineHint.',
+    'definition | references | hover | callers | callees | callHierarchy | implementation | typeDefinition | supertypes | subtypes -> requires uri and exactly one anchor: position or symbolName+lineHint.',
   ],
   ghGetFileContent: [
     'Optionally choose fullContent, a line range, or matchString; extraction modes are exclusive.',

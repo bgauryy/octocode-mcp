@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { GitHubSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/github_search/scheme.js';
 import { LocalSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_search/scheme.js';
-import { LocalAnalyzeGraphBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_analyze_graph/scheme.js';
+import { AstSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/ast_search/scheme.js';
 import { NpmSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/package_search/scheme.js';
 
 const q0 = (
@@ -30,8 +30,8 @@ describe('Unified public pagination fields', () => {
     ).toBe(false);
   });
 
-  it('localSearch files uses limit as the total cap and pageSize per page', () => {
-    const query = q0(LocalSearchBulkQuerySchema, {
+  it('astSearch files uses limit as the total cap and pageSize per page', () => {
+    const query = q0(AstSearchBulkQuerySchema, {
       operation: 'files',
       path: '.',
       names: ['*.ts'],
@@ -45,9 +45,9 @@ describe('Unified public pagination fields', () => {
 
   it('localSearch text uses maxFiles as its total cap, not limit', () => {
     const query = q0(LocalSearchBulkQuerySchema, {
-      operation: 'text',
       path: '.',
       searchText: 'needle',
+      regex: 'literal',
       maxFiles: 40,
       page: 2,
       pageSize: 10,
@@ -56,15 +56,16 @@ describe('Unified public pagination fields', () => {
     expect(
       LocalSearchBulkQuerySchema.safeParse({
         queries: [
-          { operation: 'text', path: '.', searchText: 'needle', limit: 40 },
+          { path: '.', searchText: 'needle', regex: 'literal', limit: 40 },
         ],
       }).success
     ).toBe(false);
   });
 
-  it('localAnalyzeGraph distinguishes limit from pageSize', () => {
-    const query = q0(LocalAnalyzeGraphBulkQuerySchema, {
-      operation: 'cycles',
+  it('astSearch topology distinguishes limit from pageSize', () => {
+    const query = q0(AstSearchBulkQuerySchema, {
+      operation: 'topology',
+      analysis: 'cycles',
       path: '.',
       limit: 100,
       page: 2,

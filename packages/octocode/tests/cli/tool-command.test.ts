@@ -124,7 +124,7 @@ describe('toolCommand', () => {
       command: 'tools',
       args: [
         'localSearch',
-        '{"operation":"text","path":".","searchText":"runCLI","regex":"fixed","include":["ts","tsx"],"maxFiles":5,"matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+        '{"path":".","searchText":"runCLI","regex":"literal","include":["ts","tsx"],"maxFiles":5,"matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       ],
       options: {},
     });
@@ -178,7 +178,7 @@ describe('toolCommand', () => {
       options: {
         json: true,
         queries:
-          '{"operation":"text","path":".","searchText":"runCLI","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"runCLI","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -227,9 +227,8 @@ describe('toolCommand', () => {
     const output = consoleSpy.mock.calls
       .map((call: unknown[]) => call.map(String).join(' '))
       .join('\n');
-    expect(output).toContain('Command Patterns');
+    expect(output).toContain('Command Pattern');
     expect(output).toContain('"searchText":"buildDirectToolCommandPatterns"');
-    expect(output).toContain('"pattern":"eval($X)"');
     expect(output).toContain('absolute path');
   });
 
@@ -242,7 +241,7 @@ describe('toolCommand', () => {
       args: ['localSearch'],
       options: {
         input:
-          '{"operation":"text","path":".","searchText":"buildDirectToolCommandPatterns","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"buildDirectToolCommandPatterns","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -281,7 +280,7 @@ describe('toolCommand', () => {
       command: 'tools',
       args: ['localSearch'],
       options: {
-        queries: '{"operation":"text","path":".","searchText":"runCLI"',
+        queries: '{"path":".","searchText":"runCLI"',
       },
     });
 
@@ -301,7 +300,7 @@ describe('toolCommand', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":999,"matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":999,"matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -348,8 +347,7 @@ describe('toolCommand', () => {
       command: 'tools',
       args: ['localSearch'],
       options: {
-        queries:
-          '{"operation":"text","path":".","searchText":"runCLI","maxResults":5}',
+        queries: '{"path":".","searchText":"runCLI","maxResults":5}',
       },
     });
 
@@ -374,7 +372,7 @@ describe('toolCommand', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"runCLI","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"runCLI","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -393,7 +391,7 @@ describe('toolCommand', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"runCLI","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"runCLI","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -428,7 +426,7 @@ describe('toolCommand', () => {
 
     await toolCommand.handler!({
       command: 'tools',
-      args: ['localSearch', 'localSearch', 'localAnalyzeGraph'],
+      args: ['localSearch', 'localSearch', 'astSearch'],
       options: { scheme: true, json: true, compact: true },
     });
 
@@ -446,7 +444,7 @@ describe('toolCommand', () => {
     expect(parsed.schemas.map(schema => schema.name)).toEqual([
       'localSearch',
       'localSearch',
-      'localAnalyzeGraph',
+      'astSearch',
     ]);
     expect(
       parsed.schemas.every(schema => schema.inputSchema === undefined)
@@ -530,7 +528,7 @@ describe('toolCommand', () => {
       command: 'tools',
       args: ['localSearch'],
       options: {
-        queries: '{"operation":"text","path":".","keywords":["runCLI"]}',
+        queries: '{"path":".","keywords":["runCLI"]}',
       },
     });
 
@@ -694,9 +692,9 @@ describe('toolCommand', () => {
       'npmSearch',
       'ghCloneRepo',
       'localSearch',
-      'localAnalyzeGraph',
+      'astSearch',
       'localGetFileContent',
-      'lspGetSemantics',
+      'lspSearch',
     ]);
     expect(names).not.toEqual(
       expect.arrayContaining([
@@ -750,7 +748,7 @@ describe('toolCommand', () => {
       entry => entry.name === 'localSearch'
     );
     expect(localSearch).toBeDefined();
-    expect(localSearch?.fullDescription).toMatch(/Choose operation:"text"/);
+    expect(localSearch?.fullDescription).toMatch(/lexical/);
     expect(localSearch?.inputSchema?.type).toBe('object');
     expect(Array.isArray(localSearch?.fields)).toBe(true);
     expect(
@@ -803,21 +801,12 @@ describe('toolCommand', () => {
     expect(parsed.commands.runCompact).toContain('--compact');
     expect(parsed.commands.runJson).toContain('tools localSearch');
     expect(parsed.guidance?.join('\n')).toContain('absolute path');
-    expect(parsed.relations?.join('\n').toLowerCase()).toContain('structural');
-    expect(parsed.variants?.map(variant => variant.name)).toEqual([
-      'text',
-      'structural',
-      'files',
-      'tree',
-    ]);
+    expect(parsed.relations?.join('\n').toLowerCase()).toContain('regex');
+    expect(parsed.variants?.map(variant => variant.name)).toEqual(['lexical']);
     const variants = new Map(
       parsed.variants?.map(variant => [variant.name, variant.fields])
     );
-    expect(variants.get('text')).toContain('searchText');
-    expect(variants.get('text')).not.toContain('pattern');
-    expect(variants.get('structural')).toContain('pattern');
-    expect(variants.get('files')).toContain('pathRegex');
-    expect(variants.get('tree')).toContain('namePattern');
+    expect(variants.get('lexical')).toBeUndefined();
   });
 
   it('pretty-prints compact JSON when --pretty is supplied', async () => {
@@ -882,40 +871,16 @@ describe('toolCommand', () => {
     expect(parsed.commands.full).toBe('tools localSearch --scheme --json');
     expect(parsed.commands.run).toContain('--compact');
     expect(parsed.guidance?.join('\n')).toContain('absolute path');
-    expect(parsed.relations?.join('\n').toLowerCase()).toContain('structural');
-    expect(parsed.variants?.map(variant => variant.name)).toEqual([
-      'text',
-      'structural',
-      'files',
-      'tree',
-    ]);
+    expect(parsed.relations?.join('\n').toLowerCase()).toContain('regex');
+    expect(parsed.variants?.map(variant => variant.name)).toEqual(['lexical']);
     const variants = new Map(
       parsed.variants?.map(variant => [variant.name, variant.fields])
     );
     const fieldGroups = parsed.fieldGroups ?? [];
-    expect(variants.get('text')).toContain('searchText*:string');
-    expect(
-      variants.get('text')?.some(field => field.startsWith('pattern'))
-    ).toBe(false);
-    expect(variants.get('structural')).toEqual(
-      expect.arrayContaining(['pattern?:string', 'rule?:string'])
-    );
-    expect(variants.get('files')).toContain('pathRegex?:string');
-    expect(fieldGroups).toContainEqual(
-      expect.objectContaining({
-        variants: ['files', 'tree'],
-        fields: expect.arrayContaining(['pageSize?:integer 1-50']),
-      })
-    );
-    expect(fieldGroups).toContainEqual(
-      expect.objectContaining({
-        variants: ['text', 'structural'],
-        fields: expect.arrayContaining(['pageSize?:integer 1-1000']),
-      })
-    );
-    expect(variants.get('tree')).toContain('namePattern?:string');
+    expect(variants.get('lexical')).toEqual([]);
+    expect(fieldGroups).toEqual([]);
     expect(parsed.fields?.some(field => field.startsWith('searchText'))).toBe(
-      false
+      true
     );
     expect(parsed.fields?.some(field => field.startsWith('time.'))).toBe(false);
     expect(parsed.variants?.every(variant => !('example' in variant))).toBe(

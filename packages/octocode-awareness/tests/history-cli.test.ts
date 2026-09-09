@@ -99,7 +99,7 @@ describe('built local-history CLI contract', () => {
       const help = invoke(script, ['history', 'capture', '--help'], workspace);
       expect(help.status, help.stderr || help.stdout).toBe(0);
       expect(help.stdout).toContain('history capture [options]');
-      expect(help.stdout).toContain('--workspace --agent-id --phase --operation-id --file --outcome');
+      for (const flag of ['--workspace', '--agent-id', '--phase', '--operation-id', '--file', '--outcome']) expect(help.stdout).toContain(flag);
       const schemaResult = invoke(script, ['schema', 'command', 'history', 'capture', '--compact'], workspace);
       expect(schemaResult.status, schemaResult.stderr || schemaResult.stdout).toBe(0);
       const schema = schemaResult.json as { oneOf: Array<{ properties: { phase: { const: string } }; required: string[]; additionalProperties: boolean }> };

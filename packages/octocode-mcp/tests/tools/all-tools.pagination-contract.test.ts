@@ -34,12 +34,12 @@ const TOOL_PAGINATION_CONTRACT: Record<
     exemption: 'bounded clone/materialization operation',
   },
   localSearch: { controls: ['page', 'pageSize'] },
-  localAnalyzeGraph: { controls: ['page', 'pageSize'] },
+  astSearch: { controls: ['page', 'pageSize'] },
   localGetFileContent: { controls: ['charOffset', 'charLength'] },
-  lspGetSemantics: { controls: ['page', 'pageSize'] },
+  lspSearch: { controls: ['page', 'pageSize'] },
 };
 
-const TOTAL_CAP_TOOLS = new Set(['localSearch', 'localAnalyzeGraph']);
+const TOTAL_CAP_TOOLS = new Set(['astSearch']);
 
 describe('all-tools pagination contract', () => {
   it('covers every tool in the live catalog', () => {

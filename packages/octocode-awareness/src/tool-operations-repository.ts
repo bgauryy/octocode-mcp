@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { attendAwareness } from './attend-query.js';
+import { attendWorkspace } from './attend-presence.js';
 import { queryAwareness, writeAwarenessView } from './repo-query.js';
 import type { AwarenessToolOperation, AwarenessToolOperationContext, AwarenessToolOperationResult } from './tool-operations.js';
 
@@ -31,7 +31,10 @@ case 'query': {
       return { payload: result, exitCode: 0 };
     }
 case 'attend': {
-      const result = attendAwareness(db, {
+      const result = attendWorkspace(db, {
+        details: request['details'] as boolean | undefined,
+        changes: request['changes'] as boolean | undefined,
+        offset: request['offset'] as number | undefined,
         revision: request['revision'] as string | undefined,
         agentId: context.agentId,
         ...(context.runtimeObservation === undefined ? {} : { runtimeObservation: context.runtimeObservation }),
@@ -47,7 +50,7 @@ case 'attend': {
         compact: request['compact'] as boolean | undefined,
         cwd,
       });
-      return { payload: result, exitCode: 0 };
+      return { payload: result, exitCode: result.ok ? 0 : 1 };
     }
 case 'view': {
       const result = writeAwarenessView(db, {

@@ -4,19 +4,25 @@
   <img src="assets/logo.png" alt="Octocode Awareness" width="300" />
 </p>
 
-Local coordination for coding agents: shared work, messages, verification, and reusable learning. SQLite stores coordination state; repository files and observed checks establish truth. No server or daemon. Requires Node `^22.22.2 || ^24.15.0 || >=26.0.0`.
+Local coordination for coding agents: shared work, messages, verification, recoverable file history, and reusable learning. SQLite stores coordination state; repository files and observed checks establish truth. No server or daemon. Requires Node `^22.22.2 || ^24.15.0 || >=26.0.0`.
+
+This is the canonical Awareness overview for CLI users, agents, and host integrators. It covers the operating flow, feature families, storage, architecture, and known limits. The [reference index](docs/README.md) routes exact protocols; the [agent skill](skills/octocode-awareness/SKILL.md) owns operating instructions. Dated plans, ratings, and benchmark receipts do not define runtime behavior.
+
+Default flow: meet workspace peers once, work, and communicate when needed. Work tracking, verification gates, automatic history, and durable learning are opt-in.
 
 ## Start
 
 ```bash
-npx @octocodeai/octocode-awareness guide
-npx @octocodeai/octocode-awareness skill install --platform shared --project-dir "$PWD" --dry-run
-# Review; omit --dry-run to install.
-export OCTOCODE_AGENT_ID="${OCTOCODE_AGENT_ID:-my-agent}"
+export OCTOCODE_AGENT_ID="${OCTOCODE_AGENT_ID:-awareness:$(node -e 'process.stdout.write(require("node:crypto").randomUUID())')}"
+npx @octocodeai/octocode-awareness agent register --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD"
 npx @octocodeai/octocode-awareness attend --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD" --compact
-npx @octocodeai/octocode-awareness schema commands --all --compact
-npx @octocodeai/octocode-awareness maintenance init --compact
 ```
+
+Standalone CLI users register before the first `attend`; keep that identity for
+the session. Pi and other native hosts own registration and delivery, so reuse
+their identity and briefing through the host facade. External hosts can install
+the bundled skill and communication hooks; see [the usage guide](docs/SKILLS.md)
+and [host integration](docs/HOOKS.md).
 
 The canonical skill source is
 [`skills/octocode-awareness`](skills/octocode-awareness/SKILL.md). The published
@@ -27,23 +33,39 @@ host hooks, and serves its references through `docs list` / `docs show <name>`:
 npx @octocodeai/octocode-awareness docs list --compact
 ```
 
-The separately owned `octocode-orchestrator` skill remains in the sibling
-[`octocode-agent` repository](https://github.com/bgauryy/octocode-agent/tree/main/skills/octocode-orchestrator).
-Follow structured `attend.next`; discover one route with `schema command <noun> [action]`.
-Results are JSON and `--compact` reduces output. [docs/SKILLS.md](docs/SKILLS.md).
+Follow peer-page continuations when present. Discover one unfamiliar route with `schema command <noun> [action]`.
+Results are JSON and `--compact` reduces output.
 
-Use **NOTICE → SCOPE/IDENTITY → INSPECT → ACT → OBSERVE → SETTLE/VERIFY → LEARN**. A meaningful shared-state signal earns one `attend`; unchanged state means continue authorized work. Declare work with paths and a check, run it, then end/submit, `verify mark`, and `verify audit`. `next` is read-first guidance: `{ action, reason, target?, command?: { name, args } }`. A command exists only when safe and available; it never claims work, marks verification, compacts context, or authorizes edits.
+Attend once per workspace/session, communicate when a peer needs to know or act,
+and discover other capabilities on demand. `attend --details` selects the deeper
+work/memory/verification observer. If work needs tracking, reuse its run IDs,
+record observed checks, and audit after final writes. Routine solo edits need no
+Awareness work or memory records.
 
-## Storage and routes
+## Cooperate through one ledger
 
-The default store is `$OCTOCODE_HOME/awareness/awareness.sqlite3` (`~/.octocode` when home is unset). Workspace policy or `--db-scope repo` selects `<workspace>/.octocode/awareness.sqlite3`; `--db <path>` wins. Stores never merge, and Agent control and runtime databases remain separate. [Configuration](docs/CONFIGURATION.md) · [storage scopes](docs/STORAGE_SCOPES.md).
+Peers use the same physical Awareness database and distinct stable agent IDs. Linked Git worktrees can discover peers, messages, and memory across checkouts; keep each agent bound to its own physical workspace. Separate clones do not connect automatically. Display names and vendor labels are metadata, not authentication.
 
-One root noun/action vocabulary owns the Awareness ledger: `plan`, `task`, `work`, `lock`, `verify`, `memory`, `agent`, and `signal`. `handoff`, `guide`, `instructions`, and `hooks pre-edit` remain specialized entry points. `coordination …`, `check`, and `message` are removed; use `verify` and `signal`. Inspect the live schema before acting. [Architecture](ARCHITECTURE.md) · [lifecycle](docs/HOW_IT_WORKS.md).
+| Situation | Action and boundary |
+|---|---|
+| A peer needs evidence or a decision | Use `signal publish`; answer an existing thread with `signal reply` and its exact signal ID. |
+| A message arrives | Configured hooks or native events deliver it. Without delivery, read the scoped inbox when expecting a reply; avoid repeated broad polling. Acknowledgement means handled; resolution means no work or response remains. |
+| Files might overlap | Inspect declared work and communicate with the owner. Use an exclusive lock for unsafe concurrent changes; advisory presence alone does not prevent writes. |
+| A lease expires | Inspect the result and explicitly reacquire. Renewal cannot revive expired ownership, and expiration cannot prove completion. |
+| Tracked work finishes | Run the declared checks, end or submit the exact run to `PENDING`, then mark the observed result. Audit owned work and workers after their final writes; preserve peer debt. |
+| Learning can help another task | Store one scoped memory or reflection with verified evidence. Revalidate recalled references against current files; peer assertions and retained history are leads. |
+| A session ends | Release owned leases and leave the registry. Native hosts own their lifecycle; standalone agents call `agent leave`. |
+
+The [runtime flow](docs/HOW_IT_WORKS.md), [lock protocol](docs/LOCKS.md), and [learning workflow](docs/REFLECTION.md) provide exact procedures. Peer text, acknowledgements, captured bytes, and successful process exits do not grant authority or successful verification.
+
+## Features and discovery
+
+The live `schema commands` catalog owns route discovery; `schema command <noun> [action]` owns exact inputs. This table maps capabilities without copying action inventories or route counts.
 
 | Entry point | Capability |
 |---|---|
-| `attend` | Structured, bounded next action, operational state, and advisory regulation. |
-| `status`, `query` | Read-only workboard, ownership, diagnostics, and exports. |
+| `attend` | Bounded peers by default; `--details` adds work/evidence; `--changes` pages Git changes and declared work across linked checkouts. Neither source proves authorship. |
+| `status`, `query` | Workboard, ownership, diagnostics, and exports. Expired leases are excluded from status; explicit maintenance deletes stale rows. |
 | `plan` | Durable objectives, members, documents, and lifecycle. |
 | `task` | Acceptance, paths, dependency graph, claims, presence, submit, and verification. |
 | `work` | Advisory work presence, leases, overlap inspection, and runs. |
@@ -51,10 +73,10 @@ One root noun/action vocabulary owns the Awareness ledger: `plan`, `task`, `work
 | `verify` | Observed check receipts and debt audits. |
 | `agent` | Identity registration and presence. |
 | `signal` | Typed peer messages, threads, acknowledgements, and resolution. |
-| `memory` | Scoped observations, lexical/semantic recall, provenance and expiry, evaluation, reindexing, and lifecycle. |
+| `memory` | Scoped observations, lexical/semantic recall, provenance, expiry, evaluation, reindexing, and lifecycle. |
 | `refinement`, `reflect` | Owned follow-up and concise reusable lessons. |
 | `session capture` | Repository continuation context and session-linked learning. |
-| `history` | [Local history](docs/LOCAL_HISTORY.md). |
+| `history` | Captures, checkpoints, timelines, byte reads, selective restore/undo, expired-preview cleanup, and conservative recovery. |
 | `maintenance` | Initialization, diagnostics, stale-state cleanup, and self-tests. |
 | `config`, `hooks`, `hook run` | Policy, host integration, health checks, and lifecycle receipts. |
 | `docs`, `schema` | Reference navigation and command/entity discovery. |
@@ -66,16 +88,54 @@ Plans and tasks share run-owned claims, work presence, locks, and verification. 
 
 `schema entities --compact` inventories entity owners and kinds. Presence, signals, and memory are leads; schemas, locks, and verification debt enforce their own boundaries. Expiry recovers coordination state but never proves completion or success.
 
+## Storage and architecture
+
+The default store is `$OCTOCODE_HOME/awareness/awareness.sqlite3` (`~/.octocode` when home is unset). Workspace policy or `--db-scope repo` selects `<workspace>/.octocode/awareness.sqlite3`; `--db <path>` wins. Agent control and runtime databases have separate owners. Opening a store checks its exact SQLite contract without implicit migration or merging. See [configuration](docs/CONFIGURATION.md), [storage scopes](docs/STORAGE_SCOPES.md), and [entity relationships](docs/ENTITY_LINKS.md).
+
+| Layer | Owns |
+|---|---|
+| Awareness schemas and domain | Canonical requests, validation, coordination, evidence, and policy. |
+| SQLite | Plans, tasks, runs, leases, signals, delivery receipts, memory metadata, verification, and history journals. |
+| Private Git | Immutable captured bytes and operation references. |
+| CLI and native API | Shell parsing/rendering or structured calls into the same executor. |
+| Skill and prompt exports | Shared operating instructions and on-demand discovery. |
+| Hooks and Pi adapters | Host event translation, identity/context binding, delivery, and lifecycle. Pi owns execution, workers, compaction, and UI. |
+| Agent contracts | Shared types and host protocols; sharing utilities does not combine Agent and Awareness databases. |
+
+Hosts consume the public package API and add trusted runtime bindings. They do not copy the command schemas, coordination ledger, or history writer. Code research remains owned by Octocode tools-core and engine. See the [architecture reference](ARCHITECTURE.md) and [Pi integration flow](../octocode-pi-extension/docs/AWARENESS_AGENT_FLOW.md).
+
+## Local Git, recovery, and expiration
+
+Private history lives under `<workspace>/.octocode/.localGit`, partitioned by canonical database and physical workspace identity. Read exact paths from `history status`; do not construct namespace paths. The bundled Git backend writes its own objects and refs without changing the project's index, HEAD, branches, or remotes. Back up the ledger and matching history stores together.
+
+Share compact operation/file/side references through Awareness signals, then fetch the required bytes with `history read`. Follow every continuation before claiming complete content, decode the declared encoding before comparing bytes, and verify current files independently. Git holds immutable evidence; SQLite retains transactional inbox state, expiring ownership, task gates, and searchable memory metadata. See [Git coordination](docs/GIT_COORDINATION.md).
+
+Restore previews bind selected files to their observed state and expiration. Applying a valid preview captures undo evidence, acquires its own lease, and rechecks file state. Multi-file restore can be partial; its returned verification run still needs observed checks. [Local history](docs/LOCAL_HISTORY.md) owns capture, relocation, restore, and recovery procedures.
+
+| State | Maintenance boundary |
+|---|---|
+| Leases and claims | Expiration ends live ownership; explicit maintenance removes stale state without granting verification success. |
+| Expired ready restore previews | `history retention-preview` lists them; confirmed `history retention-prune` deletes eligible rows in bounded pages. |
+| Applying restores and unfinished captures | `history recovery` reports them; reconciliation changes metadata only for an unambiguous durable restore journal. Uncertain state remains unresolved. |
+| Git objects and refs | `history evidence` reports orphan candidates. Destructive reclamation is unavailable; age alone does not establish that writers and recovery no longer need an object. |
+| Messages and memory | Scoped resolution, validity, supersession, and retention policies govern cleanup. Open messages and useful learning do not expire merely because a session ends. |
+
+## Efficient agent use
+
+Reuse a command schema after discovering it. Prefer scoped compact reads, exact returned IDs, and references to evidence over copied payloads. A detailed-attention revision can suppress unchanged output only for the same complete scope; fresh lock admission still checks current state. Follow executable continuations and retain omission/unknown states. Instructions and recipes come from canonical exports, with detail loaded only when needed.
+
+Measure complete verified workflows, including discovery, communication, retries, and repair. Separate cold CLI startup from in-process API latency, and distinguish serialized bytes or context estimates from provider token usage. Smaller output alone does not establish improved correctness, total cost, or autonomous cooperation. [Navigation and delivery](docs/MEMORY_NAVIGATION.md) owns the read and delivery contracts.
+
 ## Agent physiology
 
 Awareness reports observed verification debt, scoped contention, reference warnings, and omitted rows, then recommends bounded corrections. Native runtime context supplies token occupancy and, only for a fresh matching model input limit, input headroom and saturation. Unknown limits retain occupancy but omit normalized values. Tool failure guidance requests inspection; it cannot retry, compact, or choose a model. Generic task/spend budget remains unavailable without its own sensor. [Implemented behavior and limits](docs/AGENT_PHYSIOLOGY.md).
 
 ## Integrate and verify
 
-In-process hosts import `openAwarenessStore`, `dispatchAwarenessCommand`, and
-`createAwarenessEventConsumer` from the public package API. See the
+In-process hosts import `executeAwarenessCommand` for the complete command catalog,
+and `openAwarenessStore` / `createAwarenessEventConsumer` for lifecycle delivery. See the
 [runtime flow](docs/HOW_IT_WORKS.md#peer-event-delivery) for ordered outbox delivery.
-The sibling native host uses that API through a local Yarn portal during development.
+Local development resolves the owning workspace packages; rebuild contracts before consumers.
 Shared entity types and embedding utilities belong to
 `@octocodeai/agent-contracts/entities` and `@octocodeai/agent-contracts/embed`.
 Preview optional hooks before installation, then check the selected host:
@@ -86,4 +146,52 @@ npx @octocodeai/octocode-awareness hooks check --host <host> --project-dir . --s
 yarn workspace @octocodeai/octocode-awareness verify
 ```
 
-Edit the package-local [skill](skills/octocode-awareness/SKILL.md); a build refreshes published mirrors. For native host integration changes, run the sibling [native Agent checks](https://github.com/bgauryy/octocode-agent/tree/main/packages/octocode-agent) as well. [Documentation index](docs/README.md) · [docs/VERIFY.md](docs/VERIFY.md) · [Thesis](docs/THESIS.md) · [References](docs/REFERENCES.md).
+Edit the package-local [skill](skills/octocode-awareness/SKILL.md); a build refreshes published mirrors. For native host integration changes, run the sibling [native Agent checks](https://github.com/bgauryy/octocode-agent/tree/main/packages/octocode-agent) as well. [Verification runbook](docs/VERIFY.md) · [Conceptual model](docs/THESIS.md) · [Research references](docs/REFERENCES.md).
+
+## Native API
+
+Awareness exports its command catalog, schemas, standing agent prompt, and
+command execution through the package root. Pi imports this API for its native
+tool, history capture, checkpoints, and optional scheduled checks. The CLI uses the
+same executor; it only parses shell input and renders the result.
+
+```ts
+import {
+  executeAwarenessCommand,
+} from '@octocodeai/octocode-awareness';
+
+const result = await executeAwarenessCommand(
+  { command: 'attend', params: { limit: 5 } },
+  { workspace: process.cwd(), agentId: 'example-host:session-1', compact: true },
+);
+// result.payload is structured data; result.exitCode preserves conflict/debt codes.
+// Follow request objects in result.payload.next using the same trusted context.
+```
+
+Add `AWARENESS_PI_HOST_PROMPT` once to the agent's system instructions. It is an
+alias of the canonical `EXTERNAL_AGENT_AWARENESS_PROMPT`; CLI `instructions export`
+returns the same text. Attend once, communicate when useful, and discover other
+features on demand. Record learning after substantial work or a meaningful event.
+Lock waits yield to the event loop. Cancellation is cooperative; completed atomic
+writes are reported as completed. The API never changes cwd/env, reads stdin,
+exits the host, or starts an Awareness CLI process.
+
+See the [API reference](docs/API.md) for trusted context bindings, schemas,
+result codes, pagination, host callbacks, and prompt exports.
+
+## Verification and known limits
+
+Use the [verification runbook](docs/VERIFY.md) for package, installed CLI/API, host, and release checks; the [feature sweep](docs/FEATURE_SWEEP.md) and [audit rubric](docs/COMPREHENSIVE_AUDIT.md) define workflow evidence. Build dependencies before consumers and finish package rebuilds before starting hosts that import their output.
+
+Keep implemented contracts, configured hooks, actual host activation, and observed workflow outcomes separate. Fixtures and passing regressions do not establish live activation in every editor or reliable model cooperation. Preserve frozen benchmark receipts, failures, interventions, and unavailable checks with each experiment instead of copying changing totals or readiness scores into this guide.
+
+| Limit | Required check or improvement |
+|---|---|
+| Semantic recall ranks a capped candidate pool | [The embedding reader](src/memory-embeddings.ts) can omit older matches before ranking. Complete large-store recall requires explicit partial/continuation behavior or a terminal diagnostic; a larger cap alone is insufficient. |
+| Hook definition checks can accept inactive text | [Frontmatter detection](src/hooks-install-health.ts) uses textual event/command checks. Validate active structure and bindings; definition readiness does not prove host activation. |
+| Capture and object inflation lack a hard peak-memory bound | Measure growing files, compressed objects, concurrent allocations, and cancellation; returned-byte limits alone do not bound memory use. |
+| Recovery spans SQLite, Git, and workspace files | Automatic capture crash reconciliation and safe object collection are unavailable. Keep uncertain journals and referenced bytes; restore is not a filesystem-wide transaction. |
+| Delivery needs a host opportunity | Pi drains at lifecycle boundaries and has no message-arrival watcher. Exercise persistence, wake, session transitions, and acknowledgements in the actual host. |
+| Output limits do not establish total query cost | Measure large verification-debt, memory, and handoff scopes; bounded returned rows alone do not prove bounded database work. |
+| Agent decisions and learning remain fallible | Verify exact conflict owners, decoded history bytes, task gates, and memory evidence. Use held-out workflows and a real versioned model before claiming semantic quality or token savings. |
+| Advisory regulation is not an autonomous controller | Predictions, adaptive concurrency, model escalation, and semantic confidence need calibrated outcome evidence; unknown observations grant no authority. |

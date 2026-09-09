@@ -1,12 +1,11 @@
 /**
- * plan-command — the /octocode-plan slash-command handler and UI management.
+ * Plan presentation and browser review actions.
  * Also owns browser-driven plan review (openPlanReview, refreshPlanUi).
  */
 
 import path from 'node:path';
-import type { PiContext, NotifyFn } from '../../types.js';
-import { buildPlanPrompt } from '../../prompts/plan-prompt.js';
-import { adoptPlanModePolicy, enterPlanMode, exitPlanMode, isPlanMode } from '../plan-mode.js';
+import type { PiContext } from '../../types.js';
+import { adoptPlanModePolicy, exitPlanMode } from '../plan-mode.js';
 import {
   consumeHumanAuthorizationReceipt,
   createHumanAuthorizationReceipt,
@@ -28,9 +27,6 @@ import {
   getPlanCoordination,
   getPlanReviewState,
   addPlanDecision,
-  clearPlan,
-  finishPlanVerification,
-  setPlanLifecycle,
 } from './plan-store.js';
 import { stepLabel } from './plan-types.js';
 import type { PlanStep } from './plan-types.js';
@@ -40,19 +36,13 @@ import {
   rollbackAcceptedPlanStart,
   startAcceptedPlan,
 } from './plan-lifecycle.js';
-import { completeStep, removeStep, restorePlanSteps, startStep } from './plan-executor.js';
 import {
   ensureUnifiedProjection,
   planWorkspace,
-  renderList,
   sharedStartContractError,
   writeCurrentPlanArtifacts,
 } from './plan-presentation.js';
 import { getCurrentPlanReadModel } from '../plan-read-model.js';
-
-export const OCTOCODE_PLAN_COMMAND_COMPLETIONS = ['new ', 'off', 'show', 'html', 'changes ', 'complete ', 'start ', 'remove ', 'clear'] as const;
-
-export type SendPlanPrompt = (text: string) => void | Promise<void>;
 
 // ─── UI refresh state ────────────────────────────────────────────────────────────
 
@@ -118,7 +108,6 @@ export function refreshPlanUi(ctx?: PiContext): void {
   syncCurrentPlanHtmlIfEnabled(ctx, scope);
   if (steps.length > 0) adoptPlanModePolicy(ctx, getPlanReviewState(scope));
   else exitPlanMode(ctx);
-  if (!ctx?.hasUI) return;
   planMetricsRefresh?.(ctx);
 }
 
@@ -299,127 +288,4 @@ async function servePlanPage(ctx: PiContext | undefined, scope: string): Promise
     if (!opened.ok && opened.message) ctx.ui?.notify?.(opened.message, 'warn');
   }
   return served.url;
-}
-
-// ─── /octocode-plan command handler ──────────────────────────────────────────────────
-
-export async function handleOctocodePlanCommand(args: string, ctx: PiContext | undefined, notify: NotifyFn, sendPrompt?: SendPlanPrompt): Promise<void> {
-  const scope = activePlanScope(ctx);
-  const tokens = args.trim().split(/\s+/).filter(Boolean);
-  const [action = 'show', arg] = tokens;
-  const remainder = tokens.slice(1).join(' ');
-  if (action === 'off') {
-    const was = isPlanMode(ctx);
-    exitPlanMode(ctx);
-    notify(ctx, was ? 'Plan mode off.' : 'Plan mode was not on.', 'info');
-    return;
-  }
-  if (action === 'new') {
-    const goal = args.trim().replace(/^new\b/, '').trim().replace(/\s+/g, ' ');
-    if (!sendPrompt) {
-      notify(ctx, 'This host cannot send prompts — describe the goal and ask the agent to call plan with action:"propose" inside queries[].', 'warning');
-      return;
-    }
-    enterPlanMode(ctx);
-    setPlanLifecycle(scope, 'researching');
-    notify(ctx, 'Creating plan… Plan mode on.', 'info');
-    try {
-      await sendPrompt(buildPlanPrompt(goal));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setManagedActivity(ctx, { kind: 'failed', label: 'Could not start plan mode' });
-      notify(ctx, `Could not start plan mode: ${message}`, 'warning');
-    }
-    return;
-  }
-  if (action === 'html') {
-    const url = await openPlanReview(ctx);
-    notify(ctx, url ? `Plan review: ${url}` : 'Failed to open plan review.', url ? 'info' : 'warning');
-    return;
-  }
-  const n = arg ? parseInt(arg, 10) : NaN;
-  const validStep = (op: string) => {
-    if (isNaN(n) || n < 1) { notify(ctx, `Usage: /octocode-plan ${op} <step-number>`, 'warning'); return false; }
-    if (n > getPlan(scope).length) { notify(ctx, `Step ${n} does not exist. The plan has ${getPlan(scope).length} steps.`, 'warning'); return false; }
-    return true;
-  };
-  switch (action) {
-    case 'clear':
-      clearPlan(scope);
-      tearDownPlanHtml(scope);
-      refreshPlanUi(ctx);
-      notify(ctx, 'Plan cleared.', 'info');
-      return;
-    case 'changes': {
-      const result = requestPlanChanges(scope);
-      if (!result.ok) { notify(ctx, `Cannot request changes: ${result.message}`, 'warning'); return; }
-      if (remainder) addPlanDecision(scope, 'Requested plan changes', remainder);
-      writeCurrentPlanArtifacts(ctx, scope, 'draft');
-      refreshPlanUi(ctx);
-      notify(ctx, `Changes requested${remainder ? `: ${remainder}` : ''}. Revise the RFC and re-propose.`, 'info');
-      return;
-    }
-    case 'complete':
-      if (validStep('complete')) {
-        const target = getPlan(scope)[n - 1];
-        if (target?.awarenessTaskId) {
-          notify(ctx, 'Shared completion requires an observed receipt; use plan.complete with receipt {command,status,message}.', 'warning');
-          return;
-        }
-        const completed = completeStep(scope, n);
-        if (completed.length > 0 && completed.every((step) => step.status === 'done')) {
-          refreshPlanUi(ctx);
-          finishPlanVerification(scope, true, 'All local plan steps completed');
-        }
-      }
-      break;
-    case 'start': {
-      const reviewPhase = getPlanReviewState(scope).phase;
-      if (reviewPhase === 'in_review' || reviewPhase === 'accepted') {
-        if (!arg) {
-          notify(ctx, 'Usage: /octocode-plan start <displayed-revision>. Start is bound to the revision shown by the plan overview.', 'warning');
-          return;
-        }
-        const started = startReviewedPlan(scope, arg, ctx);
-        if (!started.ok) {
-          notify(ctx, `Implementation did not start: ${started.message}`, 'warning');
-          refreshPlanUi(ctx);
-          return;
-        }
-        writeCurrentPlanArtifacts(ctx, scope, 'active');
-        refreshPlanUi(ctx);
-        notify(ctx, started.message, 'info');
-        return;
-      }
-      if (validStep('start')) {
-        const beforeStart = getPlan(scope).map((step) => ({ ...step }));
-        startStep(scope, n);
-        try {
-          ensureUnifiedProjection(scope, undefined, ctx);
-        } catch (error) {
-          restorePlanSteps(scope, beforeStart);
-          notify(ctx, `Step did not start; local plan state was restored after shared projection failed: ${error instanceof Error ? error.message : String(error)}`, 'warning');
-          refreshPlanUi(ctx);
-          return;
-        }
-      }
-      break;
-    }
-    case 'remove':
-      if (validStep('remove')) {
-        if (getPlan(scope)[n - 1]?.awarenessTaskId) {
-          notify(ctx, 'Mapped shared steps cannot be removed in place; abandon or revise the shared plan explicitly.', 'warning');
-          return;
-        }
-        removeStep(scope, n);
-      }
-      break;
-    case 'show':
-    default:
-      break;
-  }
-  refreshPlanUi(ctx);
-  const steps = getPlan(scope);
-  const done = steps.filter((s) => s.status === 'done').length;
-  notify(ctx, steps.length === 0 ? 'No active plan.' : `Plan ${done}/${steps.length} done\n${renderList(steps)}`, 'info');
 }

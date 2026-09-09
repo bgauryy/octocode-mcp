@@ -1,9 +1,9 @@
 import { CallToolResult } from '@modelcontextprotocol/server';
+import { inferEvidenceKind } from './evidence.js';
 import { incrementToolCharSavings } from '../../../shared/session/index.js';
 import type {
   ProcessedBulkResult,
   FlatQueryResult,
-  EvidenceKind,
   QueryError,
 } from '../../../types/toolResults.js';
 import type {
@@ -311,39 +311,6 @@ function reconcilePaginationDiagnostics(
         }
       : {}),
   };
-}
-
-function inferEvidenceKind(
-  toolName: string,
-  query: object,
-  data: Record<string, unknown>
-): EvidenceKind {
-  if (toolName === 'localAnalyzeGraph') return 'syntactic';
-  if (toolName === 'lspGetSemantics') {
-    const source = (data.lsp as { source?: string } | undefined)?.source;
-    return source &&
-      ['native', 'native-graph-facts', 'markdown'].includes(source)
-      ? 'syntactic'
-      : 'semantic';
-  }
-  if (toolName === 'local.text') {
-    return (query as Record<string, unknown>).mode === 'structural'
-      ? 'structural'
-      : 'lexical';
-  }
-  if (toolName === 'localSearch') {
-    const operation = (query as Record<string, unknown>).operation;
-    if (operation === 'structural') return 'structural';
-    if (operation === 'text') return 'lexical';
-    return 'exact';
-  }
-  if (
-    toolName.startsWith('gh') ||
-    toolName.startsWith('github.') ||
-    toolName === 'npmSearch'
-  )
-    return 'provider';
-  return 'exact';
 }
 
 function recordBulkCharSavings(

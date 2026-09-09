@@ -7,7 +7,7 @@ const config = {
   tools: { enabled: null, disabled: null },
 };
 
-it.each(['localSearch', 'localGetFileContent', 'localAnalyzeGraph', 'lspGetSemantics', 'ghCloneRepo'])(
+it.each(['localSearch', 'localGetFileContent', 'astSearch', 'lspSearch', 'ghCloneRepo'])(
   'local gate takes precedence over allowlisting %s', name => {
     expect(getToolAvailability(name, { ...config, local: { ...config.local, enabled: false }, tools: { enabled: [name], disabled: null } }))
       .toEqual({ enabled: false, envVar: 'ENABLE_LOCAL' });

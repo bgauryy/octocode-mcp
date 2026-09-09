@@ -35,10 +35,12 @@ describe('shared schema fields', () => {
       queries: [{ value: 'alpha' }],
       responseCharOffset: -1,
       responseCharLength: 100_000,
+      responseSnapshot: 'response-v1:test',
     });
 
     expect(parsed.responseCharOffset).toBe(0);
     expect(parsed.responseCharLength).toBe(50_000);
+    expect(parsed.responseSnapshot).toBe('response-v1:test');
     expect(
       schema.parse({
         queries: [{ value: 'alpha' }],

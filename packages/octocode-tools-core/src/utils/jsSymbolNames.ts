@@ -3,8 +3,8 @@
 // `let`, ...) as exported *function declarations*, so `extractGraphFacts`
 // returns declarations whose `name` is a reserved keyword. Those can never be a
 // real declaration name, so filtering them out drops the garbage without ever
-// dropping a legitimate symbol. Consumers (localAnalyzeGraph's graph builder and
-// lspGetSemantics' graph-facts documentSymbols fallback) share this filter so
+// dropping a legitimate symbol. Consumers (astSearch topology's graph builder and
+// lspSearch' graph-facts documentSymbols fallback) share this filter so
 // the guard stays in one place. (The underlying mis-parse is an engine-level
 // Flow-parsing concern; this only stops the garbage from surfacing to agents.)
 const JS_RESERVED_WORDS = new Set<string>([

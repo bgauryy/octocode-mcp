@@ -1,3 +1,4 @@
+import { buildAwarenessContext } from './awareness-context.js';
 import path from 'node:path';
 import { defaultDbPath } from '@octocodeai/octocode-awareness';
 import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
@@ -34,13 +35,15 @@ export function buildAwarenessCliEnvironment(ctx?: PiContext): NodeJS.ProcessEnv
 /** Host facts only: operating policy and command catalog are owned by Awareness. */
 export function renderAwarenessCliContext(ctx?: PiContext, options: { nativeTool?: boolean } = {}): string {
   if (!isPersistentStorageEnabled()) return `<awareness_cli_runtime>\n${PERSISTENT_AWARENESS_DISABLED_MESSAGE}. Do not use durable Awareness commands; keep work in session state.\n</awareness_cli_runtime>`;
+  if (options.nativeTool) {
+    const bindings = buildAwarenessContext(ctx);
+    return `<awareness_runtime>Use the native awareness tool. It imports the Awareness API directly. Host bindings: ${JSON.stringify({ agentId: bindings.agentId, workspace: bindings.workspace, database: bindings.database })}. Other features are on demand.</awareness_runtime>`;
+  }
   const env = buildAwarenessCliEnvironment(ctx);
   if (!env.OCTOCODE_AWARENESS_CLI) return '<awareness_cli_runtime>Awareness CLI dependency is unavailable. Report the missing runtime before relying on shared coordination.</awareness_cli_runtime>';
   return [
     '<awareness_cli_runtime>',
-    options.nativeTool
-      ? 'Awareness skill is bundled. Use the native awareness tool for list, describe, and call; use the bound CLI through bash only for commands described as external-host-only.'
-      : 'Awareness skill is bundled. This tool set lacks the native awareness facade, so explicit coordination uses the bound CLI through bash.',
+    'Awareness skill is bundled. This external tool set lacks the native facade, so explicit coordination uses the bound CLI through bash.',
     `Host bindings: ${JSON.stringify({ agentId: env.OCTOCODE_AGENT_ID, name: env.OCTOCODE_AGENT_NAME, vendor: env.OCTOCODE_AGENT_VENDOR ?? null, host: env.OCTOCODE_AGENT_HOST, workspace: env.OCTOCODE_AWARENESS_WORKSPACE, database: env.OCTOCODE_AWARENESS_DB })}`,
     'bash inherits these bindings. Runner: "$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" <command> [options]. Pass --workspace "$OCTOCODE_AWARENESS_WORKSPACE" on scoped commands and --agent-id "$OCTOCODE_AGENT_ID" when required. Use this installed runner for the npx commands in the Awareness guide.',
     '</awareness_cli_runtime>',

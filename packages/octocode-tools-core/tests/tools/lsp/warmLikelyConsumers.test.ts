@@ -101,7 +101,11 @@ describe('warmLikelyConsumers', () => {
     );
     expect(mocks.searchContentRipgrep).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ itemsPerPage: 100, page: 1 })
+      expect.objectContaining({
+        itemsPerPage: 100,
+        page: 1,
+        regex: 'fixed',
+      })
     );
     expect(mocks.searchContentRipgrep).toHaveBeenNthCalledWith(
       2,

@@ -48,13 +48,13 @@ and participant IDs in handoffs; do not hand-edit or copy SQLite rows. See
 
 | Profile | Purpose |
 |---|---|
-| `guard` | Block real exclusive conflicts and protect write safety. |
-| `coordination` | Guard plus bounded presence and shared-state pointers. |
-| `full` | Coordination plus the broadest supported lifecycle coverage. |
+| `guard` | Opt into exclusive-lock guards and mutation bookkeeping; stop verification also needs verificationGate. |
+| `coordination` | Default: registry presence, message delivery after tools, and session departure; no work records or memory retrieval. |
+| `full` | Opt into edit bookkeeping and local history; verification and session handoffs require their explicit feature settings. |
 
-Hook installation mutates host configuration. Always show a noncompact dry-run immediately before applying and require explicit approval. Then install and strict-check the same host/scope. Pi uses native events and never shell-hook installation.
+Hook installation mutates host configuration. Follow the preview, authorization and strict-check procedure in `references/hooks.md`. Pi uses native events and never shell-hook installation.
 
-For first hook enablement, ask together: hook profile, host, and project/global destination. These answers are not installation approval.
+Installed hooks work with lean defaults when the global config is absent. notifications and hooks default true; verificationGate, sessionCapture and maintenanceReminders default false. Ask only for missing host/scope when installation is requested. Pi uses this workspace profile for automatic work/history, while retaining native peer delivery and active-lock checks.
 
 Use `references/hooks.md` for lifecycle coverage and runtime smoke checks. Use `references/architecture.md` for database ownership and path normalization.
 

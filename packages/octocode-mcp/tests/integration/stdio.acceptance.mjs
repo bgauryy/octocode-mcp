@@ -1,11 +1,12 @@
 /** Real built-server acceptance. Run after building CLI + MCP; no mocks or installs. */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { Client } from '@modelcontextprotocol/client';
-import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { createLocalAcceptanceFixture } from './local-acceptance-fixture.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -13,7 +14,7 @@ const { values } = parseArgs({
     cli: { type: 'string', default: 'packages/octocode/out/octocode.js' },
     cwd: { type: 'string', default: process.cwd() },
     node: { type: 'string', default: process.execPath },
-    fixture: { type: 'string', default: '.octocode/tmp/preproduction-local' },
+    fixture: { type: 'string' },
     receipt: {
       type: 'string',
       default: '.octocode/octocode-research/preproduction-mcp-receipt.json',
@@ -22,7 +23,9 @@ const { values } = parseArgs({
     live: { type: 'boolean', default: false },
   },
 });
-const fixture = path.resolve(values.fixture);
+const fixture = values.fixture
+  ? path.resolve(values.fixture)
+  : await createLocalAcceptanceFixture(path.resolve('.octocode/tmp'));
 const expectedTools = [
   'ghSearch',
   'ghGetFileContent',
@@ -32,8 +35,8 @@ const expectedTools = [
   'npmSearch',
   'localSearch',
   'localGetFileContent',
-  'localAnalyzeGraph',
-  'lspGetSemantics',
+  'astSearch',
+  'lspSearch',
 ];
 const receipt = {
   server: path.resolve(values.server),
@@ -164,8 +167,27 @@ try {
       );
     }
   );
+  for (const [regex, searchText] of [
+    ['literal', 'add'],
+    ['rust', '\\badd\\b'],
+    ['pcre2', '(?<!\\w)add(?!\\w)'],
+  ]) {
+    await check(`local text search returns the observed anchor (${regex})`, async () => {
+      const data = await call('localSearch', {
+        path: path.join(fixture, 'math.ts'),
+        searchText,
+        regex,
+        wholeWord: true,
+        resultView: 'content',
+      });
+      assert.equal(data.stats.totalOccurrences, 1);
+      assert.equal(data.stats.capped, false);
+      assert.equal(data.files[0].matches[0].line, 2);
+      assert.ok(data.files[0].matches[0].value.includes('function add'));
+    });
+  }
   await check('local file discovery positive', async () => {
-    const data = await call('localSearch', {
+    const data = await call('astSearch', {
       operation: 'files',
       path: fixture,
       extensions: ['ts'],
@@ -215,8 +237,8 @@ try {
       'file pagination executes continuations and preserves full inventory',
       async () => {
         const query = { operation: 'files', path: fixture, extensions: ['ts'] };
-        const full = await call('localSearch', { ...query, pageSize: 50 });
-        const first = await call('localSearch', { ...query, pageSize: 1 });
+        const full = await call('astSearch', { ...query, pageSize: 50 });
+        const first = await call('astSearch', { ...query, pageSize: 1 });
         const paged = await pages(first, 'nextPage', data =>
           data.files.map(file => file.path)
         );
@@ -227,9 +249,37 @@ try {
         );
       }
     );
+    await check('changed whole-response snapshots restart through MCP', async () => {
+      const parent = path.resolve('.octocode/tmp');
+      await mkdir(parent, { recursive: true });
+      const directory = await mkdtemp(path.join(parent, 'mcp-snapshot-'));
+      const file = path.join(directory, 'source.ts');
+      try {
+        await writeFile(file, 'export const value = 1;\n');
+        const first = await invoke('localGetFileContent', {
+          queries: [{ path: file, minify: 'none' }],
+          responseCharLength: 100,
+        });
+        const before = first.structuredContent.responsePagination;
+        assert.ok(before.next);
+        await writeFile(file, 'export const value = 200;\n');
+        const changed = await invoke(before.next.tool, before.next.query);
+        const restart = changed.structuredContent.responsePagination;
+        assert.equal(restart.restart, true);
+        assert.equal(restart.changed, true);
+        assert.equal(restart.expectedSnapshot, before.snapshot);
+        assert.equal(restart.charLength, 0);
+        assert.equal(restart.next.query.responseCharOffset, 0);
+        const restarted = await invoke(restart.next.tool, restart.next.query);
+        assert.equal(restarted.structuredContent.responsePagination.charOffset, 0);
+        assert.notEqual(restarted.structuredContent.responsePagination.snapshot, before.snapshot);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
     await check('structural captures positive', async () => {
-      const data = await call('localSearch', {
-        operation: 'structural',
+      const data = await call('astSearch', {
+        operation: 'match',
         path: fixture,
         pattern: 'add($$$ARGS)',
         langType: 'typescript',
@@ -238,8 +288,9 @@ try {
       assert.ok(JSON.stringify(data).includes('add(value, value)'));
     });
     await check('file graph dependency positive', async () => {
-      const data = await call('localAnalyzeGraph', {
-        operation: 'dependencies',
+      const data = await call('astSearch', {
+        operation: 'topology',
+        analysis: 'dependencies',
         path: fixture,
         file: 'entry.ts',
         depth: 2,
@@ -251,18 +302,19 @@ try {
       'graph diagnostic continuation union preserves the complete inventory',
       async () => {
         const query = {
-          operation: 'dependencies',
+          operation: 'topology',
+          analysis: 'dependencies',
           path: `${fixture}-diagnostics`,
           file: 'entry.ts',
           depth: 3,
           pageSize: 50,
           excludeDir: [],
         };
-        const full = await call('localAnalyzeGraph', {
+        const full = await call('astSearch', {
           ...query,
           diagnosticPageSize: 100,
         });
-        const first = await call('localAnalyzeGraph', {
+        const first = await call('astSearch', {
           ...query,
           diagnosticPageSize: 2,
         });
@@ -276,10 +328,10 @@ try {
       }
     );
     await check('LSP definition identifies the declaration', async () => {
-      const data = await call('lspGetSemantics', {
+      const data = await call('lspSearch', {
         uri: path.join(fixture, 'entry.ts'),
         workspaceRoot: fixture,
-        type: 'definition',
+        operation: 'definition',
         symbolName: 'add',
         lineHint: 4,
       });
@@ -298,17 +350,17 @@ try {
         const query = {
           uri: path.join(fixture, 'math.ts'),
           workspaceRoot: fixture,
-          type: 'references',
+          operation: 'references',
           symbolName: 'add',
           lineHint: 2,
         };
-        const first = await call('lspGetSemantics', { ...query, pageSize: 1 });
+        const first = await call('lspSearch', { ...query, pageSize: 1 });
         const paged = await pages(
           first,
           'nextPage',
           data => data.payload.locations
         );
-        const full = await call('lspGetSemantics', { ...query, pageSize: 100 });
+        const full = await call('lspSearch', { ...query, pageSize: 100 });
         assert.ok(paged.count > 1);
         assert.deepEqual(paged.rows, full.payload.locations);
       }
@@ -325,13 +377,13 @@ try {
           assert.ok((await client.listTools()).tools.length === 10);
         }
       );
-    await check(
-      'unknown tool returns an error and server remains responsive',
+    for (const removedName of ['localAnalyzeGraph', 'lspGetSemantics', 'octocode_nonexistent_tool']) await check(
+      `${removedName} returns an error and server remains responsive`,
       async () => {
         let rejected = false;
         try {
           const result = await client.callTool({
-            name: 'octocode_nonexistent_tool',
+            name: removedName,
             arguments: {},
           });
           rejected = result.isError === true;
@@ -439,6 +491,10 @@ try {
   });
   await mkdir(path.dirname(path.resolve(values.receipt)), { recursive: true });
   await writeFile(values.receipt, JSON.stringify(receipt, null, 2));
+  if (!values.fixture) {
+    await rm(fixture, { recursive: true, force: true });
+    await rm(`${fixture}-diagnostics`, { recursive: true, force: true });
+  }
 }
 const failures = receipt.checks.filter(check => check.status === 'failed');
 console.log(

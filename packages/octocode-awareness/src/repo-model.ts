@@ -32,6 +32,8 @@ export interface AwarenessQueryParams {
   agentId?: string | null;
   /** Prefer this owner before bounded workboard selection; does not filter totals. */
   preferAgentId?: string | null;
+  /** Apply the canonical recipient visibility rule to signal projections only. */
+  recipientAgentId?: string | null;
   /** Inspect requested paths before unrelated file presence reaches query bounds. */
   preferFiles?: string[];
   state?: string | string[] | null;
@@ -42,7 +44,12 @@ export interface AwarenessQueryParams {
   cwd?: string | null;
 }
 
-export interface AwarenessQuerySection {
+export interface QueryContinuationState {
+  next?: { list: { command: { name: 'query'; args: string[] } } };
+  terminal_limit?: { code: 'QUERY_VIEW_LIMIT'; view: AwarenessQueryView; limit: number };
+}
+
+export interface AwarenessQuerySection extends QueryContinuationState {
   count: number;
   rows: AwarenessQueryRow[];
   total: number | null;
@@ -51,7 +58,7 @@ export interface AwarenessQuerySection {
   continuation: string | null;
 }
 
-export interface AwarenessQueryResult {
+export interface AwarenessQueryResult extends QueryContinuationState {
   ok: true;
   view: AwarenessQueryView;
   generated_at: string;

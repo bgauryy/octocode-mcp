@@ -55,11 +55,11 @@ describe('resolveSymbolAnchor', () => {
         lineContent: line,
       });
       const result = await resolveSymbolAnchor(
-        { uri: filePath, type: 'definition', symbolName, lineHint: 3 } as never,
-        'lspGetSemantics'
+        { uri: filePath, operation: 'definition', symbolName, lineHint: 3 } as never,
+        'lspSearch'
       );
-      expect(result.ok).toBe(true);
-      expect(result.value.resolvedSymbol.isAmbiguous).toBe(true);
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatchObject({ errorType: 'anchor_drift' });
     }
   );
 
@@ -88,14 +88,14 @@ describe('resolveSymbolAnchor', () => {
       const result = await resolveSymbolAnchor(
         {
           uri: filePath,
-          type: 'definition',
+          operation: 'definition',
           symbolName: 'target',
           lineHint: 3,
         } as never,
-        'lspGetSemantics'
+        'lspSearch'
       );
-      expect(result.ok).toBe(true);
-      expect(result.value.resolvedSymbol.isAmbiguous).toBeUndefined();
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatchObject({ errorType: 'anchor_drift' });
     }
   );
 
@@ -116,11 +116,11 @@ describe('resolveSymbolAnchor', () => {
     const result = await resolveSymbolAnchor(
       {
         uri: filePath,
-        type: 'definition',
+        operation: 'definition',
         symbolName: 'target',
         lineHint: 1,
       } as never,
-      'lspGetSemantics'
+      'lspSearch'
     );
 
     expect(result.ok).toBe(true);
@@ -169,16 +169,18 @@ describe('resolveSymbolAnchor', () => {
     const result = await resolveSymbolAnchor(
       {
         uri: filePath,
-        type: 'definition',
+        operation: 'definition',
         symbolName: 'target',
         lineHint: 5,
       } as never,
-      'lspGetSemantics'
+      'lspSearch'
     );
 
-    expect(result.ok).toBe(true);
-    expect(result.value.resolvedSymbol.isAmbiguous).toBe(true);
-    expect(result.value.resolvedSymbol.lineDeviation).toBe(2);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({
+      errorType: 'anchor_drift',
+      lineDeviation: 2,
+    });
   });
 
   it('does not flag a unique symbol that resolves off the hint line', async () => {
@@ -196,16 +198,15 @@ describe('resolveSymbolAnchor', () => {
     const result = await resolveSymbolAnchor(
       {
         uri: filePath,
-        type: 'definition',
+        operation: 'definition',
         symbolName: 'target',
         lineHint: 5,
       } as never,
-      'lspGetSemantics'
+      'lspSearch'
     );
 
-    expect(result.ok).toBe(true);
-    // Single occurrence — the resolver cannot have bound the wrong one.
-    expect(result.value.resolvedSymbol.isAmbiguous).toBeUndefined();
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatchObject({ errorType: 'anchor_drift' });
   });
 
   it('an exact-line resolution of a multi-occurrence symbol stays unflagged', async () => {
@@ -223,11 +224,11 @@ describe('resolveSymbolAnchor', () => {
     const result = await resolveSymbolAnchor(
       {
         uri: filePath,
-        type: 'definition',
+        operation: 'definition',
         symbolName: 'target',
         lineHint: 2,
       } as never,
-      'lspGetSemantics'
+      'lspSearch'
     );
 
     expect(result.ok).toBe(true);

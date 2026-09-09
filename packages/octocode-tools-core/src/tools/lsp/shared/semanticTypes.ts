@@ -3,6 +3,7 @@ import type {
   LSPRange,
   RustBuildContext,
 } from '@octocodeai/octocode-engine/lsp/types';
+import type { CompactCall, CompactCallTarget } from './semanticCallTypes.js';
 
 export const SEMANTIC_CONTENT_TYPES = [
   'definition',
@@ -26,7 +27,7 @@ export type SemanticOutputFormat = 'structured' | 'compact';
 
 export type SemanticQueryBase = {
   id?: string;
-  type: SemanticContentType;
+  operation: SemanticContentType;
   uri?: string;
   workspaceRoot?: string;
   rustContext?: RustBuildContext;
@@ -40,12 +41,13 @@ export type SemanticQueryBase = {
 };
 
 export type SymbolAnchoredSemanticQuery = SemanticQueryBase & {
-  type: Exclude<
+  operation: Exclude<
     SemanticContentType,
     'documentSymbols' | 'workspaceSymbol' | 'diagnostic'
   >;
-  symbolName: string;
-  lineHint: number;
+  symbolName?: string;
+  lineHint?: number;
+  position?: ExactPosition;
   orderHint?: number;
   depth?: number;
   includeDeclaration?: boolean;
@@ -53,21 +55,21 @@ export type SymbolAnchoredSemanticQuery = SemanticQueryBase & {
 };
 
 export type DocumentSymbolsSemanticQuery = SemanticQueryBase & {
-  type: 'documentSymbols';
+  operation: 'documentSymbols';
 };
 
 /** `workspace/symbol`: project-wide fuzzy symbol search. `symbolName` is the query string. */
 export type WorkspaceSymbolSemanticQuery = SemanticQueryBase & {
-  type: 'workspaceSymbol';
+  operation: 'workspaceSymbol';
   symbolName: string;
 };
 
 /** `textDocument/diagnostic` (pull): errors/warnings for a file without a position anchor. */
 export type DiagnosticSemanticQuery = SemanticQueryBase & {
-  type: 'diagnostic';
+  operation: 'diagnostic';
 };
 
-export type LspGetSemanticsQuery =
+export type LspSearchQuery =
   | SymbolAnchoredSemanticQuery
   | DocumentSymbolsSemanticQuery
   | WorkspaceSymbolSemanticQuery
@@ -197,8 +199,8 @@ export type LspSemanticEnvelope = {
     | {
         kind: 'callers' | 'callees' | 'callHierarchy';
         direction: 'incoming' | 'outgoing' | 'both';
-        root?: unknown;
-        calls: unknown[];
+        root?: CompactCallTarget | string;
+        calls: Array<CompactCall | string>;
         incomingCalls?: number;
         outgoingCalls?: number;
         warmup?: ConsumerWarmupStats;

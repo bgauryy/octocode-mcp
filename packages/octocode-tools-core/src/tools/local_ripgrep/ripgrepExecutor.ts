@@ -66,9 +66,9 @@ function toSearchOptions(
     // give the engine a stable deterministic walk so ranking inputs are stable.
     sort: toEngineSort(query.sort),
     sortReverse: query.sortReverse,
-    // AST classification feeds language-aware ranking; only worth its parse
-    // cost when relevance ordering is actually requested.
-    classifyMatches: query.sort === 'relevance' || query.sort === undefined,
+    // Lexical search remains parser-free, including relevance ordering.
+    // Syntax classification belongs to structural search.
+    classifyMatches: false,
     maxSnippetChars: query.matchContentLength,
     onlyMatching: query.output === 'matchOnly',
     unique: query.unique === 'list' || query.unique === 'count',
@@ -194,13 +194,8 @@ export async function executeRipgrepSearchInternal(
         value: m.value,
       } as NonNullable<LocalSearchCodeFile['matches']>[number] & {
         count?: number;
-        kind?: string;
-        scoreHint?: number;
       };
       if (m.count !== undefined) match.count = m.count;
-      // AST classification from the engine (Tier 1 Phase 2), when present.
-      if (m.kind !== undefined) match.kind = m.kind;
-      if (m.scoreHint !== undefined) match.scoreHint = m.scoreHint;
       return match;
     }),
   }));
@@ -226,7 +221,7 @@ export async function executeRipgrepSearchInternal(
   if (files.length === 0) {
     // An honest empty must point somewhere useful, not dead-end at stats.
     const broadenHints = [
-      'No matches. Try caseMode:"insensitive", a shorter term, or regex:"smart".',
+      'No matches. Try caseMode:"insensitive", a shorter term, or regex:"rust".',
       ...(queryForExec.include?.length ||
       (queryForExec as { maxDepth?: number }).maxDepth !== undefined
         ? ['Remove include/maxDepth to search a wider tree.']

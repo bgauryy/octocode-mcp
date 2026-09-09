@@ -2,10 +2,10 @@
  * Curated per-tool example queries for --scheme and help output.
  */
 import {
-  LSP_GET_SEMANTICS_TOOL_NAME,
+  LSP_SEARCH_TOOL_NAME,
+  AST_SEARCH_TOOL_NAME,
   GITHUB_GET_HISTORY_ITEM_TOOL_NAME,
   GITHUB_SEARCH_HISTORY_TOOL_NAME,
-  LOCAL_ANALYZE_GRAPH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
 } from '../toolNames.js';
@@ -80,36 +80,9 @@ export function buildKnownDirectToolCommandPatternQueries(
       {
         label: 'text anchors',
         query: {
-          operation: 'text',
           path: '/ABS/repo/src',
           searchText: 'buildDirectToolCommandPatterns',
           maxFiles: 20,
-        },
-      },
-      {
-        label: 'structural matches',
-        query: {
-          operation: 'structural',
-          path: '/ABS/repo/src',
-          pattern: 'eval($X)',
-          langType: 'typescript',
-        },
-      },
-      {
-        label: 'file discovery',
-        query: {
-          operation: 'files',
-          path: '/ABS/repo',
-          names: ['package.json'],
-          entryType: 'f',
-        },
-      },
-      {
-        label: 'tree orientation',
-        query: {
-          operation: 'tree',
-          path: '/ABS/repo/src',
-          maxDepth: 2,
         },
       },
     ];
@@ -138,12 +111,13 @@ export function buildKnownDirectToolCommandPatternQueries(
     ];
   }
 
-  if (toolName === LOCAL_ANALYZE_GRAPH_TOOL_NAME) {
+  if (toolName === AST_SEARCH_TOOL_NAME) {
     return [
       {
         label: 'dead code from detected entrypoints',
         query: {
-          operation: 'deadCode',
+          operation: 'topology',
+          analysis: 'deadCode',
           path: '/ABS/repo',
           limit: 20,
         },
@@ -151,7 +125,8 @@ export function buildKnownDirectToolCommandPatternQueries(
       {
         label: 'cycles',
         query: {
-          operation: 'cycles',
+          operation: 'topology',
+          analysis: 'cycles',
           path: '/ABS/repo',
           limit: 20,
         },
@@ -159,7 +134,8 @@ export function buildKnownDirectToolCommandPatternQueries(
       {
         label: 'dependencies of one file',
         query: {
-          operation: 'dependencies',
+          operation: 'topology',
+          analysis: 'dependencies',
           path: '/ABS/repo',
           file: 'src/index.ts',
           depth: 2,
@@ -168,7 +144,8 @@ export function buildKnownDirectToolCommandPatternQueries(
       {
         label: 'dependents of one file',
         query: {
-          operation: 'dependents',
+          operation: 'topology',
+          analysis: 'dependents',
           path: '/ABS/repo',
           file: 'src/index.ts',
           depth: 2,
@@ -177,7 +154,8 @@ export function buildKnownDirectToolCommandPatternQueries(
       {
         label: 'shortest dependency path',
         query: {
-          operation: 'path',
+          operation: 'topology',
+          analysis: 'path',
           path: '/ABS/repo',
           file: 'src/index.ts',
           target: 'src/responses.ts',
@@ -186,9 +164,42 @@ export function buildKnownDirectToolCommandPatternQueries(
       {
         label: 'reachability from detected entrypoints',
         query: {
-          operation: 'reachability',
+          operation: 'topology',
+          analysis: 'reachability',
           path: '/ABS/repo',
           limit: 20,
+        },
+      },
+      {
+        label: 'structural match',
+        query: {
+          operation: 'match',
+          path: '/ABS/repo/src',
+          langType: 'typescript',
+          pattern: 'eval($X)',
+        },
+      },
+      {
+        label: 'file discovery',
+        query: {
+          operation: 'files',
+          path: '/ABS/repo',
+          names: ['package.json'],
+        },
+      },
+      {
+        label: 'tree orientation',
+        query: {
+          operation: 'tree',
+          path: '/ABS/repo/src',
+          maxDepth: 2,
+        },
+      },
+      {
+        label: 'document symbols',
+        query: {
+          operation: 'symbols',
+          path: '/ABS/repo/src/index.ts',
         },
       },
     ];
@@ -275,20 +286,20 @@ export function buildKnownDirectToolCommandPatternQueries(
     ];
   }
 
-  if (toolName === LSP_GET_SEMANTICS_TOOL_NAME) {
+  if (toolName === LSP_SEARCH_TOOL_NAME) {
     return [
       {
         label: 'symbol outline (absolute uri)',
         query: {
           uri: '/ABS/packages/octocode-tools-core/src/scheme/pagination.ts',
-          type: 'documentSymbols',
+          operation: 'documentSymbols',
         },
       },
       {
         label: 'semantic definition (absolute uri + lineHint)',
         query: {
           uri: '/ABS/packages/octocode-tools-core/src/scheme/pagination.ts',
-          type: 'definition',
+          operation: 'definition',
           symbolName: 'buildNextPageContinuation',
           lineHint: 72,
         },

@@ -6,21 +6,21 @@ Load when a checkout, local artifact, or resolved dependency is the evidence sou
 A known file or path can skip discovery and orientation: read the relevant lines directly. Otherwise choose one starting point:
 | Question | Tool and selection | Evidence |
 |---|---|---|
-| Names, strings, errors, configuration | `localSearch operation:"text"`, `searchText` | lexical candidates |
-| Paths or directory layout | `localSearch operation:"files"` or `"tree"` | files inside the stated scope |
-| Call/declaration/import shape | `localSearch operation:"structural"`, exactly one `pattern` or `rule` | AST syntax, not resolved identity |
+| Names, strings, errors, configuration | `localSearch`, `searchText` | lexical candidates |
+| Paths or directory layout | `astSearch operation:"files"` or `"tree"` | files inside the stated scope |
+| Call/declaration/import shape | `astSearch operation:"match"`, exactly one `pattern` or `rule` | AST syntax, not resolved identity |
 | Exact behavior or quote | `localGetFileContent`, `minify:"none"`, bounded lines or match | source text |
-| Symbol identity and use | `lspGetSemantics` | server-resolved definitions/references/callers |
-| Relationships between files | `localAnalyzeGraph` | syntactic topology |
+| Symbol identity and use | `lspSearch` | server-resolved definitions/references/callers |
+| Relationships between files | `astSearch operation:"topology"` | syntactic topology |
 
-Use an absolute `path` and an explicit `operation` for local search. Text uses `searchText`, structural uses `pattern`/`rule`; do not mix fields. Use files/count views when bodies are unnecessary. Outline with `minify:"symbols"` only when useful; `standard` may rewrite text.
+Use an absolute `path` for `localSearch`; it has no `operation` field. Text uses `searchText` with `regex:"literal"`, `"rust"`, or `"pcre2"`. Structural AST uses `astSearch operation:"match"` with exactly one `pattern` or `rule`; do not mix lexical and structural fields. Use files/count views when bodies are unnecessary. `localGetFileContent` is exact by default and accepts path-only reads; choose a line range, `matchString`, or `fullContent` when needed. `matchRanges` are padded context windows, while `matchedLines` are the exact line anchors. `standard` and `symbols` are transformed views.
 
 ## AST and LSP
 - AST: inspect diagnostics before relaxing a zero-match pattern. Incomplete or partial execution cannot prove absence. A `terminalLimit` requires narrowing/simplifying, while a returned continuation can recover a scan or display bound.
-- `structural.query.rewritten` identifies a different executed pattern; report it and use that explicit pattern when repeating the search. Keep captures off unless needed and inspect compacted-match recovery.
-- Anchored LSP queries need `uri` + `symbolName` + a real `lineHint` from search/read. `workspaceSymbol` needs a name; `documentSymbols` and `diagnostic` need a URI.
+- Structural results should be interpreted from the returned matches and diagnostics; do not assume an automatic rewrite. If a current result explicitly exposes `structural.query.rewritten`, report that observed field and use it when repeating the search. Keep captures off unless needed and inspect compacted-match recovery.
+- Anchored LSP queries need `uri` plus either `symbolName` and a real 1-based `lineHint`, or a zero-based UTF-16 `position`. `workspaceSymbol` needs `symbolName` and either `uri` or `workspaceRoot`; `documentSymbols` and `diagnostic` need a URI and no symbol anchor.
 - Use `definition` for identity, `references` for uses, `callers`/`callees` for call flow, and `hover`/`implementation`/type queries for their specific questions.
-- Inspect server capabilities, `warmup`, partial state, and pagination. Unsupported diagnostics are not a clean bill of health. For usage checks set `includeDeclaration:false`; zero references still needs entrypoint/export/runtime checks before deletion.
+- Inspect server capabilities, `lsp.source`, `warmup`, partial state, `truncated`/`terminalLimit`, and pagination. Native or graph-facts fallback is syntactic evidence, not semantic identity. Unsupported diagnostics are not a clean bill of health. For usage checks set `includeDeclaration:false`; zero references still needs entrypoint/export/runtime checks before deletion.
 
 ## Graph
 | Question | Operation and inputs | Corroboration |

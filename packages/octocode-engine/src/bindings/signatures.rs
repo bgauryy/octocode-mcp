@@ -1,5 +1,6 @@
 use crate::bindings::tasks::{
     SemanticBoundaryOffsetsTask, StructuralSearchFilesTask, StructuralSearchTask,
+    SyntaxTreeInspectTask,
 };
 use napi::bindgen_prelude::AsyncTask;
 use napi::{Error, Result, Status};
@@ -175,6 +176,21 @@ pub fn structural_search_files_detailed(
 #[napi(js_name = "getSupportedStructuralExtensions")]
 pub fn get_supported_structural_extensions() -> Vec<String> {
     crate::structural::supported_extensions()
+}
+
+/// Return a bounded, paginated syntax-tree view using the structural grammar
+/// registry. Parsing and traversal run on libuv's worker pool.
+#[napi(js_name = "inspectSyntaxTree")]
+pub fn inspect_syntax_tree(
+    content: String,
+    file_path: String,
+    options: Option<crate::structural::SyntaxTreeInspectOptions>,
+) -> AsyncTask<SyntaxTreeInspectTask> {
+    AsyncTask::new(SyntaxTreeInspectTask {
+        content,
+        file_path,
+        options,
+    })
 }
 
 /// Returns a sorted list of JS char offsets (UTF-16 code units) where

@@ -23,6 +23,10 @@ native, Pi, and Awareness. It is not an agent runtime or a UI composition root.
   contracts.
 - `agent-skills.ts` owns Agent Skill discovery and metadata contracts.
 - `prompts/` owns shared system, plan, and subagent prompt fragments.
+  Awareness owns `EXTERNAL_AGENT_AWARENESS_PROMPT` and its Pi alias; those are
+  imported separately by Pi, once per composed system prompt. The complete
+  Awareness guide and feature catalog remain on demand. See the
+  [Awareness API reference](../octocode-awareness/docs/API.md).
 - `embed.ts` owns the narrow embedding boundary used by shared discovery and
   memory features.
 
@@ -45,8 +49,8 @@ native, Pi, and Awareness. It is not an agent runtime or a UI composition root.
   subpath instead of the aggregate package root.
 - Keep `$OCTOCODE_HOME/agent/agent.sqlite3` control tables separate from the
   Rust runtime store at `$OCTOCODE_HOME/agent/core.sqlite3` and Awareness domain
-  relations at `<workspace>/.octocode/awareness.sqlite3` or the explicitly
-  selected `$OCTOCODE_HOME/awareness/awareness.sqlite3`.
+  relations at the default `$OCTOCODE_HOME/awareness/awareness.sqlite3` or the
+  explicitly selected `<workspace>/.octocode/awareness.sqlite3`.
 - Fail closed on foreign database identities and unexpected relations before
   writing schema. Shared helpers must not relabel or migrate another owner's
   database.
@@ -58,6 +62,3 @@ workspace root. Vendor source enumeration, JSON/TOML normalization, provenance,
 collision naming, and file admission remain canonical here. Foreign definitions
 stay disabled until a host applies explicit enablement and workspace trust.
 Active Pi configuration reads use the same regular-file, no-symlink, 1 MiB guard.
-
-Program-level completion gates are in
-[`DESIGN/LEFTOVERS.md`](../../DESIGN/LEFTOVERS.md).

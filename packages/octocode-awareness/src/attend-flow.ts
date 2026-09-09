@@ -30,10 +30,13 @@ export function decideNext(input: FlowInput): AttendNext {
   // A subprocess cannot reconnect to this connection's in-memory database.
   const command = (name: NonNullable<AttendNext['command']>['name'], extra: string[] = []): Pick<AttendNext, 'command'> => {
     if (input.databasePath === ':memory:') return {};
+    const allowed = cliAllowedFlags(name);
+    const accepts = (field: string) => !allowed || allowed.includes(field);
     return { command: { name, args: [
-      '--db', input.databasePath, '--workspace', input.workspacePath,
-      ...(input.artifact ? ['--artifact', input.artifact] : []),
-      ...(input.agentId ? ['--agent-id', input.agentId] : []),
+      '--db', input.databasePath,
+      ...(accepts('workspace') ? ['--workspace', input.workspacePath] : []),
+      ...(input.artifact && accepts('artifact') ? ['--artifact', input.artifact] : []),
+      ...(input.agentId && name !== 'work show' && accepts('agent_id') ? ['--agent-id', input.agentId] : []),
       ...extra, '--compact',
     ] } };
   };
@@ -74,3 +77,4 @@ export function decideNext(input: FlowInput): AttendNext {
   };
   return { action: 'continue', reason: 'Continue the authorized task; no actionable shared prerequisite was observed.' };
 }
+import { cliAllowedFlags } from './schema/cli-contract.js';

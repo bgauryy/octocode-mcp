@@ -1,3 +1,4 @@
+import { effectiveAgentStatus } from '../src/tools/agents/display-state.js';
 /**
  * Tests for the agent inbox: pure item builders, the 2-stage overlay flow with
  * injected fakes, the notification decision rules, and the registerAgentInbox
@@ -9,7 +10,6 @@ import {
   LONG_RUN_NOTIFY_MS,
   buildInboxActionItems,
   buildInboxItems,
-  inboxDisplayState,
   inboxSummaryLine,
   registerAgentInbox,
   runAgentInboxOverlay,
@@ -79,15 +79,22 @@ test('buildInboxItems: failed / killed / idle glyphs and states', () => {
   assert.ok(items[2]!.label.startsWith('◎') && items[2]!.label.includes('· idle ·'));
 });
 
-test('inboxDisplayState: normalizedStatus refines the raw process status', () => {
-  assert.equal(inboxDisplayState({ status: 'idle', normalizedStatus: 'done' }), 'done');
-  assert.equal(inboxDisplayState({ status: 'idle', normalizedStatus: 'blocked' }), 'blocked');
-  assert.equal(inboxDisplayState({ status: 'idle', normalizedStatus: 'failed' }), 'failed');
-  assert.equal(inboxDisplayState({ status: 'killed', normalizedStatus: 'done' }), 'killed');
-  assert.equal(inboxDisplayState({ status: 'starting' }), 'starting');
-  // Exited beats blocked: a dead process that last said [BLOCKED] cannot be
-  // steered, so it must not present as an actionable blocked worker.
-  assert.equal(inboxDisplayState({ status: 'exited', normalizedStatus: 'blocked' }), 'done');
+test('shared worker display state refines the raw process status', () => {
+  assert.equal(effectiveAgentStatus({ status: 'idle', normalizedStatus: 'done' }), 'done');
+  assert.equal(effectiveAgentStatus({ status: 'idle', normalizedStatus: 'blocked' }), 'blocked');
+  assert.equal(effectiveAgentStatus({ status: 'idle', normalizedStatus: 'failed' }), 'failed');
+  assert.equal(effectiveAgentStatus({ status: 'killed', normalizedStatus: 'done' }), 'killed');
+  assert.equal(effectiveAgentStatus({ status: 'starting' }), 'starting');
+  // Preserve the unresolved outcome; process liveness separately controls RPC actions.
+  assert.equal(effectiveAgentStatus({ status: 'exited', normalizedStatus: 'blocked' }), 'blocked');
+});
+
+test('an exited blocked worker retains its outcome and elapsed time without live controls', () => {
+  const entry = makeEntry({ status:'exited', normalizedStatus:'blocked' });
+  const first = buildInboxItems([entry], NOW)[0]!;
+  assert.match(first.label, /blocked/);
+  assert.equal(buildInboxItems([entry], NOW + 60_000)[0]!.label, first.label);
+  assert.deepEqual(buildInboxActionItems(entry).map(item => item.value), ['view', 'dismiss']);
 });
 
 test('inboxSummaryLine: flattens newlines, caps length, and falls back to the last ledger event', () => {
@@ -129,7 +136,7 @@ interface FlowFakes {
   notifications: Array<{ msg: string; level?: string }>;
   steered: Array<{ id: string; message: string }>;
   killed: string[];
-  transcripts: Array<{ id: string; maxLines?: number }>;
+  transcripts: Array<{ id: string }>;
   overlayCalls: Array<{ title: string; values: string[] }>;
 }
 
@@ -157,7 +164,8 @@ function makeFlow(
     },
     steer: (id, message) => { steered.push({ id, message }); return true; },
     kill: (id) => { killed.push(id); return true; },
-    transcript: (id, o) => { transcripts.push({ id, maxLines: o?.maxLines }); return `TRANSCRIPT:${id.slice(0, 8)}`; },
+    transcript: (id) => { transcripts.push({ id }); return `TRANSCRIPT:${id.slice(0, 8)}`; },
+    inspect: async (_ctx, _title, lines) => { notifications.push({ msg: lines.join('\n'), level: 'inspector' }); },
     notify: (_ctx, msg, level) => { notifications.push({ msg, level }); },
     now: () => NOW,
   };
@@ -202,17 +210,16 @@ test('overlay flow: kill path calls kill with the picked worker id', async () =>
   const flow = makeFlow([entry], [entry.agentId, 'kill']);
   await runAgentInboxOverlay(flow.deps);
   assert.deepEqual(flow.killed, [entry.agentId]);
-  assert.ok(flow.notifications.some((n) => n.level === 'warning' && n.msg.includes('Killed worker atlas')));
+  assert.ok(flow.notifications.some((n) => n.level === 'warning' && n.msg.includes('Stopped worker atlas')));
 });
 
-test('overlay flow: view path fetches a line-capped transcript and notifies it', async () => {
+test('overlay flow: view path sends retained output to the scroll inspector', async () => {
   const entry = makeEntry();
   const flow = makeFlow([entry], [entry.agentId, 'view']);
   await runAgentInboxOverlay(flow.deps);
   assert.equal(flow.transcripts.length, 1);
   assert.equal(flow.transcripts[0]!.id, entry.agentId);
-  assert.ok((flow.transcripts[0]!.maxLines ?? 0) > 0);
-  assert.ok(flow.notifications.some((n) => n.msg.startsWith('TRANSCRIPT:')));
+  assert.ok(flow.notifications.some((n) => n.level === 'inspector' && n.msg.startsWith('TRANSCRIPT:')));
 });
 
 test('overlay flow: cancel at stage 1 or dismiss at stage 2 does nothing', async () => {

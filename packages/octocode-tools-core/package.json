@@ -7,7 +7,6 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "@npmcli/config": "^11.0.1",
-    "@octocodeai/agent-contracts": "0.1.0",
     "@octocodeai/config": "19.1.0",
     "@octocodeai/octocode-core": "18.3.0",
     "@octocodeai/octocode-engine": "19.1.0",
@@ -96,18 +95,18 @@
     "directory": "packages/octocode-tools-core"
   },
   "scripts": {
-    "build": "yarn readme:sync && yarn clean && node ../../scripts/esbuild-package.mjs && yarn build:types-deps && tsc --emitDeclarationOnly -p tsconfig.build.json",
-    "build:dev": "yarn readme:sync && node ../../scripts/esbuild-package.mjs && yarn build:types-deps && tsc --emitDeclarationOnly -p tsconfig.build.json",
+    "build": "yarn readme:sync && yarn clean && node ../../scripts/esbuild-package.mjs && yarn build:types-deps && node ../../node_modules/typescript/bin/tsc --emitDeclarationOnly -p tsconfig.build.json",
+    "build:dev": "yarn readme:sync && node ../../scripts/esbuild-package.mjs && yarn build:types-deps && node ../../node_modules/typescript/bin/tsc --emitDeclarationOnly -p tsconfig.build.json",
     "build:types-deps": "yarn workspace @octocodeai/config build",
     "clean": "rm -rf dist/",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix",
+    "lint": "node ../../node_modules/eslint/bin/eslint.js src",
+    "lint:fix": "node ../../node_modules/eslint/bin/eslint.js src --fix",
     "prepack": "yarn readme:sync && node ../octocode/scripts/check-no-workspace-protocol.mjs",
     "prepublishOnly": "node ../octocode/scripts/check-no-workspace-protocol.mjs",
     "readme:sync": "node ../../scripts/sync-package-readmes.mjs .",
-    "test": "vitest run --coverage",
-    "test:quiet": "vitest run --reporter=dot --silent",
-    "typecheck": "tsc --noEmit --skipLibCheck -p tsconfig.json",
+    "test": "node ../../node_modules/vitest/vitest.mjs run --coverage",
+    "test:quiet": "node ../../node_modules/vitest/vitest.mjs run --reporter=dot --silent",
+    "typecheck": "node ../../node_modules/typescript/bin/tsc --noEmit --skipLibCheck -p tsconfig.json",
     "verify": "yarn lint && yarn typecheck && yarn test"
   },
   "type": "module",

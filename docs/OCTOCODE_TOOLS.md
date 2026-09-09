@@ -14,8 +14,8 @@ npx octocode tools <toolName> --scheme --json --compact
 |--------|-------|
 | GitHub | `ghSearch`, `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`, `ghCloneRepo` |
 | Packages | `npmSearch` |
-| Local | `localSearch`, `localGetFileContent`, `localAnalyzeGraph` |
-| LSP | `lspGetSemantics` |
+| Local | `localSearch`, `localGetFileContent`, `astSearch` |
+| LSP | `lspSearch` |
 
 ## Contents
 
@@ -35,6 +35,7 @@ The CLI and MCP server expose the same canonical contracts from `@octocodeai/oct
 
 ### Base call envelope
 
+<!-- example: schematic -->
 ```json
 {
   "queries": [
@@ -91,7 +92,7 @@ results:
       error: "..."
 ```
 
-Common row fields are `index`, optional `status`, optional `cache`, `meta`, and `data`. `status: empty` means the query ran but found no result in the observed scope; `status: error` means that row failed. Neither status should be inferred from missing output. Evidence metadata describes what the result can support: provider-index, lexical, structural, syntactic graph, exact content, or semantic LSP evidence have different failure modes.
+Common row fields are `index`, optional `status`, optional `cache`, `meta`, and `data`. `status: empty` means the tool produced no usable result for that row; interpret it with tool-specific diagnostics because unsupported capabilities, unresolved anchors, and no matches can all produce empty-like outcomes. `status: error` means that row failed. Neither status should be inferred from missing output. Evidence metadata describes what the result can support: provider-index, lexical, structural, syntactic graph, exact content, or semantic LSP evidence have different failure modes. The shared envelope and continuation contract is maintained in [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md); tool-specific payloads may add their own completeness or partial markers.
 
 Pagination is layered:
 
@@ -100,6 +101,8 @@ Pagination is layered:
 3. **Whole-response pagination** uses outer `responseCharLength` and `responseCharOffset` only for the rendered aggregate response.
 
 When output is partial, run the returned schema-valid `next.*` object. Do not stop at a numeric cursor, silently drop later pages, or treat a bounded first page as complete. When continuation is impossible, the tool emits a typed terminal-limit diagnostic instead of a fake next call.
+
+Keep continuation tokens scoped to their surface: operation-level `snapshot` values continue one result set, while the outer response contract uses `responseSnapshot` for whole-response pagination. Do not substitute one for the other; copy the executable `next.*` query returned by the same surface.
 
 ## Internal, external, and hybrid tools
 
@@ -113,10 +116,10 @@ When output is partial, run the returned schema-valid `next.*` object. Do not st
 | `ghGetHistoryItem` | External | Reads one known pull request, issue, commit, or comparison, with explicit selectors for bodies, comments, files, reviews, commits, and patches. |
 | `npmSearch` | External | Resolves exact npm package metadata or searches one effective registry. Registry-scoped npm configuration supplies authentication; package results can lead to source-repository research. |
 | `ghCloneRepo` | Hybrid | Uses provider credentials/network access, then atomically materializes a full or sparse repository under managed local storage. Disabled unless cloning and local storage are enabled. |
-| `localSearch` | Internal/local | Runs bounded text/regex search, structural AST search, file metadata discovery, or tree browsing against allowed local paths. |
+| `localSearch` | Internal/local | Runs bounded lexical text/regex search against allowed local paths. |
+| `astSearch` | Internal/local | Runs structural AST, filesystem, tree, symbol, and topology queries against allowed local paths. |
 | `localGetFileContent` | Internal/local | Reads a known allowed path with full, match, line-range, minified, or symbol-outline views and exact continuations. |
-| `localAnalyzeGraph` | Internal/local | Builds a syntactic file-import graph and answers dependencies, dependents, shortest path, cycles, reachability, or dead-code-candidate queries. |
-| `lspGetSemantics` | Internal/local with a language-server process | Resolves an anchored symbol and asks a real language server for definitions, references, calls, types, symbols, hierarchy, or diagnostics. It reports unavailable capabilities instead of returning a syntactic approximation as semantic proof. |
+| `lspSearch` | Internal/local with a language-server process | Resolves an anchored symbol and asks a real language server for definitions, references, calls, types, symbols, hierarchy, or diagnostics. It reports unavailable capabilities instead of returning a syntactic approximation as semantic proof. |
 
 Remote GitHub tools require provider runtime and credentials. `npmSearch` uses the effective npm registry configuration. Local tools require `ENABLE_LOCAL`; clone/materialization additionally requires `ENABLE_CLONE` and persistent storage. LSP availability also depends on a compatible server for the file language.
 
@@ -126,28 +129,29 @@ These surfaces complement one another; they are not interchangeable.
 
 | Surface | Octocode operation | Establishes | Does not establish |
 | --- | --- | --- | --- |
-| Text/regex | `localSearch(operation:"text")` | Exact lexical occurrences, paths, and source-line anchors within the scanned scope. | Symbol identity, reachability, or all runtime uses. |
-| Structural AST | `localSearch(operation:"structural")` with exactly one of `pattern` or `rule` | Syntax-shaped matches that ignore formatting differences and can expose captures. | That two same-shaped nodes refer to the same symbol or execute at runtime. |
-| File graph | `localAnalyzeGraph` | Syntactic import topology, candidate paths/cycles, and reachability under stated roots and exclusions. | Symbol-level identity, dynamic imports that were not resolved, or safe deletion by itself. |
-| LSP semantics | `lspGetSemantics` | Language-server identity and relations such as definitions, references, callers, callees, implementations, types, symbols, and diagnostics. | Runtime behavior outside the server's configured project/build context. |
+| Text/regex | `localSearch` | Exact lexical occurrences, paths, and source-line anchors within the scanned scope. | Symbol identity, reachability, or all runtime uses. |
+| Structural AST | `astSearch(operation:"match")` with exactly one of `pattern` or `rule` | Syntax-shaped matches that ignore formatting differences and can expose captures. | That two same-shaped nodes refer to the same symbol or execute at runtime. |
+| File graph | `astSearch` | Syntactic import topology, candidate paths/cycles, and reachability under stated roots and exclusions. | Symbol-level identity, dynamic imports that were not resolved, or safe deletion by itself. |
+| LSP semantics | `lspSearch` | Language-server identity and relations such as definitions, references, callers, callees, implementations, types, symbols, and diagnostics. | Runtime behavior outside the server's configured project/build context. |
 
 Recommended proof ladder:
 
-1. Orient with `localSearch(operation:"tree"|"files")`.
-2. Find a lexical anchor with `localSearch(operation:"text")`.
+1. Orient with `astSearch(operation:"tree"|"files")`.
+2. Find a lexical anchor with `localSearch`.
 3. Use structural search when syntax shape matters or text is noisy.
-4. Use `localAnalyzeGraph` to map file-level blast radius or candidate reachability.
+4. Use `astSearch` to map file-level blast radius or candidate reachability.
 5. Read exact source with `localGetFileContent`.
-6. Use `lspGetSemantics` from a real file/line/symbol anchor to prove identity and usages.
+6. Use `lspSearch` from a real file/line/symbol anchor to prove identity and usages.
 7. Run the relevant test, build, or runtime path before claiming behavior.
 
 Example:
 
+<!-- tool: astSearch -->
 ```json
 {
   "queries": [
     {
-      "operation": "structural",
+      "operation": "match",
       "path": ".",
       "langType": "typescript",
       "pattern": "defineTool({ $$$FIELDS })",
@@ -207,6 +211,7 @@ Fields from another operation are rejected rather than silently ignored. Mixed b
 queries are allowed and results retain input order. `ghGetFileContent` stays
 separate because it reads and minifies known content rather than discovering it.
 
+<!-- tool: ghSearch -->
 ```json
 { "operation": "code", "keywords": ["useReducer"], "owner": "vercel", "repo": "next.js" }
 { "operation": "repositories", "keywords": ["code research"], "language": "TypeScript" }
@@ -249,11 +254,12 @@ Choose one extraction intent: whole file, line range, matching slices, or symbol
 Directory mode:
 
 - Requires enabled clone and local access, plus compatible storage configuration. Clone is opt-in; inspect the live catalog and configured gates.
-- Returns `localPath` (absolute), `location` (kind/source/cached/complete), and `next` entries for `localSearch` text and tree operations with ready-to-use paths.
+- Returns `localPath` (absolute), `location` (kind/source/cached/complete), and `next` entries for `localSearch` and `astSearch` queries with ready-to-use paths.
 - Rejects file-only extraction fields.
 
 Examples:
 
+<!-- tool: ghGetFileContent -->
 ```json
 { "owner": "vercel", "repo": "next.js", "path": "packages/next/src/server/config.ts", "startLine": 1, "endLine": 80 }
 { "owner": "vercel", "repo": "next.js", "path": "packages/next/src", "type": "directory" }
@@ -298,6 +304,7 @@ Search GitHub history through one strict discovery operation per query:
 The search tool returns candidates and stable identities. Fetch detailed content
 with `ghGetHistoryItem`; search queries do not accept singular-item identities.
 
+<!-- tool: ghSearchHistory -->
 ```json
 { "operation": "pullRequests", "owner": "vercel", "repo": "next.js", "keywords": ["middleware"], "match": ["title"], "state": "merged" }
 { "operation": "issues", "owner": "vercel", "repo": "next.js", "keywords": ["memory leak"], "match": ["title"], "state": "open" }
@@ -322,6 +329,7 @@ Fields from another operation are rejected rather than ignored. In particular,
 PR and issue identity is always `number`; commit identity is `ref`; comparison
 identity is the `base` + `head` pair.
 
+<!-- tool: ghGetHistoryItem -->
 ```json
 { "operation": "pullRequest", "owner": "vercel", "repo": "next.js", "number": 12345, "content": { "changedFiles": true } }
 { "operation": "issue", "owner": "vercel", "repo": "next.js", "number": 12345, "content": { "body": true, "comments": {} } }
@@ -380,11 +388,12 @@ Key fields:
 
 Returns a location with an absolute path, requested-scope completeness, commit
 identity, and cache/verification state. Execute `next.viewStructure` using its
-named tool, `localSearch operation:"tree"`; it is a continuation key, not a
+named tool, `astSearch operation:"tree"`; it is a continuation key, not a
 separate tool.
 
 Examples:
 
+<!-- tool: ghCloneRepo -->
 ```json
 { "owner": "vercel", "repo": "next.js", "branch": "canary" }
 { "owner": "microsoft", "repo": "TypeScript", "sparsePath": "src/compiler" }
@@ -410,6 +419,7 @@ Resolve exact npm packages to metadata and source repositories, or discover pack
 | `page` | Keyword-search page; omitted for exact lookup. |
 | `pageSize` | Return 1–100 keyword results per page. Follow `next.nextPage` for more results. |
 
+<!-- tool: npmSearch -->
 ```json
 { "packageName": "react" }
 { "keywords": ["typescript", "eslint"], "pageSize": 20 }
@@ -476,9 +486,9 @@ Related docs:
 
 | Tool | Purpose |
 |------|---------|
-| `localSearch` | Unified local discovery. Set `operation` to `text`, `structural`, `files`, or `tree`; text and structural matches provide anchors for `lspGetSemantics`. |
+| `localSearch` | Lexical local discovery; matches provide anchors for `lspSearch`. |
+| `astSearch` | Structural AST, filesystem, tree, symbol, and topology discovery. |
 | `localGetFileContent` | Read targeted file content by line range, match, signature skeleton, or char page. |
-| `localAnalyzeGraph` | Run one bounded repository-graph operation: dependencies, dependents, path, reachability, cycles, or dead-code candidates. |
 
 ---
 
@@ -486,6 +496,7 @@ Related docs:
 
 Local tools are on by default. To turn the whole local surface off:
 
+<!-- example: configuration -->
 ```json
 {
   "local": {
@@ -512,11 +523,11 @@ Config reference: [Configuration Reference](https://github.com/bgauryy/octocode/
 
 ### Platform support
 
-`localSearch` uses Octocode's native in-process ripgrep, structural-search, and filesystem-walker engines. There are no external `rg`, `grep`, `find`, or `tree` dependencies.
+`localSearch` and `astSearch` use Octocode's native in-process ripgrep, structural-search, and filesystem-walker engines. There are no external `rg`, `grep`, `find`, or `tree` dependencies.
 
 `localGetFileContent` is pure Node.js and works on macOS, Linux, and Windows.
 
-All four `localSearch` operations work on macOS, Linux, and Windows. Prefer `operation:"text", resultView:"files"` when a content query can answer the question.
+All local search tools work on macOS, Linux, and Windows. Prefer `localSearch` with `resultView:"files"` when a content query can answer the question.
 
 ---
 
@@ -528,8 +539,8 @@ Local tools expose two pagination layers:
 
 | Layer | Fields | Applies To |
 |-------|--------|------------|
-| Native result pagination | `page`, `pageSize` | Every `localSearch` operation |
-| Per-file match pagination | `matchPage`, `maxMatchesPerFile` | `localSearch(operation:"text")` when a matched file has more matches |
+| Native result pagination | `page`, `pageSize` | Every `localSearch` query |
+| Per-file match pagination | `matchPage`, `maxMatchesPerFile` | `localSearch` when a matched file has more matches |
 | Content pagination | `charOffset`, `charLength` | `localGetFileContent` and oversized per-query payloads |
 | Bulk response pagination | `responseCharOffset`, `responseCharLength` | Any local-tool bulk response |
 
@@ -541,12 +552,12 @@ Use native pagination first for result lists, then char pagination only when a s
 
 | Need | Use |
 |------|-----|
-| "Which directories/files exist here?" | `localSearch(operation:"tree")` |
-| "Find files named `*.test.ts` or modified within a time window." | `localSearch(operation:"files")` |
-| "Search for text, regex, imports, TODOs, or identifiers." | `localSearch(operation:"text")` |
+| "Which directories/files exist here?" | `astSearch(operation:"tree")` |
+| "Find files named `*.test.ts` or modified within a time window." | `astSearch(operation:"files")` |
+| "Search for text, regex, imports, TODOs, or identifiers." | `localSearch` |
 | "Read this exact file section." | `localGetFileContent` |
-| "Find files containing a pattern without match bodies." | `localSearch(operation:"text", resultView:"files", ...)` |
-| "Find files that do not contain a pattern." | `localSearch(operation:"text", resultView:"filesWithout", ...)` |
+| "Find files containing a pattern without match bodies." | `localSearch( resultView:"files", ...)` |
+| "Find files that do not contain a pattern." | `localSearch( resultView:"filesWithout", ...)` |
 
 Recommended order for code research:
 
@@ -556,15 +567,17 @@ DISCOVER -> SEARCH -> READ
 
 Start broad with structure or metadata, narrow with content search, then read the smallest exact file slice needed.
 
-`localSearch` is the only local discovery entry point. Its four strict operation
-branches reject fields from other operations. Removed compatibility names cannot
-be restored with `TOOLS_TO_RUN` or `.octocoderc`.
+`localSearch` handles lexical search, while `astSearch` handles structural,
+filesystem, tree, symbol, and topology queries. Each public tool rejects fields
+from other operations. Removed compatibility names cannot be restored with
+`TOOLS_TO_RUN` or `.octocoderc`.
 
 ---
 
 ### `localSearch`
 
-One discriminated local-discovery surface. Always set `operation`; fields from different operations cannot be mixed.
+Lexical local search. The query is selected by `searchText` and `regex`; use
+`astSearch` for syntax, filesystem, tree, symbol, or topology queries.
 
 #### Best for
 
@@ -577,11 +590,10 @@ One discriminated local-discovery surface. Always set `operation`; fields from d
 | Parameter | Description |
 |-----------|-------------|
 | `path` | File or directory to search. Relative paths resolve from the workspace root. For remote repos: pass `localPath` from a `ghCloneRepo` or `ghGetFileContent(type:"directory")` result — it is already absolute and immediately valid. |
-| `operation` | Required. `text`, `structural`, `files`, or `tree`. |
-| `searchText` | Text or regex pattern. Required with `operation:"text"`. |
-| `resultView` | Text/structural response shape. Text supports `paginated`, `discovery`, `detailed`, `content`, `files`, `filesWithout`, `countLines`, `countMatches`, and `matchOnly`; structural supports content/file/count/match views. |
-| `pattern` | Octocode code-shaped AST pattern. `$X` = one node, `$$$ARGS` = a list. Use only with `operation:"structural"`; provide exactly one of `pattern` or `rule`. |
-| `rule` | YAML relational rule (`not`/`inside`/`has`/`all`/`any`). Add `stopBy: end` for ancestor/descendant relations. Use only with `operation:"structural"`. |
+| `searchText` | Text or regex pattern. Required. |
+| `resultView` | Lexical response shape: `paginated`, `discovery`, `detailed`, `content`, `files`, `filesWithout`, `countLines`, `countMatches`, or `matchOnly`. |
+| `pattern` | Use `astSearch(operation:"match")` for Octocode code-shaped AST patterns. |
+| `rule` | Use `astSearch(operation:"match")` for YAML relational rules. |
 | `matchWindow` | With `resultView:"matchOnly"`, widen each matched span by this many characters of context on each side (… marks trimmed sides). 0 = bare match. |
 | `unique` | With `resultView:"matchOnly"`, use `list` for distinct match values per file or `count` for frequencies. |
 | `contextLines` | Lines around each match. Max 100. |
@@ -595,7 +607,7 @@ One discriminated local-discovery surface. Always set `operation`; fields from d
 
 | Parameter | Description |
 |-----------|-------------|
-| `regex` | `fixed` for literal text, `smart` for normal regex, `perl` for PCRE2 features. |
+| `regex` | `literal` for literal text, `rust` for Rust regex, or `pcre2` for PCRE2 features. |
 | `caseMode` | `smart`, `sensitive`, or `insensitive`. |
 | `wholeWord` | Match whole words only. |
 | `multiline` | `off`, `on`, or `dotall` for cross-line matching. |
@@ -624,20 +636,20 @@ When matches are returned, `localSearch` also emits a machine-readable
 | Next key | Tool | Purpose |
 |----------|------|---------|
 | `fetch` | `localGetFileContent` | Read the first hit; adjust `minify` on the follow-up when needed. |
-| `lspDefinition` / `lspReferences` | `lspGetSemantics` | Follow the first match semantically when a safe symbol name can be inferred. |
+| `lspDefinition` / `lspReferences` | `lspSearch` | Follow the first match semantically when a safe symbol name can be inferred. |
 | `nextPage` / `nextMatchPage` | `localSearch` | Continue file-level or per-file match pagination. |
 
 #### Examples
 
 ```bash
-localSearch(operation="text", path="packages/octocode-mcp/src", searchText="registerTool", langType="ts")
-localSearch(operation="text", path=".", searchText="TODO", resultView="files")
-localSearch(operation="text", path="src", searchText="class\\s+\\w+Service", regex="perl", contextLines=3)
+localSearch( path="packages/octocode-mcp/src", searchText="registerTool", langType="ts")
+localSearch( path=".", searchText="TODO", resultView="files")
+localSearch( path="src", searchText="class\\s+\\w+Service", regex="rust", contextLines=3)
 ```
 
 #### Structural and AST search
 
-Use `operation:"structural"` for code-shape queries regex cannot express (find all `await` inside `for` loops, calls with N args, functions missing `try/catch`).
+Use `astSearch(operation:"match")` for code-shape queries regex cannot express (find all `await` inside `for` loops, calls with N args, functions missing `try/catch`).
 
 Structural results distinguish file-scan caps from execution limits. A scan cap
 sets `truncated` and supplies `next.expandScan` while the bound can grow. Parser
@@ -678,16 +690,16 @@ size exhaustion is a typed terminal limit rather than a generic execution
 failure.
 
 ```bash
-localSearch(operation="structural", path="src", pattern="track($$$ARGS)")
+astSearch(operation="match", path="src", pattern="track($$$ARGS)")
 # `rule` is a YAML string: \n below are real newline escapes in the JSON tool
 # arg (not literal backslash-n). On the CLI, use $'...' or a real multiline string.
-localSearch(operation="structural", path="src", rule="rule:\n  pattern: await $C\n  inside:\n    kind: for_statement\n    stopBy: end")
-localSearch(operation="structural", path=".", pattern="eval($X)")
+astSearch(operation="match", path="src", rule="rule:\n  pattern: await $C\n  inside:\n    kind: for_statement\n    stopBy: end")
+astSearch(operation="match", path=".", pattern="eval($X)")
 ```
 
 ---
 
-### `localSearch(operation:"tree")`
+### `astSearch(operation:"tree")`
 
 Directory browsing for understanding shape, ownership, and file distribution.
 
@@ -721,14 +733,14 @@ The response separates structured `files[]` and `folders[]` and includes summary
 #### Examples
 
 ```bash
-localSearch(operation="tree", path=".", maxDepth=1)
-localSearch(operation="tree", path="packages/octocode-mcp/src", maxDepth=2, entryType="d")
-localSearch(operation="tree", path="docs", extensions=["md"], detail="full")
+astSearch(operation="tree", path=".", maxDepth=1)
+astSearch(operation="tree", path="packages/octocode-mcp/src", maxDepth=2, entryType="d")
+astSearch(operation="tree", path="docs", extensions=["md"], detail="full")
 ```
 
 ---
 
-### `localSearch(operation:"files")`
+### `astSearch(operation:"files")`
 
 Metadata search for files and directories.
 
@@ -765,9 +777,9 @@ Metadata search for files and directories.
 #### Examples
 
 ```bash
-localSearch(operation="files", path=".", names=["*.test.ts"])
-localSearch(operation="files", path="packages", pathRegex="^readme\\.md$")
-localSearch(operation="files", path=".", time={"modifiedWithin":"24h"}, entryType="f", detail="full")
+astSearch(operation="files", path=".", names=["*.test.ts"])
+astSearch(operation="files", path="packages", pathRegex="^readme\\.md$")
+astSearch(operation="files", path=".", time={"modifiedWithin":"24h"}, entryType="f", detail="full")
 ```
 
 ---
@@ -815,9 +827,9 @@ minification, so check `contentView` before treating the content as minified.
 
 Local character windows can expand to a semantic boundary. Execute the returned
 `next` query unchanged; do not compute the next offset by adding the requested
-`charLength`. `fullContent:true` and local line ranges default to
-`minify:"none"`; ordinary reads default to `standard`. Anchored matching reads
-force `none` as described above.
+`charLength`. Reads default to `minify:"none"`. Request `minify:"standard"` or
+`minify:"symbols"` explicitly when a compressed or outline view is wanted.
+Anchored matching reads force `none` as described above.
 
 Redaction runs on the selected, transformed view before character pagination,
 so a secret cannot be reconstructed from separate windows. `returnedChars`
@@ -837,7 +849,7 @@ localGetFileContent(path="src/index.ts", minify="symbols")
 
 ---
 
-### `localAnalyzeGraph`
+### `astSearch`
 
 The `coverage` object separates parser inventory from module-linking support.
 It reports language coverage, resolved and external import counts, unresolved
@@ -878,7 +890,7 @@ Dependency traversal also reports immediate dominators, topological layers, and 
 - Classifying entrypoint reachability and finding strongly connected import cycles.
 - Finding repository-wide dead-export candidates and dead clusters in one pass. A dead cluster is a strongly connected set of mutually importing, unreachable files; the files don't necessarily call one another.
 
-Use `localAnalyzeGraph` to discover repository-scale file topology and candidate reachability. Use `lspGetSemantics` with `references`, `callers`, or `callees` to prove the identity and semantic connections of one known symbol. A graph edge proves that one file syntactically imports or re-exports another; it doesn't prove which binding is used.
+Use `astSearch` to discover repository-scale file topology and candidate reachability. Use `lspSearch` with `references`, `callers`, or `callees` to prove the identity and semantic connections of one known symbol. A graph edge proves that one file syntactically imports or re-exports another; it doesn't prove which binding is used.
 
 #### Key parameters
 
@@ -914,12 +926,12 @@ The graph assigns no weights to edges. `path` therefore uses breadth-first searc
 #### Examples
 
 ```bash
-localAnalyzeGraph(operation="dependencies", path="/ABS/repo", file="src/index.ts", depth=2)
-localAnalyzeGraph(operation="cycles", path="/ABS/repo", pageSize=20, limit=100)
-localAnalyzeGraph(operation="deadCode", path="/ABS/repo", entrypoints=["src/index.ts"], includeTests=false)
+astSearch(operation="topology", analysis="dependencies", path="/ABS/repo", file="src/index.ts", depth=2)
+astSearch(operation="topology", analysis="cycles", path="/ABS/repo", pageSize=20, limit=100)
+astSearch(operation="topology", analysis="deadCode", path="/ABS/repo", entrypoints=["src/index.ts"], includeTests=false)
 ```
 
-For a cycle, read the exact imports named by `cycleEdges`; use `runtimeCycleEdges` when investigating loading behavior. Verify a dead-code or transitive-edge candidate with `lspGetSemantics` before removing it.
+For a cycle, read the exact imports named by `cycleEdges`; use `runtimeCycleEdges` when investigating loading behavior. Verify a dead-code or transitive-edge candidate with `lspSearch` before removing it.
 
 ---
 
@@ -928,42 +940,42 @@ For a cycle, read the exact imports named by `cycleEdges`; use `runtimeCycleEdge
 #### Explore a new repository
 
 ```text
-localSearch(operation="tree", path=root, maxDepth=1)
-localSearch(operation="tree", path=root+"/src", maxDepth=2)
-localSearch(operation="files", path=root, names=["package.json", "tsconfig.json", "README.md"])
-localSearch(operation="text", path=root, searchText="export", resultView="files")
+astSearch(operation="tree", path=root, maxDepth=1)
+astSearch(operation="tree", path=root+"/src", maxDepth=2)
+astSearch(operation="files", path=root, names=["package.json", "tsconfig.json", "README.md"])
+localSearch( path=root, searchText="export", resultView="files")
 localGetFileContent(path="README.md", minify="symbols")
 ```
 
 #### Search, then read
 
 ```text
-localSearch(operation="text", path="src", searchText="validateInput", contextLines=2)
+localSearch( path="src", searchText="validateInput", contextLines=2)
 localGetFileContent(path="src/validation.ts", matchString="validateInput", contextLines=20)
 ```
 
 #### Find tests for a feature
 
 ```text
-localSearch(operation="files", path=".", names=["*.test.ts", "*.spec.ts"])
-localSearch(operation="text", path="tests", searchText="featureName", resultView="files")
+astSearch(operation="files", path=".", names=["*.test.ts", "*.spec.ts"])
+localSearch( path="tests", searchText="featureName", resultView="files")
 localGetFileContent(path="tests/feature.test.ts", matchString="featureName")
 ```
 
 #### Inspect recent changes
 
 ```text
-localSearch(operation="files", path=".", time={"modifiedWithin":"24h"}, entryType="f", detail="full")
-localSearch(operation="text", path=".", searchText="TODO|FIXME", regex="perl")
+astSearch(operation="files", path=".", time={"modifiedWithin":"24h"}, entryType="f", detail="full")
+localSearch( path=".", searchText="TODO|FIXME", regex="rust")
 ```
 
 ---
 
 ### Local tool rules
 
-1. Use `localSearch(operation:"tree")` or `localSearch(operation:"files")` before reading when the file is unknown.
-2. Use `localSearch(operation:"text", resultView:"files")` for fast discovery when match bodies are not needed.
-3. Use `localSearch(operation:"text")` with `contextLines` before opening a large file.
+1. Use `astSearch(operation:"tree")` or `astSearch(operation:"files")` before reading when the file is unknown.
+2. Use `localSearch( resultView:"files")` for fast discovery when match bodies are not needed.
+3. Use `localSearch` with `contextLines` before opening a large file.
 4. Use `localGetFileContent` with `matchString`, `startLine`/`endLine`, or `minify:"symbols"` instead of `fullContent` for large files.
 5. Use pagination fields when a response advertises `hasMore=true`.
 
@@ -971,8 +983,8 @@ localSearch(operation="text", path=".", searchText="TODO|FIXME", regex="perl")
 
 ### Response shape
 
-- Bulk envelope: `results[]` with `data`, `hints`, `pagination`, `outputPagination`.
-- `localSearch` returns an operation-specific payload: text/structural matches, file rows, or tree entries.
+- Tool results use the shared `results[]` row envelope; each row may contain `index`, `status`, `meta`, and `data`. Tool-specific payloads own their pagination and hints; see [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md) for the common rules.
+- `localSearch` returns lexical matches; `astSearch` returns operation-specific structural, file, tree, symbol, or topology payloads.
 - `localGetFileContent` returns file slices only — not directory listings.
 
 ### Anti-patterns
@@ -981,7 +993,7 @@ localSearch(operation="text", path=".", searchText="TODO|FIXME", regex="perl")
 |--------------|-----------------|
 | `fullContent=true` on large files | Use `matchString`, line range, or `minify:"symbols"` |
 | Search without scoping dirs | Use `excludeDir` to skip generated/vendor folders |
-| Regex for exact literals | Use `regex:"fixed"` |
+| Regex for exact literals | Use `regex:"literal"` |
 | Combining mutually exclusive flags | Pick one extraction mode |
 
 **Parallelism:** independent queries run in parallel (batch limit: 5 per call). Sequential dependencies (`structure → search → read`) stay sequential.
@@ -998,42 +1010,43 @@ localSearch(operation="text", path=".", searchText="TODO|FIXME", regex="perl")
 
 ## LSP tools reference
 
-This is the canonical reference for Octocode's semantic code-intelligence operations. LSP is the protocol layer behind these operations; structural AST search remains part of `localSearch`.
+This is the canonical reference for Octocode's semantic code-intelligence operations. LSP is the protocol layer behind these operations; structural AST search is exposed by `astSearch`.
 
 Octocode exposes **one** public semantic tool:
 
 | Tool | Use it for |
 |------|------------|
-| `lspGetSemantics` | Definitions, references, callers, callees, bidirectional call hierarchy, hover, document, and workspace symbols, type definitions, implementations, type hierarchy, and diagnostics. |
+| `lspSearch` | Definitions, references, callers, callees, bidirectional call hierarchy, hover, document, and workspace symbols, type definitions, implementations, type hierarchy, and diagnostics. |
 
-Semantic operations are local-only. Local tools default on for both CLI and MCP; set `ENABLE_LOCAL=false` to disable them. LSP needs a file that exists on disk. Use `localSearch` first when you need a symbol `lineHint`; `operation:"structural"` matches can provide AST-derived anchors before LSP proves symbol identity.
+Semantic operations are local-only. Local tools default on for both CLI and MCP; set `ENABLE_LOCAL=false` to disable them. LSP needs a file that exists on disk. Use `localSearch` first when you need a symbol `lineHint`; `astSearch(operation:"match")` can provide AST-derived anchors before LSP proves symbol identity.
 
-For external repos: clone first with `ghCloneRepo` (or fetch a subtree with `ghGetFileContent(type:"directory")`), then use the returned `localPath` as the `uri` prefix for `lspGetSemantics`. The path is always absolute and immediately valid.
+For external repos: clone first with `ghCloneRepo` (or fetch a subtree with `ghGetFileContent(type:"directory")`), then use the returned `localPath` as the `uri` prefix for `lspSearch`. The path is always absolute and immediately valid.
 
 ### Workflow
 
-1. Search with `localSearch(operation:"text")` or `localSearch(operation:"structural")` and capture the exact `lineHint`.
-2. Query `lspGetSemantics` with `uri`, `type`, `symbolName`, and `lineHint`.
+1. Search with `localSearch` or `astSearch(operation:"match")`, then read the observed source with `localGetFileContent` to verify the exact symbol spelling and line.
+2. Query `lspSearch` with `uri`, `operation`, and either `symbolName` plus a 1-based `lineHint` or a zero-based UTF-16 `position`.
 3. Page large symbol or call-flow results by executing `next.nextPage` unchanged;
    pages after the first require its snapshot token.
 4. Run project lint, typecheck, and tests before claiming risky changes are fully verified.
 
-### `lspGetSemantics`
+### `lspSearch`
 
 Required fields:
 
 | Field | Required | Notes |
 |-------|----------|-------|
-| `uri` | Yes for anchored and document operations; recommended for `workspaceSymbol` | Absolute local file path. For `workspaceSymbol`, the URI selects one language server. |
-| `type` | No | Defaults to `definition`. |
-| `symbolName` | For anchored operations and `workspaceSymbol` | Exact symbol text at the target line. |
-| `lineHint` | For anchored operations | 1-based line number from search results. |
+| `uri` | Required for anchored, document, and diagnostic operations; one of `uri` or `workspaceRoot` for `workspaceSymbol` | Absolute local file path. For `workspaceSymbol`, `uri` selects one language server. |
+| `operation` | Required for an operation-specific request; omission uses the schema default | One of the documented semantic, document, diagnostic, or workspace-symbol operations. Include it in durable examples and continuations. |
+| `symbolName` | Required for anchored operations and `workspaceSymbol` | Exact symbol text at the target line for anchored operations. |
+| `lineHint` | Required for name-anchored operations | 1-based line number from search results. Use `position` instead for an exact zero-based UTF-16 position. |
 
 Optional fields:
 
 | Field | Notes |
 |-------|-------|
 | `orderHint` | Disambiguates repeated symbol text on the same line. |
+| `position` | Alternative anchor for semantic symbol operations: zero-based UTF-16 `{line, character}`. Use either `position` or `symbolName` + `lineHint`, never both. |
 | `workspaceRoot` | Overrides automatic project-root detection. |
 | `rustContext` | Explicit rust-analyzer build context. Requires a `.rs` URI, including for `workspaceSymbol`. See [Rust build context](#rust-build-context). |
 | `contextLines` | Adds source previews to call-flow results. Keep `0` unless previews are needed. |
@@ -1046,7 +1059,7 @@ Optional fields:
 
 Semantic types:
 
-| `type` | Best for | Output |
+| `operation` | Best for | Output |
 |--------|----------|--------|
 | `definition` | Jumping from usage/import to declaration. TypeScript uses the full semantic server from its first request, so imports and path aliases resolve without a synthetic location. Unresolved provider locations are preserved unchanged. | `payload.kind="definition"`, `locations[]`. |
 | `references` | Affected references for functions, types, variables, constants, and classes. | `locations[]`, `totalReferences`, `totalFiles`, optional `byFile`. |
@@ -1066,7 +1079,7 @@ All semantic responses use this envelope:
 
 | Field | Meaning |
 |-------|---------|
-| `type` | Requested semantic type. |
+| `operation` | Requested semantic type. |
 | `uri` | Resolved local file path. |
 | `resolvedSymbol` | Symbol anchor for symbol-based requests. |
 | `lsp` | Server availability and provider/source metadata. |
@@ -1103,7 +1116,13 @@ previously collected pages and restart at page 1. A later page without a token
 returns `paginationSnapshotRequired`. Tokens validate a recomputed result set
 across processes; they do not retain historical rows.
 
-Call-flow payloads are compact by default. Each call includes the target item, sampled call ranges, `rangeCount`, and `rangeSampleCount`. Use `contextLines>0` only when source previews are useful.
+Call-flow payloads include the target item, every provider call range, and
+`rangeCount`. Ranges preserve both endpoints (`line`, `character`, `endLine`,
+`endCharacter`): lines are 1-based and characters are 0-based UTF-16 offsets.
+Compact text renders each range as `line:character-endLine:endCharacter`.
+Call-item pagination and whole-response text pagination preserve these ranges;
+presentation does not sample them. Use `contextLines>0` only when source previews
+are useful.
 An `expandDepth` continuation appears only when unvisited project calls remain;
 filtered standard-library calls do not make an otherwise complete result look
 depth-truncated.
@@ -1124,7 +1143,7 @@ Supply `rustContext` to select the Rust configuration used for a semantic query:
 For a Rust call found at line 5, query the definition with the `selected` feature:
 
 ```bash
-octocode tools lspGetSemantics --queries '{"uri":"/ABS/repo/src/lib.rs","type":"definition","symbolName":"selected","lineHint":5,"rustContext":{"features":["selected"]}}' --json
+octocode tools lspSearch --queries '{"uri":"/ABS/repo/src/lib.rs","operation":"definition","symbolName":"selected","lineHint":5,"rustContext":{"features":["selected"]}}' --json
 ```
 
 Replace the path, symbol, and line with an anchor from `localSearch`. An explicit
@@ -1136,7 +1155,7 @@ execution; the context is not a sandbox.
 
 The tool uses rust-analyzer for cfg-selected definitions, declarative macro
 expansion, and enabled build-script or procedural-macro results. The syntax graph
-from `localAnalyzeGraph` remains a separate source analysis and does not acquire
+from `astSearch` remains a separate source analysis and does not acquire
 compiler expansion through this option. A disabled provider can explain an empty
 answer even when the declaration is generated during a normal Cargo build.
 
@@ -1166,7 +1185,7 @@ If `workspaceRoot` is omitted:
 | `lsp` | A language server is available | Type-aware, cross-file. |
 | `native` / `markdown` | `documentSymbols` only | Syntax-only outline; no type inference. |
 
-Every **other** semantic operation — `references`, `definition`, `hover`, `callers`/`callees`/`callHierarchy`, `typeDefinition`, `implementation`, `workspaceSymbol`, `supertypes`/`subtypes`, `diagnostic` — requires a real server. When no server is available octocode **does not fall back to a syntactic guess**: it returns `status:"error"` with `errorCode:"lspServerUnavailable"` and a message directing you to `localSearch` (text/structural search) + `localGetFileContent`. (There is no longer a same-file-only `references` native path — a partial answer that silently omits cross-file usages is a trap, so it now errors instead.) See [LSP server lifecycle](https://github.com/bgauryy/octocode/blob/main/packages/octocode-engine/docs/LSP_SERVER_LIFECYCLE.md).
+Every **other** semantic operation — `references`, `definition`, `hover`, `callers`/`callees`/`callHierarchy`, `typeDefinition`, `implementation`, `workspaceSymbol`, `supertypes`/`subtypes`, `diagnostic` — requires a real server. When no server is available octocode **does not fall back to a syntactic guess**: it returns `status:"error"` with `errorCode:"lspServerUnavailable"` and a message directing you to lexical `localSearch` or structural `astSearch` + `localGetFileContent`. (There is no longer a same-file-only `references` native path — a partial answer that silently omits cross-file usages is a trap, so it now errors instead.) See [LSP server lifecycle](https://github.com/bgauryy/octocode/blob/main/packages/octocode-engine/docs/LSP_SERVER_LIFECYCLE.md).
 
 ### TypeScript backends
 
@@ -1234,6 +1253,7 @@ configuration in this precedence order:
 The file maps a file **extension** to a launch spec; a custom entry overrides the built-in spec
 for that extension:
 
+<!-- example: configuration -->
 ```jsonc
 {
   "languageServers": {
@@ -1252,10 +1272,11 @@ semantic operations it advertises; without it the extension is unsupported and s
 
 Definition:
 
+<!-- tool: lspSearch -->
 ```json
 {
   "uri": "/workspace/src/run.ts",
-  "type": "definition",
+  "operation": "definition",
   "symbolName": "printSchema",
   "lineHint": 133
 }
@@ -1263,10 +1284,11 @@ Definition:
 
 References grouped by file:
 
+<!-- tool: lspSearch -->
 ```json
 {
   "uri": "/workspace/src/run.ts",
-  "type": "references",
+  "operation": "references",
   "symbolName": "isOctokitDeprecation",
   "lineHint": 27,
   "includeDeclaration": true,
@@ -1276,10 +1298,11 @@ References grouped by file:
 
 Paginated call flow:
 
+<!-- tool: lspSearch -->
 ```json
 {
   "uri": "/workspace/src/run.ts",
-  "type": "callHierarchy",
+  "operation": "callHierarchy",
   "symbolName": "printSchema",
   "lineHint": 133,
   "pageSize": 5,
@@ -1289,10 +1312,22 @@ Paginated call flow:
 
 Diagnostics:
 
+<!-- tool: lspSearch -->
 ```json
 {
   "uri": "/workspace/src/run.ts",
-  "type": "diagnostic"
+  "operation": "diagnostic"
+}
+```
+
+Workspace-symbol search:
+
+<!-- tool: lspSearch -->
+```json
+{
+  "operation": "workspaceSymbol",
+  "symbolName": "ToolConfig",
+  "workspaceRoot": "/workspace"
 }
 ```
 
@@ -1307,7 +1342,7 @@ Diagnostics:
 
 > How to use `ghCloneRepo` and `ghGetFileContent` (directory mode) to bridge GitHub repositories with local + LSP tools for deep code analysis.
 
-> **Prerequisites:** Clone is enabled by default. Clone and local tools must not be explicitly disabled.
+> **Prerequisites:** Clone is opt-in. Set `ENABLE_CLONE=true`; clone and local access plus persistent storage must be enabled. Inspect the live catalog because `ghCloneRepo` is disabled by default.
 
 ---
 
@@ -1318,7 +1353,7 @@ Octocode MCP has two worlds of tools:
 | World | Tools | Strengths | Limitations |
 |-------|-------|-----------|-------------|
 | **GitHub** | `ghSearch`, `ghGetFileContent` | Fast, no disk usage, works on any repository | No LSP, no semantic analysis, API rate limits |
-| **Local + LSP** | `localSearch`, `localGetFileContent`, `localAnalyzeGraph`, `lspGetSemantics` | Unified discovery, exact reads, topology, and semantic navigation | Only works on files on disk |
+| **Local + LSP** | `localSearch`, `astSearch`, `localGetFileContent`, `lspSearch` | Unified discovery, exact reads, topology, and semantic navigation | Only works on files on disk |
 
 **Two tools bridge these worlds** — they download content to `<octocode-home>/tmp/` so local and LSP tools can analyze it:
 
@@ -1339,7 +1374,7 @@ Clones and API-fetched trees use separate tmp buckets with the same 24-hour TTL 
 │  (code/tree/repos)│       │  (full/sparse clone)       │       │  localSearch      │
 │  ghGetFileContent│       │                            │       │  localGetFileContent     │
 │                      │       │  ghGetFileContent      │       │  localSearch          │
-│                      │       │  (type: "directory")       │       │  lspGetSemantics   │
+│                      │       │  (type: "directory")       │       │  lspSearch   │
 │                      │       │  (lightweight, no git)     │       │                          │
 │                      │       │  Both return localPath     │       │                          │
 │                      │       │  + next (localSearch,      │       │                          │
@@ -1358,9 +1393,9 @@ Clones and API-fetched trees use separate tmp buckets with the same 24-hour TTL 
 | Find code pattern across repositories | ✅ `ghSearch(operation:"code")` | Overkill | Overkill |
 | **Read all files in a directory** | ❌ One-by-one | ✅ `type: "directory"` | Overkill |
 | **Search within a directory** | Limited | ✅ Directory fetch → `localSearch` | Also works |
-| **Trace function call chains** | ❌ Not possible | ❌ Partial context | ✅ Clone → `lspGetSemantics(type="callers")` / `type="callees"` |
-| **Jump to symbol definitions** | ❌ Not possible | ❌ Partial context | ✅ Clone → `lspGetSemantics(type="definition")` |
-| **Find all usages of a type** | ❌ Not possible | ❌ Partial context | ✅ Clone → `lspGetSemantics(type="references")` |
+| **Trace function call chains** | ❌ Not possible | ❌ Partial context | ✅ Clone → `lspSearch(operation="callers")` / `operation="callees"` |
+| **Jump to symbol definitions** | ❌ Not possible | ❌ Partial context | ✅ Clone → `lspSearch(operation="definition")` |
+| **Find all usages of a type** | ❌ Not possible | ❌ Partial context | ✅ Clone → `lspSearch(operation="references")` |
 | **Deep code search with regex** | Limited | ✅ If scope is small | ✅ Clone → `localSearch` |
 | **Explore monorepo subtree** | Slow (many API calls) | ✅ For small dirs | ✅ Sparse clone for large dirs |
 
@@ -1506,11 +1541,11 @@ Step 1: Clone the repo
   → localPath = "<octocode-home>/tmp/clone/vercel/next.js/canary"
 
 Step 2: Browse the tree
-  localSearch(operation="tree", path=localPath, maxDepth=2)
+  astSearch(operation="tree", path=localPath, maxDepth=2)
   → See the full directory structure with file sizes and dates
 
 Step 3: Drill into a directory
-  localSearch(operation="tree", path=localPath + "/packages/next/src", maxDepth=2)
+  astSearch(operation="tree", path=localPath + "/packages/next/src", maxDepth=2)
   → See the subdirectory contents
 ```
 
@@ -1524,15 +1559,15 @@ Step 1: Clone the repo
   → localPath
 
 Step 2: Search for the function
-  localSearch(operation="text", path=localPath, searchText="handleRequest")
+  localSearch( path=localPath, searchText="handleRequest")
   → Get file paths and lineHint values
 
 Step 3: Jump to definition
-  lspGetSemantics(type="definition", uri=localPath+"/server/router.ts", symbolName="handleRequest", lineHint=42)
+  lspSearch(operation="definition", uri=localPath+"/server/router.ts", symbolName="handleRequest", lineHint=42)
   → See the function definition
 
 Step 4: Trace callers
-  lspGetSemantics(type="callers", uri=..., symbolName="handleRequest", lineHint=42)
+  lspSearch(operation="callers", uri=..., symbolName="handleRequest", lineHint=42)
   → See all functions that call handleRequest
 ```
 
@@ -1550,11 +1585,11 @@ Step 2: Clone for deep analysis
   → localPath
 
 Step 3: Use full ripgrep power
-  localSearch(operation="text", path=localPath, searchText="def route\\(", langType="py")
+  localSearch( path=localPath, searchText="def route\\(", langType="py")
   → Full regex search, file type filtering, match context
 
 Step 4: Use LSP
-  lspGetSemantics(type="references", uri=localPath+"/src/flask/app.py", symbolName="route", lineHint=...)
+  lspSearch(operation="references", uri=localPath+"/src/flask/app.py", symbolName="route", lineHint=...)
   → Find every file that uses the @route decorator
 ```
 
@@ -1572,11 +1607,11 @@ Step 2: Clone only the compiler
   → localPath (only downloads src/compiler, much faster)
 
 Step 3: Search within the fetched subtree
-  localSearch(operation="text", path=localPath, searchText="transformTypeScript")
+  localSearch( path=localPath, searchText="transformTypeScript")
   → Search only within the compiler code
 
 Step 4: Find files by metadata
-  localSearch(operation="files", path=localPath, names=["*.ts"], time={"modifiedWithin":"30d"})
+  astSearch(operation="files", path=localPath, names=["*.ts"], time={"modifiedWithin":"30d"})
   → TypeScript files in the compiler modified within 30 days
 ```
 
@@ -1591,7 +1626,7 @@ Step 4: Find files by metadata
 | **Conditional cache** | `ghGetFileContent` and the `ghSearch` tree operation retain response bodies and ETags for conditional refresh; stale bodies can remain available for up to 24 hours |
 | **Response marker** | A result whose primary response payload was served from cache includes `cache: 1`. Fresh results and helper-only cache hits omit `cache`; no other marker value is valid. The contract is identical in CLI and MCP output. |
 | **Clone cache** | `ghCloneRepo` uses the clone/materialization cache |
-| **Live tools** | `localSearch`, `localGetFileContent`, `localAnalyzeGraph`, and `lspGetSemantics` read the workspace directly and don't cache tool results |
+| **Live tools** | `localSearch`, `localGetFileContent`, `astSearch`, and `lspSearch` read the workspace directly and don't cache tool results |
 | **Location** | Use returned paths. Clone cache keys include ref, sparse scope, and host. File/tree generations live under `<octocode-home>/tmp/tree/{owner}/{repo}/{commitSha}/snapshots/{generation}/`; remote response L2 uses `<octocode-home>/tmp/response/` |
 | **Identity** | The API resolves an omitted branch, then pins file/tree bytes and paths to the resolved commit SHA. Clones accept branch, tag, or full commit SHA and return the actual HEAD as `location.commitSha` |
 | **Ref pointer** | Auth-scoped branch/tag-to-commit results are cached for 60 seconds; `forceRefresh` bypasses the pointer |
@@ -1640,9 +1675,9 @@ For TypeScript/JavaScript LSP:
 | Search cloned code | `localSearch` | `path` = `localPath` |
 | Read cloned file | `localGetFileContent` | `path` = `localPath + "/file.ts"` |
 | Find files in clone | `localSearch` | `path` = `localPath` |
-| Jump to definition | `lspGetSemantics` with `type="definition"` | `uri` = file in `localPath` |
-| Find all references | `lspGetSemantics` with `type="references"` | `uri` = file in `localPath` |
-| Trace callers/callees | `lspGetSemantics` with `type="callers"` or `type="callees"` | `uri` = file in `localPath` |
+| Jump to definition | `lspSearch` with `operation="definition"` | `uri` = file in `localPath` |
+| Find all references | `lspSearch` with `operation="references"` | `uri` = file in `localPath` |
+| Trace callers/callees | `lspSearch` with `operation="callers"` or `operation="callees"` | `uri` = file in `localPath` |
 
 ---
 
@@ -1680,7 +1715,7 @@ Every tool must pass the same top-level contract:
 | Hints | Tool `hints.ts` files expose only `empty` and `error`. Empty hints are conditional and filter-aware. Error hints classify the failure and stay short. Success path hints are limited to data-bearing signals such as pagination or warnings. |
 | Empty results | Successful no-match responses are not errors. They must include a clear empty signal, preserve the query's ordered index, and provide recovery hints only when the query context makes a concrete next step possible. |
 | Errors | Provider, validation, path, auth, rate-limit, timeout, LSP-unavailable, and command failures return structured errors with recovery context and without leaking secrets. |
-| Evidence | Tools that can report evidence must set `evidence.kind`, `answerReady`, `confidence`, and `complete` consistently. Aggregated evidence should downgrade confidence and completeness when any query is partial or fallback-based. |
+| Evidence | Preserve the fields each tool returns, including `evidence.kind`/`confidence`, row status, and tool-specific partial or completeness markers. Do not infer universal `answerReady` or `complete` fields; partial, fallback, and unsupported states must remain explicit. |
 | Security | Local tools respect path validation and command allow-lists. Remote tools sanitize errors and redact secrets. Clone and directory fetch do not write outside the intended cache or checkout root. |
 
 ### Global scenario matrix
@@ -1783,34 +1818,34 @@ Primary code: [packages/octocode-tools-core/src/tools/github_clone_repo/](https:
 
 #### Verify `localSearch`
 
-Public router: [packages/octocode-tools-core/src/tools/local_search/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/local_search). Schema: `LocalSearchQuerySchema`. The router delegates to the internal text/structural, file-discovery, and tree engines.
+Primary code: [packages/octocode-tools-core/src/tools/local_search/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/local_search). Schema: `LocalSearchQuerySchema`. This tool performs lexical text and regex search; structural, file-discovery, and tree queries use `astSearch`.
 
 | Surface | Checks |
 | --- | --- |
-| Params | Verify `operation`, `path`, `searchText` or `pattern`, `regex`, `caseMode`, `wholeWord`, type/include/exclude/excludeDir, hidden/noIgnore, `resultView`, `contextLines`, `matchContentLength`, `maxMatchesPerFile`, `matchPage`, `pageSize`, and `page`. |
+| Params | Verify `path`, `searchText`, `regex`, `caseMode`, `wholeWord`, include/exclude/excludeDir, hidden/noIgnore, `resultView`, `contextLines`, `matchContentLength`, `maxMatchesPerFile`, `matchPage`, `pageSize`, `page`, and the current schema's remaining lexical filters. |
 | Hidden fields | MCP schema must not expose implementation-only knobs such as threads, binary, encoding, debug, passthru, or symlink following. |
-| Mutex | Structural `pattern` conflicts with `rule`; non-structural search requires `searchText`. Invalid enum combinations become per-query errors. |
+| Mutex | Lexical search requires `searchText`; invalid enum combinations become per-query errors. |
 | Implementation | Runs ripgrep in-process through the native engine. No external `rg` binary and no grep fallback. Invalid regex, path errors, and no-permission paths are structured errors. |
 | Pagination | File and match pagination work independently. `line` values are stable 1-indexed `lineHint` inputs for LSP tools. |
 | Empty | Empty hints name active filters such as type, include, exclude, excludeDir, or path. No-filter empty stays silent. |
-| Research quality | Results must include file path, match count, line, column, snippet value, and enough context to drive precise `lspGetSemantics` queries such as `type="definition"`, `type="references"`, `type="callers"`, or `type="callees"`. |
+| Research quality | Results must include file path, match count, line, column, snippet value, and enough context to drive precise `lspSearch` queries such as `operation="definition"`, `operation="references"`, `operation="callers"`, or `operation="callees"`. |
 
-#### Verify `localSearch(operation:"tree")`
+#### Verify `astSearch` operations
 
-Primary code: [packages/octocode-tools-core/src/tools/local_view_structure/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/local_view_structure). Schema: `ViewStructureQuerySchema`.
+Primary code: [packages/octocode-tools-core/src/tools/ast_search/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/ast_search). Schema: `AstSearchQuerySchema`.
 
 | Surface | Checks |
 | --- | --- |
-| Params | Verify `operation:"tree"`, `path`, `namePattern`, `extensions`, exclude filters, `maxDepth`, total `limit`, `pageSize`, and `page`. |
-| Hidden fields | `extension` singular and `recursive` are not exposed in unified `localSearch`. Use `extensions`; set a bounded `maxDepth` to recurse. |
+| Params | Verify every operation branch (`match`, `files`, `tree`, `symbols`, and `topology`) against the live schema. For filesystem/tree queries cover `path`, name and extension filters, exclude filters, depth, limits, pages, and entry details; for `match`, verify exactly one `pattern` or `rule`; for `topology`, verify its analysis-specific selectors and diagnostics. |
+| Hidden fields | `extension` singular and `recursive` are not exposed in `astSearch`. Use `extensions`; set a bounded `maxDepth` to recurse. |
 | Implementation | Directory walk respects path validation, depth cap, ignored directories, sorting, and entry typing. Symlink and permission cases are explicit. |
 | Pagination | Entry pagination uses stable ordering so page 2 continues page 1 without duplicates or missed entries. |
 | Empty | Empty directories are empty, not errors. Missing paths are errors. Filtered empties name the active filter. |
 | Research quality | Entries must identify name, path, type, size, modified time, and depth so the next search or content call can be scoped. |
 
-#### Verify `localSearch`
+#### Verify `astSearch(operation:"files")`
 
-Primary code: [packages/octocode-tools-core/src/tools/local_find_files/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/local_find_files). Schema: `FindFilesQuerySchema`.
+Primary code: [packages/octocode-tools-core/src/tools/ast_search/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/ast_search). Schema: `AstSearchQuerySchema`.
 
 | Surface | Checks |
 | --- | --- |
@@ -1820,13 +1855,13 @@ Primary code: [packages/octocode-tools-core/src/tools/local_find_files/](https:/
 | Empty | Empty hints quote active filters such as `names`, `time.modifiedWithin`, or `size.greater`. No-filter empty stays silent. |
 | Research quality | Results must support targeted follow-ups by path, type, size, permissions, and timestamps. |
 
-#### Verify `localAnalyzeGraph`
+#### Verify `astSearch`
 
-Primary code: [packages/octocode-tools-core/src/tools/local_analyze_graph/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/local_analyze_graph) and [packages/octocode-tools-core/src/graph/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/graph). Schema: `LocalAnalyzeGraphQuerySchema`.
+Primary code: [packages/octocode-tools-core/src/tools/ast_search/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/ast_search), with topology analysis under `ast_search/topology/`. Schema: `AstSearchQuerySchema`.
 
 | Surface | Checks |
 | --- | --- |
-| Params | Verify all six operations, required `file`/`target` selectors, `depth`, roots, `includeTests`, exclusions, caps, `rustWorkspace`, result pages, and diagnostic pages. |
+| Params | Verify `operation:"topology"` with each `analysis` (`dependencies`, `dependents`, `path`, `cycles`, `reachability`, and `deadCode`), required `file`/`target` selectors, `depth`, roots, `includeTests`, exclusions, caps, `rustWorkspace`, result pages, and diagnostic pages. |
 | Implementation | Build one bounded graph per distinct batch configuration; preserve unresolved imports, inferred roots, skipped files, and partial scan diagnostics. |
 | Pagination | Execute `nextPage`, `nextDiagnostics`, and safe scan-expansion continuations; reject stale diagnostic snapshots. |
 | Empty | Distinguish a valid empty relation from unsupported syntax, unresolved imports, uncertain entrypoints, or an incomplete scan. |
@@ -1838,21 +1873,21 @@ Primary code: [packages/octocode-tools-core/src/tools/local_fetch_content/](http
 
 | Surface | Checks |
 | --- | --- |
-| Params | Verify `path`, `fullContent`, `matchString`, `startLine`, `endLine`, `contextLines`, `charOffset`, `charLength`. |
+| Params | Verify `path`, `fullContent`, `matchString`, `startLine`, `endLine`, `contextLines`, `charOffset`, `charLength`, and `minify`. |
 | Mutex | `fullContent`, `matchString`, and line ranges are mutually exclusive, with per-query errors inside bulk calls. |
 | Implementation | Handles UTF-8 files, large files, minified content, binary/unreadable files, no trailing newline, and out-of-range line requests. |
 | Pagination | Character pagination continues exact content without overlap. Match extraction plus pagination must preserve `matchRanges`. |
 | Empty | A missing `matchString` result returns empty with no fake content. Missing file and invalid path are errors. |
 | Research quality | Returned content must include path, line range, total lines, `isPartial`, and enough source text to cite or reason from. Partial line-range reads emit a `startLine=N` continuation hint. |
 
-#### Verify `lspGetSemantics`
+#### Verify `lspSearch`
 
 Primary code: [packages/octocode-tools-core/src/tools/lsp/semantic_content/](https://github.com/bgauryy/octocode/tree/main/packages/octocode-tools-core/src/tools/lsp/semantic_content). Schema: `LspGetSemanticsQuerySchema`.
 
 | Surface | Checks |
 | --- | --- |
-| Params | Verify `uri`, `type`, `symbolName`, `lineHint`, `orderHint`, `includeDeclaration`, `groupByFile`, `depth`, `page`, `contextLines`, and output pagination. |
-| Implementation | Requires a `lineHint` for symbol-anchored types, resolves exact code occurrences while ignoring string/comment hits, uses pooled LSP clients, and reports capability gaps explicitly. |
+| Params | Verify `uri`, `operation`, `symbolName`, `lineHint` or zero-based UTF-16 `position`, `workspaceRoot`, `orderHint`, `includeDeclaration`, `groupByFile`, `depth`, `page`, `pageSize`, `contextLines`, and operation-level pagination. |
+| Implementation | Requires either a name plus `lineHint` or an exact `position` for symbol-anchored operations, resolves exact code occurrences while ignoring string/comment hits, uses pooled LSP clients, and reports capability gaps explicitly. |
 | Pagination | Large semantic payloads page without losing target identity. |
 | Empty | Symbol-not-found, unsupported capability, and LSP-unavailable paths are explicit. |
 | Semantic quality | Definition/reference/call/hover/symbol outputs identify URI, range, symbol identity, completeness, and static-vs-dynamic limits where applicable. |
@@ -1863,9 +1898,9 @@ These suites verify that tools compose into reliable research workflows.
 
 | Suite | Steps | Pass criteria |
 | --- | --- | --- |
-| Local semantic navigation | `localSearch` for a symbol, then `lspGetSemantics` with `type="definition"`, `type="references"`, and `type="callers"`/`type="callees"` using returned line hints. | LSP tools resolve the same symbol, references include the definition when requested, call direction is correct, and fallback mode is explicit if used. |
+| Local semantic navigation | `localSearch` for a symbol, then `lspSearch` with `operation="definition"`, `operation="references"`, and `operation="callers"`/`operation="callees"` using returned line hints. | LSP tools resolve the same symbol, references include the definition when requested, call direction is correct, and fallback mode is explicit if used. |
 | Remote to local deep dive | `ghSearch(operation:"code"|"repositories")`, then `ghCloneRepo`, then local search and LSP tools on `localPath`. | Remote identity, branch, clone path, and local path all line up. No result requires guessing a path or branch. |
-| Structure to content | `ghSearch(operation:"tree")` or `localSearch(operation:"tree")`, then content fetch on selected entries. | Paths emitted by structure tools are directly accepted by content tools. Empty directories and missing files are differentiated. |
+| Structure to content | `ghSearch(operation:"tree")` or `astSearch(operation:"tree")`, then content fetch on selected entries. | Paths emitted by structure tools are directly accepted by content tools. Empty directories and missing files are differentiated. |
 | Package provenance | `npmSearch`, then `ghSearch(operation:"tree"|"code")` on parsed repository owner/name. | Package repository metadata is normalized enough to drive GitHub tools, and missing/ambiguous repository URLs are represented as missing evidence. |
 | PR archaeology | `ghSearchHistory(operation:"pullRequests")` with title search, then `ghGetHistoryItem(operation:"pullRequest", number)` and file-content or code search follow-up. | Approximate search finds candidates; number lookup returns the requested body/diff data; large diffs guide targeted follow-up. |
 | Empty-result recovery | Run over-constrained queries across GitHub, local, and LSP tools. | Each tool either stays silent when no concrete advice exists or names exactly which filter to relax. |
@@ -1930,13 +1965,13 @@ npx knip
 
 Do not mark a tool-surface change complete until these are true:
 
-1. All 10 default-enabled tools still register with input schemas and without output schemas.
+1. The catalog contains 10 tools; 9 are enabled by default and `ghCloneRepo` remains opt-in. Every registered tool has its input schema and the MCP registration publishes no output schema.
 2. All public schema defaults, caps, hidden fields, and mutex rules have tests.
 3. Every tool has success, empty, error, mixed-bulk, pagination, lean-output (`base`/`shared`), and verbosity coverage.
 4. Remote tools cover auth, rate limit, provider error, no results, and provider-mapper edge cases.
 5. Local tools cover path validation, large output, hidden/ignored files, empty results, and command allow-list behavior.
 6. LSP tools cover semantic success, fallback mode, symbol-not-found, wrong line hint, `orderHint`, pagination, and context snippets.
 7. Hints are short, contextual, deduped, and absent on final pages.
-8. Evidence metadata correctly represents whether the result is answer-ready, complete, and high-confidence.
+8. Each tool's evidence metadata and tool-specific partial/completeness markers match the result it returns; the gate does not assume universal `answerReady` or `complete` fields.
 9. No response leaks secrets, raw tokens, internal stack traces, or unrelated query metadata.
 10. `yarn lint`, `yarn typecheck`, and `yarn test` pass in the package environment.

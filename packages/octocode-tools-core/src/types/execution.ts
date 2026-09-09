@@ -1,4 +1,5 @@
 import type { AuthInfo } from '@modelcontextprotocol/server';
+import type { BulkResponsePagination } from './bulk.js';
 
 export type WithOptionalMeta<T> = Partial<T>;
 
@@ -8,12 +9,8 @@ export interface BaseQueryLocal {
   path?: string;
 }
 
-export interface ToolExecutionArgs<TQuery> {
+export interface ToolExecutionArgs<TQuery> extends BulkResponsePagination {
   queries: TQuery[];
-
-  responseCharOffset?: number;
-
-  responseCharLength?: number;
 
   authInfo?: AuthInfo;
 

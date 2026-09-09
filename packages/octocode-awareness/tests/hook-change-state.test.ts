@@ -2,8 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
-import { hookStateUnchanged, recordHookChangeState } from '../bin/hook-change-state.js';
-import { briefingChangeSignal, overlapChangeSignal, verificationDebtSignal } from '../bin/hook-signals.js';
+import { hookStateUnchanged, recordHookChangeState } from '../src/hooks/change-state.js';
+import { briefingChangeSignal, overlapChangeSignal, verificationDebtSignal } from '../src/hooks/signals.js';
 import { resolveDbPath } from '../src/db-runtime.js';
 import { writeWorkspacePolicy } from '../src/workspace-policy.js';
 

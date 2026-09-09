@@ -135,7 +135,7 @@ test('agent browser profile navigates, runs routed schemes, passes findings to w
   assert.match(text, /500 from \/api\/orders/);
   assert.deepEqual(spawned[0].tools, ['chromeDebug', 'MCPTool', 'skill', 'awareness', 'bash']);
   assert.equal(spawned[0].model, 'sonnet:high');
-  assert.match(text, /Your ONLY browser tool is `chromeDebug`/);
+  assert.match(text, /Inspect the parent-assigned browser phase with chromeDebug/);
   assert.match(text, /Network, Runtime, DOM, DOMDebugger, Fetch/);
   assert.match(tool.renderCall!({ queries: [{ type: 'spawn', profile: 'browser', task: 'Inspect app' }] }).render(80)[0]!, /agent\(spawn profile:browser\)/);
   assert.match(tool.renderResult!(result, { expanded: false }).render(160)[0]!, /SPAWNED/);

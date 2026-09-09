@@ -26,7 +26,7 @@ Use `octocode-research` when graph topology is only one part of a broader invest
 ## Install
 
 ```bash
-npx octocode skill install octocode-code-graph --platform codex
+npx -y octocode skill install octocode-code-graph
 ```
 
 ## Maintainer verification

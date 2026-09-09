@@ -14,12 +14,6 @@ import {
   createQueryShapeSchema,
   describeQuerySchema,
 } from '../../scheme/coreSchemas.js';
-import type {
-  LocalItemPagination,
-  ToolContinuation,
-} from '../../scheme/pagination.js';
-import type { BulkToolOutput } from '../../types/toolOutput.js';
-
 const queryOverrides = {
   excludeDir: z.array(z.string()).optional(),
   // Description flows from the shared core contract resource; only the
@@ -45,40 +39,3 @@ export const LocalViewStructureBulkQuerySchema = createRelaxedBulkQuerySchema(
   ViewStructureQueryShape,
   { maxQueries: 5 }
 );
-
-// ---------------------------------------------------------------------------
-// Output TYPES — describes what the local tree operation returns per query result.
-// No zod: the MCP server registers no outputSchema, so the output is a plain
-// type. Shared envelope lives in types/toolOutput.ts.
-// ---------------------------------------------------------------------------
-
-export interface LocalViewStructureEntry {
-  name?: string;
-  type: 'file' | 'dir' | 'directory' | 'link' | 'symlink';
-  path?: string;
-  absolutePath?: string;
-  uri?: string;
-  depth?: number;
-  size?: number | string;
-  sizeBytes?: number;
-  modified?: string;
-  permissions?: string;
-}
-
-export interface LocalViewStructureData {
-  path?: string;
-  entries?: LocalViewStructureEntry[];
-  // grouped list variants
-  files?: string[];
-  folders?: string[];
-  links?: string[];
-  summary?: string | Record<string, unknown>;
-  pagination?: LocalItemPagination;
-  next?: Record<string, ToolContinuation>;
-  terminalLimit?: boolean;
-  truncated?: boolean;
-  partialReasons?: Array<'limit' | 'walkLimit'>;
-  totalAvailable?: number;
-}
-
-export type LocalViewStructureOutput = BulkToolOutput<LocalViewStructureData>;

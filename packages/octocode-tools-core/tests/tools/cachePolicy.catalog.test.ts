@@ -14,8 +14,8 @@ const CACHE_WORKFLOWS = {
   liveWorkspace: [
     'localSearch',
     'localGetFileContent',
-    'localAnalyzeGraph',
-    'lspGetSemantics',
+    'astSearch',
+    'lspSearch',
   ],
 } as const;
 

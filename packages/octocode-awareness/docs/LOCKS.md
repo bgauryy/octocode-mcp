@@ -2,11 +2,15 @@
 
 File awareness and file exclusion are different operations:
 
-- `work *` is mandatory advisory presence. Multiple agents may share a file.
+- `work *` supplies advisory presence when work needs tracking. Multiple agents may share a file.
 - `lock *` is optional exclusive protection for sensitive work.
 - verification proves the promised check; ending presence or expiring a lock does not.
 
-## Ordinary Work
+Default coordination needs no work row for routine solo edits. Use the following
+flow for shared ownership or an explicit verification lifecycle. Native hosts use
+the same commands through the [API](API.md).
+
+## Tracked work
 
 ```bash
 npx @octocodeai/octocode-awareness work start --agent-id "$OCTOCODE_AGENT_ID" \
@@ -24,7 +28,7 @@ npx @octocodeai/octocode-awareness work touch --agent-id "$OCTOCODE_AGENT_ID" \
   --run-id run_abc --compact
 ```
 
-Task-backed callers pass the run returned by `task claim`. Hooks do this automatically
+Task-backed callers pass the run returned by `task claim`. Guard/full hooks do this automatically
 when exactly one live task claim applies.
 
 Ordinary overlap succeeds. `work start`/pre-edit returns bounded peer changes with
@@ -97,7 +101,7 @@ Successful verification moves the linked task to `DONE`; failure moves it to
 
 ## Automatic Hook Fallback
 
-If no task claim or explicit WORK presence matches a structured write, pre-edit
+With guard/full tracking, if no task claim or explicit WORK presence matches a structured write, pre-edit
 creates or reuses one scoped `origin=HOOK` aggregate. Post-edit records and touches
 it; Stop, PreCompact, or SessionEnd finalizes it once to `PENDING`. PreCompact keeps
 the session reusable; SessionEnd marks it ended. Aggregates never cross agent,
@@ -123,7 +127,7 @@ npx @octocodeai/octocode-awareness lock prune --workspace "$PWD" --expired-only 
 
 ## Path Coverage
 
-Write-tool hooks declare recognized paths before editing. External processes and
+Guard/full write hooks declare recognized paths before editing. External processes and
 arbitrary shell side effects may not be observable in real time; session/dirty-tree
-reconciliation reports undeclared files. Without active hooks, agents must call
-`work start|touch` explicitly.
+reconciliation can report undeclared files. For explicitly tracked work without
+active tracking hooks, call `work start|touch` on the owning run.

@@ -50,7 +50,7 @@
   "scripts": {
     "build": "node build.mjs",
     "clean": "rm -rf dist/",
-    "lint": "tsc --noEmit -p tsconfig.json",
+    "lint": "node ../../node_modules/typescript/bin/tsc --noEmit -p tsconfig.json",
     "prepublishOnly": "node ../octocode/scripts/check-no-workspace-protocol.mjs",
     "test": "node ../../node_modules/vitest/vitest.mjs run --coverage",
     "test:quiet": "node ../../node_modules/vitest/vitest.mjs run --reporter=dot --silent",

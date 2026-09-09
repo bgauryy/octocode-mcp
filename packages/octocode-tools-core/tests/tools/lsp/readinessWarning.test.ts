@@ -8,7 +8,7 @@ import type { LspSemanticEnvelope } from '../../../src/tools/lsp/shared/semantic
 
 function emptyReferencesEnvelope(): LspSemanticEnvelope {
   return {
-    type: 'references',
+    operation: 'references',
     uri: 'src/foo.ts',
     lsp: {
       serverAvailable: true,
@@ -30,7 +30,7 @@ function emptyReferencesEnvelope(): LspSemanticEnvelope {
 
 function emptyDefinitionEnvelope(): LspSemanticEnvelope {
   return {
-    type: 'definition',
+    operation: 'definition',
     uri: 'src/foo.ts',
     lsp: { serverAvailable: true, provider: 'definitionProvider' },
     payload: {
@@ -43,7 +43,7 @@ function emptyDefinitionEnvelope(): LspSemanticEnvelope {
 
 function nonEmptyDefinitionEnvelope(): LspSemanticEnvelope {
   return {
-    type: 'definition',
+    operation: 'definition',
     uri: 'src/foo.ts',
     lsp: { serverAvailable: true, provider: 'definitionProvider' },
     payload: {
@@ -55,7 +55,7 @@ function nonEmptyDefinitionEnvelope(): LspSemanticEnvelope {
 
 function unsupportedEnvelope(): LspSemanticEnvelope {
   return {
-    type: 'references',
+    operation: 'references',
     uri: 'src/foo.ts',
     lsp: { serverAvailable: true, provider: 'referencesProvider' },
     payload: {

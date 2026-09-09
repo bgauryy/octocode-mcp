@@ -1,11 +1,15 @@
 # FIX
-Load after RATE and before VALIDATE. Why: repair evidenced issues in severity order and record deliberate deferrals.
+Load after RATE, or directly when the input is a goal rather than an existing prompt. Why: repair evidenced issues in severity order and record deliberate deferrals.
+
+Use `references/behavior.md` when a rule leaves its action or scope unclear. Add an example or consequence only when it resolves ambiguity; do not expand a clear instruction into a template.
+
 ## Rules
 - Preserve intent, working logic, branches, identifiers/commands, and necessary metadata.
 - Use MUST/NEVER only for critical, fragile, destructive, or permission-sensitive behavior.
 - Prefer direct positive actions; keep prohibitions where crossing the boundary is dangerous.
 - Use `references/conciseness-toolkit.md` for token cuts and `references/attention.md` for placement.
 - Keep one term per concept and one owner per rule.
+- Put field types and limits in the schema, selection guidance in the description, and workflow in the server instructions — never the same rule in two layers.
 ## Critical rule pattern
 
 Use all three only when omission is high-risk:
@@ -26,4 +30,4 @@ Fix Critical/High issues; fix or record the rest. Avoid optional-to-mandatory es
 ## Sources
 - Anthropic, [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — clear, specific prompts at the right level of prescription.
 
-Next: with the draft complete load `references/validate.md` — never present a fix that skipped it; for a reusable instruction pattern load `references/patterns.md`; for the domain-specific repair load `references/tool-contracts.md`, `references/agent-communication.md`, `references/context-budget.md`, or `references/untrusted-content.md`.
+Next: with the draft complete load `references/validate.md` — never present a fix that skipped it; for the rule shape load `references/behavior.md`; for a reusable instruction pattern load `references/patterns.md`; for the domain-specific repair load `references/tool-contracts.md`, `references/contract-audit.md`, `references/agent-communication.md`, `references/context-budget.md`, or `references/untrusted-content.md`.

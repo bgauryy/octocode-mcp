@@ -176,6 +176,14 @@ export const contextUtils = {
     return loadNative().structuralSearchFilesDetailed(options);
   },
 
+  inspectSyntaxTree(
+    content: string,
+    filePath: string,
+    options?: NativeContextUtils.SyntaxTreeInspectOptions
+  ): Promise<NativeContextUtils.SyntaxTreeInspectResult> {
+    return loadNative().inspectSyntaxTree(content, filePath, options);
+  },
+
   getSupportedStructuralExtensions(): string[] {
     return loadNative().getSupportedStructuralExtensions();
   },

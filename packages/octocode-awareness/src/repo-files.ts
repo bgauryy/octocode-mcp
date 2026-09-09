@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { AwarenessQueryParams, AwarenessQueryRow, BindValue, limitOf, utcNow } from './repo-model.js';
 import { addExactScope, addNullableScope, addTextFilter, localPathFromReference, scopeFromParams, stripLocationSuffix, withScope, workspaceArtifactScope } from './repo-scope.js';
 import { memoryRows, runRows, taskRows } from './repo-plans.js';
-import { agentRows, developerReviewRows, lockRows, refinementRows, signalRows } from './repo-coordination.js';
+import { addSignalVisibility, agentRows, developerReviewRows, lockRows, refinementRows, signalRows } from './repo-coordination.js';
 import { summarize } from './repo-formats.js';
 
 export function trackFile(
@@ -146,6 +146,7 @@ export function repoProfileRows(db: DatabaseSync, params: AwarenessQueryParams):
   const signalWhere = ["status = 'open'"];
   const signalBinds: BindValue[] = [];
   addExactScope(signalWhere, signalBinds, scope);
+  addSignalVisibility(signalWhere, signalBinds, params);
 
   const trackedFiles = fileRows(db, withScope(params, { limit: 500 }));
   return [

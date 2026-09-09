@@ -9,7 +9,7 @@ const LOCAL_OVERLAY_MAX_LIMIT = LOCAL_MAX_LIMIT;
 const LOCAL_OVERLAY_MAX_DEPTH = LOCAL_MAX_DEPTH;
 import { LocalFindFilesQuerySchema } from '../../../octocode-tools-core/src/tools/local_find_files/scheme.js';
 import { LocalViewStructureQuerySchema } from '../../../octocode-tools-core/src/tools/local_view_structure/scheme.js';
-import { LspGetSemanticsQuerySchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
+import { LspSearchQuerySchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
 
 describe('LocalFindFilesQuerySchema.limit bound', () => {
   it('clamps limit above LOCAL_OVERLAY_MAX_LIMIT to the max', () => {
@@ -91,38 +91,32 @@ describe('LocalViewStructureQuerySchema depth + limit bounds', () => {
   });
 });
 
-describe('LspGetSemanticsQuerySchema depth bound', () => {
+describe('LspSearchQuerySchema depth bound', () => {
   const base = {
     uri: '/tmp/x.ts',
-    type: 'callers',
+    operation: 'callers',
     symbolName: 'x',
     lineHint: 1,
   };
 
-  it('clamps depth above LOCAL_OVERLAY_MAX_DEPTH to the max', () => {
-    const result = LspGetSemanticsQuerySchema.safeParse({
+  it('rejects depth above the advertised maximum', () => {
+    const result = LspSearchQuerySchema.safeParse({
       ...base,
       depth: LOCAL_OVERLAY_MAX_DEPTH + 1,
     });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.depth).toBe(LOCAL_OVERLAY_MAX_DEPTH);
-    }
+    expect(result.success).toBe(false);
   });
 
-  it('clamps negative depth up to the minimum', () => {
-    const result = LspGetSemanticsQuerySchema.safeParse({
+  it('rejects negative depth', () => {
+    const result = LspSearchQuerySchema.safeParse({
       ...base,
       depth: -1,
     });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.depth).toBe(0);
-    }
+    expect(result.success).toBe(false);
   });
 
   it('accepts depth at the max bound', () => {
-    const result = LspGetSemanticsQuerySchema.safeParse({
+    const result = LspSearchQuerySchema.safeParse({
       ...base,
       depth: LOCAL_OVERLAY_MAX_DEPTH,
     });

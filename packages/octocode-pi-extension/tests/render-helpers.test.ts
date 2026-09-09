@@ -110,18 +110,18 @@ test('buildToolCallSummary formats each Octocode direct-tool family', () => {
     ['ghGetFileContent', { queries: [{ owner: 'octo', repo: 'repo', path: 'src/a.ts', matchString: 'needle in haystack' }] }, /octo\/repo:src\/a\.ts \/needle in haystack\//],
     ['ghGetFileContent', { queries: [{ owner: 'octo', repo: 'repo', path: 'src/a.ts', startLine: 3, endLine: 8 }] }, /:src\/a\.ts:3-8/],
     ['ghSearch', { queries: [{ operation: 'tree', owner: 'octo', repo: 'repo', path: 'packages/pi' }] }, /octo\/repo\/packages\/pi/],
-    ['ghSearchPullRequests', { queries: [{ owner: 'octo', repo: 'repo', prNumber: 17 }] }, /octo\/repo PR #17/],
-    ['ghSearchIssues', { queries: [{ owner: 'octo', repo: 'repo', keywordsToSearch: ['memory', 'leak'] }] }, /octo\/repo "memory leak"/],
-    ['ghSearchCommits', { queries: [{ owner: 'octo', repo: 'repo', path: 'src', base: 'main', head: 'next' }] }, /octo\/repo path:src main\.\.next/],
+    ['ghGetHistoryItem', { queries: [{ operation: 'pullRequest', owner: 'octo', repo: 'repo', prNumber: 17 }] }, /\[pullRequest\] octo\/repo #17/],
+    ['ghSearchHistory', { queries: [{ operation: 'issues', owner: 'octo', repo: 'repo', keywords: ['memory', 'leak'] }] }, /\[issues\] octo\/repo "memory leak"/],
+    ['ghSearchHistory', { queries: [{ operation: 'commits', owner: 'octo', repo: 'repo', path: 'src', base: 'main', head: 'next' }] }, /\[commits\] octo\/repo main\.\.next path:src/],
     ['ghCloneRepo', { queries: [{ owner: 'octo', repo: 'repo', sparsePath: 'src' }] }, /octo\/repo\/src/],
     ['ghUnknown', { queries: [{ owner: 'octo', repo: 'repo' }] }, /octo\/repo/],
-    ['localSearch', { queries: [{ operation: 'structural', pattern: 'class $A', path: '/very/long/path/to/project/src' }, { operation: 'text', searchText: 'next', path: '/tmp' }] }, /\[structural\] "class \$A".*project\/src/],
+    ['astSearch', { queries: [{ operation: 'match', pattern: 'class $A', path: '/very/long/path/to/project/src' }, { operation: 'text', searchText: 'next', path: '/tmp' }] }, /\[match\] "class \$A".*project\/src/],
     ['localGetFileContent', { queries: [{ path: '/tmp/src/file.ts', startLine: 10, endLine: 12 }] }, /file\.ts:10-12/],
     ['localGetFileContent', { queries: [{ path: '/tmp/src/file.ts', matchString: 'export function longName' }] }, /file\.ts \/export function long/],
-    ['localSearch', { queries: [{ operation: 'tree', path: '/tmp/workspace', maxDepth: 4 }] }, /workspace depth:4/],
-    ['localSearch', { queries: [{ operation: 'files', path: '/tmp/workspace', names: ['a.ts', 'b.ts'], pathPattern: 'src/**' }] }, /workspace \[a\.ts, b\.ts\] src\/\*\*/],
-    ['localAnalyzeGraph', { queries: [{ operation: 'deadCode', path: '/tmp/workspace', entrypoints: ['src/index.ts'] }] }, /workspace entries:\[src\/index\.ts\]/],
-    ['lspGetSemantics', { queries: [{ type: 'references', symbolName: 'run', uri: 'file:///tmp/src/main.ts?x=1', lineHint: 42 }] }, /references "run" in main\.ts:42/],
+    ['astSearch', { queries: [{ operation: 'tree', path: '/tmp/workspace', maxDepth: 4 }] }, /workspace depth:4/],
+    ['astSearch', { queries: [{ operation: 'files', path: '/tmp/workspace', names: ['a.ts', 'b.ts'], pathPattern: 'src/**' }] }, /workspace \[a\.ts, b\.ts\] src\/\*\*/],
+    ['astSearch', { queries: [{ operation: 'topology', analysis: 'deadCode', path: '/tmp/workspace', entrypoints: ['src/index.ts'] }] }, /workspace entries:\[src\/index\.ts\]/],
+    ['lspSearch', { queries: [{ operation: 'references', symbolName: 'run', uri: 'file:///tmp/src/main.ts?x=1', lineHint: 42 }] }, /references "run" in main\.ts:42/],
     ['npmSearch', { queries: [{ packageName: 'vitest' }] }, /vitest/],
     ['customTool', { queries: [{ id: 'skip', reasoning: 'skip', alpha: 'one', beta: 'two', gamma: 'three', delta: 'four' }] }, /one two three/],
   ];
@@ -182,7 +182,7 @@ test('buildResultStats extracts meaningful per-tool result summaries', () => {
     queryCount: 1,
     summary: '5 entries',
   });
-  assert.deepEqual(buildResultStats('lspGetSemantics', { results: [result({ location: { uri: 'file:///tmp/a.ts', line: 12 }, references: [{}, {}] }), result({ symbols: [{}] })] }), {
+  assert.deepEqual(buildResultStats('lspSearch', { results: [result({ location: { uri: 'file:///tmp/a.ts', line: 12 }, references: [{}, {}] }), result({ symbols: [{}] })] }), {
     queryCount: 2,
     paths: ['a.ts:12'],
     summary: '3 refs',
@@ -191,15 +191,15 @@ test('buildResultStats extracts meaningful per-tool result summaries', () => {
     queryCount: 2,
     paths: ['pkg@1.2.3', 'other'],
   });
-  assert.deepEqual(buildResultStats('ghSearchPullRequests', { results: [result({ items: [{}, {}] }), result({ prs: [{}] })] }), {
+  assert.deepEqual(buildResultStats('ghSearchHistory', { results: [result({ items: [{}, {}] }), result({ pullRequests: [{}] })] }), {
     queryCount: 2,
     summary: '3 items',
   });
-  assert.deepEqual(buildResultStats('ghSearchIssues', { results: [result({ issues: [{}, {}] })] }), {
+  assert.deepEqual(buildResultStats('ghSearchHistory', { results: [result({ issues: [{}, {}] })] }), {
     queryCount: 1,
     summary: '2 items',
   });
-  assert.deepEqual(buildResultStats('ghSearchCommits', { results: [result({ commits: [{}, {}, {}] })] }), {
+  assert.deepEqual(buildResultStats('ghGetHistoryItem', { results: [result({ commits: [{}, {}, {}] })] }), {
     queryCount: 1,
     summary: '3 items',
   });
@@ -358,7 +358,7 @@ test('single Octocode query errors show the actionable cause instead of a struct
     '- index: 0',
     '  status: error',
     '  data:',
-    '    error: File not found: missing-root. Verify the path with localSearch operation:"files".',
+    '    error: File not found: missing-root. Verify the path with astSearch operation:"files".',
     '    errorCode: fileAccessFailed',
   ].join('\n');
   const row = buildOctocodeRenderResult(

@@ -3,8 +3,10 @@
 Load after VALIDATE passes. Why: deliver the requested artifact with a truthful delta. Write only when authorized; otherwise answer in chat.
 
 ## Choose A Variant
-- Full optimized document when you request a rewrite or leaves format unspecified.
+- Prompt only — no preamble, summary, or rationale — when the request is to write or return a prompt, description, or rule text. Deliver the artifact and nothing else.
+- Full optimized document when the user requests a rewrite or leaves the format unspecified. <!-- style-lint: ignore-line the-user -->
 - Patch-style delta for minimal edits, review-only work, or unsafe/unavailable writes.
+- Contract audit table from `references/contract-audit.md` when the subject is a multi-tool server.
 
 ```markdown
 # Optimization Complete
@@ -27,9 +29,9 @@ Load after VALIDATE passes. Why: deliver the requested artifact with a truthful 
 | <section> | <old> | <new> | <reason> |
 ```
 
-The variant must match the request, include the deliverable, and report only successful writes. Fix formatting here; if a requested change alters the repair, return to FIX, and revalidate.
+The variant must match the request, include the deliverable, and report only successful writes. The template above belongs to the document and delta variants; adding it to a prompt-only request contradicts the request. Fix formatting here; if a requested change alters the repair, return to FIX, and revalidate.
 
 ## Sources
-- Model Context Protocol, [Tools specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools) — explicit output structure and error signaling support reliable tool use.
+- Model Context Protocol, [Tools specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) — explicit output structure and error signaling support reliable tool use.
 
-Next: the flow ends here once the delivered artifact and its truthful delta are presented; when you request further changes return to `references/fix.md` and revalidate with `references/validate.md`; when the reliability claim must be proven load `references/evaluation-data.md`. <!-- style-lint: ignore-line passive-voice -->
+Next: the flow ends once you present the artifact and its truthful delta; when the user requests further changes return to `references/fix.md` and revalidate with `references/validate.md`; when a reliability claim still needs proof load `references/evaluation-data.md`. <!-- style-lint: ignore-line the-user -->

@@ -4,12 +4,12 @@
  */
 import type { z } from 'zod';
 import { PUBLIC_TOOL_DESCRIPTIONS } from '../../toolContract/descriptions.js';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../toolNames.js';
 import {
   GITHUB_SEARCH_TOOL_NAME,
   GITHUB_SEARCH_HISTORY_TOOL_NAME,
   GITHUB_GET_HISTORY_ITEM_TOOL_NAME,
-  LOCAL_ANALYZE_GRAPH_TOOL_NAME,
+  AST_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
 } from '../toolNames.js';
@@ -18,8 +18,8 @@ import {
   CloneRepoQueryLocalSchema,
 } from '../github_clone_repo/scheme.js';
 import {
-  BulkLspGetSemanticsQuerySchema,
-  LspGetSemanticsQuerySchema,
+  BulkLspSearchSchema,
+  LspSearchQuerySchema,
 } from '../lsp/semantic_content/scheme.js';
 import {
   FileContentBulkQueryLocalSchema,
@@ -30,9 +30,9 @@ import {
   GitHubSearchQuerySchema,
 } from '../github_search/scheme.js';
 import {
-  LocalAnalyzeGraphBulkQuerySchema,
-  LocalAnalyzeGraphQuerySchema,
-} from '../local_analyze_graph/scheme.js';
+  AstSearchBulkQuerySchema,
+  AstSearchQuerySchema,
+} from '../ast_search/scheme.js';
 import {
   LocalFetchContentBulkQuerySchema,
   LocalFetchContentQuerySchema,
@@ -111,11 +111,11 @@ export const DIRECT_TOOL_SPECIFICATIONS: readonly DirectToolSpecification[] = [
     inputSchema: LocalSearchBulkQuerySchema,
   },
   {
-    name: LOCAL_ANALYZE_GRAPH_TOOL_NAME,
-    title: 'Local Analyze Graph',
-    description: PUBLIC_TOOL_DESCRIPTIONS.localAnalyzeGraph,
-    schema: LocalAnalyzeGraphQuerySchema,
-    inputSchema: LocalAnalyzeGraphBulkQuerySchema,
+    name: AST_SEARCH_TOOL_NAME,
+    title: 'AST Search',
+    description: PUBLIC_TOOL_DESCRIPTIONS.astSearch,
+    schema: AstSearchQuerySchema,
+    inputSchema: AstSearchBulkQuerySchema,
   },
   {
     name: STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
@@ -125,10 +125,10 @@ export const DIRECT_TOOL_SPECIFICATIONS: readonly DirectToolSpecification[] = [
     inputSchema: LocalFetchContentBulkQuerySchema,
   },
   {
-    name: LSP_GET_SEMANTICS_TOOL_NAME,
-    title: 'Get Semantic Content',
-    description: PUBLIC_TOOL_DESCRIPTIONS.lspGetSemantics,
-    schema: LspGetSemanticsQuerySchema,
-    inputSchema: BulkLspGetSemanticsQuerySchema,
+    name: LSP_SEARCH_TOOL_NAME,
+    title: 'LSP Search',
+    description: PUBLIC_TOOL_DESCRIPTIONS.lspSearch,
+    schema: LspSearchQuerySchema,
+    inputSchema: BulkLspSearchSchema,
   },
 ];

@@ -86,7 +86,7 @@ describe('localGetFileContent direct text output', () => {
     expect(data?.content).toContain('/* block comment */');
   });
 
-  it('a plain read (no fullContent, no minify) still defaults to standard', async () => {
+  it('a plain read defaults to exact content', async () => {
     const file = join(dir, 'plain.ts');
     await writeFile(
       file,
@@ -99,7 +99,7 @@ describe('localGetFileContent direct text output', () => {
     });
 
     expect(firstData<{ contentView?: string }>(result)?.contentView).toBe(
-      'standard'
+      'none'
     );
   });
 

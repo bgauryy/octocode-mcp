@@ -27,7 +27,7 @@ Flow: `THINK → PLAN → CODE → REVIEW`.
 1. **Think** — map source → transformation → boundary → sink and identify the owned interface. For consequential design, load `references/architecture-lenses.md`; it defines the system views and impact map.
 2. **Plan** — name In, Out, Interface, Test, Edges, Touches, dependencies, parallel work, and material risks. Use `references/output-contracts.md` when a written plan or review contract can improve the decision.
 3. **Code** — before editing, load `references/delivery-discipline.md`; it owns verification, cleanup, and definition-of-done rules. Write the failing surface test, implement one slice, and exercise the production path. Do not route around a wrong model or boundary.
-4. **Review** — inspect the diff and rerun focused checks. Complete required cleanup and bookkeeping.
+4. **Review** — inspect the diff and rerun focused checks. Complete required cleanup and bookkeeping. When the work is agent-authored, load `references/agent-defect-classes.md`; it owns the defect classes a passing test suite cannot rule out, and `references/agent-defect-evidence.md` sets how much review each class earns.
 
 ## Gates
 

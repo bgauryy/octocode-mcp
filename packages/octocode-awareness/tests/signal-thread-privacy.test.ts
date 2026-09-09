@@ -3,6 +3,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { initDb } from '../src/db-init.js';
 import { agentSignal } from '../src/notifications-signals.js';
 import { getNotifications } from '../src/notifications-inbox.js';
+import { attendAwareness } from '../src/attend-query.js';
 
 function freshDb(): DatabaseSync {
   const db = new DatabaseSync(':memory:');
@@ -107,5 +108,39 @@ describe('signal thread privacy', () => {
       workspacePath: '/repo',
     });
     expect(resolved).toMatchObject({ action: 'resolve', resolved: 2 });
+  });
+
+  it('keeps targeted signals out of another agent attend snapshots while retaining peer verification work', () => {
+    const db = freshDb();
+    const workspace = '/repo';
+    agentSignal(db, {
+      action: 'publish', agentId: 'sender', toAgents: ['recipient'], kind: 'question',
+      subject: 'private question', body: 'PRIVATE_BODY', workspacePath: workspace,
+    });
+    const now = new Date().toISOString();
+    db.prepare(`INSERT INTO task_runs
+      (run_id, origin, agent_id, rationale, test_plan, status, workspace_path, created_at, updated_at)
+      VALUES ('peer-run', 'WORK', 'peer', 'peer verification', 'run checks', 'PENDING', ?, ?, ?)`)
+      .run(workspace, now, now);
+
+    const outsider = attendAwareness(db, { workspacePath: workspace, agentId: 'outsider', compact: true });
+    expect(outsider.workboard.Inbox ?? []).toEqual([]);
+    expect(outsider.counts?.Inbox).toBe(0);
+    expect(outsider.workboard.Verify?.map(row => row['id'])).toContain('peer-run');
+    expect(JSON.stringify(outsider)).not.toContain('private question');
+
+    agentSignal(db, {
+      action: 'publish', agentId: 'sender', toAgents: ['recipient'], kind: 'question',
+      subject: 'private follow-up', body: 'PRIVATE_FOLLOW_UP', workspacePath: workspace,
+    });
+    const unchanged = attendAwareness(db, {
+      workspacePath: workspace, agentId: 'outsider', compact: true, revision: outsider.revision,
+    });
+    expect(unchanged).toMatchObject({ unchanged: true, revision: outsider.revision });
+    expect(JSON.stringify(unchanged)).not.toContain('private follow-up');
+
+    const recipient = attendAwareness(db, { workspacePath: workspace, agentId: 'recipient', compact: true });
+    expect(recipient.workboard.Inbox).toHaveLength(1);
+    expect(recipient.counts?.Inbox).toBe(2);
   });
 });

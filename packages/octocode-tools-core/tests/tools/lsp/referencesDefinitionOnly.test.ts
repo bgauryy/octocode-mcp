@@ -12,7 +12,7 @@ function makeQuery(): SymbolAnchoredSemanticQuery {
   return {
     id: 'q1',
     uri: URI,
-    type: 'references',
+    operation: 'references',
     symbolName: 'isLocalTool',
     lineHint: 37,
   } as SymbolAnchoredSemanticQuery;

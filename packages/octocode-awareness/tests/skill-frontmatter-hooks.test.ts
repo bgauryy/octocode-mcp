@@ -41,17 +41,19 @@ describe('SKILL.md hook frontmatter', () => {
     }
   });
 
-  it('uses pre-edit as the single guard-then-presence hook', () => {
+  it('keeps optional bookkeeping and verification out of default frontmatter', () => {
     const fm = frontmatter(SKILL_MD);
-    expect(fm).toContain('scripts/hooks/pre-edit.sh');
+    expect(fm).not.toContain('scripts/hooks/pre-edit.sh');
+    expect(fm).not.toContain('scripts/hooks/stop-verify.sh');
+    expect(fm).not.toContain('scripts/hooks/session-compact.sh');
     expect(fm).not.toContain('scripts/hooks/harness-guard.sh');
   });
 
-  it('registers every package-owned Claude lifecycle edge and lets the workspace profile no-op disabled commands', () => {
+  it('registers message delivery and session departure without write matchers', () => {
     const fm = frontmatter(SKILL_MD);
-    expect(fm).toContain('PreCompact:');
-    expect(fm).toContain('PostCompact:');
-    expect(fm).toContain('scripts/hooks/session-compact.sh');
+    expect(fm).not.toContain('PreCompact:');
+    expect(fm).not.toContain('PostCompact:');
+    expect(fm).not.toContain('matcher:');
     expect(fm).toContain('PostToolUseFailure:');
     expect(fm).toContain('scripts/hooks/post-edit.sh');
     expect(fm).toContain('SubagentStart:');

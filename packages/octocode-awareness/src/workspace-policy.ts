@@ -29,7 +29,8 @@ const MEMORY_COMMANDS = new Set([
 
 const PROFILE_COMMANDS: Record<AwarenessHookProfile, ReadonlySet<string>> = {
   guard: new Set(['pre-edit', 'post-edit', 'stop-verify']),
-  coordination: new Set(['pre-edit', 'post-edit', 'stop-verify']),
+  // Post-tool delivery also reaches peers during a long turn. It never tracks edits.
+  coordination: new Set(['notify-deliver', 'post-edit', 'session-end']),
   full: new Set(['pre-edit', 'post-edit', 'stop-verify', 'notify-deliver', 'session-compact', 'session-end']),
 };
 

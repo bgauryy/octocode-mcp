@@ -8,7 +8,7 @@ import { buildCompactionCard, buildHandoffCard } from '../src/tools/custom-messa
 import { buildOctocodeRenderResult } from '../src/tools/render-helpers.js';
 import type { PlanStep } from '../src/tools/planning/plan-types.js';
 import type { ToolCallResult } from '../src/types.js';
-import { buildPlanFooterSegments } from '../src/extension-ui.js';
+import { projectPlanStatus } from './helpers/plan-status.js';
 
 const PLAN: PlanStep[] = [
   { id: 'one', text: 'Inventory renderers', status: 'done' },
@@ -27,7 +27,7 @@ function assertWidthSafe(lines: readonly string[], width: number): void {
 
 test('plan, task, agent, footer, and Awareness projections stay complete and width-safe', () => {
   for (const width of [24, 40, 80, 120]) {
-    const plan = renderFooterView({ rows: [buildPlanFooterSegments(PLAN_MODEL)] }, { width });
+    const plan = renderFooterView({ rows: [projectPlanStatus(PLAN_MODEL)] }, { width });
     const awareness = formatAwarenessPanel({
       activePlans: 1,
       readyTasks: 2,
@@ -62,10 +62,14 @@ test('plan, task, agent, footer, and Awareness projections stay complete and wid
 });
 
 test('footer plan projection shows progress and the current task without duplicating the checklist', () => {
-  const segments = buildPlanFooterSegments(PLAN_MODEL);
+  const segments = projectPlanStatus(PLAN_MODEL);
   assert.deepEqual(segments.map((segment) => segment.text), [
-    'plan 1/3',
-    'task 2 Unifying state projections',
+    'Plan',
+    '1 done',
+    'task 2 running: Unifying state projections',
+    '1 active',
+    '1 waiting',
+    'plan',
   ]);
 });
 

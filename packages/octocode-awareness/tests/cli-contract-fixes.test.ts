@@ -3,10 +3,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
-import { KNOWN_FLAGS, COMMAND_ROUTES } from '../bin/cli-routing.js';
-import { getAwarenessCommandDescriptor, listAwarenessCommandDescriptors, runSchemaCli } from '../src/schema/cli.js';
+import { describe, expect, it } from 'vitest';
+import { commandSchemaProperties } from '../src/schema/command-properties.js';
+import { getAwarenessCommandDescriptor, listAwarenessCommandDescriptors } from '../src/schema/cli.js';
+import { executeAwarenessCli } from '../src/command-cli.js';
 import { commandIndex } from '../src/schema/command-catalog.js';
+import { HISTORY_ROUTE_DESCRIPTORS } from '../src/schema/definitions-history.js';
 import { tsxCli } from './helpers/tsx-cli.js';
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,22 +38,18 @@ function runSource(args: string[], cwd = process.cwd()): SourceResult {
 }
 
 async function schemaCommand(command: string): Promise<Record<string, unknown>> {
-  const output: string[] = [];
-  const spy = vi.spyOn(console, 'log').mockImplementation((value: unknown) => { output.push(String(value)); });
-  try {
-    expect(await runSchemaCli(['command', ...command.split(' '), '--compact'])).toBe(0);
-  } finally {
-    spy.mockRestore();
-  }
-  return JSON.parse(output.join('\n')) as Record<string, unknown>;
+  const result = await executeAwarenessCli(['schema', 'command', ...command.split(' '), '--compact']);
+  expect(result.exitCode, JSON.stringify(result)).toBe(0);
+  return result.payload as Record<string, unknown>;
 }
 
 describe('CLI discovery contracts', () => {
   it('describes and classifies every canonical command exactly once', () => {
     const descriptors = listAwarenessCommandDescriptors();
-    expect(commandIndex).toHaveLength(97);
     expect(descriptors).toHaveLength(commandIndex.length);
     expect(new Set(descriptors.map((entry) => entry.command)).size).toBe(commandIndex.length);
+    expect(new Set(commandIndex.map((entry) => entry.command)).size).toBe(commandIndex.length);
+    expect(commandIndex.map((entry) => entry.command)).toEqual(expect.arrayContaining(HISTORY_ROUTE_DESCRIPTORS.map((entry) => entry.command)));
     expect(Object.isFrozen(descriptors)).toBe(true);
 
     for (const entry of descriptors) {
@@ -86,26 +84,14 @@ describe('CLI discovery contracts', () => {
     });
   });
 
-  it('publishes only root flags accepted by each schema route', async () => {
-    const output: string[] = [];
-    const spy = vi.spyOn(console, 'log').mockImplementation((value: unknown) => { output.push(String(value)); });
-    try {
-      expect(await runSchemaCli(['commands', '--all', '--examples', '--compact'])).toBe(0);
-    } finally {
-      spy.mockRestore();
-    }
-    const catalog = JSON.parse(output.join('\n')) as { commands: Array<{ command: string; schema: string | null }> };
-
-    for (const row of catalog.commands) {
-      if (!row.schema) continue;
-      const route = COMMAND_ROUTES[row.command];
-      if (!route) continue;
-      const schema = await schemaCommand(row.command);
-      const properties = Object.keys((schema.properties ?? {}) as Record<string, unknown>);
-      const accepted = new Set(KNOWN_FLAGS[route.command]!.map((flag) => flag.replace(/_/g, '-')));
-      for (const property of properties) {
-        expect(accepted, `${row.command} advertises --${property}`).toContain(property.replace(/_/g, '-'));
-      }
+  it('publishes exact schema flags in focused help for every command, including standalone routes', async () => {
+    for (const descriptor of listAwarenessCommandDescriptors()) {
+      const result = await executeAwarenessCli([...descriptor.command.split(' '), '--help', '--compact']);
+      expect(result.exitCode, descriptor.command).toBe(0);
+      expect(result.text, descriptor.command).toContain(`usage: npx @octocodeai/octocode-awareness ${descriptor.command} [options]`);
+      const flags = result.text!.split('\n').find(line => line.startsWith('flags: '))!.slice(7).split(' ');
+      const globals = ['database consolidate', 'hook run'].includes(descriptor.command) ? ['compact', 'help'] : ['db', 'db_scope', 'compact', 'help'];
+      expect(flags, descriptor.command).toEqual([...new Set([...Object.keys(commandSchemaProperties(descriptor.inputSchema)), ...globals])].map(flag => `--${flag.replaceAll('_', '-')}`));
     }
   });
 

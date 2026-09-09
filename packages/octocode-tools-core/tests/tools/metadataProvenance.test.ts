@@ -11,17 +11,17 @@ import { loadToolContent } from '../../src/tools/toolMetadata/state.js';
 import { LocalRipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
 import { LocalViewStructureQuerySchema } from '../../src/tools/local_view_structure/scheme.js';
 import { LocalFindFilesQuerySchema } from '../../src/tools/local_find_files/scheme.js';
-import { LocalAnalyzeGraphQuerySchema } from '../../src/tools/local_analyze_graph/scheme.js';
+import { GraphAnalysisQuerySchema } from '../../src/tools/ast_search/topology/scheme.js';
 import {
   DIRECT_TOOL_DEFINITIONS,
   DIRECT_TOOL_DISCOVERY_DEFINITIONS,
 } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
 
 describe('metadata provenance — tools-core owns executable contracts', () => {
-  it('serves the current MCP output guidance without a local patch', () => {
-    expect(localCompleteMetadata.systemPrompt).not.toContain(
-      'restores full YAML text'
-    );
+  it('serves canonical MCP output guidance beside the public catalog', () => {
+    for (const retired of ['localAnalyzeGraph', 'lspGetSemantics', 'localSearchCode', 'localFindFiles', 'localViewStructure']) {
+      expect(localCompleteMetadata.systemPrompt).not.toContain(retired);
+    }
     expect(localCompleteMetadata.systemPrompt).toContain(
       'MCP returns complete YAML text in content[].text'
     );
@@ -76,7 +76,7 @@ describe('metadata provenance — tools-core owns executable contracts', () => {
     ],
   ];
 
-  it('serves every localAnalyzeGraph operation from its shared schema', () => {
+  it('serves every astSearch operation from its shared schema', () => {
     for (const query of [
       { operation: 'deadCode', path: '.' },
       { operation: 'cycles', path: '.' },
@@ -90,7 +90,7 @@ describe('metadata provenance — tools-core owns executable contracts', () => {
       },
       { operation: 'reachability', path: '.' },
     ]) {
-      expect(LocalAnalyzeGraphQuerySchema.safeParse(query).success).toBe(true);
+      expect(GraphAnalysisQuerySchema.safeParse(query).success).toBe(true);
     }
   });
 

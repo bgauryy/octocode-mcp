@@ -12,14 +12,15 @@ describe('built CLI operational regulation', () => {
     const workspace = mkdtempSync(join(realpathSync(tmpdir()), 'physiology-cli-'));
     const db = join(workspace, 'awareness.sqlite3');
     const run = (args: string[]) => {
-      const result = spawnSync(process.execPath, [cli, ...args, '--db', db, '--workspace', workspace], {
+      const scope = args[0] === 'work' && args[1] === 'end' ? [] : ['--workspace', workspace];
+      const result = spawnSync(process.execPath, [cli, ...args, '--db', db, ...scope], {
         encoding: 'utf8', timeout: 30_000, cwd: workspace,
       });
       expect(result.status, result.stderr || result.stdout).toBe(0);
       return JSON.parse(result.stdout) as Record<string, any>;
     };
     try {
-      const args = ['attend', '--agent-id', 'owner', '--compact'];
+      const args = ['attend', '--details', '--agent-id', 'owner', '--compact'];
       const empty = run(args);
       expect(empty.regulation).toEqual({ advisory: true, actions: [] });
       expect(empty.operational_state.unavailable).toContain('context');
@@ -40,7 +41,7 @@ describe('built CLI operational regulation', () => {
       expect(selected.status, selected.stderr || selected.stdout).toBe(1);
       expect(JSON.parse(selected.stdout)).toMatchObject({ ok: true, unverified_count: 1 });
       expect(selected.stdout).toContain(String(work.run_id));
-      const full = run(['attend', '--agent-id', 'owner']);
+      const full = run(['attend', '--details', '--agent-id', 'owner']);
       expect(full.operational_state).toEqual(pending.operational_state);
       expect(full.regulation).toEqual(pending.regulation);
       const check = spawnSync(process.execPath, ['-e', 'process.exit(0)']);

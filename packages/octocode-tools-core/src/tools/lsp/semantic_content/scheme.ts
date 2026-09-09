@@ -1,100 +1,25 @@
-import { z } from 'zod';
-import { LspGetSemanticsQuerySchema as CoreLspGetSemanticsQuerySchema } from '../../../toolContract/input/resources/tools/lspGetSemantics.js';
-import { LOCAL_MAX_DEPTH } from '../../../config.js';
-import {
-  clampedInt,
-  createRelaxedBulkQuerySchema,
-  relaxedPageNumberField,
-} from '../../../scheme/fields.js';
-import {
-  createQueryShapeSchema,
-  describeQuerySchema,
-} from '../../../scheme/coreSchemas.js';
-import { getRequiredSchemaField } from '../../../scheme/conditionalSchemas.js';
-import {
-  SEMANTIC_CONTENT_TYPES,
-  type ConsumerWarmupStats,
-} from '../shared/semanticTypes.js';
+import { createRelaxedBulkQuerySchema } from '../../../scheme/fields.js';
+import { LspSearchQuerySchema as CanonicalLspSearchQuerySchema } from '../../../toolContract/input/resources/tools/lspSearch.js';
+import type { ConsumerWarmupStats } from '../shared/semanticTypes.js';
 import type {
   ItemPagination,
   ToolContinuation,
 } from '../../../scheme/pagination.js';
 import type { BulkToolOutput } from '../../../types/toolOutput.js';
+import type {
+  CompactCall,
+  CompactCallTarget,
+} from '../shared/semanticCallTypes.js';
 
-const requiredLineHintField = clampedInt(1, 1_000_000_000);
-const orderHintField = clampedInt(0, 100_000).optional();
+export const LspSearchQuerySchema = CanonicalLspSearchQuerySchema;
 
-const SEMANTIC_OUTPUT_FORMATS = ['structured', 'compact'] as const;
-
-const queryOverrides = {
-  type: z.enum(SEMANTIC_CONTENT_TYPES).default('definition'),
-  symbolName: z.string().min(1).max(1024).optional(),
-  lineHint: requiredLineHintField.optional(),
-  orderHint: orderHintField,
-  depth: clampedInt(0, LOCAL_MAX_DEPTH).optional(),
-  includeDeclaration: z.boolean().optional().default(true),
-  page: relaxedPageNumberField,
-  pageSize: clampedInt(1, 100).optional(),
-  contextLines: clampedInt(0, 100).optional(),
-  format: z.enum(SEMANTIC_OUTPUT_FORMATS).optional().default('structured'),
-} as const;
-
-const SemanticContentQueryShape = createQueryShapeSchema(
-  CoreLspGetSemanticsQuerySchema,
-  queryOverrides
-);
-
-const ANCHORED_SEMANTIC_TYPES = [
-  'definition',
-  'references',
-  'callers',
-  'callees',
-  'callHierarchy',
-  'hover',
-  'typeDefinition',
-  'implementation',
-  'supertypes',
-  'subtypes',
-] as const;
-const DOCUMENT_SEMANTIC_TYPES = ['documentSymbols', 'diagnostic'] as const;
-
-const anchoredSemanticQuerySchema = SemanticContentQueryShape.extend({
-  type: z.enum(ANCHORED_SEMANTIC_TYPES).optional(),
-  uri: getRequiredSchemaField(SemanticContentQueryShape.shape, 'uri'),
-  symbolName: getRequiredSchemaField(
-    SemanticContentQueryShape.shape,
-    'symbolName'
-  ),
-  lineHint: getRequiredSchemaField(SemanticContentQueryShape.shape, 'lineHint'),
-});
-const documentSemanticQuerySchema = SemanticContentQueryShape.extend({
-  type: z.enum(DOCUMENT_SEMANTIC_TYPES),
-  uri: getRequiredSchemaField(SemanticContentQueryShape.shape, 'uri'),
-});
-const workspaceSemanticQuerySchema = SemanticContentQueryShape.extend({
-  type: z.literal('workspaceSymbol'),
-  symbolName: getRequiredSchemaField(
-    SemanticContentQueryShape.shape,
-    'symbolName'
-  ),
-});
-
-export const LspGetSemanticsQuerySchema = describeQuerySchema(
-  CoreLspGetSemanticsQuerySchema,
-  queryOverrides
-);
-
-export const BulkLspGetSemanticsQuerySchema = createRelaxedBulkQuerySchema(
-  z.union([
-    anchoredSemanticQuerySchema,
-    documentSemanticQuerySchema,
-    workspaceSemanticQuerySchema,
-  ]),
+export const BulkLspSearchSchema = createRelaxedBulkQuerySchema(
+  LspSearchQuerySchema,
   { maxQueries: 5 }
 );
 
 // ---------------------------------------------------------------------------
-// Output TYPES — describes what lspGetSemantics returns per query result row.
+// Output TYPES — describes what lspSearch returns per query result row.
 // No zod: the MCP server registers no outputSchema, so the output is a plain
 // type. Shared envelope lives in types/toolOutput.ts.
 // ---------------------------------------------------------------------------
@@ -145,24 +70,6 @@ type LspEmptyCategory =
 interface LspEmptyState {
   category: LspEmptyCategory;
   reason: string;
-}
-
-interface LspCompactCallTarget {
-  name: string;
-  kind: string;
-  uri: string;
-  line: number;
-  endLine: number;
-  selectionLine?: number;
-}
-
-interface LspCompactCall {
-  direction: 'incoming' | 'outgoing';
-  item: LspCompactCallTarget;
-  ranges: Array<{ line: number; character: number }>;
-  rangeCount: number;
-  rangeSampleCount: number;
-  contentPreview?: string;
 }
 
 interface LspCompleteness {
@@ -220,9 +127,9 @@ type LspSemanticPayload =
     }
   | {
       kind: 'callers' | 'callees' | 'callHierarchy';
-      root?: LspCompactCallTarget | string;
+      root?: CompactCallTarget | string;
       direction: 'incoming' | 'outgoing' | 'both';
-      calls: Array<LspCompactCall | string>;
+      calls: Array<CompactCall | string>;
       incomingCalls: number;
       outgoingCalls: number;
       warmup?: ConsumerWarmupStats;
@@ -267,7 +174,7 @@ type LspSemanticPayload =
       warmup?: ConsumerWarmupStats;
     };
 
-export interface LspGetSemanticsData {
+export interface LspSearchData {
   type: string;
   uri: string;
   absolutePath?: string;
@@ -286,4 +193,4 @@ export interface LspGetSemanticsData {
   hints?: string[];
 }
 
-export type LspGetSemanticsOutput = BulkToolOutput<LspGetSemanticsData>;
+export type LspSearchOutput = BulkToolOutput<LspSearchData>;

@@ -37,6 +37,8 @@ export interface BulkResponsePagination {
   responseCharOffset?: number;
 
   responseCharLength?: number;
+
+  responseSnapshot?: string;
 }
 
 export interface ResponsePaginationInfo {
@@ -52,6 +54,14 @@ export interface ResponsePaginationInfo {
   charLength: number;
 
   totalChars: number;
+
+  snapshot: string;
+
+  expectedSnapshot?: string;
+
+  changed?: boolean;
+
+  restart?: boolean;
 
   nextCharOffset?: number;
 

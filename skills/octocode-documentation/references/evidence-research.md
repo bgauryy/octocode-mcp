@@ -16,7 +16,7 @@ Load when gathering or verifying repository facts before or after writing. Why: 
 - Prefer package/module paths and doc links over `file:line` citations.
 - Use line anchors only for short-lived debugging notes, not standing documentation.
 - Describe ownership ("auth token rotation under `packages/mcp-host` services") instead of pasting code.
-- Spot-check symbols with search (then LSP if needed); search first so line hints are real.
+- Spot-check symbols with lexical or structural search, read the observed source exactly, then use LSP only when semantic identity or references matter. Anchored LSP needs a real URI plus either a zero-based UTF-16 `position` or an exact symbol name with a 1-based `lineHint`; inspect the live schema before an unfamiliar call.
 
 ## Anti-hallucination
 

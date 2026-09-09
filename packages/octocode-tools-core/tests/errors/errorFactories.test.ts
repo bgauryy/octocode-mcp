@@ -36,7 +36,7 @@ describe('ToolErrors.fileAccessFailed', () => {
     const cause = Object.assign(new Error('no such file'), { code: 'ENOENT' });
     const err = ToolErrors.fileAccessFailed('/path/file.ts', cause);
     expect(err.message).toMatch(/file not found/i);
-    expect(err.message).toMatch(/localSearch.*files/i);
+    expect(err.message).toMatch(/astSearch.*files/i);
   });
 
   it('produces EACCES message for permission-denied cause', () => {
@@ -53,7 +53,7 @@ describe('ToolErrors.fileAccessFailed', () => {
     });
     const err = ToolErrors.fileAccessFailed('/path/dir', cause);
     expect(err.message).toMatch(/path is a directory/i);
-    expect(err.message).toMatch(/localSearch.*tree/i);
+    expect(err.message).toMatch(/astSearch.*tree/i);
   });
 
   it('produces ENOTDIR message', () => {
@@ -117,7 +117,7 @@ describe('ToolErrors.binaryFileUnsupported', () => {
     const err = ToolErrors.binaryFileUnsupported('/image.png');
     expect(err).toBeInstanceOf(ToolError);
     expect(err.message).toMatch(/binary file/i);
-    expect(err.message).toMatch(/localSearch.*text/i);
+    expect(err.message).toMatch(/astSearch.*files/i);
   });
 });
 

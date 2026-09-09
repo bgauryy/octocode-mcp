@@ -15,9 +15,9 @@ export const toolNames: ToolNames = {
   PACKAGE_SEARCH: 'npmSearch',
   GITHUB_CLONE_REPO: 'ghCloneRepo',
   LOCAL_SEARCH: 'localSearch',
-  LOCAL_ANALYZE_GRAPH: 'localAnalyzeGraph',
+  AST_SEARCH: 'astSearch',
   LOCAL_FETCH_CONTENT: 'localGetFileContent',
-  LSP_GET_SEMANTIC_CONTENT: 'lspGetSemantics',
+  LSP_SEARCH: 'lspSearch',
 } as const;
 
 // ---------------------------------------------------------------------------

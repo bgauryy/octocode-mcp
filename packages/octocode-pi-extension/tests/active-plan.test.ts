@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, test } from 'vitest';
+import { afterAll, afterEach, beforeEach, test } from 'vitest';
 import type { ToolDefinition } from '../src/types.js';
 import {
   setPlan, clearPlan, getPlan,
@@ -18,11 +18,12 @@ import { addStep, startStep, completeStep, activatePlan } from '../src/tools/pla
 import { depsMet, displayStatus, type PlanDecision, type PlanStep } from '../src/tools/planning/plan-types.js';
 import { proposePlanReview, acceptPlanReview, requestPlanChanges, startAcceptedPlan } from '../src/tools/planning/plan-lifecycle.js';
 import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
-import { refreshPlanUi, handleOctocodePlanCommand, OCTOCODE_PLAN_COMMAND_COMPLETIONS, setPlanMetricsRefreshForUi } from '../src/tools/planning/plan-command.js';
-import { buildPlanFooterSegments } from '../src/extension-ui.js';
+import { refreshPlanUi, startReviewedPlan, setPlanMetricsRefreshForUi } from '../src/tools/planning/plan-command.js';
+import { renderList } from '../src/tools/planning/plan-presentation.js';
+import { projectPlanStatus } from './helpers/plan-status.js';
 import { renderFooterView } from '../src/tui/footer-view.js';
 import { planArtifactsDir, setPlanOpenerForTests } from '../src/tools/plan-html.js';
-import { isPlanMode, exitPlanMode, planModeToolGate } from '../src/tools/plan-mode.js';
+import { isPlanMode, enterPlanMode, exitPlanMode, planModeToolGate } from '../src/tools/plan-mode.js';
 import { createSessionArtifactContext, readPlanProjection } from '../src/tools/session-artifacts.js';
 import type { PiContext } from '../src/types.js';
 import { buildPlanReadModel, getCurrentPlanReadModel, renderPlanContext, renderPlanReadModel } from '../src/tools/plan-read-model.js';
@@ -55,7 +56,16 @@ function uiCtx(cwd: string) {
   return { ctx, calls };
 }
 
-const CWD = '/tmp/plan-test-ws';
+const ownedWorkspaces: string[] = [];
+function existingWorkspace(name: string): string {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+  ownedWorkspaces.push(workspace);
+  return workspace;
+}
+afterAll(() => {
+  for (const workspace of ownedWorkspaces) fs.rmSync(workspace, { recursive: true, force: true });
+});
+const CWD = existingWorkspace('plan-test-ws');
 beforeEach(() => setPlanEntryAppender(() => undefined));
 afterEach(() => {
   clearPlan(CWD);
@@ -305,7 +315,7 @@ test('auto-advance skips a blocked step and picks the next satisfiable todo', ()
 });
 
 test('dependsOn round-trips through disk persistence', () => {
-  const cwd = '/tmp/plan-deps-persist-ws';
+  const cwd = existingWorkspace('plan-deps-persist-ws');
   setPlan(cwd, ['One', { text: 'Two', dependsOn: [1] }]);
   const onDisk = readPersistedPlanForTests(cwd);
   assert.deepEqual(onDisk[1]!.dependsOnStepIds, [onDisk[0]!.id]);
@@ -313,7 +323,7 @@ test('dependsOn round-trips through disk persistence', () => {
 });
 
 test('plan persists to disk (survives restart) and clear removes it', () => {
-  const cwd = '/tmp/plan-persist-ws';
+  const cwd = existingWorkspace('plan-persist-ws');
   setPlan(cwd, [{ text: 'Edit', activeForm: 'Editing' }, 'Test']);
   completeStep(cwd, 1); // step 2 doing
   // A fresh process would read exactly this from disk before touching memory.
@@ -374,11 +384,11 @@ test('plan detail projection renders compact progress and the running step activ
   completeStep(cwd, 1); // step 2 becomes doing
   refreshPlanUi(ctx);
   const theme = { fg: (_c: string, t: string) => t } as unknown;
-  const lines = renderFooterView({ rows: [buildPlanFooterSegments(getCurrentPlanReadModel(ctx, cwd))] }, { width: 80, theme: theme as never });
+  const lines = renderFooterView({ rows: [projectPlanStatus(getCurrentPlanReadModel(ctx, cwd))] }, { width: 80, theme: theme as never });
   const joined = lines.join('\n');
-  assert.match(joined, /plan 1\/2/, 'footer has compact progress');
+  assert.match(joined, /Plan.*1 done/, 'footer has compact progress');
   assert.doesNotMatch(joined, /Edit file/, 'completed detail stays out of the persistent panel');
-  assert.match(joined, /task 2 Run tests/, 'running task is explicit');
+  assert.match(joined, /task 2 running: Run tests/, 'running task is explicit');
   assert.deepEqual(calls.widget, [], 'the footer remains the only persistent state surface');
   clearPlan(cwd);
 });
@@ -499,18 +509,17 @@ test('refreshPlanUi repaints the footer without creating widget or status duplic
   assert.deepEqual(calls.widget, []);
 });
 
-test('/octocode-plan command completes a step and clears the plan', async () => {
+test('plan tool completes a step and clears the plan', async () => {
   const cwd = '/tmp/plan-cmd-ws';
   setPlan(cwd, ['x', 'y']);
-  const { ctx, calls } = uiCtx(cwd);
-  await handleOctocodePlanCommand('complete 1', ctx, (_c, m) => calls.notify.push(m));
+  const { ctx } = uiCtx(cwd);
+  await loadTool().execute('complete', { action: 'complete', index: 1 }, undefined, undefined, ctx);
   assert.equal(getPlan(cwd)[0]!.status, 'done');
-  await handleOctocodePlanCommand('clear', ctx, (_c, m) => calls.notify.push(m));
+  await loadTool().execute('clear', { action: 'clear' }, undefined, undefined, ctx);
   assert.equal(getPlan(cwd).length, 0);
-  assert.ok(calls.notify.some((m) => /cleared/i.test(m)));
 });
 
-test('/octocode-plan start binds the displayed revision and starts an in-review RFC with one decision', async () => {
+test('reviewed Start binds the displayed revision and starts an in-review RFC with one decision', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-command-start-'));
   const rfcPath = path.join(workspace, '.octocode', 'rfc', 'demo', 'RFC.md');
   fs.mkdirSync(path.dirname(rfcPath), { recursive: true });
@@ -526,9 +535,9 @@ test('/octocode-plan start binds the displayed revision and starts an in-review 
     assert.equal(proposed.ok, true);
 
     const revision = getPlanReviewState(workspace).revision!;
-    await handleOctocodePlanCommand('start stale-revision', ctx, (_c, message) => calls.notify.push(message));
+    calls.notify.push(startReviewedPlan(workspace, 'stale-revision', ctx).message);
     assert.equal(getPlanReviewState(workspace).phase, 'in_review', 'stale browser callback is rejected');
-    await handleOctocodePlanCommand(`start ${revision}`, ctx, (_c, message) => calls.notify.push(message));
+    calls.notify.push(startReviewedPlan(workspace, revision, ctx).message);
     assert.equal(getPlanReviewState(workspace).phase, 'executing');
     assert.deepEqual(getPlan(workspace).map((step) => step.status), ['doing', 'todo']);
     assert.ok(calls.notify.some((message) => /implementation started/i.test(message)));
@@ -538,12 +547,7 @@ test('/octocode-plan start binds the displayed revision and starts an in-review 
   }
 });
 
-test('/octocode-plan advertises one Start action instead of a separate Accept command', () => {
-  assert.ok(OCTOCODE_PLAN_COMMAND_COMPLETIONS.includes('start '));
-  assert.ok(!OCTOCODE_PLAN_COMMAND_COMPLETIONS.includes('accept ' as never));
-});
-
-test('/octocode-plan Start allows a lightweight local RFC plan without shared-only contract fields', async () => {
+test('reviewed Start allows a lightweight local RFC plan without shared-only contract fields', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-command-contract-'));
   const rfcPath = path.join(workspace, '.octocode', 'rfc', 'demo', 'RFC.md');
   fs.mkdirSync(path.dirname(rfcPath), { recursive: true });
@@ -555,7 +559,7 @@ test('/octocode-plan Start allows a lightweight local RFC plan without shared-on
     assert.equal(proposePlanReview(workspace).ok, true);
     const revision = getPlanReviewState(workspace).revision!;
 
-    await handleOctocodePlanCommand(`start ${revision}`, ctx, (_c, message) => calls.notify.push(message));
+    calls.notify.push(startReviewedPlan(workspace, revision, ctx).message);
 
     assert.equal(getPlanReviewState(workspace).phase, 'executing');
     assert.deepEqual(getPlan(workspace).map((step) => step.status), ['doing']);
@@ -566,35 +570,32 @@ test('/octocode-plan Start allows a lightweight local RFC plan without shared-on
   }
 });
 
-test('/octocode-plan changes returns review to draft and persists browser feedback', async () => {
+test('plan changes returns review to draft and persists browser feedback', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'plan-command-changes-'));
   const rfcPath = path.join(workspace, '.octocode', 'rfc', 'demo', 'RFC.md');
   fs.mkdirSync(path.dirname(rfcPath), { recursive: true });
   fs.writeFileSync(rfcPath, '# Review this design\n');
-  const { ctx, calls } = uiCtx(workspace);
   try {
     setPlan(workspace, ['Implement', 'Verify'], 'draft');
     setPlanRfc(workspace, rfcPath);
     assert.equal(proposePlanReview(workspace).ok, true);
 
-    await handleOctocodePlanCommand('changes Simplify the storage section', ctx, (_c, message) => calls.notify.push(message));
+    assert.equal(requestPlanChanges(workspace).ok, true);
+    addPlanDecision(workspace, 'Requested plan changes', 'Simplify the storage section');
 
     assert.equal(getPlanReviewState(workspace).phase, 'draft');
     assert.ok(getPlanDecisions(workspace).some((decision) => decision.a === 'Simplify the storage section'));
-    assert.ok(calls.notify.some((message) => /changes requested/i.test(message)));
   } finally {
     clearPlan(workspace);
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
 
-test('/octocode-plan command text marks blocked steps and their dependencies', async () => {
+test('plan tool text marks blocked steps and their dependencies', async () => {
   const cwd = '/tmp/plan-cmd-blocked-ws';
   setPlan(cwd, ['A', { text: 'B', dependsOn: [3] }, 'C']);
   completeStep(cwd, 1);
-  const { ctx, calls } = uiCtx(cwd);
-  await handleOctocodePlanCommand('show', ctx, (_c, m) => calls.notify.push(m));
-  assert.ok(calls.notify.some((m) => /\[!\] 2\. B \(needs 3\)/.test(m)), 'blocked dependency is visible in text output');
+  assert.match(renderList(getPlan(cwd)), /\[!\] 2\. B \(needs 3\)/, 'blocked dependency is visible in text output');
   clearPlan(cwd);
 });
 
@@ -716,12 +717,12 @@ test('plan tool add supports dependsOn ordering', async () => {
 
 test('plan tool gives compact behavioral routing and truthful transition contrasts', () => {
   const tool = loadTool();
-  for (const part of ['Definition:', 'Contrast:', 'Consequence:', 'Principle:', 'Action:']) assert.match(tool.description, new RegExp(part));
-  assert.match(tool.description, /skip the tool for an obvious one-step edit/i);
+  assert.match(tool.description, /Use a plan only for complex work/);
+  assert.match(tool.description, /Skip plans for routine fixes, a few straightforward steps, or simple delegation/);
   assert.match(tool.description, /complete only after an observed check/i);
   const guidelines = tool.promptGuidelines?.join('\n') ?? '';
   assert.match(guidelines, /queries.*reasoning.*action/is);
-  assert.match(guidelines, /Wrong: propose.*ceremonial RFC.*Right: use action:"set"/is);
+  assert.match(guidelines, /For complex work.*action:"set".*already authorized.*action:"propose".*review/is);
   assert.match(guidelines, /Wrong: complete because a worker said DONE.*verify.*action:"complete"/is);
   assert.match(guidelines, /independent lanes.*dependsOn.*delegation/is);
   assert.doesNotMatch(guidelines, /plan\(/i);
@@ -963,7 +964,7 @@ test('branch adoption restores complete review metadata and actual entry identit
 // re-adopted from the branch, so a fork from before the plan existed starts
 // clean and a fork mid-plan restores exactly that snapshot.
 
-const BRANCH_CWD = '/tmp/plan-branch-test-ws';
+const BRANCH_CWD = existingWorkspace('plan-branch-test-ws');
 
 let planEntrySequence = 0;
 function planEntry(steps: Array<Record<string, unknown>>, id?: string): Record<string, unknown> {
@@ -1059,7 +1060,7 @@ function makeRfcWorkspace(name = 'unify-plan-rfc'): { ws: string; rfcDir: string
 }
 
 test('setPlanRfc associates an RFC and it round-trips through disk', () => {
-  const cwd = '/tmp/plan-rfc-persist-ws';
+  const cwd = existingWorkspace('plan-rfc-persist-ws');
   clearPlan(cwd);
   setPlan(cwd, ['do the thing']);
   setPlanRfc(cwd, '/abs/path/.octocode/rfc/foo/RFC.md');
@@ -1071,7 +1072,7 @@ test('setPlanRfc associates an RFC and it round-trips through disk', () => {
 });
 
 test('setPlanRfc(undefined) clears the association; the RFC link survives a re-propose (setPlan)', () => {
-  const cwd = '/tmp/plan-rfc-clearset-ws';
+  const cwd = existingWorkspace('plan-rfc-clearset-ws');
   clearPlan(cwd);
   setPlan(cwd, ['step one']);
   setPlanRfc(cwd, '/abs/.octocode/rfc/bar/RFC.md');
@@ -1142,7 +1143,7 @@ test('resolveRfcPath rejects paths outside .octocode/rfc/, missing files, and tr
 // ─── Decision log ─────────────────────────────────────────────────────────────
 
 test('addPlanDecision records Q→A, round-trips through disk, and clears with the plan', () => {
-  const cwd = '/tmp/plan-decisions-ws';
+  const cwd = existingWorkspace('plan-decisions-ws');
   clearPlan(cwd);
   setPlan(cwd, ['do the work']);
   addPlanDecision(cwd, 'Storage backend?', 'SQLite (chosen)');
@@ -1320,7 +1321,7 @@ test('interactive RFC proposal shows the overview and starts from one ask-widget
     setPlanOpenerForTests(async (target) => { opened.push(target); return { ok: true }; });
     try {
       const tool = loadTool(async () => undefined);
-      const { ctx: baseCtx, calls } = uiCtx(ws);
+      const { ctx: baseCtx } = uiCtx(ws);
       const ctx = {
         ...baseCtx,
         mode: 'tui',
@@ -1342,7 +1343,6 @@ test('interactive RFC proposal shows the overview and starts from one ask-widget
       // Interactive outcome: steps and RFC links are shown in the plan widget, not echoed in content.
       assert.match(res.content[0]!.text, /approved and started|implementation started/i);
       assert.doesNotMatch(res.content[0]!.text, /Summary|Plan doc:|RFC/);
-      assert.ok(calls.notify.some((message) => /Creating plan…/i.test(message)));
 
       const markdown = fs.readFileSync(path.join(planArtifactsDir(ws), 'plan.md'), 'utf8');
       assert.match(markdown, /^Status: active$/m);
@@ -1393,10 +1393,10 @@ test('the footer truncates current work while the full plan preserves backlog de
     { id: 'verify', text: 'Later verification', status: 'todo' },
   ];
   const model = panelModel(steps);
-  const footerLines = renderFooterView({ rows: [buildPlanFooterSegments(model)] }, { width: 24 });
+  const footerLines = renderFooterView({ rows: [projectPlanStatus(model)] }, { width: 24 });
   const compact = footerLines.join(' ').replace(/\s+/g, ' ');
   assert.equal(footerLines.length, 1, 'one selected semantic row owns one physical line');
-  assert.match(compact, /plan 1\/4/, 'knowable progress survives narrow truncation');
+  assert.match(compact, /Plan.*1 done/, 'knowable progress survives narrow truncation');
   assert.ok(!compact.includes('Implementing the focused change'), 'long labels defer to the canonical plan detail surface');
   assert.ok(!compact.includes('Completed setup'), 'completed detail stays in the canonical full plan, not the persistent panel');
   const full = renderPlanReadModel(model, 'terminal') as string;
@@ -1413,9 +1413,9 @@ test('the footer shows current work without discarding tasks from full inspectio
     status: index === 0 ? 'doing' : 'todo',
   }));
   const model = panelModel(steps);
-  const lines = renderFooterView({ rows: [buildPlanFooterSegments(model)] }, { width: 80 });
+  const lines = renderFooterView({ rows: [projectPlanStatus(model)] }, { width: 80 });
   assert.equal(lines.length, 1, 'footer keeps current work compact');
-  assert.match(lines[0]!, /plan 0\/8.*task 1 Step 1/);
+  assert.match(lines[0]!, /Plan.*0 done.*task 1 running: Step 1/);
   assert.doesNotMatch(lines.join('\n'), /Step 4/);
   const full = renderPlanReadModel(model, 'terminal') as string;
   for (const step of steps) assert.ok(full.includes(step.text));
@@ -1462,44 +1462,18 @@ test('plan(propose) without an RFC asks once and starts when the user chooses St
     }
   });
 });
-test('/octocode-plan new <goal> sends the plan-mode prompt and never touches the plan', async () => {
-  const cwd = '/tmp/plan-new-ws';
-  clearPlan(cwd);
-  const { ctx, calls } = uiCtx(cwd);
-  const sent: string[] = [];
-  await handleOctocodePlanCommand('new   add   dark mode toggle', ctx, (_c, m) => calls.notify.push(m), (t) => { sent.push(t); });
-  assert.equal(sent.length, 1);
-  assert.match(sent[0]!, /^\[PLAN MODE\]/);
-  assert.match(sent[0]!, /Goal: add dark mode toggle/);
-  assert.match(sent[0]!, /queries.*reasoning.*action.*propose/is);
-  assert.doesNotMatch(sent[0]!, /plan\(propose\)/);
-  assert.match(sent[0]!, /one decision: Start implementation or Request changes/i);
-  assert.doesNotMatch(sent[0]!, /separate.*Start/i);
-  assert.equal(getPlan(cwd).length, 0, 'planning is the agent\'s job — the command sets nothing');
-  assert.ok(calls.notify.some((m) => /Plan mode/.test(m)));
-  // No goal → the prompt asks the agent to ask.
-  await handleOctocodePlanCommand('new', ctx, (_c, m) => calls.notify.push(m), (t) => { sent.push(t); });
-  assert.match(sent[1]!, /ask the user for the goal/);
-  // Hosts without sendUserMessage get a clear warning instead of a silent no-op.
-  const before = calls.notify.length;
-  await handleOctocodePlanCommand('new x', ctx, (_c, m) => calls.notify.push(m));
-  assert.match(calls.notify[before]!, /cannot send prompts/);
-});
-
-test('plan mode: /octocode-plan new tracks planning without disabling tools', async () => {
+test('plan mode tracks planning without disabling tools', async () => {
   const cwd = '/tmp/plan-mode-ws';
   const { ctx, calls } = uiCtx(cwd);
   exitPlanMode(ctx);
-  await handleOctocodePlanCommand('new ship it', ctx, (_c, m) => calls.notify.push(m), () => {});
+  enterPlanMode(ctx);
   assert.equal(isPlanMode(ctx), true);
   for (const toolName of ['edit', 'Write', 'localSearch', 'bash', 'chromeDebug']) {
     assert.equal(planModeToolGate(toolName, ctx), undefined, `${toolName} remains available while planning`);
   }
   assert.ok(calls.status.some((s) => (s as { name: string }).name === 'octocode-plan-mode'), 'status chip shown');
-  assert.ok(calls.notify.some((message) => /Creating plan…/i.test(message)));
-  await handleOctocodePlanCommand('off', ctx, (_c, m) => calls.notify.push(m));
+  exitPlanMode(ctx);
   assert.equal(isPlanMode(ctx), false);
-  assert.ok(calls.notify.some((message) => /Plan mode off/.test(message)));
 });
 
 test('plan refresh delegates every mutation to the unified footer repaint', () => {

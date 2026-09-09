@@ -169,6 +169,8 @@ export interface AgentRecord {
   awarenessAgentId?: string;
   /** Workspace whose Awareness registry this worker joins (the parent workspace). */
   awarenessWorkspace?: string;
+  /** Owning host lifecycle state; prevents duplicate leave receipts on kill + close. */
+  awarenessPresence?: 'joined' | 'left';
 }
 
 // ─── Display / UI types ───────────────────────────────────────────────────────

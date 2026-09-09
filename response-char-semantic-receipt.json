@@ -1,0 +1,26 @@
+{
+  "first": {
+    "totalChars": 15387,
+    "nextCharOffset": 595
+  },
+  "continuation": {
+    "queries": [
+      {
+        "type": "callers",
+        "uri": "/Users/guybary/Documents/code/octocode/octocode/.tmp-lsp-response-char-KcqHvZ/source.ts",
+        "workspaceRoot": "/Users/guybary/Documents/code/octocode/octocode/.tmp-lsp-response-char-KcqHvZ",
+        "symbolName": "target",
+        "lineHint": 1,
+        "format": "compact"
+      }
+    ],
+    "responseCharLength": 1000,
+    "responseCharOffset": 595
+  },
+  "replay": {
+    "totalChars": 15401,
+    "charOffset": 595,
+    "nextCharOffset": 1595
+  },
+  "mixedMatchesOriginal": false
+}

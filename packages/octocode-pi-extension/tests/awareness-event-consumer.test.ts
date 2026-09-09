@@ -89,6 +89,18 @@ function fakeStore(events: OutboxEventV1[]) {
 }
 
 describe('ordered Awareness event consumer', () => {
+  it('does not subscribe the same Pi host twice', () => {
+    const fixture = fakeStore([]);
+    const handlers = new Map<string, unknown>();
+    const pi = {
+      on: vi.fn((event: string, handler: unknown) => { handlers.set(event, handler); }),
+    } as unknown as PiInstance;
+    registerAwarenessEventConsumer(pi, { openStore: () => fixture.store, resolveExpectedAgentId: () => 'pi:session-1' });
+    registerAwarenessEventConsumer(pi, { openStore: () => fixture.store, resolveExpectedAgentId: () => 'pi:session-1' });
+    expect(pi.on).toHaveBeenCalledTimes(5);
+    expect(handlers.size).toBe(5);
+  });
+
   it.each(['informational', 'untrusted', 'host-policy', 'retry'] as const)('does not start an automatic turn for %s', async reason => {
     const events: OutboxEventV1[] = [];
     const fixture = fakeStore(events);

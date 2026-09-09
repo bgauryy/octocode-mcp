@@ -6,7 +6,7 @@ import { buildImageLinesFromData, effectiveInlineImages, formatBytes, isTerminal
 import { runMediaQuery } from './media-tool.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import type { ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 
 import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
@@ -80,12 +80,11 @@ export function registerReadMediaTool(
   registerFn(pi, registeredToolNames, {
     name: 'inspectMedia',
     label: 'Inspect Media',
-    description: 'Inspect local media and surface it in model context. image type returns inline pixels for vision; video returns metadata, a single frame, or a tiled contact sheet; audio returns metadata, a waveform, or a spectrogram. Read-only — does not write files. Use media to create or transform, runFfmpeg for advanced operations.',
-    promptSnippet: 'Read local media into model context. image→pixels; video→metadata/frame/contactSheet; audio→metadata/waveform/spectrogram. Read-only—use media to create or transform.',
+    description: DIRECT_TOOL_DESCRIPTIONS.inspectMedia!,
+    promptSnippet: 'Inspect local pixels, media metadata, or visual summaries.',
     promptGuidelines: [
       'Use type:image for screenshots/diagrams (returns inline pixels to the model for vision); type:video for a frame or contact sheet; type:audio for waveform/spectrogram.',
       'Use view:metadata when visual content is unnecessary — faster, no ffmpeg rendering required.',
-      'inspectMedia is read-only and never writes files. For creating images/PDFs/GIFs or transforming media, use media. For raw ffmpeg/ffprobe commands, use runFfmpeg.',
     ],
     parameters: buildQueryEnvelopeSchema(readMediaItemSchema, {
       reasoningDescription: 'Why this media must be inspected.',

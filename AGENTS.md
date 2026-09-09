@@ -28,13 +28,13 @@ Access: `packages/*/src/`, `tests/`, `docs/` ✅ · `*.json`, `*.config.*`, `Car
 ```
  INTERFACES   octocode-mcp   octocode (CLI)   octocode-vscode   octocode-pi-extension
                     └──────────────────────────┴── depend on ──┐
- BRAIN         @octocodeai/octocode-tools-core  (execution + schemas/descriptions)
-                    ├── prompt ────▶  @octocodeai/octocode-core  (external: shared system prompt + output types)
+ BRAIN         @octocodeai/octocode-tools-core  (execution + schemas/descriptions/routing)
+                    ├── types ─────▶  @octocodeai/octocode-core  (external reusable output types)
                     ├── native   ──▶  @octocodeai/octocode-engine  (Rust/napi: search, minify, LSP, secrets)
                     └── config   ──▶  @octocodeai/config           (env/config loader — zero-dep, single source)
 ```
 
-Tool execution, schemas, and descriptions live in tools-core; the shared system prompt currently comes from octocode-core; native primitives live in engine. Interface packages only register, render, and configure. Never duplicate `getOctocodeHome` or `.env` parsing — use `@octocodeai/config`.
+Tool execution, schemas, descriptions, and server routing instructions live in tools-core; native primitives live in engine. Interface packages only register, render, and configure. Never duplicate `getOctocodeHome` or `.env` parsing — use `@octocodeai/config`.
 
 ## Packages
 
@@ -53,7 +53,7 @@ Top-level workspace packages (10). Prefer package `ARCHITECTURE.md` / `AGENTS.md
 | [`packages/octocode-awareness`](packages/octocode-awareness) | `@octocodeai/octocode-awareness` | Shared coordination runtime for plans, work, locks, messages, verification, memory, reflection, and hooks. | [ARCHITECTURE](packages/octocode-awareness/ARCHITECTURE.md) · [docs](packages/octocode-awareness/docs/README.md) |
 | [`packages/octocode-benchmark`](packages/octocode-benchmark) | `@octocodeai/octocode-benchmark` | Internal benchmarks/evals — head-to-head tool comparisons (octocode vs gh / gh+rtk / ast-grep), VRPT scoring. | [BENCHMARK](packages/octocode-benchmark/skills/octocode-benchmark/references/BENCHMARK.md) |
 
-External (not in this workspace): `@octocodeai/octocode-core` (sibling `octocode-mcp-host`) — current source for the shared system prompt and reusable output types only. Public tool schemas and descriptions are owned here under `packages/octocode-tools-core/src/toolContract/`. Never hand-write tool guidance in interface packages. Host/worker prompt contracts live locally in `packages/octocode-agent-contracts`; Pi imports that workspace package. After changing those contracts, build `yarn workspace @octocodeai/agent-contracts build` before rebuilding Pi. Do not rebuild a sibling checkout or reinstall dependencies to refresh these local exports.
+External (not in this workspace): `@octocodeai/octocode-core` (sibling `octocode-mcp-host`) — source for reusable output types. Public tool schemas and descriptions are owned here under `packages/octocode-tools-core/src/toolContract/`. Never hand-write tool guidance in interface packages. Host/worker prompt contracts live locally in `packages/octocode-agent-contracts`; Pi imports that workspace package. After changing those contracts, build `yarn workspace @octocodeai/agent-contracts build` before rebuilding Pi. Do not rebuild a sibling checkout or reinstall dependencies to refresh these local exports.
 
 ## Tools
 
@@ -65,11 +65,11 @@ Full field-level reference: [`docs/OCTOCODE_TOOLS.md`](docs/OCTOCODE_TOOLS.md). 
 |---|---|---|
 | GitHub | `ghSearch` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` · `ghCloneRepo` | Unified code/repository/tree discovery, exact file reads, history search, exact history reads, and cloning. |
 | Package | `npmSearch` | npm package lookup + source repo |
-| Local | `localSearch` · `localGetFileContent` | Unified text/regex/AST, path-metadata, and tree discovery; exact/minified file read. `ENABLE_LOCAL=false` disables the family. |
-| Graph | `localAnalyzeGraph` | Bounded file-graph operations: dependencies, dependents, shortest path, cycles/SCCs, reachability, and dead-code candidates |
-| LSP | `lspGetSemantics` | definition, references, callers/callees, symbols, types, diagnostics, … |
+| Local | `localSearch` · `localGetFileContent` | Lexical text/regex search and exact/explicitly minified file reads. `ENABLE_LOCAL=false` disables the family. |
+| AST | `astSearch` | Files, filesystem/syntax trees, symbols, structural matching, and topology: dependencies, dependents, shortest path, cycles/SCCs, reachability, and dead-code candidates |
+| LSP | `lspSearch` | definition, references, callers/callees, symbols, types, diagnostics, … |
 
-Evidence: search and `localAnalyzeGraph` import edges are **candidates**, not symbol proof — use graph operations for repository file topology, then confirm identity/usage with `lspGetSemantics` (`references`/`callers`) before a delete claim. Do not treat search relevance ranking as proof.
+Evidence: search and `astSearch` topology import edges are **candidates**, not symbol proof — use graph operations for repository file topology, then confirm identity/usage with `lspSearch` (`references`/`callers`) before a delete claim. Do not treat search relevance ranking as proof.
 
 Lossless pagination: never silently truncate or drop reachable results. Any search, list, or read that reaches a bound must expose typed partial state and a schema-valid executable `next.*` continuation; when continuation is impossible, return an explicit typed terminal-limit diagnostic. A numeric page/cursor without a runnable tool call is incomplete. Tests must execute continuations and prove that the union of pages covers the full fixture.
 
@@ -94,7 +94,7 @@ OCTO='node packages/octocode/out/octocode.js'
 $OCTO --help
 $OCTO context --compact
 $OCTO tools --json
-$OCTO tools localSearch lspGetSemantics --scheme
+$OCTO tools localSearch astSearch localGetFileContent lspSearch --scheme
 ```
 
 Prefer `node packages/octocode/out/octocode.js` over global `octocode` / npx when validating monorepo changes. After engine or tools-core edits: rebuild the package, then `yarn workspace octocode build:dev`. `build:dev` skips clean + lint; engine uses debug (not `--release`).
@@ -110,9 +110,9 @@ Avoid hangs and aborts in shell calls:
 | Mix fast + slow cmds in one batch | One hang aborts all remaining queries | Isolate slow/network commands in their own single-query bash call |
 | `timeout <cmd>` on macOS | `timeout` is GNU — not available | `gtimeout` (brew install coreutils) or `perl -e 'alarm N; exec @ARGV' -- <cmd>` |
 
-**octocode tool call rules** (localSearch, localGetFileContent, lspGetSemantics):
-- `localSearch` always requires `path` (absolute) **+** `operation` — no exceptions.
-- Wrong field names error silently: `directory` → `path`; `maxResults` → `limit`.
+**octocode tool call rules** (localSearch, localGetFileContent, lspSearch):
+- `localSearch` requires absolute `path` and `searchText`; it has no `operation` field. `astSearch` and `lspSearch` select their operation explicitly.
+- Strict schemas reject wrong field names: `directory` → `path`; `maxResults` → `limit`.
 - Check live schema before first call: `octocode tools <toolName> --scheme --brief`
 - Version checks: always use `npm view <pkg>@latest version` — no download, no prompt, instant.
 
@@ -133,7 +133,7 @@ Adds the internal packages and octocode-engine platform packages to the `resolut
 |---|---|
 | `@octocodeai/octocode-tools-core` | Brain / all tool runners |
 | `@octocodeai/config` | Zero-dep env + config loader |
-| `@octocodeai/octocode-core` | External shared system prompt + output types (sibling repo) |
+| `@octocodeai/octocode-core` | External reusable output types (sibling repo) |
 | `@octocodeai/octocode-engine` | Rust/napi engine |
 | `@octocodeai/octocode-engine-*` | Platform-native engine packages from `packages/octocode-engine/npm/*` |
 

@@ -8,7 +8,7 @@ import {
   SearchPullRequestsBulkLocalSchema,
 } from '../../src/tools/github_search_pull_requests/splitSchemes.js';
 import { LocalFetchContentBulkQuerySchema } from '../../src/tools/local_fetch_content/scheme.js';
-import { BulkLspGetSemanticsQuerySchema } from '../../src/tools/lsp/semantic_content/scheme.js';
+import { BulkLspSearchSchema } from '../../src/tools/lsp/semantic_content/scheme.js';
 import { NpmSearchBulkQueryLocalSchema } from '../../src/tools/package_search/scheme.js';
 
 function acceptsGeneratedSchema(
@@ -169,24 +169,36 @@ describe('generated conditional input schemas', () => {
 
   it('encodes anchored, document, and workspace LSP requirements', () => {
     expectAccepted(
-      BulkLspGetSemanticsQuerySchema,
+      BulkLspSearchSchema,
       { uri: '/repo/src/a.ts', symbolName: 'run', lineHint: 4 },
-      { uri: '/repo/src/a.ts', type: 'documentSymbols' },
-      { uri: '/repo/src/a.ts', type: 'diagnostic' },
-      { type: 'workspaceSymbol', symbolName: 'Schema' },
       {
-        type: 'workspaceSymbol',
+        uri: '/repo/src/a.ts',
+        operation: 'definition',
+        position: { line: 3, character: 4 },
+      },
+      { uri: '/repo/src/a.ts', operation: 'documentSymbols' },
+      { uri: '/repo/src/a.ts', operation: 'diagnostic' },
+      { operation: 'workspaceSymbol', symbolName: 'Schema', workspaceRoot: '/repo' },
+      {
+        operation: 'workspaceSymbol',
         symbolName: 'Schema',
         workspaceRoot: '/repo',
       }
     );
     expectRejected(
-      BulkLspGetSemanticsQuerySchema,
+      BulkLspSearchSchema,
       {},
       { uri: '/repo/src/a.ts' },
-      { type: 'documentSymbols' },
-      { type: 'workspaceSymbol' },
-      { type: 'definition', uri: '/repo/src/a.ts', symbolName: 'run' }
+      { operation: 'documentSymbols' },
+      { operation: 'workspaceSymbol' },
+      { operation: 'definition', uri: '/repo/src/a.ts', symbolName: 'run' },
+      {
+        uri: '/repo/src/a.ts',
+        operation: 'definition',
+        symbolName: 'run',
+        lineHint: 4,
+        position: { line: 3, character: 4 },
+      }
     );
   });
 });

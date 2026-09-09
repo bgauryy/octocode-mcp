@@ -79,6 +79,54 @@ Mandatory advisory file presence, optional sensitive-file exclusivity, one durab
 Task queue, and authored plan documents are Octocode design choices—not claims
 copied from either source.
 
+## Concurrent Agents As A Distributed System
+
+Parallel agents over one workspace are multiple writers without a shared clock, so
+they inherit classical coordination failures. These sources supply vocabulary and
+failure classes; none of them validates Awareness's lifecycle.
+
+- **Adjacent prior art:** a practitioner account of running parallel Claude Code
+  instances reports a lost update between linked worktrees — two agents created the
+  same migration filename with different schemas and the second silently overwrote
+  the first — and argues that shared artifacts in current multi-agent frameworks
+  carry "no formal concurrency control. No fault model." See
+  [Multi-Agent Systems Have a Distributed Systems Problem](https://christophermeiklejohn.com/ai/agents/distributed/zabriskie/2026/03/30/multi-agent-systems-have-a-distributed-systems-problem.html).
+  It motivates advisory presence, exclusive leases, and one canonical ledger. It does
+  not establish that Awareness detects divergence or merges conflicting writes.
+- **Adjacent prior art:** a reported defect in another coding-agent product records the
+  same failure without any parallelism: agents editing one file in sequence, where a
+  later agent "can silently overwrite the file with a stale version," and argues a
+  write should never be able to clobber content modified after the writer's initial
+  read. See [claude-code issue #43138](https://github.com/anthropics/claude-code/issues/43138).
+  It shows that a lease covering only the write window is insufficient, which is why
+  [GIT_COORDINATION.md](GIT_COORDINATION.md) requires re-reading immediately before a
+  write. No local test proves Awareness detects a stale read taken before a lease.
+- **Adjacent prior art:** [Time, Clocks, and the Ordering of Events](https://dl.acm.org/doi/10.1145/359545.359563)
+  defines happened-before ordering without a shared clock. Awareness orders writes
+  through SQLite transactions and records observed state per agent; it does not
+  implement vector clocks and cannot prove that one agent had seen a peer's earlier
+  change before making its own.
+- **Adjacent prior art:** [Conflict-Free Replicated Data Types](https://hal.inria.fr/inria-00555588)
+  describe structures that merge without coordination. Awareness coordinates instead
+  of converging: it prevents overlapping edits by lease and message rather than
+  merging divergent copies, so CRDT guarantees do not transfer to file contents.
+- **Adjacent prior art:** [MAST](https://arxiv.org/abs/2503.13657) derives fourteen
+  multi-agent failure modes across specification, inter-agent misalignment, and task
+  verification, and reports self-verified success without ground truth. It supports
+  keeping verification separate from the agent that did the work; its benchmark
+  results describe other frameworks, not this runtime.
+- **Adjacent prior art:** a coding-agent maintainer discussion of
+  [entity-level merge for parallel edits](https://github.com/openai/codex/discussions/13557)
+  observes that "Git's line-based merge creates false conflicts when two agents add
+  different functions to the same file." Awareness's physical-file leases avoid the
+  interleaving rather than resolving it; coarse leases can serialize work that was
+  independent.
+- **Follow-on hypothesis:** treating a peer agent as a Byzantine participant — plausible
+  output that passes its own checks and is then built upon — extends the existing
+  "generated text is a lead" boundary to peer results. Awareness already requires
+  independent verification, but no local test proves that a wrong peer result is
+  contained before a dependent agent consumes it.
+
 ## Progressive Disclosure And Token Cost
 
 - **Implemented invariant:** the [Agent Skills specification](https://agentskills.io/specification)
@@ -109,9 +157,9 @@ copied from either source.
   [Remember When It Matters](https://arxiv.org/abs/2607.08716v1) frames
   behavioral-state decay as remembered execution state losing influence and reports
   that maintained memory plus a selective grounded reminder/silence policy is more
-  balanced than passive full-bank exposure or advisor-only guidance. Awareness uses
-  that result only as motivation for its locally tested hook selector: one scoped
-  prompt-grounded memory lead or silence, with signals/overrides kept separate. It is
+  balanced than passive full-bank exposure or advisor-only guidance. This motivated an earlier
+  scoped memory selector. Default hooks now deliver peer messages only; memory
+  recall is explicit when prior learning can change the approach. It is
   not the paper's separate LLM memory agent, fixed-interval trajectory observer, or
   trained policy, so its benchmark gains do not transfer. The paper's linked
   [code repository](https://github.com/yifannnwu/proactive-memory-agent) contained no

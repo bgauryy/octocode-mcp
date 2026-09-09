@@ -1,10 +1,10 @@
-# READ And UNDERSTAND
+# READ and UNDERSTAND
 
 Load when an optimization starts, before rating, or drafting. Why: a complete intent map prevents repairs aimed at the wrong problem.
 
 ## Read
 
-Read every section. Record the document type, purpose, and parts that were skipped or unreadable. If neither the path nor inline content is readable, request the missing input. <!-- style-lint: ignore-line passive-voice -->
+Read every section. Record the document type, purpose, and any part you skipped or could not read. When you cannot read the path or the inline content, request the missing input.
 
 ## Understand
 

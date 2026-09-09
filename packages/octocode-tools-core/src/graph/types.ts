@@ -1,4 +1,4 @@
-// Internal graph types shared by every localAnalyzeGraph operation. One node per source file;
+// Internal graph types shared by every astSearch topology operation. One node per source file;
 // declarations/imports/calls come from the native `extractGraphFacts` pass
 // (per-file only — cross-file linking happens here, not in Rust).
 

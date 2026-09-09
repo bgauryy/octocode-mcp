@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { LspGetSemanticsQuerySchema } from '../../../src/tools/lsp/semantic_content/scheme.js';
+import { LspSearchQuerySchema } from '../../../src/tools/lsp/semantic_content/scheme.js';
 import {
   describeRustContext,
   semanticSnapshotItems,
 } from '../../../src/tools/lsp/semantic_content/semanticSnapshot.js';
-import type { LspGetSemanticsQuery } from '../../../src/tools/lsp/shared/semanticTypes.js';
+import type { LspSearchQuery } from '../../../src/tools/lsp/shared/semanticTypes.js';
 import { attachReadinessWarning } from '../../../src/tools/lsp/shared/readiness.js';
+import { LspSearchQuerySchema as PublicLspSearchQuerySchema } from '../../../src/toolContract/input/resources/tools/lspSearch.js';
 
 const query = {
   uri: '/workspace/main.rs',
-  type: 'references' as const,
+  operation: 'references' as const,
   symbolName: 'target',
   lineHint: 1,
 };
@@ -18,7 +19,7 @@ const query = {
 describe('public Rust semantic contexts', () => {
   it('marks an unconfirmed empty answer as typed partial evidence', () => {
     const envelope = {
-      type: 'definition' as const,
+      operation: 'definition' as const,
       uri: query.uri,
       lsp: { serverAvailable: true },
       payload: {
@@ -38,14 +39,79 @@ describe('public Rust semantic contexts', () => {
     ).toBeUndefined();
   });
   it('can publish the public context as JSON Schema', () => {
-    expect(() => z.toJSONSchema(LspGetSemanticsQuerySchema)).not.toThrow();
+    expect(() => z.toJSONSchema(LspSearchQuerySchema)).not.toThrow();
+  });
+  it('keeps public anchor branches aligned with runtime requirements', () => {
+    expect(
+      PublicLspSearchQuerySchema.safeParse({
+        uri: '/workspace/main.ts',
+        operation: 'definition',
+        symbolName: 'target',
+        lineHint: 1,
+      }).success
+    ).toBe(true);
+    expect(
+      PublicLspSearchQuerySchema.safeParse({
+        uri: '/workspace/main.ts',
+        operation: 'definition',
+        position: { line: 0, character: 2 },
+      }).success
+    ).toBe(true);
+    expect(
+      PublicLspSearchQuerySchema.safeParse({
+        uri: '/workspace/main.ts',
+        operation: 'documentSymbols',
+        symbolName: 'target',
+        lineHint: 1,
+      }).success
+    ).toBe(false);
+    expect(
+      PublicLspSearchQuerySchema.safeParse({
+        uri: '/workspace/main.ts',
+        operation: 'definition',
+        symbolName: 'target',
+        lineHint: 1,
+        position: null,
+      }).success
+    ).toBe(false);
+    expect(
+      PublicLspSearchQuerySchema.safeParse({
+        operation: 'workspaceSymbol',
+        symbolName: 'target',
+      }).success
+    ).toBe(false);
+    expect(
+      PublicLspSearchQuerySchema.safeParse({
+        operation: 'workspaceSymbol',
+        symbolName: 'target',
+        workspaceRoot: '/workspace',
+      }).success
+    ).toBe(true);
+  });
+  it('publishes the workspace root alternative in generated JSON Schema', () => {
+    const generated = z.fromJSONSchema(
+      z.toJSONSchema(PublicLspSearchQuerySchema, { io: 'input' })
+    );
+    expect(
+      generated.safeParse({
+        operation: 'workspaceSymbol',
+        symbolName: 'target',
+      }).success
+    ).toBe(false);
+    expect(
+      generated.safeParse({
+        operation: 'workspaceSymbol',
+        symbolName: 'target',
+        workspaceRoot: '/workspace',
+      }).success
+    ).toBe(true);
   });
   it('normalizes equivalent contexts and requires explicit execution permission', () => {
-    const first = LspGetSemanticsQuerySchema.parse({
+    const first = LspSearchQuerySchema.parse({
       ...query,
       rustContext: { features: ['b', 'a', 'a'], cfgs: ['z', 'a'] },
     });
-    const second = LspGetSemanticsQuerySchema.parse({
+    const second = LspSearchQuerySchema.parse({
       ...query,
       rustContext: { cfgs: ['a', 'z'], features: ['a', 'b'] },
     });
@@ -55,19 +121,19 @@ describe('public Rust semantic contexts', () => {
       procMacros: false,
     });
     expect(
-      LspGetSemanticsQuerySchema.safeParse({
+      LspSearchQuerySchema.safeParse({
         ...query,
         rustContext: { procMacros: true },
       }).success
     ).toBe(false);
     expect(
-      LspGetSemanticsQuerySchema.safeParse({
+      LspSearchQuerySchema.safeParse({
         ...query,
         rustContext: { procMacros: true, buildScripts: true },
       }).success
     ).toBe(true);
     expect(
-      LspGetSemanticsQuerySchema.safeParse({
+      LspSearchQuerySchema.safeParse({
         ...query,
         uri: '/workspace/main.ts',
         rustContext: {},
@@ -82,7 +148,7 @@ describe('public Rust semantic contexts', () => {
     const base = {
       ...query,
       rustContext: { features: ['a'] },
-    } as LspGetSemanticsQuery;
+    } as LspSearchQuery;
     const first = semanticSnapshotItems(rows, base).snapshot;
     expect(
       semanticSnapshotItems(rows, { ...base, rustContext: { features: ['b'] } })

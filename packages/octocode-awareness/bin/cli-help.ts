@@ -1,10 +1,16 @@
+import { COMMAND_ROUTES } from '../src/commands/routes.js';
 import { hooksInstallUsage } from '../src/hooks-install-specs.js';
 import { cliAllowedFlags } from '../src/schema/cli-contract.js';
+import { getAwarenessCommandDescriptor } from '../src/schema/cli.js';
+import { commandSchemaProperties } from '../src/schema/command-properties.js';
 import { commandIndex } from '../src/schema/command-catalog.js';
 import { COMMAND_DISPLAY, COMMAND_EXAMPLE, COMMAND_TO_SCHEMA, HELP, HELP_COMPACT, ROUTE_EXAMPLE } from './cli-help-data.js';
-import { COMMAND_ROUTES, KNOWN_FLAGS, SINGLE_COMMANDS, extractGlobalDb, normalizeToken, selectCommand } from './cli-routing.js';
+import { extractGlobalDb, normalizeToken, selectCommand } from './cli-routing.js';
 
 export const COMMAND_HELP: Record<string, string> = {
+  'database consolidate': `usage: npx @octocodeai/octocode-awareness database consolidate --source <existing-file> --destination <new-file> [--dry-run] [--compact]
+Copies an exact current canonical database into a new file. The source is read-only. Preview with --dry-run before publishing the destination.
+schema: npx @octocodeai/octocode-awareness schema json-schema database_consolidate --compact`,
   'tell-memory': `usage: npx @octocodeai/octocode-awareness memory record --agent-id <id> --task-context <text> --observation <text> --importance <1-10> [--label <l>] [--tag <t>]... [--reference <r>]... [--file <p>]... [--supersedes <id>]... [--allow-similar]
 scope: [--workspace <p>] [--artifact <a>] [--repo <r>] [--ref <r>]
 lifecycle: [--valid-from <iso>] [--valid-to <iso>] [--failure-signature <key>]
@@ -51,7 +57,7 @@ example: npx @octocodeai/octocode-awareness lock acquire --agent-id agent --targ
 note: lock acquire is exclusive protection for sensitive/non-mergeable work; ordinary mergeable edits use work start
 note: existing live presence blocks exclusive acquire; coordinate, wait, switch, or prune only expired protection
 note: --run-id attaches exclusive protection to a claimed task run
-note: export OCTOCODE_AGENT_ID for CLI+hooks; --strict-agent-id / OCTOCODE_STRICT_AGENT_ID=1 hard-fails when missing
+note: agent identity is required; CLI and hooks can reuse OCTOCODE_AGENT_ID
 schema: npx @octocodeai/octocode-awareness schema json-schema lock_acquire --compact`,
   'agent-signal': `usage: npx @octocodeai/octocode-awareness signal publish|list|reply|ack|resolve --agent-id <id> [--to-agent <id>]... [--signal-id <id>]... [--thread-id <id>] [--kind <k>] [--subject <t>] [--body <t>] [--file <p>]...
 examples:
@@ -66,7 +72,7 @@ schema: npx @octocodeai/octocode-awareness schema json-schema agent_signal --com
 example: npx @octocodeai/octocode-awareness verify mark --agent-id agent --run-id run_123 --message "yarn test passed" --compact
 note: prefer explicit --run-id; scope deliberate --all-pending use with --workspace
 schema: npx @octocodeai/octocode-awareness schema json-schema verify --compact`,
-  'verify audit': `usage: npx @octocodeai/octocode-awareness verify audit [--agent-id <id>] [--workspace <repo>] [--stale-hours <n>]
+  'verify audit': `usage: npx @octocodeai/octocode-awareness verify audit [--agent-id <id>] [--workspace <repo>] [--older-than-days <n>] [--origin TASK|WORK|HOOK] [--before <iso>] [--limit <n>] [--offset <n>]
 example: npx @octocodeai/octocode-awareness verify audit --agent-id agent --workspace "$PWD" --compact
 schema: npx @octocodeai/octocode-awareness schema json-schema verify_audit --compact`,
   'reflect': `usage: npx @octocodeai/octocode-awareness reflect record --agent-id <id> --task <text> --outcome worked|partial|failed [--worked <t>] [--didnt-work <t>] [--judgment-note <t>] [--lesson <t>] [--fix-repo <t>] [--fix-harness <t>] [--fix-instructions <t>] [--fix-file <p>]... [--failure-signature <s>] [--eval-failure-json <json>]... [--duo] [--allow-similar] [--importance <1..10>] [--workspace <p>] [--artifact <a>] [--repo <r>] [--ref <r>]
@@ -91,8 +97,8 @@ examples:
   npx @octocodeai/octocode-awareness query all --workspace "$PWD" --format html --out .octocode/awareness/index.html
 note: files/memories expose missing file references as file_exists, missing_file, missing_references, and stale_file_refs workboard reasons
 schema: npx @octocodeai/octocode-awareness schema json-schema query --compact`,
-  'attend': `usage: npx @octocodeai/octocode-awareness attend [--workspace <repo>] [--query <text>] [--agent-id <id>] [--file <p>]... [--limit <n>] [--include-bodies] [--explain-organ]
-example: npx @octocodeai/octocode-awareness attend --query "current task" --workspace "$PWD" --agent-id "$OCTOCODE_AGENT_ID" --compact
+  'attend': `usage: npx @octocodeai/octocode-awareness attend [--workspace <repo>] [--details] [--offset <n>] [--query <text>] [--agent-id <id>] [--file <p>]... [--limit <n>] [--include-bodies] [--explain-organ]
+example: npx @octocodeai/octocode-awareness attend --workspace "$PWD" --agent-id "$OCTOCODE_AGENT_ID" --compact
 note: pass --agent-id (or OCTOCODE_AGENT_ID) so next routes owned Verify/Claimed before generic evidence
 schema: npx @octocodeai/octocode-awareness schema json-schema attend --compact`,
   'docs-catalog': `usage: npx @octocodeai/octocode-awareness docs list|show [name] [--full]
@@ -136,7 +142,7 @@ note: on overlap, inspect work show and signal if edits interact; never surprise
 schema: npx @octocodeai/octocode-awareness schema json-schema work --compact`,
   'hook-run': `usage: octocode-awareness hook run <pre-edit|post-edit|stop-verify|notify-deliver|session-compact|session-end> < hook-payload.json
 payload: host JSON on stdin; common fields are cwd/workspace, session_id, tool_name, and tool_input/path
-store: hook run intentionally rejects --db; payload workspace selects <workspace>/.octocode/awareness.sqlite3`,
+store: hook run intentionally rejects --db; payload workspace selects its configured Awareness store`,
   'hooks-install': hooksInstallUsage(),
   'schema': `usage: npx @octocodeai/octocode-awareness schema commands|entities|list|command <noun> [action]|json-schema <name>|example <name>|validate <name> <json-file|->
 examples:
@@ -150,7 +156,7 @@ example: npx @octocodeai/octocode-awareness maintenance init --db-scope global -
 example: npx @octocodeai/octocode-awareness maintenance self-test --compact`,
   'awareness-config': `usage: npx @octocodeai/octocode-awareness config show|init|validate [options]
 init flags: --hooks <true|false> --notifications <true|false> --verification-gate <true|false> --session-capture <true|false> --maintenance-reminders <true|false>
-note: config init requires every answer and refuses to overwrite; config validate checks the resolved Awareness config
+note: config init uses lean defaults plus explicit overrides and refuses to overwrite; config validate checks the resolved Awareness config
 schema: npx @octocodeai/octocode-awareness schema json-schema awareness_config --compact`,
 };
 
@@ -163,7 +169,8 @@ export function hyphenFlag(flag: string): string {
 export function helpFor(command: string | null, options: { compact?: boolean; routeKey?: string } = {}): string {
   if (!command && options.routeKey?.startsWith('noun:')) {
     const noun = options.routeKey.slice('noun:'.length);
-    const actions = [...new Set(Object.keys(COMMAND_ROUTES)
+    if (noun === 'schema') return COMMAND_HELP.schema!;
+    const actions = [...new Set(commandIndex.map(entry => entry.command)
       .filter((route) => route.startsWith(`${noun} `))
       .map((route) => route.slice(noun.length + 1)))];
     const actionList = actions.join('|');
@@ -176,13 +183,14 @@ export function helpFor(command: string | null, options: { compact?: boolean; ro
   }
   if (!command) return options.compact ? HELP_COMPACT : HELP;
   const normalized = command.replace(/_/g, '-');
-  const catalog = options.routeKey
-    ? commandIndex.find((entry) => entry.command === options.routeKey)
-    : undefined;
-  const actionFlags = catalog ? cliAllowedFlags(catalog.command) : undefined;
+  const catalog = commandIndex.find((entry) => entry.command === (options.routeKey ?? COMMAND_DISPLAY[normalized] ?? normalized));
+  const descriptor = catalog ? getAwarenessCommandDescriptor(catalog.command) : undefined;
+  const actionFlags = descriptor ? Object.keys(commandSchemaProperties(descriptor.inputSchema)) : undefined;
+  const globals = catalog && ['database consolidate', 'hook run'].includes(catalog.command)
+    ? ['compact', 'help'] : FOCUSED_GLOBAL_FLAGS;
   const flags = actionFlags
-    ? [...new Set([...actionFlags, ...FOCUSED_GLOBAL_FLAGS])]
-    : KNOWN_FLAGS[normalized];
+    ? [...new Set([...actionFlags, ...globals])]
+    : undefined;
   if (!flags) return HELP;
   const schema = catalog?.schema ?? COMMAND_TO_SCHEMA[normalized] ?? null;
   const display = options.routeKey ?? COMMAND_DISPLAY[normalized] ?? normalized;
@@ -223,13 +231,11 @@ export function commandFromHelpArgv(argv: string[]): { command: string | null; r
   const first = normalizeToken(firstRaw);
   const second = normalizeToken(secondRaw);
   let routeKey: string | undefined;
-  if (first === 'hook' && second === 'run') routeKey = 'hook run';
-  else if (first === 'hooks' && second && ['install', 'check', 'remove'].includes(second)) routeKey = `hooks ${second}`;
-  else if (first === 'schema' && second && ['commands', 'list', 'json-schema', 'example', 'validate'].includes(second)) routeKey = `schema ${second}`;
-  else if (first && second && COMMAND_ROUTES[`${first} ${second}`]) routeKey = `${first} ${second}`;
-  else if (first && SINGLE_COMMANDS.has(first)) routeKey = first;
-  const command = selectCommand(filtered).command ?? null;
-  if (!command && first && !second && Object.keys(COMMAND_ROUTES).some((route) => route.startsWith(`${first} `))) {
+  if (first && second && commandIndex.some(entry => entry.command === `${first} ${second}`)) routeKey = `${first} ${second}`;
+  else if (first && commandIndex.some(entry => entry.command === first)) routeKey = first;
+  let command = routeKey ? COMMAND_ROUTES[routeKey]?.command ?? routeKey : selectCommand(filtered).command ?? null;
+  if (first && !second && !commandIndex.some(entry => entry.command === first) && commandIndex.some(entry => entry.command.startsWith(`${first} `))) {
+    command = null;
     routeKey = `noun:${first}`;
   }
   return { command, routeKey };

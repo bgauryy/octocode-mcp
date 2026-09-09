@@ -76,7 +76,9 @@ export function releaseFileLock(
     if (artifactScope) { directWhere.push('(artifact = ? OR artifact IS NULL)'); directParams.push(artifactScope); }
     const directRun = db.prepare(`SELECT run_id FROM task_runs WHERE ${directWhere.join(' AND ')}`)
       .get(...directParams) as { run_id: string } | undefined;
-    if (directRun) runIds.push(directRun.run_id);
+    // A run-only release settles the whole run. Once target files are given,
+    // require an actual lock match so a typo cannot broaden the release.
+    if (directRun && absFiles.length === 0) runIds.push(directRun.run_id);
   }
   const ambiguousRelease = !runId && absFiles.length > 0 && runIds.length > 1;
   if (ambiguousRelease) {

@@ -49,8 +49,8 @@ npx @octocodeai/octocode-awareness attend --workspace "$PWD" --query "verify Awa
 ```
 
 Pass when self-test returns `ok:true`, schema discovery returns commands, workspace
-status opens the intended store/scope, and attend returns `ok:true` plus an
-actionable `next`. Follow `attend.next` only when it is relevant to the check; do not
+status opens the intended store/scope, and attend returns `ok:true` with a bounded
+peer briefing. Use `attend --details` to inspect work and actionable continuations. Follow `attend.next` only when it is relevant to the check; do not
 drain unrelated inbox or maintenance work.
 ## Installed Bundle Check
 
@@ -99,7 +99,14 @@ npx @octocodeai/octocode-awareness hooks check --host <claude|codex|copilot|curs
   --project-dir . --strict --compact
 ```
 
-Then make one approved harmless structured edit and observe the complete edge:
+For the default coordination profile, observe session registration and a directed
+fixture message delivered once at a supported boundary. Repeating the boundary
+must not repeat an unchanged message. Test message delivery with the actual host;
+the existence of its config file is insufficient.
+
+For an explicitly enabled guard/full profile, make one authorized harmless
+structured edit and observe the tracked edge. Enable `features.verificationGate`
+in the disposable test configuration when checking stop enforcement:
 
 1. Pre-edit declares path presence or blocks a real exclusive conflict.
 2. Post-edit records/heartbeats without ending explicit WORK/TASK.
@@ -107,7 +114,7 @@ Then make one approved harmless structured edit and observe the complete edge:
 4. The declared check plus `verify mark` clears `verify audit`.
 5. PreCompact keeps the session reusable; SessionEnd marks it ended.
 
-Verify Claude, Codex, and Cursor hooks on the host that executes them: pre-edit
+Verify applicable Claude, Codex, and Cursor hooks on the host that executes them: pre-edit
 guard/presence, successful and failed write handling, prompt briefing, compaction,
 and stop/session behavior.
 ## Full Monorepo Check
@@ -126,8 +133,10 @@ npx @octocodeai/octocode-awareness maintenance self-test --compact
 
 Pass when every command exits `0`, coverage thresholds pass, focused skill checks
 pass, and smoke ends with zero verification debt or active locks. When a change
-affects native host integration, also run the relevant checks in the sibling
-[`octocode-agent` repository](https://github.com/bgauryy/octocode-agent/tree/main/packages/octocode-agent).
+affects Pi integration, also build and test
+[`@octocodeai/pi-extension`](../../octocode-pi-extension/) against the local
+Awareness and agent-contracts packages. External host activation requires that
+host's own observed lane.
 ## Release Add-On
 
 ```bash

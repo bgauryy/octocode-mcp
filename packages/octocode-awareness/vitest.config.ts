@@ -27,15 +27,11 @@ export default defineConfig({
         'src/types/**',
       ],
       thresholds: {
-        // Thresholds recalibrated after removing 37 legacy numbered/dated
-        // iteration test files (see test-hygiene.md). The deleted files drove
-        // coverage via CLI subprocess calls that duplicated existing unit-test
-        // paths; core unit tests remain. Raise these as quality behavioral
-        // tests are added per references/test-quality.md.
-        statements: 87,
-        branches: 79,
-        functions: 93,
-        lines: 91,
+        // Ratchet after validating the shared API, CLI, stores and host adapters.
+        statements: 89.5,
+        branches: 79.5,
+        functions: 94.5,
+        lines: 93,
       },
     },
   },

@@ -32,7 +32,7 @@ describe('shared prompts', () => {
   it('routes measured improvement loops to the installed eval skill without hijacking ordinary retries', () => {
     const prompt = buildOctocodeSystemPrompt('<coordination>shared</coordination>');
     expect(prompt).toContain('octocode-eval-benchmark');
-    expect(prompt).toContain('Ordinary bounded retries and debug loops use their direct acceptance check');
+    expect(prompt).toContain('ordinary retries use their direct acceptance check');
     expect(prompt).not.toContain('octocode-graph-eval');
   });
 
@@ -41,7 +41,7 @@ describe('shared prompts', () => {
     for (const piOnlyName of ['chromeDebug', 'browser agent', 'askUser', 'localServer']) {
       expect(prompt).not.toContain(piOnlyName);
     }
-    expect(prompt).toContain('live host capability catalog');
+    expect(prompt).toContain('advertised host capabilities');
   });
 
   it('forbids replaying crash-left effects whose outcome is unknown', () => {
@@ -53,10 +53,12 @@ describe('shared prompts', () => {
 
   it('uses the negotiated catalog and teaches efficient research routing without stale tool inventories', () => {
     const prompt = buildOctocodeSystemPrompt('<coordination>shared</coordination>');
-    expect(prompt).toContain('Call catalog before choosing and schema before the first call');
-    expect(prompt).toContain('never reuse an absent name');
-    expect(prompt).toContain('text for lexical anchors, structural/AST for syntax shapes, files for path or metadata filters, and tree for bounded orientation');
-    expect(prompt).toContain('matchString with bounded context for a unique anchor');
+    expect(prompt).toContain('Reuse an observed schema');
+    expect(prompt).toContain('A catalog selects a tool; its exact schema defines a valid call');
+    expect(prompt).toContain('describe an unfamiliar contract once');
+    expect(prompt).toContain('Guessing fields or absent names produces invalid calls');
+    expect(prompt).toContain('localSearch for text/regex anchors and astSearch for files, trees, symbols, and structural matching');
+    expect(prompt).toContain('unique matchString with bounded context');
     for (const minify of ['minify:"symbols"', 'minify:"standard"', 'minify:"none"']) {
       expect(prompt).toContain(minify);
     }
@@ -82,9 +84,9 @@ describe('shared prompts', () => {
 
   it('does not instruct agents to mutate workspace reflection state', () => {
     const prompt = buildOctocodeSystemPrompt('<coordination>shared</coordination>');
-    expect(prompt).toContain('never create or hand-edit workspace `.octocode/` state for reflection');
+    expect(prompt).toContain('never hand-edit generated workspace state for reflection');
     expect(prompt).not.toContain('.octocode/REFLECT.md');
-    expect(prompt).toContain('workspace-relative path:line anchors');
+    expect(prompt).toContain('clickable path:line anchors');
   });
 
   it('expands every shared subagent placeholder', () => {
@@ -95,37 +97,39 @@ describe('shared prompts', () => {
 
   it('selects worker-only constraints when the host supplies canonical Awareness guidance', () => {
     const prompt = expandSubagentPrompt(SUBAGENT_PLACEHOLDERS.join('\n'), { coordination: 'worker-only' });
-    expect(prompt).toContain('The parent owns scope, synthesis, and dependent decisions');
-    expect(prompt).toContain('Edit only paths or symbols explicitly assigned in Ownership');
-    expect(prompt).toContain('wait for an explicit release or reassignment');
+    expect(prompt).toContain('The parent owns scope, synthesis, dependent decisions, and user contact');
+    expect(prompt).toContain('Edit only explicitly owned paths or symbols');
+    expect(prompt).toContain('wait for explicit release or reassignment');
     for (const marker of ['[DONE]', '[BLOCKED]', '[FAILED]', '[ARTIFACT]', '[EVIDENCE]', '[VERIFICATION]']) {
       expect(prompt).toContain(marker);
     }
     expect(prompt).not.toContain('Send new signals with signal publish');
-    expect(prompt).not.toContain('signal ack --signal-id');
+    expect(prompt).not.toContain('signal ack');
     expect(prompt).not.toContain('You are auto-registered');
-    expect(prompt).toContain('Never run any Git command unless the user explicitly asks');
-    expect(expandSubagentPrompt('{{OCTOCODE_COORDINATION}}')).toContain('signal ack --signal-id');
+    expect(prompt).toContain('Never run any Git command unless the current user request explicitly asks');
+    expect(expandSubagentPrompt('{{OCTOCODE_COORDINATION}}')).toContain('signal ack');
   });
 
-  it('permits the harness Awareness CLI without widening worker shell or Git authority', () => {
+  it('prefers native Awareness and limits CLI fallback without widening worker shell or Git authority', () => {
     const prompt = expandSubagentPrompt('{{OCTOCODE_SURFACE}}');
-    expect(prompt).toMatch(/Use the harness-provided Awareness CLI through shell for shared coordination and bookkeeping/);
-    expect(prompt).toContain('using the supplied database, workspace, and your stable agent identity');
-    expect(prompt).toContain('For other shell commands, use shell only when your assigned role includes it');
-    expect(prompt).toContain('the task requires a test, build, or bounded debug command');
-    expect(prompt).toContain('Never run any Git command unless the user explicitly asks for Git in the current request');
-    expect(prompt).toContain('this includes read-only Git commands');
+    expect(prompt).toContain('Use native Awareness for coordination');
+    expect(prompt).toContain('only when unavailable, use the bound CLI');
+    expect(prompt).toContain('with the supplied database, workspace, and stable identity');
+    expect(prompt).toContain('Shell is limited to role-authorized tests, builds, and debugging');
+    expect(prompt).toContain('coding, review, status, and verification alone do not authorize it');
+    expect(prompt).toContain('Never run any Git command unless the current user request explicitly asks for Git');
+    expect(prompt).toContain('including read-only inspection');
   });
 
-  it('routes worker messages through canonical signal CLI fields and acknowledges after acting', () => {
+  it('routes worker messages through canonical signal fields and acknowledges after acting', () => {
     const prompt = expandSubagentPrompt('{{OCTOCODE_COORDINATION}}');
     expect(prompt).toContain('signal publish');
-    expect(prompt).toContain('signal reply');
-    expect(prompt).toContain('--kind');
-    expect(prompt).toContain('--subject');
-    expect(prompt).toContain('--to-agent');
-    expect(prompt).toContain('signal ack --signal-id');
+    expect(prompt).toContain('signal reply with in_reply_to');
+    expect(prompt).toContain('signal_id');
+    expect(prompt).toContain('kind blocker');
+    expect(prompt).toContain('subject');
+    expect(prompt).toContain('to_agent');
+    expect(prompt).toContain('signal ack');
     expect(prompt).toContain('after acting');
     expect(prompt).not.toContain('Use the topic field');
   });

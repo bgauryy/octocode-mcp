@@ -23,8 +23,8 @@ Canonical Agent Skills for this monorepo. Each skill is a standalone folder whos
 ## Install
 
 ```bash
-npx octocode skill list
-npx octocode skill install octocode-research --platform codex
+npx -y octocode skill list
+npx -y octocode skill install octocode-research
 ```
 
 Use `--platform pi,claude,cursor,codex` to select one or more supported hosts. The source of truth remains this `skills/` directory.

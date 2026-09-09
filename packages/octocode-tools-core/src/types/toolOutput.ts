@@ -2,25 +2,17 @@
  * Hand-written output TYPES for the direct tools.
  *
  * Tools keep one shared TypeScript envelope generic plus a per-tool `data`
- * interface. MCP advertises the matching broad runtime contract sourced from
- * @octocodeai/octocode-core, avoiding per-interface schema duplication.
+ * interface. These are static types: MCP currently publishes input schemas
+ * without an outputSchema. Runtime finalizers shape the structured result and
+ * its text representation; adapters consume that shared result.
  *
  * INPUT/query schemas are unaffected: those are registered and parsed, so they
  * stay as zod.
  */
 import type { ToolResultMeta } from './toolResults.js';
 
-/** Outermost char-window pagination wrapping a whole bulk response. */
-export interface ResponsePaginationInfo {
-  scope: 'content.text';
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-  charOffset: number;
-  charLength: number;
-  totalChars: number;
-  nextCharOffset?: number;
-}
+import type { ResponsePaginationInfo } from './bulk.js';
+export type { ResponsePaginationInfo } from './bulk.js';
 
 /** One result row in a bulk tool response. */
 export interface BulkToolResultRow<TData> {

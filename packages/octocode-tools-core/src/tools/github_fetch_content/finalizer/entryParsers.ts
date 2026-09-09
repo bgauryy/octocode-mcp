@@ -161,7 +161,7 @@ function buildContinueLines(
 }
 
 // This was the ONLY fetch/search tool that could emit zero next-hints (a
-// fully-read, non-paginated file has nothing left to continue). lspGetSemantics
+// fully-read, non-paginated file has nothing left to continue). lspSearch
 // only resolves definitions/references against local files, not GitHub reads
 // directly, so hand the agent the one-step bridge instead of a dead end.
 function buildCloneForSemanticsHint(
@@ -175,7 +175,7 @@ function buildCloneForSemanticsHint(
       ...(query.branch !== undefined ? { branch: query.branch } : {}),
       sparsePath: query.path,
     },
-    why: 'lspGetSemantics (definitions/references) only works on local files — clone this path locally, then run localSearch or lspGetSemantics on it',
+    why: 'lspSearch (definitions/references) only works on local files — clone this path locally, then run localSearch or lspSearch on it',
     confidence: 'exact',
   };
 }

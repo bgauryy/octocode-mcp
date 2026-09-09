@@ -60,18 +60,18 @@
     },
     {
       "name": "localSearch",
-      "description": "Search local text or syntax, discover files, or browse directory trees"
+      "description": "Search local text with literal or regex matching"
     },
     {
-      "name": "localAnalyzeGraph",
-      "description": "Analyze bounded local file dependency graphs"
+      "name": "astSearch",
+      "description": "Inspect local syntax, symbols, structural matches, files, trees, and graph topology"
     },
     {
       "name": "localGetFileContent",
       "description": "Read local file content with minification and exact slices"
     },
     {
-      "name": "lspGetSemantics",
+      "name": "lspSearch",
       "description": "Run LSP semantic navigation over local files"
     }
   ],

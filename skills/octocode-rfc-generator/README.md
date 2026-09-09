@@ -29,7 +29,7 @@ UNDERSTAND → RESEARCH → PREREQUISITES → COMPARE → WRITE → CLOSE QUESTI
 ## Install
 
 ```bash
-npx octocode skill install octocode-rfc-generator --platform codex
+npx -y octocode skill install octocode-rfc-generator
 ```
 
 ## Maintainer verification

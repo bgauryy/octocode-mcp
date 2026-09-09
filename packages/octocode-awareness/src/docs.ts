@@ -107,7 +107,7 @@ export function mineDocStaleness(db: DatabaseSync, params: DocStalenessParams): 
   const artifact = normalizeArtifact(params.artifact);
 
   // edit_log.file_path is always stored absolute (resolved against cwd at hook
-  // time — see resolveHookPath in bin/hook-runner.ts). Doc targets, however, are
+  // time — see resolveHookPath in src/hooks/payload.ts). Doc targets, however, are
   // typically given relative (the CLI help/examples use "README.md" / "src").
   // Resolve targets to absolute against the same base so the LIKE/= match lands;
   // absolute inputs pass through resolve() unchanged. Without this, relative

@@ -8,9 +8,9 @@ import {
   isLanguageServerAvailable,
 } from '@octocodeai/octocode-engine/lsp/manager';
 import { resolveWorkspaceRootForFile } from '@octocodeai/octocode-engine/lsp/workspaceRoot';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../../toolNames.js';
 import {
-  type LspGetSemanticsQuery,
+  type LspSearchQuery,
   type LspSemanticEnvelope,
 } from '../shared/semanticTypes.js';
 import { attachReadinessWarning } from '../shared/readiness.js';
@@ -37,22 +37,22 @@ import {
   guardSemanticSnapshot,
   describeRustContext,
 } from './semanticSnapshot.js';
-import { LspGetSemanticsQuerySchema } from './scheme.js';
+import { LspSearchQuerySchema } from './scheme.js';
 
-export async function executeLspGetSemantics(
-  args: ToolExecutionArgs<LspGetSemanticsQuery>
+export async function executeLspSearch(
+  args: ToolExecutionArgs<LspSearchQuery>
 ): Promise<CallToolResult> {
   return executeBulkOperation(
     args.queries || [],
     async query => {
-      const parsed = safeParseOrError(LspGetSemanticsQuerySchema, query);
+      const parsed = safeParseOrError(LspSearchQuerySchema, query);
       if (parsed.ok === false) return parsed.error;
-      const validatedQuery = parsed.data as LspGetSemanticsQuery;
+      const validatedQuery = parsed.data as LspSearchQuery;
 
       return executeWithToolBoundary({
-        toolName: LSP_GET_SEMANTICS_TOOL_NAME,
+        toolName: LSP_SEARCH_TOOL_NAME,
         query: validatedQuery,
-        contextMessage: 'lspGetSemantics execution failed',
+        contextMessage: 'lspSearch execution failed',
         execute: async () => {
           const result = await getSemanticContent(validatedQuery);
           const contextualResult = validatedQuery.rustContext
@@ -73,7 +73,7 @@ export async function executeLspGetSemantics(
       });
     },
     {
-      toolName: LSP_GET_SEMANTICS_TOOL_NAME,
+      toolName: LSP_SEARCH_TOOL_NAME,
       minQueryTimeoutMs: 30_000,
     },
     args
@@ -81,19 +81,19 @@ export async function executeLspGetSemantics(
 }
 
 async function getSemanticContent(
-  query: LspGetSemanticsQuery
+  query: LspSearchQuery
 ): Promise<LspSemanticEnvelope | Record<string, unknown>> {
-  if (query.type === 'documentSymbols') {
+  if (query.operation === 'documentSymbols') {
     return getDocumentSymbols(query);
   }
-  if (query.type === 'workspaceSymbol') {
+  if (query.operation === 'workspaceSymbol') {
     return getWorkspaceSymbols(query);
   }
-  if (query.type === 'diagnostic') {
+  if (query.operation === 'diagnostic') {
     return getFileDiagnostics(query);
   }
 
-  const anchor = await resolveSymbolAnchor(query, LSP_GET_SEMANTICS_TOOL_NAME);
+  const anchor = await resolveSymbolAnchor(query, LSP_SEARCH_TOOL_NAME);
   if (anchor.ok === false) {
     if (anchor.error.status === 'error') return anchor.error;
     const message =
@@ -113,7 +113,7 @@ async function getSemanticContent(
   if (!serverAvailable) {
     // No server → throw, so the agent pivots to text search. We never return a
     // same-file-only or syntactic approximation dressed up as a semantic answer.
-    throwLspUnavailable(anchor.value.uri, query.type);
+    throwLspUnavailable(anchor.value.uri, query.operation);
   }
 
   const clientResult = await acquirePooledClientDetailed(
@@ -122,11 +122,11 @@ async function getSemanticContent(
     query.rustContext
   );
   if (clientResult.ok === false) {
-    throwLspUnavailable(anchor.value.uri, query.type, clientResult);
+    throwLspUnavailable(anchor.value.uri, query.operation, clientResult);
   }
   const client = clientResult.client;
 
-  const consumerProvider = CONSUMER_SCOPED_PROVIDERS[query.type];
+  const consumerProvider = CONSUMER_SCOPED_PROVIDERS[query.operation];
   const warmupStats =
     consumerProvider && client.hasCapability(consumerProvider)
       ? await warmLikelyConsumers(client, anchor.value, workspaceRoot)

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { normalizeArtifact, utcNow } from './helpers.js';
-import { fillScope } from './git.js';
+import { readScope } from './git.js';
 import { SIGNALS_DELETE_BY_IDS, SIGNAL_READS_INSERT_IGNORE } from './sql/signals.js';
 import type { PruneNotificationsParams, PruneNotificationsResult, NotificationRecord, AgentSignalParams, AgentSignalResult, AgentSignalRecord } from './types/notifications-agents.js';
 import { appendSignalScope, assertSignalsExist, inferReplyTargets, insertNotification, isThreadParticipant } from './notifications-core.js';
@@ -66,7 +66,7 @@ export function acknowledgeNotifications(
     where.push('thread_id = ?');
     binds.push(threadId);
   }
-  const scope = fillScope(
+  const scope = readScope(
     { workspace_path: params.workspacePath ?? null, artifact: normalizeArtifact(params.artifact), repo: null, ref: null },
     params.cwd ?? process.cwd(),
   );
@@ -184,7 +184,7 @@ export function pruneNotifications(
     throw new Error('signal prune requires --older-than-days >= 1');
   }
 
-  const scope = fillScope(
+  const scope = readScope(
     { workspace_path: params.workspacePath ?? null, artifact: normalizeArtifact(params.artifact), repo: null, ref: null },
     cwd ?? process.cwd(),
   );

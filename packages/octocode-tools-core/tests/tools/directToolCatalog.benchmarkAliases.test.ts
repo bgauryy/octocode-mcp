@@ -7,18 +7,13 @@ const removedAliases: ReadonlyArray<
   readonly [tool: string, canonical: string, query: Record<string, unknown>]
 > = [
   ['npmSearch', 'packageName', { name: 'zod' }],
-  ['lspGetSemantics', 'type', { op: 'documentSymbols', uri: '/repo/a.ts' }],
+  ['lspSearch', 'type', { type: 'documentSymbols', uri: '/repo/a.ts' }],
   ['localGetFileContent', 'path', { filePath: '/repo/a.ts' }],
-  [
-    'localSearch',
-    'searchText',
-    { operation: 'text', path: '/repo', keywords: 'needle' },
-  ],
+  ['localSearch', 'searchText', { path: '/repo', keywords: 'needle' }],
   [
     'localSearch',
     'langType',
     {
-      operation: 'structural',
       path: '/repo',
       pattern: 'call($X)',
       language: 'typescript',
@@ -27,17 +22,13 @@ const removedAliases: ReadonlyArray<
   [
     'localSearch',
     'pageSize',
-    { operation: 'text', path: '/repo', searchText: 'x', itemsPerPage: 5 },
+    { path: '/repo', searchText: 'x', itemsPerPage: 5 },
   ],
-  [
-    'localSearch',
-    'sort',
-    { operation: 'files', path: '/repo', sortBy: 'name' },
-  ],
+  ['localSearch', 'sort', { path: '/repo', searchText: 'x', sortBy: 'name' }],
   [
     'localSearch',
     'reverse',
-    { operation: 'text', path: '/repo', searchText: 'x', sortReverse: true },
+    { path: '/repo', searchText: 'x', sortReverse: true },
   ],
   [
     'ghGetFileContent',
@@ -102,14 +93,25 @@ const removedAliases: ReadonlyArray<
     },
   ],
   [
-    'localAnalyzeGraph',
-    'depth',
-    { path: '/repo', operation: 'dependencies', file: 'src/a.ts', maxDepth: 2 },
+    'astSearch',
+    'maxDepth',
+    {
+      path: '/repo',
+      operation: 'topology',
+      analysis: 'dependencies',
+      file: 'src/a.ts',
+      maxDepth: 2,
+    },
   ],
   [
-    'localAnalyzeGraph',
+    'astSearch',
     'pageSize',
-    { path: '/repo', operation: 'cycles', itemsPerPage: 5 },
+    {
+      path: '/repo',
+      operation: 'topology',
+      analysis: 'cycles',
+      itemsPerPage: 5,
+    },
   ],
 ];
 
@@ -134,29 +136,11 @@ describe('canonical direct-tool inputs', () => {
   it('does not reinterpret text pattern as searchText', () => {
     expect(() =>
       prepareDirectToolInput(
-        'localSearch',
-        { operation: 'text', path: '/repo', pattern: 'needle' },
+        'astSearch',
+        { path: '/repo', pattern: 'needle' },
         { rejectUnknownFields: true }
       )
     ).toThrowError(DirectToolInputError);
-  });
-
-  it('accepts only canonical entryType values', () => {
-    expect(() =>
-      prepareDirectToolInput(
-        'localSearch',
-        { operation: 'files', path: '/repo', entryType: 'file' },
-        { rejectUnknownFields: true }
-      )
-    ).toThrowError(DirectToolInputError);
-
-    expect(
-      prepareDirectToolInput(
-        'localSearch',
-        { operation: 'files', path: '/repo', entryType: 'f' },
-        { rejectUnknownFields: true }
-      )
-    ).toMatchObject({ queries: [{ entryType: 'f' }] });
   });
 
   it.each([

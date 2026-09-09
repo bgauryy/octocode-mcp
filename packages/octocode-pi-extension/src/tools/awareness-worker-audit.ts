@@ -1,4 +1,5 @@
 import { openPersistentAwareness } from './storage-policy.js';
+import { loadWorkspacePolicy } from '@octocodeai/octocode-awareness';
 
 interface WorkerIdentity { awarenessAgentId?: string; awarenessWorkspace?: string }
 interface AuditStore {
@@ -16,6 +17,17 @@ export interface WorkerAwarenessInspection {
   runIds?: string[];
   partial?: boolean;
   next?: { command: 'verify audit'; args: string[] };
+}
+
+/** Routine worker completion does not opt a session into verification bookkeeping. */
+export function inspectWorkerAwarenessAutomatically(identity: WorkerIdentity): WorkerAwarenessInspection | undefined {
+  if (!identity.awarenessWorkspace) return undefined;
+  try {
+    if (loadWorkspacePolicy(identity.awarenessWorkspace).policy.hooks.profile === 'coordination') return undefined;
+  } catch {
+    return { agentId: identity.awarenessAgentId, status: 'unavailable', observedAt: new Date().toISOString() };
+  }
+  return inspectWorkerAwareness(identity);
 }
 
 /** Read after terminal artifacts. A clean debt inspection is not successful verification. */

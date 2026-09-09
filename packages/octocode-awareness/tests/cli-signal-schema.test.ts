@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
-import { schemas } from '../src/schema/cli.js';
+import { schemas } from '../src/schema/registry.js';
 import { cliAllowedFlags, projectCliProperties } from '../src/schema/cli-contract.js';
 
 describe('signal CLI schema routing fields', () => {

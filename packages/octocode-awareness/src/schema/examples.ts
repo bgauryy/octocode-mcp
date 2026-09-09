@@ -4,8 +4,8 @@ export const examples = {
     action: "init",
     hooks: true,
     notifications: true,
-    verification_gate: true,
-    session_capture: true,
+    verification_gate: false,
+    session_capture: false,
     maintenance_reminders: false,
   },
   memory_record: {
@@ -54,13 +54,9 @@ export const examples = {
   },
   attend: {
     agent_id: "agent",
-    query: "current task",
     limit: 10,
     workspace_path: "/repo",
-    artifact: "pkg",
-    file: ["src/file.ts"],
-    include_bodies: false,
-    explain_organ: false,
+    details: false,
   },
   export_harness: {
     limit: 10,

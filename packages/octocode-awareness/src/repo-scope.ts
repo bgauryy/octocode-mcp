@@ -2,8 +2,10 @@ import { existsSync, realpathSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
-import { normalizeWorkspacePath } from './git.js';
+import { normalizeWorkspacePath, repositoryWorkspacePaths } from './git.js';
 import { AwarenessQueryParams, BindValue, MemoryDbRow, SCOPE_CACHE, Scope } from './repo-model.js';
+
+const repositoryScopes = new WeakMap<Scope, Scope>();
 
 export function scopeFromParams(params: AwarenessQueryParams): Scope {
   const cached = SCOPE_CACHE.get(params);
@@ -31,6 +33,18 @@ export function withScope(
   const derived = { ...params, ...overrides };
   SCOPE_CACHE.set(derived, scopeFromParams(params));
   return derived;
+}
+
+/** Peer/knowledge projections share membership without widening physical work scopes. */
+export function repositoryScopeFromParams(params: AwarenessQueryParams): Scope {
+  const scope = scopeFromParams(params);
+  const cached = repositoryScopes.get(scope);
+  if (cached) return cached;
+  const shared = scope.workspacePath ? { ...scope,
+    workspacePaths: [...new Set([...scope.workspacePaths, ...repositoryWorkspacePaths(scope.workspacePath)])],
+  } : scope;
+  repositoryScopes.set(scope, shared);
+  return shared;
 }
 
 /** Plans, tasks, runs, locks, and edit logs are workspace/artifact scoped only. */

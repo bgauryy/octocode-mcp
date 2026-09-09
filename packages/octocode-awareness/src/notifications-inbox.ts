@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { normalizeArtifact, utcNow } from './helpers.js';
-import { fillScope } from './git.js';
+import { readScope } from './git.js';
 import { SIGNALS_SELECT_BASE, SIGNALS_SELECT_LEFT_JOIN_READS, SIGNALS_SELECT_ORDER_LIMIT, SIGNAL_READS_INSERT_IGNORE } from './sql/signals.js';
 import type { GetNotificationsParams, GetNotificationsResult, ResolveNotificationParams, ResolveNotificationResult } from './types/notifications-agents.js';
 import { appendSignalScope, assertSignalsExist, canReadOrJoinThread, isThreadParticipant, NotificationRow, rowToNotification } from './notifications-core.js';
@@ -24,7 +24,7 @@ export function getNotifications(
   } = params;
   const cursor = decodeSignalCursor(params.cursor);
 
-  const scope = fillScope(
+  const scope = readScope(
     { workspace_path: params.workspacePath ?? null, artifact: normalizeArtifact(params.artifact), repo: params.repo ?? null, ref: params.ref ?? null },
     cwd ?? process.cwd(),
   );
@@ -134,7 +134,7 @@ export function resolveNotification(
   assertSignalsExist(db, notificationIds);
   const hasExplicitScope = params.workspacePath != null || params.artifact != null;
   const scope = hasExplicitScope
-    ? fillScope(
+    ? readScope(
       { workspace_path: params.workspacePath ?? null, artifact: normalizeArtifact(params.artifact), repo: null, ref: null },
       cwd ?? process.cwd(),
     )

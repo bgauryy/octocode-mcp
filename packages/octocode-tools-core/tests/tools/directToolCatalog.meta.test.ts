@@ -20,23 +20,18 @@ describe('prepareDirectToolInput', () => {
     'ghGetFileContent',
     'ghCloneRepo',
     'localSearch',
-    'localAnalyzeGraph',
+    'astSearch',
     'localGetFileContent',
-    'lspGetSemantics',
+    'lspSearch',
     'npmSearch',
   ];
 
   it.each([
     ['npmSearch', {}, 'Set exactly one non-empty packageName or keywords.'],
     [
-      'localSearch',
+      'lspSearch',
       {},
-      'operation must be one of text, structural, files, or tree.',
-    ],
-    [
-      'lspGetSemantics',
-      {},
-      'workspaceSymbol needs symbolName and may use workspaceRoot. documentSymbols/diagnostic need uri. definition | references | hover | callers | callees | callHierarchy | implementation | typeDefinition | supertypes | subtypes -> requires uri + symbolName + lineHint.',
+      'workspaceSymbol needs symbolName and uri or workspaceRoot. documentSymbols/diagnostic need uri. definition | references | hover | callers | callees | callHierarchy | implementation | typeDefinition | supertypes | subtypes -> requires uri and exactly one anchor: position or symbolName+lineHint.',
     ],
   ])(
     'reports the public relation for invalid %s union input',
@@ -67,11 +62,7 @@ describe('prepareDirectToolInput', () => {
       },
       'topics',
     ],
-    [
-      'localAnalyzeGraph',
-      { operation: 'cycles', path: '/repo', maxDepth: 3 },
-      'depth',
-    ],
+    ['astSearch', { operation: 'cycles', path: '/repo', maxDepth: 3 }, 'depth'],
   ])(
     'does not suggest %s fields that are invalid for the active variant',
     (tool, query, invalidSuggestion) => {
@@ -90,7 +81,7 @@ describe('prepareDirectToolInput', () => {
   it('retains an alias suggestion when it is valid for the active LSP variant', () => {
     try {
       prepareDirectToolInput(
-        'lspGetSemantics',
+        'lspSearch',
         {
           type: 'references',
           uri: '/repo/file.ts',
@@ -100,7 +91,7 @@ describe('prepareDirectToolInput', () => {
         },
         { rejectUnknownFields: true }
       );
-      expect.unreachable('expected lspGetSemantics to reject path');
+      expect.unreachable('expected lspSearch to reject path');
     } catch (error) {
       expect(error).toBeInstanceOf(DirectToolInputError);
       expect((error as DirectToolInputError).details).toContain(
@@ -125,13 +116,12 @@ describe('prepareDirectToolInput', () => {
   });
 
   it('publishes conditional field relations that flattened schemas cannot express', () => {
-    expect(getDirectToolSchemaRelations('localAnalyzeGraph')).toEqual(
+    expect(getDirectToolSchemaRelations('astSearch')).toEqual(
       expect.arrayContaining([
-        expect.stringContaining('dependencies | dependents'),
-        expect.stringContaining('path -> requires file + target'),
+        expect.stringContaining('topology uses analysis'),
       ])
     );
-    expect(getDirectToolSchemaRelations('lspGetSemantics')).toEqual(
+    expect(getDirectToolSchemaRelations('lspSearch')).toEqual(
       expect.arrayContaining([
         expect.stringContaining('workspaceSymbol'),
         expect.stringContaining('definition | references'),
@@ -146,8 +136,12 @@ describe('prepareDirectToolInput', () => {
   });
 
   it('provides valid hand-authored patterns for every graph operation and split mode', () => {
-    const graph = buildDirectToolCommandPatterns('localAnalyzeGraph');
-    expect(graph.map(pattern => pattern.query.operation)).toEqual([
+    const graph = buildDirectToolCommandPatterns('astSearch');
+    expect(
+      graph
+        .filter(pattern => pattern.query.operation === 'topology')
+        .map(pattern => pattern.query.analysis)
+    ).toEqual([
       'deadCode',
       'cycles',
       'dependencies',
@@ -155,9 +149,11 @@ describe('prepareDirectToolInput', () => {
       'path',
       'reachability',
     ]);
-    expect(graph.every(pattern => pattern.query.path === '/ABS/repo')).toBe(
-      true
-    );
+    expect(
+      graph
+        .filter(pattern => pattern.query.operation === 'topology')
+        .every(pattern => pattern.query.path === '/ABS/repo')
+    ).toBe(true);
 
     const history = buildDirectToolCommandPatterns('ghSearchHistory');
     expect(history.map(pattern => pattern.query.operation)).toEqual([
@@ -207,9 +203,9 @@ describe('prepareDirectToolInput', () => {
   it('uses unmistakably absolute placeholders in every local command pattern', () => {
     for (const toolName of [
       'localSearch',
-      'localAnalyzeGraph',
+      'astSearch',
       'localGetFileContent',
-      'lspGetSemantics',
+      'lspSearch',
     ]) {
       for (const pattern of buildDirectToolCommandPatterns(toolName)) {
         expect(pattern.query.path ?? pattern.query.uri).toMatch(/^\/ABS\//);
@@ -218,11 +214,11 @@ describe('prepareDirectToolInput', () => {
   });
 
   it('introspects discriminated graph operations without flattening required fields', () => {
-    const fields = getDirectToolDisplayFields('localAnalyzeGraph');
+    const fields = getDirectToolDisplayFields('astSearch');
     const byName = new Map(fields.map(field => [field.name, field]));
     expect(byName.get('operation')).toMatchObject({
       required: true,
-      type: 'enum(deadCode, cycles, dependencies, dependents, path, reachability)',
+      type: 'enum(match, files, tree, symbols, topology)',
     });
     // path is optional: omitting it is valid when file/target is absolute
     // (the root is inferred by walking up to the nearest package.json).
@@ -287,25 +283,27 @@ describe('prepareDirectToolInput', () => {
   });
 
   it('keeps workspaceSymbol root optional in compact introspection', () => {
-    const workspace = getDirectToolSchemaVariants('lspGetSemantics').find(
+    const workspace = getDirectToolSchemaVariants('lspSearch').find(
       variant => variant.name === 'workspace'
     );
 
-    expect(workspace?.requires).toEqual(['type', 'symbolName']);
+    expect(workspace?.requires).toEqual([
+      'operation',
+      'symbolName',
+      'workspaceRoot',
+    ]);
   });
 
-  it('derives localSearch operation fields from the executable schema', () => {
+  it('derives astSearch operation fields from the executable schema', () => {
     const variants = new Map(
-      getDirectToolSchemaVariants('localSearch').map(variant => [
+      getDirectToolSchemaVariants('astSearch').map(variant => [
         variant.name,
         variant.fields,
       ])
     );
 
-    expect(variants.get('text')).toContain('searchText');
-    expect(variants.get('text')).not.toContain('pattern');
-    expect(variants.get('structural')).toContain('pattern');
-    expect(variants.get('structural')).not.toContain('searchText');
+    expect(variants.get('match')).toContain('pattern');
+    expect(variants.get('match')).toContain('rule');
     expect(variants.get('files')).toContain('pathRegex');
     expect(variants.get('files')).not.toContain('namePattern');
     expect(variants.get('tree')).toContain('namePattern');
@@ -314,22 +312,22 @@ describe('prepareDirectToolInput', () => {
 
   it('keeps alternative requirements and branch-specific limits honest', () => {
     const variants = new Map(
-      getDirectToolSchemaVariants('localSearch').map(variant => [
+      getDirectToolSchemaVariants('astSearch').map(variant => [
         variant.name,
         variant,
       ])
     );
-    expect(variants.get('structural')?.requires).toEqual(['operation', 'path']);
-    expect(variants.get('structural')?.fields).toEqual(
+    expect(variants.get('match')?.requires).toEqual(['operation', 'path']);
+    expect(variants.get('match')?.fields).toEqual(
       expect.arrayContaining(['pattern', 'rule'])
     );
 
-    const fields = getDirectToolVariantDisplayFields('localSearch');
-    expect(fields.text?.find(field => field.name === 'pageSize')).toMatchObject(
-      {
-        constraints: '1-1000',
-      }
-    );
+    const fields = getDirectToolVariantDisplayFields('astSearch');
+    expect(
+      fields.match?.find(field => field.name === 'pageSize')
+    ).toMatchObject({
+      constraints: '1-1000',
+    });
     expect(
       fields.files?.find(field => field.name === 'pageSize')
     ).toMatchObject({
@@ -360,7 +358,7 @@ describe('prepareDirectToolInput', () => {
     expect(() =>
       prepareDirectToolInput(
         'localSearch',
-        { operation: 'text', path: '.', searchText: 'runCLI', typo: true },
+        { path: '.', searchText: 'runCLI', typo: true },
         { rejectUnknownFields: true }
       )
     ).toThrow(DirectToolInputError);
@@ -368,7 +366,7 @@ describe('prepareDirectToolInput', () => {
     expect(() =>
       prepareDirectToolInput(
         'localSearch',
-        { operation: 'text', path: '.', searchText: 'runCLI', typo: true },
+        { path: '.', searchText: 'runCLI', typo: true },
         { rejectUnknownFields: true }
       )
     ).toThrow('Unknown field(s): typo');
@@ -405,18 +403,7 @@ describe('prepareDirectToolInput', () => {
   });
 
   it.each([
-    [
-      'text',
-      { operation: 'text', path: '.', searchText: 'needle', maxResults: 5 },
-      'maxFiles',
-    ],
-    [
-      'structural',
-      { operation: 'structural', path: '.', pattern: '$A', maxResults: 5 },
-      'maxFiles',
-    ],
-    ['files', { operation: 'files', path: '.', maxResults: 5 }, 'limit'],
-    ['tree', { operation: 'tree', path: '.', maxResults: 5 }, 'limit'],
+    ['lexical', { path: '.', searchText: 'needle', maxResults: 5 }, 'maxFiles'],
   ])(
     'suggests a field valid for the active localSearch %s variant',
     (_operation, query, expectedField) => {

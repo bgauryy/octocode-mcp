@@ -19,10 +19,13 @@ type LocalSearchData = Record<string, unknown> & {
   hints?: unknown[];
 };
 
-async function runLocalSearch(
+async function runLocalTool(
+  toolName: 'localSearch' | 'astSearch',
   query: Record<string, unknown>
 ): Promise<LocalSearchData> {
-  const response = await executeDirectTool('localSearch', { queries: [query] });
+  const response = await executeDirectTool(toolName, {
+    queries: [query],
+  });
   expect(response.isError, JSON.stringify(response)).not.toBe(true);
   const result = (
     response.structuredContent as {
@@ -96,10 +99,9 @@ function verifySmartData<T extends ToolResult>(result: T, toolName: string): T {
 }
 
 describe('Integration Tests: All Tools on node_modules', () => {
-  describe('localSearch operation:text - Pattern Search', () => {
+  describe('localSearch - - Pattern Search', () => {
     it('should find patterns in JavaScript files', async () => {
-      const result = await runLocalSearch({
-        operation: 'text',
+      const result = await runLocalTool('localSearch', {
         searchText: 'export',
         path: NODE_MODULES_PATH,
         include: ['*.js'],
@@ -108,7 +110,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         pageSize: 5,
       });
 
-      verifySmartData(result, 'localSearch:text');
+      verifySmartData(result, 'localSearch');
 
       if (result.status === undefined) {
         expect(result.files).toBeDefined();
@@ -117,8 +119,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
 
     it('should find files only mode', async () => {
-      const result = await runLocalSearch({
-        operation: 'text',
+      const result = await runLocalTool('localSearch', {
         searchText: 'package.json',
         path: NODE_MODULES_PATH,
         resultView: 'files',
@@ -127,7 +128,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         maxFiles: 10,
       });
 
-      verifySmartData(result, 'localSearch:text');
+      verifySmartData(result, 'localSearch');
 
       if (result.status === undefined) {
         expect(result.files).toBeDefined();
@@ -136,16 +137,16 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
   });
 
-  describe('localSearch operation:tree - Directory Listing', () => {
+  describe('astSearch operation:tree - Directory Listing', () => {
     it('should list directory contents', async () => {
-      const result = await runLocalSearch({
+      const result = await runLocalTool('astSearch', {
         operation: 'tree',
         path: NODE_MODULES_PATH,
         detail: 'basic',
         pageSize: 20,
       });
 
-      verifySmartData(result, 'localSearch:tree');
+      verifySmartData(result, 'astSearch:tree');
 
       if (result.status === undefined) {
         expect(
@@ -155,7 +156,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
 
     it('should provide detailed file information', async () => {
-      const result = await runLocalSearch({
+      const result = await runLocalTool('astSearch', {
         operation: 'tree',
         path: NODE_MODULES_PATH,
         detail: 'full',
@@ -163,7 +164,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         sort: 'size',
       });
 
-      verifySmartData(result, 'localSearch:tree');
+      verifySmartData(result, 'astSearch:tree');
 
       if (result.status === undefined) {
         expect(
@@ -173,13 +174,13 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
 
     it('should generate tree view', async () => {
-      const result = await runLocalSearch({
+      const result = await runLocalTool('astSearch', {
         operation: 'tree',
         path: NODE_MODULES_PATH,
         maxDepth: 2,
       });
 
-      verifySmartData(result, 'localSearch:tree');
+      verifySmartData(result, 'astSearch:tree');
 
       if (result.status === undefined) {
         expect(
@@ -189,9 +190,9 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
   });
 
-  describe('localSearch operation:files - File Discovery', () => {
+  describe('astSearch operation:files - File Discovery', () => {
     it('should find files by name', async () => {
-      const result = await runLocalSearch({
+      const result = await runLocalTool('astSearch', {
         operation: 'files',
         path: NODE_MODULES_PATH,
         names: ['package.json'],
@@ -199,7 +200,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         pageSize: 20,
       });
 
-      verifySmartData(result, 'localSearch:files');
+      verifySmartData(result, 'astSearch:files');
 
       if (result.status === undefined) {
         expect(result.files).toBeDefined();
@@ -208,7 +209,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
 
     it('should find files by extension', async () => {
-      const result = await runLocalSearch({
+      const result = await runLocalTool('astSearch', {
         operation: 'files',
         path: NODE_MODULES_PATH,
         entryType: 'f',
@@ -216,7 +217,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         pageSize: 10,
       });
 
-      verifySmartData(result, 'localSearch:files');
+      verifySmartData(result, 'astSearch:files');
 
       if (result.status === undefined) {
         expect(result.files).toBeDefined();
@@ -224,7 +225,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
 
     it('should find directories', async () => {
-      const result = await runLocalSearch({
+      const result = await runLocalTool('astSearch', {
         operation: 'files',
         path: NODE_MODULES_PATH,
         entryType: 'd',
@@ -232,7 +233,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         pageSize: 15,
       });
 
-      verifySmartData(result, 'localSearch:files');
+      verifySmartData(result, 'astSearch:files');
 
       if (result.status === undefined) {
         expect(result.files).toBeDefined();
@@ -244,7 +245,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     let testFile: string | null = null;
 
     it('should find a test file first', async () => {
-      const findResult = await runLocalSearch({
+      const findResult = await runLocalTool('astSearch', {
         operation: 'files',
         path: NODE_MODULES_PATH,
         names: ['package.json'],
@@ -260,7 +261,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         const firstFile = findResult.files[0];
         testFile = filePath(firstFile);
       } else {
-        const jsFileResult = await runLocalSearch({
+        const jsFileResult = await runLocalTool('astSearch', {
           operation: 'files',
           path: NODE_MODULES_PATH,
           names: ['*.js'],

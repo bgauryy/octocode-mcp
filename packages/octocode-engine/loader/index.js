@@ -43,6 +43,7 @@ export const structuralSearchFiles = nativeBinding.structuralSearchFiles
 export const structuralSearchFilesDetailed = nativeBinding.structuralSearchFilesDetailed
 export const getSupportedStructuralExtensions = nativeBinding.getSupportedStructuralExtensions
 export const getSemanticBoundaryOffsets = nativeBinding.getSemanticBoundaryOffsets
+export const inspectSyntaxTree = nativeBinding.inspectSyntaxTree
 
 export const getSupportedSignatureExtensions = nativeBinding.getSupportedSignatureExtensions
 export const jsonToYamlString = nativeBinding.jsonToYamlString

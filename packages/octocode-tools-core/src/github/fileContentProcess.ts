@@ -192,7 +192,7 @@ export async function processFileContentAPI(
     isPartial = false;
     // Always emit matchRanges — startLine/endLine include ±context lines, so
     // for a single match they do NOT pinpoint the matched line; without this
-    // the only structured lineHint anchor for lspGetSemantics is lost.
+    // the only structured lineHint anchor for lspSearch is lost.
     // (Mirrors the identical fix in local_fetch_content/fetchContent/extraction.ts.)
     matchRanges = extraction.matchRanges;
     matchedLines = extraction.matchingLines;

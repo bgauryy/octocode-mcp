@@ -47,7 +47,7 @@ const RESERVED_SYMBOL_WORDS = new Set([
 // bare identifier — anchored, no surrounding regex/punctuation/whitespace.
 const BARE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-type NextToolName = 'localGetFileContent' | 'lspGetSemantics' | 'local.text';
+type NextToolName = 'localGetFileContent' | 'lspSearch' | 'local.text';
 
 type NextConfidence = 'exact' | 'low';
 
@@ -167,14 +167,14 @@ export function buildSearchNextMap(
         lineHint: inferred.line ?? firstMatch.line,
       };
       next.lspDefinition = {
-        tool: 'lspGetSemantics',
-        query: { ...lspBase, type: 'definition' },
+        tool: 'lspSearch',
+        query: { ...lspBase, operation: 'definition' },
         why: 'Use the grep line as an LSP lineHint to resolve the symbol definition.',
         confidence: 'low',
       };
       next.lspReferences = {
-        tool: 'lspGetSemantics',
-        query: { ...lspBase, type: 'references' },
+        tool: 'lspSearch',
+        query: { ...lspBase, operation: 'references' },
         why: 'Use the grep line as an LSP lineHint to inspect semantic usages.',
         confidence: 'low',
       };

@@ -10,7 +10,7 @@ import { getMemory as getCanonicalMemory } from '../memory-recall.js';
 import { recallMemory as recallCanonicalMemory } from '../memory-semantic.js';
 import { insertNotification } from '../notifications-core.js';
 import { deletePrunableSignals } from '../notifications-signals.js';
-import { canonicalizePath } from '../git.js';
+import { canonicalizePath, repositoryWorkspacePaths } from '../git.js';
 import { countInboxMessages, listInboxMessagesPage, type MessageListParams, type MessagePage } from './coordination-message-inbox.js';
 import {
   containsSecretLikeText,
@@ -204,7 +204,6 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
       ...(params.label?.trim() ? { label: params.label.trim() } : {}),
       limit,
       workspacePath: this.canonicalWorkspace,
-      strictScope: true,
     };
     const result = params.semantic
       ? recallCanonicalMemory(this.db, common, true)
@@ -249,8 +248,8 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
   }
 
   protected getMessage(messageId: string): LiteMessage {
-    const row = this.db.prepare('SELECT s.*, NULL AS read_at FROM signals s WHERE s.workspace_path = ? AND s.signal_id = ?')
-      .get(this.canonicalWorkspace, messageId) as unknown as CanonicalMessageRow | undefined;
+    const row = this.db.prepare('SELECT s.*, NULL AS read_at FROM signals s WHERE s.workspace_path IN (SELECT value FROM json_each(?)) AND s.signal_id = ?')
+      .get(JSON.stringify(repositoryWorkspacePaths(this.canonicalWorkspace)), messageId) as unknown as CanonicalMessageRow | undefined;
     if (!row) throw new Error(`message not found: ${messageId}`);
     return messageFromCanonicalSignalRow(row);
   }
@@ -307,8 +306,8 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
   }
 
   listAgents(params: { includeLeft?: boolean; staleAfterMs?: number } = {}): AgentRecord[] {
-    const clauses: string[] = ['workspace_path = ?'];
-    const values: string[] = [this.canonicalWorkspace];
+    const clauses: string[] = ['workspace_path IN (SELECT value FROM json_each(?))'];
+    const values: string[] = [JSON.stringify(repositoryWorkspacePaths(this.canonicalWorkspace))];
     if (!params.includeLeft || params.staleAfterMs) clauses.push("status != 'LEFT'");
     if (params.staleAfterMs) {
       clauses.push('last_seen_at < ?');

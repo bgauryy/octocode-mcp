@@ -2,16 +2,16 @@
  * Tests for the programmatic worker seams in agent-tools.ts:
  * - registerWorkerLedgerListener: subscribe/unsubscribe, event delivery, throwing-listener isolation.
  * - steerWorkerById / killWorkerById / getWorkerTranscript: reuse of the AgentMessage
- *   and /octocode-agents code paths, unknown-id handling.
+ *   and /octocode-inbox code paths, unknown-id handling.
  */
 import assert from 'node:assert/strict';
 import { test, beforeEach, afterEach } from 'vitest';
 import { spawnRpcAgent } from '../src/tools/agents/process.js';
 import { steerWorkerById, getWorkerTranscript } from '../src/tools/agents/lifecycle.js';
 import { killWorkerById } from '../src/tools/agents/kill.js';
-import { formatAgentLedgerDetails } from '../src/tools/agents/rendering.js';
 import { setAgentProcessFactoryForTests, isSubagentProcess, pruneDroppableAgentsForSession } from '../src/tools/agents/registry.js';
-import { registerWorkerLedgerListener, listWorkerLedgerEntries } from '../src/tools/agents/ledger.js';
+import { registerWorkerLedgerListener, listWorkerLedgerEntries, enqueueWorkerTurn } from '../src/tools/agents/ledger.js';
+import { effectiveAgentStatus } from '../src/tools/agents/display-state.js';
 import type { WorkerLedgerEntry, WorkerLedgerEventType } from '../src/types.js';
 import { emitAgentEnd, makeMockAgentProcess } from './helpers/mock-process.js';
 
@@ -45,6 +45,25 @@ test('session prune drops killed workers but keeps live ones', () => {
 });
 
 // ─── registerWorkerLedgerListener ─────────────────────────────────────────────
+
+test('worker startup and the gap between queued turns reflect observed RPC state', () => {
+  if (isSubagentProcess()) return;
+  const mock = makeMockAgentProcess();
+  setAgentProcessFactoryForTests(() => mock as never);
+  const record = spawnRpcAgent({ task: 'observe transitions', resourceMode: 'lean' });
+  assert.equal(record.status, 'starting', 'sending the first prompt does not prove the turn started');
+  const start = () => mock._emit('stdout:data', Buffer.from(JSON.stringify({ type:'agent_start' }) + '\n'));
+  start();
+  assert.equal(record.status, 'running');
+  enqueueWorkerTurn(record);
+  emitAgentEnd(mock);
+  assert.equal(effectiveAgentStatus(record), 'queued', 'between turns, a pending follow-up is queued');
+  start();
+  assert.equal(record.pendingMessages, 0);
+  assert.equal(record.status, 'running');
+  emitAgentEnd(mock);
+  assert.equal(record.status, 'idle');
+});
 
 test('ledger listener receives entries and event types for worker transitions', () => {
   if (isSubagentProcess()) return;
@@ -137,17 +156,17 @@ test('a throwing ledger listener never breaks pushLedgerEvent or other listeners
 
 // ─── Worker ledger ──────────────────────────────────────────────────────────
 
-test('formatAgentLedgerDetails shows a branded running row while a worker is active', () => {
+test('worker output inspector shows the selected active worker and its status', () => {
   if (isSubagentProcess()) return;
 
   const mock = makeMockAgentProcess();
   setAgentProcessFactoryForTests(() => mock as never);
-  spawnRpcAgent({ task: 'animate me', name: 'spark', resourceMode: 'lean' });
+  const record = spawnRpcAgent({ task: 'animate me', name: 'spark', resourceMode: 'lean' });
+  mock._emit('stdout:data', Buffer.from(JSON.stringify({ type: 'agent_start' }) + '\n'));
 
-  const joined = formatAgentLedgerDetails();
-  assert.match(joined, /^[✦✧✶✺✹✷]/m, 'running workers use the branded sparkle spinner');
+  const joined = getWorkerTranscript(record.id)!;
   assert.match(joined, /spark/);
-  assert.match(joined, /· running/);
+  assert.match(joined, /status: running/);
 });
 
 // ─── steerWorkerById ──────────────────────────────────────────────────────────
@@ -158,6 +177,7 @@ test('steerWorkerById sends a steer RPC to a running worker', () => {
   const mock = makeMockAgentProcess();
   setAgentProcessFactoryForTests(() => mock as never);
   const record = spawnRpcAgent({ task: 'busy work', resourceMode: 'lean' });
+  mock._emit('stdout:data', Buffer.from(JSON.stringify({ type: 'agent_start' }) + '\n'));
   assert.equal(record.status, 'running');
 
   assert.equal(steerWorkerById(record.id, 'change course'), true);
@@ -268,7 +288,7 @@ test('getWorkerTranscript renders the single-agent status view', () => {
   assert.match(transcript, /deep in thought/);
 });
 
-test('getWorkerTranscript caps to the last maxLines lines', () => {
+test('getWorkerTranscript preserves the first and last retained output lines', () => {
   if (isSubagentProcess()) return;
 
   const mock = makeMockAgentProcess();
@@ -281,10 +301,9 @@ test('getWorkerTranscript caps to the last maxLines lines', () => {
   })}\n`));
 
   const full = getWorkerTranscript(record.id)!;
-  const capped = getWorkerTranscript(record.id, { maxLines: 5 })!;
   assert.ok(full.split('\n').length > 5);
-  assert.equal(capped.split('\n').length, 5);
-  assert.match(capped, /line 20$/, 'keeps the freshest (last) lines');
+  assert.match(full, /line 1\n/);
+  assert.match(full, /line 20$/, 'keeps every retained output line for scrolling');
 });
 
 test('getWorkerTranscript returns undefined for unknown ids', () => {

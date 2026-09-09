@@ -52,11 +52,11 @@ export function getDirectToolSchemaRelations(toolName: string): string[] {
       ...relations,
     ];
   }
-  if (toolName === 'localSearch') {
+  if (toolName === 'astSearch') {
     return [
-      'text needs searchText.',
-      'structural needs exactly one of pattern or rule.',
-      'Fields from different operations cannot be mixed.',
+      'Choose match, files, tree, symbols, or topology.',
+      'match requires exactly one of pattern or rule; langType is required for directory searches and inferred from a single source file.',
+      'topology uses analysis to select dependencies, dependents, path, cycles, reachability, or deadCode.',
     ];
   }
   if (toolName === 'ghSearchHistory') {
@@ -151,11 +151,11 @@ export function getDirectToolSchemaVariants(toolName: string) {
         : getToolSchemaVariants(toolName);
   return historyVariants.map(variant => ({
     ...variant,
-    ...(toolName === 'localSearch' && variant.name === 'structural'
+    ...(toolName === 'astSearch' && variant.name === 'match'
       ? { requires: ['operation', 'path'] }
       : {}),
-    ...(toolName === 'lspGetSemantics' && variant.name === 'workspace'
-      ? { requires: ['type', 'symbolName'] }
+    ...(toolName === 'lspSearch' && variant.name === 'workspace'
+      ? { requires: ['operation', 'symbolName', 'workspaceRoot'] }
       : {}),
     ...(fieldsByOperation.has(variant.name)
       ? { fields: fieldsByOperation.get(variant.name) }

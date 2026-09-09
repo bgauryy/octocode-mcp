@@ -16,7 +16,6 @@ import { budgetCaptures } from './captureBudget.js';
 import {
   executionLimitDiagnostic,
   isIncomplete,
-  rewrittenQueryDiagnostic,
   withCompleteness,
 } from './structuralCompleteness.js';
 import type { RipgrepQuery } from './scheme.js';
@@ -33,26 +32,10 @@ function compactStructuralMatchValue(value: string): string {
 const DEFAULT_MAX_STRUCTURAL_FILES = 2000;
 const MAX_STRUCTURAL_FILE_BYTES = 1_000_000;
 
-// Guidance appended to the typed `warnings` channel when a structural search
-// parses fine but matches nothing — the usual cause is an incomplete pattern.
+// Optional authoring guidance for a complete empty result. Absence does not
+// establish that the pattern is malformed.
 const ZERO_MATCH_GUIDANCE =
-  '0 structural matches. A pattern matches a complete AST node — a class/function usually needs a body (add `$$$BODY`), and Python/TS definitions may carry a return type (`-> $RET:`) or decorators the pattern must include. For partial or relational matches use a YAML `rule` instead of `pattern`.';
-
-/**
- * The #1 structural miss is a function/method pattern that omits the return
- * type: the natural `function $NAME($$$ARGS) { $$$BODY }` matches 0 real
- * functions because production code carries a return type between `)` and `{`.
- * When the pattern has a parameter list directly followed by a body brace and
- * no return-type position, return the typed variant (insert `: $R`); otherwise
- * undefined. Used to auto-retry; successful rewrites are disclosed explicitly.
- */
-function relaxedFunctionReturnTypePattern(
-  pattern: string | undefined
-): string | undefined {
-  if (!pattern || !/\)\s*\{/.test(pattern)) return undefined;
-  const relaxed = pattern.replace(/\)\s*\{/, '): $R {');
-  return relaxed === pattern ? undefined : relaxed;
-}
+  '0 structural matches for the requested pattern in this scope. Check the source syntax: a pattern must match a complete node, including relevant bodies (for example `$$$BODY`), return types, and decorators. For partial or relational matches, supply an explicit YAML `rule` instead of `pattern`.';
 
 /**
  * Resolve the `include` globs for a structural query: explicit include wins;
@@ -74,14 +57,13 @@ async function isRegularFile(path: string): Promise<boolean> {
 
 async function searchSingleFile(
   path: string,
-  query: RipgrepQuery,
-  patternOverride?: string
+  query: RipgrepQuery
 ): Promise<Awaited<ReturnType<typeof contextUtils.structuralSearchFiles>>> {
   const content = await readFile(path, 'utf8');
   const matches = await contextUtils.structuralSearch(
     content,
     path,
-    patternOverride ?? query.pattern,
+    query.pattern,
     query.rule
   );
 
@@ -115,9 +97,9 @@ export async function searchContentStructural(
 
   const targetIsFile = await isRegularFile(pathValidation.sanitizedPath);
   const captureText = Boolean((query as { captureText?: boolean }).captureText);
-  const buildFilesOptions = (patternOverride?: string) => ({
+  const buildFilesOptions = () => ({
     path: pathValidation.sanitizedPath,
-    pattern: patternOverride ?? query.pattern,
+    pattern: query.pattern,
     rule: query.rule,
     // Honor langType by scoping to its extensions when no explicit include
     // was given; explicit include globs always win.
@@ -135,80 +117,21 @@ export async function searchContentStructural(
     maxFiles: query.maxFiles ?? DEFAULT_MAX_STRUCTURAL_FILES,
     maxFileBytes: MAX_STRUCTURAL_FILE_BYTES,
   });
-  let attemptedPattern = query.pattern;
-  let effectivePattern = query.pattern;
-  const runNative = (patternOverride?: string) => {
-    attemptedPattern = patternOverride ?? query.pattern;
-    return targetIsFile
-      ? searchSingleFile(pathValidation.sanitizedPath, query, patternOverride)
-      : contextUtils.structuralSearchFiles(buildFilesOptions(patternOverride));
-  };
-
   let nativeResult: Awaited<
     ReturnType<typeof contextUtils.structuralSearchFiles>
   >;
   try {
-    nativeResult = await runNative();
-    // Statement-level patterns (const/let/var/return/…) must parse as complete
-    // statements; without a terminator the bare form parses as an expression
-    // fragment and silently matches nothing (`const $X = $Y` → 0 while
-    // `const $X = $Y;` matches). Retry once with ';' before reporting zero.
-    if (
-      nativeResult.totalMatches === 0 &&
-      !isIncomplete(nativeResult) &&
-      query.pattern &&
-      !query.rule &&
-      !/[;}]\s*$/.test(query.pattern)
-    ) {
-      try {
-        const retried = await runNative(`${query.pattern};`);
-        if (retried.totalMatches > 0 || isIncomplete(retried)) {
-          nativeResult = retried;
-          effectivePattern = `${query.pattern};`;
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (executionLimitDiagnostic(message, pathValidation.sanitizedPath))
-          throw error;
-        // Terminator retry is best-effort — keep the original zero-match result.
-      }
-    }
-    // Same failure mode for declarations: the natural
-    // `function $NAME($$$ARGS) { $$$BODY }` matches 0 real functions because
-    // production code carries a return type between `)` and `{`. Retry once
-    // with a return-type metavar inserted (`): $R {`) so the bare pattern
-    // matches typed functions. Only fires on 0 matches and only when the
-    // pattern lacks a return-type position, so it can never override or change
-    // an existing positive result.
-    if (
-      nativeResult.totalMatches === 0 &&
-      !isIncomplete(nativeResult) &&
-      query.pattern &&
-      !query.rule
-    ) {
-      const relaxed = relaxedFunctionReturnTypePattern(query.pattern);
-      if (relaxed) {
-        try {
-          const retried = await runNative(relaxed);
-          if (retried.totalMatches > 0 || isIncomplete(retried)) {
-            nativeResult = retried;
-            effectivePattern = relaxed;
-          }
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          if (executionLimitDiagnostic(message, pathValidation.sanitizedPath))
-            throw error;
-          // Return-type retry is best-effort — keep the original zero-match result.
-        }
-      }
-    }
+    // Execute exactly the requested shape. Adding a terminator or return type
+    // changes the query; a complete empty result is not permission to do that.
+    nativeResult = targetIsFile
+      ? await searchSingleFile(pathValidation.sanitizedPath, query)
+      : await contextUtils.structuralSearchFiles(buildFilesOptions());
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const nativeCode = /^\[(structural\.[A-Za-z.]+)\]/.exec(message)?.[1];
     if (nativeCode === 'structural.language.unsupported') {
       return createErrorResult(
-        `${message}. Use localSearch operation:"text" to search this file.`,
+        `${message}. Use localSearch to search this file.`,
         query,
         {
           toolName: TOOL_NAMES.LOCAL_RIPGREP,
@@ -221,17 +144,12 @@ export async function searchContentStructural(
       pathValidation.sanitizedPath
     );
     if (diagnostic) {
-      const rewritten = rewrittenQueryDiagnostic(
-        query.pattern,
-        attemptedPattern,
-        pathValidation.sanitizedPath
-      );
       return withCompleteness(
         await buildSearchResult([], query, 'structural', [diagnostic.message], {
           totalStructuralMatches: 0,
         }),
         'truncated',
-        [diagnostic, ...(rewritten ? [rewritten] : [])]
+        [diagnostic]
       );
     }
     const langType = query.langType || 'source';
@@ -303,16 +221,9 @@ export async function searchContentStructural(
         : nativeResult.totalMatches,
     ...(capReached ? { capReached: true } : {}),
   };
-  // A successful-but-empty structural search is almost always an incomplete
-  // pattern; surface remediation through the typed warnings channel (not hints).
+  // Keep native diagnostics separate from optional query authoring guidance.
   const warnings = [...nativeResult.warnings];
   const diagnostics = [...(nativeResult.diagnostics ?? [])];
-  const rewritten = rewrittenQueryDiagnostic(
-    query.pattern,
-    effectivePattern,
-    pathValidation.sanitizedPath
-  );
-  if (rewritten) diagnostics.push(rewritten);
   if (depthDropped > 0) {
     warnings.push(
       `maxDepth ${maxDepth}: dropped ${depthDropped} deeper file(s) — raise maxDepth or omit it to include them.`
@@ -357,8 +268,7 @@ export async function searchContentStructural(
     !query.rule &&
     depthDropped === 0
   ) {
-    // The return-type variant was already attempted above. Suggesting it again
-    // after zero matches is redundant and may use another language's syntax.
+    // Explain syntax matching without guessing a different language or query.
     const message = ZERO_MATCH_GUIDANCE;
     warnings.push(message);
     diagnostics.push({
@@ -372,7 +282,7 @@ export async function searchContentStructural(
   return withCompleteness(
     await buildSearchResult(
       depthFiltered,
-      { ...query, pattern: effectivePattern, maxFiles: effectiveMaxFiles },
+      { ...query, maxFiles: effectiveMaxFiles },
       'structural',
       warnings,
       stats

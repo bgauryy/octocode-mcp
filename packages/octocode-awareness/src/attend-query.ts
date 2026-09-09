@@ -7,6 +7,7 @@ import { assertKnownOptions } from './helpers.js';
 import { getMemory } from './memory-recall.js';
 import { queryAwareness } from './repo-query.js';
 import { AttendEvidence, AttendParams, AttendResult, chooseMode, compactRow, compactWorkboard, evidenceTrust, groupWorkboard, limitOf, ORGAN_REFERENCE, profileMap, resourceLeads, stringList, summarize, TEAM_NORMS, uniqueStrings } from './attend-model.js';
+import { attendContinuations } from './attend-continuations.js';
 import type { AwarenessQueryRow } from './repo-model.js';
 import { assessOperationalState, scopedWorkRows } from './attend-physiology.js';
 import { withAttendRevision } from './attend-revision.js';
@@ -16,6 +17,10 @@ const ATTEND_OPTION_KEYS = [
   'runtimeObservation', 'agentId', 'workspacePath', 'artifact', 'repo', 'ref', 'query',
   'file', 'limit', 'compact', 'includeBodies', 'explainOrgan', 'cwd', 'revision',
 ] as const;
+
+// Keep the observation bounded while retaining enough rows to prove whether a
+// presentation page is unchanged. The visible packet remains caller-sized.
+const ATTEND_SNAPSHOT_LIMIT = 50;
 
 function clusterCompactHandoffs(rows: AwarenessQueryRow[]): AwarenessQueryRow[] {
   const clusters = new Map<string, { row: AwarenessQueryRow; count: number; ids: string[] }>();
@@ -61,10 +66,6 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
   assertKnownOptions(params, ATTEND_OPTION_KEYS, 'attendAwareness');
   const beforeVersion = db.prepare('PRAGMA data_version').get()?.['data_version'];
   const cwd = params.cwd ? resolve(params.cwd) : process.cwd();
-  // D1 fix lives in repo-query `scopeFromParams`/`workspaceAliases`: the raw
-  // workspace path below flows through to the normalized path set, which also matches
-  // the git-root key that write paths store — so the profile block does not
-  // undercount rows written from a package/subdir.
   const workspacePath = resolve(String(params.workspacePath ?? cwd));
   let canonicalWorkspace = workspacePath;
   try { canonicalWorkspace = realpathSync(workspacePath); } catch { /* Missing paths remain explicitly scoped. */ }
@@ -87,12 +88,22 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
     cwd,
   };
 
-  // Profile is a fixed metric catalog, not a detail lane; avoid truncating it at
-  // the caller's per-column limit and mistaking omitted metrics for zero.
-  const profileResult = queryAwareness(db, { ...scope, view: 'repo-profile', limit: 500 });
+  const profileResult = queryAwareness(db, {
+    ...scope, view: 'repo-profile', limit: 500, recipientAgentId: agentId || null,
+  });
   const profile = profileMap(profileResult.rows);
-  const workboardResult = queryAwareness(db, { ...scope, view: 'workboard', query: null, preferAgentId: agentId || null, preferFiles: files });
+  const workboardResult = queryAwareness(db, {
+    ...scope, view: 'workboard', query: null,
+    preferAgentId: agentId || null, recipientAgentId: agentId || null, preferFiles: files,
+  });
   const rawWorkboard = groupWorkboard(workboardResult.rows);
+  const snapshotWorkboardResult = workboardResult.is_partial
+    ? queryAwareness(db, {
+      ...scope, view: 'workboard', query: null, limit: ATTEND_SNAPSHOT_LIMIT,
+      preferAgentId: agentId || null, recipientAgentId: agentId || null, preferFiles: files,
+    })
+    : workboardResult;
+  const snapshotWorkboard = groupWorkboard(snapshotWorkboardResult.rows);
   if (agentId && rawWorkboard['Verify']) {
     rawWorkboard['Verify'] = [...rawWorkboard['Verify']!].sort((left, right) =>
       Number(String(right['agent_id'] ?? '') === agentId) - Number(String(left['agent_id'] ?? '') === agentId));
@@ -115,7 +126,10 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
   const recall = memoryQuery
     ? getMemory(db, {
       query: memoryQuery,
-      limit: Math.min(5, limit),
+      // Recall is a ranked top-k read. Keep the selected packet small but
+      // retain a bounded probe so the revision sees rows beyond the visible
+      // evidence lead and can distinguish omission from an exact empty tail.
+      limit: ATTEND_SNAPSHOT_LIMIT,
       minImportance: 1,
       smart: true,
       workspacePath,
@@ -154,6 +168,8 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
       trust: evidenceTrust(allReferences, workspacePath),
     };
   });
+  const evidenceOmittedCount = Math.max(0, recall.memories.length - evidence.length);
+  const memorySnapshotPartial = memoryQuery !== '' && recall.memories.length >= ATTEND_SNAPSHOT_LIMIT;
 
   const trustWarnings = evidence
     .filter(item => item.trust !== 'existing_file_lead')
@@ -279,7 +295,21 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
     ?? scopedWork.find(row => Array.isArray(row['agents']) && (!agentId || row['agents'].some(agent => String(agent) !== agentId)));
   const scopedInspectionPath = scopedInspection ? String(scopedInspection['path'] ?? scopedInspection['file_path']) : null;
 
-  const next = decideNext({
+  const { continuations, partialReasons: nextPartialReasons } = attendContinuations({
+    workspacePath,
+    params,
+    query,
+    agentId,
+    files,
+    limit,
+    workboardPartial: workboardResult.is_partial,
+    evidenceOmittedCount,
+    profilePartial: profileResult.is_partial,
+    memorySnapshotPartial,
+  });
+
+  const next = {
+    ...decideNext({
     databasePath: getDatabasePath(db), workspacePath, artifact: params.artifact, agentId,
     verificationRequired: verificationTargets.length > 0, verificationRunId,
     ...(scopedInspectionPath ? { inspection: {
@@ -292,21 +322,19 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
     peerFile: files.length === 0 ? filesUnderWorkPath : undefined,
     inboxCount, hasEvidence: evidence.length > 0,
     readyTaskId: readyTasks.length > 0 && !query ? String(readyTasks[0]?.['id']) : undefined,
-  });
+    }),
+    ...(continuations.length > 0 ? { continuations } : {}),
+    ...(memorySnapshotPartial ? { terminal_limits: [{ code: 'MEMORY_RECALL_LIMIT' as const, limit: ATTEND_SNAPSHOT_LIMIT }] } : {}),
+  };
 
   const finish = (result: Omit<AttendResult, 'revision' | 'unchanged'>): AttendResult | AttendUnchangedResult => withAttendRevision({
     db, requested: params.revision, result,
     scope: { ...scope, workspacePath: canonicalWorkspace, agentId, files, compact, explainOrgan },
-    snapshot: { profile, rawWorkboard, memories: recall.memories.map(memory => {
-      // Decay continuously changes these invisible floating-point projections.
-      // Retain selected order and every persisted fact: rank crossings, expiry,
-      // changed references and evidence trust must still invalidate the packet.
+    snapshot: { profile, rawWorkboard: snapshotWorkboard, memories: recall.memories.map(memory => {
       const { score: _score, score_components: _components, ...evidenceState } = memory;
       return evidenceState;
-    }) },
-    partial: profileResult.is_partial || workboardResult.is_partial || physiology.operational_state.coverage.omitted_rows > 0
-      // Recall has no exhaustive continuation contract; reaching its limit is uncertain.
-      || (memoryQuery !== '' && recall.memories.length >= Math.min(5, limit)),
+    }).sort((left, right) => String(left['memory_id'] ?? '').localeCompare(String(right['memory_id'] ?? ''))) },
+    partial: profileResult.is_partial || snapshotWorkboardResult.is_partial || memorySnapshotPartial,
     stable: beforeVersion === db.prepare('PRAGMA data_version').get()?.['data_version'],
   });
 
@@ -334,6 +362,9 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
       },
       workboard,
       evidence,
+      partial: nextPartialReasons.length > 0,
+      ...(nextPartialReasons.length > 0 ? { partial_reasons: nextPartialReasons } : {}),
+      ...(evidenceOmittedCount > 0 ? { evidence_omitted_count: evidenceOmittedCount } : {}),
       next,
     });
   }
@@ -354,6 +385,9 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
     gaps,
     verification_targets: verificationTargets,
     trust_warnings: trustWarnings,
+    partial: nextPartialReasons.length > 0,
+    ...(nextPartialReasons.length > 0 ? { partial_reasons: nextPartialReasons } : {}),
+    ...(evidenceOmittedCount > 0 ? { evidence_omitted_count: evidenceOmittedCount } : {}),
     trace: [
       { step: 'repo-profile', count: profileResult.count },
       { step: 'workboard', count: workboardResult.count },

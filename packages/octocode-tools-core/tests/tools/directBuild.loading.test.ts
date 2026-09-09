@@ -34,14 +34,14 @@ describe('direct entry dependency loading', () => {
       Object.keys(outputs[file]!.inputs)
     );
     expect(initialInputs).not.toContain(
-      'src/tools/local_analyze_graph/execution.ts'
+      'src/tools/ast_search/topology/execution.ts'
     );
     expect(initialInputs).not.toContain(
       'src/tools/package_search/execution.ts'
     );
     expect(
       Object.values(outputs).some(
-        output => 'src/tools/local_analyze_graph/execution.ts' in output.inputs
+        output => 'src/tools/ast_search/topology/execution.ts' in output.inputs
       )
     ).toBe(true);
     expect(

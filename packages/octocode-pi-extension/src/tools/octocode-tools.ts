@@ -11,28 +11,30 @@
  */
 import { withOctocodeRender } from '../branding/renderers.js';
 import type { ToolDefinition } from '../types.js';
+import { PLAN_USAGE_GUIDANCE } from '@octocodeai/agent-contracts/prompts';
 
 // ─── Registration helper ─────────────────────────────────────────────────────
 
 export const DIRECT_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = Object.freeze({
-  file: 'Create, edit, or delete files through one guarded mutation boundary. Prefer file over bash for mutations. edit uses stale/lost-update checks and diffs; write is atomic; delete rejects directories and rechecks before unlinking.',
-  bash: 'Run the Awareness CLI, builds, tests, Git, and mechanical shell tasks with guarded write targets and per-command reasoning. Prefer file for ordinary file mutations; never for code search or file reads.',
-  inspectMedia: 'Inspect local media. image->pixels (inline vision); video->metadata/frame/contactSheet; audio->metadata/waveform/spectrogram. Read-only—use media to create or transform.',
-  media: 'Create or transform media. Render image/PDF from SVG, HTML, Markdown, or images; make GIFs, trim clips, extract audio, or convert formats. Writes are path-guarded; use inspectMedia for inspection.',
-  runFfmpeg: 'Run advanced ffmpeg or ffprobe argv directly with workspace path guards, timeout, cancellation, and progress. Prefer inspectMedia and media for standard operations. Use for filter_complex, loudnorm, or VMAF.',
-  web: 'Fetch a URL or search the web for docs, releases, errors, and info outside the repository. Prefer repository/MCP tools for code evidence.',
-  chromeDebug: 'Inspect/automate Chrome via CDP: DOM, console, network, screenshots, performance, storage, security, coverage, or raw Domain.method calls. Use agent profile:browser for multi-turn browser work.',
-  agent: 'Spawn/manage researcher, planner, architect, implementer, browser, or custom workers. Custom requires explicit tools and systemPrompt. Spawn first; use agentId later. Workers use MCPTool for repository research; the parent verifies and integrates.',
-  callTool: 'Reuse a verified dynamic tool, or propose/create/fix/delete one after approval. Research existing tools first. Use only for small reusable deterministic capabilities—not trivial shell one-liners or multi-step workflows.',
-  skill: 'Load an installed Agent Skill for a specialized workflow, or list/manage reusable dynamic skills. Do not load one for routine work. type:load uses installed skills; type:call manages dynamic lifecycle.',
-  plan: 'Maintain a visible compaction-safe checklist. Use for multi-step/risky/shared work; skip obvious one-step tasks. Consequential RFCs need review then Start; shared completion needs a check receipt.',
-  localServer: 'Serve inspected local static artifacts on a shared 127.0.0.1 server. Use for HTML plans/designs/reports; ask before opening a browser. Unmount when done.',
-  askUser: 'Ask one genuine decision question using options, multi-select, free text, or fields. Mark the safe default recommended; ordinary conversation does not need this tool.',
-  awareness: 'Discover and invoke the canonical Awareness coordination, memory, verification, history, and maintenance runtime without shell syntax. List or describe unfamiliar commands before calling them.',
-  MCPTool: 'Use automatically discovered MCP tools; prefer server:"octocode" over bash for code search/file reads. Describe unfamiliar tools before their first call. Supports stdio and Streamable HTTP.',
+  file: 'Mutate files with guarded edit, write, or delete. A local fix uses edit; write replaces the whole file and can erase unrelated work. Preserve current bytes outside the intended change. Read existing files, choose the matching operation, and batch edits to each path in one query.',
+  bash: 'Run builds, tests, packages, and bounded debugging; never for code search or file reads. Use file for edits and MCPTool for evidence. A command without timeout can hang; guards do not make arbitrary scripts safe. Keep effects authorized, set a timeout, and inspect the exit result. Git requires an explicit user request.',
+  inspectMedia: 'Inspect local image, video, or audio content. Use metadata for dimensions; use pixels, frames, or waveforms for visual evidence. Metadata alone cannot establish appearance. Inspect only the needed view; use media when the task requires an output file.',
+  media: 'Create images/PDFs or transform media. Use inspectMedia to examine an existing file; use media to produce an artifact. Rendering success does not prove visual correctness. Choose the smallest supported transform, protect existing output, and inspect the result.',
+  runFfmpeg: 'Run ffmpeg/ffprobe argv for operations such as filter_complex, loudnorm, or VMAF. Use media for a standard trim or conversion. Raw arguments can overwrite files; path guards are not consent. Pass argv without a shell or binary name, choose an authorized destination, and check the result.',
+  web: 'Browse the live web for external facts. query discovers pages; url reads one. A search snippet is a lead, not proof of the page contents. Use repository/MCP tools for code evidence. Fetch the relevant source and follow needed continuation pages before making a claim.',
+  chromeDebug: 'Inspect or operate Chrome through CDP. One screenshot uses this tool; dependent browser phases may use agent profile:browser. url navigates before inspection and can disturb current state. Preserve state outside the authorized journey. Attach to the known target, then run the smallest necessary scheme.',
+  agent: 'Delegate bounded work to researcher, planner, architect, implementer, browser, or custom workers. Independent lanes fit; dependent edits risk conflicts. Custom requires tools and systemPrompt. Workers use MCPTool for repository research; the parent owns integration. Spawn first, use agentId later, verify the handback, and release the worker.',
+  callTool: 'Reuse or maintain a dynamic function. A recurring calculation may fit; a one-off shell command does not. Creating duplicates adds maintenance without capability. Reuse first; on a miss, research alternatives and obtain creation approval. Pass a reason, grant only approved capabilities, and verify the result.',
+  skill: 'Load an installed skill for a specialized workflow or manage a reusable dynamic skill. Routine edits need no skill; repeated multi-step procedures may. Unnecessary loading adds context without changing the decision. Use type:load for installed instructions and type:call for dynamic lifecycle; read required instructions before acting.',
+  plan: `${PLAN_USAGE_GUIDANCE} Extra tracking adds noise. Use set for authorized work, propose for review; complete only after an observed check.`,
+  localServer: 'Serve an inspected static artifact on 127.0.0.1. Mount its directory, not an entire home or repository: every file in a mount may be exposed. Keep the served scope minimal. Use serve for a URL, open:true only with user authorization, and unmount when finished.',
+  askUser: 'Collect one missing choice that changes the next action. A material trade-off needs an answer; routine authorized work does not need confirmation. Redundant questions stall work, and cancellation grants no authority. Choose one input mode, ask once, and use the explicit outcome.',
+  awareness: 'Attend once and communicate when a peer needs to act. A blocker merits a signal; a routine edit needs no work or memory record. Repeated bookkeeping adds noise and can duplicate host state. Reuse the host briefing, describe unfamiliar commands once, and call only the feature needed for the next action.',
+  MCPTool: 'Call a connected MCP server\'s tools, resources, and prompts; server:"octocode" holds the code, GitHub, history, npm, and semantic research catalog. MCP action fields belong in queries[]; the selected tool\'s input belongs in queries[].arguments, and an octocode tool nests its own queries[] inside arguments. An inner field placed at the MCPTool level is rejected. Describe an unfamiliar tool once, then reuse that schema.',
 });
 
-export const SCHEMA_DESCRIPTION_MAX_CHARS = 180;
+/** One executable discovery recipe; workers inherit it through the MCP gateway. */
+export const MCP_SCHEMA_DISCOVERY_EXAMPLE = '{"queries":[{"reasoning":"Read the selected tool schema","server":"octocode","action":"describe","tool":"<catalog-tool-name>"}]}';
 
 export interface DirectToolContractStats {
   tools: number;
@@ -78,21 +80,6 @@ function prepareQueryEnvelope(
   };
 }
 
-function compactSchemaValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(compactSchemaValue);
-  if (!value || typeof value !== 'object') return value;
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => {
-    if (key !== 'description' || typeof child !== 'string') {
-      return [key, compactSchemaValue(child)];
-    }
-    const normalized = child.replace(/\s+/g, ' ').trim();
-    if (normalized.length <= SCHEMA_DESCRIPTION_MAX_CHARS) return [key, normalized];
-    const prefix = normalized.slice(0, SCHEMA_DESCRIPTION_MAX_CHARS - 1);
-    const boundary = prefix.lastIndexOf(' ');
-    return [key, `${prefix.slice(0, boundary > 80 ? boundary : prefix.length)}…`];
-  }));
-}
-
 export function registerUniqueTool(
   pi: { registerTool?(def: ToolDefinition): void },
   registeredToolNames: Set<string>,
@@ -107,7 +94,9 @@ export function registerUniqueTool(
     throw new Error('Octocode Pi extension requires the host registerTool API');
   }
   const description = DIRECT_TOOL_DESCRIPTIONS[toolDefinition.name] ?? toolDefinition.description;
-  const parameters = compactSchemaValue(toolDefinition.parameters) as ToolDefinition['parameters'];
+  // Shorten descriptions at their source. Rewriting a schema here can erase
+  // constraints or corrupt literal data inside examples/defaults.
+  const parameters = toolDefinition.parameters;
   pi.registerTool(withOctocodeRender({
     ...toolDefinition,
     description,

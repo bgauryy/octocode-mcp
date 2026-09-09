@@ -14,7 +14,7 @@ import { afterEach, test } from 'vitest';
 import { openAwarenessStore } from '@octocodeai/octocode-awareness';
 import type { ToolDefinition, PiContext } from '../src/types.js';
 import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
-import { handleOctocodePlanCommand } from '../src/tools/planning/plan-command.js';
+import { startReviewedPlan } from '../src/tools/planning/plan-command.js';
 import { setUnifiedPlanProjectorForTests } from '../src/tools/planning/plan-presentation.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
 import { completeExternalPlanTask } from '@octocodeai/octocode-awareness';
@@ -498,7 +498,7 @@ test('accepted RFC shared scope creates no Awareness rows until the Start comman
       lite.close();
     }
 
-    await handleOctocodePlanCommand(`start ${getPlanReviewState(workspace).acceptedRevision!}`, localCtx, (_ctx, message) => notices.push(message));
+    notices.push(startReviewedPlan(workspace, getPlanReviewState(workspace).acceptedRevision!, localCtx).message);
     lite = openAwarenessStore({ workspace });
     try {
       assert.equal(lite.listPlans().length, 1, 'Start creates the shared plan');
@@ -562,7 +562,7 @@ test('failed shared Start consumes authority, restores acceptance, and retries w
     lite.close();
 
     setInteractionStoreFactoryForTests((storeWorkspace) => openAwarenessStore({ workspace: storeWorkspace }));
-    await handleOctocodePlanCommand(`start ${review.acceptedRevision!}`, localCtx, (_ctx, message) => notices.push(message));
+    notices.push(startReviewedPlan(workspace, review.acceptedRevision!, localCtx).message);
     assert.equal(getPlanReviewState(workspace).phase, 'accepted', 'failed projection compensation restores accepted state');
     assert.deepEqual(getPlan(workspace).map((step) => step.status), ['todo']);
     assert.equal(getPlan(workspace)[0]?.awarenessTaskId, undefined, 'failed Start does not retain a local shared mapping');
@@ -590,7 +590,7 @@ test('failed shared Start consumes authority, restores acceptance, and retries w
     assert.equal(lite.getTask(stableTaskId).status, 'OPEN');
     lite.close();
 
-    await handleOctocodePlanCommand(`start ${review.acceptedRevision!}`, localCtx, (_ctx, message) => notices.push(message));
+    notices.push(startReviewedPlan(workspace, review.acceptedRevision!, localCtx).message);
     assert.equal(getPlanReviewState(workspace).phase, 'executing');
     assert.equal(getPlan(workspace)[0]?.awarenessTaskId, stableTaskId, 'fresh Start reuses the stable graph task');
     lite = openAwarenessStore({ workspace });
@@ -1004,7 +1004,7 @@ test('consequential proposals require an RFC unless an explicit justified overri
   assert.notEqual(overridden.isError, true);
 });
 
-test('proposal validation and command delivery failures settle activity instead of leaving Creating plan stuck', async () => {
+test('proposal validation failures settle activity instead of leaving Creating plan stuck', async () => {
   const tool = loadTool();
   const invalidCtx = { cwd: '/tmp/plan-invalid-rfc-activity' } as unknown as PiContext;
   const invalid = await tool.execute('id', {
@@ -1014,15 +1014,6 @@ test('proposal validation and command delivery failures settle activity instead 
   const invalidActivity = runtimeStoreFor(invalidCtx)?.getState().activity;
   assert.ok(!invalidActivity || !('detail' in invalidActivity) || invalidActivity.detail !== 'Creating plan…');
 
-  const notices: string[] = [];
-  await assert.doesNotReject(handleOctocodePlanCommand(
-    'new delivery failure',
-    invalidCtx,
-    (_ctx, message) => notices.push(message),
-    async () => { throw new Error('send failed'); },
-  ));
-  assert.match(notices.join('\n'), /could not start plan mode|send failed/i);
-  assert.equal(runtimeStoreFor(invalidCtx)?.getState().activity.kind, 'failed');
   clearPlan(invalidCtx.cwd!);
 });
 

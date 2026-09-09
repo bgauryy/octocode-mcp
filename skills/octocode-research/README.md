@@ -26,7 +26,7 @@ Prefer current Octocode MCP tools. The monorepo uses its built CLI; installed sk
 ## Install
 
 ```bash
-npx -y octocode skill install octocode-research --platform codex
+npx -y octocode skill install octocode-research
 ```
 
 ## Maintainer verification

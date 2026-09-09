@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const searchContentRipgrep = vi.hoisted(() => vi.fn());
+const searchContentStructural = vi.hoisted(() => vi.fn());
 vi.mock('node:fs/promises', async importOriginal => ({
   ...(await importOriginal<typeof import('node:fs/promises')>()),
   access: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('../../../src/tools/local_ripgrep/searchContentRipgrep.js', () => ({
-  searchContentRipgrep,
+vi.mock('../../../src/tools/local_ripgrep/structuralSearch.js', () => ({
+  searchContentStructural,
 }));
 
-import { executeLocalSearch } from '../../../src/tools/local_search/execution.js';
-import type { LocalSearchQuery } from '../../../src/tools/local_search/scheme.js';
+import { executeAstSearch } from '../../../src/tools/ast_search/execution.js';
+import type { AstSearchQuery } from '../../../src/tools/ast_search/scheme.js';
 import { LocalRipgrepQuerySchema } from '../../../src/tools/local_ripgrep/scheme.js';
 
 const emptyQueries = (['pattern', 'rule'] as const).flatMap(field =>
@@ -20,7 +20,7 @@ const emptyQueries = (['pattern', 'rule'] as const).flatMap(field =>
 describe('structural frontend validation contract', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    searchContentRipgrep.mockResolvedValue({
+    searchContentStructural.mockResolvedValue({
       searchEngine: 'structural',
       stats: { totalStructuralMatches: 0 },
     });
@@ -31,7 +31,7 @@ describe('structural frontend validation contract', () => {
     ({ field, value }) => {
       expect(
         LocalRipgrepQuerySchema.safeParse({
-          path: '/repo',
+          path: process.cwd(), langType: 'ts',
           mode: 'structural',
           [field]: value,
         }).success
@@ -42,13 +42,13 @@ describe('structural frontend validation contract', () => {
   it.each(emptyQueries)(
     'keeps a typed row and CLI/MCP metadata for blank $field',
     async ({ field, value }) => {
-      const result = await executeLocalSearch({
+      const result = await executeAstSearch({
         queries: [
           {
-            path: '/repo',
-            operation: 'structural',
+            path: process.cwd(), langType: 'ts',
+            operation: 'match',
             [field]: value,
-          } as LocalSearchQuery,
+          } as AstSearchQuery,
         ],
       });
       expect(result).toMatchObject({
@@ -69,18 +69,18 @@ describe('structural frontend validation contract', () => {
         'structural.query.invalid'
       );
       expect(JSON.stringify(result)).not.toContain('toolExecutionFailed');
-      expect(searchContentRipgrep).not.toHaveBeenCalled();
+      expect(searchContentStructural).not.toHaveBeenCalled();
     }
   );
 
   it('preserves surrounding whitespace in valid patterns', async () => {
     const pattern = '  target($X)  ';
-    await executeLocalSearch({
+    await executeAstSearch({
       queries: [
-        { path: '/repo', operation: 'structural', pattern } as LocalSearchQuery,
+        { path: process.cwd(), langType: 'ts', operation: 'match', pattern } as AstSearchQuery,
       ],
     });
-    expect(searchContentRipgrep).toHaveBeenCalledWith(
+    expect(searchContentStructural).toHaveBeenCalledWith(
       expect.objectContaining({ pattern })
     );
   });

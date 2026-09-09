@@ -25,22 +25,22 @@
         "hooks": {
           "type": "boolean",
           "default": true,
-          "description": "Enable installed Awareness shell-hook automation. Missing configuration keeps hooks inert."
+          "description": "Enable installed Awareness hooks. Missing configuration uses peer-communication defaults."
         },
         "notifications": {
           "type": "boolean",
           "default": true,
-          "description": "Allow hooks to deliver peer, handoff, and relevant memory context."
+          "description": "Allow hooks to deliver new peer messages."
         },
         "verificationGate": {
           "type": "boolean",
-          "default": true,
-          "description": "Allow stop hooks to surface unverified work."
+          "default": false,
+          "description": "Enable stop verification for tracked work with the guard/full profile."
         },
         "sessionCapture": {
           "type": "boolean",
-          "default": true,
-          "description": "Allow compact/end hooks to capture resumable session context."
+          "default": false,
+          "description": "Enable automatic session handoffs with the full profile."
         },
         "maintenanceReminders": {
           "type": "boolean",

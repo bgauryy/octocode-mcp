@@ -61,7 +61,7 @@ describe('shared database CLI and embedded host communication', () => {
     try {
       other.sendMessage({ fromAgentId: 'peer', toAgentId: 'reader', text: 'other workspace' });
     } finally { other.close(); }
-    const ids = Array.from({ length: 5 }, (_, index) => cli(['signal', 'publish', '--workspace', root, '--agent-id', 'writer', '--to-agent', 'reader', '--subject', `row ${index}`, '--body', `body ${index}`]).signal_id as string);
+    const ids = Array.from({ length: 5 }, (_, index) => cli(['signal', 'publish', '--kind', 'fyi', '--workspace', root, '--agent-id', 'writer', '--to-agent', 'reader', '--subject', `row ${index}`, '--body', `body ${index}`]).signal_id as string);
     const apiIds: string[] = [];
     let request: Parameters<typeof store.listMessagesPage>[0] = { agentId: 'reader', limit: 2 };
     for (;;) {

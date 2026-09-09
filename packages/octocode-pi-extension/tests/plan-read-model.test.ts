@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildPlanReadModel, renderPlanContext, renderPlanReadModel } from '../src/tools/plan-read-model.js';
 import { buildPlanMarkdownFromModel, buildPlanPageHtmlFromModel } from '../src/tools/plan-html.js';
 import { renderFooterView } from '../src/tui/footer-view.js';
-import { buildPlanFooterSegments } from '../src/extension-ui.js';
+import { projectPlanStatus } from './helpers/plan-status.js';
 
 describe('plan presentation read model', () => {
   function executionModel(phase: 'executing' | 'complete' | 'failed' = 'executing') {
@@ -19,7 +19,7 @@ describe('plan presentation read model', () => {
   }
 
   it('prioritizes the running task in the persistent footer', () => {
-    const lines = renderFooterView({ rows: [buildPlanFooterSegments(executionModel())] }, { width: 80 });
+    const lines = renderFooterView({ rows: [projectPlanStatus(executionModel())] }, { width: 80 });
     expect(lines.join('\n')).toContain('Implement core');
     expect(lines.join('\n')).not.toContain('Integrate core');
   });
@@ -29,7 +29,7 @@ describe('plan presentation read model', () => {
     model.tasks[0]!.status = 'blocked';
     model.summary.running = 0;
     model.summary.blocked += 1;
-    expect(buildPlanFooterSegments(model)[1]?.text).toContain('Document API');
+    expect(projectPlanStatus(model).find(segment => segment.text.startsWith('task '))?.text).toContain('Document API');
   });
 
   it('recomputes dependent readiness from the effective shared task state', () => {

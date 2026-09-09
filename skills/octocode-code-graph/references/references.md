@@ -6,9 +6,9 @@ Audit trail for the local evidence used to create this skill. Paths are reposito
 
 | Source | Used for |
 |---|---|
-| `packages/octocode-tools-core/src/tools/local_analyze_graph/analyzeGraph.ts` | operation behavior, pagination, warnings, syntactic confidence, and dead-code LSP continuation |
-| `packages/octocode-tools-core/src/tools/local_analyze_graph/scheme.ts` | graph output and dead-code candidate contracts |
-| `packages/octocode-tools-core/src/tools/local_analyze_graph/retention.ts` | re-export, lexical fallback, and liveness limitations |
+| `packages/octocode-tools-core/src/tools/ast_search/topology/analyzeTopology.ts` | topology operation behavior, pagination, warnings, syntactic confidence, and dead-code LSP continuation |
+| `packages/octocode-tools-core/src/tools/ast_search/topology/scheme.ts` | topology output and dead-code candidate contracts |
+| `packages/octocode-tools-core/src/tools/ast_search/topology/retention.ts` | re-export, lexical fallback, and liveness limitations |
 | `packages/octocode-tools-core/src/graph/advancedOperations.ts` | SCC condensation, topological layers, transitive edges, dominators, and weighted-path primitive |
 | `packages/octocode-engine/docs/SUPPORTED_LANGUAGES_AND_FEATURES.md` | AST, graph-fact, and LSP language/capability boundaries |
 | `packages/octocode-engine/docs/NATIVE_GRAPH_DOMAIN_SCOPE.md` | graph discovery versus LSP deletion-proof boundary and import-resolution risks |

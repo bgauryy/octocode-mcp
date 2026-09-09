@@ -11,7 +11,7 @@
  *   • Always allow (session)  → approve and remember this *class* of action for
  *                               the rest of the session, so we never re-prompt it.
  *
- * A session-scoped permission LEVEL tunes the gate (`/octocode-permissions`):
+ * A session-scoped permission LEVEL tunes the gate (/configuration → Permissions):
  * strict re-prompts everything (no memory), default is the flow above, relaxed
  * auto-approves install/git while still prompting for deletes / sudo / publish /
  * system / infra. OCTOCODE_PERMISSION_LEVEL pins the starting level.
@@ -36,6 +36,9 @@ import {
   APPROVAL_TITLES,
 } from '../tui/content.js';
 import { throwIfAborted } from './cancellation.js';
+import { randomUUID } from 'node:crypto';
+import { emitExecution } from './execution-runtime.js';
+import { executionLabel } from './execution-presentation.js';
 
 /**
  * Classes auto-approved under `relaxed` — routine local-dev actions only.
@@ -317,7 +320,17 @@ export async function requestApproval(
 
   const prompt = request.detail ? `${request.title}\n${request.detail}` : request.title;
   const choices = level === 'strict' ? [YES, NO] : [YES, NO, ALWAYS];
-  const choice = await ctx!.ui!.select!(prompt, choices, { signal });
+  const permissionId = randomUUID();
+  emitExecution(ctx, 'permission.requested', { id: permissionId, title: executionLabel(request.title) });
+  let choice: string | undefined;
+  try {
+    choice = await ctx!.ui!.select!(prompt, choices, { signal });
+    throwIfAborted(signal);
+    emitExecution(ctx, 'permission.resolved', { id: permissionId, decision: choice === ALWAYS ? 'allow-session' : choice === YES ? 'allow-once' : choice === NO ? 'denied' : 'cancelled' }, 'transcript');
+  } catch (error) {
+    emitExecution(ctx, 'permission.resolved', { id: permissionId, decision: 'cancelled' }, 'transcript');
+    throw error;
+  }
   // Some host or test implementations may ignore the dialog signal. Recheck
   // before recording an "always" grant so a late result cannot mutate state.
   throwIfAborted(signal);
@@ -327,7 +340,7 @@ export async function requestApproval(
     // Immediate feedback: what was remembered and how to undo it — a silent
     // session-wide grant is the one consent state the user must not lose track of.
     ctx?.ui?.notify?.(
-      `Always-allow remembered for "${request.actionClass}" this session — /octocode-permissions revoke ${request.actionClass} to undo.`,
+      `Allowed "${request.actionClass}" for this session. Manage grants in /configuration → Permissions.`,
       'info',
     );
     return { approved: true, remembered: false, always: true, interactive: true };

@@ -77,8 +77,8 @@ describe('raw tools command adapter parity', () => {
     const localNames = [
       'localSearch',
       'localGetFileContent',
-      'localAnalyzeGraph',
-      'lspGetSemantics',
+      'astSearch',
+      'lspSearch',
       'ghCloneRepo',
     ];
     for (const name of localNames) {

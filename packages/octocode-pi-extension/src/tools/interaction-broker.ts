@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { normalizeWorkspacePath, type AuthorizationReceiptV1, type InteractionAnswerV1, type InteractionRequestV1, type OutboxEventV1, type StoredInteractionV1 } from '@octocodeai/octocode-awareness';
 import type { PiContext } from '../types.js';
+import { emitExecution } from './execution-runtime.js';
 import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import { openPersistentAwareness } from './storage-policy.js';
 
@@ -391,7 +392,12 @@ export function submitHostInteractionAnswer(ctx: PiContext, input: HostInteracti
   if (stored.request.workspace !== workspace) throw new Error('interaction answer workspace mismatch');
   if (stored.request.sessionId !== sessionId) throw new Error('interaction answer session mismatch');
   if (stored.request.correlationId !== input.correlationId) throw new Error('interaction answer correlation mismatch');
-  return answerPendingInteraction(stored.request, input.outcome);
+  const answer = answerPendingInteraction(stored.request, input.outcome);
+  emitExecution(ctx, stored.request.kind === 'authorization' ? 'permission.resolved' : 'question.resolved', {
+    id: stored.request.interactionId,
+    decision: input.outcome.status === 'cancelled' ? 'cancelled' : 'answered',
+  }, 'transcript');
+  return answer;
 }
 
 function validateHostOutcome(outcome: HostInteractionAnswerV1['outcome']): void {

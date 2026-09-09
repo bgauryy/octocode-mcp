@@ -30,7 +30,7 @@ MCPTool({queries:[{reasoning:"Search remote code.", action:"call", server:"octoc
   arguments:{queries:[{reasoning:"Find candidate files.", operation:"code", keywords:["..."]}]}}]})
 ```
 
-Catalogued tools via `MCPTool server:"octocode"`: `ghSearch` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` · `ghCloneRepo` · `npmSearch` · `localSearch` · `localGetFileContent` · `localAnalyzeGraph` · `lspGetSemantics`. Runtime availability can disable individual tools such as cloning.
+Catalogued tools via `MCPTool server:"octocode"`: `ghSearch` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` · `ghCloneRepo` · `npmSearch` · `localSearch` · `astSearch` · `localGetFileContent` · `lspSearch`. Runtime availability can disable individual tools such as cloning.
 
 `warmMcpCatalog()` runs at `session_start`. The default first-turn prompt consumes the concise deterministic `mcp.md` guide while exact schemas stay private for validation. Set `OCTOCODE_COMPACT_MCP=0` only to inject the exact catalog for debugging; set `OCTOCODE_MCP_AI_GUIDE=1` to opt into model-authored guide generation. Calls always validate against the exact private catalog; use `MCPTool action:"describe"` before calling an unfamiliar tool or whenever the compact guide leaves an operation ambiguous.
 
@@ -77,9 +77,9 @@ and on `session_start`. Named in `DISABLED_BUILTIN_TOOL_NAMES`.
 | `read` | `localGetFileContent` (records read state for `file` edit stale-check) |
 | `edit` | `file` with `type:"edit"` |
 | `write` | `file` with `type:"write"` |
-| `grep` | `localSearch` with `operation:"text"` |
-| `find` | `localSearch` with `operation:"files"` |
-| `ls` | `localSearch` with `operation:"tree"` |
+| `grep` | `localSearch` with `searchText` |
+| `find` | `astSearch` with `operation:"files"` |
+| `ls` | `astSearch` with `operation:"tree"` |
 
 ---
 
@@ -140,17 +140,17 @@ Spawn workers with an `agent` query whose `type` is `spawn` and whose `profile` 
 
 | Profile | Specialty | Tools |
 |---|---|---|
-| `researcher` | Evidence gathering and compact claim ledgers | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI only) |
-| `architect` | Root-cause analysis and code archaeology | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI and bounded test/build/debug checks) |
-| `planner` | Dependency-ordered implementation plans and test strategy | `web` · `MCPTool` · `file` · `skill` · `bash` (Awareness CLI only) |
-| `implementer` | One bounded implementation unit with exclusive ownership and an observed check | `MCPTool` · `file` · `skill` · `bash` |
-| `browser` | Multi-turn browser analysis and lifecycle management | `chromeDebug` · `MCPTool` · `skill` · `bash` |
+| `researcher` | Evidence gathering and compact claim ledgers | `web` · `MCPTool` · `file` · `skill` · `awareness` · `bash` (role-scoped) |
+| `architect` | Root-cause analysis and code archaeology | `web` · `MCPTool` · `file` · `skill` · `awareness` · `bash` (bounded test/build/debug checks) |
+| `planner` | Dependency-ordered implementation plans and test strategy | `web` · `MCPTool` · `file` · `skill` · `awareness` · `bash` (role-scoped) |
+| `implementer` | One bounded implementation unit with exclusive ownership and an observed check | `MCPTool` · `file` · `skill` · `awareness` · `bash` |
+| `browser` | Multi-turn browser analysis and lifecycle management | `chromeDebug` · `MCPTool` · `skill` · `awareness` · `bash` |
 | `custom` | Caller-defined bounded role | Explicit caller-provided `tools` allowlist and non-empty `systemPrompt` |
 
 Researcher, architect, and planner workers keep product-code investigation read-only. Their `file` capability
 is limited by role policy to parent-assigned RFC or durable handback artifacts;
 it does not authorize product edits. `skill` loads operating guidance. Every typed
-worker can use the supplied Awareness CLI for scoped communication and bookkeeping;
+worker uses native `awareness` for scoped communication and bookkeeping;
 `bash` does not replace MCP research. Architect additionally permits bounded
 non-destructive test, build and debug checks. Typed profiles use the current
 `file` and `skill` names rather than removed standalone memory/write wrappers.
@@ -166,12 +166,14 @@ Registered via `pi.registerCommand`:
 |---|---|
 | `/octocode-rewind` | Select bounded local history, preview file changes, and explicitly apply the reviewed preview. |
 | `/octocode-inbox` | Pick a spawned worker, then view its transcript, steer it, stop it, or dismiss the overlay. |
+| `/octocode-status` | Inspect usage, tools, skills, plan, workers, and pending decisions in a scrollable terminal view. |
+| `/octocode-status events` | Inspect the selected branch’s semantic JSONL journal; `export` writes a session artifact. |
 | `/configuration` | Open the local browser configuration page from its overview. |
 
 The footer displays the same entry. Configuration includes MCP, skills, display,
 effort, permission controls, and an explicit Review plan action. Browser plan
 Start and Request changes use typed HTTP actions; feedback remains plain user text.
-Other workflow actions remain in tools or the live Awareness CLI.
+Other workflow actions remain in the native tools, including `awareness`.
 
 ---
 
@@ -218,10 +220,7 @@ Registered via `createHookComposer(pi, …)` (middleware composer that catches a
 The harness imports `@octocodeai/octocode-awareness` for native registry membership,
 shared plan projection, mutation guards/presence and peer-event delivery/policy.
 Model-facing signals, explicit locks, memory, verification, history, bookkeeping,
-and maintenance use the single `awareness` list/describe/call facade. Commands labeled
-`external-host-only` retain the installed CLI fallback through guarded `bash`. Pi freezes
-seven stable system segments, including `awareness-cli-runtime`, which supplies routing,
-the fallback runner, physical SQLite path, normalized workspace, and stable identity.
+and maintenance use the single `awareness` list/describe/call facade, importing the package API directly. Internal hook callbacks stay with the host lifecycle; setup and instruction export use the native API. The stable Awareness runtime segment supplies the physical SQLite path, normalized workspace, and identity; native execution needs no CLI runner.
 External CLI agents communicate through that same database/workspace with their own
 distinct IDs. Native run/task IDs and receipts are reused. Pi does not install shell
 hooks; its native events remain the lifecycle owner. See [agent flow](docs/AWARENESS_AGENT_FLOW.md).
@@ -236,29 +235,29 @@ Set via `ctx.ui.setStatus(name, value)` and `ctx.ui.setWidget(name, value)`.
 
 | Status key | Content |
 |---|---|
-| `octocode` | Working message (tool name or thinking indicator) |
+| `octocode` | Static Octocode identity |
 | `octocode-thinking` | Current thinking level badge |
-| `octocode-agents` | Spawned worker count and states badge |
-| `octocode-plan` | Active plan badge |
 | `agent-wait` | "waiting for agent \<id\>" label during an `agent` `type:"wait"` query |
 | `chrome-debug` | Active CDP action label during `chromeDebug` calls |
 | `octocode-mcp` | MCP connection status label |
 
-Metrics (turns · durations · exact current/max context), plan/task progress, Awareness attention, and a bounded live-agent list live only on the consolidated footer (`setFooter`), never in a duplicate status line or below-editor widget. The identity row contains `/configuration` (opens the settings HTML page in the browser); keyboard hints are intentionally omitted. A once-per-session, non-blocking `npx octocode auth status --json` probe adds `github ✓` in green when authenticated, `github ✗ login required` in red when credentials are missing, or `github check failed` in red on probe errors. Log in with `npx octocode auth login`. Full worker details remain available through the `agent` tool.
+The register-once footer owns activity, exact measured context, plan progress, worker attention, and session metadata. Pending decisions stop the motion indicator. The event reducer owns turn timing and tool counts; initialization and provider context remain separate runtime facts. Git line totals describe the whole working tree, including changes that preceded the session. GitHub authentication problems appear as attention; successful checks stay quiet.
+
+`lifecycle-ui.ts` records structured host observations through `execution-runtime.ts` into Pi custom state entries. `execution-events.ts` owns their typed payloads and replay reducer. These entries never enter model context. Pi retains user/assistant text and full tool results; the event journal references those native records instead of copying private reasoning or large output. `/octocode-status` and `/octocode-status events` inspect this state without sending an assistant message. See [UI contract](docs/UI.md).
 
 ---
 
 ## Environment Variables
 
-Set by the harness at load time.
+CLI fallback bindings supplied by the harness. Native Awareness calls use structured context.
 
 | Variable | Value |
 |---|---|
-| `OCTOCODE_AWARENESS_CLI` | Installed Awareness CLI path used by the native runner and guarded `bash` fallback |
+| `OCTOCODE_AWARENESS_CLI` | Installed CLI path for external/foreign-tool fallback; native Awareness calls do not use it |
 | `OCTOCODE_NODE` | Node executable for the installed CLI |
-| `OCTOCODE_AWARENESS_DB` | Native Pi Awareness database forwarded to the runner and guarded `bash` |
-| `OCTOCODE_AWARENESS_WORKSPACE` | Normalized workspace forwarded to the runner and guarded `bash` |
-| `OCTOCODE_AGENT_ID` | Current participant identity forwarded to the runner and guarded `bash` |
+| `OCTOCODE_AWARENESS_DB` | Native Pi Awareness database available to external/foreign-tool CLI adapters |
+| `OCTOCODE_AWARENESS_WORKSPACE` | Normalized workspace available to external/foreign-tool CLI adapters |
+| `OCTOCODE_AGENT_ID` | Current participant identity available to external/foreign-tool CLI adapters |
 | `OCTOCODE_SKILL_ROOT` | Absolute path to `dist/skills/` |
 
 Read from env at runtime (not set by harness):
@@ -309,7 +308,7 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
 14  support tools            (see Support Tools table)
  1  guarded built-in override (bash)
  6  disabled built-ins       (read, edit, write, grep, find, ls → replaced)
-3  slash commands           (local recovery, worker inbox, and configuration)
+5  slash commands           (recovery, worker inbox, status, events, and configuration)
  1  flag                     (--no-context)
 12  lifecycle hooks          (hookComposer; session_start pre-warms MCP catalog)
     direct pi.on handlers    (metrics, UI, worker inbox, Awareness, and Pi-owned compaction observation)

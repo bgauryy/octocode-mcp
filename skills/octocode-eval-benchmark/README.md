@@ -28,7 +28,7 @@ Do not edit a grader or case merely to make a candidate pass.
 ## Install
 
 ```bash
-npx octocode skill install octocode-eval-benchmark --platform codex
+npx -y octocode skill install octocode-eval-benchmark
 ```
 
 ## Maintainer verification

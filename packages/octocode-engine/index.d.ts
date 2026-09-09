@@ -450,6 +450,9 @@ export declare const SUPPORTED_STRUCTURAL_EXTENSIONS: readonly string[]
  */
 export declare function getSemanticBoundaryOffsets(content: string, filePath: string): Promise<Array<number>>
 
+/** Return a bounded, paginated tree-sitter syntax tree. */
+export declare function inspectSyntaxTree(content: string, filePath: string, options?: SyntaxTreeInspectOptions | undefined | null): Promise<SyntaxTreeInspectResult>
+
 /**
  * Returns the sorted extensions with registered Tree-sitter body queries.
  */
@@ -843,12 +846,12 @@ export declare function stripPythonDocstrings(content: string): string
 
 /**
  * One structural match. Line numbers are 1-based so `start_line` can be fed
- * directly as an `lspGetSemantics` `lineHint`; columns are 0-based char
- * offsets (tree-sitter native).
+ * directly as an `lspSearch` `lineHint`; columns are 0-based char
+ * offsets in UTF-16 code units.
  */
 /**
  * Precise position of one captured metavariable node. `line` is 1-based
- * (usable as an `lspGetSemantics` lineHint); columns are 0-based char offsets.
+ * (usable as an `lspSearch` lineHint); columns are 0-based UTF-16 code-unit offsets.
  */
 export interface MetavarRange {
   text: string
@@ -1014,6 +1017,33 @@ export interface StructuralSearchFilesResult {
   skippedUnreadable: number
   skippedLarge: number
   warnings: Array<string>
+}
+
+export interface SyntaxTreeInspectOptions {
+  namedOnly?: boolean
+  nodeOffset?: number
+  nodeLimit?: number
+}
+
+export interface SyntaxTreeNode {
+  id: number
+  parentId?: number
+  kind: string
+  named: boolean
+  startLine: number
+  startColumn: number
+  endLine: number
+  endColumn: number
+  startByte: number
+  endByte: number
+}
+
+export interface SyntaxTreeInspectResult {
+  nodes: Array<SyntaxTreeNode>
+  totalNodes: number
+  nextOffset?: number
+  status: string
+  diagnostics: Array<StructuralDiagnostic>
 }
 
 export interface StructuralSearchDetailedFileResult {

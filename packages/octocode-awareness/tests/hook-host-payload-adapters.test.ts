@@ -3,12 +3,12 @@ import {
   hookBlockOutcome,
   hookCommandForHostEvent,
   hookContextEnvelope,
-} from '../bin/hook-runner.js';
+} from '../src/hooks/payload.js';
 import {
   normalizeShellHookHost,
   payloadInput,
   toolName,
-} from '../bin/hook-payload.js';
+} from '../src/hooks/payload.js';
 
 describe('Copilot and Gemini hook payload adapters', () => {
   it('normalizes canonical host names and their CLI aliases', () => {

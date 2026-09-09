@@ -19,7 +19,7 @@ import { symbolKindName } from '../semanticPresentation.js';
 import { resolveWorkspaceSymbolAnchor, throwLspUnavailable } from './anchor.js';
 import type { CompactSymbol } from './documentSymbols.js';
 import { resolveFileAnchor } from '../../shared/resolveSymbolAnchor.js';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../../../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../../../toolNames.js';
 
 type CompactWorkspaceSymbol = CompactSymbol & { uri: string };
 
@@ -37,7 +37,7 @@ export async function getWorkspaceSymbols(
   query: WorkspaceSymbolSemanticQuery
 ): Promise<LspSemanticEnvelope | Record<string, unknown>> {
   if (query.uri) {
-    const anchor = await resolveFileAnchor(query, LSP_GET_SEMANTICS_TOOL_NAME);
+    const anchor = await resolveFileAnchor(query, LSP_SEARCH_TOOL_NAME);
     if (anchor.ok === false) return anchor.error;
     query = { ...query, uri: anchor.value.absolutePath };
   }
@@ -219,7 +219,7 @@ export function compactWorkspaceSymbols(
 export async function getFileDiagnostics(
   query: DiagnosticSemanticQuery
 ): Promise<LspSemanticEnvelope | Record<string, unknown>> {
-  const anchor = await resolveFileAnchor(query, LSP_GET_SEMANTICS_TOOL_NAME);
+  const anchor = await resolveFileAnchor(query, LSP_SEARCH_TOOL_NAME);
   if (anchor.ok === false) return anchor.error;
   const uri = anchor.value.absolutePath;
   const workspaceRoot =

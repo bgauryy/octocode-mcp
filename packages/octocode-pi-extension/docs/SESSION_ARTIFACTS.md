@@ -135,19 +135,7 @@ the explicit `sessionId`, `backlogId`, active `planId`, task IDs, or index paths
 
 ## View the plan page
 
-The plan HTML file (`plan/plan.html`) checks for updates every 3 seconds and
-reloads only when the generated plan revision changes. You can
-open it in a browser directly:
-
-```sh
-open "$(ls -dt "$OCTOCODE_HOME"/extension/sessions/*/plan/plan.html | head -1)"
-```
-
-Or use the `localServer` tool inside Octocode to serve it:
-
-```
-/octocode-plan
-```
+Open **/configuration → Review plan** to review the current session's plan. The served page checks for changes and refreshes when its revision changes. **Start** begins the displayed revision; **Request changes** returns feedback to the agent.
 
 The plan page renders:
 - Current steps with status icons (todo / doing / done)

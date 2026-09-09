@@ -6,8 +6,8 @@ import { preFlightIntent } from '../src/intents-preflight.js';
 import { releaseFileLock } from '../src/intents-release.js';
 import { auditUnverified } from '../src/verify-audit.js';
 import { markVerified } from '../src/verify-mark.js';
-import { cmdAuditUnverified } from '../bin/cli-work.js';
-import type { ParsedArgs } from '../bin/cli-model.js';
+import { cmdAuditUnverified } from '../src/commands/work.js';
+import type { ParsedArgs } from '../src/commands/args.js';
 
 function freshDb(): DatabaseSync {
   const db = new DatabaseSync(':memory:');

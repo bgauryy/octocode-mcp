@@ -157,7 +157,7 @@ function usedFiles(dir, files, texts) {
 
 /** A skill folder installs on its own, so it must not depend on a file outside itself. A bare `../name`
  *  is left alone: it is a directory argument (a skill under review), not a dependency. */
-const OUTSIDE_DEP = /\.\.\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,5}|~\/[^\s`)]+\.[A-Za-z0-9]{1,5}|file:\/\/[^\s`)]+|(?:^|[\s`("])\/(?:Users|home|etc|opt|var)\/[^\s`)"]+/;
+const OUTSIDE_DEP = /\.\.\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.[A-Za-z0-9]{1,5}|~\/[^\s`)]+\.[A-Za-z0-9]{1,5}|file:\/\/[^\s`)'\"]+|(?:^|[\s`("])\/(?:Users|home|etc|opt|var)\/[^\s`)"]+/;
 
 /** Audit trails, templates, and fixtures are carried data, exempt from entry and exit cues. */
 const DATA_ARTIFACT = /(?:^|\/)references\.md$|template|appendix|fixture/i;
@@ -413,10 +413,21 @@ Run the hook test and stop.
     rmSync(templateRef);
     writeFileSync(join(skillDir, 'SKILL.md'), lobby);
     const outsidePath = '../' + '../shared.md';
-    writeFileSync(join(skillDir, 'references', 'outside.md'), `# Outside\n\nLoad when testing. Why: regression.\n\nRead \`${outsidePath}\`.\n\nNext: return to \`SKILL.md\`.\n`);
+    const slash = String.fromCharCode(47);
+    const outsideAbsolute = slash + ['Users', 'example', 'outside.md'].join(slash);
+    const outsideUrl = ['file:', slash, slash, outsideAbsolute].join('');
+    const bareFilePrefix = ['file:', slash, slash].join('');
+    writeFileSync(join(skillDir, 'references', 'outside.md'), `# Outside\n\nLoad when testing. Why: regression.\n\nRead \`${outsidePath}\`.\n\nSee ${outsideUrl}.\n\nSee ${outsideAbsolute}.\n\nThe generated guard checks \"${bareFilePrefix}\" and '${bareFilePrefix}' before resolving a local reference.\n\nNext: return to \`SKILL.md\`.\n`);
     writeFileSync(join(skillDir, 'SKILL.md'), readFileSync(join(skillDir, 'SKILL.md'), 'utf8') + '\nWhen testing paths, load `references/outside.md`.\n');
     const outsideFindings = checkSkill(skillDir).findings;
-    if (!outsideFindings.some((finding) => finding.code === 'link-outside-skill')) {
+    const outsideLinks = outsideFindings.filter((finding) => finding.code === 'link-outside-skill');
+    const outsideMessages = outsideLinks.map((finding) => finding.message).join('\n');
+    if (outsideLinks.length !== 3
+      || !outsideMessages.includes(outsidePath)
+      || !outsideMessages.includes(outsideUrl)
+      || !outsideMessages.includes(outsideAbsolute)
+      || outsideMessages.includes(`\"${bareFilePrefix}\"`)
+      || outsideMessages.includes(`'${bareFilePrefix}'`)) {
       throw new Error(`outside-file regression: ${JSON.stringify(outsideFindings)}`);
     }
 

@@ -117,11 +117,11 @@ Project-specific instructions from /Users/bgaryy/code/octocode/AGENTS.md — the
 - Dogfood table: use shipped Octocode MCP / CLI tools (not bare find/grep/rg/cat/ls, ad-hoc gh, or registry curls); use octocode-research / octocode-eval-benchmark / octocode-subagent skills; after a package change rebuild then exercise the real CLI/MCP/skill path.
 - Method: Plan → TDD → `yarn workspace <pkg> test` → `yarn lint` → verify. No backward compat by default.
 - Access tiers: packages/*/src, tests, docs ✅ ; *.json/*.config.*/Cargo.toml/scripts ⚠ ask ; .env*/node_modules/dist/out/target ❌.
-- Architecture: interfaces (octocode-mcp, octocode CLI, octocode-vscode, octocode-pi-extension) depend on @octocodeai/octocode-tools-core (brain), which uses octocode-core (shared system prompt), octocode-engine (Rust/napi), and @octocodeai/config.
+- Architecture: interfaces (octocode-mcp, octocode CLI, octocode-vscode, octocode-pi-extension) depend on @octocodeai/octocode-tools-core (brain), which owns the tool contract and agent-facing instructions, uses octocode-engine (Rust/napi), and consumes reusable output types from octocode-core plus @octocodeai/config.
 - 10 workspace packages table (agent-contracts, config, tools-core, engine, mcp, octocode CLI, vscode, pi-extension, awareness, benchmark) with roles and ARCHITECTURE pointers.
-- Tools: 10-tool discovery catalog — GitHub (ghSearch, ghGetFileContent, ghSearchHistory, ghGetHistoryItem, ghCloneRepo), Package (npmSearch), Local (localSearch, localGetFileContent), Graph (localAnalyzeGraph), LSP (lspGetSemantics). Evidence rules: search/graph edges are candidates, confirm with LSP; lossless pagination required.
+- Tools: 10-tool discovery catalog — GitHub (ghSearch, ghGetFileContent, ghSearchHistory, ghGetHistoryItem, ghCloneRepo), Package (npmSearch), Local (localSearch, astSearch, localGetFileContent), LSP (lspSearch). Evidence rules: search/topology edges are candidates, confirm with LSP; lossless pagination required.
 - Build/local run: yarn build/test/lint/typecheck/verify; per-workspace scripts; local end-to-end rebuild chain (engine build:dev → tools-core build → octocode build:dev); prefer `node packages/octocode/out/octocode.js`.
-- Bash best practices table (npx -y, npm view for versions, isolate slow commands, gtimeout on macOS) and octocode tool call rules (localSearch needs path + operation; directory→path, maxResults→limit).
+- Bash best practices table (npx -y, npm view for versions, isolate slow commands, gtimeout on macOS) and octocode tool call rules (localSearch needs absolute path + searchText; astSearch and lspSearch select operation; directory→path, maxResults→limit).
 - Dev setup / prepublish guard scripts and single-source config/env via @octocodeai/config (getOctocodeHome, propagateOctocodeEnv, parseEnv, loadOctocoderc, PROTECTED_KEYS).
 </project_context>
 
@@ -194,8 +194,8 @@ Live schemas, catalogs, and plans are authoritative.
 - Load octocode-eval-benchmark to measure whether an iterative/agentic design improved.
 </capability_routing>
 <local_tools>
-The negotiated Octocode facade catalog owns inner tool names. Call catalog before choosing and schema before the first call. Gotchas: localSearch uses searchText (not query); lspGetSemantics uses type (not operation); localSearch always requires path + operation. Orient, search, read exact slices, then prove symbol identity and usage.
-- For local discovery choose text/structural/files/tree; use the smallest bounded result view.
+The negotiated Octocode facade catalog owns inner tool names. Call catalog before choosing and schema before the first call. Gotchas: localSearch uses searchText (not query) and has no operation field; astSearch and lspSearch use operation. Orient, search, read exact slices, then prove symbol identity and usage.
+- For local discovery choose lexical localSearch or astSearch match/files/tree/symbols/topology; use the smallest bounded result view.
 - For known files use matchString with bounded context; minify symbols/standard/none; prefer exact ranges; execute returned continuations before absence claims.
 - Use graph operations for topology; confirm risky changes/deletions with exact reads plus LSP.
 - Use LSP from a real search/read line anchor. For Markdown fetch a symbols heading skeleton first.
@@ -228,18 +228,18 @@ tool: ghSearch
 description: Discover GitHub code with operation:"code", repositories with "repositories", or a known repository tree with "tree". Code search covers the default branch; tree accepts branch. Read known paths with ghGetFileContent. Empty or incomplete search results do not prove absence. Input: queries (array, required, minItems: 1, maxItems: 5). Variants: operation=code (keywords/language/extension/filename/path/owner/repo/match/page/pageSize), operation=repositories (stars/forks/created/updated/topics/license/sort/...), operation=tree (owner/repo/branch/path/include/maxDepth/page/pageSize). Relations: additionalProperties: false.
 tool: ghSearchHistory
 description: Discover history metadata with operation:"pullRequests", "issues", or "commits". Pull requests may be searched globally; issues and commits require owner+repo. Commit keywords search messages on the default branch; omit keywords to walk history by path/ref/date. Retrieve a known number or commit ref with ghGetHistoryItem. Input: queries (array, required, minItems: 1, maxItems: 5) with per-operation filters (author/state/label/created/updated/sort/order/page/pageSize, etc.). Relations: additionalProperties: false.
-tool: localAnalyzeGraph
-description: Map file topology, not symbol identity. dependencies/dependents need file; path needs file+target; deadCode/reachability accept roots; cycles needs no selector. Import edges and dead-code results are candidates — verify changes and deletions with exact reads plus LSP. [delivered as "Input summary partial" + "Exact schema: MCPTool({queries:[{action:describe,server:octocode,tool:localAnalyzeGraph}]})"]
+tool: astSearch
+description: Inspect local structure, files, trees, symbols, or topology. topology selects dependencies/dependents/path/cycles/reachability/deadCode with bounded inputs. Import edges and dead-code results are candidates — verify changes and deletions with exact reads plus LSP.
 tool: localGetFileContent
 description: Read a known local path after search, find, or structure discovery. A path-only call returns a bounded standard-minified view. For large files, get a symbols outline, then an exact range or match. Read small config files whole with minify:"none". Optionally choose fullContent, matchString, or startLine+endLine. Partial content cannot prove absence; run the returned continuation. matchedLines are LSP anchors; match ranges and character offsets are not. Report fetched bytes only. Input: queries (array, required, minItems: 1, maxItems: 5) with fullContent=false/true, matchString, or startLine+endLine variants. Relations: additionalProperties: false.
 tool: localSearch
-description: Choose operation:"text" for lexical anchors, "structural" for AST matches, "files" for path or metadata discovery, and "tree" for directory orientation. Each operation has a strict branch, so do not mix fields across operations. Files/tree prune common generated and vendor directories by default; pass excludeDir:[] to include them. [delivered as "Input summary partial" + "Exact schema: MCPTool({queries:[{action:describe,server:octocode,tool:localSearch}]})"; note searchText not query; path + operation always required]
-tool: lspGetSemantics
-description: Use a real search/read line anchor for semantic proof. references finds usages; callers incoming calls; callees outgoing calls; callHierarchy both. Fall back to references if call hierarchy is unavailable. documentSymbols/diagnostic need uri; workspaceSymbol needs symbolName; other operations need uri+symbolName+lineHint. [delivered as "Input summary partial" + "Exact schema: MCPTool({queries:[{action:describe,server:octocode,tool:lspGetSemantics}]})"; note type not operation]
+description: Find lexical text and regex occurrences with an absolute path and searchText; there is no operation field. Use result views and pagination for bounded output.
+tool: lspSearch
+description: Use a real search/read line anchor for semantic proof. operation selects references, callers, callees, callHierarchy, definitions, symbols, hierarchies, hover, or diagnostics; anchored operations use uri plus symbolName+lineHint or position.
 tool: npmSearch
 description: Look up npm package metadata with packageName, or discover npm packages with keywords. Uses npm configuration and registry-scoped credentials; exact scoped names honor scope mappings. Optional registry overrides routing. Keyword search targets one registry and supports page; follow returned continuations. Use returned repository links for source-code research. Input: queries (array, required, minItems: 1, maxItems: 5) with packageName or keywords variants. Relations: additionalProperties: false.
 </mcp_catalog_index>
-NOTE (content check): as delivered, ghGetHistoryItem, localAnalyzeGraph, localSearch, and lspGetSemantics render with a "Input summary partial: descriptions/constraints omitted; do not mix variants" line plus an executable "Exact schema: MCPTool({...describe...})" pointer, because their compact schema summary exceeds INDEX_DESCRIPTION_CAP=4000 (packages/octocode-pi-extension/src/tools/mcp/catalog.ts:18). The other six tools render their full compact input schema inline.
+NOTE (content check): as delivered, ghGetHistoryItem, astSearch, localSearch, and lspSearch render with a "Input summary partial: descriptions/constraints omitted; inspect the live schema" note when their compact schema summary exceeds the catalog cap. The other tools render their compact input schema inline.
 
 <runtime_capabilities>
 effective_inline_images: false

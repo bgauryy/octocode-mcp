@@ -53,11 +53,57 @@ describe('paginateBulkText', () => {
 
   it('respects responseCharOffset to start reading from a position', () => {
     const text = 'aaaa\nbbbb\ncccc\ndddd\n';
+    const first = paginateBulkText(text, { responseCharLength: 10 });
     const result = paginateBulkText(text, {
       responseCharLength: 10,
       responseCharOffset: 5,
+      responseSnapshot: first.pagination!.snapshot,
     });
     expect(result.pagination!.charOffset).toBe(5);
+  });
+
+  it('requires a snapshot for later pages', () => {
+    const result = paginateBulkText('a'.repeat(100), {
+      responseCharLength: 10,
+      responseCharOffset: 10,
+    });
+    expect(result.pagination).toMatchObject({
+      changed: false,
+      restart: true,
+      charLength: 0,
+      nextCharOffset: 0,
+    });
+    expect(result.text).toContain('restart');
+  });
+
+  it('restarts when the whole response snapshot changes', () => {
+    const first = paginateBulkText('first response', { responseCharLength: 5 });
+    const result = paginateBulkText('changed response', {
+      responseCharLength: 5,
+      responseCharOffset: 5,
+      responseSnapshot: first.pagination!.snapshot,
+    });
+    expect(result.pagination).toMatchObject({
+      changed: true,
+      restart: true,
+      expectedSnapshot: first.pagination!.snapshot,
+      nextCharOffset: 0,
+    });
+    expect(result.text).not.toContain('first response');
+  });
+
+  it('restarts an offset beyond the changed response instead of accepting the clamp', () => {
+    const result = paginateBulkText('short', {
+      responseCharLength: 5,
+      responseCharOffset: 500,
+      responseSnapshot: 'response-v1:stale',
+    });
+    expect(result.pagination).toMatchObject({
+      restart: true,
+      changed: true,
+      charLength: 0,
+      nextCharOffset: 0,
+    });
   });
 
   it('handles an empty string', () => {
@@ -90,6 +136,7 @@ describe('paginateBulkText', () => {
     const text = 'hello world';
     const result = paginateBulkText(text, { responseCharLength: 5 });
     expect(result.pagination!.totalChars).toBe(text.length);
+    expect(result.pagination!.snapshot).toMatch(/^response-v1:/);
   });
 });
 

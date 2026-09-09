@@ -245,7 +245,8 @@ test('a tool needing capabilities is blocked until approved via _allow', async (
   setToolGeneratorForTests(async () => netTool);
   const tool = loadTool();
   // create it first (approved), then run: first run without _allow is blocked.
-  await run(tool, { toolType: 'fetchThing', mode: 'create', metadata: { intent: 'fetch', reason: 'net' } });
+  const created = await run(tool, { toolType: 'fetchThing', mode: 'create', metadata: { intent: 'fetch', reason: 'net' } });
+  assert.equal(created.details.status, 'blocked', created.content[0]?.text);
   const blocked = await run(tool, { toolType: 'fetchThing', metadata: {} });
   assert.equal(blocked.details.status, 'blocked');
   const approved = await run(tool, { toolType: 'fetchThing', metadata: { _allow: ['net'] } });

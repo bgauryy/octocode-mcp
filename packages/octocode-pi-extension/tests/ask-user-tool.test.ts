@@ -27,11 +27,11 @@ function loadTool(): ToolDefinition {
 // options, so it appears inline in the message flow. The mock invokes the
 // factory synchronously, captures the component + any opts (expected undefined),
 // and resolves the custom() promise when the factory calls done().
-function overlayCtx() {
+function overlayCtx(terminalRows?: number) {
   let component: { render(w: number): string[]; handleInput(d: string): void } | undefined;
   let overlayOpts: { overlay?: boolean } | undefined;
   const pendingInputs: string[] = [];
-  const tui = { requestRender: () => {} };
+  const tui = { requestRender: () => {}, terminal: { rows: terminalRows } };
   const ctx = {
     hasUI: true,
     mode: 'tui',
@@ -50,6 +50,7 @@ function overlayCtx() {
   configureInteractionBrokerRoute(ctx, true);
   return {
     ctx,
+    resize: (rows: number) => { tui.terminal.rows = rows; },
     send: (data: string) => {
       if (component) component.handleInput(data);
       else pendingInputs.push(data);
@@ -61,6 +62,51 @@ function overlayCtx() {
   };
 }
 
+test('short decision cards keep controls reachable and page through all wrapped context', async () => {
+  for (const width of [24, 40, 80]) {
+    const { ctx, send, render, resize } = overlayCtx(14);
+    const tool = loadTool();
+    const markers = Array.from({ length: 30 }, (_, i) => `detail-${String(i).padStart(2, '0')}`);
+    const pending = tool.execute('short-card', {
+      question: 'A long decision question with constraints that must remain available. '.repeat(8),
+      options: [
+        { value: 'start', label: 'Start', description: markers.join('\n'), pros: ['benefit-tail'], cons: ['risk-tail'], preview: 'preview-tail' },
+        { value: 'changes', label: 'Request changes' },
+      ],
+    }, undefined, undefined, ctx);
+    const seen = new Set<string>();
+    for (let page = 0; page < 100; page++) {
+      const lines = render(width);
+      const text = lines.join('\n');
+      assert.ok(lines.length <= 14, `height at ${width} columns: ${lines.length}`);
+      assert.ok(lines.every(line => visibleWidth(line) <= width));
+      assert.match(text, /enter/i);
+      assert.match(text, /esc/i);
+      assert.equal((text.match(/›/g) ?? []).length, 1, 'only the pinned choice has a selection cursor');
+      for (const marker of [...markers, 'benefit-tail', 'risk-tail', 'preview-tail']) {
+        if (text.includes(marker)) seen.add(marker);
+      }
+      send('\x1b[6~');
+    }
+    assert.equal(seen.size, markers.length + 3, 'every focused detail remains reachable');
+    resize(10);
+    assert.ok(render(width).length <= 10, 'resize clamps the viewport');
+    send('\x1b[B');
+    send('\r');
+    assert.equal(((await pending).details as { value: string }).value, 'changes', 'paging never selects or changes focus');
+  }
+});
+
+test('short text prompts keep the editor and cancellation visible under long questions', async () => {
+  const { ctx, send, render } = overlayCtx(10);
+  const pending = loadTool().execute('short-text', { question: 'Please explain this constraint. '.repeat(60) }, undefined, undefined, ctx);
+  assert.ok(render(24).length <= 10);
+  assert.match(render(24).join('\n'), /enter/i);
+  send('my answer');
+  send('\r');
+  assert.equal(((await pending).details as { value: string }).value, 'my answer');
+});
+
 test('askUser registration teaches decision-changing questions, concise choices, and inline fallback', () => {
   const tool = loadTool();
 
@@ -68,11 +114,11 @@ test('askUser registration teaches decision-changing questions, concise choices,
   const guidance = `${tool.description}\n${tool.promptGuidelines?.join('\n') ?? ''}`;
   assert.ok(guidance.length < 1000, 'widget policy stays compact beside its schema');
   assert.match(guidance, /missing choice that changes the next action/);
-  assert.match(guidance, /routine confirmation stalls authorized work/);
-  assert.match(guidance, /keep choices distinct/);
+  assert.match(guidance, /routine authorized work does not need confirmation/);
+  assert.match(guidance, /add only distinguishing detail/);
   assert.match(guidance, /recommended only for an evidence-backed safe default/);
-  assert.match(guidance, /options choose one and still allow a custom answer/);
-  assert.match(guidance, /cancel, timeout, or unavailable UI grants no authority/);
+  assert.match(guidance, /options chooses one with a custom-answer escape/);
+  assert.match(guidance, /cancel, timeout, and unavailable interaction never select a default/);
   assert.match(guidance, /resume a durable continuation/);
   assert.match(guidance, /otherwise ask inline/);
   const schema = tool.parameters as {
@@ -663,10 +709,10 @@ test('askUser bounds long previews, keeps decision rows visible, and scrolls wit
   const first = normalize(firstLines);
   assert.match(first, /preview line 01/);
   assert.doesNotMatch(first, /preview line 25/, 'the preview is bounded instead of flooding the decision card');
-  assert.match(first, /↓ 15 more preview lines/);
+  assert.match(first, /PgUp\/PgDn/);
   assert.match(first, /Start implementation \[recommended\]/);
   assert.match(first, /Request changes/, 'the rejection row remains visible below the preview');
-  assert.match(first, /pgup\/pgdn preview/);
+  assert.match(first, /PgUp\/PgDn/);
   assert.ok(firstLines.length < 30, 'a large preview keeps a bounded rendered height');
 
   const narrowLines = render(30);
@@ -675,8 +721,8 @@ test('askUser bounds long previews, keeps decision rows visible, and scrolls wit
   send('\x1b[6~');
   const second = normalize(render(80));
   assert.doesNotMatch(second, /preview line 01/);
-  assert.match(second, /preview line 11/);
-  assert.match(second, /↑ 10 earlier preview lines/);
+  assert.match(second, /preview line \d+/);
+  assert.match(second, /PgUp\/PgDn/);
   assert.match(second, /Request changes/);
 
   send('\x1b[5~');

@@ -4,6 +4,20 @@ import type { PlanReadModelV1 } from '../src/tools/plan-read-model.js';
 import type { RuntimeState } from '../src/tools/runtime-store.js';
 import { deriveUxSnapshot } from '../src/tools/ux-snapshot.js';
 
+test('worker updates prefer live tools and fresh output over old messages', () => {
+  const worker = {
+    agentId: 'worker', name: 'atlas', status: 'running',
+    startedAt: '1970-01-01T00:00:01.000Z', updatedAt: '1970-01-01T00:00:09.000Z',
+    lastMessage: { direction: 'to-agent' as const, action: 'send' as const, preview: 'old assignment', timestamp: 1000 },
+    activeTool: 'localSearch', deltaSummary: 'Found the caller',
+  };
+  const current = (overrides = {}) => deriveUxSnapshot({ now:10000, runtime:runtime(), agents:[{...worker,...overrides}] }).agents[0]!;
+  assert.equal(current().activeOperation, 'tool localSearch');
+  assert.equal(current({ activeTool: undefined }).activeOperation, 'Found the caller');
+  assert.equal(current({ status: 'idle', normalizedStatus: 'done' }).activeOperation, 'Found the caller');
+  assert.match(current({ status: 'idle', pendingMessages: 1 }).activeOperation!, /old assignment/);
+});
+
 function plan(overrides: Partial<PlanReadModelV1> = {}): PlanReadModelV1 {
   return {
     version: 1,
@@ -102,7 +116,11 @@ test('marks parallel plans as graph progress and promotes input, failures, messa
     plan: parallel,
     agents: [
       {
-        agentId: 'blocked-1', name: 'atlas', status: 'running', normalizedStatus: 'blocked',
+        agentId: 'blocked-1', name: 'atlas', status: 'idle', normalizedStatus: 'blocked',
+        startedAt: '1970-01-01T00:00:01.000Z', updatedAt: '1970-01-01T00:00:39.000Z',
+      },
+      {
+        agentId: 'queued-1', name: 'rhea', status: 'idle', normalizedStatus: 'done',
         pendingMessages: 2, startedAt: '1970-01-01T00:00:01.000Z', updatedAt: '1970-01-01T00:00:39.000Z',
       },
       {
@@ -115,6 +133,7 @@ test('marks parallel plans as graph progress and promotes input, failures, messa
 
   assert.equal(snapshot.plan?.progressMode, 'graph');
   assert.equal(snapshot.messages.queued, 2);
+  assert.equal(snapshot.agents.find(agent => agent.id === 'queued-1')?.state, 'queued');
   assert.equal(snapshot.messages.unread, 3);
   assert.equal(snapshot.provenance.find((item) => item.owner === 'awareness')?.stale, true);
   assert.deepEqual(snapshot.attention.slice(0, 2).map((item) => item.priority), ['P0', 'P0']);

@@ -1,22 +1,26 @@
 # Hooks And Host Integration
 
-Hooks automate Awareness lifecycle edges after the skill/CLI has chosen work; they do
-not choose tasks, prove success, or replace `attend`/verify. The CLI works without
-them. Claude, Codex, Cursor, GitHub Copilot, and Gemini use the shared hook runner.
+Hooks register participants and deliver peer messages by default. Optional profiles
+also automate tracked-work lifecycle edges. Hooks do not choose tasks or prove
+success. The API and CLI work without them. Claude, Codex, Cursor, GitHub Copilot,
+and Gemini use the shared hook runner.
 OpenCode uses one generated project plugin that only translates host events into that
 runner. Pi uses package APIs, native extension events, and the shared coordination
 store; it does not install or spawn shell hooks.
 
-Shell hooks remain inert until `<OCTOCODE_HOME>/awareness.json` exists and validates.
+Missing `$OCTOCODE_HOME/awareness.json` uses lean defaults: hooks and notifications
+enabled, verification reminders and automatic captures disabled. Malformed config
+warns and leaves shell hooks inert.
 Feature behavior follows [CONFIGURATION.md](CONFIGURATION.md). Before every real hook
 installation, show the dry-run target and obtain separate user approval immediately
 before changing host settings; configuration answers do not grant that approval.
 
-Workspace policy selects a hook profile. `guard` keeps matcher-limited mutation
-admission plus stop verification. `coordination` registers generic tool boundaries,
-validates native payloads, and classifies reads, writes, shells, MCP calls, and unknown
-tools before selecting communication or write subscribers. `full` additionally installs
-prompt/session briefing, compaction, and session-end capture. The default is `coordination`.
+Workspace policy selects a hook profile. Default `coordination` enables
+`notify-deliver`, communication-only `post-edit`, and `session-end`; it creates no
+per-edit work records. `guard` enables mutation admission, edit bookkeeping, and
+stop finalization. `full` combines communication and tracking, adds history capture,
+and enables compaction boundaries. Global feature switches separately control
+verification reminders and automatic continuation captures.
 
 A path-bearing payload is not sufficient evidence of a write. Only classified workspace
 writes enter presence, conflict admission, edit receipts, and fallback verification.
@@ -30,15 +34,15 @@ or model consumption.
 
 | Event | Behavior | Output/blocking |
 |---|---|---|
-| Prompt/session start (`full`) | Register agent; check a database/WAL change token before querying; detect changed operational state plus at most one prompt-grounded memory lead. | Emit a typed pointer such as `Awareness: memory 1.`; stay silent when stores are unchanged. |
-| Generic tool pre/post (`coordination`/`full`) | Validate and classify the native event; inspect bounded changed communication without creating write presence. | Event-specific context offer where supported; unsupported response events remain silent. |
-| Before write | Run harness guard, resolve task/explicit work, declare advisory path; honor exclusivity. | Silent normally; typed overlap pointer; host-native denial on guard or exclusive conflict. |
-| Successful write | Write edit audit and heartbeat; keep a scoped automatic HOOK active. | Best-effort, nonblocking. |
-| Failed write | Discard hook-created path presence that has no successful edit audit. | No edit audit or verification debt for a change that never happened. |
+| Prompt/session briefing (`coordination`/`full`) | Register agent and inspect bounded changed peer messages. | Attributed messages where supported; unchanged state stays silent. No memory lookup. |
+| Tool boundary communication (`coordination`/`full`) | Deliver changed peer messages. Default `post-edit` creates no write presence. | Event-specific context offer where supported; unsupported response events remain silent. |
+| Before write (`guard`/`full`) | Run harness guard, resolve task/explicit work, declare advisory path; honor exclusivity. | Silent normally; typed overlap pointer; host-native denial on guard or exclusive conflict. |
+| Successful write (`guard`/`full`) | Write edit audit and heartbeat; keep a scoped automatic HOOK active. | Best-effort, nonblocking. Full also captures supported file history. |
+| Failed write (`guard`/`full`) | Discard hook-created path presence that has no successful edit audit. | No edit audit or verification debt for a change that never happened. |
 | Subagent start | Register the host child identity and deliver changed state where the host supports child-context injection. | Cursor registration is useful, but child-context injection remains version/surface-dependent. |
-| Stop/subagent stop | Finalize the scoped HOOK once, then audit verification debt. | Count-only block or reminder; inspect details explicitly. |
-| Pre/PostCompact (`full`) | Finalize scoped HOOK state and capture a deduplicated handoff; keep the session reusable. | Best-effort, nonblocking. |
-| SessionEnd (`full`) | Finalize/capture, then mark the host session ended without claiming work success. | Best-effort, nonblocking. |
+| Stop/subagent stop (`guard`/`full`) | Finalize the scoped HOOK once; audit only when `verificationGate` is enabled. | Count-only block or reminder when enabled. |
+| Pre/PostCompact (`full`) | Finalize scoped HOOK state; capture only when `sessionCapture` is enabled. Keep the session reusable. | Best-effort, nonblocking. |
+| SessionEnd (`coordination`/`full`) | End peer/session presence. Full also settles automatic work and optionally captures continuation. | Best-effort, nonblocking; never claims success. |
 
 Pre-edit is the single guard+presence hook. The old separate harness-guard install
 entry is removed during install/repair to guarantee guard ordering.
@@ -53,7 +57,7 @@ entry is removed during install/repair to guarantee guard ordering.
 | GitHub Copilot | `.github/hooks/octocode-awareness.json` | Project-scoped official v1 hook file; success/failure writes, session/subagent/compact/end, prompt, and stop events. Global install is unsupported. |
 | Gemini CLI | `.gemini/settings.json` | Session, tool, agent, compression, and end events using Gemini event names and timeout units. |
 | OpenCode | `.opencode/plugins/octocode-awareness.js` | Project-scoped auto-discovered plugin; tool hooks can deny writes, while session events remain fail-open. No OpenCode settings file is rewritten. |
-| Pi | `@octocodeai/pi-extension` native events | `tool_call` guard/presence plus `tool_execution_end` success audit/release, session registry join/leave, durable event delivery, and compaction rehydration. No shell-hook install. |
+| Pi | `@octocodeai/pi-extension` native events | Registry join/leave and durable event delivery by default. Existing peer locks are checked; automatic work/audits require guard/full, and file history requires full. No shell-hook install. |
 | Custom | Library API or `hook run` payload | Must provide stable identity/path events. |
 
 ## Install And Verify
@@ -102,7 +106,11 @@ SQLite upsert per workspace, host, and event—no payloads or append-only hook l
 - Cursor runtime notes: local/cloud and model-context delivery require separate
   smoke checks; flat hook config has no guaranteed Windows command override.
 
-After installation, edit a harmless file and confirm:
+For the default profile, confirm registration, directed peer delivery at a supported
+boundary, silence for unchanged messages, and session-end presence cleanup.
+Do not expect per-edit work rows or verification reminders.
+
+For guard/full, enable the relevant feature switches, edit a harmless file, and confirm:
 
 1. `work list` shows the active task/explicit presence, or fallback enters Verify.
 2. Two ordinary agents can share a file and receive one changed-peer summary.
@@ -123,7 +131,7 @@ hosts, and workspace paths do not supply a fallback identity. A host child ID
 prevents subagents collapsing into their parent. Reuse one stable environment ID
 for each session so its CLI and hook work agree, and give every child a distinct ID.
 
-Pre-edit resolves the run in this order:
+With guard/full tracking, pre-edit resolves the run in this order:
 
 1. exactly one live task claim for the agent/workspace;
 2. an explicit active WORK run already declaring the target path;
@@ -162,18 +170,14 @@ A denied guard leaves no false file presence.
 briefings and peer sets emit nothing. This does not acknowledge signals; `signal ack`
 remains explicit.
 
-For Claude and Codex prompt hooks, the current prompt is held only as a bounded
-transient query; it is not written to SQLite. The selector searches the
-existing scoped memory bank, requires at least two meaningful prompt/memory token
-matches across the bounded normal recall pool, selects at most one memory lead, and
-otherwise stays silent. A match changes the fingerprint but does not embed the lead.
-Signals, overrides, recurring-failure pressure, and open-refinement counts remain
-separate operational interventions. This is a deterministic local policy, not a
-second reasoning agent, and it never makes recalled text authoritative.
+The peer briefing reads bounded unread messages without memory, refinement, or
+verification queries. It preserves sender, message, and thread IDs, clips long
+bodies with explicit partial state, and supplies executable retrieval for omitted
+content. Delivery does not acknowledge handling or close the thread.
 
-The selector still bounds and fingerprints at most five items, but the hook emits only
-`Awareness state changed.`. Memory observations, handoff bodies, maintenance commands,
-and other ledger contents require a targeted `attend`, signal, or memory read.
+Unsupported context channels do not consume the message fingerprint or shared
+change token; a later supported boundary can still offer the message. This is
+delivery at host events, not a background message watcher.
 
 Claude/Codex emit event-named `hookSpecificOutput.additionalContext`. Cursor emits
 native `additional_context` at session start and `agent_message` around tool use;
@@ -200,8 +204,8 @@ Environment controls read by every shared hook-runner adapter:
 | `OCTOCODE_AGENT_NAME` | Optional display name attached to registered agent identity. |
 | `OCTOCODE_ARTIFACT` (aliases `OCTOCODE_PACKAGE`, `OCTOCODE_SERVICE`) | Scope presence/coordination to one artifact inside a monorepo workspace. |
 | `OCTOCODE_HOME` | Root for the default global Awareness store and global hook change fingerprints; repository scope remains available explicitly. |
-| `OCTOCODE_NO_VERIFY_GATE=1` | Disable stop gate only with replacement process. |
-| `OCTOCODE_NO_NOTIFY=1` | Disable prompt briefing. |
+| `OCTOCODE_NO_VERIFY_GATE=1` | Disable stop verification reminders. Explicit checks and audits remain available. |
+| `OCTOCODE_NO_NOTIFY=1` | Disable hook message delivery. |
 | `OCTOCODE_NO_SESSION_CAPTURE=1` | Disable automatic handoff capture. |
 | `OCTOCODE_NOTIFY_RUN_DIGEST=1` | Opt in to a scoped, deduped prompt-time maintenance preview; never applies cleanup. |
 | `OCTOCODE_NO_DIGEST=1` | Force-disable the digest preview even when `OCTOCODE_NOTIFY_RUN_DIGEST=1` is set. |

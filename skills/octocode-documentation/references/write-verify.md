@@ -4,7 +4,7 @@ Load for the outline gate, write pass, and post-write checks.
 
 ## Outline gate
 
-Unless the requester already approved targets this turn, present:
+When existing authorization does not cover the intended targets, present:
 
 ```text
 Mode:     <agent-docs | human-docs | adr | codebase-pack | style-pass>
@@ -17,7 +17,7 @@ Risks:    <gaps, overwrites>
 1. Write  2. Adjust  3. Research more  4. Cancel
 ```
 
-IF a target exists → THEN ask Overwrite, Diff first, Rename, Skip, or Cancel.
+IF a target exists and the requester has not already authorized this target in the current session → THEN ask Overwrite, Diff first, Rename, Skip, or Cancel.
 
 ## Write
 
@@ -44,7 +44,6 @@ IF a target exists → THEN ask Overwrite, Diff first, Rename, Skip, or Cancel.
 5. human-docs: single type; cross-links present; no code dumps.
 6. ADRs: required sections present; linked from index when relevant.
 7. style-pass: every change traces to a named rule; no claim changed; lint clean or residual hits explained.
+8. For API or tool documentation, trace input schema → actual adapter arguments → result/evidence fields → executable `next` continuation. Check valid and invalid examples, distinguish static types from runtime validation, and label reliability claims as measured or unmeasured. For multi-tool changes, compare shared fields and run a composition case that was not used while drafting.
 
-IF verification fails → THEN fix or report residual risk. Do not claim completeness for gaps.
-
-Next: the rule behind any wording change → `references/style-index.md`; a review someone else acts on → `references/style-review.md`.
+If verification fails, fix it or report the gap; do not claim completeness. Next: wording rules → `references/style-index.md`; an actionable review → `references/style-review.md`.

@@ -299,7 +299,7 @@ const debugRecipe: Recipe = async ({ session, params, screenshotDir, signal }) =
     findings.push({
       priority: 1,
       line: `[FINDING] EXCEPTION: ${desc.slice(0, 200)} at ${loc}`,
-      action: `[ACTION] run localSearch with operation:"text" for "${desc.slice(0, 60)}" — exception at ${loc}`,
+      action: `[ACTION] run localSearch with searchText for "${desc.slice(0, 60)}" — exception at ${loc}`,
     });
   });
 
@@ -310,7 +310,7 @@ const debugRecipe: Recipe = async ({ session, params, screenshotDir, signal }) =
     findings.push({
       priority: 4,
       line: `[FINDING] CONSOLE_ERROR: ${msg}`,
-      action: `[ACTION] run localSearch with operation:"text" for "${msg.slice(0, 60)}"`,
+      action: `[ACTION] run localSearch with searchText for "${msg.slice(0, 60)}"`,
     });
   });
 

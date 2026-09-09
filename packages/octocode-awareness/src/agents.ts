@@ -10,7 +10,7 @@
 
 import type { DatabaseSync } from 'node:sqlite';
 import { normalizeArtifact, utcNow } from './helpers.js';
-import { normalizeWorkspacePath } from './git.js';
+import { normalizeWorkspacePath, repositoryWorkspacePaths } from './git.js';
 import {
   AGENTS_UPSERT,
   AGENTS_UPDATE_LAST_SEEN,
@@ -18,7 +18,6 @@ import {
   AGENTS_SELECT_NAMES_BY_IDS_PREFIX,
   AGENTS_SELECT_NAMES_NONEMPTY_SUFFIX,
   AGENTS_LIST_SELECT,
-  AGENTS_LIST_CLAUSE_WORKSPACE_PATH,
   AGENTS_LIST_CLAUSE_ARTIFACT,
   AGENTS_LIST_ORDER,
 } from './sql/agents.js';
@@ -140,13 +139,14 @@ export function listAgents(
   db: DatabaseSync,
   params: { workspacePath?: string | null; artifact?: string | null } = {},
 ): ListAgentsResult {
+  const workspaces = params.workspacePath ? JSON.stringify(repositoryWorkspacePaths(params.workspacePath)) : null;
   try {
     const binds: string[] = [];
     let sql = AGENTS_LIST_SELECT;
     const clauses: string[] = [];
     if (params.workspacePath) {
-      clauses.push(AGENTS_LIST_CLAUSE_WORKSPACE_PATH);
-      binds.push(normalizeWorkspacePath(params.workspacePath, params.workspacePath) ?? params.workspacePath);
+      clauses.push("(workspace_path IN (SELECT value FROM json_each(?)) OR workspace_path = '')");
+      binds.push(workspaces!);
     }
     const artifact = normalizeArtifact(params.artifact);
     if (artifact) {

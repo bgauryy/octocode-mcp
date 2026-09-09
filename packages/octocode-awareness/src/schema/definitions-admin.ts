@@ -37,7 +37,7 @@ export const adminSchemas = {
   schema_list: empty,
   schema_json_schema: z.object({ schema_name: text }),
   schema_example: z.object({ schema_name: text }),
-  schema_validate: z.object({ schema_name: text, input: path }),
+  schema_validate: z.object({ schema_name: text, input: z.unknown().describe('JSON value or serialized JSON to validate. The CLI accepts a JSON file path or stdin marker instead.') }),
 };
 
 export const adminExamples = {
@@ -54,5 +54,5 @@ export const adminExamples = {
   schema_list: {},
   schema_json_schema: { schema_name: 'memory_recall' },
   schema_example: { schema_name: 'memory_recall' },
-  schema_validate: { schema_name: 'memory_recall', input: 'payload.json' },
+  schema_validate: { schema_name: 'memory_recall', input: { query: 'current task' } },
 } as const;

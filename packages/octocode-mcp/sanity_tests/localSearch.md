@@ -1,23 +1,23 @@
-# Sanity check — `localSearch`
+# Runtime check — `localSearch`
 
-Manual runtime checks for unified local text, structural, file, and tree discovery.
+Manual runtime checks for lexical local text and regex discovery.
 
 ## Contract
 
-- [ ] The compact schema exposes strict `text`, `structural`, `files`, and `tree` variants with operation-scoped fields.
-- [ ] Text and structural operations reject `limit`; they paginate with `pageSize` and `page`.
-- [ ] Files and tree operations accept both `limit` and `pageSize`: `limit` caps the total candidate set before pagination, while `pageSize` caps one returned page.
+- [ ] The compact schema requires `path` and `searchText`; it has no `operation` field.
+- [ ] Lexical queries paginate with `pageSize` and `page` (and per-file matches with `matchPage`).
+- [ ] Result views include `paginated`, `discovery`, `content`, and `files`; structural, file, tree, symbol, and topology queries use `astSearch`.
 - [ ] Removed tool names and legacy aliases are rejected with a short canonical-field hint.
 
 ## Workflow
 
-- [ ] Run one representative query for every operation and verify paths, matches, totals, and operation-specific output.
-- [ ] For files or tree, run `{limit:3,pageSize:2,page:1}`, follow `next`, and verify pages contain two then one result.
-- [ ] Verify `next` preserves `limit`, `pageSize`, filters, and operation while incrementing `page`.
+- [ ] Run a representative lexical query and verify paths, matches, totals, and anchors.
+- [ ] Run `{pageSize:2,page:1}`, follow `next`, and verify the continuation preserves `searchText`, filters, and page state.
+- [ ] Verify per-file match pagination when a file has more matches than `maxMatchesPerFile`.
 - [ ] Repeat the same request and verify a cached response is marked `cache:1` without extra payload.
 
 ## Example
 
 ```json
-{"queries":[{"operation":"files","path":"/ABS/repo","names":["*.ts"],"limit":20,"pageSize":5,"page":1}]}
+{"queries":[{"path":"/ABS/repo","searchText":"needle","regex":"literal","resultView":"files","pageSize":5,"page":1}]}
 ```

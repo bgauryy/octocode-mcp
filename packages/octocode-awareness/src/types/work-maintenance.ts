@@ -46,18 +46,6 @@ export interface RefinementRow {
   updated_at: string;
 }
 
-export interface FileLockRow {
-  lock_id: string;
-  file_path: string;
-  run_id: string;
-  acquired_at: string;
-  expires_at: string | null;
-  run_agent_id?: string;
-  run_session_id?: string | null;
-  reasoning?: string;
-  test_plan?: string;
-}
-
 // ─── Advisory file work ──────────────────────────────────────────────────────
 
 export interface WorkRunRecord {
@@ -182,37 +170,6 @@ export interface TableInfoRow {
   name: string;
 }
 
-export interface CountRow {
-  count: number;
-}
-
-export interface StateCountRow {
-  state: string;
-  count: number;
-}
-
-export interface LabelCountRow {
-  label: string;
-  count: number;
-}
-
-export interface MetaRow {
-  value: string;
-}
-
-export interface FtsRow {
-  memory_id: string;
-}
-
-export interface RunIdRow {
-  run_id: string;
-}
-
-export interface RunResult {
-  changes: number;
-  lastInsertRowid: number | bigint;
-}
-
 // ─── Forget ──────────────────────────────────────────────────────────────────
 
 export interface ForgetMemoryParams {
@@ -273,13 +230,6 @@ export interface WaitForLockParams {
   retryIntervalMs?: number;      // poll interval ms (default 5000)
 }
 
-export interface WaitForLockResult {
-  ok: true;
-  waited_ms: number;
-  lock_free: boolean;
-  conflicts?: Array<{ file_path: string; agent_id: string; expires_at: string | null }>;
-}
-
 // ─── Prune-stale ──────────────────────────────────────────────────────────────
 
 export interface PruneStaleParams {
@@ -290,45 +240,6 @@ export interface PruneStaleParams {
   targetFiles?: string[];
 }
 
-export interface PruneStaleResult {
-  pruned_locks: number;
-  dry_run?: true;
-  would_prune?: number;
-}
-
-// ─── Verify ───────────────────────────────────────────────────────────────────
-
-export interface MarkVerifiedParams {
-  runId?: string;                // verify one execution run by id
-  agentId?: string;
-  allPending?: boolean;          // verify all pending runs for this agent/workspace
-  workspacePath?: string;        // scope for allPending
-  artifact?: string | null;
-  message?: string;              // what was verified
-  status?: 'SUCCESS' | 'FAILED';
-}
-
-export interface MarkVerifiedResult {
-  ok: boolean;
-  run_id?: string;
-  run_ids?: string[];            // when allPending=true
-  status?: string;
-  count?: number;
-  error?: string;
-  warning?: string;              // e.g. allPending ran across ALL workspaces (no scope given)
-}
-
-// ─── Audit ────────────────────────────────────────────────────────────────────
-
-export interface AuditUnverifiedParams {
-  agentId?: string | null;
-  workspacePath?: string;
-  artifact?: string | null;
-  olderThanDays?: number | null; // restrict inspection to stale debt
-  origins?: RunOrigin[];
-  before?: string | null;        // created before ISO timestamp
-}
-
 // ─── Delete refinement ───────────────────────────────────────────────────────
 
 export interface DeleteRefinementParams {
@@ -336,11 +247,4 @@ export interface DeleteRefinementParams {
   workspacePath?: string;
   artifact?: string | null;
   dryRun?: boolean;
-}
-
-export interface DeleteRefinementResult {
-  deleted: number;
-  dry_run?: true;
-  would_delete?: number;
-  refinement_ids: string[];
 }

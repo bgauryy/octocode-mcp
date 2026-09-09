@@ -265,7 +265,7 @@ describe('source CLI regressions', () => {
         'lock', 'acquire',
         '--workspace', dir,
         '--target-file', 'src/locked.ts',
-        '--rationale', 'own lock',
+        '--rationale', 'own lock', '--test-plan', 'focused CLI test',
         '--compact',
       ], { env });
       expect(acquired.status, acquired.stderr || acquired.stdout).toBe(0);
@@ -309,7 +309,7 @@ describe('source CLI regressions', () => {
           '--compact',
         ]);
         expect(importance.status).toBe(1);
-        expect(String(importance.parsed?.['error'])).toContain('--importance must be an integer between 1 and 10');
+        expect(importance.parsed?.['issues']).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'importance' })]));
       }
 
       for (const value of ['0', '-1']) {
@@ -321,7 +321,7 @@ describe('source CLI regressions', () => {
           '--compact',
         ]);
         expect(limit.status).toBe(1);
-        expect(String(limit.parsed?.['error'])).toContain('--limit must be a positive integer');
+        expect(limit.parsed?.['issues']).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'limit' })]));
       }
 
       const published = runSource([

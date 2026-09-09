@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { Client } from '@modelcontextprotocol/client';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { McpServer, InMemoryTransport } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { withOutputSanitization } from '../../src/utils/secureServer.js';

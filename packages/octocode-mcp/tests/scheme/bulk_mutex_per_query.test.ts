@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { LocalFetchContentBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_fetch_content/scheme.js';
-import { LocalSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_search/scheme.js';
+import { AstSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/ast_search/scheme.js';
 import { FileContentBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_fetch_content/scheme.js';
 
 describe('bulk schema cross-field validation', () => {
@@ -19,16 +19,17 @@ describe('bulk schema cross-field validation', () => {
     ).toBe(true);
   });
 
-  it('localSearch rejects fields that violate the selected operation', () => {
-    const r = LocalSearchBulkQuerySchema.safeParse({
+  it('astSearch rejects pattern and rule together in a mixed batch', () => {
+    const r = AstSearchBulkQuerySchema.safeParse({
       queries: [
         {
-          operation: 'structural',
+          operation: 'match',
           path: '/r',
+          langType: 'ts',
           pattern: 'call($A)',
           rule: 'kind: call_expression',
         },
-        { operation: 'text', searchText: 'y', path: '/r' },
+        { operation: 'files', path: '/r' },
       ],
     });
     expect(r.success).toBe(false);
@@ -37,6 +38,18 @@ describe('bulk schema cross-field validation', () => {
       expect(serialized).toContain('pattern');
       expect(serialized).toContain('rule');
     }
+    expect(
+      AstSearchBulkQuerySchema.safeParse({
+        queries: [
+          {
+            operation: 'match',
+            path: '/r',
+            langType: 'ts',
+            pattern: 'call($A)',
+          },
+        ],
+      }).success
+    ).toBe(true);
   });
 
   it('ghGetFileContent rejects a mutex-violating row in a mixed batch', () => {

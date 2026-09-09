@@ -2,11 +2,11 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { connectDb } from './db-runtime.js';
 import { hookReceipts, hookRuntimeReceiptHealth } from './hook-receipts.js';
-import { acquireConfigLock, fail, flag, HookSettings, HooksInstallOptions, HooksInstallResult, hooksInstallUsage, HOSTS, InstallableHookHost, loadSettings, opt, projectHookDir, requestedHost, targetConfig, writeSettingsAtomic } from './hooks-install-specs.js';
+import { acquireConfigLock, fail, flag, HookSettings, HooksInstallOptions, HooksInstallResult, hooksInstallUsage, hookTimeout, HOSTS, InstallableHookHost, loadSettings, opt, projectHookDir, requestedHost, targetConfig, writeSettingsAtomic } from './hooks-install-specs.js';
 import { awarenessHookName, entry, frontmatterHookDefinition, hasCommand, hasDriftedCommand, hasExactCommand, hookStatusKey, hookTargetExists, matchingCommandCount, obsoleteSpecsFor, removeCommand, removeUnexpectedAwarenessCommands, runtimeHealth, specsFor } from './hooks-install-health.js';
 import { loadWorkspacePolicy, type AwarenessHookProfile } from './workspace-policy.js';
 import { inspectOpenCodeAwarenessPlugin, installOpenCodeAwarenessPlugin, removeOpenCodeAwarenessPlugin } from './opencode-plugin-adapter.js';
-function runOpenCodeHooks(argv: string[], options: HooksInstallOptions): HooksInstallResult {
+function runOpenCodeHooks(argv: import('./hooks-install-specs.js').InstallInput, options: HooksInstallOptions): HooksInstallResult {
   if (flag(argv, '--global')) return fail('OpenCode hook installation currently supports --project-dir only');
   const projectDir = resolve(opt(argv, '--project-dir', options.cwd ?? process.cwd()));
   const adapterOptions = {
@@ -62,13 +62,13 @@ function runOpenCodeHooks(argv: string[], options: HooksInstallOptions): HooksIn
     return fail(error instanceof Error ? error.message : String(error), { host: 'opencode' });
   }
 }
-export function runHooksInstall(argv: string[], options: HooksInstallOptions): HooksInstallResult {
+export function runHooksInstall(argv: import('./hooks-install-specs.js').InstallInput, options: HooksInstallOptions): HooksInstallResult {
   const hostValue = requestedHost(argv);
   const writes = !flag(argv, '--help')
     && !flag(argv, '-h')
     && !flag(argv, '--check')
     && !flag(argv, '--dry-run')
-    && !(flag(argv, '--global') && argv.includes('--project-dir'))
+    && !(flag(argv, '--global') && Boolean(opt(argv, '--project-dir', '')))
     && !(hostValue === 'copilot' && flag(argv, '--global'))
     && HOSTS.has(hostValue as InstallableHookHost);
   if (!writes) return runHooksInstallUnlocked(argv, options);
@@ -90,18 +90,18 @@ export function runHooksInstall(argv: string[], options: HooksInstallOptions): H
   }
 }
 
-export function runHooksInstallUnlocked(argv: string[], options: HooksInstallOptions): HooksInstallResult {
+export function runHooksInstallUnlocked(argv: import('./hooks-install-specs.js').InstallInput, options: HooksInstallOptions): HooksInstallResult {
   if (flag(argv, '--help') || flag(argv, '-h')) {
     return { exitCode: 0, text: hooksInstallUsage() + '\n' };
   }
-  if (flag(argv, '--global') && argv.includes('--project-dir')) {
+  if (flag(argv, '--global') && Boolean(opt(argv, '--project-dir', ''))) {
     return fail('use either --global or --project-dir, not both');
   }
   if (requestedHost(argv) === 'opencode') return runOpenCodeHooks(argv, options);
   if (requestedHost(argv) === 'copilot' && flag(argv, '--global')) {
     return fail('GitHub Copilot hook installation currently supports --project-dir only');
   }
-  if (flag(argv, '--check') && !argv.includes('--host')) {
+  if (flag(argv, '--check') && !Boolean(opt(argv, '--host', ''))) {
     return fail('hooks check requires --host claude, codex, copilot, cursor, gemini, or opencode');
   }
 
@@ -169,7 +169,7 @@ export function runHooksInstallUnlocked(argv: string[], options: HooksInstallOpt
         matcher: spec.matcher ?? null,
         command: spec.command,
         command_windows: spec.commandWindows ?? null,
-        timeout: host === 'gemini' ? 20_000 : 20,
+        timeout: hookTimeout(host, spec.event),
         shape: host === 'cursor' || host === 'copilot' ? 'flat' : 'nested',
       },
     };

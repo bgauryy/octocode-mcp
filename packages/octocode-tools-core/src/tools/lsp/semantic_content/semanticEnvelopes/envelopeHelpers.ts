@@ -1,6 +1,6 @@
 import {
   compactResolvedSymbol,
-  type LspGetSemanticsQuery,
+  type LspSearchQuery,
   type LspSemanticEnvelope,
   type SemanticEmptyCategory,
   type SemanticContentType,
@@ -41,17 +41,17 @@ export function emptyCategoryForReason(
 }
 
 export function failedAnchorEnvelope(
-  query: LspGetSemanticsQuery,
+  query: LspSearchQuery,
   reason: string
 ): LspSemanticEnvelope {
   const uri = query.uri ?? '';
   return {
-    type: query.type,
+    type: query.operation,
     uri,
     lsp: {},
     payload: {
       kind: 'empty',
-      category: emptyCategoryForReason(query.type, reason),
+      category: emptyCategoryForReason(query.operation, reason),
       reason,
     },
   };
@@ -80,7 +80,7 @@ export function paginateItems<T>(
   items: readonly T[],
   requestedPage: number,
   requestedItemsPerPage: number,
-  query?: LspGetSemanticsQuery,
+  query?: LspSearchQuery,
   identities?: readonly unknown[]
 ): { pageItems: T[]; pagination: PaginationInfo } {
   const snapshot = query

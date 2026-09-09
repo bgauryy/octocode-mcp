@@ -48,7 +48,7 @@ export function withAttendRevision(input: {
   const { generated_at: _generatedAt, ...packet } = input.result;
   const revision = `a1.${scopeHash}.${hash({ packet, snapshot: input.snapshot })}`;
   const parsed = AttendRevisionTokenSchema.safeParse(input.requested);
-  const resetReason = input.requested === undefined ? undefined
+  const resetReason: AttendResult['reset_reason'] = input.requested === undefined ? undefined
     : !parsed.success ? 'invalid_revision'
       : parsed.data.split('.')[1] !== scopeHash ? 'scope_changed'
         : input.partial ? 'partial_snapshot'
@@ -56,6 +56,9 @@ export function withAttendRevision(input: {
   if (input.requested === revision && resetReason === undefined && !input.partial && input.stable) {
     return {
       ok: true, unchanged: true, revision, generated_at: input.result.generated_at,
+      partial: input.result.partial,
+      ...(input.result.partial_reasons ? { partial_reasons: input.result.partial_reasons } : {}),
+      ...(input.result.evidence_omitted_count ? { evidence_omitted_count: input.result.evidence_omitted_count } : {}),
       workspace_path: input.result.workspace_path, advisory: true,
       unavailable: input.result.operational_state.unavailable,
       next: input.result.next,

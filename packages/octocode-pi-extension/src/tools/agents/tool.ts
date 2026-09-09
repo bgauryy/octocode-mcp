@@ -15,7 +15,7 @@ import type {
   PiContext,
   PiTheme,
 } from '../../types.js';
-import type { registerUniqueTool } from '../octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from '../octocode-tools.js';
 import {
   AGENT_PROFILES,
   AGENT_OPERATIONS,
@@ -108,13 +108,7 @@ export function registerUnifiedAgentTool(
   registerFn(pi, registeredToolNames, {
     name: 'agent',
     label: 'Agent',
-    description: [
-      'Definition: spawn one bounded specialist or control an existing worker turn.',
-      'Contrast: delegate independent lanes with disjoint ownership; keep dependent, shared-file, or small work with the parent.',
-      'Consequence: an incomplete packet or trusted handback causes scope drift, lost updates, or an unverified final answer.',
-      'Principle: workers supply bounded evidence or edits; the parent owns authorization, verification, integration, and the user request.',
-      'Action: spawn with the complete packet, continue parent work, then wait, verify, reconcile, and kill or reuse the worker.',
-    ].join('\n'),
+    description: DIRECT_TOOL_DESCRIPTIONS.agent!,
 
     promptSnippet:
       'Spawn or manage bounded workers. Every spawn requires Goal, Context, Scope, Ownership, Acceptance, and Return; the parent must verify and integrate the handback.',
@@ -122,8 +116,8 @@ export function registerUnifiedAgentTool(
       'Delegate when two or more bounded lanes are independent with disjoint ownership, or a specialist materially improves coverage. Keep dependent/shared-file work serial.',
       'Route evidence→researcher, dependency plan→planner, root cause/design→architect, owned code+check→implementer, CDP evidence→browser; custom requires explicit least-capability tools and systemPrompt.',
       'The tool rejects incomplete packets before creating a worker. Wrong: spawn and reference its unknown agentId in one batch. Right: spawn first; use inspect, wait, message, steer, abort, or kill later.',
-      'After all spawns, continue non-overlapping parent work; then type:wait, verify load-bearing findings and checks, reconcile the plan, kill or reuse the worker, and continue the user request. Never trust or persist a raw handback.',
-      'For plan work, start the runnable step first and pass its stable task id as planStep.',
+      'After spawning, continue non-overlapping parent work; use type:wait to collect results. Verify findings/checks, reconcile an existing plan if present, kill or reuse the worker, and continue the user request. Never trust or persist a raw handback as verified memory.',
+      'If an executing plan already owns the work, start its runnable step and pass the stable task id as planStep. Delegation alone does not require a plan.',
     ],
 
     parameters,

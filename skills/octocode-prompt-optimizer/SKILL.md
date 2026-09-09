@@ -1,33 +1,50 @@
 ---
 name: octocode-prompt-optimizer
-description: "Use when improving prompts, tool/MCP schemas, policies, handoffs, routing descriptions, or instruction clarity."
+description: "Use when a prompt, agent instruction, MCP server instruction, tool description, schema field description, policy, or handoff must be written from a goal or made to actually change behavior: turn preferences into decidable boundaries, cut text that changes nothing, place each rule in its owning layer, audit a tool set for contradictions and descriptor drift, and decide how context is budgeted and compacted without destroying evidence. For SKILL.md folder structure, install, or review, use octocode-skills."
 ---
 
 # Octocode prompt optimizer
 
-Optimize instruction behavior, not prose aesthetics.
+Optimize instruction behavior, not prose aesthetics. A rule that states a preference changes nothing — "be efficient with tools" leaves every call open; "reuse a schema you already fetched; fetch only for an unfamiliar tool" decides the next call.
 
 Flow: `READ → UNDERSTAND → RATE → FIX → VALIDATE → OUTPUT`.
+
+Make each rule decide an observable action. Use the questions in `references/behavior.md` to resolve ambiguity; a rule does not need five labeled parts. When the input is a goal rather than an existing prompt, skip RATE.
 
 Workspace output contract: chat-only deltas stay in chat. New saved reviews or unnamed optimized drafts default to `<workspace>/.octocode/octocode-prompt-optimizer/`; scratch data uses `<workspace>/.octocode/tmp/octocode-prompt-optimizer/`. User-approved prompt, schema, policy, and source edits keep their named paths. Never fall back to a user-level Octocode home for artifacts.
 
 ## Rules
 - Read the complete input and map its intent before judging it. Rate evidenced issues before drafting fixes.
 - For short, low-risk text, combine adjacent phases. For complex, tool-facing, or risky instructions, keep the phases explicit. Always validate the finished draft.
+- Keep a sentence only when it defines a distinction, sets a boundary, explains a consequence, or directs an action. Cut repeated rules, motivational language, role-play, uninformative headings, and decorative terminology.
+- Prefer the smallest wrong/right example pair over more explanation when the pair fixes the boundary more precisely. Use literal language wherever literal language suffices.
+- Optimize behavioral information per token, not minimum length. Justify growth by the boundary it adds.
 - Preserve intent, working branches, identifiers, commands, and required metadata. Verify technical claims before rewriting them.
 - Reserve mandatory language for real requirements. Keep preferences flexible and mutate files only when authorized.
+- When the request is for prompt text, output only that text.
 - Ask one focused question only when an unresolved choice materially changes intent, scope, or risk. Without write authority, return a delta. Report unmeasured reliability claims as unmeasured.
 
 ## Smart routes — load only what the current step needs
-- READ and UNDERSTAND: load `references/gates.md` — read every section and map intent before judging or drafting.
-- RATE: load `references/rate.md`; FIX: load `references/fix.md`; VALIDATE: load `references/validate.md`; OUTPUT: load `references/output.md` — load only the active gate so later-step advice cannot bias the current decision.
-- When instructions conflict or a fix needs a compact instruction pattern, load `references/patterns.md` — apply the higher authority and log the resolution in one line.
-- When reducing noise, load `references/conciseness-toolkit.md`; when fixing priority/hierarchy load `references/attention.md`; when choosing a technique for an observed failure load `references/prompt-techniques.md` — match technique to failure mechanism.
-- When optimizing tool or MCP contracts, load `references/tool-contracts.md`; for agent handoffs load `references/agent-communication.md`; for typed packet boundaries load `references/zod-agent-contracts.md` — make inputs, outputs, authority, and failure states explicit.
-- When context can overflow, load `references/context-budget.md`; when repeated calls share stable prefixes load `references/prompt-caching.md` — control relevance, pagination, latency, and cost.
-- When reliability must be measured, load `references/evaluation-data.md` — build realistic held-out scenarios, verifiers, metrics, and a failure ledger. <!-- style-lint: ignore-line passive-voice -->
-- When instructions consume retrieved or user-supplied content, load `references/untrusted-content.md` — preserve the boundary between data and authority.
-- When improving this skill, prefer `octocode-eval-benchmark`; otherwise load `references/improve-loop.md` — require measurable acceptance instead of intuition.
+
+Load references that resolve the current decision. Reuse material already read and combine independent reads when useful.
+
+| When | Load | It decides |
+|---|---|---|
+| READ, UNDERSTAND | `references/gates.md` | intent map before any judgment or draft |
+| RATE · FIX · VALIDATE · OUTPUT | `references/rate.md` · `references/fix.md` · `references/validate.md` · `references/output.md` | severity, repair, gate checks, delivery variant |
+| A rule leaves the next action ambiguous | `references/behavior.md` | observable action, scope, and useful examples |
+| Instructions conflict, or a fix needs a stock pattern | `references/patterns.md` | which authority wins; one-line resolution log |
+| Text is noisy, buried, or mis-prioritized | `references/conciseness-toolkit.md` · `references/attention.md` | token cuts that keep logic; rule placement |
+| A specific failure mode is observed | `references/prompt-techniques.md` | technique matched to failure mechanism |
+| MCP server instructions, tool description, or schema | `references/tool-contracts.md` | layer ownership: workflow vs. when-to-call vs. fields |
+| Multi-tool server, or after any description/schema edit | `references/contract-audit.md` | set-wide contradictions, overlapping selection, descriptor drift |
+| Agent handoffs; typed packet boundaries | `references/agent-communication.md` · `references/zod-agent-contracts.md` | inputs, outputs, authority, failure states |
+| Context can overflow; repeated calls share a prefix | `references/context-budget.md` · `references/prompt-caching.md` | relevance, pagination, latency, cost |
+| Accumulated context must be compacted, summarized, or compressed | `references/compaction.md` | what to cut, when to compact, what stays retrievable |
+| A token saving, compression ratio, or context-cost claim needs proof | `references/token-measurement.md` | tokens per fact, task-specific comparison, and verification |
+| A reliability claim needs proof | `references/evaluation-data.md` | held-out scenarios, verifiers, metrics, failure ledger |
+| Instructions consume retrieved or user-supplied content | `references/untrusted-content.md` | the boundary between data and authority |
+| Improving this skill | `octocode-eval-benchmark`, else `references/improve-loop.md` | measurable acceptance instead of intuition |
 
 ## Related routes
 - Use `octocode-skills` for skill-folder architecture/review; `octocode-research` to verify cited contracts; `octocode-eval-benchmark` for held-out behavior.

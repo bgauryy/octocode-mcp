@@ -2,7 +2,7 @@
  * Engine-free command examples. Uses toolCommandPatternQueries.ts for
  * curated examples and derives examples from schemas when none are provided.
  */
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../toolNames.js';
 import {
   findDirectToolDefinition,
   type DirectToolCommandPattern,
@@ -75,8 +75,8 @@ function buildSchemaDerivedExampleQuery(
     example.uri ??= 'uri';
   }
 
-  if (toolName === LSP_GET_SEMANTICS_TOOL_NAME) {
-    example.type ??= 'definition';
+  if (toolName === LSP_SEARCH_TOOL_NAME) {
+    example.operation ??= 'definition';
     example.symbolName ??= 'symbolName';
     example.lineHint ??= 1;
   }
@@ -94,7 +94,7 @@ const COMMAND_PATTERN_FIELD_PRIORITY: ReadonlyMap<string, number> = new Map([
   ['packageName', 14],
   ['name', 15],
   ['uri', 20],
-  ['type', 21],
+  ['operation', 21],
   ['owner', 30],
   ['repo', 31],
   ['extension', 32],

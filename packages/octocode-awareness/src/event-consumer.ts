@@ -5,7 +5,7 @@ import {
 } from './continuity-contracts.js';
 import { openAwarenessStore } from './coordination/open.js';
 import type { OutboxEventV1 } from './coordination/coordination-continuity.js';
-import { normalizeWorkspacePath } from './git.js';
+import { normalizeWorkspacePath, repositoryWorkspacePaths } from './git.js';
 import { normalizeNotificationKind } from './helpers.js';
 
 export const AWARENESS_PEER_EVENT_MESSAGE_TYPE = 'octocode-peer-event';
@@ -137,13 +137,16 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
       store = openStore(workspace);
       stats.lastAcknowledgedSequence = store.getConsumerCursor(options.consumerId);
       const pending = store.listEvents({ consumerId: options.consumerId, limit: maxEvents + 1 });
+      const peerWorkspaces = repositoryWorkspacePaths(workspace);
       for (const candidate of pending.slice(0, maxEvents)) {
         let decision: InboundDecision = 'refuse';
         let delivery: AwarenessPeerDelivery | undefined;
         let peerMessage: PeerMessagePayload | undefined;
         try {
           const event = parseAgentEventEnvelopeV1(candidate);
-          if (event.workspace !== workspace) throw new Error('event workspace does not match this consumer');
+          if (event.workspace !== workspace && !(event.type === 'peer.message' && peerWorkspaces.includes(event.workspace))) {
+            throw new Error('event workspace does not match this consumer');
+          }
           if (event.expiresAt && Date.parse(event.expiresAt) <= now()) {
             decision = 'refuse';
           } else if (event.type === 'peer.message') {

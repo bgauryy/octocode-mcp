@@ -6,6 +6,10 @@ import { afterEach, beforeEach, test } from 'vitest';
 import { registerGeneratedTool } from '../src/tools/dynamic-tools.js';
 import { registerSkill } from '../src/tools/dynamic-skills.js';
 import { getDynamicCapabilitiesAddendum } from '../src/tools/dynamic-catalog.js';
+import { registerCallTool } from '../src/tools/call-tool.js';
+import { registerSkillTool } from '../src/tools/skill-tool.js';
+import { registerUniqueTool } from '../src/tools/octocode-tools.js';
+import type { ToolDefinition } from '../src/types.js';
 
 let toolsHome: string;
 let skillsDir: string;
@@ -102,13 +106,29 @@ test('long descriptions are truncated to bound token cost', () => {
 // Registers 60 real tools; each runs a sandboxed (--permission) verification
 // spawn, so this legitimately exceeds vitest's 5s default. Production registers
 // one tool at a time — the loop is a stress fixture, hence the raised timeout.
-test('entry count is capped so a huge registry cannot bloat the prompt', () => {
+test('entry count is capped and its executable continuation recovers the full tool inventory', async () => {
   for (let i = 0; i < 60; i++) addTool(`tool-${i}`);
   const out = getDynamicCapabilitiesAddendum();
   const toolLines = out.split('\n').filter((l) => l.startsWith('- tool-'));
   assert.ok(toolLines.length <= 30, `capped, got ${toolLines.length}`);
-  assert.match(out, /more \(call action:"list"\)/);
+  const raw = JSON.parse(out.match(/callTool\((\{[^\n]+\})\)/)![1]!);
+  let tool: ToolDefinition | undefined;
+  registerCallTool({ registerTool: definition => { tool = definition; } }, new Set(), registerUniqueTool);
+  const result = await tool!.execute('list-overflow', raw);
+  const text = result.content?.filter(item => item.type === 'text').map(item => item.text).join('\n') ?? '';
+  for (let i = 0; i < 60; i++) assert.match(text, new RegExp(`(?:^|\\n)  tool-${i} v1 `));
 }, 30_000);
+
+test('skill overflow uses the skill facade and recovers every omitted entry', async () => {
+  for (let i = 0; i < 31; i++) addSkill(`workflow-${i}`);
+  const out = getDynamicCapabilitiesAddendum();
+  const raw = JSON.parse(out.match(/skill\((\{[^\n]+\})\)/)![1]!);
+  let tool: ToolDefinition | undefined;
+  registerSkillTool({ registerTool: definition => { tool = definition; } }, new Set(), registerUniqueTool, () => []);
+  const result = await tool!.execute('list-skills-overflow', raw);
+  const text = result.content?.filter(item => item.type === 'text').map(item => item.text).join('\n') ?? '';
+  for (let i = 0; i < 31; i++) assert.match(text, new RegExp(`(?:^|\\n)  workflow-${i} v1 `));
+});
 
 test('reflects changes on the next read (no cache, no watcher needed)', () => {
   assert.equal(getDynamicCapabilitiesAddendum(), '');

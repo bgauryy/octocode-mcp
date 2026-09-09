@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { execHistoryCli, historyToolEffect } from '@octocodeai/octocode-awareness';
+import { executeAwarenessCommand, type AwarenessCommandResult, historyToolEffect, loadWorkspacePolicy } from '@octocodeai/octocode-awareness';
 import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
 import type { PiContext } from '../types.js';
 import { getAwarenessAgentId } from '../tools/awareness-shared.js';
 
-interface AwarenessRunResult { code: number; stdout: string; stderr: string }
+
 
 interface ToolCallEvent {
   toolCallId: string;
@@ -20,9 +20,9 @@ interface ToolEndEvent {
 }
 
 export interface PiHistoryAdapterOptions {
-  run?: (args: string[]) => Promise<AwarenessRunResult>;
+  run?: typeof executeAwarenessCommand;
   agentId?: (ctx?: PiContext) => string;
-  enabled?: () => boolean;
+  enabled?: (workspace: string) => boolean;
   onError?: (error: Error) => void;
   onAdvisory?: (message: string) => void;
 }
@@ -42,37 +42,35 @@ function operationId(workspace: string, agentId: string, session: string, toolCa
   return `pi_${digest}`;
 }
 
-function assertCliSuccess(result: AwarenessRunResult): Record<string, unknown> {
-  let payload: unknown;
-  try { payload = JSON.parse(result.stdout); } catch { /* handled below */ }
-  const ok = payload && typeof payload === 'object' && (payload as { ok?: unknown }).ok === true;
-  if (result.code !== 0 || !ok) {
-    throw new Error(result.stderr.trim() || result.stdout.trim() || `Awareness history capture exited ${result.code}`);
-  }
-  return payload as Record<string, unknown>;
+function assertCommandSuccess(result: AwarenessCommandResult): Record<string, unknown> {
+  const payload = result.payload as Record<string, unknown> | null;
+  if (result.exitCode !== 0 || payload?.ok !== true) throw new Error(JSON.stringify(result.payload));
+  return payload;
 }
 
 /** Native Pi adapter for canonical Awareness local history. It records state and never restores it. */
 export function createPiHistoryAdapter(options: PiHistoryAdapterOptions = {}): PiHistoryAdapter {
-  const run = options.run ?? execHistoryCli;
+  const run = options.run ?? executeAwarenessCommand;
   const resolveAgentId = options.agentId ?? getAwarenessAgentId;
-  const enabled = options.enabled ?? isPersistentStorageEnabled;
+  const enabled = options.enabled ?? ((workspace: string) =>
+    isPersistentStorageEnabled() && loadWorkspacePolicy(workspace).policy.hooks.profile === 'full');
   const active = new Map<string, { operationId: string; workspace: string; agentId: string; sessionId: string }>();
   const report = (error: unknown): void => options.onError?.(error instanceof Error ? error : new Error(String(error)));
 
   return {
     async before(event, ctx) {
-      if (!enabled() || !event.toolCallId || active.has(event.toolCallId)) return;
+      if (!event.toolCallId || active.has(event.toolCallId)) return;
       const effect = historyToolEffect(event.toolName, event.input);
       if (effect.effect !== 'workspace-write') return;
       const workspace = ctx?.cwd ?? process.cwd();
+      if (!enabled(workspace)) return;
       const agentId = resolveAgentId(ctx);
       const session = sessionId(ctx);
       const id = operationId(workspace, agentId, session, event.toolCallId);
       try {
-        const args = ['history', 'capture', '--phase', 'before', '--operation-id', id, '--agent-id', agentId, '--workspace', workspace, '--session-id', session, '--host', 'pi', '--label', `${event.toolName} mutation ${id}`, '--compact'];
-        for (const file of effect.files) args.push('--file', file);
-        const payload = assertCliSuccess(await run(args));
+        const payload = assertCommandSuccess(await run({ command: 'history capture', params: {
+          phase: 'before', operation_id: id, session_id: session, host: 'pi', label: `${event.toolName} mutation ${id}`, file: effect.files,
+        } }, { workspace, agentId, compact: true }));
         const operation = payload['operation'];
         if (operation && typeof operation === 'object' && ['partial', 'failed'].includes(String((operation as Record<string, unknown>)['status']))) {
           options.onAdvisory?.(`Awareness history before-capture ${id} is ${(operation as Record<string, unknown>)['status']}.`);
@@ -92,12 +90,9 @@ export function createPiHistoryAdapter(options: PiHistoryAdapterOptions = {}): P
         return;
       }
       try {
-        assertCliSuccess(await run([
-          'history', 'capture', '--phase', 'after', '--operation-id', capture.operationId,
-          '--agent-id', capture.agentId, '--workspace', capture.workspace,
-          '--session-id', capture.sessionId, '--host', 'pi',
-          '--outcome', event.isError ? 'failure' : 'success', '--compact',
-        ]));
+        assertCommandSuccess(await run({ command: 'history capture', params: {
+          phase: 'after', operation_id: capture.operationId, session_id: capture.sessionId, host: 'pi', outcome: event.isError ? 'failure' : 'success',
+        } }, { workspace: capture.workspace, agentId: capture.agentId, compact: true }));
         active.delete(event.toolCallId);
       } catch (error) {
         report(error);

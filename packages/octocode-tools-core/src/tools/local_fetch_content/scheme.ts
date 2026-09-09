@@ -21,11 +21,7 @@ import type {
 } from '../../scheme/pagination.js';
 import type { BulkToolOutput } from '../../types/toolOutput.js';
 
-// No schema-level default: the direct-tool executor parses inputSchema (applying
-// any default) before execution runs, which would erase the distinction between
-// "caller omitted minify" and "caller chose standard". The effective default is
-// resolved in fetchContent instead — 'none' for fullContent (verbatim, or
-// "returns the whole file" would silently strip comments), 'standard' otherwise.
+// Resolve the exact default in the read implementation; explicit views win.
 const minifyField = z.enum(['none', 'standard', 'symbols']).optional();
 
 const queryOverrides = {

@@ -7,6 +7,7 @@ export const AGENTS_UPSERT = `INSERT INTO awareness_agents (agent_id, agent_name
      artifact       = COALESCE(excluded.artifact, artifact),
      context        = COALESCE(excluded.context, context),
      metadata_json  = json_patch(metadata_json, excluded.metadata_json),
+     status        = 'ACTIVE',
      last_seen_at   = excluded.last_seen_at`;
 
 export const AGENTS_UPDATE_LAST_SEEN = `UPDATE awareness_agents
@@ -27,8 +28,6 @@ export const AGENTS_LIST_SELECT = `SELECT agent_id, agent_name, workspace_path, 
    CASE WHEN json_type(metadata_json, '$.vendor') = 'text' THEN json_extract(metadata_json, '$.vendor') ELSE NULL END AS agent_vendor,
    CASE WHEN json_type(metadata_json, '$.host') = 'text' THEN json_extract(metadata_json, '$.host') ELSE NULL END AS agent_host
    FROM awareness_agents`;
-
-export const AGENTS_LIST_CLAUSE_WORKSPACE_PATH = `(workspace_path = ? OR workspace_path = '')`;
 
 export const AGENTS_LIST_CLAUSE_ARTIFACT = `(artifact = ? OR artifact IS NULL)`;
 

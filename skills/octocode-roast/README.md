@@ -27,7 +27,7 @@ Pattern matches remain leads until verified. Humor supports the finding; it neve
 ## Install
 
 ```bash
-npx octocode skill install octocode-roast --platform codex
+npx -y octocode skill install octocode-roast
 ```
 
 ## Maintainer verification

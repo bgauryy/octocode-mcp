@@ -57,7 +57,7 @@ export function runAwarenessToolOperation(
   if (!result) throw new Error(
     `unsupported awareness operation: "${operation}". ` +
     `runAwarenessToolOperation routes only these operations: ${ROUTABLE_OPERATIONS.join(', ')}. ` +
-    `Nouns like memory/task/plan/maintenance are CLI-only (run them via the octocode-awareness binary), not library-routed.`,
+    `For the complete command catalog, use executeAwarenessCommand({ command, params }, context).`,
   );
   return result;
 }

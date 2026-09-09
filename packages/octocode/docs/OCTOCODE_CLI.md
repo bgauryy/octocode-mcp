@@ -38,8 +38,8 @@ npx octocode --help
 npx octocode status --json
 npx octocode tools
 npx octocode tools localSearch --scheme
-npx octocode tools localSearch --queries '{"operation":"tree","path":"./src"}'
-npx octocode tools localSearch --queries '{"operation":"text","path":"./src","searchText":"createServer"}'
+npx octocode tools astSearch --queries '{"operation":"tree","path":"/ABS/repo/src"}'
+npx octocode tools localSearch --queries '{"path":"/ABS/repo/src","searchText":"createServer"}'
 npx octocode tools localGetFileContent --queries '{"path":"./src/index.ts","fullContent":true}'
 npx octocode skill list
 npx octocode skill install octocode-research --platform pi
@@ -62,7 +62,7 @@ npx octocode tools localSearch --scheme --brief
 npx octocode tools localSearch --scheme
 npx octocode tools localSearch --scheme --json --compact
 npx octocode tools localSearch --scheme --json --compact --pretty
-npx octocode tools localSearch --queries '{"operation":"text","path":"/ABS/repo/src","searchText":"runCLI"}' --compact
+npx octocode tools localSearch --queries '{"path":"/ABS/repo/src","searchText":"runCLI"}' --compact
 ```
 
 **Always read the schema before a raw call:**
@@ -79,7 +79,7 @@ resolve from the command cwd, which may differ from the repository root.
 | Category | Default enabled tools |
 |---|---|
 | GitHub | `ghSearch` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` · `ghCloneRepo` |
-| Local Code | `localSearch` · `localAnalyzeGraph` · `localGetFileContent` · `lspGetSemantics` |
+| Local Code | `localSearch` · `astSearch` · `localGetFileContent` · `lspSearch` |
 | Package | `npmSearch` |
 
 ### Research loop
@@ -89,10 +89,10 @@ map cheaply → search narrowly → read exact evidence → follow symbols or hi
 ```
 
 ```bash
-npx octocode tools localSearch --queries '{"operation":"tree","path":"/ABS/repo/packages/octocode/src"}'
-npx octocode tools localSearch --queries '{"operation":"text","path":"/ABS/repo/packages/octocode/src","searchText":"executeDirectTool","resultView":"discovery"}'
+npx octocode tools astSearch --queries '{"operation":"tree","path":"/ABS/repo/packages/octocode/src"}'
+npx octocode tools localSearch --queries '{"path":"/ABS/repo/packages/octocode/src","searchText":"executeDirectTool","resultView":"discovery"}'
 npx octocode tools localGetFileContent --queries '{"path":"/ABS/repo/packages/octocode/src/cli/tool-command/execute.ts","matchString":"executeDirectTool"}'
-npx octocode tools lspGetSemantics --queries '{"uri":"/ABS/repo/packages/octocode/src/cli/tool-command/execute.ts","type":"references","symbolName":"executeToolCommand","lineHint":111}'
+npx octocode tools lspSearch --queries '{"uri":"/ABS/repo/packages/octocode/src/cli/tool-command/execute.ts","operation":"references","symbolName":"executeToolCommand","lineHint":111}'
 ```
 
 ### Key flags for `tools`
@@ -122,7 +122,7 @@ Use `ghCloneRepo` when you need to inspect several files, run structural (AST)
 search, or use LSP on remote code. Cloning is enabled by default in both CLI and MCP unless
 `ENABLE_CLONE=false`. After cloning, run
 `tools localSearch`, `tools localGetFileContent`,
-or `tools lspGetSemantics` on the returned absolute local path.
+or `tools lspSearch` on the returned absolute local path.
 
 ---
 
@@ -156,7 +156,7 @@ Direct CLI tool execution performs the persisted maintenance due-check once per 
 `cache status` reports the total `tmp` size plus clone, tree, and response usage. `cache clear --clone` and `cache clear --tree` are selective. `cache clear --all` removes the entire `tmp` directory. This deletes response entries and maintenance metadata. There is no response-only clear flag. See [Cache storage and lifecycle](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md#cache-storage-and-lifecycle) for per-response freshness, the 24-hour cleanup gate, and configuration.
 
 Use the returned absolute local path with `tools localSearch`, `tools localGetFileContent`,
-or `tools lspGetSemantics`.
+or `tools lspSearch`.
 
 ---
 
@@ -197,7 +197,7 @@ npx octocode lsp-server install rust-analyzer
 npx octocode lsp-server install --all
 ```
 
-Use when `tools lspGetSemantics` reports an LSP server is unavailable.
+Use when `tools lspSearch` reports an LSP server is unavailable.
 
 `lsp-server list` reports the managed-download servers, the
 toolchain-required servers, and a note naming packaged servers. It does not list
@@ -267,8 +267,8 @@ Prints the research protocol and active tool descriptions. Use `--minimal` for t
 ### Orient in a local codebase
 
 ```bash
-npx octocode tools localSearch --queries '{"operation":"tree","path":"/ABS/repo/src"}'
-npx octocode tools localSearch --queries '{"operation":"text","path":"/ABS/repo/src","searchText":"parseArgs","resultView":"discovery"}'
+npx octocode tools astSearch --queries '{"operation":"tree","path":"/ABS/repo/src"}'
+npx octocode tools localSearch --queries '{"path":"/ABS/repo/src","searchText":"parseArgs","resultView":"discovery"}'
 npx octocode tools localGetFileContent --queries '{"path":"/ABS/repo/src/cli/parser.ts","matchString":"parseArgs"}'
 ```
 
@@ -280,7 +280,7 @@ Treat that as a provider gap, not proof of absence.
 ```bash
 npx octocode tools ghSearch --queries '{"operation":"tree","owner":"vercel","repo":"next.js","path":"packages/next"}'
 npx octocode tools ghCloneRepo --queries '{"owner":"vercel","repo":"next.js","sparsePath":"packages/next"}'
-npx octocode tools localSearch --queries '{"operation":"text","path":"<clone localPath>/src","searchText":"useState"}'
+npx octocode tools localSearch --queries '{"path":"<clone localPath>/src","searchText":"useState"}'
 ```
 
 ### Symbols and references
@@ -288,8 +288,8 @@ npx octocode tools localSearch --queries '{"operation":"text","path":"<clone loc
 Get line anchors first, then trace the symbol:
 
 ```bash
-npx octocode tools lspGetSemantics --queries '{"uri":"/ABS/repo/src/index.ts","type":"documentSymbols"}'
-npx octocode tools lspGetSemantics --queries '{"uri":"/ABS/repo/src/index.ts","type":"references","symbolName":"runCLI","lineHint":42}'
+npx octocode tools lspSearch --queries '{"uri":"/ABS/repo/src/index.ts","operation":"documentSymbols"}'
+npx octocode tools lspSearch --queries '{"uri":"/ABS/repo/src/index.ts","operation":"references","symbolName":"runCLI","lineHint":42}'
 ```
 
 ### Package to source
@@ -316,7 +316,7 @@ npx octocode context --json
 npx octocode tools --json --compact
 npx octocode tools localSearch --scheme --json --compact
 npx octocode tools localSearch --scheme --json --compact --pretty
-npx octocode tools localSearch --queries '{"operation":"text","path":"./src","searchText":"runCLI"}' --json --compact
+npx octocode tools localSearch --queries '{"path":"/ABS/repo/src","searchText":"runCLI"}' --json --compact
 ```
 
 ---
@@ -381,7 +381,7 @@ client must retain. Removed compatibility names are rejected.
 
 The code boundary is intentionally thin:
 - `@octocodeai/octocode-tools-core` owns tool schemas, descriptions, and execution logic.
-- `@octocodeai/octocode-core` supplies the shared system prompt and reusable output types.
+- `@octocodeai/octocode-core` supplies reusable output types.
 - `@octocodeai/octocode-engine` owns native primitives (minify, structural search, LSP, secret scanning).
 - `octocode` renders commands in a terminal.
 - `octocode-mcp` registers the same tools for MCP clients.

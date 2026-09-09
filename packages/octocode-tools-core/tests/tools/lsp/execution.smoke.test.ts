@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { executeLspGetSemantics } from '../../../src/tools/lsp/semantic_content/execution.js';
+import { executeLspSearch } from '../../../src/tools/lsp/semantic_content/execution.js';
 
 const tempDirs: string[] = [];
 
@@ -11,10 +11,10 @@ afterEach(async () => {
   );
 });
 
-describe('lspGetSemantics tools-core smoke', () => {
+describe('lspSearch tools-core smoke', () => {
   it('returns a row-level recovery error when workspaceSymbol lacks symbolName', async () => {
-    const result = await executeLspGetSemantics({
-      queries: [{ type: 'workspaceSymbol' }],
+    const result = await executeLspSearch({
+      queries: [{ operation: 'workspaceSymbol' }],
     } as never);
 
     const structured = result.structuredContent as {
@@ -25,7 +25,9 @@ describe('lspGetSemantics tools-core smoke', () => {
     };
     const row = structured.results?.[0];
     expect(row?.status).toBe('error');
-    expect(row?.data?.error).toContain('Set symbolName for workspaceSymbol.');
+    expect(row?.data?.error).toContain(
+      'workspaceSymbol needs symbolName and either uri or workspaceRoot.'
+    );
   });
 
   it('returns native documentSymbols for a local TypeScript file', async () => {
@@ -42,11 +44,11 @@ describe('lspGetSemantics tools-core smoke', () => {
       ].join('\n')
     );
 
-    const result = await executeLspGetSemantics({
+    const result = await executeLspSearch({
       queries: [
         {
           uri: filePath,
-          type: 'documentSymbols',
+          operation: 'documentSymbols',
           format: 'compact',
         },
       ],
@@ -82,11 +84,11 @@ describe('lspGetSemantics tools-core smoke', () => {
       ].join('\n')
     );
 
-    const first = await executeLspGetSemantics({
+    const first = await executeLspSearch({
       queries: [
         {
           uri: filePath,
-          type: 'documentSymbols',
+          operation: 'documentSymbols',
           page: 1,
           pageSize: 1,
           format: 'structured',
@@ -108,12 +110,12 @@ describe('lspGetSemantics tools-core smoke', () => {
     const continuation = firstData?.next?.nextPage?.query;
     expect(continuation).toMatchObject({
       uri: filePath,
-      type: 'documentSymbols',
+      operation: 'documentSymbols',
       page: 2,
       pageSize: 1,
     });
 
-    const second = await executeLspGetSemantics({
+    const second = await executeLspSearch({
       queries: [continuation],
     } as never);
     const secondData = (
@@ -152,7 +154,7 @@ describe('lspGetSemantics tools-core smoke', () => {
       next?: { nextPage?: { query?: Record<string, unknown> } };
     };
     const readData = (
-      result: Awaited<ReturnType<typeof executeLspGetSemantics>>
+      result: Awaited<ReturnType<typeof executeLspSearch>>
     ) =>
       (
         result.structuredContent as {
@@ -160,11 +162,11 @@ describe('lspGetSemantics tools-core smoke', () => {
         }
       ).results?.[0]?.data;
 
-    const complete = await executeLspGetSemantics({
+    const complete = await executeLspSearch({
       queries: [
         {
           uri: filePath,
-          type: 'documentSymbols',
+          operation: 'documentSymbols',
           page: 1,
           pageSize: 100,
           format: 'structured',
@@ -178,14 +180,14 @@ describe('lspGetSemantics tools-core smoke', () => {
     const recovered: unknown[] = [];
     let query: Record<string, unknown> | undefined = {
       uri: filePath,
-      type: 'documentSymbols',
+      operation: 'documentSymbols',
       page: 1,
       pageSize: 1,
       format: 'structured',
     };
     let pages = 0;
     while (query) {
-      const result = await executeLspGetSemantics({
+      const result = await executeLspSearch({
         queries: [query],
       } as never);
       expect(result.isError).not.toBe(true);

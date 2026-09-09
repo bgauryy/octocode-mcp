@@ -11,7 +11,7 @@ import { GitHubReposSearchBulkQueryLocalSchema } from '../../../octocode-tools-c
 import { GitHubPullRequestSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_search_pull_requests/scheme.js';
 import { NpmSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/package_search/scheme.js';
 import { BulkCloneRepoLocalSchema } from '../../../octocode-tools-core/src/tools/github_clone_repo/scheme.js';
-import { BulkLspGetSemanticsQuerySchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
+import { BulkLspSearchSchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
 
 const ALL_BULK_SCHEMAS = [
   ['LocalRipgrepBulkQuerySchema', LocalRipgrepBulkQuerySchema],
@@ -37,7 +37,7 @@ const ALL_BULK_SCHEMAS = [
   ],
   ['NpmSearchBulkQueryLocalSchema', NpmSearchBulkQueryLocalSchema],
   ['BulkCloneRepoLocalSchema', BulkCloneRepoLocalSchema],
-  ['BulkLspGetSemanticsQuerySchema', BulkLspGetSemanticsQuerySchema],
+  ['BulkLspSearchSchema', BulkLspSearchSchema],
 ] as const;
 
 describe('bulk envelope numeric bounds', () => {

@@ -120,7 +120,7 @@ Every MCP tool is also a plain command: JSON in, token-efficient YAML out. Local
 
 ```bash
 npx octocode tools localSearch \
-  --queries '{"operation":"text","path":"/absolute/path/to/project","searchText":"authenticate","maxFiles":20}'
+  --queries '{"path":"/absolute/path/to/project","searchText":"authenticate","maxFiles":20}'
 ```
 ```yaml
 results:
@@ -215,8 +215,8 @@ or trees with its strict `operation` field.
 
 | Tool | What it does | Knob |
 |------|--------------|------|
-| `localSearch` | Discover local code and paths through one discriminated surface: `operation:"text"`, `"structural"`, `"files"`, or `"tree"`. | `operation` |
-| `localAnalyzeGraph` | Analyze bounded file dependencies, paths, reachability, SCCs, and dead-code candidates. Cycle results separate runtime loading cycles from type-only SCCs and include directed edge witnesses. | `operation` |
+| `localSearch` | Find lexical text and regex matches using `searchText` and an absolute `path`. | `searchText` |
+| `astSearch` | Inspect syntax, files, trees, symbols, and bounded topology analyses. | `operation` |
 | `localGetFileContent` | Read a local file or region: exact slice, match string, line range, or paginated chars. | `minify` |
 
 ### Package search
@@ -229,7 +229,7 @@ or trees with its strict `operation` field.
 
 | Tool | What it does |
 |------|--------------|
-| `lspGetSemantics` | Typed semantic navigation: `definition`, `references`, `callers`, `callees`, `callHierarchy`, `hover`, `documentSymbols`, `typeDefinition`, `implementation`, `workspaceSymbol`, `supertypes`, `subtypes`, and `diagnostic`. From the CLI, invoke it directly: `npx octocode tools lspGetSemantics --queries '<json>'`. Navigation runs through installed language servers (see the [LSP tools reference](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md#lsp-tools-reference)). |
+| `lspSearch` | Typed semantic navigation: `definition`, `references`, `callers`, `callees`, `callHierarchy`, `hover`, `documentSymbols`, `typeDefinition`, `implementation`, `workspaceSymbol`, `supertypes`, `subtypes`, and `diagnostic`. From the CLI, invoke it directly: `npx octocode tools lspSearch --queries '<json>'`. Navigation runs through installed language servers (see the [LSP tools reference](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md#lsp-tools-reference)). |
 
 Full schemas, fields, and examples for every tool live in [`docs/OCTOCODE_TOOLS.md`](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md) (linked under [Documentation](#documentation)).
 
@@ -401,10 +401,10 @@ Four code-intelligence axes; three are native to the Rust engine and need no ext
 
 | Axis | What it does | How to use it |
 |------|--------------|---------------|
-| **Structural AST** | Tree-sitter shape queries (`pattern` or YAML `rule`) across 60+ extensions. | `localSearch operation:"structural"` · CLI `tools localSearch --scheme` |
+| **Structural AST** | Tree-sitter shape queries (`pattern` or YAML `rule`) across 60+ extensions. | `astSearch operation:"match"` · CLI `tools astSearch --scheme` |
 | **Signature outline** | Body-free skeleton with line numbers from real tree-sitter parsing, no heuristics. An anti-growth guard returns the real file when a skeleton is not smaller. | `minify:"symbols"` · CLI `tools localGetFileContent --scheme` |
 | **Content minification** | Comment/whitespace stripping for 70+ languages and config formats; HTML/Vue/Svelte also minify embedded `<style>`/`<script>`. | `minify:"standard"` (default) |
-| **LSP navigation** | definition, references, callers/callees, callHierarchy, hover, typeDefinition, implementation, documentSymbols, through an installed language server; JS/TS also have a native, no-server path. | `lspGetSemantics` · CLI `tools lspGetSemantics --scheme` |
+| **LSP navigation** | definition, references, callers/callees, callHierarchy, hover, typeDefinition, implementation, documentSymbols, through an installed language server; JS/TS also have a native, no-server path. | `lspSearch` · CLI `tools lspSearch --scheme` |
 
 📋 **Full support matrix:** every extension with its exact AST, signature, LSP,
 and minify capability lives in the

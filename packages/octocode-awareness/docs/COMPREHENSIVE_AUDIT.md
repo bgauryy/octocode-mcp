@@ -1,9 +1,9 @@
 # Comprehensive Awareness audit
 
-This page defines the repeatable audit rubric. The dated
-[Awareness assessment](../../../docs/AWARENESS_ASSESSMENT.md) owns the latest
-feature ratings and local activation findings; it does not replace this acceptance
-procedure or turn partial host evidence into a comprehensive PASS.
+This page defines the repeatable audit rubric. The
+[Awareness guide](../README.md#verification-and-known-limits) owns the overview and
+known limits. Keep dated results with their benchmark receipts; partial host
+evidence does not establish a comprehensive PASS.
 
 Use this scored lane to answer whether the complete Awareness control loop works.
 Run in a disposable workspace/database. Complete the Installed and applicable Host

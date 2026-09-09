@@ -1,6 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { normalizeArtifact } from './helpers.js';
-import { fillScope } from './git.js';
+import { readScope, repositoryWorkspacePaths } from './git.js';
 import type { MemoryRow } from './types/work-maintenance.js';
 import type { MemoryRecord } from './types/identity-memory.js';
 
@@ -215,28 +215,7 @@ export function applyScopeConditions(
 ): void {
   const artifact = normalizeArtifact(options.artifact);
 
-  if (options.allWorkspaces) {
-    // Search across all workspaces: skip workspace_path entirely and do NOT
-    // auto-infer repo/ref from cwd's git repo (fillScope would otherwise scope
-    // the query to the cwd repo and silently filter out every other workspace).
-    // Only explicitly provided provenance filters still apply, so --all-workspaces
-    // composes with --artifact/--repo/--ref without surprising defaults.
-    if (artifact) {
-      conditions.push(options.strictScope ? 'm.artifact = ?' : '(m.artifact IS NULL OR m.artifact = ?)');
-      params.push(artifact);
-    }
-    if (options.repo) {
-      conditions.push(options.strictScope ? 'm.repo = ?' : '(m.repo IS NULL OR m.repo = ?)');
-      params.push(options.repo);
-    }
-    if (options.ref) {
-      conditions.push(options.strictScope ? 'm.ref = ?' : '(m.ref IS NULL OR m.ref = ?)');
-      params.push(options.ref);
-    }
-    return;
-  }
-
-  const scope = fillScope(
+  const scope = readScope(
     {
       workspace_path: options.workspacePath ?? null,
       artifact,
@@ -246,14 +225,15 @@ export function applyScopeConditions(
     options.cwd ?? options.workspacePath ?? process.cwd(),
   );
 
-  if (options.globalOnly) {
+  if (options.globalOnly && !options.allWorkspaces) {
     conditions.push('m.workspace_path IS NULL', 'm.artifact IS NULL', 'm.repo IS NULL', 'm.ref IS NULL');
     return;
   }
 
-  if (scope.workspace_path) {
-    conditions.push(options.strictScope ? 'm.workspace_path = ?' : '(m.workspace_path IS NULL OR m.workspace_path = ?)');
-    params.push(scope.workspace_path);
+  if (scope.workspace_path && !options.allWorkspaces) {
+    conditions.push(options.strictScope ? 'm.workspace_path = ?'
+      : '(m.workspace_path IS NULL OR m.workspace_path IN (SELECT value FROM json_each(?)))');
+    params.push(options.strictScope ? scope.workspace_path : JSON.stringify(repositoryWorkspacePaths(scope.workspace_path)));
   }
   if (scope.artifact) {
     conditions.push(options.strictScope ? 'm.artifact = ?' : '(m.artifact IS NULL OR m.artifact = ?)');

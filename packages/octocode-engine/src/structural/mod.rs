@@ -10,9 +10,13 @@ mod files;
 mod language;
 mod octo;
 mod query;
+mod syntax_tree;
 mod types;
 
 pub use files::{search_files, search_files_detailed};
+pub use syntax_tree::{
+    inspect as inspect_syntax_tree, SyntaxTreeInspectOptions, SyntaxTreeInspectResult,
+};
 pub use types::{
     StructuralDetailedMatch, StructuralDiagnostic, StructuralMatch, StructuralSearchDetailedResult,
     StructuralSearchFilesDetailedResult, StructuralSearchFilesOptions, StructuralSearchFilesResult,

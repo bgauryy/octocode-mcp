@@ -52,13 +52,10 @@ describe('fetchContent large-file gate applies to raw reads only', () => {
     );
   });
 
-  it('an unbounded read with no minify specified (defaults to standard) succeeds', async () => {
+  it('an unbounded exact default requests explicit bounds for large files', async () => {
     const result = await fetchContent({ path: bigFile } as never);
-
-    expect(result.status).not.toBe('error');
-    expect((result as { errorCode?: string }).errorCode).not.toBe(
-      'fileTooLarge'
-    );
+    expect(result.status).toBe('error');
+    expect((result as { errorCode?: string }).errorCode).toBe('fileTooLarge');
   });
 
   it('minify:"none" with no bounds is still rejected as too large (regression guard)', async () => {

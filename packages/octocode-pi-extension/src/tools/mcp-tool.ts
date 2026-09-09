@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { DIRECT_TOOL_DESCRIPTIONS, MCP_SCHEMA_DISCOVERY_EXAMPLE } from './octocode-tools.js';
 import { truncateToWidth } from '../tui/width.js';
 import fs from "node:fs";
 import path from "node:path";
@@ -1511,10 +1512,10 @@ export function preflightMcpQuery(query: QueryRecord): void {
   }
   if (action === "describe") {
     if (!server) throw new Error('describe requires server — use server:"octocode" for the built-in Octocode research server');
-    if (!tool) throw new Error('describe requires tool — pass the exact MCP tool name, e.g. "localSearch" or "lspGetSemantics"');
+    if (!tool) throw new Error('describe requires tool — pass the exact MCP tool name, e.g. "localSearch" or "lspSearch"');
   } else if (action === "call") {
     if (!server) throw new Error('call requires server — use server:"octocode" for the built-in Octocode research server');
-    if (!tool) throw new Error('call requires tool — pass the exact MCP tool name, e.g. "localSearch" or "lspGetSemantics"');
+    if (!tool) throw new Error('call requires tool — pass the exact MCP tool name, e.g. "localSearch" or "lspSearch"');
   } else if (action === "resources" || action === "prompts") {
     if (!server) throw new Error(`${action} requires server`);
   } else if (action === "read-resource") {
@@ -2635,18 +2636,14 @@ export function registerMcpTool(
 
   const common = {
     label: "MCPTool",
-    description:
-      "Validated MCP client for tools, resources, prompts, and live server management.",
+    description: DIRECT_TOOL_DESCRIPTIONS.MCPTool!,
     promptSnippet:
-      "<mcp_catalog_index>: describe unfamiliar tools first. Exact schemas are compiled and validated internally.",
+      "Gateway to connected MCP servers, including the built-in octocode research catalog in <mcp_catalog_index>.",
     promptGuidelines: [
-      "Put MCP actions in MCPTool.queries[] and tool input in queries[].arguments. Octocode tools nest arguments.queries[]. Never put inner fields in MCPTool.queries[].",
-      "Use the built-in octocode server for repository, GitHub, npm, and LSP research. Use responseView:\"table\" for large count/reference batches.",
-      "Config: $OCTOCODE_HOME/extension/mcp/servers.json plus trusted workspace-scoped config.",
-      "Local servers use stdio; remote servers use Streamable HTTP.",
+      `Describe example: MCPTool(${MCP_SCHEMA_DISCOVERY_EXAMPLE}). Substitute the selected catalog name; reuse its schema afterward.`,
+      "Use responseView:\"table\" for large count/reference batches.",
       "Use resources/read-resource and prompts/get-prompt/complete for the non-tool core MCP primitives.",
-      "Manage servers at runtime without restarting the agent: add/remove writes the canonical config; restart/stop reconnect. Live connections auto-reconnect when config changes.",
-      "Active MCP config directories are watched: external edits hot-reload automatically \u2014 stale connections and catalogs are dropped and the user is notified. The built-in `octocode` server is pinned local first with an npx fallback and cannot be removed.",
+      "add/remove changes $OCTOCODE_HOME/extension/mcp/servers.json or trusted workspace config; restart/stop manages connections. Config changes reload automatically. The built-in octocode server cannot be removed.",
       "Treat MCP servers as arbitrary code. Do not add or run untrusted MCP config without user approval; project-scope writes require a trusted project.",
     ],
     parameters,

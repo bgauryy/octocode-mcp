@@ -19,8 +19,6 @@ import type {
   LocalItemPagination,
   ToolContinuation,
 } from '../../scheme/pagination.js';
-import type { BulkToolOutput } from '../../types/toolOutput.js';
-
 const LOCAL_SEARCH_MODES = [
   'paginated',
   'discovery',
@@ -89,11 +87,11 @@ const bulkQueryOverrides = {
       ctx.addIssue({
         code: 'custom',
         message:
-          'semanticRanking is disabled in this build — sort:"relevance" already includes declaration/export/AST signals; remove this field.',
+          'semanticRanking is disabled in this build — use sort:"relevance" for lexical ranking and remove this field.',
       });
     })
     .describe(
-      'DISABLED in this build — do not pass. sort:"relevance" already includes declaration/export/AST signals.'
+      'DISABLED in this build — do not pass. sort:"relevance" ranks lexical matches without parsing.'
     ),
 } as const;
 
@@ -277,10 +275,6 @@ export interface LocalSearchMatch {
   column?: number;
   endColumn?: number;
   count?: number;
-  /** AST node-kind label when classifyMatches ran (declaration|callsite|…). */
-  kind?: string;
-  /** Deterministic hint derived from kind (0.0..1.0); not a ranker score. */
-  scoreHint?: number;
   metavars?: Record<string, string[]>;
   metavarRanges?: Record<
     string,
@@ -341,5 +335,3 @@ export interface LocalSearchCodeData {
     recovery?: string;
   }>;
 }
-
-export type LocalSearchCodeOutput = BulkToolOutput<LocalSearchCodeData>;

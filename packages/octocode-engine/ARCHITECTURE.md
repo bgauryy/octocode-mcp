@@ -47,10 +47,9 @@ secret regex catalog. Rust is tested with `cargo test`; the TS wrappers with
 
 ## Research graph direction
 
-Reachability/dead-code detection lives today in
-`octocode-tools-core/src/tools/local_analyze_graph/` (the `localAnalyzeGraph` MCP
-tool), consuming this engine's per-file facts rather than tool-specific regex
-logic:
+Reachability/dead-code detection is exposed by `astSearch`'s `topology`
+operation, consuming this engine's per-file facts rather than tool-specific
+regex logic:
 
 - `signatures/graph_facts.rs` (JS/TS via `js_oxc.rs`, other registered languages via
   Tree-sitter) parses files through the shared grammar registry and extracts
@@ -66,8 +65,8 @@ logic:
 
 LSP remains the semantic proof layer for cross-file identity, references,
 definitions, implementations, callers, callees, and call hierarchy. Text/ripgrep
-is discovery only; `localAnalyzeGraph` output is candidate-grade and must be
-confirmed with `lspGetSemantics` before a deletion claim, matching that rule.
+is discovery only; `astSearch` topology output is candidate-grade and must be
+confirmed with `lspSearch` before a deletion claim, matching that rule.
 
 Graph declaration IDs identify occurrences using scope and source position.
 Same-named methods and separate Rust declaration/implementation occurrences

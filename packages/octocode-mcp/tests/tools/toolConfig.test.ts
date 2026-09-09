@@ -6,10 +6,9 @@ import { PUBLIC_TOOL_DESCRIPTIONS } from '../../../octocode-tools-core/src/toolC
 import {
   DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   GITHUB_SEARCH_TOOL_NAME,
-  LOCAL_ANALYZE_GRAPH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
 } from '@octocodeai/octocode-tools-core';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
 
 const removedLspToolNames = [
   `lsp${'Goto'}Definition`,
@@ -37,9 +36,9 @@ describe('Tool Configuration', () => {
         TOOL_NAMES.PACKAGE_SEARCH,
         TOOL_NAMES.GITHUB_CLONE_REPO,
         LOCAL_SEARCH_TOOL_NAME,
-        LOCAL_ANALYZE_GRAPH_TOOL_NAME,
+        'astSearch',
         TOOL_NAMES.LOCAL_FETCH_CONTENT,
-        LSP_GET_SEMANTICS_TOOL_NAME,
+        'lspSearch',
       ]);
 
       expect(toolNames).not.toContain('ghListReleases');
@@ -49,8 +48,8 @@ describe('Tool Configuration', () => {
         'github.repositories',
         'github.tree',
         'local.text',
-        'local.files',
-        'local.tree',
+        'localAnalyzeGraph',
+        'lspGetSemantics',
       ]) {
         expect(toolNames).not.toContain(legacyName);
       }
@@ -139,20 +138,19 @@ describe('Tool Configuration', () => {
   });
 
   describe('Local tool configs', () => {
-    it('LOCAL_SEARCH should expose all local discovery operations', () => {
+    it('LOCAL_SEARCH should expose lexical text search', () => {
       const LOCAL_SEARCH = tool(LOCAL_SEARCH_TOOL_NAME);
       expect(LOCAL_SEARCH.name).toBe(LOCAL_SEARCH_TOOL_NAME);
       expect(LOCAL_SEARCH.type).toBe('search');
       expect(LOCAL_SEARCH.isLocal).toBe(true);
       expect(LOCAL_SEARCH.fn).toBeTypeOf('function');
-      for (const query of [
-        { operation: 'text', path: '.', searchText: 'needle' },
-        { operation: 'structural', path: '.', pattern: 'console.log($A)' },
-        { operation: 'files', path: '.', names: ['*.ts'] },
-        { operation: 'tree', path: '.' },
-      ]) {
-        expect(LOCAL_SEARCH.direct.schema.safeParse(query).success).toBe(true);
-      }
+      expect(
+        LOCAL_SEARCH.direct.schema.safeParse({
+          path: '.',
+          searchText: 'needle',
+          regex: 'literal',
+        }).success
+      ).toBe(true);
     });
 
     it('LOCAL_FETCH_CONTENT should have correct config', () => {
@@ -164,10 +162,10 @@ describe('Tool Configuration', () => {
     });
 
     it('LSP semantic tool should have correct config', () => {
-      const LSP_GET_SEMANTIC_CONTENT = tool(LSP_GET_SEMANTICS_TOOL_NAME);
-      expect(LSP_GET_SEMANTIC_CONTENT.name).toBe(LSP_GET_SEMANTICS_TOOL_NAME);
-      expect(LSP_GET_SEMANTIC_CONTENT.type).toBe('content');
-      expect(LSP_GET_SEMANTIC_CONTENT.isLocal).toBe(true);
+      const LSP_SEARCH = tool(LSP_SEARCH_TOOL_NAME);
+      expect(LSP_SEARCH.name).toBe(LSP_SEARCH_TOOL_NAME);
+      expect(LSP_SEARCH.type).toBe('content');
+      expect(LSP_SEARCH.isLocal).toBe(true);
     });
   });
 

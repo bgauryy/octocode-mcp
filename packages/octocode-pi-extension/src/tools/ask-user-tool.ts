@@ -1,6 +1,8 @@
 import { truncateToWidth, visibleWidth } from '../tui/width.js';
 import { paint } from '../tui/palette.js';
 import { notifyDesktopAttention } from './desktop-notify.js';
+import { observeExecutionQuestion } from './question-execution.js';
+import { randomUUID } from 'node:crypto';
 /**
  * askUser — interactive elicitation tool.
  *
@@ -30,7 +32,7 @@ import { notifyDesktopAttention } from './desktop-notify.js';
 
 import { CLI_GLYPH, CLI_STATUS_TEXT, cliSpinnerFrame, cliToolTitle } from '../tui/cli-design.js';
 import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, RenderResultOptions } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { makeComponentRenderer } from './render-helpers.js';
 import { executeQueryBatch, toToolSchema } from './query-envelope.js';
 import { ASK_HEADER_LABEL } from '../tui/content.js';
@@ -260,10 +262,44 @@ function askFooterLines(theme: PiTheme | undefined, help: string, width: number,
   return wrapAskPayload(paint(theme, warning ? 'warning' : 'muted', footerText), '', '', width);
 }
 
+interface AskViewport {
+  height: number;
+  offset: number;
+  pageSize: number;
+  total: number;
+}
+
+/** Scroll complete decision context while input and essential keys stay on screen. */
+function renderAskViewport(
+  body: string[], pinned: string[], help: string, width: number,
+  theme: PiTheme | undefined, viewport: AskViewport | undefined,
+  pagination?: { current: number; total: number }, headerLabel?: string,
+): string[] {
+  const controls = askFooterLines(theme, help, width);
+  const full = renderAskFrame([...body, ...pinned, ...controls], width, theme, pagination, headerLabel);
+  if (!viewport) return full;
+  viewport.total = body.length;
+  if (full.length <= viewport.height) {
+    viewport.offset = 0;
+    viewport.pageSize = Math.max(1, body.length);
+    return full;
+  }
+  // A compact key row cannot be displaced by a long description or warning.
+  const keys = askFooterLines(theme, 'enter · esc', width);
+  viewport.pageSize = Math.max(1, viewport.height - 3 - pinned.length - keys.length);
+  viewport.offset = Math.max(0, Math.min(viewport.offset, body.length - viewport.pageSize));
+  const end = Math.min(body.length, viewport.offset + viewport.pageSize);
+  const hint = truncateToWidth(`PgUp/PgDn ${viewport.offset + 1}–${end}/${body.length}`, Math.max(1, askFrameWidth(width) - 3));
+  return renderAskFrame([
+    ...body.slice(viewport.offset, end),
+    paint(theme, 'dim', hint),
+    ...pinned,
+    ...keys,
+  ], width, theme, pagination, headerLabel);
+}
+
 /** Max option rows painted at once; longer lists scroll in a window around the cursor. */
 const ASK_LIST_MAX_VISIBLE = 7;
-/** Max rendered preview lines painted at once; PageUp/PageDown scroll without moving option focus. */
-const ASK_PREVIEW_MAX_VISIBLE = 10;
 
 function renderAskChoiceLines(
   theme: PiTheme | undefined,
@@ -277,13 +313,13 @@ function renderAskChoiceLines(
   searchQuery?: string,
   pagination?: { current: number; total: number },
   headerLabel?: string,
-  previewOffset = 0,
+  viewport?: AskViewport,
 ): string[] {
   // Scroll window: long lists would overflow the terminal height (pi clips the
   // component), so paint at most ASK_LIST_MAX_VISIBLE rows centered on the
   // cursor with dim "N more" markers for the hidden remainder. Hidden options
   // remain reachable by navigation; the focused option itself is never clipped
-  // or capped, so its complete decision context remains readable.
+  // or dropped: the physical viewport scrolls its complete decision context.
   const focused = items[cursor];
   const focusedPreviewLines = focused?.preview
     ? focused.preview.split('\n').flatMap((previewLine) => wrapAskPayload(
@@ -293,20 +329,10 @@ function renderAskChoiceLines(
         width,
       ))
     : [];
-  const previewStart = Math.min(
-    Math.max(0, previewOffset),
-    Math.max(0, focusedPreviewLines.length - ASK_PREVIEW_MAX_VISIBLE),
-  );
-  const previewEnd = Math.min(focusedPreviewLines.length, previewStart + ASK_PREVIEW_MAX_VISIBLE);
-  const visiblePreviewLines = focusedPreviewLines.slice(previewStart, previewEnd);
-  const previewMarkerCount = (previewStart > 0 ? 1 : 0) + (previewEnd < focusedPreviewLines.length ? 1 : 0);
-  const focusedDetail = focused
-    ? (focused.description ? 1 : 0) +
-      (focused.pros?.length ?? 0) +
-      (focused.cons?.length ?? 0) +
-      visiblePreviewLines.length + previewMarkerCount
-    : 0;
-  const visibleRows = Math.max(3, ASK_LIST_MAX_VISIBLE - focusedDetail);
+  const visibleRows = Math.min(ASK_LIST_MAX_VISIBLE, Math.max(1, Math.min(
+    Math.floor((viewport?.height ?? 22) / 3),
+    (viewport?.height ?? 22) - 6 - (selected ? 1 : 0) - (warning ? 1 : 0),
+  )));
   let start = 0;
   let end = items.length;
   if (items.length > visibleRows) {
@@ -316,6 +342,8 @@ function renderAskChoiceLines(
     );
     end = start + visibleRows;
   }
+  const pinnedChoices: string[] = [];
+  let focusedContext: string[] = [];
   const rows = items.slice(start, end).flatMap((item, offset) => {
     const index = start + offset;
     const active = index === cursor;
@@ -356,6 +384,8 @@ function renderAskChoiceLines(
       `    `,
       width,
     );
+    const pinnedLabel = `${labelPrefix}${rawLabel}${badge}${disabledBadge}`.replace(/[\r\n]/g, ' ');
+    pinnedChoices.push(truncateToWidth(pinnedLabel, Math.max(1, askFrameWidth(width) - 3)));
     // Expand the FOCUSED row with its trade-offs (pros ✓ / cons ✗) and any
     // preview — collapsed rows stay one line so the list stays scannable.
     const detail: string[] = [];
@@ -388,31 +418,18 @@ function renderAskChoiceLines(
         ));
       }
       if (item.preview) {
-        if (previewStart > 0) {
-          detail.push(...wrapAskPayload(
-            paint(theme, 'dim', `↑ ${previewStart} earlier preview line${previewStart === 1 ? '' : 's'}`),
-            `    `,
-            `    `,
-            width,
-          ));
-        }
-        detail.push(...visiblePreviewLines);
-        const remaining = focusedPreviewLines.length - previewEnd;
-        if (remaining > 0) {
-          detail.push(...wrapAskPayload(
-            paint(theme, 'dim', `↓ ${remaining} more preview line${remaining === 1 ? '' : 's'}`),
-            `    `,
-            `    `,
-            width,
-          ));
-        }
+        detail.push(...focusedPreviewLines);
       }
     }
+    if (active) focusedContext = [
+      ...wrapAskPayload(`Details · ${rawLabel}${badge}${disabledBadge}`, '', '', width),
+      ...detail,
+    ];
     return [...labelLines, ...detail];
   });
   if (start > 0) rows.unshift(`${paint(theme, 'dim', `↑ ${start} more`)}`);
   if (end < items.length) rows.push(`${paint(theme, 'dim', `↓ ${items.length - end} more`)}`);
-  return renderAskFrame([
+  const body = [
     ...askHeaderLines(question, width),
     ...rows,
     // Breathing room between the last row and the footer rule.
@@ -425,8 +442,22 @@ function renderAskChoiceLines(
         width,
       )
       : []),
-    ...askFooterLines(theme, help, width, warning),
-  ], width, theme, pagination, headerLabel);
+    ...(warning ? askFooterLines(theme, help, width, warning) : []),
+  ];
+  if (viewport && body.length + askFooterLines(theme, help, width).length + 2 > viewport.height) {
+    // Keep choices stable while paging the question and focused detail. Short
+    // terminals show a smaller option window; arrow navigation reaches its tail.
+    return renderAskViewport([
+      ...askHeaderLines(question, width), ...focusedContext,
+      ...(searchQuery !== undefined ? wrapAskPayload(`/ ${searchQuery}`, '', '', width) : []),
+      ...(warning ? askFooterLines(theme, help, width, warning) : []),
+    ], [
+      ...pinnedChoices,
+      ...(selected ? [`${selected.size} selected`] : []),
+      ...(warning ? [truncateToWidth(`⚠ ${warning}`, Math.max(1, askFrameWidth(width) - 3))] : []),
+    ], help, width, theme, viewport, pagination, headerLabel);
+  }
+  return renderAskViewport(body, [], help, width, theme, viewport, pagination, headerLabel);
 }
 
 function renderAskTextLines(
@@ -439,10 +470,11 @@ function renderAskTextLines(
   width: number,
   warning?: string,
   headerLabel?: string,
+  viewport?: AskViewport,
 ): string[] {
   const inputBody = inputLine.startsWith('> ') ? inputLine.slice(2) : inputLine;
   const label = placeholder ? `Answer · ${placeholder}` : 'Answer';
-  return renderAskFrame([
+  return renderAskViewport([
     ...askHeaderLines(question, width),
     ...wrapAskPayload(
       `${paint(theme, 'brand', label)}${isEmpty ? paint(theme, 'dim', ' · paste or type') : ''}`,
@@ -450,10 +482,11 @@ function renderAskTextLines(
       ``,
       width,
     ),
+    ...(warning ? askFooterLines(theme, help, width, warning) : []),
+  ], [
+    ...(warning ? [truncateToWidth(`⚠ ${warning}`, Math.max(1, askFrameWidth(width) - 3))] : []),
     `${paint(theme, 'brand', '›')} ${inputBody}`,
-    '',
-    ...askFooterLines(theme, help, width, warning),
-  ], width, theme, undefined, headerLabel);
+  ], help, width, theme, viewport, undefined, headerLabel);
 }
 
 function renderAskFinalLines(
@@ -517,6 +550,7 @@ export async function runAskPrompt(
     kind?: 'question' | 'authorization';
   },
 ): Promise<AskOutcome | undefined> {
+  return observeExecutionQuestion(ctx, `prompt:${randomUUID()}`, params.question, async (): Promise<AskOutcome | undefined> => {
   const request = params.durable !== false && shouldBrokerInteraction(ctx)
     ? createPendingInteraction(ctx, {
         question: params.question,
@@ -536,6 +570,7 @@ export async function runAskPrompt(
   const outcome = await runAskOverlay(ctx, params);
   if (request && outcome && outcome.status !== 'timed_out') answerPendingInteraction(request, outcome);
   return outcome;
+  }, params.kind === 'authorization' ? 'permission' : 'question');
 }
 
 async function runAskOverlay(
@@ -572,7 +607,7 @@ async function runAskOverlay(
       if (!params.pagination || params.pagination.current === 1) {
         notifyDesktopAttention(ctx, 'Octocode needs your input. See the decision widget.');
       }
-      const tui = tuiRaw as { requestRender?: () => void };
+      const tui = tuiRaw as { requestRender?: () => void; terminal?: { rows?: number } };
       let finished = false;
       // Land the cursor on the recommended option (if any) so the safe default
       // is preselected and one Enter accepts it. Positioned in ROW space below,
@@ -583,7 +618,8 @@ async function runAskOverlay(
       let warning: string | undefined;
       let searchMode = false;
       let searchQuery = '';
-      let previewOffset = 0;
+      const viewport: AskViewport = { height: 24, offset: 0, pageSize: 1, total: 0 };
+      const resetViewport = (): void => { viewport.offset = 0; };
       let finalOutcome: AskOutcome | undefined;
       const selected = new Set<number>();
       const formValues: Record<string, string> = {};
@@ -616,6 +652,7 @@ async function runAskOverlay(
           }
           formValues[field.name] = value;
           fieldIndex += 1;
+          resetViewport();
           textInput.setValue('');
           warning = undefined;
           if (fieldIndex >= fields.length) finish({ status: 'form', values: formValues });
@@ -628,6 +665,7 @@ async function runAskOverlay(
       textInput.onEscape = () => {
         if (mode === 'text' && options.length > 0) {
           mode = params.multiSelect ? 'multi' : 'single';
+          resetViewport();
           textInput.setValue('');
           warning = undefined;
           rerender();
@@ -653,6 +691,7 @@ async function runAskOverlay(
           width,
           warning,
           params.headerLabel,
+          viewport,
         );
       };
 
@@ -702,7 +741,7 @@ async function runAskOverlay(
         searchMode = true;
         searchQuery = next;
         cursor = 0;
-        previewOffset = 0;
+        resetViewport();
         warning = undefined;
         rerender();
       };
@@ -722,6 +761,7 @@ async function runAskOverlay(
 
       const render = (width: number): string[] => {
         const w = width > 0 ? width : 80;
+        viewport.height = Math.max(5, Math.floor(tui.terminal?.rows ?? 24) - 2);
         if (finalOutcome) return renderAskFinalLines(theme, params.question, finalOutcome, w, params.headerLabel);
         if (mode === 'text') {
           const help = askFrameWidth(w) < 56
@@ -747,9 +787,7 @@ async function runAskOverlay(
         // and drop enter/esc — the keys the user most needs. Use a compact hint
         // that keeps the essential keys visible below the card's frame cap.
         const narrow = askFrameWidth(w) < 56;
-        const previewHelp = rows[cursor]?.preview
-          ? narrow ? 'pg↑↓ • ' : 'pgup/pgdn preview • '
-          : '';
+        const previewHelp = narrow ? 'pg↑↓ • ' : 'pgup/pgdn context • ';
         const help = mode === 'multi'
           ? narrow
             ? `${previewHelp}${multiCount}↑↓ • space • a/i • enter ✓ • esc`
@@ -769,7 +807,7 @@ async function runAskOverlay(
           searchMode ? searchQuery : undefined,
           params.pagination,
           params.headerLabel,
-          previewOffset,
+          viewport,
         );
       };
 
@@ -785,13 +823,23 @@ async function runAskOverlay(
           next = (next + step + count) % count;
         }
         cursor = next;
-        previewOffset = 0;
+        resetViewport();
         warning = undefined;
         rerender();
       };
 
       const handle = (data: string): void => {
         if (finished) return;
+        if (viewport.total > viewport.pageSize && (
+          matchesKey(data, Key.pageUp) || matchesKey(data, Key.pageDown)
+        )) {
+          viewport.offset = Math.max(0, Math.min(
+            viewport.total - viewport.pageSize,
+            viewport.offset + (matchesKey(data, Key.pageUp) ? -viewport.pageSize : viewport.pageSize),
+          ));
+          rerender();
+          return;
+        }
         if (mode === 'text' || mode === 'form') {
           const before = textInput.getValue();
           textInput.handleInput(data);
@@ -800,7 +848,7 @@ async function runAskOverlay(
           return;
         }
         if (searchMode && (mode === 'single' || mode === 'multi')) {
-          if (isCancelKey(data)) { searchMode = false; searchQuery = ''; cursor = 0; warning = undefined; rerender(); return; }
+          if (isCancelKey(data)) { searchMode = false; searchQuery = ''; cursor = 0; resetViewport(); warning = undefined; rerender(); return; }
           if (isBackspaceKey(data)) { setSearch(searchQuery.slice(0, -1)); return; }
           if (isPrintableInput(data) && data !== ' ') { setSearch(searchQuery + data); return; }
         }
@@ -808,26 +856,14 @@ async function runAskOverlay(
 
         if (mode === 'single' || mode === 'multi') {
           if (matchesKey(data, Key.left)) { finish({ status: 'back' }); return; }
-          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.pageUp)) {
-            previewOffset = Math.max(0, previewOffset - ASK_PREVIEW_MAX_VISIBLE);
+          if (matchesKey(data, Key.home)) {
+            resetViewport();
             warning = undefined;
             rerender();
             return;
           }
-          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.pageDown)) {
-            previewOffset = Math.min(Number.MAX_SAFE_INTEGER, previewOffset + ASK_PREVIEW_MAX_VISIBLE);
-            warning = undefined;
-            rerender();
-            return;
-          }
-          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.home)) {
-            previewOffset = 0;
-            warning = undefined;
-            rerender();
-            return;
-          }
-          if (choiceRows()[cursor]?.preview && matchesKey(data, Key.end)) {
-            previewOffset = Number.MAX_SAFE_INTEGER;
+          if (matchesKey(data, Key.end)) {
+            viewport.offset = Math.max(0, viewport.total - viewport.pageSize);
             warning = undefined;
             rerender();
             return;
@@ -880,7 +916,7 @@ async function runAskOverlay(
           }
           if (mode === 'multi' && data === ' ') {
             const row = choiceRows()[cursor];
-            if (row?.freeText) { mode = 'text'; textInput.setValue(''); warning = undefined; rerender(); return; }
+            if (row?.freeText) { mode = 'text'; resetViewport(); textInput.setValue(''); warning = undefined; rerender(); return; }
             if (row?.groupHeader) { move(1); return; }
             if (row?.empty) { warning = 'No matching option to toggle.'; rerender(); return; }
             const index = activeOptionIndex();
@@ -890,7 +926,7 @@ async function runAskOverlay(
           }
           if (isEnterKey(data)) {
             const row = choiceRows()[cursor];
-            if (row?.freeText) { mode = 'text'; textInput.setValue(''); warning = undefined; rerender(); return; }
+            if (row?.freeText) { mode = 'text'; resetViewport(); textInput.setValue(''); warning = undefined; rerender(); return; }
             if (row?.groupHeader) { move(1); return; }
             if (row?.empty) { warning = 'No matching option to select.'; rerender(); return; }
             const index = activeOptionIndex();
@@ -956,15 +992,10 @@ export function registerAskUserTool(
   registerFn(pi, registeredToolNames, {
     name: 'askUser',
     label: 'Ask user',
-    description: [
-      'Definition: collect one missing choice that changes the next action and evidence cannot answer.',
-      'Contrast: options choose one and still allow a custom answer; multiSelect:true toggles independent choices; fields collect related values; question alone collects text. Never combine modes.',
-      'Consequence: routine confirmation stalls authorized work; cancel, timeout, or unavailable UI grants no authority.',
-      'Principle: one decision, one input mode, one explicit outcome.',
-      'Action: choose the smallest branch, keep choices distinct, and continue independent authorized work while waiting.',
-    ].join('\n'),
+    description: DIRECT_TOOL_DESCRIPTIONS.askUser!,
     promptSnippet: 'Ask only for a missing decision that changes the next action; choose one input mode and never infer approval.',
     promptGuidelines: [
+      'options chooses one with a custom-answer escape; multiSelect:true chooses independent options; fields collects related values; question alone collects text. Never combine modes.',
       'Wrong: ask whether to continue routine authorized work. Right: continue; ask only for unresolved scope, trade-off, or authorization.',
       'Wrong: repeat labels in descriptions. Right: add only distinguishing detail; mark recommended only for an evidence-backed safe default.',
       'Back, cancel, timeout, and unavailable interaction never select a default; resume a durable continuation when present, otherwise ask inline.',
@@ -1010,7 +1041,7 @@ export function registerAskUserTool(
       const queries = Array.isArray(raw.queries)
         ? raw.queries as Record<string, unknown>[]
         : [];
-      const runQuery = async (query: Record<string, unknown>): Promise<ToolCallResult> => {
+      const executeQuestion = async (query: Record<string, unknown>): Promise<ToolCallResult> => {
       const p = query as unknown as AskParams;
       const question = String(p.question ?? '').trim();
       if (!question) {
@@ -1148,6 +1179,10 @@ export function registerAskUserTool(
           } as unknown as ToolCallResult;
       }
       };
+
+      let questionIndex = 0;
+      const runQuery = (query: Record<string, unknown>): Promise<ToolCallResult> =>
+        observeExecutionQuestion(ctx, `${id}:question:${questionIndex++}`, query.question, () => executeQuestion(query));
 
       if (queries.length === 1) {
         const query = queries[0]!;

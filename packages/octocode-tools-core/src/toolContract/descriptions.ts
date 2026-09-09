@@ -13,13 +13,11 @@ export const PUBLIC_TOOL_DESCRIPTIONS = {
   ghCloneRepo:
     'Create a cached, shallow checkout for repeated reads, local AST/regex, or LSP. Optional sparsePath scopes a file/subtree; complete refers to that scope. branch selects a branch, tag, or full commit SHA; omission uses the default branch. location.commitSha identifies HEAD; cached working-tree contents are not reverified. forceRefresh renews the checkout. Requires git and persistent local storage. Pass results[].data.location.localPath to local tools; ghGetFileContent also supports individual remote reads.',
   localSearch:
-    'Choose operation:"text" for lexical anchors, "structural" for AST matches, "files" for path or metadata discovery, and "tree" for directory orientation. Each operation has a strict branch, so do not mix fields across operations. Files/tree prune common generated and vendor directories by default; pass excludeDir:[] to prune nothing. Read exact hits with localGetFileContent and prove symbol identity with lspGetSemantics.',
-  localAnalyzeGraph:
-    'Map file topology, not symbol identity. dependencies/dependents need file; path needs file+target; deadCode/reachability accept roots; cycles needs no selector. Import edges and dead-code results are candidates—verify changes and deletions with exact reads plus LSP.',
+    'Find text and regex occurrences with file and line anchors. Matching is lexical; choose literal, Rust regex, or PCRE2 explicitly. Use astSearch for syntax, paths, trees, and file topology. Read matched content with localGetFileContent before an anchored lspSearch.',
+  astSearch:
+    'Inspect local code structure: files discovers paths and metadata; tree browses a filesystem or one file’s syntax tree; symbols lists native declarations; match selects AST nodes; topology analyzes dependencies, dependents, paths, cycles, reachability, and dead-code candidates. Syntax and graph edges do not establish cross-file symbol identity or safe deletion. Preserve graph scope and configuration when comparing results; verify candidates with exact reads, anchored lspSearch, and runnable checks.',
   localGetFileContent:
-    'Read a known local path after search, find, or structure discovery. A path-only call returns a bounded standard-minified view. For large files, get a symbols outline, then an exact range or match. Read small config files whole with minify:"none".\nOptionally choose fullContent, matchString, or startLine+endLine. Partial content cannot prove absence; run the returned continuation. matchedLines are LSP anchors; match ranges and character offsets are not. Report fetched bytes only.',
-  lspGetSemantics:
-    'Use a real search/read line anchor for semantic proof. references finds usages; callers incoming calls; callees outgoing calls; callHierarchy both. Fall back to references if call hierarchy is unavailable.\ndocumentSymbols/diagnostic need uri; workspaceSymbol needs symbolName; other operations need uri+symbolName+lineHint. orderHint resolves same-line names. format:"compact" saves tokens. Empty/unavailable results call for a new anchor or text search.',
-} as const satisfies Record<string, string>;
-
-export type PublicToolName = keyof typeof PUBLIC_TOOL_DESCRIPTIONS;
+    'Read a known local file or anchored region. Content is exact by default; explicitly choose standard for compact content or symbols for an outline. Select fullContent, matchString, or a line range. Follow executable continuations when content is partial. Use exact source lines or positions to anchor lspSearch.',
+  lspSearch:
+    'Resolve symbol identity, references, call and type hierarchies, implementations, hover, or diagnostics in a configured workspace. Anchor symbol operations to an observed source position or an exact name and line; document and workspace operations have their own scope. Read source first with localGetFileContent. Native syntax fallback is labeled as syntactic evidence; inspect provider and completeness metadata before drawing semantic conclusions.',
+} as const;

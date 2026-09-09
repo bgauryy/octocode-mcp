@@ -25,7 +25,7 @@ import type { ChromeDebugParams, Scheme } from '../chrome-debug-schemes.js';
 import { CLI_STATUS_TEXT, cliStatusGlyph, cliStatusToken, cliToolTitle } from '../tui/cli-design.js';
 import type { ToolDefinition, ToolCallResult, PiTheme, PiContext, RenderContext } from '../types.js';
 import { appendImageLines } from './image-render.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { makeComponentRenderer } from './render-helpers.js';
 import { setManagedStatus } from './runtime-renderer.js';
@@ -43,18 +43,7 @@ function setStatus(ctx: PiContext | undefined, msg: string | undefined): void {
 
 // ─── Tool description ─────────────────────────────────────────────────────────
 
-const DESCRIPTION = [
-  'Inspect/automate Chrome via CDP: DOM, console, network, screenshots, performance, storage, security, coverage, or raw Domain.method calls.',
-  'Use for live-page debugging, DOM/network inspection, screenshot capture, browser automation, JS coverage, and accessibility audits.',
-  'Use agent profile:browser for multi-turn browser work.',
-  '',
-  'All 28 schemes: debug | network | console | dom | performance | screenshot | security | storage | intercept | automate | live-page | user-auth',
-  'accessibility | workers | service-worker | websocket | supply-chain | consent | scrape | emulate | inject | monitor | login',
-  'memory | css-coverage | js-coverage | full-audit | raw',
-  '',
-  'raw=ANY CDP Domain.Method (auto-enables domain) | stealth=bot-evasion | bypassCSP | scriptSource | xpath | depth',
-  'url navigates first | port=9222 | launch=true | durationMs | selector | expression',
-].join('\n');
+const DESCRIPTION = DIRECT_TOOL_DESCRIPTIONS.chromeDebug!;
 
 // ─── Registration ─────────────────────────────────────────────────────────────
 
@@ -70,9 +59,9 @@ export function registerChromeDebugTool(
     description: DESCRIPTION,
     promptSnippet: 'Connect to Chrome DevTools Protocol to debug, inspect, and control a live browser',
     promptGuidelines: [
-      'Start with scheme:"debug" for a combined pass (exceptions + network errors + DOM + screenshot).',
+      'Choose the smallest scheme that answers the question; use scheme:"debug" for a combined pass when the failure boundary is unknown.',
       'scheme:"raw" method:"Domain.Method" runs ANY CDP call; the domain is auto-enabled before the call.',
-      'Each scheme auto-adds Debugger.setSkipAllPauses + dialog guard — safe on any page.',
+      'Schemes add Debugger.setSkipAllPauses and a dialog guard. These runtime changes do not authorize navigation or other page effects.',
       'Pass launch:true to start a fresh Chrome on the given port; each port gets its own profile dir.',
       'Screenshots → <workspace>/.octocode/screenshots/. Set OCTOCODE_CDP_DEBUG=1 for cdp-events.jsonl log.',
     ],
@@ -84,7 +73,7 @@ export function registerChromeDebugTool(
           'raw','memory','css-coverage','js-coverage','websocket',
           'service-worker','workers','accessibility','supply-chain','full-audit',
           'consent','scrape','login','emulate','inject','monitor',
-        ]).describe('Smart prebuilt debug need. Use "raw" for any CDP Domain.method not covered by a scheme.'),
+        ]).describe('Select the evidence or action needed; raw accepts a CDP Domain.method not covered by a scheme.'),
         action: z.enum(['observe','capture','navigate','interact','wait','breakpoint',
           'resume','screenshot','eval','list-targets','attach','cleanup','raw']).optional()
           .describe('Verb within the scheme. Most schemes default to observe.'),

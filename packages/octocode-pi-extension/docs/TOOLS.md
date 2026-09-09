@@ -6,9 +6,9 @@ contract. The native product obtains live schemas and composes policy through it
 runtime adapters.
 
 The 10 Octocode research tools are reached through the built-in `octocode` MCP server;
-Pi-specific tools are implemented directly in `src/tools/`. Run
-`npx octocode tools <name> --scheme` before calling a research tool—the live schema is
-authoritative.
+Pi-specific tools are implemented directly in `src/tools/`. Use `MCPTool` with
+`action:"describe"` before an unfamiliar research tool's first call, then reuse
+its schema. CLI-only hosts use `npx octocode tools <name> --scheme` instead.
 
 The extension supplies its guarded same-name `bash`. For direct extension installs, it
 removes Pi `read`/`edit`/`write`/`grep`/`find`/`ls` on load and session start. `file`
@@ -31,6 +31,20 @@ The direct palette contains 15 extension-owned tools: 14 support tools and the g
 | Planning and coordination | `plan`, `awareness`, `askUser`, `localServer` |
 
 Every direct tool exposes a `queries` batch. Each query requires a non-empty `reasoning` string of at most 240 characters. A call accepts at most 100 queries and validates the full batch before side effects. Sequential mode executes in source order and stops on the first runtime failure. Tools that explicitly expose `queryRunType:"parallel"` overlap only their documented independent operations, run at most four queries concurrently by default, and still return results in source order. Successful batches return a compact receipt index followed by every child content block—including images—in source order; the receipt never replaces model-visible results. One-query calls preserve the underlying result details and rendering contract.
+
+### Prompt and schema ownership
+
+`DIRECT_TOOL_DESCRIPTIONS` is the single source used by registration and each
+tool definition. Descriptions distinguish when to choose the tool and the
+consequence of a nearby wrong choice. Field descriptions keep exact constraints;
+registration preserves schema descriptions and example data without truncation.
+Dynamic tool, skill, and MCP guide generation import
+`BEHAVIORAL_PROMPT_GUIDANCE` from agent-contracts.
+
+The dynamic capability index is a bounded inventory, not a complete contract.
+Its overflow entry provides an executable `callTool` or `skill` list call.
+Browser workers use live CDP schemas; role prompts contain only role-specific
+boundaries, with ownership and handback policy supplied by the shared contract.
 
 ### Tool transcript UI contract
 
@@ -58,15 +72,15 @@ MCP call details likewise retain only block counts and status metadata; full tex
 structured content, and image bytes live solely in the bounded model content or
 its lossless spill artifact.
 
-The `awareness` tool is the model-facing coordination, learning, verification, history, and maintenance facade. It reads the canonical package catalog: use `action:"list"`, then `action:"describe"` for an unfamiliar command, then `action:"call"`. Pi injects database, workspace, and actor fields. Commands described as `external-host-only` stay on the bound CLI through guarded `bash`.
+The `awareness` tool is the model-facing coordination, learning, verification, history, and maintenance facade. It reads the canonical package catalog: use `action:"list"`, then `action:"describe"` for an unfamiliar command, then `action:"call"`. Pi injects database, workspace, and actor fields. Calls import the Awareness package API directly. Commands described as `external-host-only` are internal host lifecycle callbacks.
 
-Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/CRON.md). `OCTOCODE_SUPPORT_TOOL_NAMES` in `src/constants.ts` is the direct support-tool source of truth.
+Session-scoped maintenance jobs are configured with environment settings; see [CRON.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/CRON.md). `OCTOCODE_SUPPORT_TOOL_NAMES` in `src/constants.ts` is the direct support-tool source of truth.
 
 ---
 
 ## Routing Guide
 
-`gh*`, `local*`, `lspGetSemantics`, and `npmSearch` below are inner tools of the built-in `octocode` MCP server. In Pi, discover/describe/call them through `MCPTool`; they are not direct Pi tools. Use the bundled `npx octocode tools` route only outside the native MCP facade.
+`gh*`, `local*`, `astSearch`, `lspSearch`, and `npmSearch` below are inner tools of the built-in `octocode` MCP server. In Pi, discover/describe/call them through `MCPTool`; they are not direct Pi tools. Use the bundled `npx octocode tools` route only outside the native MCP facade.
 
 | Task                                                    | Tool                                                           |
 | ------------------------------------------------------- | -------------------------------------------------------------- |
@@ -81,12 +95,13 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 | Discover remote history                                | `ghSearchHistory`; inspect its live operation schema          |
 | Read an exact remote history item                      | `ghGetHistoryItem`; use the returned repository and item ID   |
 | Clone repo for local reads                              | `ghCloneRepo`                                                  |
-| Search local files (text / AST)                         | `localSearch` with `operation:"text"` or `"structural"`      |
-| Browse local directory tree                             | `localSearch` with `operation:"tree"`                         |
-| Find files by name/size/time                            | `localSearch` with `operation:"files"`                        |
+| Search local files (text)                              | `localSearch` with `searchText`                               |
+| Search local syntax                                     | `astSearch` with `operation:"match"`                          |
+| Browse local directory tree                             | `astSearch` with `operation:"tree"`                           |
+| Find files by name/size/time                            | `astSearch` with `operation:"files"`                          |
 | Read a local file or range                              | `localGetFileContent`                                          |
-| Find dead-code candidates                               | `localAnalyzeGraph` with `operation:"deadCode"`               |
-| Symbol identity, refs, callers, types                   | `lspGetSemantics`                                              |
+| Find dead-code candidates                               | `astSearch` with `operation:"topology", analysis:"deadCode"` |
+| Symbol identity, refs, callers, types                   | `lspSearch`                                                    |
 | Resolve npm package to source                           | `npmSearch`                                                    |
 | See a local image / screenshot                          | `inspectMedia` with `type:"image"`                                |
 | Inspect video/audio metadata                            | `inspectMedia` with `type:"video"` / `"audio"`, `view:"metadata"` |
@@ -100,7 +115,7 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 | Coordinate spawned workers                              | `agent` lifecycle queries                                      |
 | Discover or describe Awareness commands                 | `awareness` with `action:"list"` or `"describe"`            |
 | Run a supported Awareness command                       | `awareness` with `action:"call"`                              |
-| Run an `external-host-only` Awareness command           | Bound Awareness CLI through guarded `bash` after approval      |
+| Handle internal Awareness hook callbacks                | Host lifecycle (`hook run`, `hooks pre-edit`); excluded from model calls |
 | Fetch a URL / web search                                | `web`                                                          |
 | List / call an external MCP server tool                 | `MCPTool`                                                      |
 | Add / remove / restart an MCP server (no agent restart) | `MCPTool` (action: add/remove/restart)                         |
@@ -116,12 +131,12 @@ Session-scoped maintenance jobs are controlled by `/octocode-cron`; see [CRON.md
 | Reuse/create/maintain a verified dynamic capability | `callTool` |
 | Load or manage a reusable multi-step workflow | `skill` with `type:"load"|"call"` |
 | Compact or reset context | Pi's native auto-compaction or user `/compact` / `/new`; configure Pi's reserve threshold for 80% |
-| Recall prior lessons that may change the approach | Awareness CLI `memory recall` through `bash` |
-| Record a verified reusable root cause / decision | Awareness CLI `memory record` through `bash` |
-| Inspect deeper shared-state diagnostics | Awareness skill / `$OCTOCODE_AWARENESS_CLI` |
-| Send / read needed peer messages | Awareness CLI `signal publish` / `signal list` through `bash` |
-| Protect sensitive/non-mergeable files exceptionally | Awareness CLI `lock` through `bash` |
-| Diagnose task, handoff, verification, or presence state | Awareness CLI through `bash` |
+| Recall prior lessons that may change the approach | `awareness` call: `memory recall` |
+| Record a verified reusable root cause / decision | `awareness` call: `memory record`, after substantial work or a meaningful event |
+| Inspect deeper shared-state diagnostics | `awareness` list/describe/call; load one relevant skill reference |
+| Send / read needed peer messages | `awareness` call: `signal publish` / `signal list` |
+| Protect sensitive/non-mergeable files exceptionally | `awareness` call: `lock acquire` |
+| Diagnose task, handoff, verification, or presence state | `awareness` list/describe/call |
 
 ---
 
@@ -157,16 +172,16 @@ All accept absolute paths. Strip leading `@` if copied from a Pi file reference.
 
 | Tool                  | Key params                                                            | Notes                                                                               |
 | --------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `localSearch`         | `operation`, `path`, plus operation-specific fields                  | `text`, `structural`, `files`, and `tree` share one strict schema                    |
+| `localSearch`         | `searchText`, `path`, plus lexical filters                           | Lexical text/regex search                                                            |
+| `astSearch`           | `operation`, `path`, plus operation-specific fields                  | `match`, `files`, `tree`, `symbols`, and `topology` share one strict schema          |
 | `localGetFileContent` | `path`, `startLine`/`endLine`, `matchString`, `minify`, `fullContent` | `symbols` first for large files; `none` for edits/citations                         |
-| `localAnalyzeGraph`   | `operation`, `path`, `entrypoints`, `includeTests`, `excludeDir`      | `deadCode` returns file candidates; prove symbol usage with `lspGetSemantics`        |
+| `lspSearch`           | `operation`, `uri`, `symbolName`, `lineHint` or `position`            | Resolve symbol identity through a language server                                    |
 
-**`localSearch` operations:**
+**`astSearch` operations:**
 
 | Operation    | Use                                                                       |
 | ------------ | ------------------------------------------------------------------------- |
-| `text`       | Lexical or regex search with selectable result views                      |
-| `structural` | AST pattern (`pattern`) or rule (`rule`); captures feed `lspGetSemantics` |
+| `match`      | AST pattern (`pattern`) or rule (`rule`); captures feed `lspSearch`       |
 | `files`      | Path and metadata discovery without reading file contents                 |
 | `tree`       | Bounded directory orientation                                             |
 
@@ -174,7 +189,7 @@ All accept absolute paths. Strip leading `@` if copied from a Pi file reference.
 
 ## LSP Tool
 
-### `lspGetSemantics`
+### `lspSearch`
 
 Symbol-level code intelligence. `lineHint` **must** come from a prior search result, `matchRanges`, or `documentSymbols` — never guessed.
 
@@ -246,9 +261,9 @@ agent({queries:[{reasoning:"Free the completed worker.",type:"kill",agentId:"abc
 
 Spawn policy is warning-first: task packets should name goal, context, scope, ownership, acceptance, and return shape. Capacity limits block before process creation. Workers never receive the `agent` facade, so recursive spawning is unavailable. Spawn first and use the returned ID in a later call; generated IDs can't be referenced by another item in the same preflighted batch.
 
-### `/octocode-agents`
+### `/octocode-inbox`
 
-This user command manages the in-session worker ledger shown in the unified footer. It lists, inspects, kills, prunes, or hides worker records. Killed workers are omitted from the footer; `/octocode-agents` retains complete inspection detail. The model uses `agent` lifecycle queries; users can use `/octocode-agents` directly. See [`AGENT_ORCHESTRATOR.md`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/AGENT_ORCHESTRATOR.md) and [`SUBAGENTS.md`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/SUBAGENTS.md).
+Open the worker picker, select a worker, and choose **View output**, **Steer**, or **Stop**. The footer summarizes normal workers and identifies those needing attention. The model uses the `agent` tool for lifecycle operations. See [Agent Orchestrator](AGENT_ORCHESTRATOR.md) for the full flow.
 
 ## Media and web tools
 
@@ -339,36 +354,40 @@ Pi-core/runtime banners that do not pass through extension hooks, such as a mode
 
 ## Memory and Awareness
 
-`plan` owns session/shared projection and receipt-gated completion. There is no separate public `task` tool: plan steps become shared Awareness tasks when projection is needed, while `agent.task` is the assignment text given to a spawned worker. Signals, explicit locks, memory and maintenance use the canonical Awareness CLI through `bash`. Native advisory presence, peer registry, event delivery/policy and mutation-time lock checks remain active. Reuse native run/task IDs and observed receipts instead of duplicating bookkeeping.
+`plan` is for complex dependencies, coordinated ownership, consequential risk, substantial work spanning sessions, or an explicit planning request. Skip it for routine fixes, a few straightforward steps, or simple delegation. It owns session/shared projection and receipt-gated completion. There is no separate public `task` tool: plan steps become shared Awareness tasks when projection is needed, while `agent.task` is the assignment text given to a spawned worker. Signals, locks, memory, history, and maintenance use the native `awareness` tool. Peer registry, event delivery, and existing-lock checks run by default. Automatic work records and worker audits require guard/full; native history requires full. Reuse native run/task IDs and observed receipts.
 
-Use `"$OCTOCODE_NODE" "$OCTOCODE_AWARENESS_CLI" --db "$OCTOCODE_AWARENESS_DB" <command>` with `--workspace "$OCTOCODE_AWARENESS_WORKSPACE"` and `--agent-id "$OCTOCODE_AGENT_ID"` when required. Pi injects these shell bindings and includes the complete canonical Awareness guide in its system prompt. External agents use the same physical database and workspace with distinct stable identities; an identical path on a different machine is not a communication transport.
+Pi imports `executeAwarenessCommand` and the canonical command descriptors directly. The tool supplies trusted database, workspace, and identity context; model parameters use descriptor fields such as `to_agent`, without host bindings. Pi includes the short `AWARENESS_PI_HOST_PROMPT` once; the complete guide stays on demand. External hosts use the CLI with the same physical database, distinct stable identities and their own physical checkout paths. Linked Git worktrees share peers, signals and memory. See the [API reference](../../octocode-awareness/docs/API.md).
 
 See [AWARENESS_AGENT_FLOW.md](AWARENESS_AGENT_FLOW.md) for communication and lifecycle ownership and [REFLECT.md](REFLECT.md) for learning and maintenance guidance. Load the bundled `octocode-awareness` skill for operating detail.
 
 ### Signal-driven pattern
 
 ```
-[plan]     scope auto/session/shared → Start → execute declared check
+[start]    reuse peer briefing or attend once
+[plan]     complex work only, or explicit request: scope auto/session/shared → Start → declared check
 [complete] plan.complete + observed receipt → shared verification → next ready dependency
-[mutation] explicit targets → automatic peer-lock preflight → automatic advisory presence
-[signal]   native peer event → CLI signal list/reply/ack/resolve when relevant
-[rare]     CLI lock for non-mergeable state · CLI signal for peer coordination
-[learn]    CLI memory only for verified reusable outcomes
-[finish]   CLI verify audit for owned workspace debt before final response
+[mutation] explicit targets → peer-lock preflight → advisory presence only in guard/full
+[signal]   native peer event → awareness signal list/reply/ack/resolve when relevant
+[rare]     awareness lock for non-mergeable state · signal for useful peer coordination
+[learn]    awareness memory after substantial work, only for verified reusable learning
+[finish]   tracked work: awareness verify audit after final writes
 ```
 
-### CLI quick-reference
+### Native Awareness command reference
+
+Use these command names with `action: "call"`. Describe an unfamiliar route first;
+the package catalog owns exact fields and executable continuations.
 
 | Command                                  | Purpose                                                                                                        |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `memory recall`                          | Retrieve durable lessons before risky/unfamiliar work; flags `judgment_required` when recall confidence is low |
 | `memory record`                          | Store verified root cause, decision, workaround, or gotcha                                                     |
-| `memory forget`, `memory archive`        | Preview item-scoped cleanup with `--dry-run`                                                                    |
+| `memory forget`, `memory archive`        | Preview item-scoped cleanup with `dry_run: true`                                                               |
 | `status`                                 | Show plans, tasks, locks, work presence, agents, messages, handoffs, checks, and memory counts                 |
 | `signal publish`, `signal list`, `signal reply`, `signal ack`, `signal resolve` | Directed, scoped peer communication |
 | `handoff add\|list\|clear`               | Manual continuation notes for later agents                                                                     |
 | `lock acquire\|release\|list`            | Optional exclusive protection for sensitive paths                                                              |
-| `verify audit`                           | Audit owned verification debt before finishing                                                                |
+| `verify audit`                           | Audit owned tracked-work debt after final writes                                                              |
 | `verify mark`                            | Record observed SUCCESS or FAILED for an explicit owned run ID                                                 |
 | `maintenance digest`, `signal prune`     | Inspect scoped `--dry-run` candidates before authorized cleanup                                                |
 

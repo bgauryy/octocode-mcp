@@ -1,7 +1,7 @@
 import type { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
 import { HISTORY_ROUTE_DESCRIPTORS, historyRequestSchemas } from './schema/definitions-history.js';
 import { captureHistory } from './history-capture.js';
-import { historyRead, historyStatus, historyTimeline } from './history-query.js';
+import { historyEvidence, historyRead, historyRecovery, historyRetentionPreview, historyRetentionPrune, historyStatus, historyTimeline } from './history-query.js';
 import { applyHistoryRestore, previewHistoryRestore } from './history-restore.js';
 import { createHistoryContext, HistoryError } from './history-store.js';
 
@@ -20,5 +20,9 @@ export async function runAwarenessHistoryOperation(db: DatabaseSync, command: st
     case 'history_read': return historyRead(ctx, historyRequestSchemas.history_read.parse(parsed.data));
     case 'history_restore_preview': return previewHistoryRestore(ctx, historyRequestSchemas.history_restore_preview.parse(parsed.data));
     case 'history_restore_apply': return applyHistoryRestore(ctx, historyRequestSchemas.history_restore_apply.parse(parsed.data));
+    case 'history_retention_preview': return historyRetentionPreview(ctx, historyRequestSchemas.history_retention_preview.parse(parsed.data));
+    case 'history_retention_prune': return historyRetentionPrune(ctx, historyRequestSchemas.history_retention_prune.parse(parsed.data));
+    case 'history_recovery': return historyRecovery(ctx, historyRequestSchemas.history_recovery.parse(parsed.data));
+    case 'history_evidence': return historyEvidence(ctx, historyRequestSchemas.history_evidence.parse(parsed.data));
   }
 }

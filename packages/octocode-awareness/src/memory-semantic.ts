@@ -108,14 +108,17 @@ export function recallMemory(
               `OCTOCODE_EMBED_CMD ran (model=${model}) and matched embeddings, but none passed the scope/label/importance filters; results use lexical FTS + decay.`,
             ];
           } else {
-            bumpAccess(db, ranked.map((memory) => memory.memory_id));
+            const returned = ranked.slice(0, limit);
+            if (recallParams.recordAccess !== false) {
+              bumpAccess(db, returned.map((memory) => memory.memory_id));
+            }
             Object.assign(payload, scopedResult);
             // Semantic mode: the candidate-scoped run's judgment fields describe
             // a lexical pass, not the semantic result set.
             delete payload['judgment_required'];
             delete payload['judgment_reason'];
-            payload['memories'] = ranked.slice(0, limit);
-            payload['count'] = Math.min(ranked.length, limit);
+            payload['memories'] = returned;
+            payload['count'] = returned.length;
             payload['mode'] = 'semantic';
             payload['embedding_model'] = model;
           }
@@ -133,7 +136,7 @@ export function recallMemory(
     // every non-success semantic branch above (warnings already in payload).
     Object.assign(payload, getMemory(db, baseParams));
   }
-  if (useSemantic && payload['mode'] !== 'semantic') {
+  if (useSemantic && payload['mode'] !== 'semantic' && recallParams.recordAccess !== false) {
     const fallback = (payload['memories'] ?? []) as Array<{ memory_id?: string }>;
     bumpAccess(db, fallback.flatMap((memory) => (memory.memory_id ? [memory.memory_id] : [])));
   }

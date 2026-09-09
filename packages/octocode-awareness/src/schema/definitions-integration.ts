@@ -5,7 +5,7 @@ const text = z.string().min(1);
 const scope = { workspace: text.optional() };
 const limit = z.number().int().positive().optional();
 
-/** CLI-only integrations retain their distinct evidence and host contracts. */
+/** Integration commands share one contract between native hosts and the CLI. */
 export const integrationSchemas = {
   agent_presence: z.object({ ...scope, agent_id: text, status: z.enum(['ACTIVE', 'IDLE']).optional() }),
   verified_memory: z.object({ ...scope, label: text, text, source_digest: text, scope: z.enum(['project', 'artifact']).optional(), verified_at: text.optional(), valid_until: text.optional(), importance: z.number().int().min(1).max(10).optional(), tags: text.optional() }),
@@ -18,6 +18,6 @@ export const integrationSchemas = {
   handoff_clear: z.object({ ...scope, handoff_id: text }),
   guide: z.object({ json: z.boolean().optional() }),
   instructions_export: z.object({ format: z.enum(['prompt', 'agents-md', 'json']).optional() }),
-  pre_edit: z.object({ ...scope, host: text.optional(), agent_id: text.optional(), event_json: text.optional() }),
+  pre_edit: z.object({ ...scope, host: text.optional(), agent_id: text.optional(), event_json: z.union([text, z.record(z.string(), z.unknown())]).optional().describe('Native event object or serialized JSON. CLI can also read the event from stdin.') }),
   database_consolidate: z.object({ source: text, destination: text, unattributed_agent_id: text.optional(), dry_run: z.boolean().optional() }),
 };

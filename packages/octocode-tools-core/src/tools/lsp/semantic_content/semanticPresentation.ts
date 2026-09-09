@@ -10,29 +10,13 @@ import {
 } from '../../../utils/response/charSavings.js';
 import {
   type CompactLocation,
-  type LspGetSemanticsQuery,
+  type LspSearchQuery,
   type LspSemanticEnvelope,
 } from '../shared/semanticTypes.js';
-
-const MAX_RANGE_SAMPLES = 8;
-
-export type CompactCallTarget = {
-  name: string;
-  kind: string;
-  uri: string;
-  line: number;
-  endLine: number;
-  selectionLine?: number;
-};
-
-export type CompactCall = {
-  direction: 'incoming' | 'outgoing';
-  item: CompactCallTarget;
-  ranges: Array<{ line: number; character: number }>;
-  rangeCount: number;
-  rangeSampleCount: number;
-  contentPreview?: string;
-};
+import type {
+  CompactCall,
+  CompactCallTarget,
+} from '../shared/semanticCallTypes.js';
 
 export function attachSemanticRawEvidence<T extends object>(result: T): T {
   return attachRawResponseChars(result, countSerializedChars(result));
@@ -56,7 +40,7 @@ export function classifySemanticResult(
 }
 
 export function formatSemanticResult(
-  query: LspGetSemanticsQuery,
+  query: LspSearchQuery,
   result: LspSemanticEnvelope | Record<string, unknown>
 ): LspSemanticEnvelope | Record<string, unknown> {
   if (query.format !== 'compact' || !isSemanticEnvelope(result)) return result;
@@ -183,14 +167,11 @@ export function formatCallRow(value: unknown): string {
   const direction = stringField(value, 'direction');
   const item = formatCallTargetRow(value.item);
   const ranges = arrayField(value, 'ranges').map(formatRangeRow).join(',');
-  const rangeCount = numberField(value, 'rangeCount');
-  const rangeSampleCount = numberField(value, 'rangeSampleCount');
   const preview = stringField(value, 'contentPreview');
   return [
     direction,
     item,
     ranges ? `ranges=${ranges}` : '',
-    rangeCount > rangeSampleCount ? `totalRanges=${rangeCount}` : '',
     preview ? `| ${oneLine(preview, 180)}` : '',
   ]
     .filter(Boolean)
@@ -211,7 +192,7 @@ export function formatCallTargetRow(value: unknown): string {
 
 export function formatRangeRow(value: unknown): string {
   if (!isRecord(value)) return String(value);
-  return `${numberField(value, 'line')}:${numberField(value, 'character')}`;
+  return `${numberField(value, 'line')}:${numberField(value, 'character')}-${numberField(value, 'endLine')}:${numberField(value, 'endCharacter')}`;
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -261,7 +242,6 @@ export function compactIncomingCall(
     item: compactCallItem(call.from),
     ranges,
     rangeCount: call.fromRanges.length,
-    rangeSampleCount: ranges.length,
     ...contentPreview(call.from, contextLines),
   };
 }
@@ -276,7 +256,6 @@ export function compactOutgoingCall(
     item: compactCallItem(call.to),
     ranges,
     rangeCount: call.fromRanges.length,
-    rangeSampleCount: ranges.length,
     ...contentPreview(call.to, contextLines),
   };
 }
@@ -295,18 +274,14 @@ export function compactCallItem(item: CallHierarchyItem): CompactCallTarget {
 }
 
 export function compactRanges(ranges: readonly LSPRange[]) {
-  const seen = new Set<string>();
-  const compact: Array<{ line: number; character: number }> = [];
-  for (const range of ranges) {
-    const line = range.start.line + 1;
-    const character = range.start.character;
-    const key = `${line}:${character}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    compact.push({ line, character });
-    if (compact.length >= MAX_RANGE_SAMPLES) break;
-  }
-  return compact;
+  // Preserve every provider range, including equal starts with different ends.
+  // The shared response paginator owns output bounds; presentation never samples.
+  return ranges.map(range => ({
+    line: range.start.line + 1,
+    character: range.start.character,
+    endLine: range.end.line + 1,
+    endCharacter: range.end.character,
+  }));
 }
 
 export function contentPreview(

@@ -5,6 +5,24 @@ describe('awareness mutation gate', () => {
   const cwd = '/repo';
   const event = (toolName: string, input: Record<string, unknown>) => ({ toolName, input });
 
+  it('checks existing locks without creating work, edit receipts, or verification debt in coordination mode', () => {
+    const startWork = vi.fn(); const endWork = vi.fn(); const recordEdit = vi.fn();
+    const queryTarget = vi.fn(() => ({ blocked: false }));
+    const gate = createAwarenessMutationGate({
+      storeExists: () => true, trackWork: () => false, queryTarget, startWork, endWork, recordEdit,
+    });
+    const write = event('file', { queries: [{ type: 'write', path: 'a.ts' }] });
+    expect(gate.preflight(write, cwd, 'me')).toBeUndefined();
+    gate.complete(write, cwd, 'me', true);
+    gate.cleanup();
+    expect(queryTarget).toHaveBeenCalledOnce();
+    expect(startWork).not.toHaveBeenCalled();
+    expect(endWork).not.toHaveBeenCalled();
+    expect(recordEdit).not.toHaveBeenCalled();
+    queryTarget.mockReturnValue({ blocked: true });
+    expect(gate.preflight(write, cwd, 'me')?.block).toBe(true);
+  });
+
   it.each(['write', 'edit', 'delete'])('blocks the registered file tool %s operation before presence', (type) => {
     const startWork = vi.fn(() => 'run_file');
     const queryTarget = vi.fn(() => ({ blocked: true, message: 'peer owns file' }));

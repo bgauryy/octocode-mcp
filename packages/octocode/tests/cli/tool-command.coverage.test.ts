@@ -213,7 +213,7 @@ describe('tool-command coverage', () => {
       command: 'tools',
       args: ['localSearch'],
       options: {
-        queries: '{"operation":"text","path":".","searchText":"x"}',
+        queries: '{"path":".","searchText":"x"}',
         compact: true,
       },
     });
@@ -414,10 +414,8 @@ describe('tool-command coverage', () => {
 
     const output = consoleSpy.mock.calls.flat().join('\n');
     expect(output).toContain('Variants');
-    expect(output).toContain('text:');
-    expect(output).toContain('structural:');
+    expect(output).toContain('lexical:');
     expect(output).toContain('searchText*:string');
-    expect(output).toContain('pattern?:string');
     expect(output).toContain(
       'full fields: tools localSearch --scheme --json --compact'
     );
@@ -430,7 +428,7 @@ describe('tool-command coverage', () => {
 
     await toolCommand.handler!({
       command: 'tools',
-      args: ['lspGetSemantics'],
+      args: ['lspSearch'],
       options: { scheme: true, json: true, compact: true },
     });
 
@@ -439,12 +437,13 @@ describe('tool-command coverage', () => {
     };
     expect(parsed.variants?.map(variant => variant.name)).toEqual([
       'anchored',
+      'position',
       'document',
       'workspace',
     ]);
     expect(parsed.variants?.[0]?.requires).toEqual([
       'uri',
-      'type',
+      'operation',
       'symbolName',
       'lineHint',
     ]);
@@ -520,7 +519,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '[{"operation":"text","path":".","searchText":"foo","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1},{"operation":"text","path":"src","searchText":"bar","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}]',
+          '[{"path":".","searchText":"foo","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1},{"path":"src","searchText":"bar","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}]',
       },
     });
 
@@ -543,7 +542,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"queries":[{"operation":"text","path":".","searchText":"foo","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}],"responseCharOffset":500}',
+          '{"queries":[{"path":".","searchText":"foo","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}],"responseCharOffset":500}',
       },
     });
 
@@ -564,7 +563,7 @@ describe('tool-command coverage', () => {
       command: 'tools',
       args: [
         'localSearch',
-        '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+        '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
         'extra',
       ],
       options: {},
@@ -618,7 +617,7 @@ describe('tool-command coverage', () => {
         args: ['localSearch'],
         options: {
           queries:
-            '{"operation":"text","path":".","searchText":"x","regex":"fixed","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+            '{"path":".","searchText":"x","regex":"literal","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
         },
       });
 
@@ -626,7 +625,7 @@ describe('tool-command coverage', () => {
         expect.objectContaining({
           queries: [
             expect.objectContaining({
-              regex: 'fixed',
+              regex: 'literal',
               pageSize: 1,
               page: 1,
               maxMatchesPerFile: 1,
@@ -654,7 +653,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -675,7 +674,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -699,7 +698,7 @@ describe('tool-command coverage', () => {
       options: {
         json: true,
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -727,7 +726,7 @@ describe('tool-command coverage', () => {
       options: {
         json: true,
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -755,7 +754,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -773,7 +772,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -793,7 +792,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -895,7 +894,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '[{"operation":"text","path":".","searchText":"ok","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1},{"operation":"text","path":".","searchText":999,"matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}]',
+          '[{"path":".","searchText":"ok","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1},{"path":".","searchText":999,"matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}]',
       },
     });
 
@@ -976,7 +975,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -1001,7 +1000,7 @@ describe('tool-command coverage', () => {
       args: ['localSearch'],
       options: {
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -1025,7 +1024,7 @@ describe('tool-command coverage', () => {
       options: {
         json: true,
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -1049,7 +1048,7 @@ describe('tool-command coverage', () => {
       options: {
         json: true,
         queries:
-          '{"operation":"text","path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+          '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
       },
     });
 
@@ -1057,18 +1056,18 @@ describe('tool-command coverage', () => {
     expect(parsed).toBe('just a string');
   });
 
-  it('buildExampleValue: lspGetSemantics example exercises semantic enum branches', async () => {
+  it('buildExampleValue: lspSearch example exercises semantic enum branches', async () => {
     const { toolCommand } =
       await import('../../src/cli/tool-command/command.js');
 
     await toolCommand.handler!({
       command: 'tools',
-      args: ['lspGetSemantics'],
+      args: ['lspSearch'],
       options: { scheme: true },
     });
 
     const out = consoleSpy.mock.calls.flat().join('\n');
-    expect(out).toContain('lspGetSemantics');
+    expect(out).toContain('lspSearch');
     expect(out).toContain('Input Schema');
     expect(out).toContain('definition');
   });

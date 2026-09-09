@@ -44,8 +44,8 @@ describe('interactive configuration catalog', () => {
     'github.repositories',
     'github.tree',
     'local.text',
-    'local.files',
-    'local.tree',
+    'localAnalyzeGraph',
+    'lspGetSemantics',
   ])('does not expose removed tool %s', toolName => {
     expect(getAllTools().some(tool => tool.id === toolName)).toBe(false);
   });

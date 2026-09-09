@@ -1,12 +1,23 @@
 /**
  * Bounded agent observation packet over Awareness state.
  */
-import type { AttendNext } from './attend-flow.js';
+import type { AttendNext as AttendFlowNext } from './attend-flow.js';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { AwarenessQueryRow } from './repo-model.js';
 import type { OperationalState, Regulation } from './attend-physiology.js';
 import type { RuntimeObservation } from '@octocodeai/agent-contracts/physiology';
+
+export interface AttendContinuation {
+  /** Native API request; CLI adapters can translate the same command/params. */
+  command: 'query workboard' | 'memory recall';
+  params: Record<string, unknown>;
+}
+
+export type AttendNext = AttendFlowNext & {
+  continuations?: AttendContinuation[];
+  terminal_limits?: Array<{ code: 'MEMORY_RECALL_LIMIT'; limit: number }>;
+};
 
 export interface AttendParams {
   revision?: string;
@@ -50,6 +61,9 @@ export interface AttendResult {
   repo?: string | null;
   ref?: string | null;
   counts?: Record<string, number>;
+  partial: boolean;
+  partial_reasons?: string[];
+  evidence_omitted_count?: number;
   operational_state: OperationalState;
   regulation: Regulation;
   profile?: Record<string, number>;
@@ -68,6 +82,9 @@ export interface AttendResult {
 export interface AttendUnchangedResult {
   ok: true;
   unchanged: true;
+  partial?: boolean;
+  partial_reasons?: string[];
+  evidence_omitted_count?: number;
   revision: string;
   generated_at: string;
   workspace_path: string;

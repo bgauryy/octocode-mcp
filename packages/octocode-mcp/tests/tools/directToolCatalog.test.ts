@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import {
+  AST_SEARCH_TOOL_NAME,
   GITHUB_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
 } from '../../../octocode-tools-core/src/tools/toolNames.js';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
 import {
   DIRECT_TOOL_CATEGORIES,
   DIRECT_TOOL_DEFINITIONS,
@@ -44,9 +45,9 @@ describe('directToolCatalog', () => {
       'npmSearch',
       'ghCloneRepo',
       'localSearch',
-      'localAnalyzeGraph',
+      'astSearch',
       'localGetFileContent',
-      'lspGetSemantics',
+      'lspSearch',
     ]);
     expect(names).not.toEqual(
       expect.arrayContaining([
@@ -113,7 +114,7 @@ describe('directToolCatalog', () => {
       'goal',
       'reasoning',
     ]);
-    expect(getDirectToolAutoFilledFields(LSP_GET_SEMANTICS_TOOL_NAME)).toEqual([
+    expect(getDirectToolAutoFilledFields(LSP_SEARCH_TOOL_NAME)).toEqual([
       'goal',
       'reasoning',
     ]);
@@ -122,9 +123,7 @@ describe('directToolCatalog', () => {
   it('categorizes known direct tool names and leaves unknown names as Other', () => {
     expect(getDirectToolCategory(GITHUB_SEARCH_TOOL_NAME)).toBe('GitHub');
     expect(getDirectToolCategory(LOCAL_SEARCH_TOOL_NAME)).toBe('Local Code');
-    expect(getDirectToolCategory(LSP_GET_SEMANTICS_TOOL_NAME)).toBe(
-      'Local Code'
-    );
+    expect(getDirectToolCategory(LSP_SEARCH_TOOL_NAME)).toBe('Local Code');
     expect(getDirectToolCategory(STATIC_TOOL_NAMES.PACKAGE_SEARCH)).toBe(
       'Package'
     );
@@ -165,8 +164,8 @@ describe('directToolCatalog', () => {
     );
 
     expect(localByName['id']).toBeUndefined();
-    expect(localByName['operation']?.required).toBe(true);
-    expect(localByName['searchText']?.required).toBe(false);
+    expect(localByName['operation']).toBeUndefined();
+    expect(localByName['searchText']?.required).toBe(true);
     expect(localByName['include']?.type).toBe('array<string>');
     expect(localByName['matchContentLength']?.required).toBe(false);
     expect(localByName['page']?.required).toBe(false);
@@ -174,26 +173,24 @@ describe('directToolCatalog', () => {
 
     expect(buildDirectToolExampleQuery(LOCAL_SEARCH_TOOL_NAME)).toEqual({
       path: '/ABS/repo/src',
-      operation: 'text',
       searchText: 'buildDirectToolCommandPatterns',
       maxFiles: 20,
     });
     expect(
       buildDirectToolExampleQuery(STATIC_TOOL_NAMES.GITHUB_CLONE_REPO)
     ).toEqual({ owner: 'bgauryy', repo: 'octocode' });
-    expect(buildDirectToolExampleQuery(LSP_GET_SEMANTICS_TOOL_NAME)).toEqual({
+    expect(buildDirectToolExampleQuery(LSP_SEARCH_TOOL_NAME)).toEqual({
       uri: '/ABS/packages/octocode-tools-core/src/scheme/pagination.ts',
-      type: 'documentSymbols',
+      operation: 'documentSymbols',
     });
     expect(buildDirectToolExampleQuery('missingTool')).toEqual({});
   });
 
   it('prepares direct tool input from every CLI-supported JSON payload shape', () => {
     const query = {
-      operation: 'text',
       path: '.',
       searchText: 'DIRECT_TOOL_CATEGORIES',
-      regex: 'fixed',
+      regex: 'literal',
       matchContentLength: 200,
       pageSize: 1,
       page: 1,
@@ -211,7 +208,7 @@ describe('directToolCatalog', () => {
       expect.objectContaining({
         queries: [
           expect.objectContaining({
-            regex: 'fixed',
+            regex: 'literal',
             goal: `Execute ${LOCAL_SEARCH_TOOL_NAME} via unit-test`,
             reasoning: 'Executed via unit-test tool command',
           }),
@@ -284,13 +281,12 @@ describe('directToolCatalog', () => {
       LOCAL_SEARCH_TOOL_NAME,
       [
         {
-          operation: 'text',
           searchText: 'a',
           path: '.',
           legacyLimit: 3,
           bogusKey: true,
         },
-        { operation: 'text', searchText: 'b', path: '.', fixed_string: true },
+        { searchText: 'b', path: '.', fixed_string: true },
       ],
       {
         sourceLabel: 'unit-test',
@@ -314,7 +310,7 @@ describe('directToolCatalog', () => {
     const prepared = prepareDirectToolInput(
       LOCAL_SEARCH_TOOL_NAME,
       {
-        queries: [{ operation: 'text', searchText: 'a', path: '.' }],
+        queries: [{ searchText: 'a', path: '.' }],
         responseCharLength: 500,
       },
       { sourceLabel: 'unit-test' }
@@ -376,8 +372,8 @@ describe('directToolCatalog', () => {
 
   it('validates direct tool input against the canonical MCP bulk schema', () => {
     expect(() =>
-      prepareDirectToolInput(LOCAL_SEARCH_TOOL_NAME, {
-        operation: 'structural',
+      prepareDirectToolInput(AST_SEARCH_TOOL_NAME, {
+        operation: 'match',
         path: '.',
         pattern: 123,
         matchContentLength: 200,
@@ -390,10 +386,9 @@ describe('directToolCatalog', () => {
 
   it('returns an MCP result envelope from the direct execution pipeline', async () => {
     const input = prepareDirectToolInput(LOCAL_SEARCH_TOOL_NAME, {
-      operation: 'text',
       path: 'src/tools',
       searchText: 'ALL_TOOLS',
-      regex: 'fixed',
+      regex: 'literal',
       matchContentLength: 200,
       pageSize: 1,
       page: 1,

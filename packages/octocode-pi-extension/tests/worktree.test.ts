@@ -5,18 +5,29 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { afterAll, afterEach, beforeAll, beforeEach, test } from 'vitest';
 import { allowLocalFixtureProcesses } from '../../../test-utils/external-effects-guard.js';
-import { cleanupSpawnedAgentsForShutdown, prepareSpawnAgentParams, spawnRpcAgent } from '../src/tools/agents/process.js';
+import {
+  cleanupSpawnedAgentsForShutdown,
+  prepareSpawnAgentParams,
+  spawnRpcAgent,
+} from '../src/tools/agents/process.js';
 import { listWorkerLedgerEntries } from '../src/tools/agents/ledger.js';
 import { setAgentProcessFactoryForTests } from '../src/tools/agents/registry.js';
-import { formatAgentLedgerDetails } from '../src/tools/agents/rendering.js';
+import { getWorkerTranscript } from '../src/tools/agents/lifecycle.js';
 import { evaluateSpawnPolicy } from '../src/tools/agents/policy.js';
-import { createAgentWorktree, sweepAgentWorktrees } from '../src/tools/worktree.js';
+import {
+  createAgentWorktree,
+  sweepAgentWorktrees,
+} from '../src/tools/worktree.js';
 import type { PiContext } from '../src/types.js';
 import { makeMockAgentProcess } from './helpers/mock-process.js';
+import { extensionWorkspaceRoot } from '../src/extension-paths.js';
 
 function git(cwd: string, args: string[]): string {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout || `git ${args.join(' ')} failed`);
+  if (result.status !== 0)
+    throw new Error(
+      result.stderr || result.stdout || `git ${args.join(' ')} failed`
+    );
   return result.stdout.trim();
 }
 
@@ -59,13 +70,17 @@ afterEach(() => {
   setAgentProcessFactoryForTests(null);
   if (previousHome === undefined) delete process.env.OCTOCODE_HOME;
   else process.env.OCTOCODE_HOME = previousHome;
-  for (const dir of cleanupDirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of cleanupDirs.splice(0))
+    fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test('prepareSpawnAgentParams fails closed for non-interactive worktree requests', async () => {
   await assert.rejects(
-    () => prepareSpawnAgentParams({ task: 'x', isolation: 'worktree' }, { hasUI: false } as PiContext),
-    /requires an interactive UI approval/,
+    () =>
+      prepareSpawnAgentParams({ task: 'x', isolation: 'worktree' }, {
+        hasUI: false,
+      } as PiContext),
+    /requires an interactive UI approval/
   );
 });
 
@@ -75,7 +90,10 @@ test('prepareSpawnAgentParams lets the user choose shared cwd instead of creatin
     ui: { select: async () => 'Use current repo / shared cwd' },
   } as unknown as PiContext;
 
-  const params = await prepareSpawnAgentParams({ task: 'x', isolation: 'worktree' }, ctx);
+  const params = await prepareSpawnAgentParams(
+    { task: 'x', isolation: 'worktree' },
+    ctx
+  );
   assert.equal(params.isolation, 'shared');
   assert.equal(params.worktreeDecision, 'shared');
 });
@@ -83,7 +101,11 @@ test('prepareSpawnAgentParams lets the user choose shared cwd instead of creatin
 test('evaluateSpawnPolicy refuses worktree isolation outside a git work tree', () => {
   const dir = tmp('octocode-worktree-not-git-');
   cleanupDirs.push(dir);
-  const result = evaluateSpawnPolicy({ task: 'x', cwd: dir, isolation: 'worktree' });
+  const result = evaluateSpawnPolicy({
+    task: 'x',
+    cwd: dir,
+    isolation: 'worktree',
+  });
   assert.equal(result.allowed, false);
   assert.match(result.reason ?? '', /git|work tree/i);
 });
@@ -92,7 +114,11 @@ test('createAgentWorktree creates an isolated branch under Octocode home', () =>
   const repo = initRepo();
   cleanupDirs.push(repo);
 
-  const state = createAgentWorktree({ parentCwd: repo, agentId: '12345678-aaaa-bbbb-cccc-dddddddddddd', name: 'Rex Worker' });
+  const state = createAgentWorktree({
+    parentCwd: repo,
+    agentId: '12345678-aaaa-bbbb-cccc-dddddddddddd',
+    name: 'Rex Worker',
+  });
 
   assert.equal(state.baseCommit, git(repo, ['rev-parse', 'HEAD']));
   assert.match(state.branch, /^octocode\/agents\/rex-worker-12345678$/);
@@ -115,16 +141,40 @@ test('spawnRpcAgent runs approved worktree workers in the worktree cwd and clean
     return mock as never;
   });
 
-  const record = spawnRpcAgent({ task: 'Goal: g\nContext: c\nScope: s\nOwnership: o\nAcceptance: a\nReturn: r', cwd: repo, isolation: 'worktree', worktreeDecision: 'create' });
+  const record = spawnRpcAgent({
+    task: 'Goal: g\nContext: c\nScope: s\nOwnership: o\nAcceptance: a\nReturn: r',
+    cwd: repo,
+    isolation: 'worktree',
+    worktreeDecision: 'create',
+  });
   assert.ok(record.worktree, 'record stores worktree metadata');
   assert.equal(spawnedCwd, record.worktree!.path);
-  assert.equal(listWorkerLedgerEntries()[0]!.worktree?.branch, record.worktree!.branch);
-  assert.match(formatAgentLedgerDetails(), /⎇ agents\//);
-  assert.match(String(mock.writes[0]!['message']), /Worktree isolation is active/);
+  assert.equal(
+    record.awarenessWorkspace,
+    record.worktree!.path,
+    'worker ownership and audits use its physical checkout'
+  );
+  assert.ok(
+    record.handbackPath?.startsWith(extensionWorkspaceRoot(repo)),
+    'handback stays in the parent workspace artifacts'
+  );
+  assert.equal(
+    listWorkerLedgerEntries()[0]!.worktree?.branch,
+    record.worktree!.branch
+  );
+  assert.match(getWorkerTranscript(record.id)!, /worktree: octocode\/agents\//);
+  assert.match(
+    String(mock.writes[0]!['message']),
+    /Worktree isolation is active/
+  );
 
   mock.exitCode = 0;
   mock._emit('close', 0, null);
-  assert.equal(fs.existsSync(record.worktree!.path), false, 'clean worktree removed on process close');
+  assert.equal(
+    fs.existsSync(record.worktree!.path),
+    false,
+    'clean worktree removed on process close'
+  );
 });
 
 test('spawnRpcAgent keeps unmerged worktrees and makes records non-prunable', () => {
@@ -133,24 +183,49 @@ test('spawnRpcAgent keeps unmerged worktrees and makes records non-prunable', ()
   const mock = makeMockAgentProcess();
   setAgentProcessFactoryForTests(() => mock as never);
 
-  const record = spawnRpcAgent({ task: 'Goal: g\nContext: c\nScope: s\nOwnership: o\nAcceptance: a\nReturn: r', cwd: repo, isolation: 'worktree', worktreeDecision: 'create' });
-  fs.writeFileSync(path.join(record.worktree!.path, 'worker.txt'), 'change\n', 'utf8');
+  const record = spawnRpcAgent({
+    task: 'Goal: g\nContext: c\nScope: s\nOwnership: o\nAcceptance: a\nReturn: r',
+    cwd: repo,
+    isolation: 'worktree',
+    worktreeDecision: 'create',
+  });
+  fs.writeFileSync(
+    path.join(record.worktree!.path, 'worker.txt'),
+    'change\n',
+    'utf8'
+  );
   git(record.worktree!.path, ['add', 'worker.txt']);
   git(record.worktree!.path, ['commit', '-m', 'worker change']);
 
   mock.exitCode = 0;
   mock._emit('close', 0, null);
 
-  assert.equal(fs.existsSync(record.worktree!.path), true, 'worktree with commits is kept');
-  assert.equal(listWorkerLedgerEntries().length, 1, 'unmerged worktree record remains visible');
+  assert.equal(
+    fs.existsSync(record.worktree!.path),
+    true,
+    'worktree with commits is kept'
+  );
+  assert.equal(
+    listWorkerLedgerEntries().length,
+    1,
+    'unmerged worktree record remains visible'
+  );
   assert.equal(listWorkerLedgerEntries()[0]!.worktree?.mergeState, 'unmerged');
 });
 
 test('sweepAgentWorktrees removes clean orphan metadata but keeps work with unique commits', () => {
   const repo = initRepo();
   cleanupDirs.push(repo);
-  const clean = createAgentWorktree({ parentCwd: repo, agentId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', name: 'Clean' });
-  const dirty = createAgentWorktree({ parentCwd: repo, agentId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', name: 'Dirty' });
+  const clean = createAgentWorktree({
+    parentCwd: repo,
+    agentId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    name: 'Clean',
+  });
+  const dirty = createAgentWorktree({
+    parentCwd: repo,
+    agentId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    name: 'Dirty',
+  });
   fs.writeFileSync(path.join(dirty.path, 'worker.txt'), 'change\n', 'utf8');
   git(dirty.path, ['add', 'worker.txt']);
   git(dirty.path, ['commit', '-m', 'worker change']);

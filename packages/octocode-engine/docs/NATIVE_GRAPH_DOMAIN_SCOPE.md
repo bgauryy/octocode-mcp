@@ -1,8 +1,7 @@
-# Native Graph Domain — Scope
+# Native graph domain — scope
 
 Status: **Superseded** — reachability/dead-code detection now ships in
-`octocode-tools-core/src/tools/local_analyze_graph/` (the `localAnalyzeGraph` MCP
-tool), consuming the native `graphFacts` API this doc scoped a Rust port
+`astSearch`'s `topology` operation, consuming the native `graphFacts` API this doc scoped a Rust port
 around. See ARCHITECTURE.md §"Research Graph Direction" for the current
 implementation. This doc is kept as a historical record of the original
 native-port design — its import-resolution risk analysis (§7) remains
@@ -12,18 +11,18 @@ plan.
 Current hybrid boundary: Rust performs the bounded walk, parallel reads,
 per-file fact extraction, and same-file reference counting through
 `scanGraphFacts`; tools-core retains import resolution, reachability, SCC, and
-dead-code policy. This is an I/O/parsing batch, not the superseded full graph
+dead-code policy behind `astSearch` topology. This is an I/O/parsing batch, not the superseded full graph
 algorithm port proposed below.
 
 > **Historical note (superseded 2026-07-28):** the blocker below described the
 > state right after `octocode-tools-core/src/oql/research/analyze/` was
 > deleted, before its replacement existed. That replacement is
-> `local_analyze_graph/`, which consumes shared reachability (BFS) and — unlike the
+> `astSearch` topology implementation, which consumes shared reachability (BFS) and — unlike the
 > deleted OQL pipeline — also implements SCC (`src/graph/reachability.ts`,
 > iterative Tarjan's, used by `deadCodeScan.ts` for `dead-cluster` verdicts).
 > The native `graphFacts` API this plan builds on is **not** orphaned — see
 > ARCHITECTURE.md. A native Rust port of the graph algorithms below is no
-> longer scoped against the deleted OQL pipeline; it would need `localAnalyzeGraph`
+> longer scoped against the deleted OQL pipeline; it can use `astSearch` topology
 > as its new differential-test oracle if ever revived (see Future Possibilities
 > in `.octocode/rfc/20260728-engine-quality-fixes/RFC.md`).
 
@@ -91,7 +90,7 @@ a new `src/graph/`, but not locked here — let the code shape it):
   `findAstRetainingFiles` + `calleeRefersToSymbol`), preserving the
   lexical-fallback flag (`retentionSource: ast | ripgrep`).
 - **SCC** (the one genuinely new algorithm — exists nowhere today) — a
-  strongly-connected-components pass (e.g. Tarjan) over the file/symbol graphs so
+  strongly-connected-components pass (for example, Tarjan) over the file/symbol graphs so
   a mutually-referencing cluster with no external retainer is correctly
   `transitive-dead` instead of falsely `reachable`.
 - **Transitive-dead pruning** — fixpoint removal of nodes whose only retainers

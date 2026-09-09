@@ -17,8 +17,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { formatExternalAgentCoordinationContext } from '@octocodeai/octocode-awareness';
 import { getInstallSource } from '../../assets.js';
-import { extensionTmpRoot, extensionWorkspaceRoot } from '../../extension-paths.js';
-import { inspectWorkerAwareness } from '../awareness-worker-audit.js';
+import {
+  extensionTmpRoot,
+  extensionWorkspaceRoot,
+} from '../../extension-paths.js';
+import { inspectWorkerAwarenessAutomatically } from '../awareness-worker-audit.js';
 import { getRandomAgentName } from '../../agentNames.js';
 import {
   cleanupWorktreeIfNoWork,
@@ -71,11 +74,7 @@ import {
   recordMessageActivity,
   previewMessage,
 } from './ledger.js';
-import {
-  killAgent,
-  syncWorkerRegistry,
-  removePromptFiles,
-} from './kill.js';
+import { killAgent, syncWorkerRegistry, removePromptFiles } from './kill.js';
 
 // ─── UI callback wiring ────────────────────────────────────────────────────────
 
@@ -90,7 +89,7 @@ let _stopTicker: () => void = () => {};
  */
 export function wireProcessCallbacks(
   refreshUi: (ctx?: PiContext) => void,
-  stopTicker: () => void,
+  stopTicker: () => void
 ): void {
   _refreshUi = refreshUi;
   _stopTicker = stopTicker;
@@ -107,7 +106,7 @@ let processCleanupHandlersInstalled = false;
 export function cleanupSpawnedAgentsForShutdown(): number {
   // Kill every worker whose process is still alive — including idle ones, whose
   // process stays up between turns and would otherwise survive as an orphan.
-  const alive = [...agents.values()].filter((record) => isProcessAlive(record));
+  const alive = [...agents.values()].filter(record => isProcessAlive(record));
   for (const record of alive) killAgent(record, { forceKillDelayMs: 0 });
   // The killed children's close/stderr events fire on later ticks and call
   // _refreshUi; hide the ledger so those callbacks clear rather than
@@ -121,7 +120,9 @@ export function cleanupSpawnedAgentsForShutdown(): number {
 function installProcessCleanupHandlers(): void {
   if (processCleanupHandlersInstalled || isSubagentProcess()) return;
   processCleanupHandlersInstalled = true;
-  const cleanup = () => { cleanupSpawnedAgentsForShutdown(); };
+  const cleanup = () => {
+    cleanupSpawnedAgentsForShutdown();
+  };
   process.once('beforeExit', cleanup);
   process.once('exit', cleanup);
   for (const signal of EXIT_SIGNALS) {
@@ -162,14 +163,22 @@ function writeTempPromptFile(name: string, text: string): string {
 }
 
 function buildHandbackPath(workspace: string, agentId: string): string {
-  return path.join(extensionWorkspaceRoot(workspace), 'workers', agentId, HANDBACK_ARTIFACT_FILENAME);
+  return path.join(
+    extensionWorkspaceRoot(workspace),
+    'workers',
+    agentId,
+    HANDBACK_ARTIFACT_FILENAME
+  );
 }
 
 function ensureHandbackDir(filePath: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
 }
 
-function prepareHandbackPath(workspace: string, agentId: string): { path: string; warning?: string } {
+function prepareHandbackPath(
+  workspace: string,
+  agentId: string
+): { path: string; warning?: string } {
   const preferredPath = buildHandbackPath(workspace, agentId);
   try {
     ensureHandbackDir(preferredPath);
@@ -179,16 +188,27 @@ function prepareHandbackPath(workspace: string, agentId: string): { path: string
       extensionTmpRoot(),
       'handbacks',
       agentId,
-      HANDBACK_ARTIFACT_FILENAME,
+      HANDBACK_ARTIFACT_FILENAME
     );
     try {
       ensureHandbackDir(fallbackPath);
     } catch (fallbackError) {
-      const preferredMessage = preferredError instanceof Error ? preferredError.message : String(preferredError);
-      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-      throw new Error(`Unable to prepare worker handback directory (${preferredMessage}); fallback also failed (${fallbackMessage}).`);
+      const preferredMessage =
+        preferredError instanceof Error
+          ? preferredError.message
+          : String(preferredError);
+      const fallbackMessage =
+        fallbackError instanceof Error
+          ? fallbackError.message
+          : String(fallbackError);
+      throw new Error(
+        `Unable to prepare worker handback directory (${preferredMessage}); fallback also failed (${fallbackMessage}).`
+      );
     }
-    const preferredMessage = preferredError instanceof Error ? preferredError.message : String(preferredError);
+    const preferredMessage =
+      preferredError instanceof Error
+        ? preferredError.message
+        : String(preferredError);
     return {
       path: fallbackPath,
       warning: `Parent workspace handback directory is unavailable; using temporary fallback ${fallbackPath} (${preferredMessage}).`,
@@ -203,11 +223,17 @@ function workerAwarenessAgentId(workerId: string): string {
 
 function cleanupPromptFiles(promptFiles: string[]): void {
   for (const filePath of promptFiles) {
-    try { fs.rmSync(path.dirname(filePath), { recursive: true, force: true }); } catch { /* best-effort */ }
+    try {
+      fs.rmSync(path.dirname(filePath), { recursive: true, force: true });
+    } catch {
+      /* best-effort */
+    }
   }
 }
 
-export function getActiveAgentUi(ctx?: PiContext): NonNullable<PiContext['ui']> | undefined {
+export function getActiveAgentUi(
+  ctx?: PiContext
+): NonNullable<PiContext['ui']> | undefined {
   try {
     if (!ctx?.hasUI) return undefined;
     return ctx.ui;
@@ -218,22 +244,34 @@ export function getActiveAgentUi(ctx?: PiContext): NonNullable<PiContext['ui']> 
   }
 }
 
-async function approveWorktreeIsolation(params: SpawnAgentParams, ctx?: PiContext): Promise<SpawnAgentParams> {
+async function approveWorktreeIsolation(
+  params: SpawnAgentParams,
+  ctx?: PiContext
+): Promise<SpawnAgentParams> {
   if (params.isolation !== 'worktree') return params;
   const ui = getActiveAgentUi(ctx);
   if (typeof ui?.select !== 'function') {
-    throw new Error('isolation:"worktree" requires an interactive UI approval; non-interactive hosts fail closed. Re-run with isolation:"shared" to use the current cwd intentionally.');
+    throw new Error(
+      'isolation:"worktree" requires an interactive UI approval; non-interactive hosts fail closed. Re-run with isolation:"shared" to use the current cwd intentionally.'
+    );
   }
   const create = 'Create isolated worktree';
   const shared = 'Use current repo / shared cwd';
   const cancel = 'Cancel spawn';
-  const picked = await ui.select('Spawn this worker in an isolated git worktree?', [create, shared, cancel]);
+  const picked = await ui.select(
+    'Spawn this worker in an isolated git worktree?',
+    [create, shared, cancel]
+  );
   if (picked === create) return { ...params, worktreeDecision: 'create' };
-  if (picked === shared) return { ...params, isolation: 'shared', worktreeDecision: 'shared' };
+  if (picked === shared)
+    return { ...params, isolation: 'shared', worktreeDecision: 'shared' };
   throw new Error('Spawn cancelled before creating a worktree.');
 }
 
-function withWorktreePromptContext(params: SpawnAgentParams, worktree: InternalWorktreeState): SpawnAgentParams {
+function withWorktreePromptContext(
+  params: SpawnAgentParams,
+  worktree: InternalWorktreeState
+): SpawnAgentParams {
   const preamble = [
     'Worktree isolation is active for this worker.',
     `- Worktree path: ${worktree.path}`,
@@ -241,16 +279,37 @@ function withWorktreePromptContext(params: SpawnAgentParams, worktree: InternalW
     `- Base commit: ${worktree.baseCommit}`,
     '- Report repo-relative paths in handback; the parent ledger exposes the isolated path for review.',
   ].join('\n');
-  return { ...params, cwd: worktree.path, context: params.context ? `${preamble}\n\n${params.context}` : preamble };
+  return {
+    ...params,
+    cwd: worktree.path,
+    context: params.context ? `${preamble}\n\n${params.context}` : preamble,
+  };
 }
 
 function cleanupRecordWorktree(record: AgentRecord): void {
-  if (!record.worktree || record.worktree.mergeState === 'discarded' || record.worktree.mergeState === 'merged') return;
+  if (
+    !record.worktree ||
+    record.worktree.mergeState === 'discarded' ||
+    record.worktree.mergeState === 'merged'
+  )
+    return;
   try {
     const outcome = cleanupWorktreeIfNoWork(record.worktree);
-    pushLedgerEvent(record, 'worktree', outcome === 'removed' ? 'removed clean worktree' : 'kept unmerged worktree', record.worktree);
+    pushLedgerEvent(
+      record,
+      'worktree',
+      outcome === 'removed'
+        ? 'removed clean worktree'
+        : 'kept unmerged worktree',
+      record.worktree
+    );
   } catch (cleanupError) {
-    pushLedgerEvent(record, 'worktree', `worktree cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`, record.worktree);
+    pushLedgerEvent(
+      record,
+      'worktree',
+      `worktree cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+      record.worktree
+    );
   }
 }
 
@@ -264,14 +323,22 @@ export function withPeerCoordination(
   task: string,
   selfId: string | undefined,
   peerIds: string[],
-  opts: { parentId?: string; handbackPath?: string } = {},
+  opts: { parentId?: string; handbackPath?: string } = {}
 ): string {
   if (!selfId) return task;
-  const coordination = formatExternalAgentCoordinationContext({ selfId, parentId: opts.parentId, peerIds });
+  const coordination = formatExternalAgentCoordinationContext({
+    selfId,
+    parentId: opts.parentId,
+    peerIds,
+  });
   const lines = [
     coordination,
-    opts.handbackPath ? `- durable handback file: ${opts.handbackPath}` : undefined,
-    opts.handbackPath ? '- before a terminal [DONE]/[BLOCKED]/[FAILED] when findings are long or important, write concise Markdown to that exact file (Status, Result, Evidence, Verification, Next), then include `[ARTIFACT] <path>` in your final output.' : undefined,
+    opts.handbackPath
+      ? `- durable handback file: ${opts.handbackPath}`
+      : undefined,
+    opts.handbackPath
+      ? '- before a terminal [DONE]/[BLOCKED]/[FAILED] when findings are long or important, write concise Markdown to that exact file (Status, Result, Evidence, Verification, Next), then include `[ARTIFACT] <path>` in your final output.'
+      : undefined,
   ].filter((line): line is string => Boolean(line));
   return `${task}\n\n${lines.join('\n')}`;
 }
@@ -281,14 +348,23 @@ function collectPeerAwarenessIds(excludeId: string): string[] {
   const ids: string[] = [];
   for (const rec of agents.values()) {
     if (rec.id === excludeId || !rec.awarenessAgentId) continue;
-    if (rec.status !== 'exited' && rec.status !== 'failed' && rec.status !== 'killed') ids.push(rec.awarenessAgentId);
+    if (
+      rec.status !== 'exited' &&
+      rec.status !== 'failed' &&
+      rec.status !== 'killed'
+    )
+      ids.push(rec.awarenessAgentId);
   }
   return ids;
 }
 
 // ─── Pi argument builder ───────────────────────────────────────────────────────────
 
-function buildPiArgs(params: SpawnAgentParams, name: string, promptFiles: string[]): string[] {
+function buildPiArgs(
+  params: SpawnAgentParams,
+  name: string,
+  promptFiles: string[]
+): string[] {
   const resourceMode = params.resourceMode ?? 'lean';
   const args = ['--mode', 'rpc'];
   const workerTools = getWorkerTools(params);
@@ -301,16 +377,29 @@ function buildPiArgs(params: SpawnAgentParams, name: string, promptFiles: string
 
   if (params.provider) args.push('--provider', params.provider);
   if (params.model) args.push('--model', params.model);
-  if (shouldForceThinkingOffForToolCallingWorker(params, workerTools)) args.push('--thinking', 'off');
+  if (shouldForceThinkingOffForToolCallingWorker(params, workerTools))
+    args.push('--thinking', 'off');
   else if (params.thinking) args.push('--thinking', params.thinking);
   if (workerTools.length) args.push('--tools', workerTools.join(','));
   else if (params.tools !== undefined) args.push('--no-tools');
   args.push('--no-context-files');
 
   if (resourceMode === 'lean') {
-    args.push('--no-extensions', '--no-skills', '--no-prompt-templates', '--no-themes');
+    args.push(
+      '--no-extensions',
+      '--no-skills',
+      '--no-prompt-templates',
+      '--no-themes'
+    );
   } else if (resourceMode === 'octocode') {
-    args.push('--no-extensions', '-e', getInstallSource(), '--no-skills', '--no-prompt-templates', '--no-themes');
+    args.push(
+      '--no-extensions',
+      '-e',
+      getInstallSource(),
+      '--no-skills',
+      '--no-prompt-templates',
+      '--no-themes'
+    );
   }
 
   const systemPrompt = String(params.systemPrompt ?? '').trim();
@@ -333,17 +422,37 @@ export function refreshNormalizedResult(record: AgentRecord): void {
   record.recoveryRisk = evaluateWorkerRecoveryRisk(output);
   // Step-budget circuit-breaker: surface a warning when a worker's completed tool calls
   // reach the budget, so the parent can abort/steer a runaway worker.
-  const steps = record.toolCalls.filter((call) => call.status !== 'running').length;
-  const budget = evaluateStepBudget(steps, resolveSpawnPolicy(DEFAULT_SPAWN_POLICY).maxStepsPerWorker);
-  if (budget.exceeded && budget.warning && !record.recoveryRisk.warnings.includes(budget.warning)) {
+  const steps = record.toolCalls.filter(
+    call => call.status !== 'running'
+  ).length;
+  const budget = evaluateStepBudget(
+    steps,
+    resolveSpawnPolicy(DEFAULT_SPAWN_POLICY).maxStepsPerWorker
+  );
+  if (
+    budget.exceeded &&
+    budget.warning &&
+    !record.recoveryRisk.warnings.includes(budget.warning)
+  ) {
     record.recoveryRisk.warnings.push(budget.warning);
   }
-  if (record.normalizedResult.status !== 'unknown' && record.normalizedResult.status !== previousStatus) {
-    pushLedgerEvent(record, 'handback', `handback status: ${record.normalizedResult.status}`);
+  if (
+    record.normalizedResult.status !== 'unknown' &&
+    record.normalizedResult.status !== previousStatus
+  ) {
+    pushLedgerEvent(
+      record,
+      'handback',
+      `handback status: ${record.normalizedResult.status}`
+    );
   }
   const newWarnings = record.recoveryRisk.warnings.join('\n');
   if (newWarnings && newWarnings !== previousWarnings) {
-    pushLedgerEvent(record, 'policy', `recovery risk: ${record.recoveryRisk.warnings.join('; ')}`);
+    pushLedgerEvent(
+      record,
+      'policy',
+      `recovery risk: ${record.recoveryRisk.warnings.join('; ')}`
+    );
   }
 }
 
@@ -351,7 +460,8 @@ export function refreshNormalizedResult(record: AgentRecord): void {
 
 function captureMessageError(record: AgentRecord, message: unknown): void {
   const m = message as { stopReason?: string; errorMessage?: string };
-  const errMsg = typeof m.errorMessage === 'string' ? m.errorMessage.trim() : '';
+  const errMsg =
+    typeof m.errorMessage === 'string' ? m.errorMessage.trim() : '';
   if (m.stopReason !== 'error' && !errMsg) return;
   const text = errMsg || 'worker model turn failed';
   if (!record.error) record.error = text;
@@ -374,19 +484,36 @@ function recordInboundMessage(record: AgentRecord, message: unknown): void {
   if (!isAssistantOutputMessage(message)) return;
   const text = extractTextFromMessage(message);
   if (!text) return;
-  recordMessageActivity(record, 'from-agent', 'reply', text, `reply received: ${previewMessage(text)}`);
+  recordMessageActivity(
+    record,
+    'from-agent',
+    'reply',
+    text,
+    `reply received: ${previewMessage(text)}`
+  );
 }
 
 function getEventToolName(event: Record<string, unknown>): string {
-  return String(event['toolName'] ?? event['tool_name'] ?? event['tool'] ?? event['name'] ?? '').trim();
+  return String(
+    event['toolName'] ??
+      event['tool_name'] ??
+      event['tool'] ??
+      event['name'] ??
+      ''
+  ).trim();
 }
 
-function getEventToolCallId(event: Record<string, unknown>): string | undefined {
+function getEventToolCallId(
+  event: Record<string, unknown>
+): string | undefined {
   const id = event['toolCallId'] ?? event['tool_call_id'] ?? event['id'];
   return typeof id === 'string' && id.trim() ? id : undefined;
 }
 
-function recordToolStart(record: AgentRecord, event: Record<string, unknown>): void {
+function recordToolStart(
+  record: AgentRecord,
+  event: Record<string, unknown>
+): void {
   const toolName = getEventToolName(event);
   if (!toolName) return;
   pushCapped(record.toolCalls, {
@@ -399,14 +526,24 @@ function recordToolStart(record: AgentRecord, event: Record<string, unknown>): v
   touch(record, 'running');
 }
 
-function recordToolEnd(record: AgentRecord, event: Record<string, unknown>): void {
+function recordToolEnd(
+  record: AgentRecord,
+  event: Record<string, unknown>
+): void {
   const toolName = getEventToolName(event);
   const toolCallId = getEventToolCallId(event);
   if (!toolName && !toolCallId) return;
-  const call = [...record.toolCalls].reverse().find((item) => (
-    toolCallId ? item.toolCallId === toolCallId : item.toolName === toolName
-  ) && item.status === 'running');
-  const isError = Boolean(event['isError'] ?? event['is_error'] ?? event['error']);
+  const call = [...record.toolCalls]
+    .reverse()
+    .find(
+      item =>
+        (toolCallId
+          ? item.toolCallId === toolCallId
+          : item.toolName === toolName) && item.status === 'running'
+    );
+  const isError = Boolean(
+    event['isError'] ?? event['is_error'] ?? event['error']
+  );
   if (call) {
     call.status = isError ? 'error' : 'done';
     call.finishedAt = Date.now();
@@ -421,7 +558,12 @@ function recordToolEnd(record: AgentRecord, event: Record<string, unknown>): voi
       isError,
     });
   }
-  if (toolName) pushLedgerEvent(record, 'tool', `tool ${isError ? 'failed' : 'finished'}: ${toolName}`);
+  if (toolName)
+    pushLedgerEvent(
+      record,
+      'tool',
+      `tool ${isError ? 'failed' : 'finished'}: ${toolName}`
+    );
   touch(record);
 }
 
@@ -439,11 +581,19 @@ function processRpcLine(record: AgentRecord, line: string): void {
   const eventType = (event as { type?: string }).type;
   if (eventType === 'tool_call' || eventType === 'tool_execution_start') {
     recordToolStart(record, eventObject);
-  } else if (eventType === 'tool_result' || eventType === 'tool_execution_end') {
+  } else if (
+    eventType === 'tool_result' ||
+    eventType === 'tool_execution_end'
+  ) {
     recordToolEnd(record, eventObject);
   } else if (eventType === 'response') {
     pushCapped(record.responses, event);
-    const resp = event as { id?: string; success?: boolean; command?: string; error?: string };
+    const resp = event as {
+      id?: string;
+      success?: boolean;
+      command?: string;
+      error?: string;
+    };
     // A correlated reply to a liveness probe: resolve the pending probe so the
     // waiter learns the worker is alive-but-quiet (not hung). Any response at all
     // proves the RPC channel is live, so it also counts as a heartbeat below.
@@ -453,7 +603,9 @@ function processRpcLine(record: AgentRecord, line: string): void {
       resolveProbe();
     }
     if (resp.success === false) {
-      if (!record.error) record.error = resp.error ?? `RPC command failed: ${resp.command ?? 'unknown'}`;
+      if (!record.error)
+        record.error =
+          resp.error ?? `RPC command failed: ${resp.command ?? 'unknown'}`;
       pushLedgerEvent(record, 'error', record.error);
     }
     // Heartbeat on every response (success or not) so a blocking wait resets its
@@ -472,7 +624,10 @@ function processRpcLine(record: AgentRecord, line: string): void {
     // turn 2 has yet to run.
     record.pendingMessages = Math.max(0, (record.pendingMessages ?? 0) - 1);
     touch(record, 'running');
-  } else if (eventType === 'message_end' && (event as { message?: unknown }).message) {
+  } else if (
+    eventType === 'message_end' &&
+    (event as { message?: unknown }).message
+  ) {
     const message = (event as { message: unknown }).message;
     pushCapped(record.messages, message);
     captureMessageError(record, message);
@@ -493,10 +648,14 @@ function processRpcLine(record: AgentRecord, line: string): void {
     // pending wait must not resolve with the incomplete lastOutput.
     // willRetry (context-overflow retry) or a still-pending queued turn both mean the
     // worker is not actually done — keep it non-terminal and do not resolve waiters.
-    if ((event as { willRetry?: boolean }).willRetry === true || record.pendingMessages > 0) {
+    if ((event as { willRetry?: boolean }).willRetry === true) {
       touch(record);
+    } else if (record.pendingMessages > 0) {
+      // This turn ended; a queued follow-up is not running until agent_start.
+      // pendingMessages keeps wait() blocking through this idle process boundary.
+      touch(record, 'idle');
     } else {
-      record.awarenessInspection = inspectWorkerAwareness(record);
+      record.awarenessInspection = inspectWorkerAwarenessAutomatically(record);
       touch(record, 'idle');
       notifyWaiters(record);
     }
@@ -512,7 +671,11 @@ function processRpcLine(record: AgentRecord, line: string): void {
  * Invariant (EPIPE): touch(record, 'failed'); notifyWaiters(record) — abort
  * propagation from pipe failure so wait() resolves immediately.
  */
-export function sendRpc(record: AgentRecord, payload: Record<string, unknown>, explicitId?: string): boolean {
+export function sendRpc(
+  record: AgentRecord,
+  payload: Record<string, unknown>,
+  explicitId?: string
+): boolean {
   const id = explicitId ?? `${record.id}-${record.nextRequestId++}`;
   try {
     record.process.stdin.write(`${JSON.stringify({ id, ...payload })}\n`);
@@ -530,23 +693,35 @@ export function sendRpc(record: AgentRecord, payload: Record<string, unknown>, e
 
 // ─── Spawn ────────────────────────────────────────────────────────────────────────────
 
-export async function prepareSpawnAgentParams(params: SpawnAgentParams, ctx?: PiContext): Promise<SpawnAgentParams> {
+export async function prepareSpawnAgentParams(
+  params: SpawnAgentParams,
+  ctx?: PiContext
+): Promise<SpawnAgentParams> {
   return approveWorktreeIsolation(params, ctx);
 }
 
-export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentRecord {
-  if (!buildInitialPrompt(params)) throw new Error('agent spawn requires task.');
+export function spawnRpcAgent(
+  params: SpawnAgentParams,
+  ctx?: PiContext
+): AgentRecord {
+  if (!buildInitialPrompt(params))
+    throw new Error('agent spawn requires task.');
   installProcessCleanupHandlers();
 
   const id = randomUUID();
   const name = params.name ? String(params.name) : getRandomAgentName();
-  const requestedCwd = path.resolve(String(params.cwd ?? ctx?.cwd ?? process.cwd()));
+  const requestedCwd = path.resolve(
+    String(params.cwd ?? ctx?.cwd ?? process.cwd())
+  );
   const promptFiles: string[] = [];
   // SEV-1: workers resolve models against the same catalog as the parent, but Pi's
   // bare default (google/grok) is often unconfigured/unreachable — an unset worker
   // model silently errors every turn (0 tools run). Inherit the parent's known-working
   // model+provider when the caller didn't pin one, so delegation works by default.
-  const effectiveParams = resolveWorkerModelParams({ ...params, cwd: requestedCwd }, ctx);
+  const effectiveParams = resolveWorkerModelParams(
+    { ...params, cwd: requestedCwd },
+    ctx
+  );
   validateWorkerModelParams(effectiveParams, ctx);
   const args = buildPiArgs(effectiveParams, name, promptFiles);
   const invocation = getPiInvocation(args);
@@ -560,7 +735,9 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
   const policyResult = evaluateSpawnPolicy(effectiveParams, activeAgentCount());
   if (!policyResult.allowed) {
     cleanupPromptFiles(promptFiles);
-    throw new Error(`${policyResult.reason} Kill or wait for existing agents before spawning more.`);
+    throw new Error(
+      `${policyResult.reason} Kill or wait for existing agents before spawning more.`
+    );
   }
 
   let worktree: InternalWorktreeState | undefined;
@@ -569,7 +746,9 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
   if (effectiveParams.isolation === 'worktree') {
     if (effectiveParams.worktreeDecision !== 'create') {
       cleanupPromptFiles(promptFiles);
-      throw new Error('isolation:"worktree" requires explicit user approval before creating a git worktree.');
+      throw new Error(
+        'isolation:"worktree" requires explicit user approval before creating a git worktree.'
+      );
     }
     worktree = createAgentWorktree({
       parentCwd: requestedCwd,
@@ -581,14 +760,20 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
     cwd = worktree.path;
   }
   const peerIds = collectPeerAwarenessIds(id);
-  const awarenessWorkspace = ctx?.cwd ?? requestedCwd;
-  const parentAwarenessAgentId = process.env[AWARENESS_AGENT_ENV_VAR]?.trim() || 'pi-agent';
-  const handback = prepareHandbackPath(awarenessWorkspace, id);
+  const awarenessWorkspace = cwd;
+  const parentAwarenessAgentId =
+    process.env[AWARENESS_AGENT_ENV_VAR]?.trim() || 'pi-agent';
+  const handback = prepareHandbackPath(ctx?.cwd ?? requestedCwd, id);
   const handbackPath = handback.path;
-  const task = withPeerCoordination(buildInitialPrompt(spawnParams), awarenessAgentId, peerIds, {
-    parentId: parentAwarenessAgentId,
-    handbackPath,
-  });
+  const task = withPeerCoordination(
+    buildInitialPrompt(spawnParams),
+    awarenessAgentId,
+    peerIds,
+    {
+      parentId: parentAwarenessAgentId,
+      handbackPath,
+    }
+  );
 
   let proc;
   try {
@@ -658,8 +843,15 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
     awarenessWorkspace,
   };
   pushLedgerEvent(record, 'spawned', `spawned ${name}`, { awarenessAgentId });
-  if (record.worktree) pushLedgerEvent(record, 'worktree', `created worktree ${record.worktree.branch}`, record.worktree);
-  for (const warning of record.policyWarnings) pushLedgerEvent(record, 'policy', warning);
+  if (record.worktree)
+    pushLedgerEvent(
+      record,
+      'worktree',
+      `created worktree ${record.worktree.branch}`,
+      record.worktree
+    );
+  for (const warning of record.policyWarnings)
+    pushLedgerEvent(record, 'policy', warning);
   agents.set(id, record);
   // Register the worker in the shared Awareness agent list (best-effort, advisory).
   syncWorkerRegistry('join', record);
@@ -675,20 +867,20 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
   // chunks must not be turned into replacement chars — inside a JSON RPC line
   // that corruption makes JSON.parse throw and the event is silently dropped.
   const rpcDecoder = new StringDecoder('utf8');
-  proc.stdout.on('data', (chunk) => {
+  proc.stdout.on('data', chunk => {
     stdoutBuffer += rpcDecoder.write(chunk);
     const lines = stdoutBuffer.split('\n');
     stdoutBuffer = lines.pop() ?? '';
     for (const line of lines) processRpcLine(record, line);
     _refreshUi(ctx);
   });
-  proc.stderr.on('data', (chunk) => {
+  proc.stderr.on('data', chunk => {
     record.stderr += chunk.toString();
     pushLedgerEvent(record, 'status', 'stderr received');
     touch(record);
     _refreshUi(ctx);
   });
-  proc.on('error', (error) => {
+  proc.on('error', error => {
     record.error = error instanceof Error ? error.message : String(error);
     pushLedgerEvent(record, 'error', record.error);
     // Dead process: no agent_start will ever arrive to drain queued turns, so
@@ -711,9 +903,14 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
     // so floor the counter or isTerminal() (and thus `wait`) never resolves and the
     // ledger keeps showing 'queued' against a dead worker.
     record.pendingMessages = 0;
-    if (record.status !== 'killed') touch(record, code === 0 ? 'exited' : 'failed');
-    record.awarenessInspection = inspectWorkerAwareness(record);
-    pushLedgerEvent(record, record.status === 'failed' ? 'error' : 'exit', `process closed with code ${record.exitCode ?? 'unknown'}`);
+    if (record.status !== 'killed')
+      touch(record, code === 0 ? 'exited' : 'failed');
+    record.awarenessInspection = inspectWorkerAwarenessAutomatically(record);
+    pushLedgerEvent(
+      record,
+      record.status === 'failed' ? 'error' : 'exit',
+      `process closed with code ${record.exitCode ?? 'unknown'}`
+    );
     removePromptFiles(record);
     cleanupRecordWorktree(record);
     syncWorkerRegistry('leave', record);
@@ -721,12 +918,11 @@ export function spawnRpcAgent(params: SpawnAgentParams, ctx?: PiContext): AgentR
     _refreshUi(ctx);
   });
 
-  // H4: Only advance to 'running' when the initial RPC write succeeded.
-  // If sendRpc returned false, it already transitioned the record to 'failed'
-  // and notified waiters; overwriting with 'running' here would mask the failure.
+  // A successful write queues startup; agent_start proves execution. If the
+  // write fails, sendRpc already marks failure and wakes waiters.
   if (sendRpc(record, { type: 'prompt', message: task })) {
     pushLedgerEvent(record, 'message', 'initial prompt sent');
-    touch(record, 'running');
+    touch(record);
   }
   // Make silent or slow-starting workers visible immediately. Event handlers will
   // keep the unified panel/footer fresh once stdout/stderr/close events arrive.

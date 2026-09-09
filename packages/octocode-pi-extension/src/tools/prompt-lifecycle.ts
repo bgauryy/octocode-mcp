@@ -5,7 +5,7 @@ export interface PromptLifecycleRuleV1 {
   version: 1;
   placement: PromptPlacement;
   mutable: boolean;
-  delivery: 'once' | 'on-change' | 'on-trigger' | 'every-turn';
+  delivery: 'once' | 'on-change' | 'on-trigger';
   restoration: 'reload-owner' | 'attributed-turn-context' | 'transcript-owned';
   defaultTokenBudget: number;
   reason: string;

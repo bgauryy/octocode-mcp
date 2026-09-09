@@ -1,5 +1,5 @@
 import {
-  type LspGetSemanticsQuery,
+  type LspSearchQuery,
   type LspSemanticEnvelope,
 } from '../shared/semanticTypes.js';
 import { buildNextPageContinuation } from '../../../scheme/pagination.js';
@@ -81,7 +81,7 @@ function declarationRegexForFile(filePath: string): string {
 // The symbol to hand off to a text search. Symbol-anchored and workspaceSymbol
 // queries carry `symbolName`; fall back to the resolved symbol's name.
 function fallbackSymbolName(
-  query: LspGetSemanticsQuery,
+  query: LspSearchQuery,
   result: LspSemanticEnvelope
 ): string | undefined {
   const fromQuery = (query as { symbolName?: unknown }).symbolName;
@@ -111,7 +111,7 @@ function looksLikeImportBinding(content: string, symbolName: string): boolean {
 }
 
 function paginationContinuation(
-  query: LspGetSemanticsQuery,
+  query: LspSearchQuery,
   result: LspSemanticEnvelope
 ): NonNullable<LspSemanticEnvelope['next']>[string] | undefined {
   if (!isRecord(result.pagination)) return undefined;
@@ -123,7 +123,7 @@ function paginationContinuation(
   )
     return undefined;
   return buildNextPageContinuation(
-    'lspGetSemantics',
+    'lspSearch',
     {
       ...query,
       page: nextPage,
@@ -131,7 +131,7 @@ function paginationContinuation(
         ? { snapshot: result.pagination.snapshot }
         : {}),
     },
-    `Continue semantic ${query.type} results on page ${nextPage}.`
+    `Continue semantic ${query.operation} results on page ${nextPage}.`
   );
 }
 
@@ -140,7 +140,7 @@ function paginationContinuation(
 // ranges. On an empty/incomplete result: re-anchor or fall back to
 // localSearch text, so the agent isn't left at a dead end.
 export function withSemanticNext(
-  query: LspGetSemanticsQuery,
+  query: LspSearchQuery,
   result: LspSemanticEnvelope | Record<string, unknown>
 ): LspSemanticEnvelope | Record<string, unknown> {
   if (!isSemanticEnvelope(result)) return result;
@@ -202,7 +202,7 @@ export function withSemanticNext(
   const verificationRoot = semanticResult.workspaceRoot ?? query.workspaceRoot;
   const loc = payload.locations?.[0];
   const localBindingDefinition =
-    query.type === 'definition' &&
+    query.operation === 'definition' &&
     symbolName &&
     loc?.uri &&
     typeof loc.content === 'string' &&
@@ -214,9 +214,9 @@ export function withSemanticNext(
     ...(localBindingDefinition
       ? {
           verifyDefinition: {
-            tool: 'lspGetSemantics',
+            tool: 'lspSearch',
             query: {
-              type: 'workspaceSymbol',
+              operation: 'workspaceSymbol',
               uri: semanticResult.uri,
               symbolName,
               ...(verificationRoot && { workspaceRoot: verificationRoot }),
@@ -229,10 +229,9 @@ export function withSemanticNext(
             searchDefinitionCandidates: {
               tool: 'localSearch',
               query: {
-                operation: 'text',
                 path: verificationRoot,
                 searchText: symbolName,
-                regex: 'fixed',
+                regex: 'literal',
                 wholeWord: true,
                 resultView: 'content',
                 maxFiles: 100,
@@ -248,7 +247,7 @@ export function withSemanticNext(
     ...(depthExpandable
       ? {
           expandDepth: buildNextPageContinuation(
-            'lspGetSemantics',
+            'lspSearch',
             {
               ...query,
               snapshot: undefined,
@@ -267,7 +266,6 @@ export function withSemanticNext(
           verifyCompleteness: buildNextPageContinuation(
             'localSearch',
             {
-              operation: 'text',
               path: completenessSearchPath,
               searchText: symbolName,
               wholeWord: true,
@@ -323,10 +321,9 @@ export function withSemanticNext(
         textSearch: {
           tool: 'localSearch',
           query: {
-            operation: 'text',
             path: filePath,
             searchText: declarationRegexForFile(filePath),
-            regex: 'perl',
+            regex: 'pcre2',
           },
           why: "documentSymbols is unsupported for this file's language server — fall back to a regex search over top-level declarations for an outline.",
           confidence: 'low',
@@ -357,15 +354,15 @@ export function withSemanticNext(
     ...baseNext,
     textSearch: {
       tool: 'localSearch',
-      query: { operation: 'text', path: searchPath, searchText: symbolName },
+      query: { path: searchPath, searchText: symbolName, regex: 'literal' },
       why: `Semantic ${semanticResult.type} returned no result (${empty.category}) — fall back to a text search for "${symbolName}"`,
       confidence: 'low',
     },
   };
   if (REANCHOR_EMPTY_CATEGORIES.has(empty.category) && semanticResult.uri) {
     next.reAnchor = {
-      tool: 'lspGetSemantics',
-      query: { type: 'documentSymbols', uri: semanticResult.uri },
+      tool: 'lspSearch',
+      query: { operation: 'documentSymbols', uri: semanticResult.uri },
       why: "Re-anchor: list this file's symbols to find the correct lineHint, then retry the semantic query",
       confidence: 'medium',
     };

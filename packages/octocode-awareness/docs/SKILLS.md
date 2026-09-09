@@ -27,17 +27,19 @@ Install other workflow skills separately with `npx octocode skill install <skill
 when that work is needed. Discover the package-bundled list with
 `npx @octocodeai/octocode-awareness --help` — do not hardcode a skill list from prose.
 
-Every agent-facing example below uses `npx @octocodeai/octocode-awareness`; local
-build paths are maintainer implementation details, not an alternative agent runner.
+The examples below are for external CLI hosts. Pi uses its native `awareness`
+tool; other native hosts import the [command API](API.md). All interfaces share
+the same command schemas and selected Awareness store.
 
 ```bash
 export OCTOCODE_AGENT_ID="${OCTOCODE_AGENT_ID:-my-agent}"
-npx @octocodeai/octocode-awareness attend --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD" --query "current task" --compact
+npx @octocodeai/octocode-awareness attend --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD" --compact
 ```
 
-Follow `attend.next`. The routine loop is `attend` → `work start` → `work end`
-→ `verify mark` → `verify audit`; load expert noun inventories only when the next
-action needs them. Omit `--db-scope` for the global default; use
+Attend once or reuse a host briefing, then communicate when a peer needs to know or
+act. Default attendance reads registered peers only. Use `--details` for deeper
+work/evidence routing, and load one unfamiliar command schema when needed.
+Tracking and learning are conditional. Omit `--db-scope` for the global default; use
 `--db-scope repo` only for deliberate repository isolation, and use `--db` only
 for an explicit isolated path.
 
@@ -47,17 +49,16 @@ for an explicit isolated path.
 |---|---|
 | `AGENTS.md` / host instructions | Trigger Awareness and point at the smallest owner. |
 | `octocode-awareness` skill | Decide when and how to plan, coordinate, lock, verify, remember, or clean. |
-| CLI / SQLite | Read and mutate canonical live plans, tasks, presence, verification, signals, and memory. |
-| Host hooks | Automate deterministic start/write/failure/stop/compact/session edges; never replace judgment. |
+| API / CLI / SQLite | Read and mutate canonical live plans, tasks, presence, verification, signals, and memory. |
+| Host hooks | Register peers and deliver changed messages by default; guard/full opt into tracking. |
 | `.octocode/` | Discover authored plan docs and bounded generated snapshots when live SQLite is unavailable to a reader. |
 
 Agents should begin with `attend`, not by reading `.octocode/`. A plan document may
 explain intent; live state comes from `attend`, `query`, `memory recall`, or `docs show`.
 `.octocode/` query exports are read-only snapshots — never hand-edit them or read them as state.
 
-When the host supports delegation, batch routine deterministic Awareness CLI operations
-into one phase for the smallest capable low-cost agent. The lead retains scope and
-judgment, destructive approvals, conflicts, memory truth, and final verification.
+Do not add a separate coordination task for routine solo work. Keep scope,
+conflict resolution, memory judgment, and observed verification with the work owner.
 
 ## Concepts
 
@@ -66,7 +67,7 @@ judgment, destructive approvals, conflicts, memory truth, and final verification
 | Plan | Shared objective, lead, members, lifecycle, and `.octocode/plan/**` documents. |
 | Task | Only durable selectable queue; required reasoning and paths; derived readiness. |
 | Run | One attempt with rationale and test plan; origin TASK, explicit WORK, or HOOK fallback. |
-| File work | Mandatory advisory presence. Multiple agents may share a path knowingly. |
+| File work | Advisory presence for tracked work. Multiple agents may share a path knowingly. |
 | Lock | Optional exclusive protection for sensitive work. |
 | Verification | Ending work is not success; the declared check must be recorded. |
 | Signal | Typed peer message/thread. |
@@ -74,7 +75,11 @@ judgment, destructive approvals, conflicts, memory truth, and final verification
 | Memory | Reusable verified learning; routine status does not belong here. |
 | Query export | Read-only `.octocode/` snapshot written on request via `query --format html/json/csv`. |
 
-## Use the operating loop
+## Track shared or substantial work
+
+Use this lifecycle when shared ownership or explicit verification tracking helps.
+Routine solo edits need no Awareness work row. Reuse native task/run IDs when the
+host already owns the lifecycle; do not repeat its bookkeeping manually.
 
 ### 1. Attend and choose
 
@@ -105,8 +110,8 @@ npx @octocodeai/octocode-awareness work start --agent-id "$OCTOCODE_AGENT_ID" --
   --file src/a.ts --rationale "<why>" --test-plan "<exact check>" --compact
 ```
 
-Hooks declare recognized structured writes automatically. Without working hooks,
-call `work start|touch` yourself.
+Guard/full hooks declare recognized structured writes automatically. For tracked
+work without those hooks, call `work start|touch` on the owning run.
 
 Ordinary overlap is allowed. Inspect peers only when notified or when the interaction
 matters:
@@ -160,7 +165,8 @@ with `--workspace`; an unscoped batch spans all workspaces for that agent.
 
 ### 5. Learn, hand off, maintain
 
-Record only future-useful, verified outcomes:
+After substantial work or a meaningful event, record only future-useful, verified
+outcomes. Skip routine edits and repeated lessons:
 
 ```bash
 npx @octocodeai/octocode-awareness reflect record --agent-id "$OCTOCODE_AGENT_ID" \
@@ -182,6 +188,9 @@ npx @octocodeai/octocode-awareness signal prune --workspace "$PWD" --resolved --
 
 ## Memory
 
+Recall only when prior learning could change the approach. Record only verified
+reusable learning; neither operation is a per-task or per-turn requirement.
+
 ```bash
 npx @octocodeai/octocode-awareness memory recall --query "<task>" --workspace "$PWD" --smart --compact
 npx @octocodeai/octocode-awareness memory record --agent-id "$OCTOCODE_AGENT_ID" \
@@ -196,7 +205,7 @@ requires `OCTOCODE_EMBED_CMD` and falls back safely when absent.
 
 ## Compact outputs
 
-- `attend --compact` is a bounded lobby, tested at or below 2 KB.
+- Default `attend` returns bounded registry pages; `--details` selects the separately budgeted observer.
 - Normal edits emit no Awareness context.
 - Changed peers/briefings emit once; fingerprints suppress repetition.
 - Workboard groups paths and caps peers with omitted counts; its `--limit` applies
@@ -226,12 +235,14 @@ Use non-compact dry-run/check output to review settings and runtime details. Com
 is an execution receipt. Repair drift with previewed remove → remove → install → strict
 check; removal sweeps obsolete Awareness roots/events but preserves other hooks.
 
-Pre-edit runs the harness guard, declares advisory work, and blocks only guard denial
+With guard/full tracking, pre-edit runs the harness guard, declares advisory work, and blocks only guard denial
 or exclusive conflicts. A successful post-edit logs/heartbeats and keeps the scoped
 HOOK aggregate ACTIVE; a failed write discards hook-created presence and creates no
 edit audit or verification debt. Stop, PreCompact, or SessionEnd finalizes successful
 work once to PENDING. PreCompact keeps the session reusable; SessionEnd marks it ended.
-Prompt briefings and handoffs are deduplicated; stop debt is capped.
+Peer messages are deduplicated. Stop reminders and automatic handoffs require
+their global feature switches; both default off. The coordination profile creates
+no per-edit work records. Missing configuration uses defaults without onboarding.
 
 See [HOOKS.md](HOOKS.md) for host differences.
 

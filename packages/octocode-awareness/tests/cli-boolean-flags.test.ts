@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { parseArgs } from '../bin/cli-model.js';
+import { parseArgs } from '../src/command-parser.js';
 
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'aw-bool-')); });

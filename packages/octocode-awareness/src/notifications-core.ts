@@ -7,7 +7,7 @@ import { beginWrite } from './db-transaction.js';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { normalizeArtifact, normalizeNotificationKind, utcNow, parseJsonList } from './helpers.js';
-import { fillScope } from './git.js';
+import { fillScope, repositoryWorkspacePaths } from './git.js';
 import { insertOutboxEvent } from './event-outbox.js';
 import { SIGNALS_SELECT_PARENT, SIGNALS_INSERT } from './sql/signals.js';
 import type { InsertNotificationParams, InsertNotificationResult, NotificationRecord, NotificationKind, NotificationStatus } from './types/notifications-agents.js';
@@ -106,6 +106,7 @@ export function insertNotification(
   const signalId = 'ntf_' + randomUUID().replace(/-/g, '');
   const createdAt = utcNow();
   const wsPath = scope.workspace_path ?? process.cwd();
+  const replyWorkspaces = inReplyTo ? repositoryWorkspacePaths(wsPath) : [];
 
   const transaction = beginWrite(db);
   try {
@@ -116,7 +117,7 @@ export function insertNotification(
       if (!parent) {
         throw new Error(`insertNotification: parent signal ${inReplyTo} not found (deleted?). Omit inReplyTo to start a new thread.`);
       }
-      if (parent.workspace_path !== wsPath) {
+      if (!replyWorkspaces.includes(parent.workspace_path)) {
         throw new Error('insertNotification: parent signal belongs to a different workspace');
       }
       if (!canReadOrJoinThread(db, parent.thread_id, agentId)) {
@@ -172,8 +173,8 @@ export function appendSignalScope(
 ): void {
   const prefix = alias ? `${alias}.` : '';
   if (scope.workspace_path) {
-    where.push(`(${prefix}workspace_path = ? OR ${prefix}workspace_path IS NULL)`);
-    binds.push(scope.workspace_path);
+    where.push(`(${prefix}workspace_path IN (SELECT value FROM json_each(?)) OR ${prefix}workspace_path IS NULL)`);
+    binds.push(JSON.stringify(repositoryWorkspacePaths(scope.workspace_path)));
   }
   if (scope.artifact) {
     where.push(`(${prefix}artifact = ? OR ${prefix}artifact IS NULL)`);

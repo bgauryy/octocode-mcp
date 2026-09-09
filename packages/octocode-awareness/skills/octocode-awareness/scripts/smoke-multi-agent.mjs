@@ -45,6 +45,7 @@ const db = join(workspace, "awareness.sqlite3");
 const target = join(workspace, "shared.txt");
 const artifact = "smoke-service";
 const staleTarget = join(workspace, "stale.txt");
+const standaloneAgents = ["agent-a", "agent-b", "agent-stale"];
 
 await writeFile(target, "seed\n", "utf8");
 await writeFile(staleTarget, "stale seed\n", "utf8");
@@ -60,14 +61,48 @@ function run(label, cmdArgs, { expect = [0] } = {}) {
   const done = spawnSync(process.execPath, [awareness, "--db", db, ...effectiveArgs], {
     cwd: workspace,
     encoding: "utf8",
+    timeout: 30_000,
+    killSignal: "SIGKILL",
   });
   if (done.stdout.trim()) console.log(`[${label}] stdout:\n${done.stdout.trim()}`);
   if (done.stderr.trim()) console.log(`[${label}] stderr:\n${done.stderr.trim()}`);
+  if (done.error) {
+    throw new Error(`${label} failed to complete: ${done.error.message}`);
+  }
   if (!expect.includes(done.status ?? 1)) {
     throw new Error(`${label} exited ${done.status}; expected ${expect.join("|")}`);
   }
   return done.stdout.trim() ? JSON.parse(done.stdout) : {};
 }
+
+function registerStandaloneAgent(agentId) {
+  return run(`register-${agentId}`, [
+    "agent", "register", "--agent-id", agentId, "--workspace", workspace,
+    "--agent-name", agentId, "--agent-host", "smoke-multi-agent",
+  ]);
+}
+
+function leaveStandaloneAgent(agentId) {
+  return run(`leave-${agentId}`, [
+    "agent", "leave", "--agent-id", agentId, "--workspace", workspace,
+  ]);
+}
+
+for (const agentId of standaloneAgents) registerStandaloneAgent(agentId);
+process.on("exit", () => {
+  for (const agentId of standaloneAgents) {
+    try {
+      spawnSync(process.execPath, [awareness, "--db", db, "agent", "leave", "--agent-id", agentId, "--workspace", workspace, "--compact"], {
+        cwd: workspace,
+        encoding: "utf8",
+        timeout: 5_000,
+        killSignal: "SIGKILL",
+      });
+    } catch {
+      // Best effort during process teardown; normal completion leaves explicitly below.
+    }
+  }
+});
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -91,6 +126,7 @@ assert(workRunA && workRunB, "both advisory workers should get runs");
 assert(workB.peer_count === 1, "second advisory worker should see the first peer");
 const visibleWork = run("work-show", ["work", "show", "--compact", "--workspace", workspace, "--file", target]);
 assert(visibleWork.count === 2, "both advisory workers should be visible");
+assert((await readFile(target, "utf8")).includes("seed"), "advisory smoke must read the seeded file before verification");
 for (const [agent, runId] of [["agent-a", workRunA], ["agent-b", workRunB]]) {
   run(`work-end-${agent}`, ["work", "end", "--compact", "--agent-id", agent, "--run-id", runId]);
   run(`work-verify-${agent}`, ["verify", "mark", "--compact", "--agent-id", agent, "--run-id", runId, "--message", "advisory smoke passed"]);
@@ -109,6 +145,7 @@ const claimA = run("agent-a", [
 ]);
 assert(claimA.run?.run_id, "agent-a should get a standalone run_id");
 await appendFile(target, "agent-a wrote while holding the lock\n", "utf8");
+assert((await readFile(target, "utf8")).includes("agent-a wrote while holding the lock"), "agent-a must read its edit before verification");
 
 log("phase 3: agent-b collides on the live lock");
 const blockedB = run(
@@ -179,8 +216,6 @@ assert(inboxAgain.count === 0, "mark-read should prevent duplicate delivery");
 const resolved = run("signal-resolve", [
   "signal", "resolve",
   "--agent-id", "agent-b",
-  "--workspace", workspace,
-  "--artifact", artifact,
   "--thread-id", signal.thread_id,
 ]);
 assert(resolved.resolved === 1, "signal resolve should close the thread");
@@ -207,6 +242,7 @@ const claimB = run("agent-b", [
 ]);
 assert(claimB.run?.run_id, "agent-b should now get a standalone run");
 await appendFile(target, "agent-b wrote after receiving release\n", "utf8");
+assert((await readFile(target, "utf8")).includes("agent-b wrote after receiving release"), "agent-b must read its edit before verification");
 run("agent-b", [
   "lock", "release",
   "--agent-id", "agent-b",
@@ -267,10 +303,14 @@ run("verify-stale", [
 log("phase 8: final DB and file assertions");
 const status = run("status", ["status", "--workspace", workspace, "--artifact", artifact]);
 assert(status.locks.length === 0, "final status should have no live locks");
-const finalAudit = run("audit-final", ["verify", "audit", "--workspace", workspace, "--artifact", artifact]);
-assert(finalAudit.count === 0, "final audit should have no pending verification");
+for (const agent of ["agent-a", "agent-b", "agent-stale"]) {
+  const finalAudit = run(`audit-final-${agent}`, ["verify", "audit", "--agent-id", agent, "--workspace", workspace, "--artifact", artifact]);
+  assert(finalAudit.count === 0, `${agent} should have no pending verification`);
+}
 const finalText = await readFile(target, "utf8");
 assert(finalText.includes("agent-a wrote"), "final file missing agent-a edit");
 assert(finalText.includes("agent-b wrote"), "final file missing agent-b edit");
+
+for (const agentId of standaloneAgents) leaveStandaloneAgent(agentId);
 
 log("PASS", JSON.stringify({ workspace, db, target }, null, 2));

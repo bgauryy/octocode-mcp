@@ -60,7 +60,7 @@ import { getRandomAgentName } from '../../agentNames.js';
 import type { QueryRecord } from '../query-envelope.js';
 
 // ─── Single-agent result rendering ────────────────────────────────────────────
-// Exported so command.ts (handleOctocodeAgentsCommand inspect verb) can render
+// Exported so the inbox and agent inspect action can render
 // the same view without duplicating the layout logic.
 
 export function renderSingleAgentResult(record: AgentRecord, header: string, opts: { full?: boolean } = {}): ToolCallResult {
@@ -112,7 +112,7 @@ export function renderSingleAgentResult(record: AgentRecord, header: string, opt
 
 // ─── Programmatic worker seams ─────────────────────────────────────────────────
 // Thin exported wrappers over the exact code paths the agent tool and the
-// /octocode-agents command verbs use, so other features can steer/kill/inspect
+// /octocode-inbox command verbs use, so other features can steer/kill/inspect
 // workers without going through the tool surface.
 
 /**
@@ -140,20 +140,11 @@ export function steerWorkerById(idOrPrefix: string, message: string): boolean {
   return queued;
 }
 
-/**
- * Render a worker's current state + output by id or prefix \u2014 the same
- * single-agent rendering agent inspect / /octocode-agents inspect use.
- * With maxLines set, keeps the LAST maxLines lines (the freshest output).
- * Returns undefined for unknown ids.
- */
-export function getWorkerTranscript(idOrPrefix: string, opts: { maxLines?: number } = {}): string | undefined {
+/** Full retained worker status/output for the interactive inspector. */
+export function getWorkerTranscript(idOrPrefix: string): string | undefined {
   const record = findAgentByIdOrPrefix(idOrPrefix);
   if (!record) return undefined;
-  const text = (renderSingleAgentResult(record, 'Agent status').content[0] as { text?: string } | undefined)?.text ?? '';
-  const maxLines = opts.maxLines;
-  if (maxLines === undefined || maxLines <= 0) return text;
-  const lines = text.split('\n');
-  return lines.length <= maxLines ? text : lines.slice(-maxLines).join('\n');
+  return (renderSingleAgentResult(record, 'Agent status', { full: true }).content[0] as { text?: string } | undefined)?.text ?? '';
 }
 
 /** Execute the public agent lifecycle operations against the worker registry. */

@@ -152,11 +152,11 @@ export const SUBAGENT_REGISTRY = {
     tools: [
       'chromeDebug', // CDP execution — primary tool
       'web',         // CDP docs + web research
-      'MCPTool',     // Octocode MCP server: localGetFileContent, localSearch, localAnalyzeGraph, etc.
+      'MCPTool',     // Octocode MCP server: localGetFileContent, localSearch, astSearch, etc.
       'file',        // only parent-assigned durable handback artifacts
       'skill',       // load bundled/user workflows, including Awareness
       'awareness',   // native coordination, memory, verification, and history gateway
-      'bash',        // assigned shell work and external-host-only Awareness fallback
+      'bash',        // assigned shell work
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -175,7 +175,7 @@ export const SUBAGENT_REGISTRY = {
       'file',   // only parent-assigned durable handback artifacts
       'skill',  // load bundled/user workflows, including Awareness
       'awareness', // native coordination, memory, verification, and history gateway
-      'bash',   // assigned shell work and external-host-only Awareness fallback
+      'bash',   // assigned shell work
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -193,7 +193,7 @@ export const SUBAGENT_REGISTRY = {
       'file',   // only parent-assigned durable handback artifacts
       'skill',  // load bundled/user workflows, including Awareness
       'awareness', // native coordination, memory, verification, and history gateway
-      'bash',   // assigned shell work and external-host-only Awareness fallback
+      'bash',   // assigned shell work
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
@@ -227,7 +227,7 @@ export const SUBAGENT_REGISTRY = {
       'file',    // assigned source edits and durable handback
       'skill',   // load only a matching implementation workflow
       'awareness', // native coordination, verification, and handoff gateway
-      'bash',    // assigned tests/builds and external-host-only Awareness fallback
+      'bash',    // assigned tests/builds
     ],
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'medium',

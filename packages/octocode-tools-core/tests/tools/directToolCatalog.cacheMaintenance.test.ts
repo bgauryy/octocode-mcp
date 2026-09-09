@@ -12,7 +12,7 @@ import {
   _resetInitialize,
   executeDirectTool,
 } from '../../src/tools/directToolCatalog.exec.js';
-import { LOCAL_SEARCH_TOOL_NAME } from '../../src/tools/toolNames.js';
+import { AST_SEARCH_TOOL_NAME } from '../../src/tools/toolNames.js';
 
 describe('direct CLI cache bootstrap', () => {
   beforeEach(() => {
@@ -21,9 +21,9 @@ describe('direct CLI cache bootstrap', () => {
   });
 
   it('checks maintenance before a local tool that does not initialize the server runtime', async () => {
-    await executeDirectTool(LOCAL_SEARCH_TOOL_NAME, {
+    await executeDirectTool(AST_SEARCH_TOOL_NAME, {
       queries: [
-        { operation: 'tree', path: process.cwd(), maxDepth: 1, limit: 1 },
+        { operation: 'tree', path: process.cwd(), maxDepth: 1, pageSize: 1 },
       ],
     });
 

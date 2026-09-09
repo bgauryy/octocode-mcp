@@ -1,22 +1,22 @@
 import path from 'node:path';
-import { execHistoryCli } from '@octocodeai/octocode-awareness';
+import { executeAwarenessCommand, type AwarenessCommandCall, type AwarenessCommandContext } from '@octocodeai/octocode-awareness';
 
 export interface CheckpointInfo { id: string; label: string; ts: number; filesChanged: number; kind?: 'edit'|'checkpoint'|'restore'; side?: 'before'|'after' }
 export interface DiffStatEntry { status: string; path: string }
-export interface CheckpointPage { checkpoints: CheckpointInfo[]; nextArgs?: string[] }
+export interface CheckpointPage { checkpoints: CheckpointInfo[]; nextCall?: AwarenessCommandCall }
 export interface RestoreResult { verificationRunId: string }
 export interface CheckpointEngine {
-  listCheckpoints(limit?: number, nextArgs?: string[]): Promise<CheckpointPage>;
+  listCheckpoints(limit?: number, nextCall?: AwarenessCommandCall): Promise<CheckpointPage>;
   restoreFiles(id: string, paths?: string[]): Promise<RestoreResult>;
   diffStat(id: string): Promise<DiffStatEntry[]>;
 }
-export interface CheckpointStoreOptions { agentId?: string; run?: typeof execHistoryCli }
+export interface CheckpointStoreOptions { agentId?: string; run?: typeof executeAwarenessCommand }
 interface Payload { ok?: boolean; [key: string]: unknown }
 
-async function invoke(run: typeof execHistoryCli, args: string[]): Promise<Payload> {
-  const result = await run(args); let payload: Payload = {};
-  try { payload = JSON.parse(result.stdout) as Payload; } catch { /* handled below */ }
-  if (result.code !== 0 || payload.ok !== true) throw new Error(result.stderr.trim() || result.stdout.trim() || 'Awareness history command failed');
+async function invoke(run: typeof executeAwarenessCommand, request: AwarenessCommandCall, context: AwarenessCommandContext): Promise<Payload> {
+  const result = await run(request, context);
+  const payload = result.payload as Payload | null;
+  if (result.exitCode !== 0 || payload?.ok !== true) throw new Error(JSON.stringify(result.payload));
   return payload;
 }
 
@@ -24,11 +24,11 @@ async function invoke(run: typeof execHistoryCli, args: string[]): Promise<Paylo
 export async function initCheckpointStore(cwd: string, opts: CheckpointStoreOptions = {}): Promise<CheckpointEngine> {
   const workspace = path.resolve(cwd); const agentId = opts.agentId ?? process.env['OCTOCODE_AGENT_ID'];
   if (!agentId) throw new Error('OCTOCODE_AGENT_ID is required for local history');
-  const run = opts.run ?? execHistoryCli; const base = ['--workspace', workspace, '--agent-id', agentId, '--compact'];
+  const run = opts.run ?? executeAwarenessCommand; const context = { workspace, agentId, compact: true };
   const previews = new Map<string, string>();
   const observed = new Map<string, CheckpointInfo>();
-  const list = async (limit = 30, nextArgs?: string[]): Promise<CheckpointPage> => {
-    const payload = await invoke(run, nextArgs ?? ['history', 'timeline', '--workspace', workspace, '--limit', String(limit), '--compact']);
+  const list = async (limit = 30, nextCall?: AwarenessCommandCall): Promise<CheckpointPage> => {
+    const payload = await invoke(run, nextCall ?? { command: 'history timeline', params: { limit } }, context);
     const checkpoints = (Array.isArray(payload.operations) ? payload.operations : []).map((raw) => {
       const op = raw as Record<string, unknown>; const kind = op.kind as CheckpointInfo['kind'];
       const side: 'before' | 'after' = kind === 'checkpoint' ? 'after' : 'before';
@@ -36,7 +36,7 @@ export async function initCheckpointStore(cwd: string, opts: CheckpointStoreOpti
     });
     checkpoints.forEach(item => observed.set(item.id, item));
     const next = payload.next && typeof payload.next === 'object' ? payload.next as Record<string, unknown> : undefined;
-    return { checkpoints, ...(Array.isArray(next?.argv) && next.argv.every(arg => typeof arg === 'string') ? { nextArgs: next.argv as string[] } : {}) };
+    return { checkpoints, ...(next?.call && typeof next.call === 'object' ? { nextCall: next.call as AwarenessCommandCall } : {}) };
   };
   return {
     listCheckpoints: list,
@@ -44,7 +44,7 @@ export async function initCheckpointStore(cwd: string, opts: CheckpointStoreOpti
       const key = `${id}\0${[...(paths ?? [])].sort().join('\0')}`;
       const previewId = previews.get(key);
       if (!previewId) throw new Error('Preview this restore before applying it.');
-      const applied = await invoke(run, ['history', 'restore-apply', ...base, '--preview-id', previewId]);
+      const applied = await invoke(run, { command: 'history restore-apply', params: { preview_id: previewId } }, context);
       if (typeof applied.verification_run_id !== 'string' || !applied.verification_run_id) {
         throw new Error('Awareness restore returned no verification run id');
       }
@@ -54,7 +54,7 @@ export async function initCheckpointStore(cwd: string, opts: CheckpointStoreOpti
     async diffStat(id) {
       const operation = observed.get(id);
       if (!operation) throw new Error(`History operation not found in the bounded timeline: ${id}`);
-      const preview = await invoke(run, ['history', 'restore-preview', ...base, '--operation-id', id, '--side', operation.side ?? 'before']);
+      const preview = await invoke(run, { command: 'history restore-preview', params: { operation_id: id, side: operation.side ?? 'before' } }, context);
       if (typeof preview.preview_id !== 'string') throw new Error('Awareness restore preview returned no preview id');
       previews.set(`${id}\0`, preview.preview_id);
       const changes = Array.isArray(preview.changes) ? preview.changes as Array<Record<string, unknown>> : [];

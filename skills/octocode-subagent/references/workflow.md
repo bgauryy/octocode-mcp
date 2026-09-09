@@ -4,7 +4,7 @@ Load when running the full local-offload loop (beyond the lobby summary). Why: e
 
 **1. GATE** — `./scripts/ollama-health.sh` → `ollama list` → `ollama show MODEL_NAME` when size/capabilities unclear → `ollama ps` to prefer already-warm for small tasks. Confirm low-risk and worth offload. For articles: source text already saved (or fetch it yourself) before invoke. Gate fail → stay solo.
 
-**2. ROUTE** — load `references/model-selection.md` (mandatory); load `references/usage-matrix.md` / `references/decision-matrix.md` / `references/family-playbooks.md` only when needed. **Do not** load `references/ollama-local-models.md` on routine routing. Job → tier → smallest fitting installed chat model → prefer warm → skip embedders → `--think=false` for bulk.
+**2. ROUTE** — reuse a suitable selected model; load `references/model-selection.md` when selecting or changing it. Load `references/usage-matrix.md`, `references/decision-matrix.md`, or `references/family-playbooks.md` when a capability or cost question needs them. Use an installed chat model that fits the job; prefer a warm model for small work and `--think=false` for bulk.
 
 | Complexity | Volume | Action |
 |---|---|---|

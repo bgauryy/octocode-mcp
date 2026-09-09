@@ -65,7 +65,7 @@ function validationGuidance(toolName: string): string[] {
   if (toolName === 'npmSearch') {
     return getDirectToolSchemaRelations(toolName).slice(0, 1);
   }
-  if (toolName === 'localSearch') {
+  if (toolName === 'astSearch') {
     const operations = getDirectToolSchemaVariants(toolName).map(
       variant => variant.name
     );
@@ -81,7 +81,7 @@ function validationGuidance(toolName: string): string[] {
         ]
       : [];
   }
-  if (toolName === 'lspGetSemantics') {
+  if (toolName === 'lspSearch') {
     const relations = getDirectToolSchemaRelations(toolName);
     return relations.length > 0 ? [relations.join(' ')] : [];
   }
@@ -246,8 +246,8 @@ const REJECTED_FIELD_HINTS: Readonly<
   Record<string, Readonly<Record<string, string | readonly string[]>>>
 > = {
   npmSearch: { name: 'packageName' },
-  lspGetSemantics: {
-    op: 'type',
+  lspSearch: {
+    op: 'operation',
     line: 'lineHint',
     path: 'uri',
     itemsPerPage: 'pageSize',
@@ -272,7 +272,7 @@ const REJECTED_FIELD_HINTS: Readonly<
     limit: '',
     topicsToSearch: 'topics',
   },
-  localAnalyzeGraph: {
+  astSearch: {
     itemsPerPage: 'pageSize',
     maxResults: 'limit',
     maxDepth: 'depth',

@@ -24,7 +24,7 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 | Pi support tools | 14 |
 | Guarded Pi builtin overrides | 1 (`bash`) |
 | Disabled Pi builtins | 6 |
-| Slash command entries | 3 |
+| Slash command entries | 5 |
 | Bundled main-agent skills | 15 |
 
 ### Support tools
@@ -49,15 +49,14 @@ The live source inventory is authoritative. Use `/configuration` inside Pi and s
 The extension overrides `bash` with command and path guards. It removes Pi's public `read`, `edit`, `write`, `grep`, `find`, and `ls` tools; use Octocode research tools for reads and discovery, and `file` for mutations.
 
 Awareness coordination uses the native `awareness` facade for catalog discovery and
-host-bound command calls without shell syntax. The bundled skill provides workflow guidance,
-and the installed CLI remains the explicit fallback for external-host-only operations. Pi
-supplies the runner, database, workspace and agent identity. Signals,
+host-bound command calls through the imported Awareness API. The bundled skill provides workflow guidance. Pi
+supplies the database, workspace and agent identity; native calls never launch the Awareness CLI. Signals,
 locks, memory, bookkeeping and maintenance share the same SQLite ledger as native
 Pi events and external CLI agents. Pi retains automatic registry/event delivery,
 mutation guards and plan UI. Peers must use the same physical database and workspace
 with distinct stable IDs. See [Awareness agent flow](docs/AWARENESS_AGENT_FLOW.md).
 
-Awareness also records bounded local file history around native `file` mutations with bundled private Git storage. `/octocode-rewind` previews and explicitly applies a selected file restore in interactive Pi; headless sessions use the same `history` commands through the native `awareness` facade, with the bundled CLI retained for external-host fallback. This does not snapshot the workspace on every prompt or rewind the conversation.
+The default Awareness flow is one peer briefing plus native message delivery. Scheduled status checks require `OCTOCODE_CRON_STATUS=1`. Work bookkeeping and worker audits require the guard/full workspace profile; full enables bounded local file history around native `file` mutations with bundled private Git storage. `/octocode-rewind` previews and explicitly applies a selected file restore in interactive Pi; headless sessions use the same `history` commands through the native `awareness` facade. This does not snapshot the workspace on every prompt or rewind the conversation.
 
 Typed and browser workers receive explicit Octocode research, skill, and Awareness capabilities. Custom workers require an explicit least-capability tool allowlist and a non-empty role prompt; all workers receive the shared bounded-worker contract.
 
@@ -84,15 +83,17 @@ Set `OCTOCODE_HOME` to change the Octocode home directory. Set `OCTOCODE_STORAGE
 
 See the repository [configuration guide](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md) for every supported key and [docs/SETTINGS.md](docs/SETTINGS.md) for Pi's control center, persistence, and security behavior.
 
-## Slash command entries (3)
+## Slash command entries (5)
 
 | Command | Purpose |
 |---|---|
 | `/octocode-rewind` | Preview and explicitly apply a local file-history restore. |
 | `/octocode-inbox` | Inspect, steer, or stop spawned workers through a keyboard-driven picker. |
+| `/octocode-status` | Inspect session usage, tools, skills, plan, agents, and pending decisions. |
+| `/octocode-status events` | Inspect the selected branch’s execution journal; use `export` to save JSONL. |
 | `/configuration` | Open the local browser configuration page. |
 
-The footer shows `/configuration`. The page controls MCP connections and tools,
+The footer separates live activity from session metadata. `/octocode-status` opens details; `/octocode-status export` writes the semantic journal into the session artifact directory. Full messages and tool output remain in Pi’s transcript. The footer shows `/configuration`. The page controls MCP connections and tools,
 skills, permissions, theme, effort, and footer density, and opens the current plan
 for review. Host-provided and user-installed commands remain in the live inventory.
 The recovery command remains preview-first and does not rewrite input through regex triggers.
@@ -105,7 +106,7 @@ The build copies these main-agent skills into `dist/skills/`:
 - `octocode-awareness`
 - `octocode-brainstorming`
 - `octocode-chrome-devtools`
-- `octocode-clean-code`
+- `octocode-clean-agentic-code`
 - `octocode-code-graph`
 - `octocode-documentation`
 - `octocode-eval-benchmark`

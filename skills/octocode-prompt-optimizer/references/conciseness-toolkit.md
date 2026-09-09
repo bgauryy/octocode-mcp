@@ -31,4 +31,4 @@ Load when a FIX target line is wordy, indirect, or over about 20-25 words. Why: 
 ## Sources
 - Anthropic, [Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — the minimal high-signal context principle.
 
-Next: once the tokens are cut, load `references/attention.md` to place the surviving rules; when the offload move moves detail out of an always-loaded core, load `references/context-budget.md`; return to `references/fix.md` to record the change.
+Next: once the tokens are cut, load `references/attention.md` to place the surviving rules; when the target is an accumulated transcript rather than a line of prose, load `references/compaction.md`; when a token saving must be proven rather than asserted, load `references/token-measurement.md`; when the offload move moves detail out of an always-loaded core, load `references/context-budget.md`; return to `references/fix.md` to record the change.

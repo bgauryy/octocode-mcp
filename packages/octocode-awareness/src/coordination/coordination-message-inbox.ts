@@ -2,6 +2,7 @@ import type { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
 import type { LiteMessage } from '@octocodeai/agent-contracts/entities';
 import { type CanonicalMessageRow, messageFromCanonicalSignalRow } from './coordination-shared.js';
 import { decodeSignalCursor, encodeSignalCursor } from '../signal-pagination.js';
+import { repositoryWorkspacePaths } from '../git.js';
 
 export interface MessageListParams {
   agentId?: string | null;
@@ -21,8 +22,8 @@ export interface MessagePage {
 function messageFilter(workspace: string, params: MessageListParams) {
   const agentId = params.agentId?.trim();
   const topic = params.topic?.trim();
-  const clauses: string[] = ['s.workspace_path = ?'];
-  const values: string[] = [workspace];
+  const clauses: string[] = ['s.workspace_path IN (SELECT value FROM json_each(?))'];
+  const values: string[] = [JSON.stringify(repositoryWorkspacePaths(workspace))];
   if (agentId) {
     clauses.push('s.from_agent != ?');
     values.push(agentId);

@@ -39,8 +39,8 @@ Do not add fields from another operation or assume a former tool name remains an
 |---|---|---|
 | `localSearch` | Where is text, syntax, a path, or a directory entry? | Text proves occurrence; AST proves syntax within the searched scope. |
 | `localGetFileContent` | What does a known local file contain? | `none` preserves selected source apart from security redaction; transformed views are lossy. |
-| `localAnalyzeGraph` | Which files depend on one another or form paths and cycles? | Syntactic file topology; unresolved imports and excluded files limit coverage. |
-| `lspGetSemantics` | Which definition, references, callers, or types does the server resolve? | Server and project scope limit semantic evidence. |
+| `astSearch` | Which files depend on one another or form paths and cycles? | Syntactic file topology; unresolved imports and excluded files limit coverage. |
+| `lspSearch` | Which definition, references, callers, or types does the server resolve? | Server and project scope limit semantic evidence. |
 | `ghSearch` | Which indexed code, repositories, or tree paths are candidates? | Code search uses GitHub's indexed default branch; a tree query can select a ref. |
 | `ghGetFileContent` | What is in a known remote file or directory snapshot? | Pin the ref for reproducibility; file views and provider limits still apply. |
 | `ghSearchHistory` | Which PRs, issues, or commits are candidates? | Discovery identifies records; it does not fetch every detail surface. |
@@ -59,20 +59,20 @@ minification configuration.
 Start at the cheapest step that resolves the missing evidence. A known path does
 not need another repository-wide search.
 
-1. **Orient when the area is unfamiliar.** Use `localSearch` with `operation:"tree"`
+1. **Orient when the area is unfamiliar.** Use `astSearch` with `operation:"tree"`
    for layout or `operation:"files"` for names and metadata. Supply an absolute
    `path`; use `names` for file patterns and `namePattern` for tree filtering.
-2. **Locate an anchor.** Use `operation:"text"` with `searchText` for identifiers,
+2. **Locate an anchor.** Use `localSearch` with `searchText` for identifiers,
    messages, and literals. Choose the regex mode explicitly when interpretation
-   matters. Use `operation:"structural"` with exactly one of `pattern` or `rule`
-   when the question concerns a syntax shape.
+   matters. Use `astSearch(operation:"match")` with exactly one of `pattern` or
+   `rule` when the question concerns a syntax shape.
 3. **Read the relevant source.** Use `localGetFileContent` with a returned line
    range or `matchString`. Set `minify:"none"` when quoting or examining precise
    syntax. An outline helps identify declarations before reading their bodies.
 4. **Map topology when needed.** Use graph `dependencies`, `dependents`, `path`,
    `cycles`, `reachability`, or `deadCode`. Review diagnostics for skipped files,
    unresolved edges, and bounded results.
-5. **Resolve identity when needed.** Use `lspGetSemantics` with a real `uri`,
+5. **Resolve identity when needed.** Use `lspSearch` with a real `uri`,
    `symbolName`, and `lineHint` for anchored operations. `documentSymbols` and
    `diagnostic` operate on a document; `workspaceSymbol` searches the server's
    workspace without requiring a symbol line.
@@ -108,6 +108,15 @@ Read a selected path with `ghGetFileContent`. Supply an observed commit SHA in
 `branch` when the claim depends on a fixed revision. Record the resolved identity;
 a branch name can move between calls. Fetch exact source before quoting a search
 snippet or interpreting a diff in isolation.
+
+For exact remote source, use `minify:"none"` and preserve the returned
+`resolvedBranch`, commit identity, and match or line metadata. `standard` and
+`symbols` are transformed views and do not prove that omitted text was absent.
+Use the returned `localPath` after `ghCloneRepo` rather than reconstructing a
+cache path. A fresh clone reports verification for its checkout; a cache reuse
+can report `verified:false`, so a cached path and HEAD identity do not by
+themselves prove that the working tree contents are unchanged. A sparse clone is
+complete only relative to its requested subtree.
 
 For repeated reads, AST queries, graph analysis, or semantic verification, use
 `ghCloneRepo` and then the local tools on its returned path. A sparse checkout or

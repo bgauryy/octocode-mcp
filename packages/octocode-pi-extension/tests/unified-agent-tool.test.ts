@@ -10,6 +10,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'node:fs';
+import { compileMcpSchemaValidator } from '../src/tools/mcp/schema-validator.js';
 import type { ToolDefinition, ToolCallResult } from '../src/types.js';
 import {
   AGENT_OPERATIONS,
@@ -110,14 +112,10 @@ const MOCK_TRANSCRIPT = '[STATUS] Mock agent idle.';
 // regular const declarations, so factories run before const initialization).
 const {
   mockRefreshAgentLedgerUi,
-  mockFormatAgentLedger,
-  mockFormatAgentLedgerDetails,
   mockKillWorkerById,
   mockSteerWorkerById,
 } = vi.hoisted(() => ({
   mockRefreshAgentLedgerUi: vi.fn(),
-  mockFormatAgentLedger: vi.fn(() => 'Octocode agents: 1 total \u00b7 1 idle'),
-  mockFormatAgentLedgerDetails: vi.fn(() => 'mock-agent-001 \u00b7 idle'),
   // MOCK_RECORD.id === 'mock-agent-001' \u2014 inline the string since vi.hoisted runs
   // before the module body is evaluated and MOCK_RECORD is not yet in scope.
   mockKillWorkerById: vi.fn((id: string) => id === 'mock-agent-001'),
@@ -128,8 +126,6 @@ vi.mock('../src/tools/agents/rendering.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../src/tools/agents/rendering.js')>();
   return {
     ...original,
-    formatAgentLedger: mockFormatAgentLedger,
-    formatAgentLedgerDetails: mockFormatAgentLedgerDetails,
     refreshAgentLedgerUi: mockRefreshAgentLedgerUi,
   };
 });
@@ -296,6 +292,15 @@ async function loadSut() {
 // ─── Schema tests ─────────────────────────────────────────────────────────────
 
 describe('schema', () => {
+  it('accepts the documented browser packet and rejects a packet without ownership', async () => {
+    const tools = await loadSut();
+    const documentation = fs.readFileSync(new URL('../subagents/browser-agent/BROWSER_AGENT.md', import.meta.url), 'utf8');
+    const example = JSON.parse(documentation.match(/```json\n([\s\S]*?)\n```/)![1]!);
+    const validator = compileMcpSchemaValidator(tools.get('agent')!.parameters);
+    expect(validator.validate(example).valid).toBe(true);
+    delete example.queries[0].ownership;
+    expect(validator.validate(example).valid).toBe(false);
+  });
   it('registers exactly one tool named "agent"', async () => {
     const tools = await loadSut();
     expect(tools.has('agent')).toBe(true);
@@ -828,7 +833,7 @@ describe('spawn: typed profiles', () => {
     expect(spawnCall.resourceMode).toBe('octocode');
     expect(spawnCall.tools).toEqual([]);
     expect(spawnCall.skills).toBeDefined();
-    expect(spawnCall.systemPrompt).toMatch(/bounded worker, not the user-facing agent/i);
+    expect(spawnCall.systemPrompt).toMatch(/The parent owns scope, synthesis, dependent decisions, and user contact/i);
     expect(spawnCall.systemPrompt).toMatch(/Perform the bounded custom test role/);
   });
 
@@ -1004,9 +1009,8 @@ describe('multi-query batch', () => {
       ),
     ).rejects.toThrow(/queries\[1\].*no agent found/i);
 
-    // inspect (index 2) must not have been called
-    expect(mockFormatAgentLedgerDetails).not.toHaveBeenCalled();
-    expect(mockFormatAgentLedger).not.toHaveBeenCalled();
+    const lifecycle = await import('../src/tools/agents/lifecycle.js');
+    expect(vi.mocked(lifecycle.executeAgentLifecycle).mock.calls.map(([params]) => params['type'])).toEqual(['kill', 'kill']);
   });
 });
 

@@ -48,7 +48,7 @@ describe('attend structured-next adversarial review', () => {
       action: 'inspect_ready_task', target: { task_id: 'task_ready' },
       command: {
         name: 'task show',
-        args: ['--db', dbPath, '--workspace', workspace, '--task-id', 'task_ready', '--compact'],
+        args: ['--db', dbPath, '--task-id', 'task_ready', '--compact'],
       },
     });
     const executable = spawnSync(process.execPath, [TSX_SCRIPT, SOURCE_SCRIPT, 'task', 'show', ...packet.next.command!.args], {

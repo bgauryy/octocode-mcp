@@ -740,7 +740,7 @@ test("catalog addendum is byte-stable: tools appear in the output sorted regardl
           inputSchema: { type: "object" },
         },
         {
-          name: "lspGetSemantics",
+          name: "lspSearch",
           description: "LSP.",
           inputSchema: { type: "object" },
         },
@@ -750,14 +750,14 @@ test("catalog addendum is byte-stable: tools appear in the output sorted regardl
   const out = getCachedMcpCatalogAddendum(mcpCtx);
   const findIdx = out.indexOf("tool: localSearch");
   const getIdx = out.indexOf("tool: localGetFileContent");
-  const lspIdx = out.indexOf("tool: lspGetSemantics");
+  const lspIdx = out.indexOf("tool: lspSearch");
   assert.ok(
     getIdx < findIdx,
     "localGetFileContent before localSearch (alphabetical)",
   );
   assert.ok(
     findIdx < lspIdx,
-    "localSearch before lspGetSemantics (alphabetical)",
+    "localSearch before lspSearch (alphabetical)",
   );
 });
 

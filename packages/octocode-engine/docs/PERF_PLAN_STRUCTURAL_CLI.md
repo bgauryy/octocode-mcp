@@ -66,11 +66,11 @@ The scan is cheap; only the compile is expensive, and almost all content is clea
 
 ```bash
 # floor
-time node packages/octocode/out/octocode.js tools localSearch --queries \
-  '{"operation":"structural","path":"/tmp/tinydir","pattern":"$FN($$$ARGS)"}' --compact >/dev/null
+time node packages/octocode/out/octocode.js tools astSearch --queries \
+  '{"operation":"match","path":"/tmp/tinydir","pattern":"$FN($$$ARGS)","langType":"rust"}' --compact >/dev/null
 # count + content on the Rust tree (parity: expect ast-grep-identical totals)
-time node packages/octocode/out/octocode.js tools localSearch --queries \
-  '{"operation":"structural","path":"/ABS/REPO/packages/octocode-engine/src","pattern":"$FN($$$ARGS)","include":["**/*.rs"],"maxFiles":5000,"pageSize":1000}' --compact >/dev/null
+time node packages/octocode/out/octocode.js tools astSearch --queries \
+  '{"operation":"match","path":"/ABS/REPO/packages/octocode-engine/src","pattern":"$FN($$$ARGS)","langType":"rust","include":["**/*.rs"],"maxFiles":5000,"pageSize":1000}' --compact >/dev/null
 ast-grep run -p '$FN($$$ARGS)' --lang rust packages/octocode-engine/src --json=compact | jq length
 # sanitizer tax isolated
 node -e 'const {sanitizeContent}=require("./packages/octocode-engine/index.js");const t=performance.now();sanitizeContent("clean","/t.txt");console.log((performance.now()-t).toFixed(1),"ms first-call")'

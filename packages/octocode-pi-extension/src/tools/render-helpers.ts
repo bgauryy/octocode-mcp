@@ -274,18 +274,17 @@ export function buildToolCallSummary(toolName: string, args: unknown): string {
       return `${repo}${p && p !== '.' ? `/${p}` : ''}`.trim();
     }
 
-    if (toolName === 'ghSearchPullRequests' || toolName === 'ghSearchIssues') {
-      const keywords = arr(q.keywordsToSearch).join(' ');
+    if (toolName === 'ghSearchHistory' || toolName === 'ghGetHistoryItem') {
       const number = q.prNumber ?? q.issueNumber;
-      const kind = toolName === 'ghSearchPullRequests' ? 'PR' : 'issue';
-      const detail = number != null ? `${kind} #${number}` : keywords ? `"${keywords}"` : kind;
-      return `${repo} ${detail}`.trim();
-    }
-
-    if (toolName === 'ghSearchCommits') {
-      const pathValue = str(q.path);
       const range = [str(q.base), str(q.head)].filter(Boolean).join('..');
-      return `${repo}${pathValue ? ` path:${pathValue}` : ''}${range ? ` ${range}` : ''}`.trim();
+      const keywords = arr(q.keywords).join(' ');
+      const pathValue = str(q.path);
+      const detail = number != null ? `#${number}` : range || (keywords ? `"${keywords}"` : '');
+      const op = str(q.operation);
+      return [op ? `[${op}]` : '', repo, detail, pathValue ? `path:${pathValue}` : '']
+        .filter(Boolean)
+        .join(' ')
+        .trim();
     }
 
     if (toolName === 'ghCloneRepo') {
@@ -297,8 +296,8 @@ export function buildToolCallSummary(toolName: string, args: unknown): string {
   }
 
   // ── Local tools ───────────────────────────────────────────────────────────
-  if (toolName.startsWith('local') || toolName === 'lspGetSemantics') {
-    if (toolName === 'localSearch' && (q.operation === 'text' || q.operation === 'structural')) {
+  if (toolName.startsWith('local') || toolName === 'astSearch' || toolName === 'lspSearch') {
+    if (toolName === 'localSearch' || (toolName === 'astSearch' && q.operation === 'match')) {
       const kw = str(q.searchText ?? q.pattern ?? q.rule ?? q.keywords);
       const p = str(q.path);
       const mode = str(q.operation);
@@ -315,28 +314,28 @@ export function buildToolCallSummary(toolName: string, args: unknown): string {
       return (shortPath(p) + anchor).trim();
     }
 
-    if (toolName === 'localSearch' && q.operation === 'tree') {
+    if (toolName === 'astSearch' && q.operation === 'tree') {
       const p = str(q.path);
       const depth = q.maxDepth != null ? ` depth:${q.maxDepth}` : '';
       return (shortPath(p) + depth).trim();
     }
 
-    if (toolName === 'localSearch' && q.operation === 'files') {
+    if (toolName === 'astSearch' && q.operation === 'files') {
       const p = str(q.path);
       const names = arr(q.names).join(', ');
       const pat = str(q.pathPattern);
       return `${shortPath(p)}${names ? ` [${names}]` : ''}${pat ? ` ${pat}` : ''}`.trim();
     }
 
-    if (toolName === 'localAnalyzeGraph' && q.operation === 'deadCode') {
+    if (toolName === 'astSearch' && q.operation === 'topology') {
       const p = str(q.path);
       const entrypoints = arr(q.entrypoints).join(', ');
       return `${shortPath(p)}${entrypoints ? ` entries:[${entrypoints}]` : ''}`.trim();
     }
 
-    if (toolName === 'lspGetSemantics') {
+    if (toolName === 'lspSearch') {
       const sym = str(q.symbolName);
-      const type = str(q.type) || 'definition';
+      const type = str(q.operation) || 'definition';
       const uri = str(q.uri);
       const file = uri ? basename(uri.replace(/\?.*$/, '')) : '';
       const line = q.lineHint != null ? `:${q.lineHint}` : '';
@@ -488,7 +487,7 @@ export function buildResultStats(toolName: string, details: unknown): ResultStat
     };
   }
 
-  if (toolName === 'localAnalyzeGraph') {
+  if (toolName === 'astSearch') {
     let resultCount = 0;
     for (const r of results) {
       const data = (r.data ?? {}) as Record<string, unknown>;
@@ -497,7 +496,7 @@ export function buildResultStats(toolName: string, details: unknown): ResultStat
     return { queryCount, summary: resultCount > 0 ? `${resultCount} candidates` : undefined };
   }
 
-  if (toolName === 'lspGetSemantics') {
+  if (toolName === 'lspSearch') {
     const paths: string[] = [];
     let refCount = 0;
     for (const r of results) {
@@ -530,14 +529,16 @@ export function buildResultStats(toolName: string, details: unknown): ResultStat
     return { queryCount, paths: paths.slice(0, 3) };
   }
 
-  if (toolName === 'ghSearchPullRequests' || toolName === 'ghSearchIssues' || toolName === 'ghSearchCommits') {
+  if (toolName === 'ghSearchHistory' || toolName === 'ghGetHistoryItem') {
+    // One operation family per call, but the key differs by operation
+    // (pullRequests/issues/commits) and detail reads return a single item.
     let count = 0;
     for (const r of results) {
       const data = (r.data ?? {}) as Record<string, unknown>;
-      if (Array.isArray(data.items)) count += data.items.length;
-      else if (Array.isArray(data.prs)) count += data.prs.length;
-      else if (Array.isArray(data.issues)) count += data.issues.length;
-      else if (Array.isArray(data.commits)) count += data.commits.length;
+      for (const key of ['items', 'pullRequests', 'prs', 'issues', 'commits']) {
+        const value = data[key];
+        if (Array.isArray(value)) count += value.length;
+      }
     }
     return { queryCount, summary: count > 0 ? `${count} items` : undefined };
   }

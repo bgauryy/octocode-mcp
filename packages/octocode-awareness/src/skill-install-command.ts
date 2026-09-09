@@ -46,7 +46,11 @@ function fail(error: string, details: Record<string, unknown> = {}): SkillInstal
   return { exitCode: 1, payload: { ok: false, error, ...details } };
 }
 
-function option(argv: string[], name: string): string | undefined {
+function option(argv: string[] | Record<string, unknown>, name: string): string | undefined {
+  if (!Array.isArray(argv)) {
+    const value = argv[name.slice(2).replaceAll('-', '_')];
+    return value === undefined ? undefined : String(value);
+  }
   const prefix = `${name}=`;
   const inline = argv.find((arg) => arg.startsWith(prefix));
   if (inline) return inline.slice(prefix.length);
@@ -56,8 +60,8 @@ function option(argv: string[], name: string): string | undefined {
   return value && !value.startsWith('--') ? value : undefined;
 }
 
-function flag(argv: string[], name: string): boolean {
-  return argv.includes(name);
+function flag(argv: string[] | Record<string, unknown>, name: string): boolean {
+  return Array.isArray(argv) ? argv.includes(name) : argv[name.slice(2).replaceAll('-', '_')] === true;
 }
 
 function sameTree(left: string, right: string): boolean {
@@ -103,7 +107,7 @@ function replaceDirectory(source: string, destination: string): void {
   }
 }
 
-export function runSkillInstall(argv: string[], options: SkillInstallOptions): SkillInstallResult {
+export function runSkillInstall(argv: string[] | Record<string, unknown>, options: SkillInstallOptions): SkillInstallResult {
   const platformValue = option(argv, '--platform');
   if (!platformValue) {
     return fail(`--platform is required (${Object.keys(PLATFORM_DIRS).join('|')})`);

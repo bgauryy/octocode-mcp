@@ -9,8 +9,8 @@ export const operationSchemas = {
   awareness_config: z
     .object({
       action: z.enum(['show', 'init', 'validate']).default('show'),
-      hooks: z.boolean().optional().describe('Enable all installed host-hook automation.'),
-      notifications: z.boolean().optional().describe('Deliver peer, handoff, and relevant memory context from hooks.'),
+      hooks: z.boolean().optional().describe('Enable installed hooks under the selected workspace profile.'),
+      notifications: z.boolean().optional().describe('Deliver new peer messages from hooks.'),
       verification_gate: z.boolean().optional().describe('Surface unverified work during stop hooks.'),
       session_capture: z.boolean().optional().describe('Capture resumable context at compact/session end.'),
       maintenance_reminders: z.boolean().optional().describe('Emit bounded maintenance-pressure reminders from hooks.'),
@@ -212,5 +212,5 @@ export const operationSchemas = {
         .describe("Keep a materially distinct recurrence despite the duplicate gate."),
     })
     .strict()
-    .describe("Reflect after work.")
+    .describe("Record one verified reusable lesson after substantial work or a meaningful event; skip routine summaries and repeated lessons.")
 };

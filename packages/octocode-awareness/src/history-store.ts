@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { lstatSync, realpathSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
 import { getDatabasePath } from './db-runtime.js';
-import { openHistoryGitStore, type HistoryGitStore } from './history-git.js';
+import type { HistoryGitStore } from './history-git.js';
 import { historyEntitySchemas } from './schema/definitions-history.js';
 import type { z } from 'zod';
 
@@ -19,13 +19,47 @@ export interface HistoryContext {
   store(): Promise<HistoryGitStore>;
 }
 export const historyHash = (value: string): string => createHash('sha256').update(value).digest('hex');
+function pathExists(path: string): boolean {
+  try { lstatSync(path); return true; }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+/** One placement owner for the lazy store and its read-only status projection. */
+export function historyStoragePaths(ctx: Pick<HistoryContext, 'workspace' | 'dbPath'>) {
+  if (ctx.dbPath === ':memory:') return null;
+  const historyRoot = resolve(ctx.workspace, '.octocode', '.localGit', historyHash(realpathSync(ctx.dbPath)));
+  const root = resolve(historyRoot, 'awareness-v1', historyHash(ctx.workspace));
+  const legacyRoot = resolve(`${ctx.dbPath}.history`, 'awareness-v1', historyHash(ctx.workspace));
+  return { history_root: historyRoot, root, git_dir: resolve(root, 'repo.git'),
+    legacy_root: legacyRoot, relocation_required: pathExists(legacyRoot) };
+}
+/** Reject unsafe placement or a split history before writing a capture journal. */
+export function assertHistoryStorageReady(ctx: Pick<HistoryContext, 'workspace' | 'dbPath'>): void {
+  const storage = historyStoragePaths(ctx);
+  if (!storage) throw new HistoryError('HISTORY_DISABLED', 'Local history requires a persistent Awareness database.');
+  let candidate = ctx.workspace;
+  for (const part of relative(ctx.workspace, storage.root).split(sep)) {
+    candidate = resolve(candidate, part);
+    try {
+      const stat = lstatSync(candidate);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) throw new HistoryError('HISTORY_UNSAFE_STORAGE', `History storage ancestor must be a directory, not a symlink: ${candidate}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  if (storage.relocation_required) throw new HistoryError('HISTORY_STORE_RELOCATION_REQUIRED',
+    `Existing history remains at ${storage.legacy_root}. Stop history writers and explicitly relocate that complete store to ${storage.root}; never merge stores. Inspect history status and the local-history relocation guide before resuming.`);
+}
 export function createHistoryContext(db: DatabaseSync, workspace: string): HistoryContext {
   const canonical = realpathSync(workspace);
   const dbPath = getDatabasePath(db);
   let pending: Promise<HistoryGitStore> | undefined;
   return { db, workspace: canonical, dbPath, store() {
-    if (dbPath === ':memory:') throw new HistoryError('HISTORY_DISABLED', 'Local history requires a persistent Awareness database.');
-    return pending ??= openHistoryGitStore({ historyRoot: `${dbPath}.history`, storeId: 'awareness-v1', workspaceId: historyHash(canonical) });
+    const context = { workspace: canonical, dbPath };
+    assertHistoryStorageReady(context);
+    return pending ??= import('./history-git.js').then(({ openHistoryGitStore }) => openHistoryGitStore({ historyRoot: historyStoragePaths(context)!.history_root, storeId: 'awareness-v1', workspaceId: historyHash(canonical), boundaryRoot: canonical }));
   } };
 }
 export function historyPath(ctx: HistoryContext, path: string): string {

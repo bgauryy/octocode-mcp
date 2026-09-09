@@ -53,16 +53,18 @@ initialize
   -> stdio connect
 ```
 
-At startup, Octocode reads configuration from environment variables and `<octocode-home>/.octocoderc`, initializes local security and provider clients, loads repository-owned tool metadata plus the external shared system prompt, opens the session store, and registers the final enabled tool set. Octocode looks the GitHub token up live on every request, so changing an environment token can affect the next API call even though the startup status log keeps its original token-source snapshot.
+At startup, Octocode reads configuration from environment variables and `<octocode-home>/.octocoderc`, initializes local security and provider clients, loads repository-owned tool metadata and agent-facing instructions, opens the session store, and registers the final enabled tool set. Octocode looks the GitHub token up live on every request, so changing an environment token can affect the next API call even though the startup status log keeps its original token-source snapshot.
 
 ## Tool catalog
 
-With no environment variables set, the MCP server registers 10 tools:
+The full discovery catalog contains 10 tools. With the default settings, the MCP
+server registers 9: `ghCloneRepo` is opt-in and requires `ENABLE_CLONE=true` plus
+persistent storage.
 
 | Family | Tools |
 |--------|-------|
 | GitHub | `ghSearch`, `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`, `ghCloneRepo` |
-| Local | `localSearch`, `localGetFileContent`, `localAnalyzeGraph`, `lspGetSemantics` |
+| Local | `localSearch`, `localGetFileContent`, `astSearch`, `lspSearch` |
 | Package | `npmSearch` |
 
 To read the live CLI catalog, run `octocode tools --json`.
@@ -71,7 +73,12 @@ To read the live CLI catalog, run `octocode tools --json`.
 `operation: "code" | "repositories" | "tree"` branches reject fields from
 other operations and removed compatibility names cannot be re-enabled.
 
-Every tool accepts bulk input through `queries`, with up to 5 items per call. Responses use a structured bulk envelope with per-query success, empty, and error states, plus pagination hints when more content is available. For more information, see the [Octocode tools reference](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md).
+Every tool accepts bulk input through `queries`, with up to 5 items per call. MCP
+publishes executable input schemas, descriptions, and availability metadata; it
+does not publish a protocol `outputSchema`. Runtime results still use the shared
+structured bulk envelope with per-query success, empty, and error states, plus
+typed evidence and pagination data when more content is available. For the
+complete response and continuation rules, see the [Octocode tools reference](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md).
 
 ## Configuration and auth
 
@@ -101,6 +108,9 @@ For full details, see the [Octocode configuration and authentication](https://gi
 
 Tool names were renamed in v18 to use camelCase. If you have `TOOLS_TO_RUN` or `DISABLE_TOOLS` set with old names, update them — **old names are not recognized and cause a fatal startup error when all names in the list are invalid**. The `Did you mean?` hint in stderr identifies the new name.
 
+This migration table is historical. The names in the Old name column are not
+active catalog entries.
+
 | Old name | New name |
 |---|---|
 | `github_search_code` | `ghSearch` |
@@ -109,14 +119,14 @@ Tool names were renamed in v18 to use camelCase. If you have `TOOLS_TO_RUN` or `
 | `github_search_repos` | `ghSearch` (repositories operation) |
 | `github_search_pull_requests` | `ghSearchHistory` |
 | `github_clone_repo` | `ghCloneRepo` |
-| `local_analyze_graph` | `localAnalyzeGraph` |
+| `local_analyze_graph` | `astSearch` (`topology` operation) |
 | `local_fetch_content` | `localGetFileContent` |
-| `local_dead_code` | `localAnalyzeGraph` (deadCode operation) |
-| `local_find_files` | `localSearch` (files operation) |
-| `local_ripgrep` | `localSearch` (text operation) |
-| `local_view_structure` | `localSearch` (tree operation) |
+| `local_dead_code` | `astSearch` (`topology` with `analysis:"deadCode"`) |
+| `local_find_files` | `astSearch` (`files` operation) |
+| `local_ripgrep` | `localSearch` (lexical `searchText`) |
+| `local_view_structure` | `astSearch` (`tree` operation) |
 | `local_search` | `localSearch` ✅ unchanged |
-| `lsp` | `lspGetSemantics` |
+| `lsp` | `lspSearch` |
 | `package_search` | `npmSearch` |
 
 ## Materialization and response cache

@@ -25,12 +25,9 @@ memory_record: z
       repo: repoScope.optional().describe("Repo scope."),
       ref: refScope.optional().describe("Ref scope."),
       file: z
-        .string()
-        .trim()
-        .min(1)
-        .max(1024)
+        .union([z.string().trim().min(1).max(1024), targetFiles])
         .optional()
-        .describe("Primary file."),
+        .describe("Declared files; repeat --file to capture all evidence dependencies."),
       file_tree_fingerprint: z
         .string()
         .trim()
@@ -58,11 +55,11 @@ memory_record: z
         .describe("Keep a materially distinct recurrence despite the duplicate gate."),
     })
     .strict()
-    .describe("Record a memory."),
+    .describe("Save verified reusable learning with scope and evidence. Routine status belongs in the current conversation, not durable memory."),
   memory_recall: z
     .object({
       check_fingerprint: z.boolean().default(false)
-        .describe("Recheck retained declared file/dependency bytes with bounded I/O. Returns fresh/stale/unknown; unchecked captures remain unknown. Freshness does not verify the memory claim or dependency completeness."),
+        .describe("Recheck declared bytes (fresh/stale/unknown), not claims or dependency coverage."),
       query: z.string().trim().max(1000).default("").describe("Recall query."),
       limit: z.number().int().min(1).max(50).default(3),
       min_importance: z.number().int().min(1).max(10).default(1),
@@ -93,7 +90,7 @@ memory_record: z
         .default(false)
         .describe("Exact scope only."),
       global_only: z.boolean().default(false).describe("Only unscoped rows."),
-      all_workspaces: z.boolean().default(false).describe("Search across all workspaces (skip workspace_path scoping)."),
+      all_workspaces: z.boolean().default(false).describe("Search every workspace."),
       sort: memorySort,
       smart: z
         .boolean()
@@ -114,7 +111,7 @@ memory_record: z
       full: z
         .boolean()
         .default(false)
-        .describe("Return full MemoryRecord rows (default is lean projection)."),
+        .describe("Full memory rows; default is lean."),
       as_of: z
         .string()
         .trim()
@@ -124,7 +121,7 @@ memory_record: z
         .describe("Point-in-time ISO."),
     })
     .strict()
-    .describe("Recall memories."),
+    .describe("Recall scoped lessons when prior learning could change the approach. Ranked hits are leads; revalidate their evidence before reuse."),
   workspace_status: z
     .object({
       workspace: workspacePath.optional().describe("Workspace filter."),
@@ -155,20 +152,23 @@ memory_record: z
     .describe("Query awareness views for agents, scripts, and humans."),
   attend: z
     .object({
+      details: z.boolean().default(false).describe("Opt into the workboard, verification and diagnostics. A query or file filter also requests this detailed view."),
+      changes: z.boolean().default(false).describe("Read paged Git path/status and declared work across linked checkouts. Exclusive with details and scope/query filters; use include_bodies for full work intent."),
+      offset: z.number().int().min(0).default(0).describe("Continuation offset for presence or changes. Reuse returned revision for change pages."),
       revision: AttendRevisionInputSchema.optional(),
       agent_id: agentId.optional().describe("Stable agent identity used to prioritize owned work."),
       query: z.string().trim().max(1000).default("").describe("Current task, risk, or design question."),
-      limit: z.number().int().min(1).max(50).default(10).describe("Rows per workboard column and evidence cap."),
+      limit: z.number().int().min(1).max(50).default(10).describe("Peers or Git/work rows per page; detailed view rows per column and evidence cap."),
       workspace_path: workspacePath.optional().describe("Workspace filter."),
       artifact: artifactScope.optional(),
       repo: repoScope.optional().describe("Repo filter."),
       ref: refScope.optional().describe("Ref filter."),
       file: z.array(z.string().trim().min(1).max(1024)).max(50).default([]).describe("File filters."),
-      include_bodies: z.boolean().default(false).describe("Include full signal bodies in routed reads."),
-      explain_organ: z.boolean().default(false).describe("Include the organ reference even in compact output; operational state and regulation are always included."),
+      include_bodies: z.boolean().default(false).describe("Include full signal bodies in routed reads, or full work intent with changes."),
+      explain_organ: z.boolean().default(false).describe("Request detailed diagnostics with the organ reference."),
     })
     .strict()
-    .describe("Build a bounded read-only lobby with observed operational state, deterministic advisory regulation, evidence leads, and a next action. Unavailable runtime sensors stay explicit; noncompact mode adds diagnostics."),
+    .describe("Meet registered workspace peers. Default reads presence only; details, query, or file opt into coordination inspection. Reuse the initial briefing until shared state changes."),
   export_harness: z
     .object({
       limit: z.number().int().min(1).max(200).default(10),

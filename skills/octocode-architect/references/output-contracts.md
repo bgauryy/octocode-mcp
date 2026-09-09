@@ -41,6 +41,8 @@ Verification: <checks and observed results>
 Verdict: block | merge-ok | approve
 ```
 
+For an interface or tool contract, review the complete path: input schema → actual adapter arguments → result shape and evidence → executable `next` continuation. Check one valid and one invalid example for each changed branch, distinguish static types from runtime validation, and separate measured reliability from an unmeasured expectation. For a multi-tool surface, compare shared field names and meanings across the set and run at least one held-out composition case.
+
 Lead with the major decision. Name the type, field, function, or interface. Avoid persona imitation, preambles, and checklist narration.
 
 Next: during implementation load `delivery-discipline.md`; after a completed review return to `SKILL.md`.

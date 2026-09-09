@@ -12,7 +12,8 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 | Document | Owns |
 |---|---|
 | [ARCHITECTURE.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/ARCHITECTURE.md) | Pi composition root, adapter ownership, dependency rules, and convergence limits. |
-| [TOOLS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/TOOLS.md) | Complete tool inventory, routing rules, CLI schema lookup, and Awareness-as-CLI guidance. |
+| [TOOLS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/TOOLS.md) | Tool inventory, routing rules, and native Awareness list/describe/call guidance. |
+| [Awareness API](../../octocode-awareness/docs/API.md) | Imported command execution, schemas, prompt exports, host bindings, and continuations. |
 | [OVERRIDES.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/OVERRIDES.md) | Branded-launcher native-tool suppression, direct-extension backstop, and replacement routes. |
 | [WHY_OCTOCODE.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/WHY_OCTOCODE.md) | Product positioning, capability profiles, and comparison with vanilla Pi. |
 
@@ -27,6 +28,7 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 
 | Document | Owns |
 |---|---|
+| [Awareness guide](../../octocode-awareness/README.md) | Canonical overview of coordination, features, CLI/API, storage, recovery, and known limits. |
 | [AWARENESS_AGENT_FLOW.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/AWARENESS_AGENT_FLOW.md) | Agent lifecycle for using Awareness inside Pi sessions. |
 | [AGENT_ORCHESTRATOR.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/AGENT_ORCHESTRATOR.md) | Pi SDK subagent orchestration contract, rollback notes, and UX policy. |
 | [SUBAGENTS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/SUBAGENTS.md) | Spawn profiles, live control, durable peer communication, and isolation. |
@@ -48,7 +50,6 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 | Document | Owns |
 |---|---|
 | [AGENT_TOOL_AUDIT.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/AGENT_TOOL_AUDIT.md) | Dated decision snapshot for palette ratings, Awareness signal value, and contract-size evidence. Current registries remain source-owned. |
-| [Awareness assessment](https://github.com/bgauryy/octocode/blob/main/docs/AWARENESS_ASSESSMENT.md) | Dated cross-host evidence, engineering ratings, activation limits, and evaluated next increments. |
 
 ---
 

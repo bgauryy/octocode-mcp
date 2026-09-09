@@ -27,7 +27,10 @@ export function workboardRows(db: DatabaseSync, params: AwarenessQueryParams): A
     pushLimited(columns, counts, 'FilesUnderWork', row, limit);
   }
 
-  const openSignals = signalRows(db, withScope(params, { state: ['open'], limit: 200, includeBodies: false }));
+  const openSignals = signalRows(db, withScope(params, {
+    state: ['open'], limit: 200, includeBodies: false,
+    recipientAgentId: params.recipientAgentId ?? params.preferAgentId ?? null,
+  }));
   for (const row of openSignals) {
     pushLimited(columns, counts, 'Inbox', {
       item_type: 'signal',

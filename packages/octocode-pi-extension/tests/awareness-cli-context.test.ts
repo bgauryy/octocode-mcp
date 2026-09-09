@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defaultDbPath, AWARENESS_PI_HOST_PROMPT } from '@octocodeai/octocode-awareness';
+import {
+  defaultDbPath,
+  AWARENESS_PI_HOST_PROMPT,
+} from '@octocodeai/octocode-awareness';
 import { SYSTEM_PROMPT } from '../src/prompts/system-prompt.js';
 import { OCTOCODE_SUPPORT_TOOL_NAMES } from '../src/constants.js';
 import type { PiContext } from '../src/types.js';
-import { buildAwarenessCliEnvironment, renderAwarenessCliContext } from '../src/tools/awareness-cli-context.js';
+import {
+  buildAwarenessCliEnvironment,
+  renderAwarenessCliContext,
+} from '../src/tools/awareness-cli-context.js';
 import { getAwarenessAgentIdentity } from '../src/tools/awareness-shared.js';
 
 beforeEach(() => {
@@ -15,10 +21,9 @@ afterEach(() => vi.unstubAllEnvs());
 describe('canonical Awareness CLI in Pi', () => {
   it('injects the canonical policy behind one native Awareness facade', () => {
     expect(SYSTEM_PROMPT).toContain(AWARENESS_PI_HOST_PROMPT);
-    expect(SYSTEM_PROMPT).toMatch(/awareness lists, describes, and calls/i);
     expect([...OCTOCODE_SUPPORT_TOOL_NAMES]).toContain('awareness');
-    for (const name of ['memory', 'message', 'lock']) expect([...OCTOCODE_SUPPORT_TOOL_NAMES]).not.toContain(name);
-    expect(SYSTEM_PROMPT).toContain('external-host-only');
+    for (const name of ['memory', 'message', 'lock'])
+      expect([...OCTOCODE_SUPPORT_TOOL_NAMES]).not.toContain(name);
   });
 
   it('binds shell calls to the native store, workspace, identity and local runtime', () => {
@@ -33,17 +38,26 @@ describe('canonical Awareness CLI in Pi', () => {
     expect(env.OCTOCODE_AWARENESS_CLI).toMatch(/octocode-awareness\.js$/);
     expect(renderAwarenessCliContext(ctx)).toContain('pi-cli-test');
     expect(renderAwarenessCliContext(ctx)).toContain('$OCTOCODE_AWARENESS_DB');
-    expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toMatch(/native awareness tool.*list, describe, and call/i);
-    expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toMatch(/external-host-only/i);
-    expect(renderAwarenessCliContext(ctx)).toMatch(/lacks the native awareness facade/i);
+    expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toContain(
+      'native awareness tool. It imports the Awareness API directly'
+    );
+    expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toContain(
+      'Host bindings:'
+    );
+    expect(renderAwarenessCliContext(ctx)).toContain('lacks the native facade');
   });
 
   it('does not advertise a durable CLI binding when persistence is disabled', () => {
     vi.stubEnv('OCTOCODE_STORAGE_MODE', 'memory');
     vi.stubEnv('OCTOCODE_AWARENESS_DB', '/stale/awareness.sqlite3');
     vi.stubEnv('OCTOCODE_AWARENESS_CLI', '/stale/cli.js');
-    expect(buildAwarenessCliEnvironment({ cwd: process.cwd() } as PiContext).OCTOCODE_AWARENESS_DB).toBeUndefined();
-    expect(renderAwarenessCliContext()).toContain('Persistent storage is disabled');
+    expect(
+      buildAwarenessCliEnvironment({ cwd: process.cwd() } as PiContext)
+        .OCTOCODE_AWARENESS_DB
+    ).toBeUndefined();
+    expect(renderAwarenessCliContext()).toContain(
+      'Persistent storage is disabled'
+    );
   });
 
   it('exports the native identity and actual worker provider despite stale inherited labels', () => {
@@ -51,7 +65,11 @@ describe('canonical Awareness CLI in Pi', () => {
     vi.stubEnv('OCTOCODE_AGENT_ID', 'worker:123');
     vi.stubEnv('OCTOCODE_AGENT_VENDOR', 'parent-vendor');
     vi.stubEnv('OCTOCODE_AGENT_HOST', 'parent-host');
-    const ctx = { cwd: process.cwd(), model: { provider: 'anthropic' }, sessionManager: { getSessionName: () => 'Parser review' } } as PiContext;
+    const ctx = {
+      cwd: process.cwd(),
+      model: { provider: 'anthropic' },
+      sessionManager: { getSessionName: () => 'Parser review' },
+    } as PiContext;
     const nativeIdentity = getAwarenessAgentIdentity(ctx);
     const env = buildAwarenessCliEnvironment(ctx);
     expect(env.OCTOCODE_AGENT_ID).toBe(nativeIdentity.agentId);
@@ -60,14 +78,18 @@ describe('canonical Awareness CLI in Pi', () => {
     expect(env.OCTOCODE_AGENT_HOST).toBe(nativeIdentity.metadata.host);
     expect(env.OCTOCODE_AGENT_VENDOR).toBe('anthropic');
     expect(env.OCTOCODE_AGENT_HOST).toBe('pi');
-    expect(renderAwarenessCliContext(ctx)).toContain('"vendor":"anthropic","host":"pi"');
+    expect(renderAwarenessCliContext(ctx)).toContain(
+      '"vendor":"anthropic","host":"pi"'
+    );
   });
 
   it('reports unknown vendor explicitly without guessing from a routing ID', () => {
     vi.stubEnv('OCTOCODE_STORAGE_MODE', 'persistent');
     vi.stubEnv('OCTOCODE_AGENT_ID', 'openai:opaque-id');
     const ctx = { cwd: process.cwd() } as PiContext;
-    expect(buildAwarenessCliEnvironment(ctx).OCTOCODE_AGENT_VENDOR).toBeUndefined();
+    expect(
+      buildAwarenessCliEnvironment(ctx).OCTOCODE_AGENT_VENDOR
+    ).toBeUndefined();
     expect(renderAwarenessCliContext(ctx)).toContain('"vendor":null');
   });
 });

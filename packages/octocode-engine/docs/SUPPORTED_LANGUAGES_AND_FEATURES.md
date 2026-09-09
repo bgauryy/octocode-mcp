@@ -10,7 +10,7 @@ console.log('jsts', n.getSupportedJsTsExtensions().sort());
 console.log('minify', Object.keys(n.getMINIFY_CONFIG().fileTypes).sort());"
 ```
 
-## Structural (AST) search — `localSearch operation:"structural"`
+## Structural (AST) search — `astSearch operation:"match"`
 
 Tree-sitter-backed. Two query forms: `pattern` (code-shaped, `$X`/`$$$ARGS` metavars) and `rule` (YAML, `kind`/`has`/`inside`/`all`/`any`/`not`). A `rule: kind: NODE_KIND` query bypasses pattern-fragment parsing and dispatches directly to the registered grammar. Use it when `pattern` parsing does not represent the intended code shape. Direct and nested rule patterns share the same grammar-checked fragment context: Java calls and CSS/SCSS declarations may omit a trailing semicolon without changing matches or capture ranges for complete patterns.
 
@@ -37,7 +37,7 @@ the full extension inventory through public tools. Its cases cover
 representative syntax, views, and continuations; they do not prove every grammar
 construct or minification transformation correct.
 
-## Signature extraction / graph facts — `minify:"symbols"`, `localAnalyzeGraph`
+## Signature extraction / graph facts — `minify:"symbols"`, `astSearch operation:"topology"`
 
 `localGetFileContent minify:"symbols"` provides skeleton outlines. All supported code languages, including JS/TS, use Tree-sitter body queries for signature skeletons. OXC provides JS/TS graph facts, native document symbols and in-file references, and minification. Graph facts are syntax-derived and vary by language; signature capability does not establish complete declaration or call extraction.
 
@@ -98,7 +98,7 @@ smaller, processing fails, or input exceeds its 1 MiB guard. A selected mode
 does not establish which transformations ran. See the
 [tool reference](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md) for extraction and pagination.
 
-## LSP — `lspGetSemantics`
+## LSP — `lspSearch`
 
 Built-in routing covers 45 file extensions, 25 language IDs, and 19 server
 commands. LSP routing is separate from native grammar support: Shell, Less, and
@@ -156,11 +156,11 @@ node -e "const n=require('./packages/octocode-engine/index.js'); \
 console.log(n.getSupportedStructuralExtensions().sort()); \
 console.log(n.getSupportedSignatureExtensions().sort())"
 
-node packages/octocode/out/octocode.js tools localSearch \
-    --queries '{"operation":"structural","path":"/ABS/REPO","pattern":"$$$"}'
+node packages/octocode/out/octocode.js tools astSearch \
+    --queries '{"operation":"match","path":"/ABS/REPO","pattern":"$$$","langType":"typescript"}'
 
-node packages/octocode/out/octocode.js tools lspGetSemantics \
-    --queries '{"uri":"/ABS/REPO/src/file.ts","type":"documentSymbols"}'
+node packages/octocode/out/octocode.js tools lspSearch \
+    --queries '{"uri":"/ABS/REPO/src/file.ts","operation":"documentSymbols"}'
 ```
 
 Run the package tests with these commands:
@@ -171,7 +171,7 @@ yarn workspace @octocodeai/octocode-engine test
 yarn workspace @octocodeai/octocode-tools-core test
 ```
 
-## `localSearch` text operation (ripgrep-backed)
+## `localSearch` lexical search (ripgrep-backed)
 
 | Feature | Values |
 |---|---|
@@ -179,11 +179,11 @@ yarn workspace @octocodeai/octocode-tools-core test
 | `caseMode` | `smart` · `sensitive` · `insensitive` |
 | `wholeWord`, `invertMatch` | boolean |
 | `multiline` | `off` · `on` · `dotall` (`.` spans newlines) |
-| `resultView` | Text: `paginated` · `discovery` · `detailed` · `content` · `files` · `filesWithout` · `countLines` · `countMatches` · `matchOnly`; structural: `content` · `files` · `countMatches` |
+| `resultView` | `paginated` · `discovery` · `detailed` · `content` · `files` · `filesWithout` · `countLines` · `countMatches` · `matchOnly` |
 | `unique` | `off` · `list` · `count` (requires `resultView:"matchOnly"`) |
 | `sort` / `reverse` | `relevance` · `matchCount` · `path` · `modified` · `accessed` · `created`, all reversible |
 | `include` / `exclude` / `excludeDir` | glob arrays |
 | `maxDepth`, `contextLines`, `matchWindow`, `matchPage`, `maxMatchesPerFile` | bounds/pagination |
 
-Read the live `localSearch` schema before scripting queries. The schema
-validates fields per operation and rejects fields from other operation variants.
+Read the live `localSearch` schema before scripting queries. It is lexical only;
+use `astSearch` for structural, file, tree, symbol, and topology operations.

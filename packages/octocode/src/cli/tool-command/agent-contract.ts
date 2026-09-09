@@ -14,4 +14,4 @@ export const BATCH_ERROR_GUIDANCE =
   'Input validation rejects the call; runtime row errors stay indexed and isolated.';
 
 export const CHEAP_VIEW_GUIDANCE =
-  'Cheap views: compact schemas; localSearch resultView:"discovery"; content readers minify:"symbols".';
+  'Cheap views: compact schemas; localSearch resultView:"files"; content readers minify:"symbols".';

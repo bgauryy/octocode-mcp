@@ -42,11 +42,17 @@ export function syncWorkerRegistry(action: 'join' | 'leave', record: AgentRecord
   const agentId = record.awarenessAgentId;
   const workspace = record.awarenessWorkspace;
   if (!agentId || !workspace) return;
+  if (action === 'leave' && record.awarenessPresence !== 'joined') return;
   let aw: ReturnType<typeof openPersistentAwareness> | undefined;
   try {
     aw = openPersistentAwareness({ workspace });
-    if (action === 'join') aw.joinAgent({ agentId, name: record.name, role: 'worker' });
-    else aw.leaveAgent({ agentId });
+    if (action === 'join') {
+      aw.joinAgent({ agentId, name: record.name, role: 'worker' });
+      record.awarenessPresence = 'joined';
+    } else {
+      aw.leaveAgent({ agentId });
+      record.awarenessPresence = 'left';
+    }
   } catch { /* Awareness unresolved — advisory */ }
   finally { aw?.close(); }
 }
@@ -95,7 +101,7 @@ export function killAgent(record: AgentRecord, opts: { forceKillDelayMs?: number
 
 // ─── Public wrappers ─────────────────────────────────────────────────────────
 
-/** Kill a worker by id or prefix (same path as /octocode-agents kill). Returns false for unknown ids. */
+/** Kill a worker by id or prefix (same path as agent kill). Returns false for unknown ids. */
 export function killWorkerById(idOrPrefix: string): boolean {
   const record = findAgentByIdOrPrefix(idOrPrefix);
   if (!record) return false;

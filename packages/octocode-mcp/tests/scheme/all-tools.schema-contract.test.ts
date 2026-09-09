@@ -3,11 +3,10 @@ import { z } from 'zod';
 import { existsSync, readdirSync } from 'node:fs';
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import {
-  LOCAL_ANALYZE_GRAPH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
 } from '../../../octocode-tools-core/src/tools/toolNames.js';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
 const SHARED_FIELDS = ['goal', 'reasoning'] as const;
 const REMOVED_FIELDS = ['id', 'mainResearchGoal', 'researchGoal'] as const;
 
@@ -16,7 +15,7 @@ const REMOVED_QUERY_ALIASES: Record<
   ReadonlyArray<Record<string, unknown>>
 > = {
   npmSearch: [{ name: 'zod' }, { keywords: 'state' }],
-  lspGetSemantics: [{ op: 'documentSymbols' }],
+  lspSearch: [{ op: 'documentSymbols' }],
   localGetFileContent: [{ filePath: '/tmp/test.ts' }],
   localSearch: [
     { keywords: 'needle' },
@@ -36,7 +35,7 @@ const REMOVED_QUERY_ALIASES: Record<
     { keywordsToSearch: ['x'] },
   ],
   ghSearch: [{ topicsToSearch: ['mcp'] }, { itemsPerPage: 5 }],
-  localAnalyzeGraph: [{ maxDepth: 2 }, { itemsPerPage: 5 }],
+  astSearch: [{ itemsPerPage: 5 }],
 };
 
 const MINIMAL_QUERY: Record<string, Record<string, unknown>> = {
@@ -46,15 +45,20 @@ const MINIMAL_QUERY: Record<string, Record<string, unknown>> = {
     owner: 'facebook',
   },
   [LOCAL_SEARCH_TOOL_NAME]: {
-    operation: 'text',
     searchText: 'foo',
     path: '.',
+    regex: 'literal',
   },
-  [LOCAL_ANALYZE_GRAPH_TOOL_NAME]: { operation: 'cycles', path: '.' },
+  astSearch: {
+    operation: 'match',
+    path: './src/index.ts',
+    langType: 'ts',
+    pattern: 'foo($A)',
+  },
   [STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT]: { path: '/tmp/test.ts' },
-  [LSP_GET_SEMANTICS_TOOL_NAME]: {
+  [LSP_SEARCH_TOOL_NAME]: {
     uri: '/tmp/test.ts',
-    type: 'definition',
+    operation: 'definition',
     symbolName: 'myFn',
     lineHint: 10,
   },
@@ -444,9 +448,9 @@ describe('all-tools schema contract', () => {
       // The in-catalog history pair shares schema modules instead of a
       // per-tool scheme.ts, so both tools are excluded from the count.
       const SPLIT_TOOLS: string[] = ['ghSearchHistory', 'ghGetHistoryItem'];
-      // The six former public discovery tools remain internal engine modules,
+      // The former split discovery modules remain internal engine modules,
       // and github_search_pull_requests/scheme.ts is their internal schema.
-      const outOfCatalogSchemeCount = 7;
+      const outOfCatalogSchemeCount = 8;
       expect(schemeFiles).toHaveLength(
         ALL_TOOLS.filter(tool => !SPLIT_TOOLS.includes(tool.name)).length +
           outOfCatalogSchemeCount

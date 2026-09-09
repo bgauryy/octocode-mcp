@@ -20,7 +20,7 @@ import path from 'node:path';
 import { Marked } from 'marked';
 
 import type { ToolCallResult, ToolDefinition, PiContext, PiTheme, RenderContext } from '../types.js';
-import type { registerUniqueTool } from './octocode-tools.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { buildToolView } from './render-helpers.js';
 import { assertPathAllowed } from './path-guard.js';
 import { resolveFilePath } from './file-state.js';
@@ -225,14 +225,14 @@ export function registerMediaTool(
   registerFn(pi, registeredToolNames, {
     name: 'media',
     label: 'Media',
-    description: 'Create or transform media. Render image/PDF from SVG, HTML, Markdown, or images; make GIFs, trim clips, extract audio, convert formats, or concat sources[]. Writes are path-guarded; use inspectMedia to inspect existing files without writing.',
+    description: DIRECT_TOOL_DESCRIPTIONS.media!,
     promptSnippet: 'Create image/PDF artifacts or transform existing audio/video/image files.',
     promptGuidelines: [
       'Use type:image/pdf to author; type:gif/trim/audio/convert transforms `source` into `dest`.',
       'type:concat joins sources[] — reencode:true for different codecs/resolutions.',
-      'For inspecting existing media without writing files, use inspectMedia. For raw ffmpeg operations (filter_complex, loudnorm, VMAF), use runFfmpeg.',
+      'image takes svg OR html; pdf takes html OR markdown OR images. Supply exactly one source form.',
       'convert videoCodec:"h264_videotoolbox"/"hevc_videotoolbox" for hardware encoding on macOS.',
-      'Use inspectMedia for metadata, frames, contact sheets, waveforms, and spectrograms (read-only, returns inline pixels for vision).'
+      'Inspect generated artifacts before presenting them; image pixels enter model context only with showToModel:true or a later inspectMedia call.'
     ],
     parameters: buildQueryEnvelopeSchema(mediaItemSchema, {
       reasoningDescription: 'Concise reason this media operation is necessary.',

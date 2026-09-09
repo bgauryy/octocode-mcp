@@ -4,7 +4,7 @@ Load when symlinking a local skill into vendor skill dirs (Claude, Cursor, Codex
 
 ## Human gate
 
-Default is **dry-run** (plan only). Agents must show the plan and wait for explicit human OK before `--approve`.
+Default is **dry-run** (plan only). Inspect the plan before `--approve`. Existing authorization can cover its source, destinations, and conflict policy; ask only when the plan requires authority that has not been granted.
 
 ```bash
 node scripts/skill-sync.mjs <skill-dir> --platforms top
@@ -30,7 +30,7 @@ node scripts/skill-sync.mjs --list-vendors
 
 - Stable local skill source that you control (development dogfood or live edits).
 - User asked to sync/symlink to Claude, Cursor, Codex, or `.agents`.
-- Prefer Octocode CLI copy/symlink when installing published skills: `npx octocode skill install --add …`.
+- Prefer Octocode CLI copy/symlink when installing published skills: `npx -y octocode skill install --add …`.
 
 Never symlink a temp fetch — use `references/fetch-remote.md` + copy instead.
 

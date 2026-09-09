@@ -3,6 +3,26 @@ import { test } from 'vitest';
 import { renderFooterView } from '../src/tui/footer-view.js';
 import { visibleWidth } from '../src/tui/width.js';
 
+test('long labels cannot hide the executable action route at normal terminal widths', () => {
+  for (const width of [36, 52, 80]) {
+    const [line] = renderFooterView({ rows: [[
+      { text: 'Working on a long task description '.repeat(8) },
+      { text: '/configuration' },
+    ]] }, { width });
+    assert.match(line!, /\/configuration$/);
+    assert.ok(visibleWidth(line!) <= width);
+  }
+});
+
+test('narrow metadata omits partial counters and keeps the configuration route', () => {
+  const [line] = renderFooterView({ rows: [[
+    { text: 'gpt-5.6' }, { text: '23s', keepWhole: true },
+    { text: 'tools 24', keepWhole: true }, { text: '/configuration' },
+  ]] }, { width: 36 });
+  assert.match(line!, /gpt-5.6.*23s.*\/configuration/);
+  assert.doesNotMatch(line!, /tools|to…/);
+});
+
 test('renders exactly one physical line per selected semantic row', () => {
   const lines = renderFooterView({
     rows: [

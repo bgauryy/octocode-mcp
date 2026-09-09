@@ -8,10 +8,10 @@ import {
   GITHUB_GET_HISTORY_ITEM_TOOL_NAME,
   GITHUB_SEARCH_TOOL_NAME,
   GITHUB_SEARCH_HISTORY_TOOL_NAME,
-  LOCAL_ANALYZE_GRAPH_TOOL_NAME,
+  AST_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
 } from '../toolNames.js';
-import { LSP_GET_SEMANTICS_TOOL_NAME } from '../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '../toolNames.js';
 import {
   DIRECT_TOOL_SPECIFICATIONS,
   type DirectToolSpecification,
@@ -49,9 +49,9 @@ const DIRECT_TOOL_RELEVANCE_ORDER = new Map<string, number>(
     STATIC_TOOL_NAMES.GITHUB_FETCH_CONTENT,
     STATIC_TOOL_NAMES.GITHUB_CLONE_REPO,
     LOCAL_SEARCH_TOOL_NAME,
-    LOCAL_ANALYZE_GRAPH_TOOL_NAME,
+    AST_SEARCH_TOOL_NAME,
     STATIC_TOOL_NAMES.LOCAL_FETCH_CONTENT,
-    LSP_GET_SEMANTICS_TOOL_NAME,
+    LSP_SEARCH_TOOL_NAME,
     STATIC_TOOL_NAMES.PACKAGE_SEARCH,
   ].map((name, index) => [name, index])
 );
@@ -138,7 +138,11 @@ export function getDirectToolCategory(toolName: string): DirectToolCategory {
     return 'GitHub';
   }
 
-  if (toolName.startsWith('local') || toolName.startsWith('lsp')) {
+  if (
+    toolName.startsWith('local') ||
+    toolName.startsWith('lsp') ||
+    toolName.startsWith('ast')
+  ) {
     return 'Local Code';
   }
 

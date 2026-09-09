@@ -28,7 +28,7 @@ Ollama:     GATE → ROUTE → RUN → VERIFY → REPORT
 ## Install
 
 ```bash
-npx octocode skill install octocode-subagent --platform codex
+npx -y octocode skill install octocode-subagent
 ```
 
 ## Maintainer verification

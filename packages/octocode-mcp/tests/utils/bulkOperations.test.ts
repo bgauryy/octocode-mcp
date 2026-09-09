@@ -160,7 +160,10 @@ describe('executeBulkOperation', () => {
         { responseCharLength: 40 }
       );
       const firstStructured = firstPage.structuredContent as {
-        responsePagination?: { nextCharOffset?: number };
+        responsePagination?: {
+          nextCharOffset?: number;
+          snapshot?: string;
+        };
       };
       const nextOffset = firstStructured.responsePagination?.nextCharOffset;
 
@@ -173,7 +176,11 @@ describe('executeBulkOperation', () => {
         queries,
         processor,
         { toolName: TOOL_NAMES.GITHUB_SEARCH_REPOSITORIES },
-        { responseCharLength: 40, responseCharOffset: nextOffset }
+        {
+          responseCharLength: 40,
+          responseCharOffset: nextOffset,
+          responseSnapshot: firstStructured.responsePagination?.snapshot,
+        }
       );
       const secondText = getTextContent(secondPage.content);
       const secondBody = secondText.replace(/^# Response page [^\n]+\n/, '');

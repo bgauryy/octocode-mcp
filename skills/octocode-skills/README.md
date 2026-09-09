@@ -24,7 +24,7 @@ UNDERSTAND → DISCOVER → INSPECT → JUDGE → RECOMMEND → USER GATE → AC
 ## Install
 
 ```bash
-npx octocode skill install octocode-skills --platform codex
+npx -y octocode skill install octocode-skills
 ```
 
 ## Review a skill

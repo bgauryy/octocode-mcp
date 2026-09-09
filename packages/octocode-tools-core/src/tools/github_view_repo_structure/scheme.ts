@@ -10,12 +10,6 @@ import {
   createQueryShapeSchema,
   describeQuerySchema,
 } from '../../scheme/coreSchemas.js';
-import type {
-  ItemPagination,
-  ToolContinuation,
-} from '../../scheme/pagination.js';
-import type { BulkToolOutput } from '../../types/toolOutput.js';
-
 // Field set + descriptions (incl. includeSizes) come from octocode-core; the
 // runtime only relaxes the numeric/pagination bounds (clamp instead of reject).
 const queryOverrides = {
@@ -36,46 +30,3 @@ export const GitHubViewRepoStructureBulkQueryLocalSchema =
       queryOverrides
     )
   );
-
-// ---------------------------------------------------------------------------
-// Output TYPES — describes what the GitHub tree operation returns. No zod: the MCP
-// server registers no outputSchema. The upstream octocode-core output schema
-// described a different envelope (data.entries[]) than this tool actually emits
-// (results[].data.structure[]); this declares the real local envelope. Index
-// signatures mirror the original .passthrough() for additive runtime fields.
-// Shared envelope lives in types/toolOutput.ts.
-// ---------------------------------------------------------------------------
-
-export interface StructureDirEntry {
-  dir?: string;
-  files?: string[];
-  folders?: string[];
-  [key: string]: unknown;
-}
-
-export interface RepoStructureResultData {
-  structure?: StructureDirEntry[];
-  // Keyed by repo-relative file path; values are byte sizes (includeSizes).
-  fileSizes?: Record<string, number>;
-  summary?: {
-    totalFiles?: number;
-    totalFolders?: number;
-    truncated?: boolean;
-    [key: string]: unknown;
-  };
-  resolvedBranch?: string;
-  pagination?: ItemPagination;
-  next?: Record<string, ToolContinuation>;
-  warnings?: string[];
-  // status:"error" rows retain their ordered index plus the failure details.
-  owner?: string;
-  repo?: string;
-  path?: string;
-  error?: string;
-  statusCode?: number;
-  errorType?: string;
-  [key: string]: unknown;
-}
-
-export type GitHubViewRepoStructureOutputLocal =
-  BulkToolOutput<RepoStructureResultData>;

@@ -8,8 +8,9 @@ These terms describe engineering responsibilities, not emotions or sentience.
 
 ## Implemented workspace sensing
 
-`attend` returns `operational_state` and `regulation` in both compact and full
-output. No extra flag enables them. The state has `scope: workspace_observation`;
+`attend --details` returns `operational_state` and `regulation` in compact and full
+output. Task/file filters also select this observer. Default `attend` reads only
+registered peers. The state has `scope: workspace_observation`;
 it describes observations available to the selected workspace query.
 
 | State | Meaning | Limit |

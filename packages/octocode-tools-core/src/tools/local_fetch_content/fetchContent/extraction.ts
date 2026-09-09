@@ -48,7 +48,7 @@ function buildMatchExtractionState(
     result.matchingLines.length > 10
       ? ` (+${result.matchingLines.length - 10} more)`
       : '';
-  const matchSummary = `Found ${result.matchCount} occurrence${result.matchCount === 1 ? '' : 's'} of "${query.matchString}" on line${result.matchingLines.length === 1 ? '' : 's'} ${shownLines}${extraCount} — all shown as ${result.matchRanges.length} slice${result.matchRanges.length === 1 ? '' : 's'}, ±${contextLines} lines of context each; these lines are lineHint anchors for lspGetSemantics.`;
+  const matchSummary = `Found ${result.matchCount} occurrence${result.matchCount === 1 ? '' : 's'} of "${query.matchString}" on line${result.matchingLines.length === 1 ? '' : 's'} ${shownLines}${extraCount} — all shown as ${result.matchRanges.length} slice${result.matchRanges.length === 1 ? '' : 's'}, ±${contextLines} lines of context each; these lines are lineHint anchors for lspSearch.`;
   let actualStartLine: number | undefined;
   let actualEndLine: number | undefined;
   let matchRanges: Array<{ start: number; end: number }> | undefined;
@@ -61,7 +61,7 @@ function buildMatchExtractionState(
       actualEndLine = lastRange.end;
       // Always emit matchRanges — startLine/endLine include ±context lines,
       // so for a single match they do NOT pinpoint the matched line; without
-      // this the only structured anchor for lspGetSemantics lineHint is lost.
+      // this the only structured anchor for lspSearch lineHint is lost.
       matchRanges = result.matchRanges;
     }
   }

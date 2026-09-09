@@ -23,7 +23,6 @@ export interface PreFlightRunSuccess {
   run: RunRecord;
 }
 
-
 export interface PreFlightRunConflict {
   ok: false;
   conflict: true;
@@ -65,7 +64,6 @@ export interface ReleaseFileLockResult {
   updated_at: string;
   ambiguousRelease?: string;
 }
-
 
 export interface AcquireFileLockResult {
   ok: true;
@@ -168,34 +166,4 @@ export interface Scope {
   artifact: string | null;
   repo: string | null;
   ref: string | null;
-}
-
-// ─── Weakness clustering ──────────────────────────────────────────────────────
-
-export interface WeaknessCluster {
-  failure_signature: string;  // raw (may include |surface:Z suffix)
-  base_signature: string;     // without |surface:Z — use this for display/grouping
-  surfaces: string[];         // extracted surface values across all merged signatures
-  count: number;
-  avg_importance: number;
-  score: number;
-  memory_ids: string[];
-  representative: string;
-  labels: string[];
-}
-
-export interface MineWeaknessResult {
-  ok: true;
-  clusters: WeaknessCluster[];
-  total_signatures: number;
-  total_memories: number;
-}
-
-export interface MineWeaknessParams {
-  agentId?: string | null;
-  workspacePath?: string | null;
-  artifact?: string | null;
-  minCount?: number;
-  limit?: number;
-  cwd?: string;
 }

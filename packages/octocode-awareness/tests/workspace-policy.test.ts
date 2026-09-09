@@ -57,7 +57,12 @@ describe('workspace Awareness policy', () => {
     expect(hookCommandEnabled('guard', 'post-edit')).toBe(true);
     expect(hookCommandEnabled('guard', 'stop-verify')).toBe(true);
     expect(hookCommandEnabled('guard', 'notify-deliver')).toBe(false);
-    expect(hookCommandEnabled('coordination', 'notify-deliver')).toBe(false);
+    expect(hookCommandEnabled('coordination', 'notify-deliver')).toBe(true);
+    expect(hookCommandEnabled('coordination', 'post-edit')).toBe(true);
+    expect(hookCommandEnabled('coordination', 'session-end')).toBe(true);
+    expect(hookCommandEnabled('coordination', 'pre-edit')).toBe(false);
+    expect(hookCommandEnabled('coordination', 'stop-verify')).toBe(false);
+    expect(hookCommandEnabled('coordination', 'session-compact')).toBe(false);
     expect(hookCommandEnabled('full', 'notify-deliver')).toBe(true);
     expect(hookCommandEnabled('full', 'session-end')).toBe(true);
   });

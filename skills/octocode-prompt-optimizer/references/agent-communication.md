@@ -8,7 +8,7 @@ Load when agents delegate, hand off ownership, work asynchronously, or expose ca
 
 | Need | Use | Keep explicit |
 |---|---|---|
-| Focused internal subtask | Typed local call | Parent owns you conversation and final synthesis |
+| Focused internal subtask | Typed local call | Parent owns the user conversation and final synthesis | <!-- style-lint: ignore-line the-user -->
 | Specialist assists parent | Manager-as-tool | Input/output contract; parent retains control |
 | Specialist takes over | Handoff | Receiver, transfer condition, filtered context, and return/terminal rule |
 | Independent remote agent | A2A | Agent Card, declared capabilities, task lifecycle, artifacts, auth |

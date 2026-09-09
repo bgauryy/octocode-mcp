@@ -1,4 +1,4 @@
-// Worked examples for lspGetSemantics, keyed by `type` — shown by
+// Worked examples for lspSearch, keyed by `operation` — shown by
 // showToolHelp() since the LSP tool's flat display fields don't capture the
 // per-type field combinations (e.g. documentSymbols needs no symbolName).
 export const LSP_TYPE_EXAMPLES: Array<[string, Record<string, unknown>]> = [
@@ -6,7 +6,7 @@ export const LSP_TYPE_EXAMPLES: Array<[string, Record<string, unknown>]> = [
     'definition — jump to declaration',
     {
       uri: '/path/to/file.ts',
-      type: 'definition',
+      operation: 'definition',
       symbolName: 'myFunction',
       lineHint: 42,
     },
@@ -15,7 +15,7 @@ export const LSP_TYPE_EXAMPLES: Array<[string, Record<string, unknown>]> = [
     'references — all usages',
     {
       uri: '/path/to/file.ts',
-      type: 'references',
+      operation: 'references',
       symbolName: 'MyClass',
       lineHint: 10,
     },
@@ -24,7 +24,7 @@ export const LSP_TYPE_EXAMPLES: Array<[string, Record<string, unknown>]> = [
     'callers — who calls this function',
     {
       uri: '/path/to/file.ts',
-      type: 'callers',
+      operation: 'callers',
       symbolName: 'handleRequest',
       lineHint: 55,
     },
@@ -33,7 +33,7 @@ export const LSP_TYPE_EXAMPLES: Array<[string, Record<string, unknown>]> = [
     'callees — what this function calls',
     {
       uri: '/path/to/file.ts',
-      type: 'callees',
+      operation: 'callees',
       symbolName: 'handleRequest',
       lineHint: 55,
     },
@@ -42,20 +42,20 @@ export const LSP_TYPE_EXAMPLES: Array<[string, Record<string, unknown>]> = [
     'hover — type signature + docs',
     {
       uri: '/path/to/file.ts',
-      type: 'hover',
+      operation: 'hover',
       symbolName: 'myVar',
       lineHint: 20,
     },
   ],
   [
     'documentSymbols — file outline (no symbolName/lineHint needed)',
-    { uri: '/path/to/file.ts', type: 'documentSymbols' },
+    { uri: '/path/to/file.ts', operation: 'documentSymbols' },
   ],
   [
     'typeDefinition — where the type was declared',
     {
       uri: '/path/to/file.ts',
-      type: 'typeDefinition',
+      operation: 'typeDefinition',
       symbolName: 'myVar',
       lineHint: 20,
     },
@@ -64,7 +64,7 @@ export const LSP_TYPE_EXAMPLES: Array<[string, Record<string, unknown>]> = [
     'implementation — concrete impl of interface member',
     {
       uri: '/path/to/file.ts',
-      type: 'implementation',
+      operation: 'implementation',
       symbolName: 'render',
       lineHint: 88,
     },

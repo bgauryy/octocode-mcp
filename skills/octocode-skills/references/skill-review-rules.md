@@ -15,7 +15,7 @@ Load when interpreting or fixing review findings — after running `scripts/skil
 | `octocode-contract-stale` | use current public Octocode tool names and `octocode skill install/list/info` command forms |
 | `unused-file` | every shipped file is reachable from `SKILL.md`, `README.md`, or another used file; remove development-only metadata, probes, duplicates, and dead weight |
 
-## WARN codes → fix
+## WARN codes → assess
 
 | Code | Fix |
 |------|-----|
@@ -23,18 +23,18 @@ Load when interpreting or fixing review findings — after running `scripts/skil
 | `lobby-long` | keep `SKILL.md` lean; move depth into one-concept refs |
 | `readme-missing` | add `README.md`: overview, capabilities, how it works, install |
 | `reference-h1` | one short H1 per reference |
-| `reference-long` | one concept per file; split and cross-link |
+| `reference-long` | inspect for mixed concepts or duplication; retain a coherent procedure when splitting adds navigation cost |
 | `orphan-reference` | route it from `SKILL.md` or another reference, or delete it |
-| `lobby-reference-unlisted` | name the reference in `SKILL.md` with when to read it |
-| `lobby-script-unlisted` | name the runnable script in `SKILL.md` with when and how to run it |
+| `lobby-reference-unlisted` | confirm a clear route from the lobby or an owned index; add a missing route without duplicating the catalog |
+| `lobby-script-unlisted` | confirm an agent-facing usage route; internal helpers can remain behind a routed command |
 | `lobby-workflow-missing` | show the workflow on its own line in `SKILL.md` — a `Flow:` line or a `## Workflow` heading, not trailing mid-sentence |
 | `script-unreferenced` | a library nothing imports: import it, name it, or drop it |
 | `route-condition` | state when or why on the same line as the ref or script |
 | `reference-entry-cue` | open the chunk with `Load when …` and `Why:` |
-| `reference-dead-end` | end with the next hop, or say the step ends here |
+| `reference-dead-end` | add a next hop when execution depends on it; a complete reference needs no ceremonial closing line |
 | `flow-phase-unrouted` | name each flow phase in a route or gate, or drop it from the flow |
 
-Navigation codes treat the skill as a map. `SKILL.md` lists every reference, runnable script, workflow, and usage condition. Each chunk declares its entry and points onward. Audit trails, templates, and fixtures skip entry/exit cues. A concrete directory route includes its files; write schematic paths with a placeholder such as `scripts/<hook-directory>/` so the reviewer does not require that example to ship.
+Navigation warnings are review candidates, not mandatory formatting. Check reachability and use conditions; retain clear nested routes and complete references. Audit trails, templates, and fixtures skip entry/exit cues. A concrete directory route includes its files; write schematic paths with a placeholder such as `scripts/<hook-directory>/` so the reviewer does not require that example to ship.
 
 ## Judgment checks the script cannot make
 
@@ -47,4 +47,4 @@ Navigation codes treat the skill as a map. `SKILL.md` lists every reference, run
 | Portability | core commands run in a single-folder copy; optional integrations declare their dependency and setup, and pass documented tests with it absent/present |
 | Workspace artifacts | lobby routes generated files under `<workspace>/.octocode/`, distinguishes requested source mutations, and forbids user-level fallback |
 
-Key limits: references stay inside the skill; every shipped file is used; each `references/*.md` ≤50 lines with one short H1; every reference and runnable script is named in the lobby. Next: when re-running the loop load `references/skill-review.md`; for design rationale load `references/skill-anatomy.md`. <!-- style-lint: ignore-line passive-voice -->
+Required: internal dependencies resolve and shipped files have a purpose. Length and lobby-listing warnings need judgment; explain retained warnings rather than expanding or fragmenting instructions mechanically. Next: use `references/skill-review.md` to rerun checks and `references/skill-anatomy.md` for design guidance.

@@ -66,7 +66,12 @@ describe('core-driven MCP tool registration', () => {
       const queries = [{ operation: 'code', keywords: ['needle'] }];
       await mcp.callTool(
         GITHUB_SEARCH_TOOL_NAME,
-        { queries, responseCharOffset: 7, responseCharLength: 101 },
+        {
+          queries,
+          responseCharOffset: 7,
+          responseCharLength: 101,
+          responseSnapshot: 'response-v1:remote',
+        },
         { authInfo, sessionId: 'session-123', signal: controller.signal }
       );
 
@@ -75,6 +80,7 @@ describe('core-driven MCP tool registration', () => {
         queries,
         responseCharOffset: 7,
         responseCharLength: 101,
+        responseSnapshot: 'response-v1:remote',
         authInfo,
         sessionId: 'session-123',
       });
@@ -116,7 +122,12 @@ describe('core-driven MCP tool registration', () => {
 
       await mcp.callTool(
         basicTool.name,
-        { queries, responseCharOffset: 3, responseCharLength: 50 },
+        {
+          queries,
+          responseCharOffset: 3,
+          responseCharLength: 50,
+          responseSnapshot: 'response-v1:local',
+        },
         { signal: controller.signal }
       );
 
@@ -125,6 +136,7 @@ describe('core-driven MCP tool registration', () => {
         queries,
         responseCharOffset: 3,
         responseCharLength: 50,
+        responseSnapshot: 'response-v1:local',
       });
       expect(receivedArgs?.signal).toBeInstanceOf(AbortSignal);
       expect(receivedArgs?.signal?.aborted).toBe(false);
