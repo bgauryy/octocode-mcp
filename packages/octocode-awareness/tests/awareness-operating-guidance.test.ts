@@ -43,15 +43,15 @@ describe('Awareness operating guidance', () => {
     const skill = read('SKILL.md');
     expect(skill).toContain('agent register');
     expect(skill).toContain('references/configuration.md');
-    expect(skill).toContain('route by exact agent ID');
+    expect(skill).toMatch(/route by exact agent ID/i);
   });
 
   it('supports agents with and without native delivery while retaining physical ownership', () => {
     for (const policy of [EXTERNAL_AGENT_AWARENESS_PROMPT, read('SKILL.md')]) {
-      expect(policy).toContain('same physical SQLite file');
+      expect(policy).toMatch(/(?:same|one) physical SQLite file/);
       expect(policy).toContain('linked Git worktrees');
       expect(policy).toContain('own checkout');
-      expect(policy).toMatch(/Without (?:native delivery or installed hooks|either), [^.]*signal list/);
+      expect(policy).toMatch(/Without (?:native delivery or installed hooks|either|delivery), [^.]*signal list/);
       expect(policy).toContain('expected reply');
     }
     expect(EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS).toContain('locks, recovery and verification tied to the physical checkout');
@@ -61,12 +61,12 @@ describe('Awareness operating guidance', () => {
 
   it('keeps the short skill actionable and delegates complete recipes to supported CLI routes', () => {
     const skill = read('SKILL.md');
-    expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(6_400);
+    expect(Buffer.byteLength(skill)).toBeLessThanOrEqual(5_700);
     expect(skill).toContain('distinct stable ID');
-    expect(skill).toContain('same physical SQLite file');
-    expect(skill).toContain('Audit owned tracked work after the last artifact or worker write');
+    expect(skill).toMatch(/(?:same|one) physical SQLite file/);
+    expect(skill).toContain('Audit owned work after final writes');
     expect(skill).toContain('signal reply --in-reply-to <signal-id>');
-    expect(skill).toContain('never publish a fake reply');
+    expect(skill).toContain('preserving the thread');
     expect(skill).toContain('references/coordination-protocol.md');
     const protocol = read('references/coordination-protocol.md');
     expect(protocol).toContain('--db "$AWARENESS_DB"');

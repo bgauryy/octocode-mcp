@@ -52,7 +52,7 @@ Use the host facade (Pi: `awareness` list/describe/call) or CLI. Describe an unf
 | Reusable learning | Targeted `memory recall`; prefer a supplied ID/digest. |
 | File-byte recovery | Explicit `history`; apply only the exact authorized preview ID. |
 
-For tracked work, run the check, end/submit to PENDING, then `verify mark` from its observed result. Unrun checks stay PENDING. Audit owned work after final writes, settle or disclose debt, release owned leases. Details: [tracked work](references/agent-cheatsheet.md).
+For tracked work, run the check, end/submit to PENDING, then `verify mark` from its observed result. Unrun checks stay PENDING. Audit owned work after final writes with `verify audit`, settle or disclose debt, release owned leases. Details: [tracked work](references/agent-cheatsheet.md).
 
 ## Remember selectively
 
