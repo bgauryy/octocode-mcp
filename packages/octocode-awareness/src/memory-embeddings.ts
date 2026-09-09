@@ -5,6 +5,15 @@ import type { MemoryRecord } from './types/identity-memory.js';
 import { attachMemoryReferences } from './memory-search.js';
 import { cosineSimilarity } from '@octocodeai/agent-contracts/embed';
 
+export const EMBEDDING_CANDIDATE_LIMIT = 2_000;
+
+export function embeddingCandidateCount(db: DatabaseSync, model: string, states: string[]): number {
+  if (states.length === 0) return 0;
+  return Number(db.prepare(`SELECT COUNT(*) AS count FROM awareness_memories
+    WHERE embedding IS NOT NULL AND embedding_model = ? AND state IN (${states.map(() => '?').join(',')})`)
+    .get(model, ...states)?.['count'] ?? 0);
+}
+
 // ─── Embedding storage + cosine search (ARCH-6) ─────────────────────────────
 
 /**
@@ -71,7 +80,7 @@ export function searchByEmbedding(
     `SELECT memory_id, embedding, embedding_model FROM awareness_memories
      WHERE ${conditions.join(' AND ')}
      ORDER BY COALESCE(last_accessed_at, created_at) DESC
-     LIMIT 2000`
+     LIMIT ${EMBEDDING_CANDIDATE_LIMIT}`
   ).all(...binds) as unknown as EmbRow[];
 
   const results: Array<{ memory_id: string; similarity: number }> = [];

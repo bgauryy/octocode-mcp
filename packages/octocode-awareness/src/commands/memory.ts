@@ -133,7 +133,9 @@ export function cmdGetMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string,
     ...recallMemory(db, recallParams, Boolean(args['semantic'])),
   };
   if (opts.compact && payload['count'] === 0) {
-    return emit({ count: 0, memories: [] }, 0, opts);
+    return emit({ count: 0, memories: [],
+      ...(payload['partial'] ? { partial: true, partialReasons: payload['partialReasons'], terminalLimit: payload['terminalLimit'] } : {}),
+    }, 0, opts);
   }
   if (!Boolean(args['full'])) {
     const memories = (payload['memories'] ?? []) as Array<Record<string, unknown>>;

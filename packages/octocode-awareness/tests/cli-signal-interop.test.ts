@@ -54,6 +54,17 @@ describe('shared database CLI and embedded host communication', () => {
     expect(cli(['signal', 'list', '--workspace', root, '--agent-id', 'pi']).signals).toHaveLength(0);
   });
 
+  it('renders signal action hints as executable CLI argv while API keeps operation requests', () => {
+    const sent = store.sendMessage({ fromAgentId: 'sender', toAgentId: 'reader', text: 'Please review' });
+    const exact = cli(['signal', 'list', '--workspace', root, '--agent-id', 'reader', '--signal-id', sent.messageId]);
+    expect(exact.actions.ack.command).toMatchObject({ name: 'signal ack' });
+    expect(exact.actions.ack.command.args).toEqual(expect.arrayContaining(['--agent-id', 'reader', '--signal-id', sent.messageId]));
+    expect(exact.actions.ack.command.args).not.toContain('--workspace');
+    expect(exact.actions.reply[0].command).toMatchObject({ name: 'signal reply' });
+    expect(exact.actions.reply[0].draft).toBe(true);
+    expect(exact.actions.reply[0].command.args).toEqual(expect.arrayContaining(['--in-reply-to', sent.messageId, '--subject', 'Reply to: message']));
+  });
+
   it('keeps workspaces separate and follows CLI and API continuations without losing messages', () => {
     const otherWorkspace = join(root, 'other');
     mkdirSync(otherWorkspace);

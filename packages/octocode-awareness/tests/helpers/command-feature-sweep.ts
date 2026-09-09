@@ -127,6 +127,7 @@ export async function runCommandFeatureSweep({ call, workspace, tempRoot, artifa
     const stale = fixture[2] === 'eval:stale:release';
     await run('memory store-verified', {
       label: fixture[0], text: fixture[1], source_digest: fixture[2], scope: fixture[2].includes('artifact') ? 'artifact' : 'project',
+      ...(fixture[2].includes('artifact') ? { artifact: 'fixture-artifact' } : {}),
       verified_at: stale ? '2026-07-01T00:00:00.000Z' : '2026-08-26T00:00:00.000Z',
       valid_until: stale ? '2026-08-01T00:00:00.000Z' : '2026-09-30T00:00:00.000Z', importance: 8,
     });

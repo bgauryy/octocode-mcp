@@ -57,6 +57,26 @@ to inspect peer overlap; mutations continue to enforce the host's actor binding.
 exact form cannot be combined with `query`. Source digest, scope, and expiry checks
 still apply to an exact pointer.
 
+Verified-memory reads return a page: `memories`, `partial`, `partialReasons`, and
+an executable `next.call` when another page is available. Consumers must read
+`payload.memories`; the response is no longer a bare array. Keep the returned
+filters and observation time when following the call. Bounded semantic ranking
+must expose its terminal limit rather than imply exhaustive evidence coverage.
+If a peer changes the result set between pages, `snapshot_changed` returns a
+restart call. Discard the old page chain before restarting; do not combine it
+with the new revision.
+
+Use verified memory for selected file reasoning: concise `text`, a `why` or
+`constraint`, source digest and validity, optional file/area, and a real `artifact`
+identifier for artifact scope. An optional `history_ref` links existing immutable
+evidence; storing a note does not capture file bytes. Exact duplicate stores reuse
+their record, while explicit supersession replaces obsolete knowledge. Discover
+the current field schema before constructing an unfamiliar request.
+The complete stored evidence packet has an 8192-byte budget. Keep one reusable
+reason in a record and link detailed evidence instead of copying a file or dialogue.
+Verified recall also limits its memory array to 16 KiB; the executable continuation
+advances by the records actually returned, even when fewer than `limit` fit.
+
 ## Results and continuations
 
 `AwarenessCommandResult` returns `payload` and `exitCode`, with optional `text`, `diagnostics`, and `cancelled`. Read the command's payload as well as its exit code:
@@ -72,6 +92,13 @@ still apply to an exact pointer.
 Bounded results expose partial state and an executable continuation where another page or read is available. API continuations contain `{ command, params }` requests instead of shell argument arrays. For default presence attendance, the next request is `payload.next.list.command`. Execute it with the same trusted context. Other routes can place requests under their own `next` fields. A terminal-limit diagnostic means the result cannot be extended by that route; do not treat the bounded packet as complete.
 
 History API continuations use `next.call: { command, params }`; the CLI adapter keeps its `next.argv` form. Follow the returned call with the same database and workspace context.
+
+Signal lists expose a page-level acknowledgement action with exact IDs; explicit
+signal reads can expose reply drafts. API actions use `{ command, params }`; CLI
+actions supply argv. Fill a draft with a substantive answer before executing it.
+These are suggestions, not automatically performed mutations. Restore apply
+returns `undo_preview`, targeting the durable checkpoint's available after image;
+execute that preview request before deciding whether to authorize another apply.
 
 Detailed attendance is selected by `details`, `query`, `file`, `artifact`, `repo`,
 `ref`, `include_bodies`, `explain_organ`, or `revision`; `changes` selects the
@@ -91,7 +118,7 @@ The API never launches the Awareness binary, captures process stdout, changes cw
 
 `EXTERNAL_AGENT_AWARENESS_PROMPT` owns the short standing policy. `AWARENESS_PI_HOST_PROMPT` is an alias of the same text. Add it once to system instructions; add host bindings separately. CLI `instructions export` returns the same policy.
 
-The full `EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS` and `getExternalAgentAwarenessGuide()` are on-demand references, also available through `guide`. Avoid placing the complete guide or command catalog in every turn. The policy starts with one peer briefing, useful communication, and conditional feature discovery. Record verified reusable learning after substantial work or a meaningful event.
+The full `EXTERNAL_AGENT_AWARENESS_INSTRUCTIONS` and `getExternalAgentAwarenessGuide()` are on-demand references, also available through `guide`. Avoid placing the complete guide or command catalog in every turn. The policy starts with one peer briefing, useful communication, and conditional feature discovery. Store learning only when a verified reason or constraint changes a future decision.
 
 The standing policy directs agents to the tracked-work recipe before using work,
 task, or verification features. Exact close/submit, verification, and audit procedures

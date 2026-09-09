@@ -1,7 +1,8 @@
 import type { DatabaseSync } from 'node:sqlite';
 import { getMemory } from './memory-recall.js';
 import { bumpAccess } from './memory-write.js';
-import { searchByEmbedding, storeEmbedding } from './memory-embeddings.js';
+import { searchByEmbedding, storeEmbedding, embeddingCandidateCount, EMBEDDING_CANDIDATE_LIMIT } from './memory-embeddings.js';
+import { memoryRecallBounds } from './memory-limits.js';
 import { resolveEmbedCommand, runHostEmbedder } from '@octocodeai/agent-contracts/embed';
 import type { GetMemoryParams } from './types/identity-memory.js';
 
@@ -57,6 +58,7 @@ export function recallMemory(
   // actually gets returned, to avoid double-counting recall hits.
   const baseParams: GetMemoryParams = useSemantic ? { ...recallParams, recordAccess: false } : recallParams;
   const payload: Record<string, unknown> = {};
+  let semanticCandidateLimited = false;
 
   if (useSemantic) {
     const embedCmd = resolveEmbedCommand();
@@ -74,10 +76,11 @@ export function recallMemory(
         const { embedding, model } = runHostEmbedder(queryText, { command: embedCmd });
         const limit = Math.max(1, Number(recallParams.limit ?? 3) || 3);
         const semanticStates = recallParams.states ?? (recallParams.asOf ? ['ACTIVE', 'SUPERSEDED'] : ['ACTIVE']);
+        semanticCandidateLimited = embeddingCandidateCount(db, model, semanticStates) > EMBEDDING_CANDIDATE_LIMIT;
         // Rank the complete bounded embedding pool before final top-k. Applying
         // workspace/provenance filters after a global top-k can otherwise hide
         // valid in-scope results behind better out-of-scope matches.
-        const hits = searchByEmbedding(db, embedding, 2_000, 0.0, model, semanticStates);
+        const hits = searchByEmbedding(db, embedding, EMBEDDING_CANDIDATE_LIMIT, 0.0, model, semanticStates);
         if (hits.length === 0) {
           payload['warnings'] = [
             `OCTOCODE_EMBED_CMD ran (model=${model}) but no stored embeddings matched; results use lexical FTS + decay. Record memories while OCTOCODE_EMBED_CMD is set to populate vectors.`,
@@ -121,6 +124,7 @@ export function recallMemory(
             payload['count'] = returned.length;
             payload['mode'] = 'semantic';
             payload['embedding_model'] = model;
+            Object.assign(payload, memoryRecallBounds(semanticCandidateLimited, ranked.length > limit, EMBEDDING_CANDIDATE_LIMIT, limit));
           }
         }
       } catch (err) {
@@ -135,6 +139,7 @@ export function recallMemory(
     // Lexical run — the direct path without semantic, and the fallback for
     // every non-success semantic branch above (warnings already in payload).
     Object.assign(payload, getMemory(db, baseParams));
+    if (semanticCandidateLimited) Object.assign(payload, memoryRecallBounds(true, payload['partial'] === true, EMBEDDING_CANDIDATE_LIMIT, Number(recallParams.limit ?? 3)));
   }
   if (useSemantic && payload['mode'] !== 'semantic' && recallParams.recordAccess !== false) {
     const fallback = (payload['memories'] ?? []) as Array<{ memory_id?: string }>;

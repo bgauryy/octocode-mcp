@@ -17,10 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { formatExternalAgentCoordinationContext } from '@octocodeai/octocode-awareness';
 import { getInstallSource } from '../../assets.js';
-import {
-  extensionTmpRoot,
-  extensionWorkspaceRoot,
-} from '../../extension-paths.js';
+import { extensionTmpRoot, extensionWorkspaceRoot } from '../../extension-paths.js';
 import { inspectWorkerAwarenessAutomatically } from '../awareness-worker-audit.js';
 import { getRandomAgentName } from '../../agentNames.js';
 import {
@@ -75,6 +72,7 @@ import {
   previewMessage,
 } from './ledger.js';
 import { killAgent, syncWorkerRegistry, removePromptFiles } from './kill.js';
+import { buildAwarenessContext } from '../awareness-context.js';
 
 // ─── UI callback wiring ────────────────────────────────────────────────────────
 
@@ -761,6 +759,7 @@ export function spawnRpcAgent(
   }
   const peerIds = collectPeerAwarenessIds(id);
   const awarenessWorkspace = cwd;
+  const awarenessDatabase = buildAwarenessContext({ cwd: requestedCwd }).database;
   const parentAwarenessAgentId =
     process.env[AWARENESS_AGENT_ENV_VAR]?.trim() || 'pi-agent';
   const handback = prepareHandbackPath(ctx?.cwd ?? requestedCwd, id);
@@ -785,6 +784,7 @@ export function spawnRpcAgent(
         ...process.env,
         [SUBAGENT_ENV_VAR]: '1',
         [AWARENESS_AGENT_ENV_VAR]: awarenessAgentId,
+        OCTOCODE_AWARENESS_DB: awarenessDatabase,
         // getPiInvocation() re-executes process.argv[1], which for any octocode-agent
         // process is bin/octocode-agent.mjs. Left unset, a worker spawned from a
         // parent running in the default SDK-embed mode would inherit that mode and
@@ -841,6 +841,7 @@ export function spawnRpcAgent(
     worktree,
     awarenessAgentId,
     awarenessWorkspace,
+    awarenessDatabase,
   };
   pushLedgerEvent(record, 'spawned', `spawned ${name}`, { awarenessAgentId });
   if (record.worktree)

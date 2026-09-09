@@ -326,7 +326,7 @@ describe.sequential('real Pi runtime contract', () => {
       expect(providerPrompts[0]).toContain(path.resolve(workspace));
       expect(providerPrompts[0]).toContain(octocodeHome);
       const toolResultsBeforeCompact = JSON.stringify(created.session.sessionManager.getEntries());
-      expect(toolResultsBeforeCompact).toContain('Octocode Awareness');
+      expect(toolResultsBeforeCompact).toContain('# Awareness');
       expect(toolResultsBeforeCompact).toContain('verify audit');
       expect(lifecycle).toEqual(expect.arrayContaining(['before_agent_start', 'turn_start', 'turn_end']));
       expect(usages).toContainEqual(expect.objectContaining({ phase: 'turn_end', contextWindow: 8_192 }));

@@ -1,5 +1,6 @@
 import type { MemoryItem } from '@octocodeai/agent-contracts/entities';
 import { openAwarenessStore } from './open.js';
+import type { MemoryRecallPage } from './coordination-core.js';
 
 export const EXTERNAL_MEMORY_ACTIONS = ['recall', 'record', 'forget', 'review', 'suggest'] as const;
 export const EXTERNAL_MEMORY_RECALL_MODES = ['lexical', 'semantic', 'recent', 'tagged'] as const;
@@ -37,6 +38,10 @@ export interface ExternalMemoryResult {
   candidate?: Omit<ExternalMemoryParams, 'changedFiles'>;
   memoryId?: string;
   deleted?: number;
+  partial?: boolean;
+  partialReasons?: MemoryRecallPage['partialReasons'];
+  terminalLimit?: MemoryRecallPage['terminalLimit'];
+  warnings?: string[];
 }
 
 function validateObservation(observation: string): string | null {
@@ -132,19 +137,29 @@ export function executeExternalMemoryAction(input: { workspace: string; params: 
     }
     const mode = params.mode ?? 'lexical';
     const query = params.query?.trim() || (mode === 'tagged' ? params.tags?.[0]?.trim() : undefined);
-    const items = aw.recallMemory({
+    const page = aw.recallMemory({
       query: params.action === 'review' ? params.query?.trim() : mode === 'recent' ? undefined : query,
       label: params.label?.trim(),
       limit: limit(params.limit),
       semantic: params.action === 'recall' && mode === 'semantic',
     });
+    const items = page.memories;
     if (params.action === 'review') {
       const candidates = review(items);
-      return { action: 'review', summary: `Reviewed ${items.length} memor${items.length === 1 ? 'y' : 'ies'}; found ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} for cleanup or rewrite.`, result: items, count: items.length, candidates };
+      return { action: 'review', summary: `Reviewed ${items.length} memor${items.length === 1 ? 'y' : 'ies'}; found ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} for cleanup or rewrite.`, result: items, count: items.length, candidates, ...pageMetadata(page) };
     }
     const scope = mode === 'recent' ? ' recent' : query ? ` for "${query}"` : '';
-    return { action: 'recall', summary: `Recalled ${items.length}${scope} memor${items.length === 1 ? 'y' : 'ies'}.`, result: items, count: items.length };
+    return { action: 'recall', summary: `Recalled ${items.length}${scope} memor${items.length === 1 ? 'y' : 'ies'}.`, result: items, count: items.length, ...pageMetadata(page) };
   } finally {
     aw.close();
   }
+}
+
+function pageMetadata(page: MemoryRecallPage): Pick<ExternalMemoryResult, 'partial' | 'partialReasons' | 'terminalLimit' | 'warnings'> {
+  return {
+    partial: page.partial,
+    partialReasons: page.partialReasons,
+    ...(page.terminalLimit ? { terminalLimit: page.terminalLimit } : {}),
+    ...(page.warnings?.length ? { warnings: page.warnings } : {}),
+  };
 }

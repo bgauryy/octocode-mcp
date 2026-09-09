@@ -101,8 +101,8 @@ describe('AwarenessStore cross-workspace isolation in an explicit Awareness file
 
     expect(a.listPlans().map((p) => p.title)).toEqual(['plan-a']);
     expect(b.listPlans().map((p) => p.title)).toEqual(['plan-b']);
-    expect(a.recallMemory({}).map((m) => m.text)).toEqual(['mem-a']);
-    expect(b.recallMemory({})).toHaveLength(0);
+    expect(a.recallMemory({}).memories.map((m) => m.text)).toEqual(['mem-a']);
+    expect(b.recallMemory({}).memories).toHaveLength(0);
     expect(b.listHandoffs()).toHaveLength(0);
     expect(a.status().plans).toBe(1);
     expect(b.status().plans).toBe(1);

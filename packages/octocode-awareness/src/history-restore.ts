@@ -79,10 +79,18 @@ function publicSnapshot(snapshot: WorkspaceFileSnapshot) {
   if (snapshot.status === 'captured') return { path: snapshot.path, status: snapshot.status, digest: snapshot.digest, size: snapshot.size, mode: snapshot.mode };
   return snapshot;
 }
+function undoPreviewCall(workspace: string, agentId: string, operationId: string | null) {
+  return operationId ? {
+    command: 'history restore-preview' as const,
+    params: { workspace, agent_id: agentId, operation_id: operationId, side: 'after' as const },
+  } : undefined;
+}
 function appliedReceipt(preview: ReturnType<typeof historyEntitySchemas.local_history_restore.parse>) {
   const stored = preview.result_json ? JSON.parse(preview.result_json) as { results?: unknown[]; verification_run_id?: string } : {};
+  const undoPreview = undoPreviewCall(preview.workspace_path, preview.agent_id, preview.undo_operation_id);
   return { ok: true as const, status: 'applied' as const, preview_id: preview.preview_id, undo_operation_id: preview.undo_operation_id,
-    verification_run_id: stored.verification_run_id ?? preview.lease_run_id, results: stored.results ?? [] };
+    verification_run_id: stored.verification_run_id ?? preview.lease_run_id, results: stored.results ?? [],
+    ...(undoPreview ? { undo_preview: undoPreview } : {}) };
 }
 
 export async function applyHistoryRestore(ctx: HistoryContext, input: HistoryRestoreApplyInput) {
@@ -211,7 +219,8 @@ export async function applyHistoryRestore(ctx: HistoryContext, input: HistoryRes
     ctx.db.prepare("UPDATE local_history_restores SET status='applied',result_json=? WHERE preview_id=?")
       .run(JSON.stringify({ results, verification_run_id: leaseRunId }), preview.preview_id);
     return { ok: true as const, status: 'applied' as const, preview_id: preview.preview_id, undo_operation_id: undo.operation.operation_id,
-      verification_run_id: leaseRunId, results };
+      verification_run_id: leaseRunId, results,
+      undo_preview: undoPreviewCall(ctx.workspace, input.agent_id, undo.operation.operation_id) };
   } catch (error) {
     const status = results.length > 0 ? 'partial' : error instanceof Error && /stale restore preview/i.test(error.message) ? 'conflict' : 'failed';
     const message = error instanceof Error ? error.message : String(error);
@@ -219,7 +228,8 @@ export async function applyHistoryRestore(ctx: HistoryContext, input: HistoryRes
       .run(status, JSON.stringify({ results, error: message }), preview.preview_id);
     releaseLease('FAILED');
     return { ok: false as const, status, preview_id: preview.preview_id, undo_operation_id: undo?.operation.operation_id,
-      verification_run_id: leaseRunId, results, error: message };
+      verification_run_id: leaseRunId, results, error: message,
+      ...(undo ? { undo_preview: undoPreviewCall(ctx.workspace, input.agent_id, undo.operation.operation_id) } : {}) };
   }
 }
 

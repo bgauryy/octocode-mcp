@@ -135,7 +135,11 @@ The 14 support tools and guarded `bash` override form the direct palette. The na
 `awareness` facade handles catalog discovery and host-bound calls through imported `executeAwarenessCommand`. Checkpoints, history hooks and optional scheduled checks use the same API. The CLI is an external-host adapter. Native Pi registry, event delivery/policy,
 mutation guards and plan UI remain active.
 External CLI agents can participate through the same physical SQLite file and
-normalized workspace, using distinct stable IDs. See [the agent flow](docs/AWARENESS_AGENT_FLOW.md).
+normalized workspace, using distinct stable IDs. Workers retain their physical
+worktree for file/lock ownership while inheriting the parent `OCTOCODE_AWARENESS_DB`,
+so native calls, CLI fallback, guards, registry and delivery share one ledger without
+database copies. Awareness list continuations use executable `queries[]` envelopes;
+completed commands with oversized output do not auto-replay mutations. See [the agent flow](docs/AWARENESS_AGENT_FLOW.md).
 
 ### 3.3 MCP research tools (10 via MCPTool → octocode-mcp server)
 

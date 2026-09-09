@@ -32,7 +32,7 @@ export function writeCommandPayload(payload: unknown, compact = false): void {
   else process.stdout.write(`${JSON.stringify(payload, null, compact ? 0 : 2)}\n`);
 }
 
-export interface EmitOptions { compact?: boolean }
+export interface EmitOptions { compact?: boolean; cli?: boolean }
 
 function compactValue(value: unknown, key?: string): unknown {
   // Unknown identity labels are meaningful even in compact peer discovery.

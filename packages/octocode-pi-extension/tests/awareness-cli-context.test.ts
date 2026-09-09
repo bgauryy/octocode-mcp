@@ -11,6 +11,7 @@ import {
   renderAwarenessCliContext,
 } from '../src/tools/awareness-cli-context.js';
 import { getAwarenessAgentIdentity } from '../src/tools/awareness-shared.js';
+import { buildAwarenessContext } from '../src/tools/awareness-context.js';
 
 beforeEach(() => {
   vi.stubEnv('OCTOCODE_AGENT_NAME', undefined);
@@ -58,6 +59,13 @@ describe('canonical Awareness CLI in Pi', () => {
     expect(renderAwarenessCliContext()).toContain(
       'Persistent storage is disabled'
     );
+  });
+
+  it('honors the explicit inherited database for worktree native calls', () => {
+    vi.stubEnv('OCTOCODE_AWARENESS_DB', '/parent/.octocode/awareness.sqlite3');
+    const context = buildAwarenessContext({ cwd: '/worktree' } as PiContext);
+    expect(context.workspace).toBe('/worktree');
+    expect(context.database).toBe('/parent/.octocode/awareness.sqlite3');
   });
 
   it('exports the native identity and actual worker provider despite stale inherited labels', () => {

@@ -7,16 +7,8 @@ import {
 } from '@octocodeai/octocode-awareness';
 import type { ApprovalClass } from '@octocodeai/agent-contracts/protocols';
 import { z } from 'zod';
-import type {
-  PiContext,
-  PiInstance,
-  PiTheme,
-  ToolCallResult,
-} from '../types.js';
-import {
-  DIRECT_TOOL_DESCRIPTIONS,
-  type registerUniqueTool,
-} from './octocode-tools.js';
+import type { PiContext, PiInstance, PiTheme, ToolCallResult } from '../types.js';
+import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import {
   buildQueryEnvelopeSchema,
   executeQueryBatch,
@@ -162,7 +154,8 @@ function nativeContinuations(value: unknown): unknown {
 
 function boundedOutput(
   raw: string,
-  retry?: Record<string, unknown>
+  retry?: Record<string, unknown>,
+  completedWrite = false
 ): { text: string; totalChars: number; truncated: boolean } {
   if (raw.length <= AWARENESS_OUTPUT_MAX_CHARS)
     return { text: raw, totalChars: raw.length, truncated: false };
@@ -177,7 +170,10 @@ function boundedOutput(
         limit: AWARENESS_OUTPUT_MAX_CHARS,
       },
       ...(retry ? { next: { retry } } : {}),
-      hint: 'The response exceeds the native output limit. Describe this command and narrow its limit, filters or detail options before retrying. This is not a complete result page.',
+      ...(completedWrite ? { commandCompleted: true } : {}),
+      hint: completedWrite
+        ? 'The command completed, but its response exceeds the native output limit. Do not repeat the write to recover output; inspect the resulting state with a read command.'
+        : 'The response exceeds the native output limit. Describe this command and narrow its limit, filters or detail options before retrying. This is not a complete result page.',
     }),
     totalChars: raw.length,
     truncated: true,
@@ -231,14 +227,15 @@ function listCommands(query: Record<string, unknown>): ToolCallResult {
   const next = hasMore
     ? {
         tool: 'awareness',
-        query: {
+        queries: [{
+          reasoning: 'Continue listing Awareness commands',
           action: 'list',
           ...(noun ? { noun } : {}),
           ...(effect ? { effect } : {}),
           ...(piMode ? { piMode } : {}),
           page: page + 1,
           pageSize,
-        },
+        }],
       }
     : undefined;
   const payload = {
@@ -377,6 +374,7 @@ async function callCommand(
   const diagnostics = execution.diagnostics?.join('\n');
   const narrower = { ...params, limit: 1 };
   const canRetry =
+    descriptor.effect === 'read' &&
     rawText.length > AWARENESS_OUTPUT_MAX_CHARS &&
     params['limit'] !== 1 &&
     Object.hasOwn(
@@ -399,7 +397,8 @@ async function callCommand(
             },
           ],
         }
-      : undefined
+      : undefined,
+    descriptor.effect !== 'read' && execution.exitCode === 0 && !execution.cancelled
   );
   const boundedStderr = diagnostics ? boundedOutput(diagnostics) : undefined;
   const validReportExit =

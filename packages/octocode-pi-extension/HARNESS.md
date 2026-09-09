@@ -222,7 +222,10 @@ shared plan projection, mutation guards/presence and peer-event delivery/policy.
 Model-facing signals, explicit locks, memory, verification, history, bookkeeping,
 and maintenance use the single `awareness` list/describe/call facade, importing the package API directly. Internal hook callbacks stay with the host lifecycle; setup and instruction export use the native API. The stable Awareness runtime segment supplies the physical SQLite path, normalized workspace, and identity; native execution needs no CLI runner.
 External CLI agents communicate through that same database/workspace with their own
-distinct IDs. Native run/task IDs and receipts are reused. Pi does not install shell
+distinct IDs. Workers keep their physical worktree as workspace, while the inherited
+`OCTOCODE_AWARENESS_DB` selects the parent ledger for native calls, CLI fallback,
+guards, registry and delivery; no database copies are made. Native run/task IDs and
+receipts are reused. Pi does not install shell
 hooks; its native events remain the lifecycle owner. See [agent flow](docs/AWARENESS_AGENT_FLOW.md).
 
 Each Pi session also writes one version 2 contract across `manifest.json`, `session.json`, `plan/index.json`, `tasks/index.json`, and `backlog/index.json`, plus `memory.md` and `audit.md`, under the safe flat session root. These files expose stable session/plan/task/backlog IDs for inspection and handoff; they are projections, not a second coordination database. With `storage.mode=memory`, filesystem projections remain available, durable CLI bindings are omitted and the prompt directs agents to session state.
@@ -255,7 +258,7 @@ CLI fallback bindings supplied by the harness. Native Awareness calls use struct
 |---|---|
 | `OCTOCODE_AWARENESS_CLI` | Installed CLI path for external/foreign-tool fallback; native Awareness calls do not use it |
 | `OCTOCODE_NODE` | Node executable for the installed CLI |
-| `OCTOCODE_AWARENESS_DB` | Native Pi Awareness database available to external/foreign-tool CLI adapters |
+| `OCTOCODE_AWARENESS_DB` | Canonical inherited Awareness database for native/worker calls and external/foreign-tool CLI adapters |
 | `OCTOCODE_AWARENESS_WORKSPACE` | Normalized workspace available to external/foreign-tool CLI adapters |
 | `OCTOCODE_AGENT_ID` | Current participant identity available to external/foreign-tool CLI adapters |
 | `OCTOCODE_SKILL_ROOT` | Absolute path to `dist/skills/` |

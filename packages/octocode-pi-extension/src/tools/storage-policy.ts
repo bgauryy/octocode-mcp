@@ -2,6 +2,7 @@ import { openAwarenessStore } from '@octocodeai/octocode-awareness';
 import { openOctocodeDb as openExtensionStateDb } from '@octocodeai/agent-contracts/db';
 import { isPersistentStorageEnabledForExtension } from '@octocodeai/config';
 import { extensionStateDbPath } from '../extension-paths.js';
+import { resolveAwarenessDatabase } from './awareness-context.js';
 
 export const PERSISTENT_AWARENESS_DISABLED_MESSAGE =
   'Persistent storage is disabled (storage.mode=memory); Awareness state is unavailable. '
@@ -28,5 +29,5 @@ export function openPersistentAwareness(
   options: Parameters<typeof openAwarenessStore>[0],
 ): ReturnType<typeof openAwarenessStore> {
   assertPersistentAwarenessEnabled();
-  return openAwarenessStore(options);
+  return openAwarenessStore({ ...options, dbPath: options?.dbPath ?? resolveAwarenessDatabase(options?.workspace ?? process.cwd(), options?.scope) });
 }

@@ -1,8 +1,6 @@
 import { buildAwarenessContext } from './awareness-context.js';
-import path from 'node:path';
-import { defaultDbPath } from '@octocodeai/octocode-awareness';
 import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from '@octocodeai/config';
-import { resolveAwarenessCliPath, resolveAwarenessCoordinationScope } from '../assets.js';
+import { resolveAwarenessCliPath } from '../assets.js';
 import type { PiContext } from '../types.js';
 import { getAwarenessAgentIdentity } from './awareness-shared.js';
 import { PERSISTENT_AWARENESS_DISABLED_MESSAGE } from './storage-policy.js';
@@ -19,7 +17,8 @@ export function buildAwarenessCliEnvironment(ctx?: PiContext): NodeJS.ProcessEnv
   } catch {
     return env; // Ordinary shell work remains available if the dependency is missing.
   }
-  const workspace = path.resolve(ctx?.cwd ?? process.cwd());
+  const bindings = buildAwarenessContext(ctx);
+  const workspace = bindings.workspace;
   const identity = getAwarenessAgentIdentity(ctx);
   env.OCTOCODE_NODE = process.execPath;
   env.OCTOCODE_AGENT_ID = identity.agentId;
@@ -28,7 +27,7 @@ export function buildAwarenessCliEnvironment(ctx?: PiContext): NodeJS.ProcessEnv
   if (identity.metadata.vendor) env.OCTOCODE_AGENT_VENDOR = identity.metadata.vendor;
   else delete env.OCTOCODE_AGENT_VENDOR;
   env.OCTOCODE_AWARENESS_WORKSPACE = workspace;
-  env.OCTOCODE_AWARENESS_DB = defaultDbPath(workspace, resolveAwarenessCoordinationScope(workspace));
+  env.OCTOCODE_AWARENESS_DB = bindings.database;
   return env;
 }
 

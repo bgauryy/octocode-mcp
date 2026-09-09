@@ -63,7 +63,7 @@ describe('coordination dispatch and focused help contracts', () => {
       command: 'memory', action: 'recall-verified', params: {
         query: 'focused verification', sourceDigest: 'sha256:receipt', scope: 'project', limit: '1', now: '2026-09-02T00:00:00.000Z',
       },
-    }).result).toMatchObject([{ memoryId: stored.memoryId, sourceDigest: 'sha256:receipt' }]);
+    }).result).toMatchObject({ memories: [{ memoryId: stored.memoryId, sourceDigest: 'sha256:receipt' }], partial: false });
     expect(dispatchAwarenessCommand(store, {
       command: 'memory', action: 'reindex', params: { force: true, limit: '2' },
     }).result).toEqual({ enabled: false, scanned: 0, embedded: 0 });

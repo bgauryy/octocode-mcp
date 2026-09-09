@@ -44,7 +44,7 @@ describe('remaining native command routes', () => {
       store.storeVerifiedMemory({ label: 'WORKFLOW', text: 'resume after compact', sourceDigest: 'eval:fresh:recovery', ...common });
       store.storeVerifiedMemory({ label: 'RELEASE', text: 'release command current', sourceDigest: 'eval:fresh:release', ...common });
       store.storeVerifiedMemory({ label: 'RELEASE', text: 'release command obsolete', sourceDigest: 'eval:stale:release', verifiedAt: '2026-07-01T00:00:00.000Z', validUntil: '2026-08-01T00:00:00.000Z' });
-      store.storeVerifiedMemory({ label: 'DECISION', text: 'artifact decision', sourceDigest: 'eval:artifact:decision', scope: 'artifact', ...common });
+      store.storeVerifiedMemory({ label: 'DECISION', text: 'artifact decision', sourceDigest: 'eval:artifact:decision', scope: 'artifact', artifact: 'fixture-artifact', ...common });
       store.storeVerifiedMemory({ label: 'DECISION', text: 'artifact decision', sourceDigest: 'eval:project:decision', scope: 'project', ...common });
     } finally {
       store.close();

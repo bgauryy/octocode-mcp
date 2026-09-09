@@ -38,8 +38,19 @@ describe('semantic recall access accounting', () => {
     const result = recallMemory(db, { query: 'accounting', limit: 1 }, true);
     expect(result['mode']).toBe('semantic');
     expect(result['memories']).toMatchObject([{ memory_id: best }]);
+    expect(result).toMatchObject({ partial: true, partialReasons: ['result_limit'], terminalLimit: { code: 'MEMORY_RECALL_LIMIT' } });
     expect(access(best)).toMatchObject({ access_count: 1 });
     expect(access(other)).toMatchObject({ access_count: 0, last_accessed_at: null });
+  });
+
+  it('discloses a saturated embedding pool even when top-k is satisfied', () => {
+    for (let i = 0; i < 1999; i++) {
+      const id = insertMemory(db, { taskContext: 'pool', observation: `candidate ${i}`, importance: 5 }).memoryId;
+      storeEmbedding(db, id, new Float32Array([1, 0]), 'fixture');
+    }
+    const result = recallMemory(db, { query: 'accounting', limit: 1, recordAccess: false }, true);
+    expect(result['partialReasons']).toContain('candidate_limit');
+    expect(result['terminalLimit']).toMatchObject({ code: 'MEMORY_RECALL_LIMIT', candidateLimit: 2000 });
   });
 
   it.each(['accounting', ''])('honors recordAccess:false for query %j', (query) => {

@@ -194,6 +194,33 @@ describe('notifications', () => {
     expect(inbox.signals).toHaveLength(1);
     expect(inbox.signals[0]!.kind).toBe('question');
     expect(inbox.signals[0]!.to_agents).toEqual(['agent-b']);
+    expect(inbox.actions).toEqual({
+      ack: { operation: 'agent_signal', request: { action: 'ack', agent_id: 'agent-b', signal_id: [published.signal_id] } },
+    });
+
+    const exact = agentSignal(db, {
+      action: 'list', agentId: 'agent-b', workspacePath: '/repo', signalIds: [published.signal_id], unreadOnly: false,
+    });
+    expect(exact.action).toBe('list');
+    if (exact.action !== 'list') throw new Error('exact list failed');
+    expect(exact.actions?.ack.request).toEqual({ action: 'ack', agent_id: 'agent-b', signal_id: [published.signal_id] });
+    expect(exact.actions?.reply).toEqual([{ operation: 'agent_signal', request: {
+      action: 'reply', agent_id: 'agent-b', in_reply_to: published.signal_id, subject: 'Reply to: can you review?',
+    }, draft: true, note: 'Add a substantive body before executing this reply draft.' }]);
+    expect(exact.actions?.ack.request).not.toHaveProperty('workspace_path');
+
+    const long = agentSignal(db, {
+      action: 'publish', agentId: 'agent-a', toAgents: ['agent-b'], kind: 'fyi',
+      subject: 'x'.repeat(200), workspacePath: '/repo',
+    });
+    if (long.action !== 'publish') throw new Error('long publish failed');
+    const longRead = agentSignal(db, {
+      action: 'list', agentId: 'agent-b', workspacePath: '/repo', signalIds: [long.signal_id], unreadOnly: false,
+    });
+    expect(longRead.action).toBe('list');
+    if (longRead.action !== 'list') throw new Error('long exact list failed');
+    expect(longRead.actions?.reply?.[0]?.request).toMatchObject({ subject: expect.any(String) });
+    expect(String(longRead.actions?.reply?.[0]?.request.subject)).toHaveLength(200);
 
     const ack = agentSignal(db, {
       action: 'ack',
@@ -204,7 +231,7 @@ describe('notifications', () => {
     expect(ack.action).toBe('ack');
     if (ack.action !== 'ack') throw new Error('ack failed');
     expect(ack.acknowledged).toBe(1);
-    const afterAck = agentSignal(db, { action: 'list', agentId: 'agent-b', workspacePath: '/repo' });
+    const afterAck = agentSignal(db, { action: 'list', agentId: 'agent-b', workspacePath: '/repo', signalIds: [published.signal_id] });
     expect(afterAck.action).toBe('list');
     if (afterAck.action !== 'list') throw new Error('list failed');
     expect(afterAck.signals).toHaveLength(0);

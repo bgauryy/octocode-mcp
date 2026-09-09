@@ -214,4 +214,32 @@ describe('external-agent integration boundary', () => {
     });
     expect(forgotten).toMatchObject({ action: 'forget', deleted: 1 });
   });
+
+  it('preserves bounded recall metadata for external native consumers', () => {
+    const aw = openAwarenessStore({ workspace });
+    try {
+      for (const text of [
+        'shared adapter constraint alpha',
+        'shared adapter rule bravo',
+        'shared adapter decision charlie',
+        'shared adapter behavior delta',
+      ]) {
+        aw.storeMemory({ label: 'OTHER', text });
+      }
+    } finally {
+      aw.close();
+    }
+
+    const recalled = executeExternalMemoryAction({
+      workspace,
+      params: { action: 'recall', query: 'shared adapter', limit: 1 },
+    });
+    expect(recalled).toMatchObject({
+      action: 'recall',
+      count: 1,
+      partial: true,
+      partialReasons: ['candidate_limit', 'result_limit'],
+      terminalLimit: { code: 'MEMORY_RECALL_LIMIT', candidateLimit: 3, resultLimit: 1 },
+    });
+  });
 });

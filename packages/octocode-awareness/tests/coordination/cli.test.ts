@@ -58,7 +58,7 @@ describe('coordination adapter commands', () => {
     expect(jsonOut<{ sourceDigest: string }>().sourceDigest).toBe('sha256:auth');
     stdout = '';
     expect(runCli(['memory', 'recall-verified', '--workspace', workspace, '--query', 'receipt', '--mode', 'hybrid', '--now', '2026-08-27T00:00:00.000Z'])).toBe(0);
-    expect(jsonOut<Array<{ sourceDigest: string }>>()[0]?.sourceDigest).toBe('sha256:auth');
+    expect(jsonOut<{ memories: Array<{ sourceDigest: string }> }>().memories[0]?.sourceDigest).toBe('sha256:auth');
   });
 
   it('keeps agent presence touch and leave in the adapter', () => {

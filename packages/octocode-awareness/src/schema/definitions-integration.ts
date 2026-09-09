@@ -1,18 +1,22 @@
 import { z } from 'zod';
 import { MEMORY_RECALL_MODES_V1 } from '../memory-hardening.js';
+import { MEMORY_LABELS } from './common.js';
 
-const text = z.string().min(1);
+const text = z.string().trim().min(1);
 const scope = { workspace: text.optional() };
-const limit = z.number().int().positive().optional();
+const limit = z.number().int().min(1).max(50).optional();
+const label = z.enum(MEMORY_LABELS).describe('Canonical memory label; put the descriptive summary in text.');
+const artifact = text.max(256);
+const file = z.union([text.max(1024), z.array(text.max(1024)).min(1).max(20)]);
 
 /** Integration commands share one contract between native hosts and the CLI. */
 export const integrationSchemas = {
   agent_presence: z.object({ ...scope, agent_id: text, status: z.enum(['ACTIVE', 'IDLE']).optional() }),
-  verified_memory: z.object({ ...scope, label: text, text, source_digest: text, scope: z.enum(['project', 'artifact']).optional(), verified_at: text.optional(), valid_until: text.optional(), importance: z.number().int().min(1).max(10).optional(), tags: text.optional() }),
-  verified_recall: z.object({ ...scope, memory_id: text.optional().describe('Exact record ID; cannot be combined with query. Source, scope and expiry filters still apply.'), query: text.optional().describe('Lexical mode matches a contiguous phrase. Use memory_id for an evidence pointer.'), label: text.optional(), source_digest: text.optional(), scope: z.enum(['project', 'artifact']).optional(), mode: z.enum(MEMORY_RECALL_MODES_V1).optional(), limit, now: text.optional(), min_similarity: z.number().optional() }),
+  verified_memory: z.object({ ...scope, label, text: text.max(4000), source_digest: text.max(512), scope: z.enum(['project', 'artifact']).optional(), artifact: artifact.optional(), file: file.optional(), area: text.max(256).optional(), why: text.max(1000).optional(), constraint: text.max(1000).optional(), history_ref: text.max(512).optional(), supersedes: z.array(text.max(128)).max(200).optional(), verified_at: text.max(64).optional(), valid_until: text.max(64).optional(), importance: z.number().int().min(1).max(10).optional(), tags: text.optional() }),
+  verified_recall: z.object({ ...scope, memory_id: text.optional().describe('Exact record ID; cannot be combined with query. Source, scope and expiry filters still apply.'), query: text.max(1000).optional().describe('Lexical mode matches a contiguous phrase. Use memory_id for an evidence pointer.'), label: label.optional(), source_digest: text.max(512).optional(), scope: z.enum(['project', 'artifact']).optional(), artifact: artifact.optional(), file: file.optional(), area: text.max(256).optional(), mode: z.enum(MEMORY_RECALL_MODES_V1).optional(), limit, offset: z.number().int().min(0).max(1000000000).optional(), revision: text.max(128).optional(), now: text.max(64).optional(), min_similarity: z.number().min(0).max(1).optional() }),
   memory_evaluate: z.object({ ...scope, corpus_json: text.optional(), now: text.optional(), limit, min_similarity: z.number().optional() }),
   memory_reindex: z.object({ ...scope, force: z.boolean().optional(), limit }),
-  memory_prune: z.object({ ...scope, older_than: text, label: text.optional(), confirm: z.boolean().optional() }),
+  memory_prune: z.object({ ...scope, older_than: text, label: label.optional(), confirm: z.boolean().optional() }),
   handoff_add: z.object({ ...scope, agent_id: text, summary: text, file: z.array(text).optional() }),
   handoff_list: z.object({ ...scope, include_cleared: z.boolean().optional() }),
   handoff_clear: z.object({ ...scope, handoff_id: text }),

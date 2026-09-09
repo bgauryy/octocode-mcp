@@ -117,6 +117,8 @@ export function dispatchAwarenessCommand(
             label: reqStr(p, 'label', 'memory store-verified'), text: reqStr(p, 'text', 'memory store-verified'),
             sourceDigest: reqStr(p, 'sourceDigest', 'memory store-verified'),
             scope: str(p['scope']) as 'project' | 'artifact' | undefined,
+            artifact: str(p['artifact']), file: list(p['file']), area: str(p['area']), why: str(p['why']), constraint: str(p['constraint']), historyRef: str(p['historyRef']),
+            supersedes: Array.isArray(p['supersedes']) ? p['supersedes'].map(value => String(value)) : undefined,
             verifiedAt: str(p['verifiedAt']), validUntil: str(p['validUntil']),
             importance: num(p['importance']), tags: list(p['tags']),
           }));
@@ -125,6 +127,8 @@ export function dispatchAwarenessCommand(
             memoryId: str(p['memoryId']),
             query: str(p['query']), label: str(p['label']), sourceDigest: str(p['sourceDigest']),
             scope: str(p['scope']) as 'project' | 'artifact' | undefined,
+            artifact: str(p['artifact']), offset: num(p['offset']), revision: str(p['revision']),
+            file: list(p['file']), area: str(p['area']),
             mode: str(p['mode']) as MemoryRecallModeV1 | undefined,
             limit: num(p['limit']), now: str(p['now']), minSimilarity: num(p['minSimilarity']),
           }));

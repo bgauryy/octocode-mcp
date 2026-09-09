@@ -3,13 +3,15 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { extensionHome, extensionStateDbPath } from '../src/extension-paths.js';
 import { openOctocodeDb, openPersistentAwareness } from '../src/tools/storage-policy.js';
+import { resolveAwarenessDatabase } from '../src/tools/awareness-context.js';
 
 const mocks = vi.hoisted(() => ({
   openStateDb: vi.fn(() => ({ kind: 'extension-state' })),
   openAwarenessStore: vi.fn(() => ({ kind: 'awareness' })),
 }));
 
-vi.mock('@octocodeai/octocode-awareness', () => ({
+vi.mock('@octocodeai/octocode-awareness', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@octocodeai/octocode-awareness')>(),
   openAwarenessStore: mocks.openAwarenessStore,
 }));
 
@@ -73,6 +75,6 @@ describe('persistent storage policy', () => {
 
     openPersistentAwareness({ workspace: '/workspace' });
 
-    expect(mocks.openAwarenessStore).toHaveBeenCalledWith({ workspace: '/workspace' });
+    expect(mocks.openAwarenessStore).toHaveBeenCalledWith({ workspace: '/workspace', dbPath: resolveAwarenessDatabase('/workspace') });
   });
 });

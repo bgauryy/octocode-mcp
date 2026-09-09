@@ -114,7 +114,7 @@ export async function executeAwarenessCommand(request: AwarenessCommandCall, con
         || request.command === 'maintenance self-test' || (noun === 'docs' && action !== 'staleness');
       const scope = metadataOnly ? context.scope : storageScopeForCommand(COMMAND_ROUTES[request.command]?.command ?? request.command, workspace, context.scope);
       const dbPath = metadataOnly ? context.database ?? '' : resolveDbPath(context.database, { scope, workspace });
-      const opts = { compact: output.compact };
+          const opts = { compact: output.compact, cli: context.continuations === 'cli' };
       let exitCode = 0;
 
       if (noun === 'schema') {

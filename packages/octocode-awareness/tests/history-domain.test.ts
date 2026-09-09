@@ -88,7 +88,12 @@ describe('canonical local history domain', () => {
     const preview = await call('restore-preview', { agent_id, operation_id: 'edit-1', side: 'before' });
     expect(readFileSync(join(workspace, 'a.ts'), 'utf8')).toBe('after');
     const result = await call('restore-apply', { agent_id, preview_id: preview.preview_id });
-    expect(result).toMatchObject({ ok: true, status: 'applied', undo_operation_id: expect.any(String) });
+    expect(result).toMatchObject({ ok: true, status: 'applied', undo_operation_id: expect.any(String), undo_preview: {
+      command: 'history restore-preview',
+      params: { workspace, agent_id, side: 'after' },
+    } });
+    expect((result as { undo_preview: { params: { operation_id: string } } }).undo_preview.params.operation_id)
+      .toBe((result as { undo_operation_id: string }).undo_operation_id);
     expect(readFileSync(join(workspace, 'a.ts'), 'utf8')).toBe('before');
     expect(readFileSync(join(workspace, 'untouched.ts'), 'utf8')).toBe('keep');
     expect(await call('read', { operation_id: result.undo_operation_id, file: 'a.ts', side: 'after' }))

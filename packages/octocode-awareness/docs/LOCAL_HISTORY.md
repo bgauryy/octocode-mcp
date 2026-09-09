@@ -76,6 +76,11 @@ Apply acquires a dedicated exclusive work lease, claims the preview once, rechec
 
 A completed restore leaves its work run `PENDING` and returns `verification_run_id`. Inspect the restored files, run the applicable checks, and use `verify mark` with the observed result. Restoring bytes never grants a successful verification receipt. A failed application releases its own lease as `FAILED`; crash recovery retains the applying journal and uses lease expiry.
 
+When an undo checkpoint exists, the result also supplies `undo_preview`: execute
+that returned request to preview its available `after` image. API callers receive
+`{command, params}`; CLI callers receive argv. Do not guess the side from the word
+"undo", and do not apply a newly created preview without its exact authorized ID.
+
 ## Consolidation and maintenance
 
 Database consolidation rejects a source that contains local-history rows. Copying SQLite alone leaves object IDs without their sidecar bytes. A future explicit conversion must copy the matching sidecar, verify its marker and referenced objects, then publish the destination as one operation. Until that protocol exists, use the original database and sidecar together.

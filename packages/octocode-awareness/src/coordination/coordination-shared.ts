@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { renderMemoryContent } from '../memory-content.js';
 import { decodeSignalBody } from '../signal-data.js';
 import { awarenessDatabasePath, DEFAULT_AWARENESS_STORAGE_SCOPE, type AwarenessStorageScope } from '../storage-scope.js';
 
@@ -113,7 +114,7 @@ export function memoryFromCanonicalRow(row: CanonicalMemoryRow): MemoryItem {
   return {
     memoryId: row.memory_id,
     label: row.label,
-    text: row.observation,
+    text: renderMemoryContent(row.observation),
     tags: row.tags ?? (row.tags_json ? JSON.parse(row.tags_json) as string[] : []),
     createdAt: row.created_at,
   };

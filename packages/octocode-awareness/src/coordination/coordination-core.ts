@@ -8,9 +8,15 @@ import { connectDb, resolveDbPath } from '../db-runtime.js';
 import { beginWrite } from '../db-transaction.js';
 import { storageScopeForCommand } from '../workspace-policy.js';
 import { insertOutboxEvent } from '../event-outbox.js';
-import type { MemoryEvaluationCorpusV1,MemoryEvaluationReportV1,MemoryRecallModeV1 } from '../memory-hardening.js';
-import type { VerifiedMemoryV1 } from './coordination-memory-agents.js';
+import type { MemoryEvaluationCorpusV1,MemoryEvaluationReportV1 } from '../memory-hardening.js';
+import type { MemoryRecallBounds } from '../memory-limits.js';
+import type { VerifiedMemoryPageV1, VerifiedMemoryRecallParams, VerifiedMemoryStoreParams, VerifiedMemoryV1 } from './verified-memory.js';
 import type { MessageListParams, MessagePage } from './coordination-message-inbox.js';
+
+export interface MemoryRecallPage extends MemoryRecallBounds {
+  memories: MemoryItem[];
+  warnings?: string[];
+}
 
 export abstract class CoordinationBase {
   readonly workspace: string;
@@ -85,13 +91,13 @@ export abstract class CoordinationBase {
   abstract auditChecks(params: { agentId?: string | null; planId?: string | null; minAgeMs?: number | null }): CheckAudit;
   abstract markCheck(params: { taskId: string; runId: string; doneAt: string; agentId: string; message: string; status?: CheckStatus }): Task;
   abstract storeMemory(params: { label: string; text: string; tags?: string | string[] | null }): MemoryItem;
-  abstract storeVerifiedMemory(params: { label: string; text: string; scope?: 'project' | 'artifact'; sourceDigest: string; verifiedAt?: string; validUntil?: string; importance?: number; tags?: string | string[] | null }): VerifiedMemoryV1;
-  abstract recallVerifiedMemory(params?: { memoryId?: string; query?: string; label?: string; sourceDigest?: string; scope?: 'project' | 'artifact'; limit?: number; now?: string; mode?: MemoryRecallModeV1; minSimilarity?: number }): VerifiedMemoryV1[];
+  abstract storeVerifiedMemory(params: VerifiedMemoryStoreParams): VerifiedMemoryV1;
+  abstract recallVerifiedMemory(params?: VerifiedMemoryRecallParams): VerifiedMemoryPageV1;
   abstract evaluateVerifiedMemory(params?: { corpus?: MemoryEvaluationCorpusV1; now?: string; limit?: number; minSimilarity?: number }): MemoryEvaluationReportV1;
   protected abstract embedMemory(memoryId: string, text: string): boolean;
   abstract reindexMemories(params: { force?: boolean; limit?: number }): { enabled: boolean; scanned: number; embedded: number };
   abstract forgetMemory(params: { memoryId: string }): { forgotten: boolean };
-  abstract recallMemory(params: { query?: string | null; label?: string | null; limit?: number; semantic?: boolean; minSimilarity?: number }): MemoryItem[];
+  abstract recallMemory(params: { query?: string | null; label?: string | null; limit?: number; semantic?: boolean; minSimilarity?: number }): MemoryRecallPage;
   abstract pruneMemories(params: { olderThanMs: number; label?: string | null; dryRun?: boolean }): PruneResult;
   abstract joinAgent(params: { agentId: string; name?: string | null; role?: string | null; metadata?: string | Record<string, unknown> | null }): AgentRecord;
   abstract touchAgent(params: { agentId: string; status?: AgentStatus }): AgentRecord;

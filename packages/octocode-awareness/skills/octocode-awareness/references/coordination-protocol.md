@@ -1,6 +1,6 @@
 # Coordination Protocol
 
-Read this before using signals or refinements across agents. For advisory overlap read `references/files-awareness.md`; for exclusivity and verification read `references/lock-protocol.md`.
+Load this when a signal or refinement workflow is unfamiliar. For advisory overlap read `references/files-awareness.md`; for exclusivity and verification read `references/lock-protocol.md`.
 
 Host operation names may differ from public CLI nouns. Use the live CLI schema rather than translating internal operation names yourself.
 
@@ -46,7 +46,12 @@ a repository name without the same physical database does not connect them.
 
 ## Signals
 
-Use a signal when another participant must see a blocker, question, request, decision, handoff, or FYI. A signal is the durable typed message and thread; “message” describes its peer-facing content, not a second task or authority plane. Use durable memory for reusable lessons and refinements for owned follow-up work.
+Use a signal when a blocker, question, request, decision or handoff changes a peer's
+next action. Skip routine FYIs. Include the relevant file/area, concise reason and
+evidence pointer; full files and transcripts usually add noise. Reply with the
+decision-changing constraint and next action, not an empty acknowledgement. Fetch
+missing evidence before claiming support; delivery and agreement are not proof.
+Use durable memory for reusable lessons and refinements for owned follow-up work.
 
 Pass your checkout with `--workspace`. Signal reads include sibling worktrees;
 `--repo` and `--ref` filter only when explicitly supplied. A branch switch does
@@ -56,7 +61,7 @@ to the physical checkout; never use Git's index lock as an agent lease.
 | Action | Use when | Closed when |
 |---|---|---|
 | `signal publish` | Start a typed thread; target agents or broadcast. | A participant acts or explicitly declines. |
-| `signal list` | Start/resume work or inspect an inbox. | Read rows remain open until handled. |
+| `signal list` | A wake or expected reply needs an inbox read and host delivery has not supplied it. | Read rows remain open until handled. |
 | `signal reply` | Preserve context in the existing thread. | The reply resolves the question or names the next owner. |
 | `signal ack` | Record that the recipient acted on the message. | Follow-up remains visible if work is still open. |
 | `signal resolve` | No response or work remains. | Thread leaves the open queue. |
@@ -89,6 +94,11 @@ ack/resolve commands bind to those IDs and do not accept `--workspace`. Native
 delivery may mark a signal read before the recipient acts. Ack/read state is not proof of task completion. Listing does not resolve a
 thread. Follow returned executable `next` continuations when a list is partial;
 retain their filters and cursor instead of increasing a limit and assuming completeness.
+
+Prefer returned acknowledgement actions to reconstructing fields: API actions
+are `{command, params}` and CLI actions contain argv. Exact message reads can
+include reply drafts; add the substantive answer before sending. Merely receiving
+an action hint does not authorize or perform acknowledgement or resolution.
 
 ## Refinements
 

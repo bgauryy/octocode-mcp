@@ -1,5 +1,27 @@
 # Local Git coordination
 
+## Purpose: selected file context
+
+Private Git supports communication about files and retained context: the reason
+for a meaningful change, a constraint a peer must preserve, and the evidence for
+a reusable lesson. Ordinary edits need no record. Do not turn every tool call
+into a checkpoint, message, work run or reflection.
+
+Use the smallest durable unit that changes a later decision: a short file/area
+memory with provenance, plus an existing operation pointer when captured bytes
+matter. Create a new checkpoint only for a deliberate handoff, reusable lesson
+or recovery need; give it a concise explanatory label. Receivers read the reason
+first and fetch only relevant evidence. Git blob deduplication saves disk, but
+does not save model tokens when the same bytes are repeatedly returned.
+
+Selected file reasoning uses `memory store-verified`: file/area, actual artifact
+identity, what matters, why/constraint, source digest, validity and an optional
+`history_ref` to existing evidence. Exact duplicates reuse a record; obsolete
+decisions can be superseded. Recall the memory first and follow its evidence only
+when bytes change the next decision. SQLite owns searchable reasoning and its
+lifecycle; private Git owns immutable versions. This reuses existing memory and
+history owners rather than creating a second Git-notes index or message bus.
+
 Git identifies the linked worktrees that belong to one local repository.
 Awareness shares peer discovery, signals and memory across those worktrees when
 they use the same SQLite database. Each record keeps its original workspace;

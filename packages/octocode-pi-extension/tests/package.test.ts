@@ -1,4 +1,4 @@
-// Contract tests for the pi-extension.
+import { assertInheritedAwarenessLockGate } from './helpers/inherited-awareness-lock.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,13 +44,9 @@ const MCP_STDIO_ENTRY = import.meta.resolve('@modelcontextprotocol/server/stdio'
 const packageRoot = path.resolve(import.meta.dirname, '..');
 const distDir = path.join(packageRoot, 'dist');
 const EXPECTED_OCTOCODE_SKILLS = [
-  'octocode-brainstorming',
-  'octocode-prompt-optimizer',
-  'octocode-research',
-  'octocode-rfc-generator',
-  'octocode-roast',
-  'octocode-skills',
-  'octocode-subagent',
+  'octocode-brainstorming', 'octocode-prompt-optimizer', 'octocode-research',
+  'octocode-rfc-generator', 'octocode-roast',
+  'octocode-skills', 'octocode-subagent',
 ];
 
 let distAssetsReady = false;
@@ -641,7 +637,7 @@ test('workers discover research tools and skills with one frozen Awareness guide
     assert.match(result!.systemPrompt!, /<awareness>/);
     assert.match(result!.systemPrompt!, /Attend once per workspace\/session/);
     assert.match(result!.systemPrompt!, /Recall memory only when prior learning could change the approach/);
-    assert.match(result!.systemPrompt!, /Re-attend when participation changes and the briefing is stale/);
+    assert.match(result!.systemPrompt!, /A routine solo edit needs no calls or record/);
     assert.match(result!.systemPrompt!, /bound CLI when the facade is unavailable/);
     assert.doesNotMatch(result!.systemPrompt!, /highest-ROI command|Essential loop/);
     assert.match(result!.systemPrompt!, /<awareness_cli_runtime>/);
@@ -3698,6 +3694,11 @@ test('Awareness pre-edit gate blocks lock conflicts', async () => {
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }
+});
+
+test('Awareness mutation gate honors an inherited database outside default storage', async () => {
+  const { handlers } = await captureExtensions();
+  await withAgentId('bound-worker', () => assertInheritedAwarenessLockGate(workspace => handlers.get('tool_call')![0]!({ toolName: 'write', input: { path: 'shared.txt' } }, { cwd: workspace }) as Promise<unknown>));
 });
 
 test('agent lifecycle routes steer/follow_up RPCs and does not fake running on idle steer', async () => {

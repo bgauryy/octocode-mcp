@@ -140,9 +140,23 @@ export interface AgentSignalRecord extends NotificationRecord {
   data?: import('../signal-data.js').SignalData;
 }
 
+export interface AgentSignalActionHint {
+  operation: 'agent_signal';
+  request: Record<string, unknown>;
+  draft?: boolean;
+  note?: string;
+}
+
+export interface AgentSignalActionHints {
+  /** A single page-level acknowledgement request for all signals on the page. */
+  ack: AgentSignalActionHint;
+  /** Targeted replies are emitted only for explicit signal-id reads. */
+  reply?: AgentSignalActionHint[];
+}
+
 export type AgentSignalResult =
   | { action: 'publish' | 'reply'; signal_id: string; signal_ids: string[]; thread_id: string; workspace_path: string; artifact: string | null }
-  | ({ action: 'list'; count: number; signals: AgentSignalRecord[]; unread_only: boolean } & Pick<GetNotificationsResult, 'partial' | 'partialReasons' | 'next'>)
+  | ({ action: 'list'; count: number; signals: AgentSignalRecord[]; unread_only: boolean; actions?: AgentSignalActionHints } & Pick<GetNotificationsResult, 'partial' | 'partialReasons' | 'next'>)
   | { action: 'resolve'; resolved: number; signal_ids: string[] }
   | { action: 'ack'; acknowledged: number; signal_ids: string[] };
 

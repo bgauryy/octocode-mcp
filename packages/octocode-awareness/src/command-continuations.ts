@@ -25,6 +25,16 @@ export function structuredAwarenessContinuations(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(structuredAwarenessContinuations);
   if (!value || typeof value !== 'object') return value;
   const object = value as Record<string, unknown>;
+  if (object.operation === 'agent_signal' && object.request && typeof object.request === 'object') {
+    const request = object.request as Record<string, unknown>;
+    const action = request.action;
+    const command = action === 'ack' ? 'signal ack' : action === 'reply' ? 'signal reply' : undefined;
+    if (command) {
+      const { action: _action, ...params } = request;
+      const { operation: _operation, request: _request, ...metadata } = object;
+      return { ...metadata, call: { command, params } };
+    }
+  }
   if (typeof object.name === 'string' && Array.isArray(object.args) && object.args.every(arg => typeof arg === 'string') && getAwarenessCommandDescriptor(object.name)) {
     return awarenessContinuationCall(object.name, object.args as string[]);
   }

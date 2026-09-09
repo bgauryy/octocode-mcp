@@ -87,6 +87,22 @@ The live `schema commands` catalog owns route discovery; `schema command <noun> 
 
 Plans and tasks share run-owned claims, work presence, locks, and verification. Peer messages are signals; handoffs retain continuation notes. Host APIs and CLI commands read the same IDs.
 
+Choose one owner for each fact; do not create a parallel record just because
+another feature is available:
+
+| Fact | Owner | Why it remains distinct |
+|---|---|---|
+| Work to perform with acceptance and dependencies | Task/run, preferably the host's existing IDs | Claims and verification enforce execution state. |
+| A decision-changing question or answer | Signal thread | Delivery, handling and resolution have their own lifecycle. |
+| Reusable file/area reasoning | Scoped memory and its evidence references | Validity and supersession describe knowledge, not task completion. |
+| A verified outcome that produced learning | Reflection into memory; optional refinement only for an explicit follow-up | Reflection is a write workflow, not another knowledge database. |
+| Existing follow-up without a task plan | Refinement | Update the same row; don't also create a task for the same obligation. |
+| Context needed by the next session | One handoff, reusing a host handoff where available | Continuation context is neither a new task nor a reusable lesson. |
+
+These lifecycle differences are why the tables are retained. Duplicate behavior
+is consolidated at the insertion and host-adapter layers; an empty table alone
+is not evidence that its entity is unused.
+
 `schema entities --compact` inventories entity owners and kinds. Presence, signals, and memory are leads; schemas, locks, and verification debt enforce their own boundaries. Expiry recovers coordination state but never proves completion or success.
 
 ## Storage and architecture
@@ -112,6 +128,8 @@ Private history lives under `<workspace>/.octocode/.localGit`, partitioned by ca
 Creating a history store adds an owned ignore marker inside `.localGit`, excluding untracked history from ordinary Git status. Existing compatible markers are preserved; incompatible or symlinked markers fail safely. Already tracked history requires explicit untracking; initialization never changes the project index.
 
 Share compact operation/file/side references through Awareness signals, then fetch the required bytes with `history read`. Follow every continuation before claiming complete content, decode the declared encoding before comparing bytes, and verify current files independently. Git holds immutable evidence; SQLite retains transactional inbox state, expiring ownership, task gates, and searchable memory metadata. See [Git coordination](docs/GIT_COORDINATION.md).
+
+Use private Git selectively for file-based communication and reusable context: what changed, why it matters, and what a peer should preserve. A routine edit creates no checkpoint or memory by default. Reuse existing evidence; create a deliberate checkpoint only when its selected file versions help a handoff, durable lesson or recovery decision. Put the reason in its label and the scoped memory, then send the compact pointer. Load a summary or relevant excerpt first; full-version reconstruction is an integrity check, not the everyday communication flow.
 
 Restore previews bind selected files to their observed state and expiration. Applying a valid preview captures undo evidence, acquires its own lease, and rechecks file state. Multi-file restore can be partial; its returned verification run still needs observed checks. [Local history](docs/LOCAL_HISTORY.md) owns capture, relocation, restore, and recovery procedures.
 
@@ -176,7 +194,7 @@ const result = await executeAwarenessCommand(
 Add `AWARENESS_PI_HOST_PROMPT` once to the agent's system instructions. It is an
 alias of the canonical `EXTERNAL_AGENT_AWARENESS_PROMPT`; CLI `instructions export`
 returns the same text. Attend once, communicate when useful, and discover other
-features on demand. Record learning after substantial work or a meaningful event.
+features on demand. Record learning only when a verified reason or constraint is reusable.
 Lock waits yield to the event loop. Cancellation is cooperative; completed atomic
 writes are reported as completed. The API never changes cwd/env, reads stdin,
 exits the host, or starts an Awareness CLI process.
@@ -192,7 +210,7 @@ Keep implemented contracts, configured hooks, actual host activation, and observ
 
 | Limit | Required check or improvement |
 |---|---|
-| Semantic recall ranks a capped candidate pool | [The embedding reader](src/memory-embeddings.ts) can omit older matches before ranking. Complete large-store recall requires explicit partial/continuation behavior or a terminal diagnostic; a larger cap alone is insufficient. |
+| Ranked recall has bounded candidate and result budgets | Ordinary lexical/semantic discovery reports `partial`, `partialReasons` and `terminalLimit` when bounded. Narrow the query or scope; these ranked results have no stable exhaustive continuation. Exact scoped verified-memory pages use their executable continuations. |
 | Hook definition checks can accept inactive text | [Frontmatter detection](src/hooks-install-health.ts) uses textual event/command checks. Validate active structure and bindings; definition readiness does not prove host activation. |
 | Capture and object inflation lack a hard peak-memory bound | Measure growing files, compressed objects, concurrent allocations, and cancellation; returned-byte limits alone do not bound memory use. |
 | Recovery spans SQLite, Git, and workspace files | Automatic capture crash reconciliation and safe object collection are unavailable. Keep uncertain journals and referenced bytes; restore is not a filesystem-wide transaction. |

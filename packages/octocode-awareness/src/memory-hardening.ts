@@ -24,6 +24,7 @@ export interface MemoryEvaluationQueryV1 {
   staleSourceDigests?: string[];
   forbiddenSourceDigests?: string[];
   scope?: 'project' | 'artifact';
+  artifact?: string;
   falseRecallWeight?: number;
   risk?: 'ordinary' | 'stale' | 'cross-scope' | 'secret';
 }
@@ -66,7 +67,7 @@ export const MEMORY_EVALUATION_CORPUS_V1: MemoryEvaluationCorpusV1 = {
     { caseId: 'semantic-authorization', query: 'single use permission race', mode: 'semantic', expectedSourceDigests: ['eval:fresh:authorization'] },
     { caseId: 'hybrid-recovery', query: 'resume after compact', mode: 'hybrid', expectedSourceDigests: ['eval:fresh:recovery'] },
     { caseId: 'stale-command', query: 'release command', mode: 'hybrid', expectedSourceDigests: ['eval:fresh:release'], staleSourceDigests: ['eval:stale:release'], risk: 'stale', falseRecallWeight: 3 },
-    { caseId: 'artifact-scope', query: 'artifact decision', mode: 'lexical', scope: 'artifact', expectedSourceDigests: ['eval:artifact:decision'], forbiddenSourceDigests: ['eval:project:decision'], risk: 'cross-scope', falseRecallWeight: 4 },
+    { caseId: 'artifact-scope', query: 'artifact decision', mode: 'lexical', scope: 'artifact', artifact: 'fixture-artifact', expectedSourceDigests: ['eval:artifact:decision'], forbiddenSourceDigests: ['eval:project:decision'], risk: 'cross-scope', falseRecallWeight: 4 },
     { caseId: 'secret-exclusion', query: 'credential token', mode: 'hybrid', expectedSourceDigests: [], forbiddenSourceDigests: ['eval:secret:credential'], risk: 'secret', falseRecallWeight: 10 },
   ],
 };

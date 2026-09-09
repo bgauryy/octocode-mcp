@@ -167,8 +167,10 @@ export interface AgentRecord {
   worktree?: InternalWorktreeState;
   /** Stable Awareness id used to register this worker in the shared agent list. */
   awarenessAgentId?: string;
-  /** Workspace whose Awareness registry this worker joins (the parent workspace). */
+  /** Physical checkout used for this worker's Awareness file/lock ownership. */
   awarenessWorkspace?: string;
+  /** Explicit parent Awareness database when a worktree has repository-scoped storage. */
+  awarenessDatabase?: string;
   /** Owning host lifecycle state; prevents duplicate leave receipts on kill + close. */
   awarenessPresence?: 'joined' | 'left';
 }

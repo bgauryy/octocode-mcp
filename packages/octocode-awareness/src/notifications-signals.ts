@@ -2,7 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { normalizeArtifact, utcNow } from './helpers.js';
 import { readScope } from './git.js';
 import { SIGNALS_DELETE_BY_IDS, SIGNAL_READS_INSERT_IGNORE } from './sql/signals.js';
-import type { PruneNotificationsParams, PruneNotificationsResult, NotificationRecord, AgentSignalParams, AgentSignalResult, AgentSignalRecord } from './types/notifications-agents.js';
+import type { PruneNotificationsParams, PruneNotificationsResult, NotificationRecord, AgentSignalParams, AgentSignalResult, AgentSignalRecord, AgentSignalActionHints } from './types/notifications-agents.js';
 import { appendSignalScope, assertSignalsExist, inferReplyTargets, insertNotification, isThreadParticipant } from './notifications-core.js';
 import { getNotifications, resolveNotification } from './notifications-inbox.js';
 import { decodeSignalBody, encodeSignalBody } from './signal-data.js';
@@ -18,6 +18,26 @@ export function requireSignalText(value: string | null | undefined, field: strin
     throw new Error(`agent_signal ${field} is required`);
   }
   return value;
+}
+
+function signalActionHints(agentId: string, signals: AgentSignalRecord[], exactSignalIds: string[]): AgentSignalActionHints | undefined {
+  const signalIds = signals.map(signal => signal.signal_id);
+  if (signalIds.length === 0) return undefined;
+  const actions: AgentSignalActionHints = {
+    ack: { operation: 'agent_signal', request: { action: 'ack', agent_id: agentId, signal_id: signalIds } },
+  };
+  if (exactSignalIds.length > 0) {
+    actions.reply = signals.map(signal => ({
+      operation: 'agent_signal' as const,
+      request: {
+        action: 'reply', agent_id: agentId, in_reply_to: signal.signal_id,
+        subject: `Reply to: ${signal.subject}`.slice(0, 200),
+      },
+      draft: true,
+      note: 'Add a substantive body before executing this reply draft.',
+    }));
+  }
+  return actions;
 }
 
 /**
@@ -141,13 +161,16 @@ export function agentSignal(db: DatabaseSync, params: AgentSignalParams): AgentS
         cursor: params.cursor,
         cwd: params.cwd,
       });
+      const signals = result.signals.map(signalRecord);
+      const actions = signalActionHints(params.agentId, signals, params.signalIds ?? []);
       return {
         action: 'list',
         count: result.count,
-        signals: result.signals.map(signalRecord),
+        signals,
         unread_only: result.unread_only,
         partial: result.partial,
         partialReasons: result.partialReasons,
+        ...(actions ? { actions } : {}),
         ...(result.next ? { next: result.next } : {}),
       };
     }

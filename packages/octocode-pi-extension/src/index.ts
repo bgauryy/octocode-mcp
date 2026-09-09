@@ -3,14 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { propagateOctocodeEnv, getOctocodeHome, isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } from "@octocodeai/config";
 import { extensionWorkspaceRoot } from './extension-paths.js';
-import { connectDb, defaultDbPath, insertEditLog } from '@octocodeai/octocode-awareness';
+import { connectDb, insertEditLog } from '@octocodeai/octocode-awareness';
+import { resolveAwarenessDatabase } from './tools/awareness-context.js';
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
 import { openPersistentAwareness } from './tools/storage-policy.js';
-import {
-  DISABLED_BUILTIN_TOOL_NAMES,
-  OVERRIDDEN_BUILTIN_TOOL_NAMES,
-  OCTOCODE_SUPPORT_TOOL_NAMES,
-} from './constants.js';
+import { DISABLED_BUILTIN_TOOL_NAMES, OVERRIDDEN_BUILTIN_TOOL_NAMES, OCTOCODE_SUPPORT_TOOL_NAMES } from './constants.js';
 import { checkForCoreUpdate, readOwnVersion } from './core-update-check.js';
 import { ensureAdaptiveThinkingCompatibility } from './model-compat.js';
 import {
@@ -221,13 +218,14 @@ const awarenessMutationGate = createAwarenessMutationGate({
   storeExists: (workspace) => {
     if (!isPersistentStorageEnabled()) return false;
     const scope = resolveAwarenessCoordinationScope(workspace);
-    return fs.existsSync(defaultDbPath(workspace, scope));
+    return fs.existsSync(resolveAwarenessDatabase(workspace, scope));
   },
   queryTarget: (target, workspace, agentId) => {
     const scope = resolveAwarenessCoordinationScope(workspace);
     const result = runAwarenessPreEdit({
       workspace,
       scope,
+      dbPath: resolveAwarenessDatabase(workspace, scope),
       agentId,
       host: 'pi',
       event: { toolName: 'write', input: { path: target } },
@@ -261,7 +259,7 @@ const awarenessMutationGate = createAwarenessMutationGate({
   recordEdit: (target, workspace, agentId) => {
     if (!isPersistentStorageEnabled()) return;
     const scope = resolveAwarenessCoordinationScope(workspace);
-    const database = connectDb(defaultDbPath(workspace, scope));
+    const database = connectDb(resolveAwarenessDatabase(workspace, scope));
     try {
       insertEditLog(database, {
         agentId,

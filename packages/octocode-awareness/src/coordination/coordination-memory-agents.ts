@@ -1,11 +1,12 @@
 import type { AgentRecord,AgentStatus,LiteMessage,MemoryItem,PruneResult } from '@octocodeai/agent-contracts/entities';
 import { generateAgentName } from './agent-naming.js';
-import { bytesToEmbedding,cosineSimilarity,embeddingToBytes,isEmbeddingEnabled,runHostEmbedder } from '@octocodeai/agent-contracts/embed';
+import { embeddingToBytes,isEmbeddingEnabled,runHostEmbedder } from '@octocodeai/agent-contracts/embed';
 import { CoordinationState } from './coordination-state.js';
+import type { MemoryRecallPage } from './coordination-core.js';
 import { encodeSignalBody } from '../signal-data.js';
 import { countPresentAgentPresence, countStaleAgentPresence } from './coordination-agent-presence.js';
-import { agentFromCanonicalRow,CanonicalAgentRow,CanonicalMemoryRow,CanonicalMessageRow,cutoffIso,DEFAULT_SEMANTIC_MIN_SIMILARITY,memoryFromCanonicalRow,messageFromCanonicalSignalRow,now,parseMetadata,required,splitFiles,splitTags } from './coordination-shared.js';
-import { insertMemory } from '../memory-write.js';
+import { agentFromCanonicalRow,CanonicalAgentRow,CanonicalMemoryRow,CanonicalMessageRow,cutoffIso,memoryFromCanonicalRow,messageFromCanonicalSignalRow,now,parseMetadata,required,splitFiles,splitTags } from './coordination-shared.js';
+import { insertMemoryWithSimilarityGate } from '../memory-write.js';
 import { forgetMemory as forgetCanonicalMemory } from '../memory-lifecycle.js';
 import { getMemory as getCanonicalMemory } from '../memory-recall.js';
 import { recallMemory as recallCanonicalMemory } from '../memory-semantic.js';
@@ -13,131 +14,32 @@ import { insertNotification } from '../notifications-core.js';
 import { deletePrunableSignals } from '../notifications-signals.js';
 import { canonicalizePath, repositoryWorkspacePaths } from '../git.js';
 import { countInboxMessages, listInboxMessagesPage, type MessageListParams, type MessagePage } from './coordination-message-inbox.js';
-import {
-  containsSecretLikeText,
-  MEMORY_EVALUATION_CORPUS_V1,
-  runMemoryEvaluationCorpus,
-  type MemoryEvaluationCorpusV1,
-  type MemoryEvaluationReportV1,
-  type MemoryRecallModeV1,
-} from '../memory-hardening.js';
-
-export interface VerifiedMemoryV1 {
-  version: 1;
-  memoryId: string;
-  label: string;
-  text: string;
-  scope: 'project' | 'artifact';
-  sourceDigest: string;
-  verifiedAt: string;
-  validUntil?: string;
-  importance: number;
-  explanation?: string;
-}
+import { evaluateVerifiedMemory as evaluateVerifiedMemoryCanonical, recallVerifiedMemory as recallVerifiedMemoryCanonical, storeVerifiedMemory as storeVerifiedMemoryCanonical, type VerifiedMemoryPageV1, type VerifiedMemoryRecallParams, type VerifiedMemoryStoreParams, type VerifiedMemoryV1 } from './verified-memory.js';
+import { containsSecretLikeText } from '../memory-hardening.js';
+import type { MemoryEvaluationCorpusV1, MemoryEvaluationReportV1 } from '../memory-hardening.js';
 
 export abstract class CoordinationMemoryAgents extends CoordinationState {
   protected get canonicalWorkspace(): string {
     return canonicalizePath(this.workspace);
   }
 
-  storeVerifiedMemory(params: { label: string; text: string; scope?: 'project' | 'artifact'; sourceDigest: string; verifiedAt?: string; validUntil?: string; importance?: number; tags?: string | string[] | null }): VerifiedMemoryV1 {
-    const label = required(params.label, 'label');
-    const text = required(params.text, 'text');
-    const sourceDigest = required(params.sourceDigest, 'sourceDigest');
-    if (containsSecretLikeText(`${label}\n${text}`)) throw new Error('memory rejected: secret-like content must never enter durable memory');
-    const verifiedAt = params.verifiedAt ?? now();
-    if (!Number.isFinite(Date.parse(verifiedAt))) throw new Error('verifiedAt must be an ISO timestamp');
-    if (params.validUntil && !Number.isFinite(Date.parse(params.validUntil))) throw new Error('validUntil must be an ISO timestamp');
-    const importance = Math.min(Math.max(Math.trunc(params.importance ?? 5), 1), 10);
-    const memoryId = this.writeTransaction(() => {
-      const inserted = insertMemory(this.db, {
-        agentId: 'awareness',
-        taskContext: label,
-        observation: text,
-        importance,
-        label,
-        tags: splitTags(params.tags),
-        workspacePath: this.canonicalWorkspace,
-        validFrom: verifiedAt,
-        validTo: params.validUntil,
-      });
-      this.db.prepare(`UPDATE awareness_memories
-        SET scope_kind = ?, source_digest = ?, verified_at = ?, secret_scan_status = 'passed'
-        WHERE memory_id = ?`).run(params.scope ?? 'project', sourceDigest, verifiedAt, inserted.memoryId);
-      return inserted.memoryId;
-    });
-    this.embedMemory(memoryId, `${label}\n${text}`);
-    return { version: 1, memoryId, label, text, scope: params.scope ?? 'project', sourceDigest, verifiedAt, ...(params.validUntil ? { validUntil: params.validUntil } : {}), importance };
+  storeVerifiedMemory(params: VerifiedMemoryStoreParams): VerifiedMemoryV1 {
+    return storeVerifiedMemoryCanonical({ db: this.db, canonicalWorkspace: this.canonicalWorkspace, writeTransaction: operation => this.writeTransaction(operation), embedMemory: (memoryId, text) => this.embedMemory(memoryId, text) }, params);
   }
 
-  recallVerifiedMemory(params: { memoryId?: string; query?: string; label?: string; sourceDigest?: string; scope?: 'project' | 'artifact'; limit?: number; now?: string; mode?: MemoryRecallModeV1; minSimilarity?: number } = {}): VerifiedMemoryV1[] {
-    if (params.memoryId && params.query !== undefined) throw new Error('memory_id cannot be combined with query');
-    const stamp = params.now ?? now();
-    const clauses = ["workspace_path = ?", "state = 'ACTIVE'", 'verified_at IS NOT NULL', "secret_scan_status = 'passed'", '(valid_to IS NULL OR valid_to > ?)'];
-    const values: Array<string | number> = [this.canonicalWorkspace, stamp];
-    if (params.memoryId) { clauses.push('memory_id = ?'); values.push(params.memoryId); }
-    if (params.label?.trim()) { clauses.push('label = ?'); values.push(params.label.trim()); }
-    if (params.sourceDigest?.trim()) { clauses.push('source_digest = ?'); values.push(params.sourceDigest.trim()); }
-    if (params.scope) { clauses.push('scope_kind = ?'); values.push(params.scope); }
-    const limit = Math.min(Math.max(params.limit ?? 10, 1), 50);
-    const query = params.query?.trim();
-    const lexicalClauses = [...clauses];
-    const lexicalValues: Array<string | number> = [...values];
-    if (query) { lexicalClauses.push('(observation LIKE ? OR label LIKE ? OR tags_json LIKE ?)'); const like = `%${query}%`; lexicalValues.push(like, like, like); }
-    const readRows = (sqlClauses: string[], sqlValues: Array<string | number>, sqlLimit = limit) => this.db.prepare(`SELECT * FROM awareness_memories WHERE ${sqlClauses.join(' AND ')} ORDER BY importance DESC, verified_at DESC LIMIT ?`).all(...sqlValues, sqlLimit) as Array<Record<string, unknown>>;
-    const toMemory = (row: Record<string, unknown>, similarity?: number): VerifiedMemoryV1 => ({
-      version: 1,
-      memoryId: String(row['memory_id']), label: String(row['label']), text: String(row['observation']),
-      scope: row['scope_kind'] === 'artifact' ? 'artifact' : 'project', sourceDigest: String(row['source_digest']),
-      verifiedAt: String(row['verified_at']), ...(row['valid_to'] ? { validUntil: String(row['valid_to']) } : {}),
-      importance: Number(row['importance'] ?? 5),
-      explanation: `verified memory; scope=${String(row['scope_kind'] ?? 'project')}; source=${String(row['source_digest'])}${similarity === undefined ? '' : `; similarity=${similarity.toFixed(4)}`}`,
-    });
-    const lexical = (): VerifiedMemoryV1[] => readRows(lexicalClauses, lexicalValues).map((row) => toMemory(row));
-    const mode = params.mode ?? 'lexical';
-    if (!query || mode === 'lexical') return lexical();
-    if (!isEmbeddingEnabled()) return lexical();
-    // Refresh missing, cross-model, or dimension-mismatched vectors before
-    // ranking. Any host failure leaves semantic empty and safely falls back.
-    this.reindexMemories();
-    let queryVec: Float32Array;
-    let queryModel: string;
-    try { const embedded = runHostEmbedder(query); queryVec = embedded.embedding; queryModel = embedded.model; } catch { return lexical(); }
-    const semanticClauses = [...clauses, 'embedding IS NOT NULL', 'embedding_model = ?'];
-    const semanticValues: Array<string | number> = [...values, queryModel];
-    const semantic = readRows(semanticClauses, semanticValues, 2000)
-      .flatMap((row) => {
-        try {
-          const sim = cosineSimilarity(queryVec, bytesToEmbedding(row['embedding'] as Uint8Array));
-          return sim > 0 && sim >= Math.min(Math.max(params.minSimilarity ?? DEFAULT_SEMANTIC_MIN_SIMILARITY, 0), 1) ? [{ row, sim }] : [];
-        } catch { return []; }
-      })
-      .sort((a, b) => b.sim - a.sim)
-      .slice(0, limit)
-      .map(({ row, sim }) => toMemory(row, sim));
-    if (mode === 'semantic') return semantic.length ? semantic : lexical();
-    const combined = [...semantic];
-    const seen = new Set(combined.map((item) => item.memoryId));
-    for (const item of lexical()) if (!seen.has(item.memoryId) && combined.length < limit) combined.push(item);
-    return combined;
+  recallVerifiedMemory(params: VerifiedMemoryRecallParams = {}): VerifiedMemoryPageV1 {
+    return recallVerifiedMemoryCanonical({ db: this.db, canonicalWorkspace: this.canonicalWorkspace, writeTransaction: operation => this.writeTransaction(operation), embedMemory: (memoryId, text) => this.embedMemory(memoryId, text) }, params);
   }
 
   evaluateVerifiedMemory(params: { corpus?: MemoryEvaluationCorpusV1; now?: string; limit?: number; minSimilarity?: number } = {}): MemoryEvaluationReportV1 {
-    return runMemoryEvaluationCorpus(params.corpus ?? MEMORY_EVALUATION_CORPUS_V1, (item) => this.recallVerifiedMemory({
-      query: item.query,
-      mode: item.mode,
-      scope: item.scope,
-      now: params.now,
-      limit: params.limit,
-      minSimilarity: params.minSimilarity,
-    }));
+    return evaluateVerifiedMemoryCanonical((recall) => this.recallVerifiedMemory(recall), params);
   }
 
   storeMemory(params: { label: string; text: string; tags?: string | string[] | null }): MemoryItem {
     const label = required(params.label, 'label');
     const text = required(params.text, 'text');
     if (containsSecretLikeText(`${label}\n${text}`)) throw new Error('memory rejected: secret-like content must never enter durable memory');
-    const inserted = insertMemory(this.db, {
+    const guarded = insertMemoryWithSimilarityGate(this.db, {
       agentId: 'awareness',
       taskContext: label,
       observation: text,
@@ -146,15 +48,22 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
       tags: splitTags(params.tags),
       workspacePath: this.canonicalWorkspace,
     });
-    const memoryId = inserted.memoryId;
+    if (guarded.skipped) {
+      const similarId = guarded.similar[0]?.memory_id;
+      if (!similarId) throw new Error('similar memory gate returned no candidate');
+      const existing = this.db.prepare('SELECT * FROM awareness_memories WHERE memory_id = ?').get(similarId) as CanonicalMemoryRow | undefined;
+      if (!existing) throw new Error('similar memory gate returned an unknown memory');
+      return memoryFromCanonicalRow(existing);
+    }
+    const memoryId = guarded.result.memoryId;
     // Best-effort: embed on write when a host embedder is configured. Never blocks the store.
     this.embedMemory(memoryId, `${label}\n${text}`);
     return {
       memoryId,
-      label: inserted.memory.label,
-      text: inserted.memory.observation,
-      tags: inserted.memory.tags,
-      createdAt: inserted.memory.created_at,
+      label: guarded.result.memory.label,
+      text: guarded.result.memory.observation,
+      tags: guarded.result.memory.tags,
+      createdAt: guarded.result.memory.created_at,
     };
   }
 
@@ -187,7 +96,7 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     const rows = this.db.prepare(`SELECT memory_id, label, observation FROM awareness_memories${where} ORDER BY created_at DESC LIMIT ?`)
       .all(...(params.force ? [this.canonicalWorkspace, limit] : [this.canonicalWorkspace, model, bytes, limit])) as Array<{ memory_id: string; label: string; observation: string }>;
     let embedded = 0;
-    for (const row of rows) if (this.embedMemory(row.memory_id, `${row.label}\n${row.observation}`)) embedded++;
+    for (const row of rows) if (this.embedMemory(row.memory_id, `${row.label}\n${renderMemoryContent(row.observation)}`)) embedded++;
     return { enabled: true, scanned: rows.length, embedded };
   }
 
@@ -200,7 +109,7 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     return { forgotten: result.deleted > 0 };
   }
 
-  recallMemory(params: { query?: string | null; label?: string | null; limit?: number; semantic?: boolean; minSimilarity?: number } = {}): MemoryItem[] {
+  recallMemory(params: { query?: string | null; label?: string | null; limit?: number; semantic?: boolean; minSimilarity?: number } = {}): MemoryRecallPage {
     const limit = Math.min(Math.max(params.limit ?? 10, 1), 50);
     const common = {
       query: params.query?.trim() ?? '',
@@ -211,7 +120,21 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     const result = params.semantic
       ? recallCanonicalMemory(this.db, common, true)
       : getCanonicalMemory(this.db, common);
-    return ((result['memories'] ?? []) as CanonicalMemoryRow[]).map(memoryFromCanonicalRow);
+    const warnings: unknown = (result as Record<string, unknown>)['warnings'];
+    const rawMemories = (result['memories'] ?? []) as CanonicalMemoryRow[];
+    return {
+      memories: rawMemories.map(memoryFromCanonicalRow),
+      partial: result['partial'] === true,
+      partialReasons: Array.isArray(result['partialReasons'])
+        ? result['partialReasons'] as MemoryRecallPage['partialReasons']
+        : [],
+      ...(result['terminalLimit'] && typeof result['terminalLimit'] === 'object'
+        ? { terminalLimit: result['terminalLimit'] as MemoryRecallPage['terminalLimit'] }
+        : {}),
+      ...(Array.isArray(warnings)
+        ? { warnings: warnings.filter((warning: unknown): warning is string => typeof warning === 'string') }
+        : {}),
+    };
   }
 
   pruneMemories(params: { olderThanMs: number; label?: string | null; dryRun?: boolean }): PruneResult {
@@ -387,3 +310,4 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
   }
 
 }
+import { renderMemoryContent } from '../memory-content.js';

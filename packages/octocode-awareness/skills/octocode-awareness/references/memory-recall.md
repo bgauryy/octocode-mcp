@@ -6,6 +6,11 @@ Memory is a ranked lead, never authority. Current user instructions, source, and
 
 ## Recall
 
+If a peer supplied a verified memory ID, use `memory recall-verified --memory-id
+<id> --source-digest <digest>` before searching. Keep its workspace and validity
+filters. Otherwise search for the decision or constraint, not a serialized inbox
+or transcript. Empty or stale recall supplies no supporting evidence; say so.
+
 ```bash
 <cli> memory recall --agent-id "$OCTOCODE_AGENT_ID" --workspace "$PWD" \
   --query "<current task>" --smart --compact
@@ -15,7 +20,18 @@ Use compact recall for orientation. Expand only relevant IDs and verify every de
 
 ## Store
 
-At the end of substantial work or a meaningful event, store one concise verified, reusable lesson with narrow scope and references. Skip routine edits and repeated lessons. Prefer a lesson that changes a future decision over status, raw dialogue, or a transcript. Reflect after the check so outcome and evidence remain joined.
+Store only when verified learning changes a future decision. Use narrow scope and
+references; keep the reason and constraint, not routine edits, status or dialogue.
+Reuse a known memory ID rather than storing the same lesson again. Verified writes
+deduplicate exact selected evidence; use explicit supersession for a changed
+decision. No memory or reflection is required to finish work.
+
+For file reasoning, retain what matters and why, file/area and actual artifact
+identity, source digest and validity. An optional history pointer references
+already captured evidence; it does not enable per-edit recording. Verified recall
+returns `memories` plus explicit partial state and `next.call`. Read only relevant
+pages. Ordinary ranked discovery can instead return a terminal-limit diagnostic:
+narrow its filters rather than assuming the returned top matches are everything.
 
 ## Validate declared evidence
 

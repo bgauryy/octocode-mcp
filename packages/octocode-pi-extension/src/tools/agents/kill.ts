@@ -45,7 +45,7 @@ export function syncWorkerRegistry(action: 'join' | 'leave', record: AgentRecord
   if (action === 'leave' && record.awarenessPresence !== 'joined') return;
   let aw: ReturnType<typeof openPersistentAwareness> | undefined;
   try {
-    aw = openPersistentAwareness({ workspace });
+    aw = openPersistentAwareness({ workspace, dbPath: record.awarenessDatabase });
     if (action === 'join') {
       aw.joinAgent({ agentId, name: record.name, role: 'worker' });
       record.awarenessPresence = 'joined';

@@ -86,7 +86,7 @@ export async function gitCoordinationScenario(): Promise<void> {
       peerStore.joinAgent({ agentId: 'peer-agent' });
       assert.deepEqual(peerStore.listAgents().map(a => a.agentId).sort(), ['main-agent', 'peer-agent']);
       const sharedMemory = mainStore.storeMemory({ label: 'GOTCHA', text: 'Auth contract requires checking preconditions' });
-      assert.ok(peerStore.recallMemory({ query: 'Auth contract' }).some(m => m.memoryId === sharedMemory.memoryId));
+      assert.ok(peerStore.recallMemory({ query: 'Auth contract' }).memories.some(m => m.memoryId === sharedMemory.memoryId));
       const messages = Array.from({ length: 3 }, (_, n) => mainStore.sendMessage({
         fromAgentId: 'main-agent', toAgentId: 'peer-agent', text: `native question ${n}`,
       }));

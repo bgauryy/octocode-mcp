@@ -6,6 +6,7 @@ import { anyReferenceCandidateIds, attachMemoryReferences, compileRecallRegex, e
 import { bumpAccess } from './memory-write.js';
 import { checkMemoryEvidence, createMemoryEvidenceBudget } from './memory-evidence.js';
 import { canonicalMemoryInstant, decayComponents, JUDGMENT_RELEVANCE_FLOOR, LexicalScopeOptions, SCORING_PREFETCH_FACTOR } from './memory-scoring.js';
+import { memoryRecallBounds } from './memory-limits.js';
 
 // ─── getMemory ────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ export function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): GetMe
       ...scopeOptions,
     },
   );
+  let candidateLimited = memories.length >= limit * SCORING_PREFETCH_FACTOR;
   if (smartEnabled && memories.length < limit && (labels.length > 0 || tags.length > 0 || minImportance > 1)) {
     if (labels.length > 0 && !droppedSmartFilters.includes('label')) droppedSmartFilters.push('label');
     if (tags.length > 0 && !droppedSmartFilters.includes('tag')) droppedSmartFilters.push('tag');
@@ -124,6 +126,7 @@ export function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): GetMe
       states,
       scopeOptions,
     );
+    candidateLimited ||= expanded.length >= limit * SCORING_PREFETCH_FACTOR;
     const byId = new Map(memories.map(memory => [memory.memory_id, memory]));
     for (const memory of expanded) byId.set(memory.memory_id, memory);
     memories = [...byId.values()];
@@ -192,6 +195,7 @@ export function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): GetMe
     memories.sort((a, b) => ((b.score ?? 0) - (a.score ?? 0)) || stableTieBreak(a, b));
   }
 
+  const bounds = memoryRecallBounds(candidateLimited, memories.length > limit, limit * SCORING_PREFETCH_FACTOR, limit);
   memories = memories.slice(0, limit);
   const evidenceBudget = createMemoryEvidenceBudget();
   for (const memory of memories) {
@@ -215,6 +219,7 @@ export function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): GetMe
   } = {
     count: memories.length,
     memories,
+    ...bounds,
     mode,
     sort,
     as_of: normalizedAsOf,

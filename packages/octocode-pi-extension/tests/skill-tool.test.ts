@@ -197,7 +197,7 @@ test('registered skill tool loads the bundled Awareness instructions when no use
     const text = loaded.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n');
     assert.equal(loaded.isError ?? false, false, text);
     assert.match(text, /skill: octocode-awareness \[bundled\]/);
-    assert.match(text, /# Octocode Awareness/);
+    assert.match(text, /# Awareness/);
     assert.match(text, /verify audit/);
     assert.equal(getSkillUsage().get('octocode-awareness')?.count, 1);
   } finally {

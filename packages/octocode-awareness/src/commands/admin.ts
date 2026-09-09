@@ -95,6 +95,10 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
     partialReasons: result.partialReasons ?? [],
     ...(continuation ? { next: { list: { command: { name: 'signal list', args: continuationArgs } } } } : {}),
   } : {};
+  const cliActions = result.action === 'list' && result.actions ? {
+    ack: { ...result.actions.ack, command: { name: 'signal ack', args: ['--db', dbPath, '--agent-id', String(result.actions.ack.request.agent_id), ...((result.actions.ack.request.signal_id as string[]).flatMap(id => ['--signal-id', id])), '--compact'] } },
+    ...(result.actions.reply ? { reply: result.actions.reply.map(action => ({ ...action, command: { name: 'signal reply', args: ['--db', dbPath, '--agent-id', String(action.request.agent_id), '--in-reply-to', String(action.request.in_reply_to), '--subject', String(action.request.subject), '--compact'] } })) } : {}),
+  } : undefined;
   if (compactList && result.action === 'list') {
     const signals = result.signals.map((signal) => {
       const shownFiles = signal.files.slice(0, 3);
@@ -123,6 +127,7 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
       signals,
       unread_only: result.unread_only,
       bodies: 'omitted',
+      ...(cliActions ? { actions: cliActions } : {}),
       ...pagination,
     }, 0, opts);
   }
@@ -130,6 +135,7 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
     return emit({
       db_path: dbPath,
       ...result,
+      ...(cliActions ? { actions: cliActions } : {}),
       ...pagination,
       bodies: 'summarized',
       signals: result.signals.map(({ data, ...signal }) => ({

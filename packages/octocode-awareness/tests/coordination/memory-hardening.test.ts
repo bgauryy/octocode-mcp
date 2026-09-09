@@ -17,8 +17,8 @@ describe('verified memory hardening', () => {
       const active = aw.storeVerifiedMemory({ label: 'build', text: 'Run workspace verify', sourceDigest: 'sha256:docs', verifiedAt: '2026-08-26T00:00:00.000Z', validUntil: '2026-09-01T00:00:00.000Z', importance: 8 });
       aw.storeVerifiedMemory({ label: 'BUILD', text: 'Old command', sourceDigest: 'sha256:old', verifiedAt: '2026-08-01T00:00:00.000Z', validUntil: '2026-08-20T00:00:00.000Z' });
       const recalled = aw.recallVerifiedMemory({ now: '2026-08-26T00:00:00.000Z' });
-      expect(recalled.map((memory) => memory.memoryId)).toEqual([active.memoryId]);
-      expect(recalled[0]?.explanation).toContain('source=sha256:docs');
+      expect(recalled.memories.map((memory) => memory.memoryId)).toEqual([active.memoryId]);
+      expect(recalled.memories[0]?.explanation).toContain('source=sha256:docs');
     } finally { aw.close(); }
   });
 
@@ -27,9 +27,9 @@ describe('verified memory hardening', () => {
     roots.push(workspace);
     const aw = openAwarenessStore({ workspace, dbPath: join(workspace, 'awareness.sqlite3') });
     try {
-      expect(() => aw.storeVerifiedMemory({ label: 'credential', text: 'api_key=supersecretvalue', sourceDigest: 'sha256:x' })).toThrow(/secret-like/);
-      expect(() => aw.storeMemory({ label: 'credential', text: 'access_token=supersecretvalue' })).toThrow(/secret-like/);
-      expect(aw.recallVerifiedMemory()).toEqual([]);
+      expect(() => aw.storeVerifiedMemory({ label: 'SECURITY', text: 'api_key=supersecretvalue', sourceDigest: 'sha256:x' })).toThrow(/secret-like/);
+      expect(() => aw.storeMemory({ label: 'SECURITY', text: 'access_token=supersecretvalue' })).toThrow(/secret-like/);
+      expect(aw.recallVerifiedMemory().memories).toEqual([]);
     } finally { aw.close(); }
   });
 
@@ -39,8 +39,8 @@ describe('verified memory hardening', () => {
     const aw = openAwarenessStore({ workspace, dbPath: join(workspace, 'awareness.sqlite3') });
     try {
       aw.storeMemory({ label: 'OTHER', text: 'unverified assertion', tags: ['verified', 'source:fake'] });
-      expect(aw.recallMemory({ query: 'assertion' })).toHaveLength(1);
-      expect(aw.recallVerifiedMemory({ query: 'assertion' })).toEqual([]);
+      expect(aw.recallMemory({ query: 'assertion' }).memories).toHaveLength(1);
+      expect(aw.recallVerifiedMemory({ query: 'assertion' }).memories).toEqual([]);
     } finally { aw.close(); }
   });
 
@@ -62,7 +62,7 @@ describe('verified memory hardening', () => {
       aw.storeVerifiedMemory({ label: 'WORKFLOW', text: 'resume after compact', sourceDigest: 'eval:fresh:recovery', ...common });
       aw.storeVerifiedMemory({ label: 'RELEASE', text: 'release command current', sourceDigest: 'eval:fresh:release', ...common });
       aw.storeVerifiedMemory({ label: 'RELEASE', text: 'release command obsolete', sourceDigest: 'eval:stale:release', verifiedAt: '2026-07-01T00:00:00.000Z', validUntil: '2026-08-01T00:00:00.000Z' });
-      aw.storeVerifiedMemory({ label: 'DECISION', text: 'artifact decision', sourceDigest: 'eval:artifact:decision', scope: 'artifact', ...common });
+      aw.storeVerifiedMemory({ label: 'DECISION', text: 'artifact decision', sourceDigest: 'eval:artifact:decision', scope: 'artifact', artifact: 'fixture-artifact', ...common });
       aw.storeVerifiedMemory({ label: 'DECISION', text: 'artifact decision', sourceDigest: 'eval:project:decision', scope: 'project', ...common });
 
       const report = aw.evaluateVerifiedMemory({ corpus: MEMORY_EVALUATION_CORPUS_V1, now: '2026-08-26T00:00:00.000Z' });

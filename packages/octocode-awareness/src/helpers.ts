@@ -4,6 +4,7 @@
  */
 
 import { resolve } from 'node:path';
+import { renderMemoryContent } from './memory-content.js';
 import type { MemoryRecord } from './types/identity-memory.js';
 import type { MemoryRow } from './types/work-maintenance.js';
 
@@ -153,7 +154,7 @@ export function rowToMemory(row: MemoryRow): MemoryRecord {
     memory_id: row.memory_id,
     agent_id: row.agent_id,
     task_context: row.task_context,
-    observation: row.observation,
+    observation: renderMemoryContent(row.observation),
     importance: row.importance,
     state: (row.state as 'ACTIVE' | 'SUPERSEDED') ?? 'ACTIVE',
     label: row.label ?? 'OTHER',

@@ -19,8 +19,8 @@ describe('single-store convergence', () => {
       store.storeMemory({ label: 'OTHER', text: 'host observation' });
       insertMemory(db, { taskContext: 'ledger', observation: 'full runtime row', importance: 5, workspacePath: workspace });
       expect(db.prepare('SELECT COUNT(*) AS count FROM awareness_memories').get()).toEqual({ count: 3 });
-      expect(store.recallMemory({ query: 'full runtime row' }).map(row => row.text)).toContain('full runtime row');
-      expect(store.recallVerifiedMemory({ sourceDigest: 'sha256:source' })).toHaveLength(1);
+      expect(store.recallMemory({ query: 'full runtime row' }).memories.map(row => row.text)).toContain('full runtime row');
+      expect(store.recallVerifiedMemory({ sourceDigest: 'sha256:source' }).memories).toHaveLength(1);
       expect(db.prepare("SELECT 1 FROM sqlite_schema WHERE name = 'memories'").get()).toBeUndefined();
     } finally { db.close(); store.close(); }
   });

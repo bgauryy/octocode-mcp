@@ -144,6 +144,13 @@ test('lists the complete Awareness catalog through one direct tool', async () =>
     (details(value).next as Record<string, unknown> | undefined)?.tool,
     'awareness'
   );
+  const next = details(value).next as { queries?: unknown[] } | undefined;
+  assert.equal(Array.isArray(next?.queries), true, 'pagination continuation must use the registered query envelope');
+  assert.equal(
+    compileMcpSchemaValidator(tool.parameters).validate({ queries: next?.queries ?? [] }).valid,
+    true,
+    'pagination continuation must be directly executable by the awareness tool',
+  );
   const parameters = tool.parameters as {
     properties?: Record<string, { maxItems?: number }>;
   };
@@ -171,13 +178,17 @@ test('paginates every canonical command exactly once and describes every native 
   const tool = makeTool();
   const expected = listAwarenessCommandDescriptors();
   const listed = new Set<string>();
-  for (let page = 1; listed.size < expected.length; page += 1) {
-    const value = await run(tool, { action: 'list', page, pageSize: 25 });
+  let request: Record<string, unknown> = { queries: [{ reasoning: 'Discover Awareness commands', action: 'list', pageSize: 25 }] };
+  for (let page = 0; page <= expected.length; page += 1) {
+    assert.equal(compileMcpSchemaValidator(tool.parameters).validate(request).valid, true);
+    const value = await tool.execute('catalog-page', request, undefined, undefined, { cwd: root } as PiContext);
     const entries = details(value).entries as Array<{ command: string }>;
     for (const entry of entries)
       assert.equal(listed.has(entry.command), false, entry.command);
     for (const entry of entries) listed.add(entry.command);
-    if (!details(value).next) break;
+    const next = details(value).next as { queries: unknown[] } | undefined;
+    if (!next) break;
+    request = { queries: next.queries };
   }
   assert.deepEqual(
     [...listed].sort(),
@@ -459,6 +470,18 @@ test('bounds model-visible command output and reports truncation', async () => {
     }).valid,
     true
   );
+});
+
+test('does not offer to replay a completed mutation when its output is oversized', async () => {
+  const exec = vi.fn(async (): Promise<AwarenessCommandResult> => ({ payload: { receipt: 'x'.repeat(13_000) }, exitCode: 0 }));
+  const value = await run(makeTool(exec), { action: 'call', command: 'agent register', params: { limit: 10 } });
+  assert.equal(value.isError, false);
+  const packet = JSON.parse(String((value.content[0] as { text?: string }).text));
+  assert.equal(packet.next, undefined);
+  assert.equal(packet.diagnostic.kind, 'terminal-limit');
+  assert.equal(packet.commandCompleted, true);
+  assert.match(packet.hint, /Do not repeat/);
+  assert.equal(exec.mock.calls.length, 1);
 });
 
 test('preserves exit code 2 as blocked instead of success', async () => {

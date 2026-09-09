@@ -41,18 +41,49 @@ describe('semantic memory recall', () => {
     aw.storeMemory({ label: 'BUILD', text: 'how to run a database migration with drizzle' });
     aw.storeMemory({ label: 'OTHER', text: 'classic apple pie recipe with cinnamon' });
     const hits = aw.recallMemory({ query: 'database migration steps', semantic: true, limit: 5 });
-    expect(hits.length).toBeGreaterThan(0);
-    expect(hits[0]!.label).toBe('BUILD');
+    expect(hits.memories.length).toBeGreaterThan(0);
+    expect(hits.memories[0]!.label).toBe('BUILD');
   });
 
   it('ranks only current verified rows through the semantic verified-memory route', () => {
-    aw.storeVerifiedMemory({ label: 'BUILD', text: 'database migration transaction', sourceDigest: 'sha256:db', validUntil: '2027-01-01T00:00:00.000Z' });
-    aw.storeVerifiedMemory({ label: 'OTHER', text: 'apple pie cinnamon recipe', sourceDigest: 'sha256:food', validUntil: '2027-01-01T00:00:00.000Z' });
+    aw.storeVerifiedMemory({ label: 'BUILD', text: 'database migration transaction', sourceDigest: 'sha256:db', verifiedAt: '2026-08-26T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z' });
+    aw.storeVerifiedMemory({ label: 'OTHER', text: 'apple pie cinnamon recipe', sourceDigest: 'sha256:food', verifiedAt: '2026-08-26T00:00:00.000Z', validUntil: '2027-01-01T00:00:00.000Z' });
     aw.storeMemory({ label: 'OTHER', text: 'database migration transaction extra' });
     const hits = aw.recallVerifiedMemory({ query: 'database migration steps', mode: 'semantic', now: '2026-08-27T00:00:00.000Z' });
-    expect(hits[0]?.sourceDigest).toBe('sha256:db');
-    expect(hits[0]?.explanation).toContain('similarity=');
-    expect(hits.map((item) => item.sourceDigest)).not.toContain('unverified');
+    expect(hits.memories[0]?.sourceDigest).toBe('sha256:db');
+    expect(hits.memories[0]?.explanation).toContain('similarity=');
+    expect(hits.memories.map((item) => item.sourceDigest)).not.toContain('unverified');
+  });
+
+  it('pages semantic and hybrid unions without repeats and includes lexical-only rows in hybrid', () => {
+    for (const [index, [text, sourceDigest]] of ([
+      ['database migration transaction', 'sha256:one'],
+      ['database migration rollback', 'sha256:two'],
+      ['database migration lexical-only', 'sha256:low'],
+    ] as const).entries()) {
+      // Keep one lexical-only row out of the embedding pool so hybrid recall
+      // proves that it unions semantic and lexical candidates.
+      if (index === 2) delete process.env['OCTOCODE_EMBED_CMD'];
+      aw.storeVerifiedMemory({ label: 'TEST', text, sourceDigest, verifiedAt: '2026-08-26T00:00:00Z', validUntil: '2027-01-01T00:00:00Z' });
+      if (index === 2) process.env['OCTOCODE_EMBED_CMD'] = `"${process.execPath}" "${scriptPath}"`;
+    }
+    aw.storeVerifiedMemory({ label: 'OTHER', text: 'apple pie cinnamon recipe', sourceDigest: 'sha256:unrelated', verifiedAt: '2026-08-26T00:00:00Z', validUntil: '2027-01-01T00:00:00Z' });
+    const readPages = (mode: 'semantic' | 'hybrid', minSimilarity?: number) => {
+      const ids: string[] = [];
+      let page = aw.recallVerifiedMemory({ query: 'database migration', mode, minSimilarity, limit: 1, now: '2026-08-27T00:00:00Z' });
+      for (;;) {
+        ids.push(...page.memories.map(item => item.memoryId));
+        if (!page.next) return { ids, page };
+        const params = page.next.call.params;
+        page = aw.recallVerifiedMemory({ query: String(params.query), mode: params.mode as 'semantic' | 'hybrid', minSimilarity: params.min_similarity === undefined ? undefined : Number(params.min_similarity), limit: Number(params.limit), offset: Number(params.offset), revision: String(params.revision), now: String(params.now) });
+      }
+    };
+    const semantic = readPages('semantic', 0.5);
+    expect(new Set(semantic.ids).size).toBe(2);
+    expect(semantic.ids).toHaveLength(2);
+    const hybrid = readPages('hybrid', 0.5);
+    expect(new Set(hybrid.ids).size).toBe(hybrid.ids.length);
+    expect(hybrid.ids).toHaveLength(3);
   });
 
   it('reindex backfills embeddings for rows stored before the embedder was set', () => {
@@ -63,15 +94,15 @@ describe('semantic memory recall', () => {
     expect(first).toEqual({ enabled: true, scanned: 1, embedded: 1 });
     // Nothing left missing → second pass embeds 0.
     expect(aw.reindexMemories()).toEqual({ enabled: true, scanned: 0, embedded: 0 });
-    expect(aw.recallMemory({ query: 'database migration', semantic: true })[0]?.label).toBe('BUILD');
+    expect(aw.recallMemory({ query: 'database migration', semantic: true }).memories[0]?.label).toBe('BUILD');
   });
 
   it('falls back to lexical recall when the embedder is unset', () => {
     delete process.env['OCTOCODE_EMBED_CMD'];
     aw.storeMemory({ label: 'BUILD', text: 'database migration notes' });
     const hits = aw.recallMemory({ query: 'migration', semantic: true });
-    expect(hits.map((h) => h.label)).toContain('BUILD');
-    expect(hits[0]!.similarity).toBeUndefined();
+    expect(hits.memories.map((h) => h.label)).toContain('BUILD');
+    expect(hits.memories[0]!.similarity).toBeUndefined();
     expect(aw.reindexMemories()).toEqual({ enabled: false, scanned: 0, embedded: 0 });
   });
 
@@ -84,7 +115,7 @@ describe('semantic memory recall', () => {
     await writeFile(v2, EMBED_SCRIPT.replace("model:'test-bow'", "model:'test-bow-v2'"), 'utf8');
     process.env['OCTOCODE_EMBED_CMD'] = `"${process.execPath}" "${v2}"`;
     const hits = aw.recallMemory({ query: 'database migration notes', semantic: true });
-    expect(hits.map((h) => h.label)).toContain('BUILD');
+    expect(hits.memories.map((h) => h.label)).toContain('BUILD');
     expect(aw.reindexMemories()).toEqual({ enabled: true, scanned: 1, embedded: 1 });
   });
 
@@ -94,17 +125,17 @@ describe('semantic memory recall', () => {
     await writeFile(resized, EMBED_SCRIPT.replace('const N=64', 'const N=32'), 'utf8');
     process.env['OCTOCODE_EMBED_CMD'] = `"${process.execPath}" "${resized}"`;
     const hits = aw.recallMemory({ query: 'database migration notes', semantic: true });
-    expect(hits[0]?.label).toBe('BUILD');
+    expect(hits.memories[0]?.label).toBe('BUILD');
   });
 
   it('keeps canonical lexical fallback explicit when a host-only similarity floor is unavailable', () => {
     aw.storeMemory({ label: 'BUILD', text: 'how to run a database migration with drizzle' });
     // Default floor (0): the weakly-related row is a semantic hit with a score.
     const withScore = aw.recallMemory({ query: 'database migration steps', semantic: true });
-    expect(withScore[0]?.label).toBe('BUILD');
+    expect(withScore.memories[0]?.label).toBe('BUILD');
     // Canonical recall does not expose the removed host scorer's similarity
     // threshold; it remains a useful lexical result rather than a fabricated score.
     const floored = aw.recallMemory({ query: 'database migration steps', semantic: true, minSimilarity: 0.95 });
-    expect(floored.map((hit) => hit.label)).toContain('BUILD');
+    expect(floored.memories.map((hit) => hit.label)).toContain('BUILD');
   });
 });

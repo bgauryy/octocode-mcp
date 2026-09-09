@@ -89,6 +89,29 @@ describe('reliable cooperation contracts', () => {
     expect((delivered[0] as { content: string }).content).toContain('history.ready');
   });
 
+  it('turns signal action hints into directly executable command API calls', async () => {
+    const context = fixture();
+    const sent = await executeAwarenessCommand({ command: 'signal publish', params: {
+      kind: 'question', subject: 'Review this', to_agent: ['reader'], body: 'Please review.',
+    } }, context);
+    const signal = sent.payload as { signal_id: string };
+    const listed = await executeAwarenessCommand({ command: 'signal list', params: {
+      signal_id: [signal.signal_id], all: true,
+    } }, { ...context, agentId: 'reader' });
+    const converted = structuredAwarenessContinuations(listed.payload) as {
+      actions: { ack: { call: AwarenessCommandCall }; reply: Array<{ call: AwarenessCommandCall }> };
+    };
+    expect(converted.actions.ack.call).toEqual({ command: 'signal ack', params: {
+      agent_id: 'reader', signal_id: [signal.signal_id],
+    } });
+    const acked = await executeAwarenessCommand(converted.actions.ack.call, { ...context, agentId: 'reader' });
+    expect(acked.payload).toMatchObject({ action: 'ack', acknowledged: 1, signal_ids: [signal.signal_id] });
+    const replyParams = { ...converted.actions.reply[0]!.call.params, body: 'Reviewed and confirmed.' };
+    const replied = await executeAwarenessCommand({ ...converted.actions.reply[0]!.call, params: replyParams }, { ...context, agentId: 'reader' });
+    expect(replied.exitCode).toBe(0);
+    expect(replied.payload).toMatchObject({ action: 'reply', thread_id: signal.signal_id });
+  });
+
   it('preserves plain text and unversioned JSON without inferring a machine protocol', () => {
     for (const body of [null, 'human text', '{bad json', '{"type":"ready","payload":{}}', '{"$awareness":"future","body":null}', '{"$awareness":"signal/v1","body":null,"data":{}}']) {
       expect(encodeSignalBody(body)).toBe(body);

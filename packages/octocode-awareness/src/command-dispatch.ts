@@ -23,6 +23,16 @@ export async function runDatabaseCommandHandler(db: DatabaseSync, command: strin
       const { runHistoryCommand } = await import('./commands/history.js');
       signal?.throwIfAborted();
       const result = await runHistoryCommand(db, command, args);
+      if (opts.cli && command === 'history_restore_apply' && result.undo_preview && typeof result.undo_preview === 'object') {
+        const preview = result.undo_preview as { command?: string; params?: Record<string, unknown> };
+        if (preview.command === 'history restore-preview' && preview.params) {
+          const params = preview.params;
+          result.undo_preview = { command: { name: preview.command, args: [
+            '--db', dbPath, '--workspace', String(params.workspace), '--agent-id', String(params.agent_id),
+            '--operation-id', String(params.operation_id), '--side', String(params.side), '--compact',
+          ] } };
+        }
+      }
       exitCode = emit(result, result.ok === false ? 2 : 0, opts); break;
     }
     case 'tell-memory':    exitCode = cmdTellMemory(db, args, dbPath, opts); break;

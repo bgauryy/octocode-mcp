@@ -173,7 +173,9 @@ it('skill install script prints the hook init flow without SQLite warnings', () 
     const arbitraryCwd = mkdtempSync(resolve(tmpdir(), 'octocode-install-command-cwd-'));
     const restoreLocalProcesses = allowLocalFixtureProcesses();
     try {
-      const schema = spawnSync('/bin/sh', ['-c', parsed.commands.schema!], {
+      // Exercise generated arguments against the local build without registry I/O.
+      const schemaArgs = parsed.commands.schema!.replace(/^npx @octocodeai\/octocode-awareness\s+/, '').split(/\s+/);
+      const schema = spawnSync(NODE, [SCRIPT, ...schemaArgs], {
         cwd: arbitraryCwd,
         encoding: 'utf8',
         timeout: 5000,

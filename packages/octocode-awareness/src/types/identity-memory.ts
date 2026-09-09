@@ -1,6 +1,7 @@
 /**
  * types.ts — Shared interfaces and types for @octocodeai/octocode-awareness.
  */
+import type { MemoryRecallBounds } from '../memory-limits.js';
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -254,7 +255,7 @@ export interface GetMemoryParams {
   cwd?: string;
 }
 
-export interface GetMemoryResult {
+export interface GetMemoryResult extends MemoryRecallBounds {
   count: number;
   memories: MemoryRecord[];
   mode: 'lexical' | 'fallback' | 'semantic';

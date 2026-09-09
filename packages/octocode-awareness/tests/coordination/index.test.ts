@@ -114,7 +114,7 @@ describe('AwarenessStore canonical coordination', () => {
 
   it('stores and prunes memory without altering the coordination schema contract', () => {
     const memory = aw.storeMemory({ label: 'GOTCHA', text: 'Use node sqlite with the supported runtime.', tags: 'sqlite,node' });
-    expect(aw.recallMemory({ query: 'sqlite' })).toHaveLength(1);
+    expect(aw.recallMemory({ query: 'sqlite' }).memories).toHaveLength(1);
     expect(aw.forgetMemory({ memoryId: memory.memoryId })).toEqual({ forgotten: true });
     expect(aw.schema().entities.memory).toContain('memoryId');
     expect(aw.schema().entities.message).toContain('messageId');
