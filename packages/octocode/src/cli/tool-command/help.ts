@@ -19,6 +19,7 @@ import {
   getToolSchemaGuidance,
 } from './formatting.js';
 import { LSP_TYPE_EXAMPLES } from './lsp-examples.js';
+import { formatToolFlagExample } from './flags-to-query.js';
 
 function formatBriefField(field: {
   name: string;
@@ -168,10 +169,20 @@ export async function showToolHelp(toolName: string): Promise<boolean> {
 
   console.log(`  ${bold('Flags')}`);
   console.log(
-    `    ${c('cyan', '--json')}     ${dim('direct structured result JSON (pretty)')}`
+    `    ${dim('Every schema field above is a flag: camelCase → kebab-case')}`
   );
   console.log(
-    `    ${c('cyan', '--compact')}  ${dim('direct structured result JSON (minified)')}`
+    `    ${dim('(maxDepth → --max-depth); repeat array flags; nested objects')}`
+  );
+  console.log(
+    `    ${dim('use --<parent>-<child>; a bare word selects the operation.')}`
+  );
+  console.log(`    ${c('yellow', formatToolFlagExample(tool.name))}`);
+  console.log(
+    `    ${dim('Output is minified structured JSON by default (fewest tokens).')}`
+  );
+  console.log(
+    `    ${c('cyan', '--json')}  ${dim('pretty structured JSON')}   ${c('cyan', '--yaml')}  ${dim('human-readable view')}`
   );
 
   console.log();

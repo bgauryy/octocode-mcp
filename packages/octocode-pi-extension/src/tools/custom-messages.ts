@@ -8,9 +8,8 @@ import { AWARENESS_PEER_EVENT_MESSAGE_TYPE } from '@octocodeai/octocode-awarenes
  * Lifecycle and peer messages get dedicated renderers instead of pi's default
  * plain custom-message row:
  *  - compaction checkpoints (emitted from compaction-hooks on session_compact)
- *  - awareness handoffs (emitted when session awareness is handed to a
- *    successor context/agent)
- *  - accepted Awareness peer messages (the existing attributed context payload)
+ *  - accepted Awareness peer messages (the existing attributed context payload),
+ *    including peer handoffs (details.messageClass === 'handoff')
  * Recovery receipts use the state-entry renderer and add no model context.
  *
  * Contract discipline: `content` on a custom message ENTERS THE LLM CONTEXT.
@@ -29,7 +28,6 @@ import { makeComponentRenderer } from './render-helpers.js';
 import { renderFrame } from '../tui/components.js';
 
 export const COMPACTION_CHECKPOINT_TYPE = 'octocode-compaction-checkpoint';
-export const AWARENESS_HANDOFF_TYPE = 'octocode-awareness-handoff';
 
 const MAX_SUMMARY_LINES = 8;
 const MAX_LIST_ITEMS = 6;
@@ -71,17 +69,6 @@ export interface CompactionCheckpointDetails {
       steps: PlanStep[];
     };
   };
-}
-
-export interface AwarenessHandoffDetails {
-  /** Short human label for the handoff. */
-  label: string;
-  from?: string;
-  to?: string;
-  goal?: string;
-  status?: string;
-  notes?: string[];
-  artifacts?: string[];
 }
 
 // ─── Card builders (pure) ─────────────────────────────────────────────────────
@@ -160,51 +147,6 @@ export function buildCompactionCard(
     title: cardHeader('Compaction checkpoint', label, theme),
     body: body.filter((line): line is string => Boolean(line)),
     footer: 'context compacted — checkpoint ready',
-    borderToken: 'dim',
-  }, { width, theme });
-}
-
-/**
- * Branded awareness-handoff card. Collapsed = 1–2 lines (header + route);
- * expanded = full box with goal, status, notes, and artifacts.
- */
-export function buildHandoffCard(
-  details: AwarenessHandoffDetails,
-  expanded: boolean,
-  theme: PiTheme | undefined,
-  width: number,
-): string[] {
-  const label = details.label || 'handoff';
-  const routeParts = [
-    details.from || details.to ? `${details.from ?? '?'} → ${details.to ?? '?'}` : '',
-    details.status ? `status: ${details.status}` : '',
-  ].filter(Boolean);
-  const route = routeParts.length > 0 ? paint(theme, 'dim', routeParts.join(SEP)) : undefined;
-
-  if (!expanded) {
-    const lines = [cardHeader('Awareness handoff', label, theme)];
-    if (route) lines.push(`  ${route}`);
-    return lines.map((line) => fit(line, width));
-  }
-
-  const body: string[] = [];
-  if (route) body.push(route);
-  if (details.goal) {
-    body.push(`${paint(theme, 'muted', 'goal:')} ${paint(theme, 'bright', details.goal)}`);
-  }
-  for (const note of (details.notes ?? []).slice(0, MAX_LIST_ITEMS)) {
-    body.push(paint(theme, 'bright', `- ${note}`));
-  }
-  const omittedNotes = (details.notes?.length ?? 0) - MAX_LIST_ITEMS;
-  if (omittedNotes > 0) {
-    body.push(paint(theme, 'muted', `… ${omittedNotes} more note${omittedNotes === 1 ? '' : 's'}`));
-  }
-  const artifacts = listLine('artifacts', details.artifacts ?? [], theme);
-  if (artifacts) body.push(artifacts);
-  return renderFrame({
-    title: cardHeader('Awareness handoff', label, theme),
-    body,
-    footer: 'awareness handed off',
     borderToken: 'dim',
   }, { width, theme });
 }
@@ -293,14 +235,6 @@ export function registerOctocodeMessageRenderers(pi: PiInstance): void {
         width,
       ), undefined),
   );
-  pi.registerMessageRenderer?.(AWARENESS_HANDOFF_TYPE, (message, options, theme) =>
-    makeComponentRenderer((_props, { width: width }) => buildHandoffCard(
-        detailsOf(message) as unknown as AwarenessHandoffDetails,
-        options?.expanded === true,
-        theme,
-        width,
-      ), undefined),
-  );
 }
 
 // ─── Emitters ─────────────────────────────────────────────────────────────────
@@ -351,15 +285,6 @@ export function emitCompactionCheckpoint(pi: PiInstance, details: CompactionChec
   pi.sendMessage?.({
     customType: COMPACTION_CHECKPOINT_TYPE,
     content: renderCompactionContextMarker(details),
-    display: true,
-    details,
-  });
-}
-
-export function emitAwarenessHandoff(pi: PiInstance, details: AwarenessHandoffDetails): void {
-  pi.sendMessage?.({
-    customType: AWARENESS_HANDOFF_TYPE,
-    content: `Awareness handoff recorded: ${details.label}`,
     display: true,
     details,
   });

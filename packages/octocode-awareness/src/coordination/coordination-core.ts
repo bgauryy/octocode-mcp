@@ -86,7 +86,7 @@ export abstract class CoordinationBase {
   abstract markCheck(params: { taskId: string; runId: string; doneAt: string; agentId: string; message: string; status?: CheckStatus }): Task;
   abstract storeMemory(params: { label: string; text: string; tags?: string | string[] | null }): MemoryItem;
   abstract storeVerifiedMemory(params: { label: string; text: string; scope?: 'project' | 'artifact'; sourceDigest: string; verifiedAt?: string; validUntil?: string; importance?: number; tags?: string | string[] | null }): VerifiedMemoryV1;
-  abstract recallVerifiedMemory(params?: { query?: string; label?: string; sourceDigest?: string; scope?: 'project' | 'artifact'; limit?: number; now?: string; mode?: MemoryRecallModeV1; minSimilarity?: number }): VerifiedMemoryV1[];
+  abstract recallVerifiedMemory(params?: { memoryId?: string; query?: string; label?: string; sourceDigest?: string; scope?: 'project' | 'artifact'; limit?: number; now?: string; mode?: MemoryRecallModeV1; minSimilarity?: number }): VerifiedMemoryV1[];
   abstract evaluateVerifiedMemory(params?: { corpus?: MemoryEvaluationCorpusV1; now?: string; limit?: number; minSimilarity?: number }): MemoryEvaluationReportV1;
   protected abstract embedMemory(memoryId: string, text: string): boolean;
   abstract reindexMemories(params: { force?: boolean; limit?: number }): { enabled: boolean; scanned: number; embedded: number };
@@ -97,7 +97,7 @@ export abstract class CoordinationBase {
   abstract touchAgent(params: { agentId: string; status?: AgentStatus }): AgentRecord;
   abstract leaveAgent(params: { agentId: string }): AgentRecord;
   abstract listAgents(params: { includeLeft?: boolean; staleAfterMs?: number }): AgentRecord[];
-  abstract sendMessage(params: { fromAgentId: string; toAgentId?: string | null; topic?: string | null; text: string; files?: string | string[] | null }): LiteMessage;
+  abstract sendMessage(params: { fromAgentId: string; toAgentId?: string | null; topic?: string | null; text: string; data?: import('../signal-data.js').SignalData | string; files?: string | string[] | null }): LiteMessage;
   abstract listMessages(params: { agentId?: string | null; includeRead?: boolean; topic?: string | null; limit?: number }): LiteMessage[];
   abstract listMessagesPage(params?: MessageListParams): MessagePage;
   abstract countMessages(params?: Omit<MessageListParams, 'cursor' | 'limit'>): number;

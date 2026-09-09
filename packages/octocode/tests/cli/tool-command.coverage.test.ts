@@ -458,7 +458,10 @@ describe('tool-command coverage', () => {
       await toolCommand.handler!({
         command: 'tools',
         args: ['ghCloneRepo'],
-        options: { queries: '{"owner":"bgauryy","repo":"octocode-mcp"}' },
+        options: {
+          queries: '{"owner":"bgauryy","repo":"octocode-mcp"}',
+          yaml: true,
+        },
       });
 
       expect(mocks.initialize).toHaveBeenCalledTimes(1);
@@ -570,7 +573,9 @@ describe('tool-command coverage', () => {
     });
 
     const output = consoleSpy.mock.calls.flat().join('\n');
-    expect(output).toContain('Pass tool input with --queries');
+    expect(output).toContain(
+      "Pass it with --queries '<json>' or use field flags"
+    );
     expect(process.exitCode).toBe(2);
   });
 
@@ -658,7 +663,7 @@ describe('tool-command coverage', () => {
     });
 
     const allArgs = consoleSpy.mock.calls.flat().join('\n');
-    expect(allArgs).toContain('"status": "ok"');
+    expect(allArgs).toContain('"status":"ok"');
   });
 
   it('printToolResult: falls back to JSON.stringify(result) when no content and no structuredContent', async () => {
@@ -980,7 +985,7 @@ describe('tool-command coverage', () => {
     });
 
     const out = consoleSpy.mock.calls.flat().join('\n');
-    expect(out).toContain('"found": true');
+    expect(out).toContain('"found":true');
   });
 
   it('printToolResult: content blocks with non-string text are filtered out', async () => {
@@ -1001,6 +1006,7 @@ describe('tool-command coverage', () => {
       options: {
         queries:
           '{"path":".","searchText":"x","matchContentLength":200,"pageSize":1,"page":1,"maxMatchesPerFile":1}',
+        yaml: true,
       },
     });
 

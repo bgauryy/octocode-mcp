@@ -38,9 +38,9 @@ const CLI_ALLOWED: Record<string, string[]> = {
   'refinement get': ['workspace', 'refinement_id', 'artifact', 'repo', 'ref', 'quality', 'include_handoffs', 'state', 'limit', 'offset', 'full'],
   'lock prune': ['older_than_minutes', 'expired_only', 'agent_id', 'workspace', 'artifact', 'target_file', 'dry_run'],
   'reflect record': ['agent_id', 'task', 'outcome', 'lesson', 'worked', 'didnt_work', 'fix_repo', 'fix_file', 'fix_harness', 'fix_instructions', 'failure_signature', 'importance', 'judgment_note', 'duo', 'eval_failure_json', 'workspace', 'artifact', 'repo', 'ref', 'allow_similar'],
-  'signal publish': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance'],
+  'signal publish': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'subject', 'body', 'data', 'to_agent', 'file', 'ref_id', 'importance'],
   'signal list': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'kind', 'thread_id', 'signal_id', 'all', 'unread_only', 'mark_read', 'limit', 'cursor', 'include_bodies', 'format'],
-  'signal reply': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'in_reply_to', 'subject', 'body', 'to_agent', 'file', 'ref_id', 'importance'],
+  'signal reply': ['agent_id', 'workspace', 'artifact', 'repo', 'ref', 'in_reply_to', 'subject', 'body', 'data', 'to_agent', 'file', 'ref_id', 'importance'],
   'signal ack': ['agent_id', 'signal_id'], 'signal resolve': ['agent_id', 'signal_id', 'thread_id'],
   ...HISTORY_ALLOWED,
 };

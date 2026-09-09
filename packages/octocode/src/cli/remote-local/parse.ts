@@ -2,10 +2,8 @@ import type {
   CloneResultData,
   CloneStructuredContent,
   DirectToolResult,
-  FetchDirectoryData,
   FetchFileData,
   FetchStructuredContent,
-  RemoteMaterializationKind,
 } from './types.js';
 
 export function directToolText(result: DirectToolResult): string {
@@ -24,13 +22,10 @@ export function parseCloneResult(result: DirectToolResult): CloneResultData {
   return structured?.results?.[0]?.data ?? {};
 }
 
-export function parseFetchResult(
-  result: DirectToolResult,
-  kind: Extract<RemoteMaterializationKind, 'file' | 'tree'>
-): FetchFileData | FetchDirectoryData {
+export function parseFileContentResult(
+  result: DirectToolResult
+): FetchFileData {
   const structured = result.structuredContent as
     FetchStructuredContent | undefined;
-  const data = structured?.results?.[0]?.data;
-  if (kind === 'file') return data?.files?.[0] ?? {};
-  return data?.directories?.[0] ?? {};
+  return structured?.results?.[0]?.data?.files?.[0] ?? {};
 }

@@ -58,6 +58,7 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
     kind: publishKind,
     subject: args['subject'] ? String(args['subject']) : undefined,
     body: args['body'] ? String(args['body']) : null,
+    data: args['data'] === undefined ? undefined : String(args['data']),
     toAgents,
     files,
     refs,
@@ -112,6 +113,7 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
         file_count: signal.files.length,
         file_omitted_count: Math.max(0, signal.files.length - shownFiles.length),
         has_body: Boolean(signal.body),
+        ...(signal.data ? { has_data: true } : {}),
       };
     });
     return emit({
@@ -130,9 +132,10 @@ export function cmdAgentSignal(db: DatabaseSync, args: ParsedArgs, dbPath: strin
       ...result,
       ...pagination,
       bodies: 'summarized',
-      signals: result.signals.map((signal) => ({
+      signals: result.signals.map(({ data, ...signal }) => ({
         ...signal,
         body: signal.body == null ? null : summarizeText(signal.body, 160),
+        ...(data ? { has_data: true } : {}),
       })),
     }, 0, opts);
   }

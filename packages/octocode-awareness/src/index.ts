@@ -212,6 +212,8 @@ export type { DocCatalogEntry, DocCatalogListResult, DocCatalogShowResult } from
 export { insertSession, endSession, getSession, listSessions, getOrCreateSession } from './sessions.js';
 
 // Types
+export { encodeSignalBody, decodeSignalBody } from './signal-data.js';
+export type { SignalData } from './signal-data.js';
 export type { AgentIdentity, RegisterAgentParams, ListAgentsResult, EmbeddingSearchResult, MemoryRecord, RefinementRecord, FileLock, InsertMemoryParams, InsertMemoryResult, GetMemoryParams, GetMemoryResult, InsertRefinementParams, InsertRefinementResult, GetRefinementsParams, GetRefinementsResult, MemoryState, LockType, RunStatus, RunOrigin, WorkSource, RefinementQuality, RefinementState, ReflectionOutcome, InsertSessionParams } from './types/identity-memory.js';
 export type { PreFlightRunParams, PreFlightRunResult, PreFlightRunSuccess, PreFlightRunConflict, ReleaseFileLockParams, ReleaseFileLockResult, FileLockParams, FileLockResult, FileLockReleaseStatus, ReflectParams, ReflectResult, Scope, ScopePartial } from './types/locks-reflection.js';
 export type { StartWorkParams, StartWorkResult, TouchWorkParams, EndWorkParams, WorkMutationResult, ListWorkParams, ListWorkResult, WorkRunRecord, WorkFileRecord, WorkPresence, WorkPeer, WorkConflict, ForgetMemoryParams, ForgetMemoryResult, WaitForLockParams, PruneStaleParams, DeleteRefinementParams } from './types/work-maintenance.js';

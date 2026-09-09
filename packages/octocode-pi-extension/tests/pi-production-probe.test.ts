@@ -6,7 +6,7 @@ import {
   createPiSdkScenarioSuite,
   createProductionPiScenarioSuite,
   type ProductionPiScenarioId,
-} from "../src/testing.js";
+} from "./helpers/production-pi.js";
 
 const roots: string[] = [];
 

@@ -29,7 +29,7 @@ function printUsage(message: string, jsonOutput: boolean): void {
         `    cache status\n` +
         `\n  ${dim('Flow:')}\n` +
         `    cache fetch checks existing tmp materialization first; use --force-refresh to bypass it.\n` +
-        `    Default depth is clone; use --depth file or --depth tree for bounded downloads.\n` +
+        `    Default depth is clone; --depth file downloads one file, --depth tree sparse-clones one subtree.\n` +
         `    Use location.localPath with tools localSearch or tools lspSearch; read the tool schema first.\n`
     );
   }
@@ -244,6 +244,10 @@ export const cacheCommand: CLICommand = {
     }
 
     try {
+      // `cache fetch` IS the explicit materialization request, so clone
+      // support is enabled for this invocation; an explicit user setting
+      // (ENABLE_CLONE=false) still wins.
+      process.env.ENABLE_CLONE ??= 'true';
       const result = await materializeRemoteForCli({
         repoRef,
         path: requestedPath || undefined,

@@ -144,6 +144,7 @@ describe('toolCommand', () => {
       command: 'tools',
       args: ['ghSearch'],
       options: {
+        yaml: true,
         queries:
           '{"queries":[{"operation":"code","keywords":["tool"],"owner":"bgauryy","repo":"octocode-mcp"}],"responseCharLength":1200}',
       },
@@ -247,12 +248,12 @@ describe('toolCommand', () => {
 
     expect(publicMocks.localSearch).not.toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Unsupported tool flags: --input')
+      expect.stringContaining('Unknown localSearch flag: --input')
     );
     expect(process.exitCode).toBe(2);
   });
 
-  it('rejects legacy tool-specific flags and requires one JSON payload', async () => {
+  it('rejects flags that are not schema fields with a suggestion', async () => {
     const { toolCommand } =
       await import('../../src/cli/tool-command/command.js');
 
@@ -267,9 +268,50 @@ describe('toolCommand', () => {
 
     expect(publicMocks.localSearch).not.toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('Unsupported tool flags')
+      expect.stringContaining('Unknown localSearch flag: --keywords')
     );
     expect(process.exitCode).toBe(2);
+  });
+
+  it('builds a query from schema field flags without --queries', async () => {
+    const { toolCommand } =
+      await import('../../src/cli/tool-command/command.js');
+
+    await toolCommand.handler!({
+      command: 'tools',
+      args: ['localSearch'],
+      options: {},
+      raw: [
+        'tools',
+        'localSearch',
+        '--path',
+        '.',
+        '--search-text',
+        'runCLI',
+        '--max-files',
+        '5',
+        '--whole-word',
+        '--include',
+        '*.ts',
+        '--include',
+        '*.mjs',
+      ],
+    });
+
+    expect(publicMocks.localSearch).toHaveBeenCalledTimes(1);
+    const callArg = publicMocks.localSearch.mock.calls[0]![0] as {
+      queries: Array<Record<string, unknown>>;
+    };
+    expect(callArg.queries[0]).toEqual(
+      expect.objectContaining({
+        path: '.',
+        searchText: 'runCLI',
+        maxFiles: 5,
+        wholeWord: true,
+        include: ['*.ts', '*.mjs'],
+      })
+    );
+    expect(process.exitCode).toBeUndefined();
   });
 
   it('rejects invalid JSON payloads for canonical tool usage', async () => {
@@ -528,6 +570,7 @@ describe('toolCommand', () => {
       command: 'tools',
       args: ['localSearch'],
       options: {
+        yaml: true,
         queries: '{"path":".","keywords":["runCLI"]}',
       },
     });
@@ -616,7 +659,7 @@ describe('toolCommand', () => {
     expect(context).toContain('Octocode CLI — Minimal Context');
     expect(context).toContain('Protocol: schema first');
     expect(context).toContain(
-      'Output: YAML default; --compact structured JSON. Input validation rejects the call; runtime row errors stay indexed and isolated.'
+      'Output: minified structured JSON by default; --yaml human view. Input validation rejects the call; runtime row errors stay indexed and isolated.'
     );
     expect(context).not.toContain('Output contract (all tools)');
     expect(context).not.toContain('Use Octocode tools carefully.');
@@ -677,7 +720,7 @@ describe('toolCommand', () => {
       'tools <name> --scheme --json --compact'
     );
     expect(parsed.commands.fullCatalog).toBe('tools --json --full');
-    expect(parsed.commands.run).toContain('--compact');
+    expect(parsed.commands.run).toContain('--queries');
 
     const { TOOL_DEFINITIONS } =
       await import('../../src/cli/tool-command/registry.js');
@@ -869,7 +912,7 @@ describe('toolCommand', () => {
     expect(parsed.fieldNames).toBeUndefined();
     expect(parsed.fields?.some(field => field.startsWith('path*:'))).toBe(true);
     expect(parsed.commands.full).toBe('tools localSearch --scheme --json');
-    expect(parsed.commands.run).toContain('--compact');
+    expect(parsed.commands.run).toContain('--queries');
     expect(parsed.guidance?.join('\n')).toContain('absolute path');
     expect(parsed.relations?.join('\n').toLowerCase()).toContain('regex');
     expect(parsed.variants?.map(variant => variant.name)).toEqual(['lexical']);

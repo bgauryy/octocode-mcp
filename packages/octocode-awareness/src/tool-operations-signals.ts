@@ -33,6 +33,7 @@ case 'agent_signal': {
         kind: request['kind'] as NotificationKind | undefined,
         subject: request['subject'] as string | undefined,
         body: request['body'] as string | undefined ?? null,
+        data: request['data'] as import('./signal-data.js').SignalData | string | undefined,
         toAgents,
         files: stringArray(request['files']),
         refs,

@@ -140,194 +140,29 @@ describe('CLI Parser', () => {
       );
     });
 
-    it('should parse semantic value options', () => {
+    it('parses live value options for registered commands', () => {
       const result = parseArgs([
-        'lsp',
-        'src/index.ts',
-        '--op',
-        'references',
-        '--symbol',
-        'runCLI',
-        '--line',
-        '42',
-        '--workspace-root',
-        '.',
-      ]);
-
-      expect(result.command).toBe('lsp');
-      expect(result.args).toEqual(['src/index.ts']);
-      expect(result.options).toEqual({
-        op: 'references',
-        symbol: 'runCLI',
-        line: '42',
-        'workspace-root': '.',
-      });
-    });
-
-    it('should parse --items-per-page as a value option', () => {
-      const result = parseArgs([
-        'query',
-        './src',
-        '--target',
-        'research',
-        '--items-per-page',
-        '1',
-      ]);
-
-      expect(result.command).toBe('query');
-      expect(result.args).toEqual(['./src']);
-      expect(result.options).toMatchObject({
-        target: 'research',
-        'items-per-page': '1',
-      });
-    });
-
-    it('should parse symbol-outline value options', () => {
-      const result = parseArgs([
-        'lsp',
-        'src',
-        '--symbols',
-        '--ext',
-        'ts,tsx',
-        '--kind',
-        'function',
-        '--limit',
-        '10',
-      ]);
-
-      expect(result.command).toBe('lsp');
-      expect(result.args).toEqual(['src']);
-      expect(result.options).toEqual({
-        symbols: true,
-        ext: 'ts,tsx',
-        kind: 'function',
-        limit: '10',
-      });
-    });
-
-    it('should parse repository value options', () => {
-      const result = parseArgs([
-        'query',
-        'agent',
-        'tools',
-        '--target',
-        'repositories',
-        '--topic',
-        'mcp,agents',
-        '--lang',
-        'TypeScript',
-        '--owner',
-        'openai',
-        '--stars',
-        '>1000',
-        '--forks',
-        '>100',
-        '--good-first-issues',
-        '>5',
-        '--license',
-        'mit',
-        '--created',
-        '>=2024-01-01',
-        '--updated',
-        '>2025-01-01',
-        '--size',
-        '<50000',
-        '--match',
-        'name,description',
-        '--sort',
-        'stars',
-        '--visibility',
-        'public',
-        '--archived',
-        'false',
-        '--verbose',
-        '--limit',
-        '10',
-      ]);
-
-      expect(result.command).toBe('query');
-      expect(result.args).toEqual(['agent', 'tools']);
-      expect(result.options).toEqual({
-        target: 'repositories',
-        topic: 'mcp,agents',
-        lang: 'TypeScript',
-        owner: 'openai',
-        stars: '>1000',
-        forks: '>100',
-        'good-first-issues': '>5',
-        license: 'mit',
-        created: '>=2024-01-01',
-        updated: '>2025-01-01',
-        size: '<50000',
-        match: 'name,description',
-        sort: 'stars',
-        visibility: 'public',
-        archived: 'false',
-        verbose: true,
-        limit: '10',
-      });
-    });
-
-    it('should parse file-discovery value and boolean options', () => {
-      const result = parseArgs([
-        'find',
-        'auth',
-        '.',
-        '--search',
-        'both',
-        '--ext',
-        'ts,tsx',
-        '--path',
-        'src',
-        '--name',
-        '*auth*',
-        '--regex',
-        'auth.*config',
-        '--entry',
+        'cache',
+        'fetch',
+        'facebook/react',
+        'README.md',
+        '--depth',
         'file',
-        '--min-depth',
-        '1',
-        '--max-depth',
-        '4',
-        '--modified-within',
-        '7d',
-        '--include',
-        '*.ts',
-        '--exclude-dir',
-        'node_modules,dist',
-        '--context-lines',
-        '3',
-        '--max-matches',
-        '5',
-        '--match-page',
-        '2',
-        '--details',
-        '--fixed',
-        '--limit',
-        '20',
+        '--branch',
+        'main',
       ]);
 
-      expect(result.command).toBe('find');
-      expect(result.args).toEqual(['auth', '.']);
-      expect(result.options).toEqual({
-        search: 'both',
-        ext: 'ts,tsx',
-        path: 'src',
-        name: '*auth*',
-        regex: 'auth.*config',
-        entry: 'file',
-        'min-depth': '1',
-        'max-depth': '4',
-        'modified-within': '7d',
-        include: '*.ts',
-        'exclude-dir': 'node_modules,dist',
-        'context-lines': '3',
-        'max-matches': '5',
-        'match-page': '2',
-        details: true,
-        fixed: true,
-        limit: '20',
-      });
+      expect(result.command).toBe('cache');
+      expect(result.args).toEqual(['fetch', 'facebook/react', 'README.md']);
+      expect(result.options).toEqual({ depth: 'file', branch: 'main' });
+    });
+
+    it('treats pruned legacy tool flags as plain booleans outside tools', () => {
+      // The schema-flag surface for `tools` re-parses raw argv itself, so the
+      // parser no longer carries per-tool vocabulary (owner, stars, sort, …).
+      const result = parseArgs(['status', '--stars', '5']);
+      expect(result.options).toEqual({ stars: true });
+      expect(result.args).toEqual(['5']);
     });
 
     it('should parse unsupported top-level long options without rewriting them', () => {

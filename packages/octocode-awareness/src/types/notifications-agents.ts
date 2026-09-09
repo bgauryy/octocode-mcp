@@ -119,6 +119,7 @@ export interface AgentSignalParams {
   kind?: NotificationKind;
   subject?: string;
   body?: string | null;
+  data?: import('../signal-data.js').SignalData | string;
   toAgents?: string[];
   files?: string[];
   refs?: string[];
@@ -136,6 +137,7 @@ export interface AgentSignalParams {
 
 export interface AgentSignalRecord extends NotificationRecord {
   to_agents: string[];
+  data?: import('../signal-data.js').SignalData;
 }
 
 export type AgentSignalResult =

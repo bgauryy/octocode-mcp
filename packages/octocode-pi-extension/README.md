@@ -137,6 +137,6 @@ yarn workspace @octocodeai/pi-extension test
 yarn workspace @octocodeai/pi-extension typecheck
 ```
 
-The package's production test suite checks the documented inventories against the executable harness so counts and names cannot drift silently. Cross-host conformance code imports `createProductionPiScenarioSuite` and `captureProductionPiLifecycle` from `@octocodeai/pi-extension/testing`; the runtime root intentionally exports neither helper.
+The package's production test suite checks the documented inventories against the executable harness so counts and names cannot drift silently. Conformance helpers (`createProductionPiScenarioSuite`, `captureProductionPiLifecycle`) are test-only: they live in `tests/helpers/production-pi.ts` and are not published, so the package exposes no conformance subpath.
 
 Awareness uses one compact cooperation policy with full CLI/skill detail on demand. See [agent flow](docs/AWARENESS_AGENT_FLOW.md#final-worker-audits-and-context-estimates) for bounded wake-ups, final worker debt audits and context-estimate limits.

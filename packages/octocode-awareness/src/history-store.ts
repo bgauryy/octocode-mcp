@@ -59,7 +59,14 @@ export function createHistoryContext(db: DatabaseSync, workspace: string): Histo
   return { db, workspace: canonical, dbPath, store() {
     const context = { workspace: canonical, dbPath };
     assertHistoryStorageReady(context);
-    return pending ??= import('./history-git.js').then(({ openHistoryGitStore }) => openHistoryGitStore({ historyRoot: historyStoragePaths(context)!.history_root, storeId: 'awareness-v1', workspaceId: historyHash(canonical), boundaryRoot: canonical }));
+    const storage = historyStoragePaths(context)!;
+    return pending ??= import('./history-git.js').then(({ openHistoryGitStore }) => openHistoryGitStore({
+      historyRoot: storage.history_root,
+      storeId: 'awareness-v1',
+      workspaceId: historyHash(canonical),
+      boundaryRoot: canonical,
+      ignoreMarkerPath: resolve(storage.history_root, '..', '.gitignore'),
+    }));
   } };
 }
 export function historyPath(ctx: HistoryContext, path: string): string {

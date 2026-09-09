@@ -1,18 +1,17 @@
 import path from 'node:path';
-import { statSync } from 'node:fs';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { executeDirectTool } from '@octocodeai/octocode-tools-core/direct';
+import { paths } from '@octocodeai/octocode-tools-core/paths';
 import { refLabel, type GithubRef } from '../routing.js';
-import { directToolText, parseCloneResult, parseFetchResult } from './parse.js';
 import {
-  locationKindFor,
-  normalizeRepoPath,
-  resolveRepoOption,
-} from './path-utils.js';
+  directToolText,
+  parseCloneResult,
+  parseFileContentResult,
+} from './parse.js';
+import { normalizeRepoPath, resolveRepoOption } from './path-utils.js';
 import type {
   DirectToolResult,
-  FetchDirectoryData,
   RemoteMaterialization,
-  RemoteMaterializationKind,
   RemoteMaterializationRequest,
 } from './types.js';
 
@@ -21,17 +20,20 @@ export async function materializeRemoteForCli(
 ): Promise<RemoteMaterialization> {
   const repo = resolveRepoOption(request.repoRef, request.branch);
   const requestedPath = normalizeRepoPath(repo.subpath, request.path);
-  if (request.kind === 'file' && !requestedPath) {
-    throw new Error(
-      'File materialization requires a repository-relative path.'
-    );
+
+  if (request.kind === 'file') {
+    if (!requestedPath) {
+      throw new Error(
+        'File materialization requires a repository-relative path.'
+      );
+    }
+    return materializeFileForCli(repo, requestedPath, request);
   }
 
-  if (request.kind === 'repo') {
-    return materializeCloneForCli(repo, requestedPath, request);
-  }
-
-  return materializeTreeForCli(repo, requestedPath, request);
+  // `repo` and `tree` both materialize through a (sparse) clone: the tool-side
+  // tree materialization was retired, and a sparse clone is the one runner that
+  // yields a real on-disk directory.
+  return materializeCloneForCli(repo, requestedPath, request);
 }
 
 async function materializeCloneForCli(
@@ -96,15 +98,16 @@ async function materializeCloneForCli(
   };
 }
 
-async function materializeTreeForCli(
+/** Branch names may contain '/'; keep the on-disk segment flat. */
+function branchSegment(branch: string | undefined): string {
+  return (branch ?? 'default').replace(/[^A-Za-z0-9._-]+/g, '_');
+}
+
+async function materializeFileForCli(
   repo: GithubRef,
   requestedPath: string,
   request: RemoteMaterializationRequest
 ): Promise<RemoteMaterialization> {
-  const kind = request.kind as Extract<
-    RemoteMaterializationKind,
-    'file' | 'tree'
-  >;
   const result = (await executeDirectTool('ghGetFileContent', {
     queries: [
       {
@@ -112,12 +115,11 @@ async function materializeTreeForCli(
         repo: repo.repo,
         branch: repo.branch,
         path: requestedPath,
-        type: kind === 'file' ? 'file' : 'directory',
+        fullContent: true,
+        contextLines: 0,
+        minify: 'none',
         forceRefresh: request.forceRefresh || undefined,
-        ...(kind === 'file'
-          ? { fullContent: true, contextLines: 0, minify: 'none' }
-          : {}),
-        goal: `Save ${refLabel(repo)}${requestedPath ? `/${requestedPath}` : ''} locally`,
+        goal: `Save ${refLabel(repo)}/${requestedPath} locally`,
         reasoning: 'CLI remote-as-local materialization',
       },
     ],
@@ -127,43 +129,37 @@ async function materializeTreeForCli(
     throw new Error(directToolText(result));
   }
 
-  const data = parseFetchResult(result, kind);
-  if (!data.localPath) {
-    throw new Error('ghGetFileContent did not return a localPath.');
+  const file = parseFileContentResult(result);
+  if (typeof file.content !== 'string') {
+    throw new Error('ghGetFileContent did not return file content.');
   }
 
-  const localPath = path.resolve(data.localPath);
-  const repoRoot = path.resolve(data.repoRoot ?? data.localPath);
-  const resolvedBranch = data.resolvedBranch ?? repo.branch;
-  const cached = Boolean(data.cached);
-  const dirData = data as FetchDirectoryData;
-  const complete = kind === 'file' ? true : dirData.complete === true;
-  const verified = dirData.verified ?? false;
-  const commitSha = dirData.commitSha;
-  const hasSubdirectories = dirData.hasSubdirectories ?? false;
-  const skippedSummary = dirData.skippedSummary;
+  // The tool no longer materializes; the CLI owns the write under the shared
+  // tmp cache so `cache status`/`cache clear` keep governing the bytes.
+  const resolvedBranch = file.resolvedBranch ?? repo.branch;
+  const repoRoot = path.join(
+    paths.tmp,
+    'fetch',
+    repo.owner,
+    repo.repo,
+    branchSegment(resolvedBranch)
+  );
+  const localPath = path.join(repoRoot, ...requestedPath.split('/'));
+  mkdirSync(path.dirname(localPath), { recursive: true });
+  writeFileSync(localPath, file.content, 'utf8');
 
   return {
     owner: repo.owner,
     repo: repo.repo,
-    ...(dirData.isPartial ? { isPartial: true } : {}),
-    ...(dirData.partialReasons
-      ? { partialReasons: dirData.partialReasons }
-      : {}),
-    ...(dirData.terminalLimit ? { terminalLimit: true } : {}),
-    ...(dirData.next ? { next: dirData.next } : {}),
     location: {
-      kind: locationKindFor(request.kind),
+      kind: 'file',
       localPath,
       repoRoot,
-      ...(requestedPath ? { requestedPath } : {}),
-      source: 'tree',
-      cached,
-      complete,
-      verified,
-      ...(commitSha ? { commitSha } : {}),
-      ...(hasSubdirectories ? { hasSubdirectories: true } : {}),
-      ...(skippedSummary ? { skippedSummary } : {}),
+      requestedPath,
+      source: 'fetch',
+      cached: false,
+      complete: true,
+      verified: false,
       ...(resolvedBranch ? { resolvedBranch } : {}),
     },
   };

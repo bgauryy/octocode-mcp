@@ -19,6 +19,11 @@ import {
 } from './registry.js';
 import { getInputText, validateRawToolFootguns } from './input.js';
 import {
+  buildQueryFromFlags,
+  extractToolArgvTail,
+  hasToolFlagInput,
+} from './flags-to-query.js';
+import {
   printJsonPayload,
   printMultipleToolSchemasJson,
   printToolCatalogJson,
@@ -35,15 +40,19 @@ type ToolResult = Parameters<typeof formatCallToolResultForOutput>[0];
 
 type OutputMode = 'text' | 'json' | 'compact';
 
+// Minified structured JSON is the default: it is the cheapest representation
+// for agents (fewest tokens) and identical to what MCP serves. Humans opt into
+// the readable YAML view with --yaml (alias --text); --json keeps the pretty
+// structured form.
 function getOutputMode(args: ParsedArgs): OutputMode {
-  if (args.options.compact === true) {
-    return 'compact';
+  if (args.options.yaml === true || args.options.text === true) {
+    return 'text';
   }
   if (args.options.json === true) {
     return 'json';
   }
 
-  return 'text';
+  return 'compact';
 }
 
 function printToolResult(
@@ -82,7 +91,7 @@ function printToolCommandError(
   message: string,
   details: string[] = []
 ): void {
-  if (args.options.json === true || args.options.compact === true) {
+  if (getOutputMode(args) !== 'text') {
     printJsonPayload(
       {
         kind: 'octocode.toolError',
@@ -91,7 +100,7 @@ function printToolCommandError(
         error: message,
         ...(details.length > 0 ? { details } : {}),
       },
-      args.options.compact === true,
+      getOutputMode(args) === 'compact',
       args.options.pretty === true
     );
     return;
@@ -207,7 +216,17 @@ export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
 
   let inputText: string | undefined;
   try {
-    inputText = getInputText(tool.name, args);
+    if (typeof args.options.queries === 'string') {
+      inputText = getInputText(tool.name, args);
+    } else {
+      // Schema-flag input: `tools astSearch tree --path src --max-depth 2`.
+      // Flags compile into the same single-query JSON that --queries takes,
+      // so validation and execution below are identical for both paths.
+      const tail = extractToolArgvTail(args.raw, tool.name, args);
+      if (hasToolFlagInput(tail)) {
+        inputText = JSON.stringify(buildQueryFromFlags(tool.name, tail));
+      }
+    }
   } catch (error) {
     printToolCommandError(
       args,

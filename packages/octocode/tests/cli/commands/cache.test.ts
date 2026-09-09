@@ -21,6 +21,8 @@ const { mockPaths, getDirectorySizeBytes, existsSync, rmSync } = vi.hoisted(
 vi.mock('node:fs', () => ({
   existsSync,
   rmSync,
+  mkdirSync: () => undefined,
+  writeFileSync: () => undefined,
   statSync: () => ({ isFile: () => false }),
 }));
 
@@ -47,9 +49,7 @@ function run(args: string[], options: Record<string, string | boolean> = {}) {
   return cacheCommand.handler(parsed);
 }
 
-function fetchFileEnvelope(
-  localPath = '/tmp/octocode/tmp/tree/facebook/react/main/packages/react/index.js'
-) {
+function fetchFileEnvelope() {
   return {
     isError: false,
     content: [],
@@ -64,10 +64,7 @@ function fetchFileEnvelope(
               {
                 path: 'packages/react/index.js',
                 content: 'export {};',
-                localPath,
-                repoRoot: '/tmp/octocode/tmp/tree/facebook/react/main',
                 resolvedBranch: 'main',
-                cached: true,
               },
             ],
           },
@@ -77,9 +74,7 @@ function fetchFileEnvelope(
   };
 }
 
-function fetchDirectoryEnvelope(
-  localPath = '/tmp/octocode/tmp/tree/facebook/react/main/packages/react'
-) {
+function cloneEnvelope(localPath = '/fake/octocode/tmp/clone/facebook/react') {
   return {
     isError: false,
     content: [],
@@ -90,20 +85,16 @@ function fetchDirectoryEnvelope(
           data: {
             owner: 'facebook',
             repo: 'react',
-            directories: [
-              {
-                path: 'packages/react',
-                localPath,
-                repoRoot: '/tmp/octocode/tmp/tree/facebook/react/main',
-                fileCount: 2,
-                totalSize: 1234,
-                complete: true,
-                verified: true,
-                commitSha: '0123456789abcdef0123456789abcdef01234567',
-                cached: true,
-                resolvedBranch: 'main',
-              },
-            ],
+            location: {
+              kind: 'repo',
+              localPath,
+              source: 'clone',
+              cached: true,
+              complete: true,
+              verified: true,
+              commitSha: '0123456789abcdef0123456789abcdef01234567',
+              resolvedBranch: 'main',
+            },
           },
         },
       ],
@@ -201,7 +192,6 @@ describe('cache command', () => {
             owner: 'facebook',
             repo: 'react',
             path: 'packages/react/index.js',
-            type: 'file',
             fullContent: true,
             minify: 'none',
           }),
@@ -212,9 +202,6 @@ describe('cache command', () => {
     const output = vi.mocked(console.log).mock.calls.flat().join('\n');
     const parsed = JSON.parse(output) as {
       success: boolean;
-      source: string;
-      localPath: string;
-      repoRoot: string;
       location: {
         kind: string;
         localPath: string;
@@ -227,31 +214,24 @@ describe('cache command', () => {
       };
     };
     expect(parsed.success).toBe(true);
-    expect(parsed.location.source).toBe('tree');
-    expect(parsed.location.repoRoot).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main'
-    );
-    expect(parsed.location.localPath).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main/packages/react/index.js'
-    );
     expect(parsed).not.toHaveProperty('localPath');
     expect(parsed).not.toHaveProperty('repoRoot');
     expect(parsed.location.kind).toBe('file');
-    expect(parsed.location.source).toBe('tree');
+    expect(parsed.location.source).toBe('fetch');
     expect(parsed.location.localPath).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main/packages/react/index.js'
+      '/fake/octocode/tmp/fetch/facebook/react/main/packages/react/index.js'
     );
     expect(parsed.location.repoRoot).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main'
+      '/fake/octocode/tmp/fetch/facebook/react/main'
     );
     expect(parsed.location.requestedPath).toBe('packages/react/index.js');
     expect(parsed.location.resolvedBranch).toBe('main');
-    expect(parsed.location.cached).toBe(true);
+    expect(parsed.location.cached).toBe(false);
     expect(parsed.location.complete).toBe(true);
   });
 
-  it('cache fetch --depth tree reads canonical directory rows', async () => {
-    executeDirectTool.mockResolvedValue(fetchDirectoryEnvelope());
+  it('cache fetch --depth tree sparse-clones the requested subtree', async () => {
+    executeDirectTool.mockResolvedValue(cloneEnvelope());
 
     await run(['fetch', 'facebook/react', 'packages/react'], {
       depth: 'tree',
@@ -259,14 +239,13 @@ describe('cache command', () => {
     });
 
     expect(executeDirectTool).toHaveBeenCalledWith(
-      'ghGetFileContent',
+      'ghCloneRepo',
       expect.objectContaining({
         queries: [
           expect.objectContaining({
             owner: 'facebook',
             repo: 'react',
-            path: 'packages/react',
-            type: 'directory',
+            sparsePath: 'packages/react',
           }),
         ],
       })
@@ -275,11 +254,6 @@ describe('cache command', () => {
     const output = vi.mocked(console.log).mock.calls.flat().join('\n');
     const parsed = JSON.parse(output) as {
       success: boolean;
-      localPath: string;
-      repoRoot: string;
-      complete: boolean;
-      verified: boolean;
-      commitSha?: string;
       location: {
         kind: string;
         localPath: string;
@@ -291,27 +265,19 @@ describe('cache command', () => {
       };
     };
     expect(parsed.success).toBe(true);
+    expect(parsed.location.kind).toBe('directory');
+    expect(parsed.location.source).toBe('clone');
     expect(parsed.location.localPath).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main/packages/react'
+      '/fake/octocode/tmp/clone/facebook/react/packages/react'
     );
     expect(parsed.location.repoRoot).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main'
+      '/fake/octocode/tmp/clone/facebook/react'
     );
     expect(parsed.location.complete).toBe(true);
     expect(parsed.location.verified).toBe(true);
     expect(parsed.location.commitSha).toBe(
       '0123456789abcdef0123456789abcdef01234567'
     );
-    expect(parsed.location.kind).toBe('directory');
-    expect(parsed.location.source).toBe('tree');
-    expect(parsed.location.localPath).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main/packages/react'
-    );
-    expect(parsed.location.repoRoot).toBe(
-      '/tmp/octocode/tmp/tree/facebook/react/main'
-    );
-    expect(parsed.location.complete).toBe(true);
-    expect(parsed.location.verified).toBe(true);
   });
 
   it.each(['LICENSE', '.github', 'src/a.ts'])(

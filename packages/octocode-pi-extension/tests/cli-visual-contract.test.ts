@@ -10,7 +10,7 @@ const sourceRoot = path.join(packageRoot, 'src');
 const expectedRendererFallbackDebt: Record<string, number> = {};
 
 const expectedLowLevelFallbacks: Record<string, number> = {
-  'src/tui/cli-design.ts': 2,
+  'src/tui/cli-design.ts': 1,
   'src/tui/palette.ts': 1,
 };
 

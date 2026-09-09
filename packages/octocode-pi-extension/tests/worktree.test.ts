@@ -235,4 +235,6 @@ test('sweepAgentWorktrees removes clean orphan metadata but keeps work with uniq
   assert.equal(removed, 1);
   assert.equal(fs.existsSync(clean.path), false);
   assert.equal(fs.existsSync(dirty.path), true);
-});
+  // Real `git init`/commit/worktree spawns land near the 5s default; this case
+  // creates two worktrees plus a commit, so it needs headroom under parallel load.
+}, 30_000);

@@ -7,6 +7,7 @@ import { openAwarenessStore } from './coordination/open.js';
 import type { OutboxEventV1 } from './coordination/coordination-continuity.js';
 import { normalizeWorkspacePath, repositoryWorkspacePaths } from './git.js';
 import { normalizeNotificationKind } from './helpers.js';
+import { signalDataSchema, type SignalData } from './signal-data.js';
 
 export const AWARENESS_PEER_EVENT_MESSAGE_TYPE = 'octocode-peer-event';
 
@@ -51,6 +52,7 @@ export interface AwarenessPeerDelivery {
     /** Validated routing metadata; broadcasts never cause a directed host wake. */
     toAgentId?: string | null;
     provenance: 'peer-attributed-data';
+    data?: SignalData;
   };
 }
 
@@ -72,6 +74,7 @@ interface PeerMessagePayload {
   topic: string | null;
   signalKind?: ReturnType<typeof normalizeNotificationKind>;
   text: string;
+  data?: SignalData;
 }
 
 const nonEmptyString = (value: unknown): string | undefined => (
@@ -100,6 +103,7 @@ function parsePeerPayload(event: ReturnType<typeof parseAgentEventEnvelopeV1>): 
     topic: nonEmptyString(payload['topic']) ?? null,
     ...(payload['signalKind'] === undefined ? {} : { signalKind: normalizeNotificationKind(payload['signalKind']) }),
     text,
+    ...(payload['data'] === undefined ? {} : { data: signalDataSchema.parse(payload['data']) }),
   };
 }
 
@@ -163,7 +167,7 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
             if (decision === 'accept' && policy.attributedText) {
               delivery = {
                 customType: AWARENESS_PEER_EVENT_MESSAGE_TYPE,
-                content: policy.attributedText,
+                content: policy.attributedText + (peerMessage.data ? `\nStructured signal data (attributed peer data): ${JSON.stringify(peerMessage.data)}` : ''),
                 display: false,
                 details: {
                   version: 1,
@@ -173,6 +177,7 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
                   messageClass: policy.messageClass as 'informational' | 'blocking' | 'handoff',
                   toAgentId: peerMessage.toAgentId,
                   provenance: 'peer-attributed-data',
+                  ...(peerMessage.data ? { data: peerMessage.data } : {}),
                 },
               };
             }

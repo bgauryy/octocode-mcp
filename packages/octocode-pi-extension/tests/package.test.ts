@@ -1087,7 +1087,7 @@ test('PI_CONFIG_DIR matches the host pi package configDir (single source, no har
 test('enum tool params use string-enum schemas (Google API compat), never literal unions', async () => {
   // Pi docs: Type.Union(Type.Literal(...)) compiles to anyOf/const, which
   // Google's API rejects. Every string-enum tool param must be a plain
-  // {type:"string", enum:[...]} schema (see stringEnumSchema / pi-ai StringEnum).
+  // {type:"string", enum:[...]} schema (see pi-ai StringEnum).
   const { tools } = await captureExtensions();
   const prop = (tool: string, name: string): Record<string, unknown> => queryPropertySchemas(tools.get(tool)!, name)[0]!;
 
@@ -2927,6 +2927,35 @@ test('generic turn activity never overwrites a specific plan lifecycle', async (
     }
   } finally {
     for (const handler of handlers.get('session_shutdown') ?? []) await handler({ reason: 'quit' }, ctx);
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+// Regression: persistRenderedPng tracks every harness-persisted inline-display
+// fallback, but nothing called cleanupImplicitImageArtifacts, so those PNGs
+// accumulated for the whole process lifetime.
+test('session_shutdown clears harness-persisted image fallbacks but keeps explicit saveTo output', async () => {
+  const { handlers } = await captureExtensions();
+  const { createImageFromSvg, persistRenderedPng } = await import('../src/tools/create-image-tool.js');
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="#000"/></svg>';
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-image-shutdown-'));
+  try {
+    const rendered = createImageFromSvg(svg, workspace, { name: 'temporary.png' });
+    assert.equal(rendered.ok, true);
+    // No session context -> OS-temp fallback path, tracked for session cleanup.
+    const implicitPath = persistRenderedPng(rendered.base64!, undefined, rendered.name)!;
+    const explicitPath = path.join(workspace, 'durable.png');
+    createImageFromSvg(svg, workspace, { saveTo: explicitPath });
+    assert.ok(fs.existsSync(implicitPath), 'precondition: fallback image persisted');
+    assert.ok(fs.existsSync(explicitPath), 'precondition: explicit output persisted');
+
+    for (const handler of handlers.get('session_shutdown') ?? []) {
+      await handler({ reason: 'quit' }, { cwd: workspace, hasUI: false });
+    }
+
+    assert.equal(fs.existsSync(implicitPath), false, 'fallback image is cleaned at session shutdown');
+    assert.ok(fs.existsSync(explicitPath), 'explicit saveTo output survives shutdown');
+  } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });

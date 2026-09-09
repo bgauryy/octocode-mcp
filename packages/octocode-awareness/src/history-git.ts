@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { relative, resolve, sep } from 'node:path';
 import * as git from 'isomorphic-git';
 import { inspectOrphanObjects, type HistoryMaintenanceResult } from './history-git-maintenance.js';
+import { ensureHistoryIgnoreMarker } from './history-ignore.js';
 
 export function historyGitBackend() {
   return { name: 'isomorphic-git', version: git.version(), bundled: true, system_git_required: false };
@@ -57,6 +58,7 @@ export interface OpenHistoryGitStoreOptions {
   storeId: string;
   workspaceId: string;
   boundaryRoot?: string;
+  ignoreMarkerPath?: string;
 }
 
 const OID = /^[0-9a-f]{40}$/;
@@ -142,6 +144,10 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
   validateIdentity('workspace id', options.workspaceId);
   const historyRoot = resolve(options.historyRoot);
   const boundaryRoot = options.boundaryRoot ? resolve(options.boundaryRoot) : undefined;
+  const ignoreMarkerPath = options.ignoreMarkerPath ? resolve(options.ignoreMarkerPath) : undefined;
+  if (ignoreMarkerPath && ignoreMarkerPath !== resolve(historyRoot, '..', '.gitignore')) {
+    throw new Error('history ignore marker must be the .gitignore beside its private history root');
+  }
   if (boundaryRoot && historyRoot !== boundaryRoot && !historyRoot.startsWith(`${boundaryRoot}${sep}`)) throw new Error('history store escaped its boundary');
   const rootDir = resolve(historyRoot, options.storeId, options.workspaceId);
   if (rootDir !== historyRoot && !rootDir.startsWith(`${historyRoot}${sep}`)) throw new Error('history store escaped its root');
@@ -162,6 +168,7 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
   await chmod(storeDir, 0o700);
   await chmod(rootDir, 0o700);
   const assertMetadataSafe = async (ref?: string): Promise<void> => {
+    if (ignoreMarkerPath) await ensureHistoryIgnoreMarker(ignoreMarkerPath, boundaryRoot, assertDirectoryChain, rejectSymlink);
     if (boundaryRoot) await assertDirectoryChain(boundaryRoot, historyRoot, 'history boundary ancestor');
     for (const [candidate, label] of [[historyRoot, 'history root'], [storeDir, 'history store directory'], [rootDir, 'history workspace directory'], [gitdir, 'Git directory'], [resolve(gitdir, 'objects'), 'Git objects directory'], [resolve(gitdir, 'refs'), 'Git refs directory']] as const) {
       await rejectSymlink(candidate, label);
@@ -206,6 +213,7 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
     }
   };
   await withInitializationLock(rootDir, async () => {
+    if (ignoreMarkerPath) await ensureHistoryIgnoreMarker(ignoreMarkerPath, boundaryRoot, assertDirectoryChain, rejectSymlink);
     await assertMetadataSafe();
     await ensureMarker();
     await rejectSymlink(gitdir, 'Git directory');

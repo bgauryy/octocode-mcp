@@ -11,7 +11,7 @@
  *     their call sites; only stable copy lives here.
  */
 
-import { type ApprovalClass, type PermissionLevel } from '@octocodeai/agent-contracts/protocols';
+import { type ApprovalClass } from '@octocodeai/agent-contracts/protocols';
 
 // ─── Brand ─────────────────────────────────────────────────────────────────────
 
@@ -21,9 +21,6 @@ export const TAGLINE = 'Your AI coding agent';
 export const BETA_LABEL = 'BETA VERSION';
 export const BETA_ISSUES_PREFIX = 'for issues:';
 export const BETA_ISSUES_URL = 'https://github.com/bgauryy/octocode/issues';
-
-/** Word shown in the live working line while a turn is active. */
-export const WORKING_WORD = 'Thinking';
 
 // ─── Approval gate ─────────────────────────────────────────────────────────────
 
@@ -43,13 +40,6 @@ export const APPROVAL_TITLES: Partial<Record<ApprovalClass, string>> = {
 
 /** Title for shell-startup persistence writes (a `system`-class trigger with its own wording). */
 export const APPROVAL_TITLE_SHELL_PERSISTENCE = 'Modify shell startup files (persistence)';
-
-/** One-line meaning per permission level, shared by the cycle notify and status output. */
-export const PERMISSION_LEVEL_SUMMARY: Record<PermissionLevel, string> = {
-  strict: 'prompt for every sensitive action, no session memory',
-  default: 'prompt once per class; "always allow" remembered this session',
-  relaxed: 'auto-approve install/git; still prompt deletes/sudo/publish/system/infra',
-};
 
 // ─── Widget chrome ─────────────────────────────────────────────────────────────
 

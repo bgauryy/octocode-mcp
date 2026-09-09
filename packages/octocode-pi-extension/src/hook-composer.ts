@@ -118,9 +118,6 @@ export class OctocodeHookComposer {
     });
   }
 
-  entries(event: string): HookMiddlewareEntry[] {
-    return [...(this.middlewares.get(event) ?? [])];
-  }
 }
 
 export function createHookComposer(pi: PiInstance, options: HookComposerOptions = {}): OctocodeHookComposer {

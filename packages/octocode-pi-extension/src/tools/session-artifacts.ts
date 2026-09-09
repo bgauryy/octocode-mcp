@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { assertContextSegmentAuthority, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
+import { assertContextSegmentAuthority, contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
+import { estimateContextTokens } from './context-segments.js';
 import { getOctocodeHome } from '@octocodeai/config';
 import { extensionHome } from '../extension-paths.js';
 
@@ -587,7 +588,7 @@ export function writeRehydrationLedger(
   for (const [id, content] of Object.entries(input.segmentContents ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
     const segment = segmentsById.get(id);
     if (!segment) throw new Error(`Rehydration content has no segment manifest: ${id}`);
-    if (contentDigestForRehydration(content) !== segment.digest) throw new Error(`Rehydration content digest mismatch: ${id}`);
+    if (contentDigest(content) !== segment.digest) throw new Error(`Rehydration content digest mismatch: ${id}`);
     const relative = `${REHYDRATION_CONTENT_DIR}/${sha256(id).slice(0, 24)}.txt`;
     ctx.writeText(relative, content);
     ctx.registerProducer('compaction', relative);
@@ -642,10 +643,6 @@ export function readRehydrationLedger(ctx: SessionArtifactContext): RehydrationL
   return result.status === 'valid' ? result.ledger : undefined;
 }
 
-function contentDigestForRehydration(content: string): string {
-  return `sha256:${sha256(content)}`;
-}
-
 export function resolveRehydrationContentRefs(
   ctx: SessionArtifactContext,
   ledger: RehydrationLedgerV1,
@@ -687,8 +684,8 @@ export function resolveRehydrationSegments(
   for (const segment of ledger.segments) {
     const content = contentById[segment.id];
     if (segment.rehydrate === 'never' || content === undefined) { skipped.push(segment.id); continue; }
-    const digest = contentDigestForRehydration(content);
-    const tokens = Math.ceil(content.length / 4);
+    const digest = contentDigest(content);
+    const tokens = estimateContextTokens(content);
     if (digest !== segment.digest) {
       stale.push(segment.id);
       continue;

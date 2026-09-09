@@ -37,7 +37,8 @@ function buildAgentInstructionsBlock(): string[] {
     '  tools --json --compact                    lean catalog',
     '  tools <name> --scheme --json --compact    lean machine schema',
     '  tools <name> --scheme                     full descriptions + relations',
-    "  tools <name> --queries '<json>' --compact  lean typed result (default output is YAML)",
+    "  tools <name> --queries '<json>'            batch run: queries[] rows, indexed results",
+    '  tools <name> [op] --<field> <value>        single query via schema flags (kebab-case; repeat array flags)',
     '  Batch with queries[]; results[] preserve zero-based index and isolate errors.',
     `  ${CONTINUATION_GUIDANCE}`,
     '  Full MCP protocol + tool guidance: context --full; cheapest index: context --minimal.',
@@ -198,7 +199,8 @@ export async function showHelp(): Promise<void> {
     `  ${bold(`TOOLS (${toolCount} enabled / ${catalogCount} cataloged)`)}  ${dim('name + concise description')}`,
     `    ${c('yellow', 'tools'.padEnd(31))} ${dim('list public catalog + availability')}`,
     `    ${c('yellow', AGENT_TOOL_COMMANDS.schema.padEnd(31))} ${dim('lean schema + relations')}`,
-    `    ${c('yellow', "tools <name> --queries '<json>' --compact".padEnd(31))} ${dim('lean run')}`,
+    `    ${c('yellow', "tools <name> --queries '<json>'".padEnd(31))} ${dim('lean run (minified JSON by default)')}`,
+    `    ${c('yellow', 'tools <name> [op] --<field> <value>'.padEnd(31))} ${dim('flag run — schema fields as kebab-case flags')}`,
     ...toolLines,
     '',
 
@@ -214,7 +216,7 @@ export async function showHelp(): Promise<void> {
     '',
 
     // ── Flags · exit codes · docs (compact, no repetition) ─────────────────
-    `  ${bold('FLAGS')}  ${c('cyan', '--json')} ${dim('envelope ·')} ${c('cyan', '--compact')} ${dim('lean ·')} ${c('cyan', '--pretty')} ${dim('readable JSON ·')} ${c('cyan', '--raw')} ${dim('bare file ·')} ${c('cyan', '--no-color')}`,
+    `  ${bold('FLAGS')}  ${dim('tool output is minified JSON by default ·')} ${c('cyan', '--yaml')} ${dim('human view ·')} ${c('cyan', '--json')} ${dim('pretty ·')} ${c('cyan', '--pretty')} ${dim('readable JSON ·')} ${c('cyan', '--raw')} ${dim('bare file ·')} ${c('cyan', '--no-color')}`,
     `  ${bold('EXIT')}   ${dim('0 ok · 2 input · 3 not-found · 4 auth · 5 tool · 7 rate-limit')}`,
     `  ${bold('DOCS')}   ${underline('https://github.com/bgauryy/octocode/tree/main/docs')}`,
     '',

@@ -275,16 +275,19 @@ Read from env at runtime (not set by harness):
 
 ## Conformance Testing Entrypoint
 
-Production Pi SDK probes are test-only and do not load with the runtime extension:
+Production Pi SDK probes are test-only and are not published with the package. The
+probe corpus lives in the test corpus, not in `src/`, so it never reaches `dist`:
 
 ```ts
 import {
   createProductionPiScenarioSuite,
   captureProductionPiLifecycle,
-} from '@octocodeai/pi-extension/testing';
+} from './helpers/production-pi.js';
 ```
 
-The default `@octocodeai/pi-extension` entrypoint exports only runtime composition and must not statically reach `src/adapters/pi-production-probe.ts`.
+The `@octocodeai/pi-extension` package exposes only `.` (runtime composition) and
+`./package.json`; there is no published conformance subpath. `tests/factory.test.ts`
+pins this by asserting the probe files are absent from `src/`.
 
 ---
 

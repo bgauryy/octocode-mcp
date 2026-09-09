@@ -33,6 +33,13 @@ export function structuredAwarenessContinuations(value: unknown): unknown {
     const name = argv.slice(0, 2).join(' ');
     if (getAwarenessCommandDescriptor(name)) {
       const { argv: _argv, ...rest } = object;
+      // History's domain/CLI continuation carries argv plus convenience fields.
+      // The command API has one executable representation, bound to its context.
+      if (name.startsWith('history ') && rest.command === name) {
+        delete rest.command;
+        delete rest.args;
+        delete rest.db;
+      }
       return { ...structuredAwarenessContinuations(rest) as object, call: awarenessContinuationCall(name, argv.slice(2)) };
     }
   }

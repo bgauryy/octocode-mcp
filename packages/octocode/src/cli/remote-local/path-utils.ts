@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { resolveRef, isGithubRef, type GithubRef } from '../routing.js';
-import type { RemoteLocationKind, RemoteMaterializationKind } from './types.js';
 
 export function normalizeRepoPath(
   ...parts: readonly (string | undefined)[]
@@ -34,15 +33,4 @@ export function resolveRepoOption(repoRef: string, branch?: string): GithubRef {
     throw new Error(`--repo must be a GitHub ref, got "${repoRef}".`);
   }
   return ref;
-}
-
-/**
- * Maps a materialization request kind to the structural `location.kind`.
- * A `tree` materialization lands on disk as a directory.
- */
-export function locationKindFor(
-  kind: RemoteMaterializationKind
-): RemoteLocationKind {
-  if (kind === 'tree') return 'directory';
-  return kind;
 }

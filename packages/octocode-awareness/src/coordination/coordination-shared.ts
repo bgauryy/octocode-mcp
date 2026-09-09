@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { decodeSignalBody } from '../signal-data.js';
 import { awarenessDatabasePath, DEFAULT_AWARENESS_STORAGE_SCOPE, type AwarenessStorageScope } from '../storage-scope.js';
 
 import type {
@@ -131,12 +132,14 @@ export function agentFromCanonicalRow(row: CanonicalAgentRow): AgentRecord {
 }
 
 export function messageFromCanonicalSignalRow(row: CanonicalMessageRow): LiteMessage {
+  const { body, data } = decodeSignalBody(row.body);
   return {
     messageId: row.signal_id,
     fromAgentId: row.from_agent,
     toAgentId: row.to_agent,
     topic: row.subject === 'message' ? null : row.subject,
-    text: row.body ?? '',
+    text: body ?? '',
+    ...(data ? { data } : {}),
     files: JSON.parse(row.files_json) as string[],
     createdAt: row.created_at,
     readAt: row.read_at ?? null,

@@ -49,6 +49,7 @@ Peers use the same physical Awareness database and distinct stable agent IDs. Li
 | Situation | Action and boundary |
 |---|---|
 | A peer needs evidence or a decision | Use `signal publish`; answer an existing thread with `signal reply` and its exact signal ID. |
+| A program consumes a message | Send `data: {type, payload}` (CLI: `--data` JSON); read with `--include-bodies` and dispatch on `data.type`. Keep sender and thread IDs from the signal metadata. |
 | A message arrives | Configured hooks or native events deliver it. Without delivery, read the scoped inbox when expecting a reply; avoid repeated broad polling. Acknowledgement means handled; resolution means no work or response remains. |
 | Files might overlap | Inspect declared work and communicate with the owner. Use an exclusive lock for unsafe concurrent changes; advisory presence alone does not prevent writes. |
 | A lease expires | Inspect the result and explicitly reacquire. Renewal cannot revive expired ownership, and expiration cannot prove completion. |
@@ -108,6 +109,8 @@ Hosts consume the public package API and add trusted runtime bindings. They do n
 
 Private history lives under `<workspace>/.octocode/.localGit`, partitioned by canonical database and physical workspace identity. Read exact paths from `history status`; do not construct namespace paths. The bundled Git backend writes its own objects and refs without changing the project's index, HEAD, branches, or remotes. Back up the ledger and matching history stores together.
 
+Creating a history store adds an owned ignore marker inside `.localGit`, excluding untracked history from ordinary Git status. Existing compatible markers are preserved; incompatible or symlinked markers fail safely. Already tracked history requires explicit untracking; initialization never changes the project index.
+
 Share compact operation/file/side references through Awareness signals, then fetch the required bytes with `history read`. Follow every continuation before claiming complete content, decode the declared encoding before comparing bytes, and verify current files independently. Git holds immutable evidence; SQLite retains transactional inbox state, expiring ownership, task gates, and searchable memory metadata. See [Git coordination](docs/GIT_COORDINATION.md).
 
 Restore previews bind selected files to their observed state and expiration. Applying a valid preview captures undo evidence, acquires its own lease, and rechecks file state. Multi-file restore can be partial; its returned verification run still needs observed checks. [Local history](docs/LOCAL_HISTORY.md) owns capture, relocation, restore, and recovery procedures.
@@ -123,6 +126,8 @@ Restore previews bind selected files to their observed state and expiration. App
 ## Efficient agent use
 
 Reuse a command schema after discovering it. Prefer scoped compact reads, exact returned IDs, and references to evidence over copied payloads. A detailed-attention revision can suppress unchanged output only for the same complete scope; fresh lock admission still checks current state. Follow executable continuations and retain omission/unknown states. Instructions and recipes come from canonical exports, with detail loaded only when needed.
+
+History command API reads return `next.call`; CLI reads return `next.argv`. Execute that continuation exactly, and reject a repeated page within a read chain. Do not replay saved inbox or lock reads. Retrieve a known verified memory with `memory recall-verified --memory-id <id>`; optional digest, scope and expiry filters still apply. Search queries are for discovery, not exact evidence pointers.
 
 Measure complete verified workflows, including discovery, communication, retries, and repair. Separate cold CLI startup from in-process API latency, and distinguish serialized bytes or context estimates from provider token usage. Smaller output alone does not establish improved correctness, total cost, or autonomous cooperation. [Navigation and delivery](docs/MEMORY_NAVIGATION.md) owns the read and delivery contracts.
 

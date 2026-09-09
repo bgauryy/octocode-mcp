@@ -27,11 +27,6 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./testing": {
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js",
-      "default": "./dist/testing.js"
-    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -81,8 +76,8 @@
     "build": "node scripts/build.mjs",
     "build:skills": "node scripts/build.mjs --skills-only",
     "clean": "node scripts/build.mjs --clean",
-    "lint": "tsc --noEmit -p tsconfig.json",
-    "typecheck": "yarn lint",
+    "lint": "node ../../node_modules/eslint/bin/eslint.js . --config eslint.config.mjs --no-warn-ignored && tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "yarn build && node ../../node_modules/vitest/vitest.mjs run",
     "test:unit": "node ../../node_modules/vitest/vitest.mjs run",
     "test:watch": "node ../../node_modules/vitest/vitest.mjs --watch",

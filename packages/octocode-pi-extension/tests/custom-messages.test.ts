@@ -16,17 +16,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, test } from 'vitest';
 import {
-  AWARENESS_HANDOFF_TYPE,
   COMPACTION_CHECKPOINT_TYPE,
   buildCompactionCard,
-  buildHandoffCard,
   buildPeerEventCard,
   buildRecoveryCard,
-  emitAwarenessHandoff,
   emitCompactionCheckpoint,
   renderCompactionContextMarker,
   registerOctocodeMessageRenderers,
-  type AwarenessHandoffDetails,
   type CompactionCheckpointDetails,
 } from '../src/tools/custom-messages.js';
 import {
@@ -97,16 +93,6 @@ const compactionDetails: CompactionCheckpointDetails = {
   },
 };
 
-const handoffDetails: AwarenessHandoffDetails = {
-  label: 'session-7',
-  from: 'main',
-  to: 'successor',
-  goal: 'finish the renderer feature',
-  status: 'in-progress',
-  notes: ['tests pass', 'wiring pending'],
-  artifacts: ['docs/plan.md'],
-};
-
 beforeEach(() => {
   previousHome = process.env['OCTOCODE_HOME'];
   testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-compaction-test-home-'));
@@ -162,33 +148,10 @@ test('buildCompactionCard omits empty sections and falls back to a label', () =>
   assert.doesNotMatch(body, /reason:/);
 });
 
-test('buildHandoffCard collapsed: 1-2 lines with label and route', () => {
-  const lines = buildHandoffCard(handoffDetails, false, theme, WIDTH);
-  assert.ok(lines.length >= 1 && lines.length <= 2);
-  assert.match(lines[0]!, /◆/);
-  assert.match(lines[0]!, /Awareness handoff/);
-  assert.match(lines[0]!, /session-7/);
-  assert.match(lines[1]!, /main → successor/);
-  assert.match(lines[1]!, /status: in-progress/);
-  assert.ok(!lines.some((l) => l.includes('finish the renderer feature')), 'goal is expanded-only');
-});
-
-test('buildHandoffCard expanded: full box with goal, notes, and artifacts', () => {
-  const lines = buildHandoffCard(handoffDetails, true, theme, WIDTH);
-  assert.match(lines[0]!, /╭─/);
-  assert.match(lines[lines.length - 1]!, /╰─/);
-  const body = lines.join('\n');
-  assert.match(body, /goal:.*finish the renderer feature/);
-  assert.match(body, /- tests pass/);
-  assert.match(body, /- wiring pending/);
-  assert.match(body, /artifacts \(1\).*docs\/plan\.md/);
-});
-
 test('card builders truncate every line to the given width', () => {
   const narrow = 24;
   for (const lines of [
     buildCompactionCard(compactionDetails, true, undefined, narrow),
-    buildHandoffCard(handoffDetails, true, undefined, narrow),
   ]) {
     for (const line of lines) {
       assert.ok(visibleWidth(line) <= narrow, `line exceeds width ${narrow}: ${JSON.stringify(line)}`);
@@ -239,24 +202,9 @@ test('renderCompactionContextMarker keeps large summary bodies out of model cont
   assert.ok(!marker.includes('\n'));
 });
 
-test('emitAwarenessHandoff: one-line content, details payload, display true, no triggerTurn', () => {
-  const { pi, sent } = makePi();
-  emitAwarenessHandoff(pi, handoffDetails);
-  assert.equal(sent.length, 1);
-  const { msg, extraArgs } = sent[0]!;
-  assert.equal(msg.customType, AWARENESS_HANDOFF_TYPE);
-  assert.equal(msg.display, true);
-  assert.equal(msg.details, handoffDetails);
-  assert.match(msg.content, /Awareness handoff recorded: session-7/);
-  assert.ok(!msg.content.includes('\n'));
-  assert.ok(!msg.content.includes('finish the renderer feature'));
-  assert.equal(extraArgs.length, 0);
-});
-
 test('emitters are safe when the host lacks sendMessage', () => {
   const bare = {} as unknown as PiInstance;
   assert.doesNotThrow(() => emitCompactionCheckpoint(bare, compactionDetails));
-  assert.doesNotThrow(() => emitAwarenessHandoff(bare, handoffDetails));
 });
 
 // ─── Renderer registration ────────────────────────────────────────────────────
@@ -266,7 +214,7 @@ test('registerOctocodeMessageRenderers registers lifecycle and peer types', () =
   registerOctocodeMessageRenderers(pi);
   assert.deepEqual(
     [...renderers.keys()].sort(),
-    [AWARENESS_HANDOFF_TYPE, COMPACTION_CHECKPOINT_TYPE, 'octocode-peer-event'].sort(),
+    [COMPACTION_CHECKPOINT_TYPE, 'octocode-peer-event'].sort(),
   );
 });
 
@@ -316,13 +264,12 @@ test('registered renderer components render the card lines from message.details'
   assert.match(collapsed[0]!, /Compaction checkpoint/);
   assert.match(collapsed[0]!, /entry-42/);
 
-  const handoff = renderers.get(AWARENESS_HANDOFF_TYPE)!(
-    { role: 'custom', customType: AWARENESS_HANDOFF_TYPE, content: 'x', details: handoffDetails },
+  const expanded = renderers.get(COMPACTION_CHECKPOINT_TYPE)!(
+    { role: 'custom', customType: COMPACTION_CHECKPOINT_TYPE, content: 'x', details: compactionDetails },
     { expanded: true },
     theme,
   ) as { render(width: number): string[] };
-  const expanded = handoff.render(WIDTH);
-  assert.match(expanded.join('\n'), /finish the renderer feature/);
+  assert.match(expanded.render(WIDTH).join('\n'), /╭─/);
 });
 
 test('registered renderer tolerates a message with no details', () => {

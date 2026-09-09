@@ -5,11 +5,12 @@ import { SIGNALS_DELETE_BY_IDS, SIGNAL_READS_INSERT_IGNORE } from './sql/signals
 import type { PruneNotificationsParams, PruneNotificationsResult, NotificationRecord, AgentSignalParams, AgentSignalResult, AgentSignalRecord } from './types/notifications-agents.js';
 import { appendSignalScope, assertSignalsExist, inferReplyTargets, insertNotification, isThreadParticipant } from './notifications-core.js';
 import { getNotifications, resolveNotification } from './notifications-inbox.js';
+import { decodeSignalBody, encodeSignalBody } from './signal-data.js';
 
 // ─── pruneNotifications ────────────────────────────────────────────────────────
 
 export function signalRecord(n: NotificationRecord): AgentSignalRecord {
-  return { ...n, to_agents: n.to_agent ? [n.to_agent] : [] };
+  return { ...n, ...decodeSignalBody(n.body), to_agents: n.to_agent ? [n.to_agent] : [] };
 }
 
 export function requireSignalText(value: string | null | undefined, field: string): string {
@@ -93,6 +94,7 @@ export function agentSignal(db: DatabaseSync, params: AgentSignalParams): AgentS
   switch (params.action) {
     case 'publish':
     case 'reply': {
+      const body = encodeSignalBody(params.body, params.data);
       const toAgents = params.toAgents?.length
         ? params.toAgents
         : params.action === 'reply'
@@ -107,7 +109,7 @@ export function agentSignal(db: DatabaseSync, params: AgentSignalParams): AgentS
         toAgent,
         kind: params.action === 'reply' ? 'reply' : params.kind ?? 'fyi',
         subject: requireSignalText(params.subject, 'subject'),
-        body: params.body ?? null,
+        body,
         files: params.files ?? [],
         refIds: params.refs ?? [],
         inReplyTo: params.inReplyTo ?? null,

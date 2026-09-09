@@ -152,8 +152,8 @@ memory_record: z
     .describe("Query awareness views for agents, scripts, and humans."),
   attend: z
     .object({
-      details: z.boolean().default(false).describe("Opt into the workboard, verification and diagnostics. A query or file filter also requests this detailed view."),
-      changes: z.boolean().default(false).describe("Read paged Git path/status and declared work across linked checkouts. Exclusive with details and scope/query filters; use include_bodies for full work intent."),
+      details: z.boolean().default(false).describe("Request the coordination inspection view. This is also selected by query, file, artifact, repo, ref, include_bodies, explain_organ, or revision."),
+      changes: z.boolean().default(false).describe("Read paged Git path/status and declared work across linked checkouts. This view cannot combine with details, query, file, artifact, repo, ref, or explain_organ; include_bodies and revision remain valid."),
       offset: z.number().int().min(0).default(0).describe("Continuation offset for presence or changes. Reuse returned revision for change pages."),
       revision: AttendRevisionInputSchema.optional(),
       agent_id: agentId.optional().describe("Stable agent identity used to prioritize owned work."),
@@ -168,7 +168,7 @@ memory_record: z
       explain_organ: z.boolean().default(false).describe("Request detailed diagnostics with the organ reference."),
     })
     .strict()
-    .describe("Meet registered workspace peers. Default reads presence only; details, query, or file opt into coordination inspection. Reuse the initial briefing until shared state changes."),
+    .describe("Meet registered workspace peers. Default reads presence only; details, query, file, artifact, repo, ref, include_bodies, explain_organ, or revision request coordination inspection. changes selects the separate Git view. Reuse the initial briefing until shared state changes."),
   export_harness: z
     .object({
       limit: z.number().int().min(1).max(200).default(10),

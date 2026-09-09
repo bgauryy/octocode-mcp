@@ -117,7 +117,6 @@ export function stableSchemaDigest(schema: unknown): string {
  */
 export function normalizeSchemaForCatalog(schema: unknown): unknown {
   if (!isRecord(schema)) return schema;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { $schema: _dropped, type, ...rest } = schema as Record<string, unknown>;
   return type !== undefined ? { type, ...rest } : rest;
 }

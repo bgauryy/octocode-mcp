@@ -39,7 +39,7 @@ export async function getToolsContextString(
       'Octocode CLI — Minimal Context',
       'Protocol: schema first → orient → search → read exact → prove → decide.',
       `Run: ${AGENT_TOOL_COMMANDS.catalog} | ${AGENT_TOOL_COMMANDS.schema} | ${AGENT_TOOL_COMMANDS.run}`,
-      `Output: YAML default; --compact structured JSON. ${BATCH_ERROR_GUIDANCE}`,
+      `Output: minified structured JSON by default; --yaml human view. ${BATCH_ERROR_GUIDANCE}`,
       `Tools (${toolNames.length}):`,
     ];
     for (const [category, names] of byCategory) {
@@ -62,8 +62,9 @@ export async function getToolsContextString(
         'Full MCP prompt + tool descriptions. Schemas stay on demand.',
         '  *** TOOL CALLS ***',
         '  tools --json --compact | tools <name> --scheme --json --compact | tools <name> --scheme',
-        "  tools <name> --queries '<json>' [--compact|--json]",
-        '  YAML is default; --json is direct structured JSON; --compact is the minified form.',
+        "  tools <name> --queries '<json>'           batch: queries[] rows, indexed results",
+        '  tools <name> [op] --<field> <value>       single query via schema flags (camelCase → kebab-case; repeat array flags)',
+        '  Minified structured JSON is default; --json is the pretty form; --yaml is the human view.',
         '  *** RESEARCH LOOP ***  orient → search → read exact → prove → decide.',
         `  ${CHEAP_VIEW_GUIDANCE}`,
         `  ${CONTINUATION_GUIDANCE}`,
@@ -73,7 +74,7 @@ export async function getToolsContextString(
     : [
         'Compact context; use `context --full` for MCP instructions + long descriptions.',
         'Protocol: schema first → orient → search → read exact → prove → decide.',
-        "Commands: tools --json --compact | tools <name> --scheme --json --compact | tools <name> --queries '<json>' --compact",
+        "Commands: tools --json --compact | tools <name> --scheme --json --compact | tools <name> --queries '<json>' | tools <name> [op] --<field> <value>",
         CHEAP_VIEW_GUIDANCE,
         CONTINUATION_GUIDANCE,
         'Proof: snippets are discovery, not proof; use exact reads, PR/commit evidence, or LSP.',
@@ -93,8 +94,8 @@ export async function getToolsContextString(
     'Output contract (all tools):',
     (full
       ? [
-          '  CLI default: YAML. --json: direct structured result JSON. --compact: the same result minified.',
-          '  MCP transports also carry YAML text, but CLI JSON modes omit that duplicate text.',
+          '  CLI default: minified structured result JSON. --json: the same result pretty-printed. --yaml: human view.',
+          '  MCP transports also carry YAML text; CLI JSON modes omit that duplicate text.',
           '',
           '  --json result:',
           '    results[]: array                       ordered rows: index, optional status/meta, and data',
@@ -105,7 +106,7 @@ export async function getToolsContextString(
           '    results[].data.location: object        fetched or cloned content location',
         ]
       : [
-          '  Default: YAML. --json: direct structured result JSON. --compact: minified structured JSON.',
+          '  Default: minified structured JSON. --json: pretty structured JSON. --yaml: human view.',
           `  ${BATCH_ERROR_GUIDANCE}`,
         ]
     ).join('\n'),

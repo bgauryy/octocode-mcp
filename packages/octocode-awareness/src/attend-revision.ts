@@ -62,7 +62,7 @@ export function withAttendRevision(input: {
       workspace_path: input.result.workspace_path, advisory: true,
       unavailable: input.result.operational_state.unavailable,
       next: input.result.next,
-      note: 'Only the scoped observation is unchanged; retain the previous packet. Recheck current state before mutations.',
+      note: 'Scoped observation unchanged; retain the previous packet and recheck before mutations.',
     };
   }
   return { ...input.result, unchanged: false, revision, ...(resetReason ? { reset_reason: resetReason } : {}) };

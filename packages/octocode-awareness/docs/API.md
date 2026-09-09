@@ -24,7 +24,7 @@ const result = await executeAwarenessCommand(
 
 Use a stable, distinct session identity in a real host. Cooperating agents need the same physical database and workspace, or linked Git worktrees. Keep each caller's own checkout as workspace; see [Git coordination](GIT_COORDINATION.md). `attend` reads the registry; native hosts register and leave through their lifecycle integration. Registration and last-seen timestamps are activity evidence, not proof that a process is live.
 
-`AwarenessCommandCall` contains a canonical command name and optional `params`. Parameter names match descriptor fields, such as `to_agent` and `include_bodies`; they are not CLI flags. Discover an unfamiliar command with `getAwarenessCommandDescriptor(command)`, or enumerate with `listAwarenessCommandDescriptors()`. The catalog contains 97 commands; descriptors own required fields, limits, approval classes, and host exposure.
+`AwarenessCommandCall` contains a canonical command name and optional `params`. Parameter names match descriptor fields, such as `to_agent` and `include_bodies`; they are not CLI flags. Discover an unfamiliar command with `getAwarenessCommandDescriptor(command)`, or enumerate with `listAwarenessCommandDescriptors()`. Descriptors own required fields, limits, approval classes, and host exposure.
 
 Use `{ command: 'attend', params: { changes: true, limit: 10 } }` when Git changes
 or peer work affect the next action. The opt-in view returns separate `git` and
@@ -53,6 +53,10 @@ For `work list` and `work show`, optional `params.agent_id` selects whose work t
 read. It is not an actor override and is not filled from `context.agentId`. Omit it
 to inspect peer overlap; mutations continue to enforce the host's actor binding.
 
+`memory recall-verified` accepts either a search query or an exact `memory_id`; the
+exact form cannot be combined with `query`. Source digest, scope, and expiry checks
+still apply to an exact pointer.
+
 ## Results and continuations
 
 `AwarenessCommandResult` returns `payload` and `exitCode`, with optional `text`, `diagnostics`, and `cancelled`. Read the command's payload as well as its exit code:
@@ -67,11 +71,17 @@ to inspect peer overlap; mutations continue to enforce the host's actor binding.
 
 Bounded results expose partial state and an executable continuation where another page or read is available. API continuations contain `{ command, params }` requests instead of shell argument arrays. For default presence attendance, the next request is `payload.next.list.command`. Execute it with the same trusted context. Other routes can place requests under their own `next` fields. A terminal-limit diagnostic means the result cannot be extended by that route; do not treat the bounded packet as complete.
 
-Detailed attendance can return `unchanged: true` with `partial: true`: retain the
-previous packet and follow its returned continuations for omitted detail. Equality
-is reported only when the bounded comparison snapshot is complete. Workboard and
-memory safety caps remain explicit and prevent an incomplete snapshot from being
-reported unchanged.
+History API continuations use `next.call: { command, params }`; the CLI adapter keeps its `next.argv` form. Follow the returned call with the same database and workspace context.
+
+Detailed attendance is selected by `details`, `query`, `file`, `artifact`, `repo`,
+`ref`, `include_bodies`, `explain_organ`, or `revision`; `changes` selects the
+separate Git view and cannot combine with those detail filters except
+`include_bodies` and `revision`. An unchanged response preserves its `revision`,
+`workspace_path`, partial/omission fields, `next` action, and executable
+continuations; retain the previous packet and follow those continuations for
+omitted detail. Equality is reported only when the bounded comparison snapshot is
+complete. Workboard and memory safety caps remain explicit and prevent an
+incomplete snapshot from being reported unchanged.
 
 The API never launches the Awareness binary, captures process stdout, changes cwd or environment, reads stdin, or exits the host. Output is request-local across asynchronous calls. Lock waits yield to the event loop and honor cancellation. Cancellation cannot preempt every synchronous operation; completed atomic writes are reported as completed.
 
@@ -97,8 +107,16 @@ All commands are library-callable. Pi's native `awareness` tool excludes descrip
 
 Hosts can also import `openAwarenessStore`, `createAwarenessEventConsumer`, and the lower-level domain APIs exported by [the package root](../src/index.ts). The older `execCli` and `dispatchAwarenessCommand` helpers cover only a subset of routes; use `executeAwarenessCommand` for the full catalog.
 
-Event consumers drain at host lifecycle opportunities. The host supplies wake-ups and persists accepted messages before acknowledging delivery. Delivery acknowledgement, signal handling (`signal ack`), and thread completion (`signal resolve` with `thread_id`) are separate. There is no package background message watcher. See [peer event delivery](HOW_IT_WORKS.md#peer-event-delivery) and [Pi integration](../../octocode-pi-extension/docs/AWARENESS_AGENT_FLOW.md).
+Event consumers drain at host lifecycle opportunities. The host supplies wake-ups and persists accepted messages before acknowledging delivery. Native `sendMessage` accepts optional `data`; native inbox messages expose human `text` and validated `data` separately. Accepted deliveries retain it in `details.data` and attributed content. Hooks emit `has_data` with an executable full-read continuation instead of clipping machine JSON. Delivery acknowledgement, signal handling (`signal ack`), and thread completion (`signal resolve` with `thread_id`) are separate. There is no package background message watcher. See [peer event delivery](HOW_IT_WORKS.md#peer-event-delivery) and [Pi integration](../../octocode-pi-extension/docs/AWARENESS_AGENT_FLOW.md).
 
 Command schemas and host-injected field metadata derive from the same projected Zod fields, including union branches. CLI help exposes those fields directly.
+
+`signal publish` and `signal reply` may carry structured `data` as an object or JSON
+string using the versioned `signal/v1` envelope with caller-defined `{type, payload}`
+alongside the human body. The envelope is bounded to 4000 UTF-8 bytes.
+`signal list --include-bodies` exposes `data`; compact or summarized rows omit its
+payload and retain `has_data: true`.
+`encodeSignalBody` and `decodeSignalBody` support adapters that explicitly handle
+the stored wire envelope; ordinary command and native inbox callers use `data`.
 
 Source owners: [command API](../src/command-api.ts), [command schemas](../src/schema/cli.ts), [continuations](../src/command-continuations.ts), and [standing policy](../src/coordination/external-policy.ts).

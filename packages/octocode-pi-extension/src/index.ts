@@ -176,6 +176,7 @@ import {
   initializeSessionAudit,
 } from './tools/session-audit.js';
 import { cleanupEphemeralToolOutputs } from './tools/ephemeral-tool-output.js';
+import { cleanupImplicitImageArtifacts } from './tools/create-image-tool.js';
 import {
   consumeValidatedRehydration,
   hasPendingRehydration,
@@ -627,7 +628,7 @@ function registerRuntimeUiPhase({ pi, notify }: RuntimeUiRegistrationArgs): void
       updateOctocodeMetricsUi(ctx);
     },
   });
-  // Branded conversation cards (compaction checkpoints / awareness handoffs)
+  // Branded conversation cards (compaction checkpoints / awareness peer events)
   // — must be registered before compaction-hooks emits the first card.
   registerOctocodeMessageRenderers(pi);
   pi.registerEntryRenderer?.(REHYDRATION_RECEIPT_ENTRY_TYPE, (entry, options, theme) =>
@@ -1250,6 +1251,9 @@ async function wireOctocodePiExtension(
       } finally {
         sessionRuntime = undefined;
         cleanupEphemeralToolOutputs();
+        // Harness-persisted inline-display fallbacks are session-scoped; explicit
+        // saveTo output is never tracked and therefore survives.
+        cleanupImplicitImageArtifacts();
       }
     });
 

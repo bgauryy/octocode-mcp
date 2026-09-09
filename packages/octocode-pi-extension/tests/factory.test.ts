@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { test } from 'vitest';
 import octocodeDefault, { createOctocodePiExtension } from '../src/index.js';
 import * as runtimeEntrypoint from '../src/index.js';
-import * as testingEntrypoint from '../src/testing.js';
+import * as testingEntrypoint from './helpers/production-pi.js';
 import { resolvePromptMode, composeSystemPrompt } from '../src/prompt.js';
 
 test('default export preserves the single-arg Pi contract (default(pi))', () => {
@@ -17,20 +17,24 @@ test('createOctocodePiExtension returns a single-arg wiring function', () => {
   assert.equal(wiring.length, 1);
 });
 
-test('production conformance helpers are exported only from the testing subpath', () => {
+test('production conformance helpers stay in the test corpus and are never published', () => {
   assert.equal('createProductionPiScenarioSuite' in runtimeEntrypoint, false);
   assert.equal('captureProductionPiLifecycle' in runtimeEntrypoint, false);
+  // The probe corpus stays usable from tests/, just not from the package surface.
   assert.equal(typeof testingEntrypoint.createProductionPiScenarioSuite, 'function');
   assert.equal(typeof testingEntrypoint.captureProductionPiLifecycle, 'function');
 
   const manifest = JSON.parse(
     fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
   ) as { exports?: Record<string, unknown> };
-  assert.deepEqual(manifest.exports?.['./testing'], {
-    types: './dist/testing.d.ts',
-    import: './dist/testing.js',
-    default: './dist/testing.js',
-  });
+  assert.equal(manifest.exports?.['./testing'], undefined, 'no published conformance subpath');
+
+  // `dist` is built from src/** only, so keeping the probe out of src/ is what
+  // keeps it out of the published tarball. Asserted on source (not on dist)
+  // because the default build does not clean stale dist artifacts.
+  const srcRoot = new URL('../src/', import.meta.url);
+  assert.equal(fs.existsSync(new URL('testing.ts', srcRoot)), false);
+  assert.equal(fs.existsSync(new URL('adapters/pi-production-probe.ts', srcRoot)), false);
 });
 
 test('resolvePromptMode: explicit option wins, then env, then append default', () => {

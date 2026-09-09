@@ -1,10 +1,8 @@
-import { truncateToWidth } from '../tui/width.js';
-import { paint } from '../tui/palette.js';
 /**
- * create-image-tool — registers the `createImage` tool: turn agent-authored
- * markup into a real image and render it inline in the TUI (Kitty graphics /
- * iTerm2 inline images; a themed placeholder on terminals without image
- * support).
+ * create-image-tool — image rendering primitives used by the `createMedia`
+ * tool: turn agent-authored markup into a real image for inline TUI display
+ * (Kitty graphics / iTerm2 inline images; a themed placeholder on terminals
+ * without image support).
  *
  * Two authoring modes — the model can create ANY image, not just vector art:
  *   • svg  — rasterized with @resvg/resvg-js (Rust, zero runtime deps, prebuilt
@@ -25,20 +23,13 @@ import path from 'node:path';
 
 import { Resvg } from '@resvg/resvg-js';
 
-import type { ToolCallResult, ToolDefinition, PiContext, PiTheme, RenderContext } from '../types.js';
+import type { PiContext } from '../types.js';
 import { createSessionArtifactContext } from './session-artifacts.js';
-import type { registerUniqueTool } from './octocode-tools.js';
-import { cliStatusGlyph, cliStatusToken, cliToolTitle } from '../tui/cli-design.js';
-import { makeComponentRenderer } from './render-helpers.js';
 import { assertPathAllowed } from './path-guard.js';
 import { resolveFilePath } from './file-state.js';
-import { appendImageLines, effectiveInlineImages, formatBytes, isTerminalImageCapable } from './image-render.js';
+import { formatBytes } from './image-render.js';
 import { connectToChrome, cleanupConnection, findChromePath } from '../chrome-debug.js';
-import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { extensionTmpRoot } from '../extension-paths.js';
-
-import { z } from 'zod';
-type RegisterFn = typeof registerUniqueTool;
 
 /** Refuse to render output larger than this — matches image-render's inline cap. */
 const MAX_PNG_BYTES = 4 * 1024 * 1024; // 4MB
@@ -383,132 +374,4 @@ export function cleanupImplicitImageArtifacts(): number {
   implicitArtifactDirs.clear();
   try { fs.rmdirSync(fallbackRoot()); } catch { /* another session may still own it */ }
   return removed;
-}
-
-const createImageItemSchema = z.looseObject({
-  svg: z.string().optional().describe('SVG document to render (must contain an <svg> element). Lightweight vector path — no browser needed. Provide svg OR html.'),
-  html: z.string().optional().describe('HTML markup to render via headless Chrome — full CSS/flex/grid/gradients/webfonts/emoji. Provide svg OR html. Requires Chrome.'),
-  width: z.number().int().min(1).optional().describe('Target render width in pixels. SVG: scales the vector. HTML: viewport width. Omit to fit content. Max 4096.'),
-  height: z.number().int().min(1).optional().describe('HTML only: fixed viewport height in pixels. Omit to fit content height. Max 8192.'),
-  background: z.string().optional().describe('Background color (e.g. "white", "#0d1117", "rgba(0,0,0,0)"). Default: transparent.'),
-  name: z.string().optional().describe('Display name for the image.'),
-  saveTo: z.string().optional().describe('Optional path to also save the rendered PNG to disk (path-guarded to the workspace).'),
-  showToModel: z.boolean().optional().describe('Also return the image to the model as a vision block. Default false.'),
-});
-export function registerCreateImageTool(
-  pi: { registerTool?(def: ToolDefinition): void },
-  registeredToolNames: Set<string>,
-  registerFn: RegisterFn,
-): void {
-  registerFn(pi, registeredToolNames, {
-    name: 'createImage',
-    label: 'Create Image',
-    description:
-      'Create an image from agent-authored markup and show it inline in the TUI (Kitty/iTerm2 inline images; a themed placeholder elsewhere). ' +
-      'Two modes: `svg` (fast vector, rasterized with resvg, no browser) or `html` (full CSS/flex/grid/gradients/webfonts/emoji via headless Chrome — "any image"). ' +
-      'Use when a diagram, chart, table, badge, or other visual communicates better than text. Optionally saves to disk and/or returns the image to a vision model (showToModel).',
-    promptSnippet: 'Create an image from SVG (vector) or HTML (full CSS via headless Chrome) and show it inline in the TUI — for diagrams/charts/visuals.',
-    promptGuidelines: [
-      'Use createImage to SHOW something graphic (diagram/chart/table/badge). Provide `svg` for simple vector art, or `html` for rich CSS layouts, gradients, webfonts, and emoji ("any image").',
-      'html mode renders in headless Chrome (needs Chrome installed); svg mode is browser-free and loads system fonts so text renders.',
-      'Prefer text for textual answers. The rendered PNG stays out of model context by default; set showToModel:true only if you need to inspect the result. Max 4MB output.',
-      'If the terminal can\'t show inline images (VS Code/tmux/plain xterm), the tool saves the PNG and says so — OFFER to open it in a browser and ALWAYS ask the user first (askUser); never open a browser automatically.',
-    ],
-    parameters: buildQueryEnvelopeSchema(createImageItemSchema, {
-      reasoningDescription: 'Concise reason this image creation is necessary.',
-    }),
-
-    async execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, onUpdate?: unknown, ctx?: PiContext): Promise<ToolCallResult> {
-      const cwd = ctx?.cwd ?? process.cwd();
-      return executeQueryBatch({
-        toolCallId,
-        raw: params,
-        signal,
-        onUpdate: typeof onUpdate === 'function' ? onUpdate as (update: ToolCallResult) => void : undefined,
-        ctx,
-        passthroughSingle: true,
-        async execute(query, _index, _callId, batchSignal) {
-          if (batchSignal?.aborted) throw new Error('Operation aborted');
-          const svg = typeof query['svg'] === 'string' ? (query['svg'] as string) : undefined;
-          const html = typeof query['html'] === 'string' ? (query['html'] as string) : undefined;
-          if (!svg && !html) throw new Error('createImage: provide `svg` or `html`.');
-          if (svg && html) throw new Error('createImage: provide only one of `svg` or `html`, not both.');
-
-          const shared = {
-            width: typeof query['width'] === 'number' ? (query['width'] as number) : undefined,
-            background: typeof query['background'] === 'string' ? (query['background'] as string) : undefined,
-            name: typeof query['name'] === 'string' ? (query['name'] as string) : undefined,
-            saveTo: typeof query['saveTo'] === 'string' ? (query['saveTo'] as string) : undefined,
-          };
-
-          const res = svg
-            ? createImageFromSvg(svg, cwd, shared)
-            : await createImageFromHtml(html!, cwd, {
-                ...shared,
-                height: typeof query['height'] === 'number' ? (query['height'] as number) : undefined,
-                signal: batchSignal,
-              });
-
-          if (!res.ok) throw new Error(res.message);
-
-          // On terminals that can't display inline images (VS Code, tmux, plain
-          // xterm, …) the picture won't show. Persist it so the user can open it,
-          // and tell the agent to OFFER opening it in a browser — never auto-open.
-          const protocolCapable = isTerminalImageCapable();
-          const inlineEffective = effectiveInlineImages(ctx);
-          const showToModel = query['showToModel'] === true;
-          let savedPath = res.savedPath;
-          const imagePath = savedPath ?? ((!showToModel || !inlineEffective) && res.base64
-            ? persistRenderedPng(res.base64, ctx, res.name)
-            : undefined);
-          const temporaryArtifact = Boolean(!savedPath && imagePath);
-          let message = res.message;
-          if (!inlineEffective) {
-            if (!savedPath) savedPath = imagePath;
-            const reason = protocolCapable
-              ? 'inline image display is disabled or unavailable in the current UI mode'
-              : 'this terminal has no inline-image support (e.g. VS Code / tmux)';
-            const where = savedPath ? ` Saved to ${savedPath}.` : '';
-            message = `${res.message} — ${reason}, so it won't render inline here.${where} Offer to open it in a browser; ask the user first, never open automatically.`;
-          }
-
-          const content: ToolCallResult['content'] = [{ type: 'text', text: message }];
-          if (showToModel) content.unshift({ type: 'image', data: res.base64!, mimeType: 'image/png' });
-
-          return {
-            content,
-            details: { ok: true, imagePath, mimeType: 'image/png', bytes: res.bytes, name: res.name, savedPath, terminalSupportsImages: protocolCapable, effectiveInlineImages: inlineEffective, temporaryArtifact },
-          };
-        },
-      });
-    },
-
-    renderCall(args: unknown, theme?: PiTheme) {
-      const envelope = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
-      const queries = Array.isArray(envelope['queries']) ? (envelope['queries'] as Record<string, unknown>[]) : [];
-      const input = queries[0] ?? {};
-      const mode = typeof input['html'] === 'string' ? 'html' : 'svg';
-      const name = typeof input['name'] === 'string' ? (input['name'] as string) : mode;
-      const title = cliToolTitle(theme, 'createImage');
-      return makeComponentRenderer((_props, { width: width }) => [truncateToWidth(`${title} ${paint(theme, 'dim', `${mode} \u00b7 ${name}`)}`, width)], undefined);
-    },
-
-    renderResult(result: ToolCallResult, opts: { expanded?: boolean; isPartial?: boolean }, theme?: PiTheme, context?: RenderContext) {
-      if (opts.isPartial) return makeComponentRenderer((_props, _context) => [paint(theme, 'brand', '… rendering image')], undefined);
-      const ok = !result.isError;
-      const note = (result.content.find((c) => c.type === 'text') as { text?: string } | undefined)?.text ?? (ok ? 'image created' : 'render failed');
-      const icon = paint(theme, cliStatusToken(ok), cliStatusGlyph(ok));
-      const base = makeComponentRenderer((_props, { width: width }) => [truncateToWidth(`${icon} ${cliToolTitle(theme, 'createImage')} · ${note}`, width)], undefined);
-      if (!ok) return base;
-
-      // When showToModel put an image block in content, pi's tool-execution
-      // component renders it natively — self-rendering here too would duplicate it.
-      if (result.content.some((c) => c.type === 'image')) return base;
-
-      const details = (result.details ?? {}) as { imagePath?: string; name?: string; bytes?: number };
-      return details.imagePath
-        ? appendImageLines(base, context, details.imagePath, theme, { name: details.name, bytes: details.bytes })
-        : base;
-    },
-  });
 }

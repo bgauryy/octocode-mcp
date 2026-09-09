@@ -23,34 +23,14 @@ export type CloneStructuredContent = {
 };
 
 export type FetchFileData = {
-  readonly localPath?: string;
-  readonly repoRoot?: string;
+  readonly content?: string;
   readonly resolvedBranch?: string;
-  readonly cached?: boolean;
-  readonly commitSha?: string;
-};
-
-export type FetchDirectoryData = {
-  readonly localPath?: string;
-  readonly repoRoot?: string;
-  readonly resolvedBranch?: string;
-  readonly cached?: boolean;
-  readonly complete?: boolean;
-  readonly verified?: boolean;
-  readonly commitSha?: string;
-  readonly hasSubdirectories?: boolean;
-  readonly skippedSummary?: Record<string, number>;
-  readonly isPartial?: boolean;
-  readonly partialReasons?: readonly string[];
-  readonly terminalLimit?: boolean;
-  readonly next?: Readonly<Record<string, unknown>>;
 };
 
 export type FetchStructuredContent = {
   readonly results?: readonly {
     readonly data?: {
       readonly files?: readonly FetchFileData[];
-      readonly directories?: readonly FetchDirectoryData[];
     };
   }[];
 };
@@ -69,7 +49,7 @@ export type RemoteLocation = {
   readonly localPath: string;
   readonly repoRoot?: string;
   readonly requestedPath?: string;
-  readonly source?: 'clone' | 'tree';
+  readonly source?: 'clone' | 'fetch';
   readonly cached?: boolean;
   readonly complete?: boolean;
   readonly verified?: boolean;

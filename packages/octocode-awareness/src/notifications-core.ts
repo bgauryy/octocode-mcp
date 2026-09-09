@@ -1,4 +1,5 @@
 import { beginWrite } from './db-transaction.js';
+import { decodeSignalBody } from './signal-data.js';
 /**
  * notifications.ts — Agent-to-agent workspace messaging.
  *
@@ -137,6 +138,7 @@ export function insertNotification(
     // Signals are the sole durable message record. Publish their native
     // delivery event in this same write boundary so a committed signal never
     // lacks a corresponding attributed peer event (and vice versa).
+    const decoded = decodeSignalBody(body);
     insertOutboxEvent(db, {
       version: 1,
       eventId: `evt_${signalId}`,
@@ -152,7 +154,8 @@ export function insertNotification(
         toAgentId: toAgent,
         signalKind: normalizedKind,
         topic: subject,
-        text: body?.trim() || subject,
+        text: decoded.body?.trim() || subject,
+        ...(decoded.data ? { data: decoded.data } : {}),
         files,
       },
     });

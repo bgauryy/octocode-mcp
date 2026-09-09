@@ -12,7 +12,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { setWorktreeGitRunnerForTests, type WorktreeGitRunner } from '../worktree.js';
+import { setWorktreeGitRunnerForTests } from '../worktree.js';
 import {
   type AgentRecord,
   type AgentProcessFactory,
@@ -160,6 +160,3 @@ export function setAgentProcessFactoryForTests(factory: AgentProcessFactory | nu
   ledgerHidden = false;
 }
 
-export function setAgentWorktreeGitRunnerForTests(runner: WorktreeGitRunner | null): void {
-  setWorktreeGitRunnerForTests(runner);
-}

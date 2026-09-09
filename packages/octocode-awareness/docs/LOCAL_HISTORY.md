@@ -23,13 +23,17 @@ marker contains the format version, store ID, workspace ID, and object format,
 without absolute paths. Moving a database changes its namespace and requires an
 explicit matching store relocation. The store never uses the workspace `.git`
 directory, index, refs, configuration, hooks, remotes, filters, or object alternates.
-Workspace storage ancestors must be real directories, not symlinks.
+Workspace storage ancestors must be real directories, not symlinks. On the first
+actual store initialization, Awareness creates `.octocode/.localGit/.gitignore`
+with the catch-all `*` rule so generated history stays out of ordinary Git status.
+An existing marker containing that rule is preserved; an incompatible marker or
+symlink is rejected without overwriting its contents.
 
 The implementation bundles the exact `isomorphic-git` version declared in the package manifest. It runs through Node's file-system API, requires no `git` executable or network access, and is distributed under its MIT license. Direct object reads validate a caller-supplied limit after the object is inflated; that limit bounds returned content, not peak compressed-object inflation work.
 
-History is lazy. Status and in-memory Awareness databases do not create a store.
-There is no implicit history migration, automatic garbage collection, or use of
-the workspace repository as a fallback object source.
+History is lazy. Status and in-memory Awareness databases do not create the marker
+or a store. There is no implicit history migration, automatic garbage collection,
+or use of the workspace repository as a fallback object source.
 
 ### Existing sidecars
 

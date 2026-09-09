@@ -4,7 +4,7 @@ import { test } from 'vitest';
 import { renderFooterView } from '../src/tui/footer-view.js';
 import { buildPlanReadModel } from '../src/tools/plan-read-model.js';
 import { formatAwarenessPanel } from '../src/tools/awareness-status.js';
-import { buildCompactionCard, buildHandoffCard } from '../src/tools/custom-messages.js';
+import { buildCompactionCard, buildPeerEventCard } from '../src/tools/custom-messages.js';
 import { buildOctocodeRenderResult } from '../src/tools/render-helpers.js';
 import type { PlanStep } from '../src/tools/planning/plan-types.js';
 import type { ToolCallResult } from '../src/types.js';
@@ -86,14 +86,9 @@ test('compaction and Awareness messages share closed, width-perfect component fr
         summary: 'Preserve the active task and plan references.',
         activePlan: { total: 3, done: 1, running: 'Unify state projections' },
       }, true, undefined, width),
-      buildHandoffCard({
-        label: 'handoff-1',
-        from: 'builder',
-        to: 'reviewer',
-        goal: 'Verify all TUI permutations',
-        status: 'in-progress',
-        notes: ['Borders checked'],
-        artifacts: ['docs/TUI_PERMUTATION_CONTRACT.html'],
+      buildPeerEventCard({
+        content: '[peer:builder; class:handoff; authority:data]\nVerify all TUI permutations\nBorders checked',
+        details: { messageClass: 'handoff', eventId: 'handoff-1' },
       }, true, undefined, width),
     ];
     for (const lines of cards) {

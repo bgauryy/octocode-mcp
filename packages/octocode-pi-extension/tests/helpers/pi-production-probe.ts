@@ -12,7 +12,7 @@ import {
   type ExtensionFactory,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { PiInstance } from "../types.js";
+import type { PiInstance } from "../../src/types.js";
 
 const PROVIDER = "octocode-production-probe";
 const MODEL = "deterministic-v1";

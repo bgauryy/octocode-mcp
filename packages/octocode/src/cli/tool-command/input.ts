@@ -3,19 +3,11 @@
 import type { ParsedArgs } from '../types.js';
 import { DirectToolInputError } from '@octocodeai/octocode-tools-core/schema';
 import { formatToolExampleCommand } from './formatting.js';
+import { TOOL_RUNTIME_FLAGS } from './flags-to-query.js';
 
-const TOOL_RUNTIME_OPTION_KEYS = new Set([
-  'queries',
-  'json',
-  'help',
-  'version',
-  'scheme',
-  'compact',
-  'pretty',
-  'format',
-  'full',
-  'no-color',
-]);
+// The shared runtime set plus `format`, which is runtime-only when paired
+// with --queries (its schema-field meaning exists only on the flag path).
+const TOOL_RUNTIME_OPTION_KEYS = new Set([...TOOL_RUNTIME_FLAGS, 'format']);
 
 function getUnexpectedToolOptionKeys(args: ParsedArgs): string[] {
   return Object.keys(args.options).filter(
@@ -34,13 +26,13 @@ export function getInputText(
       .join(', ');
 
     throw new DirectToolInputError(
-      `Unsupported tool flags: ${formattedKeys}. Use ${formatToolExampleCommand(toolName)}.`
+      `Use either field flags or --queries, not both (got ${formattedKeys} with --queries). Use ${formatToolExampleCommand(toolName)}.`
     );
   }
 
   if (args.args.length > 1) {
     throw new DirectToolInputError(
-      `Pass tool input with --queries. Use ${formatToolExampleCommand(toolName)}.`
+      `Use either a positional selector with field flags or --queries, not both. Use ${formatToolExampleCommand(toolName)}.`
     );
   }
 

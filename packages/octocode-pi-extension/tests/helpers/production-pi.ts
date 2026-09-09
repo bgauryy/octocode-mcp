@@ -1,11 +1,11 @@
-import { APPROVED_PI_HOST_VERSION } from './adapters/pi-host-compatibility.js';
+import { APPROVED_PI_HOST_VERSION } from '../../src/adapters/pi-host-compatibility.js';
 import {
   capturePiSdkLifecycle,
   createPiSdkScenarioSuite,
   type ProductionPiLifecycleCapture,
   type ProductionPiScenarioSuite,
-} from './adapters/pi-production-probe.js';
-import { createOctocodePiExtension } from './index.js';
+} from './pi-production-probe.js';
+import { createOctocodePiExtension } from '../../src/index.js';
 
 export {
   PRODUCTION_PI_SCENARIO_IDS,
@@ -17,7 +17,7 @@ export {
   type ProductionPiScenarioProbe,
   type ProductionPiScenarioReceipt,
   type ProductionPiScenarioSuite,
-} from './adapters/pi-production-probe.js';
+} from './pi-production-probe.js';
 
 /** Exercise supported conformance scenarios through the installed Pi SDK composition. */
 export function createProductionPiScenarioSuite(cwd: string): ProductionPiScenarioSuite {

@@ -1,10 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const executeDirectTool = vi.fn();
-const { statSync } = vi.hoisted(() => ({
+const { statSync, mkdirSync, writeFileSync } = vi.hoisted(() => ({
   statSync: vi.fn(() => ({ isFile: (): boolean => false })),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }));
-vi.mock('node:fs', () => ({ statSync, existsSync: () => false }));
+vi.mock('node:fs', () => ({
+  statSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync: () => false,
+}));
+vi.mock('@octocodeai/octocode-tools-core/paths', () => ({
+  paths: { tmp: '/tmp/octo-home/tmp' },
+}));
 
 vi.mock('@octocodeai/octocode-tools-core/direct', () => ({
   executeDirectTool: (...args: unknown[]) => executeDirectTool(...args),
@@ -109,27 +119,17 @@ describe('remote clone materialization', () => {
     });
   });
 
-  it('preserves directory recovery instead of upgrading an unknown result to complete', async () => {
-    const next = {
-      escalateToClone: {
-        tool: 'ghCloneRepo',
-        query: { owner: 'o', repo: 'r', sparsePath: 'src' },
-      },
-    };
+  it('materializes tree depth through a sparse clone', async () => {
     executeDirectTool.mockResolvedValue({
       structuredContent: {
         results: [
           {
             data: {
-              directories: [
-                {
-                  localPath: '/tmp/r/src',
-                  repoRoot: '/tmp/r',
-                  isPartial: true,
-                  partialReasons: ['fetchFailed'],
-                  next,
-                },
-              ],
+              location: {
+                localPath: '/tmp/r',
+                resolvedBranch: 'main',
+                complete: true,
+              },
             },
           },
         ],
@@ -140,23 +140,69 @@ describe('remote clone materialization', () => {
       path: 'src',
       kind: 'tree',
     });
-    expect(result).toMatchObject({
-      location: { complete: false, verified: false },
-      isPartial: true,
-      partialReasons: ['fetchFailed'],
-      next,
+    expect(executeDirectTool).toHaveBeenCalledWith(
+      'ghCloneRepo',
+      expect.objectContaining({
+        queries: [expect.objectContaining({ sparsePath: 'src' })],
+      })
+    );
+    expect(result.location).toMatchObject({
+      kind: 'directory',
+      localPath: '/tmp/r/src',
+      repoRoot: '/tmp/r',
+      source: 'clone',
     });
   });
 
-  it('rejects the removed flat fetch envelope', async () => {
+  it('writes file depth locally from the fetched content', async () => {
     executeDirectTool.mockResolvedValue({
       structuredContent: {
-        results: [{ files: [{ localPath: '/tmp/legacy' }] }],
+        results: [
+          {
+            data: {
+              files: [{ content: 'MIT License\n', resolvedBranch: 'main' }],
+            },
+          },
+        ],
+      },
+    });
+    const result = await materializeRemoteForCli({
+      repoRef: 'o/r',
+      path: 'LICENSE',
+      kind: 'file',
+    });
+    expect(executeDirectTool).toHaveBeenCalledWith(
+      'ghGetFileContent',
+      expect.objectContaining({
+        queries: [
+          expect.objectContaining({ path: 'LICENSE', fullContent: true }),
+        ],
+      })
+    );
+    expect(writeFileSync).toHaveBeenCalledWith(
+      '/tmp/octo-home/tmp/fetch/o/r/main/LICENSE',
+      'MIT License\n',
+      'utf8'
+    );
+    expect(result.location).toMatchObject({
+      kind: 'file',
+      localPath: '/tmp/octo-home/tmp/fetch/o/r/main/LICENSE',
+      repoRoot: '/tmp/octo-home/tmp/fetch/o/r/main',
+      source: 'fetch',
+      complete: true,
+      resolvedBranch: 'main',
+    });
+  });
+
+  it('rejects a file fetch that returns no content', async () => {
+    executeDirectTool.mockResolvedValue({
+      structuredContent: {
+        results: [{ data: { files: [{ path: 'LICENSE' }] } }],
       },
     });
     await expect(
       materializeRemoteForCli({ repoRef: 'o/r', path: 'LICENSE', kind: 'file' })
-    ).rejects.toThrow('localPath');
+    ).rejects.toThrow('file content');
   });
 
   it('identifies a sparse extensionless file from the actual checkout', async () => {

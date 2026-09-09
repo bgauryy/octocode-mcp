@@ -179,7 +179,7 @@ describe('raw tools command adapter parity', () => {
     }
   );
 
-  it.each<Record<string, boolean>>([{}, { json: true }])(
+  it.each<Record<string, boolean>>([{}, { json: true }, { yaml: true }])(
     'selects the direct execution projection for %j',
     async options => {
       const testCase = ADAPTER_PARITY_CASES[0]!;
@@ -190,16 +190,19 @@ describe('raw tools command adapter parity', () => {
         args: [testCase.name],
         options: { ...options, queries: JSON.stringify(testCase.input) },
       });
-      if (options.json) {
+      if (options.yaml) {
+        // The human view keeps the text projection.
+        expect(directExecution).toHaveBeenLastCalledWith(
+          testCase.name,
+          expect.any(Object)
+        );
+      } else {
+        // Structured JSON (minified by default, pretty with --json) is the
+        // default projection.
         expect(directExecution).toHaveBeenLastCalledWith(
           testCase.name,
           expect.any(Object),
           { resultProjection: 'structured' }
-        );
-      } else {
-        expect(directExecution).toHaveBeenLastCalledWith(
-          testCase.name,
-          expect.any(Object)
         );
       }
     }

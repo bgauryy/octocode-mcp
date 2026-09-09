@@ -1,6 +1,7 @@
 import type { PlanPhase } from './plan-domain.js';
 import path from 'node:path';
 import { contentDigest, type ContextSegmentV1 } from '@octocodeai/octocode-awareness';
+import { estimateContextTokens } from './context-segments.js';
 import type { PiContext, PiInstance } from '../types.js';
 import {
   activePlanScope,
@@ -313,7 +314,7 @@ export function consumeValidatedRehydration(
       if (!stale.includes(checkpoint.id)) stale.push(checkpoint.id);
       continue;
     }
-    const tokens = Math.ceil(current.content.length / 4);
+    const tokens = estimateContextTokens(current.content);
     if ((checkpoint.tokenBudget !== undefined && tokens > checkpoint.tokenBudget)
       || estimatedTokens + tokens > (options.totalTokenBudget ?? REHYDRATION_PROJECTION_TOKEN_BUDGET)) {
       overBudget.push(checkpoint.id);
@@ -332,7 +333,7 @@ export function consumeValidatedRehydration(
     }
     const label = `<rehydrated_segment id=${JSON.stringify(checkpoint.id)} origin=${JSON.stringify(checkpoint.origin)} authority=${JSON.stringify(checkpoint.authority)} source="current">`;
     const block = `${label}\n${current.content}\n</rehydrated_segment>`;
-    const projectedTokens = Math.ceil(block.length / 4);
+    const projectedTokens = estimateContextTokens(block);
     if (estimatedTokens + projectedTokens > (options.totalTokenBudget ?? REHYDRATION_PROJECTION_TOKEN_BUDGET)) {
       overBudget.push(checkpoint.id);
       continue;

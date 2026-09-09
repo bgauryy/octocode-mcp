@@ -147,6 +147,12 @@ describe('runCLI', () => {
       options: {
         queries: '{"path":".","keywords":"runCLI"}',
       },
+      raw: [
+        'tools',
+        'localSearch',
+        '--queries',
+        '{"path":".","keywords":"runCLI"}',
+      ],
     });
     expect(mocks.loadCommand).not.toHaveBeenCalled();
   });
@@ -173,6 +179,14 @@ describe('runCLI', () => {
           '{"owner":"bgauryy","repo":"octocode-mcp","keywords":["tool"]}',
         output: 'json',
       },
+      raw: [
+        'tools',
+        'github.code',
+        '--queries',
+        '{"owner":"bgauryy","repo":"octocode-mcp","keywords":["tool"]}',
+        '--output',
+        'json',
+      ],
     });
   });
 

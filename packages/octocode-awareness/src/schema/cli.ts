@@ -27,7 +27,21 @@ const listableSchemas = [
 ];
 
 
-const CORE_NOUNS = new Set(["verify", "attend", "plan", "task", "work", "memory", "signal", "query", "history"]);
+// Discovery is classified per route rather than per noun: routine memory and
+// history reads stay in the lobby while maintenance/recovery actions move to
+// the advanced tier. Every route remains available through --all and exact
+// schema/help lookup.
+const COMPACT_ADVANCED_COMMANDS = new Set<string>([
+  "memory archive", "memory restore", "memory forget", "memory evaluate", "memory reindex", "memory prune",
+  "lock prune", "refinement delete", "signal prune",
+  "history restore-preview", "history restore-apply", "history retention-preview", "history retention-prune",
+  "history recovery", "history evidence",
+]);
+const COMPACT_CORE_NOUNS = new Set(["verify", "attend", "plan", "task", "work", "memory", "signal", "query", "history"]);
+const COMPACT_CORE_COMMANDS = new Set([
+  "status", "agent register", "agent list", "lock acquire", "lock wait", "lock release",
+]);
+
 // Rare/expert/redundant commands stay fully available under `--all` and
 // `<command> --help`, but are hidden from the default lobby catalog to keep the
 // agent-facing surface small. Removing them here removes catalog verbosity, not
@@ -43,7 +57,9 @@ function groupedCommandIndex() {
   for (const row of commandIndex) {
     if (COMPACT_HIDE.has(row.command)) continue;
     const [noun, ...rest] = row.command.split(" ");
-    const tier = CORE_NOUNS.has(noun!) ? "core" : "advanced";
+    const tier = COMPACT_ADVANCED_COMMANDS.has(row.command)
+      ? "advanced"
+      : COMPACT_CORE_COMMANDS.has(row.command) || COMPACT_CORE_NOUNS.has(noun!) ? "core" : "advanced";
     (grouped[tier][noun!] ??= []).push(rest.length > 0 ? rest.join(" ") : noun === "query" ? "<view>" : "<direct>");
   }
   return grouped;

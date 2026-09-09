@@ -21,6 +21,14 @@ export interface ParsedArgs {
   command: string | null;
   args: string[];
   options: Record<string, string | boolean>;
+  /**
+   * The unmodified argv the parser consumed. Order- and repeat-preserving —
+   * used by the schema-aware tool flag parser, since `options` collapses
+   * repeated flags and cannot distinguish booleans from consumed values.
+   * Optional so hand-built ParsedArgs (tests, embedders) stay valid; the
+   * tool flag parser falls back to reconstructing a tail from options.
+   */
+  raw?: string[];
 }
 
 // A runnable command is behavior, not documentation: it carries only its name,

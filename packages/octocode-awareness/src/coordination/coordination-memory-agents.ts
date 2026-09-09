@@ -2,6 +2,7 @@ import type { AgentRecord,AgentStatus,LiteMessage,MemoryItem,PruneResult } from 
 import { generateAgentName } from './agent-naming.js';
 import { bytesToEmbedding,cosineSimilarity,embeddingToBytes,isEmbeddingEnabled,runHostEmbedder } from '@octocodeai/agent-contracts/embed';
 import { CoordinationState } from './coordination-state.js';
+import { encodeSignalBody } from '../signal-data.js';
 import { countPresentAgentPresence, countStaleAgentPresence } from './coordination-agent-presence.js';
 import { agentFromCanonicalRow,CanonicalAgentRow,CanonicalMemoryRow,CanonicalMessageRow,cutoffIso,DEFAULT_SEMANTIC_MIN_SIMILARITY,memoryFromCanonicalRow,messageFromCanonicalSignalRow,now,parseMetadata,required,splitFiles,splitTags } from './coordination-shared.js';
 import { insertMemory } from '../memory-write.js';
@@ -69,10 +70,12 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     return { version: 1, memoryId, label, text, scope: params.scope ?? 'project', sourceDigest, verifiedAt, ...(params.validUntil ? { validUntil: params.validUntil } : {}), importance };
   }
 
-  recallVerifiedMemory(params: { query?: string; label?: string; sourceDigest?: string; scope?: 'project' | 'artifact'; limit?: number; now?: string; mode?: MemoryRecallModeV1; minSimilarity?: number } = {}): VerifiedMemoryV1[] {
+  recallVerifiedMemory(params: { memoryId?: string; query?: string; label?: string; sourceDigest?: string; scope?: 'project' | 'artifact'; limit?: number; now?: string; mode?: MemoryRecallModeV1; minSimilarity?: number } = {}): VerifiedMemoryV1[] {
+    if (params.memoryId && params.query !== undefined) throw new Error('memory_id cannot be combined with query');
     const stamp = params.now ?? now();
     const clauses = ["workspace_path = ?", "state = 'ACTIVE'", 'verified_at IS NOT NULL', "secret_scan_status = 'passed'", '(valid_to IS NULL OR valid_to > ?)'];
     const values: Array<string | number> = [this.canonicalWorkspace, stamp];
+    if (params.memoryId) { clauses.push('memory_id = ?'); values.push(params.memoryId); }
     if (params.label?.trim()) { clauses.push('label = ?'); values.push(params.label.trim()); }
     if (params.sourceDigest?.trim()) { clauses.push('source_digest = ?'); values.push(params.sourceDigest.trim()); }
     if (params.scope) { clauses.push('scope_kind = ?'); values.push(params.scope); }
@@ -318,11 +321,11 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     return (rows as unknown as CanonicalAgentRow[]).map(agentFromCanonicalRow);
   }
 
-  sendMessage(params: { fromAgentId: string; toAgentId?: string | null; topic?: string | null; text: string; files?: string | string[] | null }): LiteMessage {
+  sendMessage(params: { fromAgentId: string; toAgentId?: string | null; topic?: string | null; text: string; data?: import('../signal-data.js').SignalData | string; files?: string | string[] | null }): LiteMessage {
     const fromAgentId = required(params.fromAgentId, 'from-agent-id');
     const toAgentId = params.toAgentId?.trim() || null;
     const topic = params.topic?.trim() || null;
-    const messageText = required(params.text, 'text');
+    const messageText = encodeSignalBody(required(params.text, 'text'), params.data);
     const files = splitFiles(params.files);
     const signalId = this.writeTransaction(() => {
       this.touchAgent({ agentId: fromAgentId });

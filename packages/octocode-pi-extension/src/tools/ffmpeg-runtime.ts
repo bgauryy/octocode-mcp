@@ -48,7 +48,6 @@ function findExecutable(name: string): string | undefined {
 function findStaticBinary(name: 'ffmpeg' | 'ffprobe'): string | undefined {
   try {
     const pkg = name === 'ffmpeg' ? 'ffmpeg-static' : '@derhuerst/ffprobe-static';
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const p = require(pkg) as string | null;
     if (typeof p === 'string' && p) return p;
   } catch {

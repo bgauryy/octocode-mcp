@@ -3,7 +3,7 @@ export const AGENT_TOOL_COMMANDS = {
   catalog: 'tools --json --compact',
   schema: 'tools <name> --scheme --json --compact',
   fullSchema: 'tools <name> --scheme --json',
-  run: "tools <name> --queries '<json>' --compact",
+  run: "tools <name> --queries '<json>'",
   runJson: "tools <name> --queries '<json>' --json",
 } as const;
 

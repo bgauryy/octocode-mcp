@@ -288,6 +288,8 @@ export interface LiteMessage {
   toAgentId: string | null;
   topic: string | null;
   text: string;
+  /** Validated machine payload, separate from human-readable message text. */
+  data?: { type: string; payload: Record<string, unknown> };
   files: string[];
   createdAt: string;
   readAt: string | null;

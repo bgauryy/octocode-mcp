@@ -94,7 +94,7 @@ export function printLightInstructions(
   console.log('4. Use auth status for read-only token/auth state:');
   console.log('   auth status --json');
   console.log(
-    '5. Read YAML output directly; use --json only when you need the envelope.'
+    '5. Read the minified JSON output directly; --yaml renders the human view.'
   );
   console.log();
   showLightAvailableTools();

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { visibleWidth as piVisibleWidth } from '@earendil-works/pi-tui';
 import { test } from 'vitest';
 import { buildOctocodeRenderCall, buildOctocodeRenderResult, buildResultStats, buildToolCallSummary, makeCachedRenderer, makeComponentRenderer, singleLineRenderer, wrapText } from '../src/tools/render-helpers.js';
-import { CLI_GLYPH, cliSpinnerFrame, formatCliToolRow, formatThinkingRow, summarizeInlineValue } from '../src/tui/cli-design.js';
+import { CLI_GLYPH, cliSpinnerFrame } from '../src/tui/cli-design.js';
 import type { PiTheme, ToolCallResult } from '../src/types.js';
 
 const theme: PiTheme = {
@@ -20,25 +20,10 @@ function textResult(text: string, details: unknown = {}, isError = false): ToolC
   };
 }
 
-test('CLI design contract centralizes glyphs, spinners, and transcript rows', () => {
+test('CLI design contract centralizes glyphs and spinner frames', () => {
   assert.equal(CLI_GLYPH.tool, '◇');
   assert.equal(cliSpinnerFrame(0), '⠋');
   assert.equal(cliSpinnerFrame(120), '⠙');
-  assert.equal(summarizeInlineValue({ command: 'echo ok' }), '{"command":"echo ok"}');
-
-  // Wide explicit width: the stub theme's <token> markers count as visible
-  // cells, so the row must not be truncated for the exact-equality assertion.
-  assert.equal(
-    formatCliToolRow('running', 'bash', { command: 'echo ok' }, theme, 500),
-    '<toolTitle>╭─ ⚙</toolTitle> <toolTitle>bash</toolTitle> <dim>running…</dim><dim> · {"command":"echo ok"}</dim>',
-  );
-  // Narrow terminals clip the row to width so the ╭─ frame never wraps.
-  const clipped = formatCliToolRow('running', 'bash', { command: 'echo ok'.repeat(30) }, undefined, 40);
-  assert.ok(visibleWidth(clipped) <= 40, `row must clip to width, got ${visibleWidth(clipped)} cells`);
-  assert.equal(
-    formatThinkingRow('start', theme),
-    '<mdLink>╭─ 🧠 thinking</mdLink> <dim>model reasoning</dim>',
-  );
 });
 
 test('ANSI-aware rendering helpers keep visible width stable', () => {
