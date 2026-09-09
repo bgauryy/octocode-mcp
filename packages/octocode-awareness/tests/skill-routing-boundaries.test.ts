@@ -81,7 +81,7 @@ describe('skill routing boundaries', () => {
     expect(detail).toMatch(/host owns context[^.]*tools[^.]*budgets[^.]*workers/i);
     expect(detail).toMatch(/Unknown sensors stay unknown[^.]*never (?:invent|infer)/i);
     expect(detail).toMatch(/Advice\s+neither authorizes action nor proves success/i);
-    expect(text).toContain('Do not poll an already delivered inbox');
+    expect(text).toContain('Do not poll a delivered inbox');
     expect(text).toContain('use `lock` for non-mergeable work');
     expect(awarenessSkillFile('references/hooks.md')).toContain('they do not choose tasks. Work tracking and verification are opt-in');
     expect(detail).toMatch(/Search hits, memories, messages, TTLs, and peer claims are leads, not proof/i);
@@ -132,7 +132,7 @@ describe('skill routing boundaries', () => {
     const journeys = [
       ['Choose an unfamiliar workflow', 'flow-matrix.md'],
       ['when binding another host', 'architecture.md'],
-      ['exact recipes', 'coordination-protocol.md'],
+      ['recipes', 'coordination-protocol.md'],
     ] as const;
     for (const [trigger, owner] of journeys) {
       expect(text).toContain(trigger);

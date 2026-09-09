@@ -1,6 +1,6 @@
 ---
 name: octocode-prompt-optimizer
-description: "Use when a prompt, agent instruction, MCP server instruction, tool description, schema field description, policy, or handoff must be written from a goal or made to actually change behavior: turn preferences into decidable boundaries, cut text that changes nothing, place each rule in its owning layer, audit a tool set for contradictions and descriptor drift, and decide how context is budgeted and compacted without destroying evidence. For SKILL.md folder structure, install, or review, use octocode-skills."
+description: "Use when a prompt, agent or MCP instruction, tool/schema description, policy, or handoff must actually change behavior: decidable boundaries, cut no-op text, put rules in their owning layer, audit tools for contradictions and drift, budget context. SKILL.md structure, install, or review: use octocode-skills."
 ---
 
 # Octocode prompt optimizer

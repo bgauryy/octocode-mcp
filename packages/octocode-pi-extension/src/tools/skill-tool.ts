@@ -56,7 +56,7 @@ function result(text: string, details?: unknown, isError = false): ToolCallResul
 
 type SkillPartialReason = 'content-limit' | 'file-limit' | 'file-depth' | 'file-filter' | 'file-read-error';
 
-function skillContinuation(tool: 'localGetFileContent' | 'localSearch', query: Record<string, unknown>, why: string) {
+function skillContinuation(tool: 'localGetFileContent' | 'astSearch', query: Record<string, unknown>, why: string) {
   return {
     tool: 'MCPTool' as const,
     query: { queries: [{ reasoning: why, action: 'call' as const, server: 'octocode', tool, arguments: { queries: [query] } }] },
@@ -111,7 +111,7 @@ function loadSkill(skill: DiscoveredSkill): ToolCallResult {
       ...(contentPartial ? { content: skillContinuation('localGetFileContent', {
         path: skill.path, minify: 'none', charOffset: returnedChars, charLength: SKILL_CONTENT_CAP,
       }, 'Read the next page of skill instructions before acting.') } : {}),
-      ...(filePartialReasons.length ? { files: skillContinuation('localSearch', {
+      ...(filePartialReasons.length ? { files: skillContinuation('astSearch', {
         operation: 'files', path: skill.dir, entryType: 'f', excludeDir: [], maxDepth: 100, limit: 10_000, pageSize: 50, sort: 'path',
       }, 'Discover all supporting files; merge with this preview and follow returned continuations.') } : {}),
     };

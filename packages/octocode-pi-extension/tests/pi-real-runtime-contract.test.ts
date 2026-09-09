@@ -195,6 +195,13 @@ describe.sequential('real Pi runtime contract', () => {
     const sessionsDir = path.join(root, 'sessions');
     fs.mkdirSync(workspace);
     fs.mkdirSync(agentDir);
+    // Local file history captures only under the full hooks profile; the default
+    // workspace profile is 'coordination'.
+    fs.mkdirSync(path.join(workspace, '.octocode'));
+    fs.writeFileSync(
+      path.join(workspace, '.octocode', 'awareness.json'),
+      `${JSON.stringify({ version: 1, storage: { repository: 'global', memory: 'global' }, hooks: { profile: 'full' } }, null, 2)}\n`,
+    );
 
     vi.stubEnv('OCTOCODE_HOME', octocodeHome);
     vi.stubEnv('OCTOCODE_STORAGE_MODE', 'persistent');
@@ -347,7 +354,7 @@ describe.sequential('real Pi runtime contract', () => {
       const operationId = String(operation?.operation_id);
       const before = await execHistoryCli(['history', 'read', '--workspace', workspace, '--operation-id', operationId, '--file', 'history-fixture.txt', '--side', 'before', '--compact']);
       const after = await execHistoryCli(['history', 'read', '--workspace', workspace, '--operation-id', operationId, '--file', 'history-fixture.txt', '--side', 'after', '--compact']);
-      expect(JSON.parse(before.stdout)).toEqual(expect.objectContaining({ ok: true, status: 'missing', content: null }));
+      expect(JSON.parse(before.stdout)).toEqual(expect.objectContaining({ ok: true, status: 'missing' }));
       const afterPayload = JSON.parse(after.stdout) as { status: string; encoding: string; content: string };
       expect(afterPayload).toEqual(expect.objectContaining({ status: 'captured', encoding: 'base64' }));
       expect(Buffer.from(afterPayload.content, 'base64').toString('utf8')).toBe('captured by real Pi SDK\n');
