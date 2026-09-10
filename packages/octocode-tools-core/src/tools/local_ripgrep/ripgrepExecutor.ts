@@ -2,8 +2,11 @@ import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import { validateRipgrepQuery } from '../../toolContract/runtime.js';
-import { LocalRipgrepQuerySchema, type RipgrepQuery } from './scheme.js';
+import { validateRipgrepQuery } from './queryWorkflow.js';
+import {
+  LocalRipgrepQuerySchema,
+  type RipgrepQuery,
+} from '@octocodeai/octocode-core/schema';
 import { RESOURCE_LIMITS } from '../../utils/core/constants.js';
 import { TOOL_NAMES } from '../toolMetadata/names.js';
 import type { LocalSearchCodeFile } from '@octocodeai/octocode-core/types';

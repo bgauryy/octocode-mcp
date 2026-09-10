@@ -4,14 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { skillDiscoveryRoots } from '../src/tools/skill-discovery.js';
 
 describe('Pi adapter Skill compatibility roots', () => {
-  it('includes Pi, Claude, Cursor, Codex, .agent, and .agents in project and user scopes', () => {
+  it('includes Claude, Cursor, Codex, .agent, and .agents but excludes Pi defaults', () => {
     const cwd = path.resolve('/workspace');
     const home = path.resolve('/home/user');
     const roots = skillDiscoveryRoots(cwd, home);
 
     for (const relative of [
-      '.pi/skills',
-      '.pi/agent/skills',
       '.claude/skills',
       '.cursor/skills',
       '.codex/skills',
@@ -21,5 +19,6 @@ describe('Pi adapter Skill compatibility roots', () => {
       expect(roots).toContainEqual(expect.objectContaining({ dir: path.join(cwd, relative) }));
       expect(roots).toContainEqual(expect.objectContaining({ dir: path.join(home, relative) }));
     }
+    expect(roots.some(root => root.dir.includes(`${path.sep}.pi${path.sep}`))).toBe(false);
   });
 });

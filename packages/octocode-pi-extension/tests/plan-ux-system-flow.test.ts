@@ -132,10 +132,10 @@ test('drives AskUser, explicit browser Start, shared work, verification, and eve
 
     await flow.runTool('plan', { queries: [{ reasoning: 'observed first check', action: 'complete', index: 1, receipt: { command: 'test data', status: 'SUCCESS', message: 'data passed' } }] });
     await flow.restart('during-work');
-    const failedVerification = await flow.runTool('plan', { queries: [{ reasoning: 'record observed failing verification', action: 'complete', index: 2, receipt: { command: 'test ui', status: 'FAILED', message: 'ui failed' } }] }) as { isError?: boolean };
+    const failedVerification = await failedToolResult(flow.runTool('plan', { queries: [{ reasoning: 'record observed failing verification', action: 'complete', index: 2, receipt: { command: 'test ui', status: 'FAILED', message: 'ui failed' } }] }));
     assert.equal(failedVerification.isError, true);
     await flow.restart('during-verification');
-    const retryAfterFailedVerification = await flow.runTool('plan', { queries: [{ reasoning: 'record a later successful observation without hiding verification debt', action: 'complete', index: 2, receipt: { command: 'test ui', status: 'SUCCESS', message: 'ui passed' } }] }) as { isError?: boolean };
+    const retryAfterFailedVerification = await failedToolResult(flow.runTool('plan', { queries: [{ reasoning: 'record a later successful observation without hiding verification debt', action: 'complete', index: 2, receipt: { command: 'test ui', status: 'SUCCESS', message: 'ui passed' } }] }));
     assert.equal(retryAfterFailedVerification.isError, true, 'a failed shared verification remains debt until the canonical task lifecycle is resolved');
     model = getCurrentPlanReadModel(flow.context as unknown as PiContext);
     assert.equal(model.phase, 'executing');
@@ -296,3 +296,4 @@ async function postPlanAction(url: string, action: unknown, origin = new URL(url
     method: 'POST', headers: { origin, 'content-type': contentType }, body: JSON.stringify(action),
   });
 }
+import { failedToolResult } from './helpers/failed-tool-result.js';

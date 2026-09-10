@@ -8,7 +8,7 @@ import {
   isLanguageServerAvailable,
 } from '@octocodeai/octocode-engine/lsp/manager';
 import { resolveWorkspaceRootForFile } from '@octocodeai/octocode-engine/lsp/workspaceRoot';
-import { LSP_SEARCH_TOOL_NAME } from '../../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import {
   type LspSearchQuery,
   type LspSemanticEnvelope,
@@ -37,7 +37,7 @@ import {
   guardSemanticSnapshot,
   describeRustContext,
 } from './semanticSnapshot.js';
-import { LspSearchQuerySchema } from './scheme.js';
+import { LspSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 export async function executeLspSearch(
   args: ToolExecutionArgs<LspSearchQuery>

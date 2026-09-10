@@ -7,7 +7,7 @@ const ADVANCED_TABLES = [
   'authorization_receipts', 'capability_receipts', 'event_outbox', 'event_consumers', 'event_acknowledgements', 'pending_interactions', 'handoffs',
   'awareness_agents', 'delivery_state', 'edit_log', 'harness_log', 'hook_receipts',
   'awareness_locks', 'awareness_memories', 'memory_refs', 'plan_docs', 'plan_members', 'awareness_plans',
-  'local_history_operations', 'local_history_restores', 'local_history_versions',
+  'local_history_durability', 'local_history_operations', 'local_history_restores', 'local_history_versions',
   'refinements', 'run_files', 'run_log', 'sessions', 'signal_reads', 'signals',
   'task_claims', 'task_dependencies', 'task_events', 'task_paths', 'task_runs', 'awareness_tasks',
 ] as const;

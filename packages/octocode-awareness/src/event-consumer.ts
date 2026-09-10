@@ -5,13 +5,15 @@ import {
 } from './continuity-contracts.js';
 import { openAwarenessStore } from './coordination/open.js';
 import type { OutboxEventV1 } from './coordination/coordination-continuity.js';
-import { normalizeWorkspacePath, repositoryWorkspacePaths } from './git.js';
+import { normalizeWorkspacePath, repositoryWorkspacePaths, withRepositoryWorkspaceScope } from './git.js';
 import { normalizeNotificationKind } from './helpers.js';
 import { signalDataSchema, type SignalData } from './signal-data.js';
 
 export const AWARENESS_PEER_EVENT_MESSAGE_TYPE = 'octocode-peer-event';
 
 export interface AwarenessEventStore {
+  /** Selected physical database, used only for advisory cross-process wake hints. */
+  readonly dbPath?: string;
   listEvents(params: { consumerId: string; limit?: number }): OutboxEventV1[];
   acknowledgeEvent(params: { consumerId: string; eventId: string; decision: InboundDecision }): {
     sequence: number;
@@ -126,7 +128,6 @@ export const createAwarenessEventObservability = (consumerId: string): Awareness
 /** Bounded serialized transaction-outbox consumer for attributed peer data. */
 export function createAwarenessEventConsumer(options: AwarenessEventConsumerOptions) {
   const openStore = options.openStore ?? ((workspace: string) => openAwarenessStore({ workspace }));
-  const workspace = normalizeWorkspacePath(options.workspace, options.workspace) ?? options.workspace;
   const maxEvents = Math.min(Math.max(options.maxEventsPerDrain ?? 100, 1), 999);
   const now = options.now ?? Date.now;
   const stats = createAwarenessEventObservability(options.consumerId);
@@ -139,83 +140,86 @@ export function createAwarenessEventConsumer(options: AwarenessEventConsumerOpti
     stats.drainErrors = 0;
     let store: AwarenessEventStore | undefined;
     try {
-      store = openStore(workspace);
-      stats.lastAcknowledgedSequence = store.getConsumerCursor(options.consumerId);
-      const pending = store.listEvents({ consumerId: options.consumerId, limit: maxEvents + 1 });
-      const peerWorkspaces = repositoryWorkspacePaths(workspace);
-      for (const candidate of pending.slice(0, maxEvents)) {
-        let decision: InboundDecision = 'refuse';
-        let delivery: AwarenessPeerDelivery | undefined;
-        let peerMessage: PeerMessagePayload | undefined;
-        try {
-          const event = parseAgentEventEnvelopeV1(candidate);
-          if (event.workspace !== workspace && !(event.type === 'peer.message' && peerWorkspaces.includes(event.workspace))) {
-            throw new Error('event workspace does not match this consumer');
-          }
-          if (event.expiresAt && Date.parse(event.expiresAt) <= now()) {
-            decision = 'refuse';
-          } else if (event.type === 'peer.message') {
-            peerMessage = parsePeerPayload(event);
-            const policy = evaluatePeerInbound({
-              fromAgentId: peerMessage.fromAgentId,
-              toAgentId: peerMessage.toAgentId,
-              expectedAgentId: options.expectedAgentId,
-              topic: peerMessage.topic,
-              signalKind: peerMessage.signalKind,
-              text: peerMessage.text,
-            });
-            decision = policy.decision;
-            if (decision === 'accept' && policy.attributedText) {
-              delivery = {
-                customType: AWARENESS_PEER_EVENT_MESSAGE_TYPE,
-                content: policy.attributedText + (peerMessage.data ? `\nStructured signal data (attributed peer data): ${JSON.stringify(peerMessage.data)}` : ''),
-                display: false,
-                details: {
-                  version: 1,
-                  eventId: candidate.eventId,
-                  sequence: candidate.sequence,
-                  createdAt: candidate.createdAt,
-                  messageClass: policy.messageClass as 'informational' | 'blocking' | 'handoff',
-                  actionable: policy.actionable,
-                  toAgentId: peerMessage.toAgentId,
-                  provenance: 'peer-attributed-data',
-                  ...(peerMessage.data ? { data: peerMessage.data } : {}),
-                },
-              };
+      return await withRepositoryWorkspaceScope(options.workspace, async () => {
+        const workspace = normalizeWorkspacePath(options.workspace, options.workspace) ?? options.workspace;
+        store = openStore(workspace);
+        stats.lastAcknowledgedSequence = store.getConsumerCursor(options.consumerId);
+        const pending = store.listEvents({ consumerId: options.consumerId, limit: maxEvents + 1 });
+        const peerWorkspaces = new Set(repositoryWorkspacePaths(workspace));
+        for (const candidate of pending.slice(0, maxEvents)) {
+          let decision: InboundDecision = 'refuse';
+          let delivery: AwarenessPeerDelivery | undefined;
+          let peerMessage: PeerMessagePayload | undefined;
+          try {
+            const event = parseAgentEventEnvelopeV1(candidate);
+            if (event.workspace !== workspace && !(event.type === 'peer.message' && peerWorkspaces.has(event.workspace))) {
+              throw new Error('event workspace does not match this consumer');
             }
+            if (event.expiresAt && Date.parse(event.expiresAt) <= now()) {
+              decision = 'refuse';
+            } else if (event.type === 'peer.message') {
+              peerMessage = parsePeerPayload(event);
+              const policy = evaluatePeerInbound({
+                fromAgentId: peerMessage.fromAgentId,
+                toAgentId: peerMessage.toAgentId,
+                expectedAgentId: options.expectedAgentId,
+                topic: peerMessage.topic,
+                signalKind: peerMessage.signalKind,
+                text: peerMessage.text,
+              });
+              decision = policy.decision;
+              if (decision === 'accept' && policy.attributedText) {
+                delivery = {
+                  customType: AWARENESS_PEER_EVENT_MESSAGE_TYPE,
+                  content: policy.attributedText + (peerMessage.data ? `\nStructured signal data (attributed peer data): ${JSON.stringify(peerMessage.data)}` : ''),
+                  display: false,
+                  details: {
+                    version: 1,
+                    eventId: candidate.eventId,
+                    sequence: candidate.sequence,
+                    createdAt: candidate.createdAt,
+                    messageClass: policy.messageClass as 'informational' | 'blocking' | 'handoff',
+                    actionable: policy.actionable,
+                    toAgentId: peerMessage.toAgentId,
+                    provenance: 'peer-attributed-data',
+                    ...(peerMessage.data ? { data: peerMessage.data } : {}),
+                  },
+                };
+              }
+            }
+          } catch {
+            stats.errors += 1;
+            stats.drainErrors += 1;
+            decision = 'refuse';
+            delivery = undefined;
           }
-        } catch {
-          stats.errors += 1;
-          stats.drainErrors += 1;
-          decision = 'refuse';
-          delivery = undefined;
+          try {
+            if (delivery) decision = (await options.deliver(delivery)) ?? decision;
+            if (decision === 'accept' && peerMessage) {
+              store.markMessageRead({ messageId: peerMessage.messageId, agentId: options.expectedAgentId });
+            }
+            const ack = store.acknowledgeEvent({ consumerId: options.consumerId, eventId: candidate.eventId, decision });
+            stats.lastAcknowledgedSequence = ack.sequence;
+            if (!ack.duplicate) {
+              if (decision === 'accept') stats.accepted += 1;
+              else if (decision === 'hold') stats.held += 1;
+              else stats.refused += 1;
+              if (decision === 'accept') stats.drainAccepted += 1;
+              else if (decision === 'hold') stats.drainHeld += 1;
+              else stats.drainRefused += 1;
+            }
+          } catch {
+            stats.errors += 1;
+            stats.drainErrors += 1;
+            break;
+          }
         }
-        try {
-          if (delivery) decision = (await options.deliver(delivery)) ?? decision;
-          if (decision === 'accept' && peerMessage) {
-            store.markMessageRead({ messageId: peerMessage.messageId, agentId: options.expectedAgentId });
-          }
-          const ack = store.acknowledgeEvent({ consumerId: options.consumerId, eventId: candidate.eventId, decision });
-          stats.lastAcknowledgedSequence = ack.sequence;
-          if (!ack.duplicate) {
-            if (decision === 'accept') stats.accepted += 1;
-            else if (decision === 'hold') stats.held += 1;
-            else stats.refused += 1;
-            if (decision === 'accept') stats.drainAccepted += 1;
-            else if (decision === 'hold') stats.drainHeld += 1;
-            else stats.drainRefused += 1;
-          }
-        } catch {
-          stats.errors += 1;
-          stats.drainErrors += 1;
-          break;
-        }
-      }
-      const remaining = store.listEvents({ consumerId: options.consumerId, limit: 1000 });
-      stats.backlogDepth = remaining.length;
-      stats.backlogCapped = remaining.length === 1000;
-      options.onObservability?.({ ...stats });
-      return { ...stats };
+        const remaining = store.listEvents({ consumerId: options.consumerId, limit: 1000 });
+        stats.backlogDepth = remaining.length;
+        stats.backlogCapped = remaining.length === 1000;
+        options.onObservability?.({ ...stats });
+        return { ...stats };
+      });
     } catch {
       stats.errors += 1;
       stats.drainErrors += 1;

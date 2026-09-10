@@ -55,7 +55,6 @@ grep   = { version = "0.4", features = ["pcre2"] }
 ignore = "0.4"
 
 # ── line diff (Myers) for edit-tool / patch previews ────────────────────────
-similar = "3"
 
 # ── security pins: transitive deps pinned to patched versions ────────────────
 # crossbeam-epoch <0.9.20: RUSTSEC-2026-0204 (invalid pointer dereference)

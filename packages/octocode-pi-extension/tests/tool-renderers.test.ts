@@ -255,7 +255,7 @@ describe('branded renderCall', () => {
   });
 
   it('includes args summary when present', () => {
-    const def = makeDef({ name: 'localGetFileContent' });
+    const def = makeDef({ name: 'localFetch' });
     withOctocodeRender(def);
     const args = { queries: [{ path: '/src/foo.ts', startLine: 10 }] };
     const component = def.renderCall!(args, stubTheme);
@@ -373,7 +373,7 @@ describe('buildOctocodeRenderCall', () => {
   });
 
   it('renders every nested Octocode query with its unlabeled reason on the next line', () => {
-    const c = buildOctocodeRenderCall('localGetFileContent', {
+    const c = buildOctocodeRenderCall('localFetch', {
       queries: [
         { path: '/src/a.ts', reasoning: 'read alpha' },
         { path: '/src/b.ts', reasoning: 'read beta' },
@@ -401,8 +401,8 @@ describe('buildToolCallSummary', () => {
     expect(summary).toContain('earendil/pi');
   });
 
-  it('localGetFileContent: shows file basename and line range', () => {
-    const summary = buildToolCallSummary('localGetFileContent', {
+  it('localFetch: shows file basename and line range', () => {
+    const summary = buildToolCallSummary('localFetch', {
       queries: [{ path: '/src/tools/render-helpers.ts', startLine: 5, endLine: 20 }],
     });
     expect(summary).toContain('render-helpers.ts');
@@ -414,7 +414,7 @@ describe('buildToolCallSummary', () => {
   });
 
   it('does not collapse multiple queries into a +N summary', () => {
-    const summary = buildToolCallSummary('localGetFileContent', {
+    const summary = buildToolCallSummary('localFetch', {
       queries: [
         { path: '/a.ts' },
         { path: '/b.ts' },

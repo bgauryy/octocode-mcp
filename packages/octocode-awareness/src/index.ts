@@ -1,4 +1,5 @@
 export { executeAwarenessCommand } from './command-api.js';
+export { watchAwarenessEventHints, type AwarenessEventHintOptions } from './event-wake-hints.js';
 export type { AwarenessCommandCall, AwarenessCommandContext, AwarenessCommandResult } from './command-api.js';
 /**
  * @octocodeai/octocode-awareness — public module API.
@@ -196,7 +197,7 @@ export type {
 } from './tool-operations.js';
 
 // Git scope
-export { detectGit, fillScope, canonicalizePath, normalizeWorkspacePath } from './git.js';
+export { detectGit, fillScope, canonicalizePath, normalizeWorkspacePath, withRepositoryWorkspaceScope } from './git.js';
 
 // Audit log (edit_log + harness_log)
 export { sha256Hex, insertEditLog, queryEditLog, insertHarnessLog, queryHarnessLog } from './audit.js';

@@ -32,6 +32,7 @@ import { makeMockAgentProcess } from './helpers/mock-process.js';
 import { extensionWorkspaceRoot } from '../src/extension-paths.js';
 import { activePlanScope, clearPlan, setPlan } from '../src/tools/planning/plan-store.js';
 import { registerPlanTool } from '../src/tools/planning/plan-registration.js';
+import { initializeWorkerCapabilityRuntime, disposeWorkerCapabilityRuntime } from '../src/tools/worker-capabilities.js';
 
 test('extractDeltaSummary prefers the latest structured worker line', () => {
   const out = '[STATUS] booting\nsome noise\n[ACTION] editing src/foo.ts\ntrailing chatter';
@@ -73,14 +74,19 @@ test('evaluateStepBudget disabled for non-positive budget', () => {
 
 // ─── Setup / teardown ─────────────────────────────────────────────────────────
 
-beforeEach(() => {
+beforeEach(async () => {
   // Each test starts with a fresh empty agent registry
   setAgentProcessFactoryForTests(null);
+  await initializeWorkerCapabilityRuntime({
+    snapshot: { schemaVersion: 1, revision: 'reliability-test', nativeTools: ['MCPTool', 'skill', 'file', 'bash', 'web', 'chromeDebug', 'awareness'], skills: [], mcpTools: [] },
+    dispatchMcp: async () => ({ content: [{ type: 'text', text: 'reliability test transport' }] }),
+  });
 });
 
-afterEach(() => {
+afterEach(async () => {
   // Restore the real factory so later tests are unaffected
   setAgentProcessFactoryForTests(null);
+  await disposeWorkerCapabilityRuntime();
 });
 
 // ─── H4: EPIPE causes agent to be marked failed and waiters notified ──────────

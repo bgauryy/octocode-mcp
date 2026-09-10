@@ -5,18 +5,18 @@ Load when Awareness needs code, repository, package, history, or skill evidence.
 Use `octocode-research` when available. Otherwise use the current MCP tools or CLI directly. In the monorepo, use the built CLI; elsewhere use `npx -y octocode`. Inspect an unfamiliar tool schema once and reuse it until the contract changes:
 
 ```bash
-npx -y octocode tools localSearch astSearch localGetFileContent lspSearch --scheme
+npx -y octocode tools localSearch astSearch localFetch lspSearch --scheme
 ```
 
 | Question | Tool |
 |---|---|
 | Text or regex occurrence | `localSearch`; no `operation` field |
 | Paths, syntax, symbols, or file topology | `astSearch`: `files`, `tree`, `match`, `symbols`, or `topology` |
-| Exact source or a deliberate transformed view | `localGetFileContent`; exact by default, choose minification explicitly |
+| Exact source or a deliberate transformed view | `localFetch`; exact by default, choose minification explicitly |
 | Symbol identity or uses | `lspSearch` with the operation's real anchor and scope |
 | Remote discovery and history | `ghSearch`, `ghSearchHistory` |
 | Exact remote content or history item | `ghGetFileContent`, `ghGetHistoryItem` |
-| Local checkout or package lookup | `ghCloneRepo` when enabled; `npmSearch` |
+| Local checkout or package lookup | `ghCloneRepo` when enabled; `artifactSearch` |
 
 Choose calls that answer the question. Read exact source before anchored LSP; `lineHint` is 1-based, while `position` is 0-based UTF-16. Follow returned executable continuations and distinguish empty, partial, and error results. A completed empty query describes its scope; it cannot rule out dynamic or external consumers.
 

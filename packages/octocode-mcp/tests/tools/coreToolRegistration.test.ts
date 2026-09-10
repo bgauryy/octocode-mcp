@@ -5,11 +5,11 @@ import type {
   RegisteredTool,
 } from '@modelcontextprotocol/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ALL_TOOLS as CORE_ALL_TOOLS } from '@octocodeai/octocode-tools-core';
 import {
-  ALL_TOOLS as CORE_ALL_TOOLS,
   GITHUB_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
-} from '@octocodeai/octocode-tools-core';
+} from '@octocodeai/octocode-core/schema';
 import type { ToolExecutionArgs } from '@octocodeai/octocode-tools-core';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 import {

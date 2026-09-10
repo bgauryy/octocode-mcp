@@ -18,7 +18,7 @@ export async function runDatabaseCommandHandler(db: DatabaseSync, command: strin
   let exitCode = 0;
   switch (command) {
     case 'history_status': case 'history_capture': case 'history_checkpoint': case 'history_timeline':
-    case 'history_read': case 'history_restore_preview': case 'history_restore_apply':
+    case 'history_read': case 'history_inspect': case 'history_restore_preview': case 'history_restore_apply':
     case 'history_retention_preview': case 'history_retention_prune': case 'history_recovery': case 'history_evidence': {
       const { runHistoryCommand } = await import('./commands/history.js');
       signal?.throwIfAborted();
@@ -35,8 +35,8 @@ export async function runDatabaseCommandHandler(db: DatabaseSync, command: strin
       }
       exitCode = emit(result, result.ok === false ? 2 : 0, opts); break;
     }
-    case 'tell-memory':    exitCode = cmdTellMemory(db, args, dbPath, opts); break;
-    case 'get-memory':     exitCode = cmdGetMemory(db, args, dbPath, opts); break;
+    case 'tell-memory':    exitCode = await cmdTellMemory(db, args, dbPath, opts); break;
+    case 'get-memory':     exitCode = await cmdGetMemory(db, args, dbPath, opts); break;
     case 'reflect':        exitCode = cmdReflect(db, args, dbPath, opts); break;
     case 'refine-set':     exitCode = cmdRefineSet(db, args, dbPath, opts); break;
     case 'refine-get':     exitCode = cmdRefineGet(db, args, dbPath, opts); break;

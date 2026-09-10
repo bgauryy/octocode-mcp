@@ -1,6 +1,6 @@
 import type { CodeSearchResult } from '../../providers/providerResults.js';
 import type { z } from 'zod';
-import type { GitHubCodeSearchQuerySchema } from '../../toolContract/input/resources/tools/githubCodeOperation.js';
+import type { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 import type { WithOptionalMeta } from '../../types/execution.js';
 
 import {

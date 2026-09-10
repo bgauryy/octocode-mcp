@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
-import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-tools-core';
+import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-core/schema';
 
 const LEGACY_GITHUB_DISCOVERY_TOOLS = [
   'github.code',

@@ -52,30 +52,34 @@ describe('fetchContent large-file gate applies to raw reads only', () => {
     );
   });
 
-  it('an unbounded exact default requests explicit bounds for large files', async () => {
+  it('an exact default automatically chunks large files', async () => {
     const result = await fetchContent({ path: bigFile } as never);
-    expect(result.status).toBe('error');
-    expect((result as { errorCode?: string }).errorCode).toBe('fileTooLarge');
+    expect(result.status).not.toBe('error');
+    expect(result.pagination?.hasMore).toBe(true);
   });
 
-  it('minify:"none" with no bounds is still rejected as too large (regression guard)', async () => {
+  it('minify:"none" automatically chunks large files', async () => {
     const result = await fetchContent({
       path: bigFile,
       minify: 'none',
     } as never);
 
-    expect(result.status).toBe('error');
-    expect((result as { errorCode?: string }).errorCode).toBe('fileTooLarge');
+    expect(result.status).not.toBe('error');
+    expect(result.pagination?.hasMore).toBe(true);
   });
 
-  it('fullContent:true is still rejected as too large regardless of file size (regression guard)', async () => {
+  it('fullContent:true provides bounded recovery for oversized source', async () => {
     const result = await fetchContent({
       path: bigFile,
       fullContent: true,
     } as never);
 
     expect(result.status).toBe('error');
-    expect((result as { errorCode?: string }).errorCode).toBe('fileTooLarge');
+    expect(result.errorCode).toBe('fileTooLarge');
+    const next = (result.next as Record<string, { query: Parameters<typeof fetchContent>[0] }>).continue!;
+    const page = await fetchContent(next.query);
+    expect(page.status).not.toBe('error');
+    expect(page.sourceBytes).toBe(result.sourceBytes);
   });
 
   it('minify:"none" with an explicit bound (matchString) still succeeds (existing exemption)', async () => {

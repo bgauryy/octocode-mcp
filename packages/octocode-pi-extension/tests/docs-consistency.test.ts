@@ -101,7 +101,10 @@ test('settings control-center reference covers every implemented domain and is i
     '`x-octocode-action-token`',
     '`Cache-Control: no-store`',
     '`X-Content-Type-Options: nosniff`',
-    '`/new`',
+    '`/config`',
+    'next turn',
+    'source ID',
+    'Worker grants',
   ]) {
     assert.ok(settings.includes(contract), `${contract} missing from SETTINGS.md`);
   }
@@ -110,6 +113,8 @@ test('settings control-center reference covers every implemented domain and is i
   for (const [label, content] of [['docs index', docsIndex], ['harness', harness]] as const) {
     assert.ok(content.includes('SETTINGS.md'), `${label} links to the settings reference`);
   }
+  assert.match(settings, /`\/configuration`.*alias/i);
+  assert.doesNotMatch(settings, /\/new` is required|prompt.*frozen.*for the session/i);
 });
 
 test('TOOLS browser guidance uses the unified agent facade', () => {

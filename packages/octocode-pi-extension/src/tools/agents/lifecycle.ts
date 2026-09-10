@@ -58,6 +58,9 @@ import { SCHEME_REGISTRY } from '../../chrome-debug-schemes.js';
 import type { ChromeDebugParams } from '../../chrome-debug-schemes.js';
 import { getRandomAgentName } from '../../agentNames.js';
 import type { QueryRecord } from '../query-envelope.js';
+import { WorkerCapabilitySelectionSchema } from '@octocodeai/agent-contracts/capabilities';
+import { configureWorkerCapabilities, getParentCapabilitySnapshot, getParentWorkerCapabilities, inspectWorkerCapabilityGrants } from '../worker-capabilities.js';
+import { buildWorkerHandoff } from './packets.js';
 
 // ─── Single-agent result rendering ────────────────────────────────────────────
 // Exported so the inbox and agent inspect action can render
@@ -78,6 +81,8 @@ export function renderSingleAgentResult(record: AgentRecord, header: string, opt
     `agentId: ${record.id}`,
     statusParts,
   ];
+  const grant = record.capabilityGrant;
+  if (grant) contentParts.push(`capabilities: grant revision ${grant.revision}, snapshot ${grant.snapshotRevision}; native: ${grant.nativeTools.join(', ') || 'none'}; skills: ${grant.skills.join(', ') || 'none'}; MCP: ${grant.mcpTools.map(item => `${item.server}/${item.tool}`).join(', ') || 'none'}`);
   const toolSummary = formatToolCalls(record.toolCalls, opts.full ? record.toolCalls.length : 3);
   if (toolSummary) contentParts.push(`tools: ${toolSummary}`);
   if (summary.policyWarnings?.length) contentParts.push(`policy: ${summary.policyWarnings.join(' | ')}`);
@@ -105,6 +110,7 @@ export function renderSingleAgentResult(record: AgentRecord, header: string, opt
     content: [{ type: 'text', text: contentParts.join('\n') }],
     details: {
       agent: summary,
+      ...(grant ? { capabilityGrant: grant } : {}),
     },
     isError: record.status === 'failed' || Boolean(record.error),
   };
@@ -154,16 +160,30 @@ export async function executeAgentLifecycle(
   ctx?: PiContext,
 ): Promise<ToolCallResult> {
   const action = String(params['type'] ?? '');
-  if (!['inspect', 'wait', 'message', 'steer', 'abort', 'kill'].includes(action)) throw new Error(`Unknown agent lifecycle operation: ${action}`);
+  if (!['inspect', 'configure', 'wait', 'message', 'steer', 'abort', 'kill'].includes(action)) throw new Error(`Unknown agent lifecycle operation: ${action}`);
   signal?.throwIfAborted();
   const renderOpts = { full: params['full'] === true };
   if (action === 'inspect' && !params['agentId']) {
     refreshAgentLedgerUi(ctx);
-    return renderAgentResult([...agents.values()], 'Spawned agents');
+    const revision = getParentCapabilitySnapshot()?.revision;
+    return renderAgentResult([...agents.values()], `Spawned agents${revision ? `\nParent capability snapshotRevision: ${revision}` : ''}`);
   }
-
   const record = getAgent(params['agentId']);
+  if (action === 'configure') {
+    if (!isProcessAlive(record)) throw new Error('Cannot configure an exited worker; spawn a fresh worker.');
+    const snapshotRevision = String(params['snapshotRevision'] ?? '').trim();
+    if (!snapshotRevision) throw new Error('agent configure requires the current parent snapshotRevision.');
+    const selection = WorkerCapabilitySelectionSchema.parse(params['capabilities']);
+    record.capabilityGrant = configureWorkerCapabilities(record.id, {
+      snapshotRevision,
+      selection,
+      expectedGrantRevision: typeof params['grantRevision'] === 'number' ? params['grantRevision'] : undefined,
+    });
+    touch(record);
+    return renderSingleAgentResult(record, 'Worker capabilities configured; removals apply now, additions before the next turn', renderOpts);
+  }
   if (action === 'inspect') {
+    record.capabilityGrant = inspectWorkerCapabilityGrants().find(item => item.grant.workerId === record.id)?.pendingGrant ?? getParentWorkerCapabilities(record.id)?.grant ?? record.capabilityGrant;
     refreshAgentLedgerUi(ctx);
     return renderSingleAgentResult(record, 'Agent status', renderOpts);
   }
@@ -290,27 +310,7 @@ export async function executeSpawnQuery(
   signal?.throwIfAborted();
   const profile = query['profile'] as AgentProfile | undefined;
   if (!profile) throw new Error('agent spawn requires an explicit profile.');
-  const packet = {
-    goal: String(query['goal'] ?? '').trim(),
-    context: String(query['context'] ?? '').trim(),
-    scope: String(query['scope'] ?? '').trim(),
-    ownership: String(query['ownership'] ?? '').trim(),
-    acceptance: String(query['acceptance'] ?? '').trim(),
-    returnShape: String(query['returnShape'] ?? '').trim(),
-  };
-  for (const [field, value] of Object.entries(packet)) {
-    if (!value) throw new Error(`agent spawn requires non-empty ${field}.`);
-  }
-  const roleInstructions = String(query['task'] ?? '').trim();
-  const task = [
-    `Goal: ${packet.goal}`,
-    `Context: ${packet.context}`,
-    `Scope: ${packet.scope}`,
-    `Ownership: ${packet.ownership}`,
-    `Acceptance: ${packet.acceptance}`,
-    `Return: ${packet.returnShape}`,
-    ...(roleInstructions ? [`Instructions: ${roleInstructions}`] : []),
-  ].join('\n');
+  const { packet, task } = buildWorkerHandoff(query);
   const name = query['name'] as string | undefined;
   const model = query['model'] as string | undefined;
   const provider = query['provider'] as string | undefined;
@@ -470,6 +470,9 @@ export async function executeSpawnQuery(
   }
 
   spawnParams.planStep = planStep;
+  spawnParams.capabilityProfile = profile;
+  spawnParams.capabilities = query['capabilities'] === undefined ? undefined : WorkerCapabilitySelectionSchema.parse(query['capabilities']);
+  spawnParams.capabilitySnapshotRevision = typeof query['snapshotRevision'] === 'string' ? query['snapshotRevision'] : undefined;
 
   signal?.throwIfAborted();
   const approvedParams = await prepareSpawnAgentParams(spawnParams, ctx);
@@ -490,10 +493,8 @@ export async function executeSpawnQuery(
 
   const agentId: string = record.id;
   const ledgerEntry = listWorkerLedgerEntries().find((entry) => entry.agentId === agentId);
-  const policyLines =
-    record.policyWarnings.length > 0
-      ? ['', '[POLICY]', ...record.policyWarnings.map((w: string) => `  ${w}`)]
-      : [];
+  const policyLines = record.policyWarnings.length > 0
+    ? ['', '[POLICY]', ...record.policyWarnings.map((w: string) => `  ${w}`)] : [];
 
   const output = [
     `[SPAWNED] profile:${profile} \u00b7 agentId:${agentId}`,
@@ -508,6 +509,6 @@ export async function executeSpawnQuery(
 
   return {
     content: [{ type: 'text', text: output }],
-    details: { agentId, profile, name: record.name, model: ledgerEntry?.model, provider: ledgerEntry?.provider, task: ledgerEntry?.task ?? task, planStep: ledgerEntry?.planStep },
+    details: { agentId, profile, name: record.name, model: ledgerEntry?.model, provider: ledgerEntry?.provider, task: ledgerEntry?.task ?? task, planStep: ledgerEntry?.planStep, capabilityGrant: record.capabilityGrant },
   } as unknown as ToolCallResult;
 }

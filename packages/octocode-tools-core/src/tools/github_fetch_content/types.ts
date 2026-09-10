@@ -1,9 +1,10 @@
 import type { z } from 'zod';
-import type { FileContentQuerySchema } from '../../toolContract/input/resources/tools/ghGetFileContent.js';
-import type { MinifyMode } from '../../scheme/fields.js';
+import type { FileContentQuerySchema } from '@octocodeai/octocode-core/schema';
+import type { MinifyMode } from '@octocodeai/octocode-core/schema';
 
 type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
-import type { PaginationInfo } from '../../types/toolResults.js';
+import type { FetchPagination } from '@octocodeai/octocode-core/extra-types';
+import type { ToolContinuation } from '../../scheme/pagination.js';
 
 export type FileContentExecutionQuery = FileContentQuery & {
   noTimestamp?: boolean;
@@ -11,8 +12,6 @@ export type FileContentExecutionQuery = FileContentQuery & {
   contextLines?: number;
   matchStringIsRegex?: boolean;
   matchStringCaseSensitive?: boolean;
-  charOffset?: number;
-  charLength?: number;
 };
 
 export interface GitHubFileContentApiData {
@@ -26,20 +25,34 @@ export interface GitHubFileContentApiData {
   startLine?: number;
   endLine?: number;
   isPartial?: boolean;
-  errorCode?: 'contentSecurityLimit';
+  errorCode?: 'contentSecurityLimit' | 'fullContentLimit' | 'noMatches';
   terminalLimit?: boolean;
-  partialReasons?: Array<'security-selected-view-size-limit'>;
+  partialReasons?: Array<
+    'security-selected-view-size-limit' | 'full-content-size-limit'
+  >;
   totalLines?: number;
   sourceChars?: number;
+  sourceBytes?: number;
+  returnedChars?: number;
+  returnedBytes?: number;
+  returnedLines?: number;
+  selectedMatchCount?: number;
+  sourceLines?: number[];
+  next?: Record<string, ToolContinuation>;
+  minifyFallback?: {
+    requested: MinifyMode;
+    applied: MinifyMode;
+    reason: 'match-evidence' | 'outline-unavailable';
+  };
 
   matchRanges?: Array<{ start: number; end: number }>;
-  /** Exact matched-line numbers (matchRanges are ±contextLines windows around them). */
+  /** Exact matched-line numbers; matchRanges span the selected source windows. */
   matchedLines?: number[];
   matchLocations?: string[];
   warnings?: string[];
   lastModified?: string;
   lastModifiedBy?: string;
-  pagination?: PaginationInfo;
+  pagination?: FetchPagination;
   cached?: boolean;
   matchNotFound?: boolean;
   searchedFor?: string;
@@ -52,56 +65,3 @@ interface GitHubFileContentApiResultBase {
 
 export interface GitHubFileContentApiResult
   extends GitHubFileContentApiResultBase, GitHubFileContentApiData {}
-
-export interface DirectoryFetchResult {
-  localPath: string;
-  repoRoot: string;
-  files: Array<{ path: string; size: number; type: string }>;
-  fileCount: number;
-  totalSize: number;
-  /** true = no files were skipped by size/type/limit/error */
-  complete: boolean;
-  /** true = completeness was proven against the remote tree (fresh fetch + complete) */
-  verified: boolean;
-  /** Immutable commit identity used by repoRoot and localPath. */
-  commitSha: string;
-  /** true when nonFile > 0 — subdirectory entries were present but not fetched; use ghCloneRepo for full coverage */
-  hasSubdirectories?: boolean;
-  directoryEntryCount: number;
-  eligibleFileCount: number;
-  savedFileCount: number;
-  skipped: {
-    nonFile: number;
-    oversized: number;
-    binary: number;
-    fileLimit: number;
-    fetchFailed: number;
-    totalSizeLimit: number;
-    pathTraversal: number;
-  };
-  limits: {
-    maxDirectoryFiles: number;
-    maxTotalSize: number;
-    maxFileSize: number;
-  };
-  warnings?: string[];
-  cached: boolean;
-  expiresAt: string;
-  owner: string;
-  repo: string;
-  branch: string;
-  directoryPath: string;
-}
-
-export interface FileMaterializationResult {
-  localPath: string;
-  repoRoot: string;
-  path: string;
-  size: number;
-  cached: boolean;
-  expiresAt: string;
-  owner: string;
-  repo: string;
-  branch: string;
-  commitSha: string;
-}

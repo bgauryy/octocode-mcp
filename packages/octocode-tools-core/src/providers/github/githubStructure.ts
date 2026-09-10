@@ -10,7 +10,7 @@ import {
 } from '../../github/client.js';
 import { generateCacheKey } from '../../utils/http/cache/key.js';
 import { withDataCache } from '../../utils/http/cache/dataCache.js';
-import { MAX_PAGE_NUMBER } from '../../toolContract/input/resources/tools/_toolkit.js';
+import { BaseMAX_PAGE_NUMBER as MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 
 /**
  * Best-effort per-language byte breakdown via GitHub's `/languages` endpoint —
@@ -170,7 +170,7 @@ async function fetchRepoMetadata(
 }
 
 import type { z } from 'zod';
-import type { GitHubViewRepoStructureQuerySchema } from '../../toolContract/input/resources/tools/githubTreeOperation.js';
+import type { GitHubViewRepoStructureQuerySchema } from '@octocodeai/octocode-core/schema';
 
 type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema

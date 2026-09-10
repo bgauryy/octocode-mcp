@@ -2,25 +2,24 @@ import { open, readFile, stat } from 'fs/promises';
 import { RESOURCE_LIMITS } from '../../../utils/core/constants.js';
 import { TOOL_NAMES } from '../../toolMetadata/names.js';
 import { createErrorResult } from '../../../utils/file/toolHelpers.js';
-import type { LocalGetFileContentToolResult } from '@octocodeai/octocode-core/extra-types';
-import type { FetchContentQuery } from '../scheme.js';
+import type { LocalFetchToolResult } from '@octocodeai/octocode-core/extra-types';
+import type { FetchContentQuery } from '@octocodeai/octocode-core/schema';
 import { ToolErrors } from '../../../errors/errorFactories.js';
 import { LOCAL_TOOL_ERROR_CODES } from '../../../errors/localToolErrors.js';
+import { buildNextPageContinuation } from '../../../scheme/pagination.js';
 import { fallbackOnBestEffortFailure } from '../../../utils/core/bestEffort.js';
 
 export type FileStats = NonNullable<Awaited<ReturnType<typeof stat>>>;
 
 export function sourceSizeFields(sourceChars: number, sourceBytes: number) {
-  const bytesDiff = Math.abs(sourceBytes - sourceChars);
-  const significant = bytesDiff >= 50 && bytesDiff / sourceChars >= 0.02;
-  return significant ? { sourceChars, sourceBytes } : { sourceChars };
+  return { sourceChars, sourceBytes };
 }
 
 export function withSourceSize(
-  result: LocalGetFileContentToolResult,
+  result: LocalFetchToolResult,
   sourceChars: number,
   sourceBytes: number
-): LocalGetFileContentToolResult {
+): LocalFetchToolResult {
   return {
     ...result,
     ...sourceSizeFields(sourceChars, sourceBytes),
@@ -29,7 +28,7 @@ export function withSourceSize(
 
 export function validateExtractionOptions(
   query: FetchContentQuery
-): LocalGetFileContentToolResult | null {
+): LocalFetchToolResult | null {
   const hasFullContent = query.fullContent === true;
   const hasMatchString = query.matchString !== undefined;
   const hasLineRange =
@@ -47,7 +46,7 @@ export function validateExtractionOptions(
   }
 
   if (hasFullContent && hasMatchString) {
-    const result: LocalGetFileContentToolResult = {
+    const result: LocalFetchToolResult = {
       status: 'error',
       error:
         'Cannot use fullContent with matchString — these are mutually exclusive extraction methods. Choose ONE: fullContent=true to read the entire file, OR matchString to extract matching sections, OR startLine+endLine for a known line range.',
@@ -56,7 +55,7 @@ export function validateExtractionOptions(
   }
 
   if (hasFullContent && hasLineRange) {
-    const result: LocalGetFileContentToolResult = {
+    const result: LocalFetchToolResult = {
       status: 'error',
       error:
         'Cannot use fullContent with startLine/endLine — these are mutually exclusive extraction methods. Choose ONE: fullContent=true to read the entire file, OR startLine+endLine for a known line range, OR matchString to extract matching sections.',
@@ -65,7 +64,7 @@ export function validateExtractionOptions(
   }
 
   if (hasMatchString && hasLineRange) {
-    const result: LocalGetFileContentToolResult = {
+    const result: LocalFetchToolResult = {
       status: 'error',
       error:
         'Cannot use matchString with startLine/endLine — these are mutually exclusive extraction methods. Choose ONE: matchString to extract matching sections, OR startLine+endLine for a known line range, OR fullContent=true to read the entire file.',
@@ -96,7 +95,7 @@ export async function getFileStatsOrError(
   absolutePath: string
 ): Promise<{
   fileStats?: FileStats;
-  errorResult?: LocalGetFileContentToolResult;
+  errorResult?: LocalFetchToolResult;
 }> {
   try {
     return {
@@ -114,7 +113,7 @@ export async function getFileStatsOrError(
         extra: {
           resolvedPath: absolutePath,
         },
-      }) as LocalGetFileContentToolResult,
+      }) as LocalFetchToolResult,
     };
   }
 }
@@ -131,13 +130,7 @@ export function shouldFailForLargeFile(
   fileSizeKB: number,
   minifyMode: 'none' | 'standard' | 'symbols'
 ): boolean {
-  // `standard`/`symbols` compress the file (symbols: a skeleton that never
-  // grows beyond the source; standard: comments/blank-line stripping) and the
-  // result is still subject to the normal charOffset/charLength pagination —
-  // so the raw source-size gate would otherwise reject exactly the large
-  // files these modes exist to make readable. Only a truly verbatim read
-  // (`minify:"none"`, e.g. via `fullContent:true`) with no bounded window is
-  // gated on raw size.
+  // Bounded reads are scanned and paginated after selection.
   if (minifyMode !== 'none') {
     return false;
   }
@@ -145,7 +138,7 @@ export function shouldFailForLargeFile(
     fileSizeKB > RESOURCE_LIMITS.LARGE_FILE_THRESHOLD_KB &&
     !query.matchString &&
     !query.startLine &&
-    !query.charLength
+    query.fullContent === true
   );
 }
 
@@ -153,29 +146,44 @@ export function createLargeFileErrorResult(
   query: FetchContentQuery,
   absolutePath: string,
   fileSizeKB: number
-): LocalGetFileContentToolResult {
+): LocalFetchToolResult {
   const toolError = ToolErrors.fileTooLarge(
     query.path!,
     fileSizeKB,
     RESOURCE_LIMITS.LARGE_FILE_THRESHOLD_KB
   );
 
-  return createErrorResult(toolError, query, {
-    toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-    extra: { resolvedPath: absolutePath },
-  }) as LocalGetFileContentToolResult;
+  const { fullContent: _fullContent, ...selection } = query;
+  return {
+    ...createErrorResult(toolError, query, {
+      toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
+      extra: { resolvedPath: absolutePath },
+    }),
+    sourceBytes: fileSizeKB * 1024,
+    isPartial: true,
+    partialReasons: ['full-content-source-size-limit'],
+    metadataUnavailable: ['totalLines'],
+    next: {
+      continue: buildNextPageContinuation('localFetch', {
+        ...selection,
+        chunkType: 'lines',
+        offset: 0,
+        limit: 100,
+      }),
+    },
+  } as LocalFetchToolResult;
 }
 
 export function createBinaryFileErrorResult(
   query: FetchContentQuery,
   absolutePath: string
-): LocalGetFileContentToolResult {
+): LocalFetchToolResult {
   const toolError = ToolErrors.binaryFileUnsupported(query.path!);
 
   return createErrorResult(toolError, query, {
     toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
     extra: { resolvedPath: absolutePath },
-  }) as LocalGetFileContentToolResult;
+  }) as LocalFetchToolResult;
 }
 
 export async function isLikelyBinaryFile(filePath: string): Promise<boolean> {
@@ -250,10 +258,13 @@ export async function isLikelyBinaryFile(filePath: string): Promise<boolean> {
 export async function readFileContentOrError(
   query: FetchContentQuery,
   absolutePath: string
-): Promise<{ content?: string; errorResult?: LocalGetFileContentToolResult }> {
+): Promise<{ content?: string; errorResult?: LocalFetchToolResult }> {
   try {
     return {
-      content: await readFile(absolutePath, 'utf-8'),
+      content: new TextDecoder('utf-8', {
+        fatal: true,
+        ignoreBOM: true,
+      }).decode(await readFile(absolutePath)),
     };
   } catch (error) {
     const cause = error instanceof Error ? error : undefined;
@@ -267,17 +278,23 @@ export async function readFileContentOrError(
       errorResult: createErrorResult(toolError, query, {
         toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
         extra: { resolvedPath: absolutePath },
-      }) as LocalGetFileContentToolResult,
+      }) as LocalFetchToolResult,
     };
   }
 }
 
 export function createNoMatchesResult(
-  _query: FetchContentQuery,
+  query: FetchContentQuery,
   totalLines: number
-): LocalGetFileContentToolResult {
+): LocalFetchToolResult {
   return {
+    path: query.path,
     status: 'empty',
+    content: '',
+    returnedBytes: 0,
+    returnedLines: 0,
+    matchedLines: [],
+    selectedMatchCount: 0,
     errorCode: LOCAL_TOOL_ERROR_CODES.NO_MATCHES,
     totalLines,
   };

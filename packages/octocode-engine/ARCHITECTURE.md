@@ -11,6 +11,8 @@ secret regex catalog. Rust is tested with `cargo test`; the TS wrappers with
 
 ## Boundary
 
+- Extension filesystem mutations and edit-preview diff generation belong to
+  `octocode-extension-rust`; this engine retains research-tool diff filtering.
 - `src/lib.rs` wires modules and re-exports the public NAPI surface.
 - `src/bindings/` is the FFI boundary. Keep wrappers thin: convert JS-owned
   values, call inner Rust modules, map errors once.
@@ -126,7 +128,7 @@ TypeScript implementation; see that doc's status before reviving the idea.
 
 - NAPI: `napi`, `napi-derive`; build: `napi-build`; dev: `napi`.
 - Serialization/text: `serde`, `serde_json`, `serde_yaml_ng`, `regex`,
-  `regex-syntax`, `aho-corasick`, `similar`, and `url`.
+  `regex-syntax`, `aho-corasick`, and `url`.
 - Async/process/LSP: `tokio`, `which`.
 - Search: `grep`, `ignore`; patched transitive security floors are pinned for
   `crossbeam-epoch` and `memmap2`.

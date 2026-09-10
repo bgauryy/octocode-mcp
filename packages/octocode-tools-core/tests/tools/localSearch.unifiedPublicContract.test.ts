@@ -2,8 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { executeDirectTool } from '../../src/tools/directToolCatalog.exec.js';
-import { findDirectToolDefinition } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
-import { LocalSearchQuerySchema } from '../../src/tools/local_search/scheme.js';
+import { findDirectToolDefinition } from '@octocodeai/octocode-core/schema';
+import { LocalSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 type ToolResult = Awaited<ReturnType<typeof executeDirectTool>>;
 type Row = { status?: string; data: Record<string, unknown> };
@@ -29,9 +29,17 @@ describe('localSearch lexical public contract', () => {
 
   beforeAll(async () => {
     await mkdir(join(process.cwd(), '.octocode', 'tmp'), { recursive: true });
-    root = await mkdtemp(join(process.cwd(), '.octocode', 'tmp', 'local-search-contract-'));
-    await writeFile(join(root, 'alpha.ts'), `export const contractNeedle = 1;\n${'paginationNeedle\n'.repeat(12)}`);
-    await writeFile(join(root, 'beta.ts'), 'export const secondContractNeedle = 2;\n');
+    root = await mkdtemp(
+      join(process.cwd(), '.octocode', 'tmp', 'local-search-contract-')
+    );
+    await writeFile(
+      join(root, 'alpha.ts'),
+      `export const contractNeedle = 1;\n${'paginationNeedle\n'.repeat(12)}`
+    );
+    await writeFile(
+      join(root, 'beta.ts'),
+      'export const secondContractNeedle = 2;\n'
+    );
   });
 
   afterAll(async () => rm(root, { recursive: true, force: true }));
@@ -40,35 +48,84 @@ describe('localSearch lexical public contract', () => {
     const definition = findDirectToolDefinition('localSearch');
     expect(definition).toBeDefined();
     const schema = definition!.inputSchema;
-    expect(schema.safeParse({ queries: [{ path: root, searchText: 'needle' }] }).success).toBe(true);
-    expect(schema.safeParse({ queries: [{ path: root, searchText: 'needle', operation: 'text' }] }).success).toBe(false);
-    expect(schema.safeParse({ queries: [{ path: root, pattern: 'const $X = $Y' }] }).success).toBe(false);
-    expect(schema.safeParse({ queries: [{ path: root, searchText: 'needle', mode: 'structural' }] }).success).toBe(false);
+    expect(
+      schema.safeParse({ queries: [{ path: root, searchText: 'needle' }] })
+        .success
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        queries: [{ path: root, searchText: 'needle', operation: 'text' }],
+      }).success
+    ).toBe(false);
+    expect(
+      schema.safeParse({ queries: [{ path: root, pattern: 'const $X = $Y' }] })
+        .success
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        queries: [{ path: root, searchText: 'needle', mode: 'structural' }],
+      }).success
+    ).toBe(false);
   });
 
   it.each([
-    'paginated', 'discovery', 'detailed', 'content', 'files',
-    'filesWithout', 'countLines', 'countMatches', 'matchOnly',
+    'paginated',
+    'discovery',
+    'detailed',
+    'content',
+    'files',
+    'filesWithout',
+    'countLines',
+    'countMatches',
+    'matchOnly',
   ] as const)('supports lexical resultView:%s', async resultView => {
     const result = await executeDirectTool('localSearch', {
-      queries: [{ path: root, searchText: 'contractNeedle', regex: 'literal', resultView }],
+      queries: [
+        {
+          path: root,
+          searchText: 'contractNeedle',
+          regex: 'literal',
+          resultView,
+        },
+      ],
     });
     expect(result.isError, JSON.stringify(result)).not.toBe(true);
     expect(firstRow(result).status).not.toBe('error');
     assertContinuations(firstRow(result).data);
   });
 
-  it.each(['literal', 'rust', 'pcre2'] as const)('executes regex:%s', async regex => {
-    const result = await executeDirectTool('localSearch', {
-      queries: [{ path: root, searchText: regex === 'pcre2' ? 'contract(?:Needle)?' : 'contractNeedle', regex, resultView: 'countMatches' }],
-    });
-    expect(result.isError, JSON.stringify(result)).not.toBe(true);
-    expect((firstRow(result).data.stats as { totalOccurrences?: number }).totalOccurrences).toBeGreaterThan(0);
-  });
+  it.each(['literal', 'rust', 'pcre2'] as const)(
+    'executes regex:%s',
+    async regex => {
+      const result = await executeDirectTool('localSearch', {
+        queries: [
+          {
+            path: root,
+            searchText:
+              regex === 'pcre2' ? 'contract(?:Needle)?' : 'contractNeedle',
+            regex,
+            resultView: 'countMatches',
+          },
+        ],
+      });
+      expect(result.isError, JSON.stringify(result)).not.toBe(true);
+      expect(
+        (firstRow(result).data.stats as { totalOccurrences?: number })
+          .totalOccurrences
+      ).toBeGreaterThan(0);
+    }
+  );
 
   it('returns schema-valid operation-free continuations', async () => {
     const result = await executeDirectTool('localSearch', {
-      queries: [{ path: root, searchText: 'paginationNeedle', resultView: 'paginated', pageSize: 1 }],
+      queries: [
+        {
+          path: root,
+          searchText: 'paginationNeedle',
+          resultView: 'paginated',
+          pageSize: 1,
+        },
+      ],
     });
     expect(result.isError, JSON.stringify(result)).not.toBe(true);
     assertContinuations(firstRow(result).data);

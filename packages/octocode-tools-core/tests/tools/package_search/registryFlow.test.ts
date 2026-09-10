@@ -16,7 +16,7 @@ import {
   fetchNpmRegistryJson,
 } from '../../../src/utils/package/npm/npmRegistry.js';
 import { searchPackages } from '../../../src/tools/package_search/execution.js';
-import { NpmSearchBulkQueryLocalSchema } from '../../../src/tools/package_search/scheme.js';
+import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 const registry = 'https://packages.example.test';
 const fixture = ['octokit', '@octokit/core', '@octokit/rest', '@octokit/types'];
@@ -69,14 +69,20 @@ beforeEach(() => {
 
 describe('npm public registry flow', () => {
   it('executes continuations until every fixture result is reached exactly once with one bounded request per page', async () => {
-    let query: Record<string, unknown> = { keywords: ['octokit'], pageSize: 2 };
+    let query: Record<string, unknown> = {
+      type: 'npm',
+      keywords: ['octokit'],
+      pageSize: 2,
+    };
     const names: string[] = [];
     let pages = 0;
     while (true) {
-      const parsed = NpmSearchBulkQueryLocalSchema.parse({ queries: [query] });
+      const parsed = ArtifactSearchBulkQueryLocalSchema.parse({
+        queries: [query],
+      });
       const data = row(await searchPackages({ queries: parsed.queries }));
       names.push(
-        ...(data.packages ?? []).map((pkg: { name: string }) => pkg.name)
+        ...(data.artifacts ?? []).map((pkg: { name: string }) => pkg.name)
       );
       pages++;
       if (!data.pagination.hasMore) break;
@@ -99,9 +105,11 @@ describe('npm public registry flow', () => {
 
   it('uses one exact metadata request and preserves monorepo directory, version and license', async () => {
     const data = row(
-      await searchPackages({ queries: [{ packageName: 'octokit' }] })
+      await searchPackages({
+        queries: [{ type: 'npm', packageName: 'octokit' }],
+      })
     );
-    expect(data.packages[0]).toMatchObject({
+    expect(data.artifacts[0]).toMatchObject({
       name: 'octokit',
       version: '1.0.0',
       license: 'MIT',
@@ -117,7 +125,7 @@ describe('npm public registry flow', () => {
     );
     const data = row(
       await searchPackages({
-        queries: [{ keywords: ['octokit'], page: 2, pageSize: 2 }],
+        queries: [{ type: 'npm', keywords: ['octokit'], pageSize: 2 }],
       })
     );
     expect(data.error).toBeDefined();
@@ -129,7 +137,9 @@ describe('npm public registry flow', () => {
       new Error('404 Not Found')
     );
     const data = row(
-      await searchPackages({ queries: [{ keywords: ['octokit'] }] })
+      await searchPackages({
+        queries: [{ type: 'npm', keywords: ['octokit'] }],
+      })
     );
     expect(data.error).toBeDefined();
     expect(data.pagination).toBeUndefined();
@@ -141,7 +151,7 @@ describe('npm public registry flow', () => {
     });
     const data = row(
       await searchPackages({
-        queries: [{ keywords: ['octokit'], pageSize: 2 }],
+        queries: [{ type: 'npm', keywords: ['octokit'], pageSize: 2 }],
       })
     );
     expect(JSON.stringify(data.error)).toContain('valid total');
@@ -155,7 +165,7 @@ describe('npm public registry flow', () => {
     });
     const data = row(
       await searchPackages({
-        queries: [{ keywords: ['@octokit/core'], pageSize: 2 }],
+        queries: [{ type: 'npm', keywords: ['@octokit/core'], pageSize: 2 }],
       })
     );
     expect(data.pagination.hasMore).toBe(false);
@@ -167,7 +177,7 @@ describe('npm public registry flow', () => {
 
   it('uses the keyword default page size for a single valid package-name term', async () => {
     const result = await searchPackages({
-      queries: [{ keywords: ['octokit'] }],
+      queries: [{ type: 'npm', keywords: ['octokit'] }],
     });
     const data = row(result);
     expect(data.pagination).toMatchObject({
@@ -186,7 +196,9 @@ describe('npm public registry flow', () => {
       new Error('npm registry authentication failed (401).')
     );
     const data = row(
-      await searchPackages({ queries: [{ packageName: '@octokit/core' }] })
+      await searchPackages({
+        queries: [{ type: 'npm', packageName: '@octokit/core' }],
+      })
     );
     expect(data.error).toContain('authentication failed');
     expect(fetchNpmRegistryJson).toHaveBeenCalledTimes(1);
@@ -200,7 +212,9 @@ describe('npm public registry flow', () => {
       new Error('npm registry returned 404 Not Found.')
     );
     const data = row(
-      await searchPackages({ queries: [{ packageName: 'missing' }] })
+      await searchPackages({
+        queries: [{ type: 'npm', packageName: 'missing' }],
+      })
     );
     expect(data.pagination).toMatchObject({ totalFound: 0, hasMore: false });
     expect(fetchNpmRegistryJson).toHaveBeenCalledTimes(1);

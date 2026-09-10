@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 describe('global-only extension-owned paths', () => {
-  it('keeps session, discovery, MCP, browser, dynamic-tool, and log artifacts under OCTOCODE_HOME/extension', () => {
+  it('keeps runtime artifacts under OCTOCODE_HOME/extension and native MCP source in the workspace', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-global-paths-'));
     const workspace = path.join(root, 'workspace');
     const octocodeHome = path.join(root, 'octocode-home');
@@ -31,7 +31,6 @@ describe('global-only extension-owned paths', () => {
     const paths = [
       context.root,
       getDiscoveryFilePath(workspace),
-      projectMcpPath(workspace),
       getSessionDir(workspace, 9222, context.identity.sessionKey),
       getScreenshotDir(workspace, context.identity.sessionKey),
       getRegistryDir({ ...process.env, OCTOCODE_HOME: octocodeHome }),
@@ -43,5 +42,6 @@ describe('global-only extension-owned paths', () => {
       expect(path.relative(agentRoot, candidate)).not.toMatch(/^\.\.(?:\/|$)/u);
       expect(path.relative(workspace, candidate)).toMatch(/^\.\.(?:\/|$)/u);
     }
+    expect(projectMcpPath(workspace)).toBe(path.join(workspace, '.agents', 'mcp.json'));
   });
 });

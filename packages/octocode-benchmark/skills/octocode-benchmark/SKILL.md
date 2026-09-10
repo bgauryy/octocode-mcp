@@ -13,7 +13,7 @@ question). Run ≥3 passes; the rollup shows every matchup together. No harness,
 Paths below are relative to the package root `packages/octocode-benchmark/`. Shared tooling
 lives in `compare/bin/`; questions in `compare/github-questions/`; reports in `results/`.
 
-## Flow (4 phases)
+## Workflow
 
 0. **Preflight** — verify + pin every arm; a failure invalidates the run.
 1. **Answer** — 2 isolated runners (anchor + baseline) per question/pass, leanest-legal path, each appends a `## Q<n>` section to `answers/<arm>-p<pass>.md`.
@@ -105,8 +105,8 @@ layout: `references/run-with-agents.md` → `run-preflight.md` + `run-phases.md`
 | When | Load |
 |---|---|
 | understand the design | `references/BENCHMARK.md` |
-| run a matchup | `references/INSTRUCTIONS.md` then `references/run-with-agents.md` |
-| brief a runner | `references/RUNNER.md` + `references/RUNNER_TOOL_CONTEXT.md` (+ the arm's `primer-*.md`) |
+| run a matchup | `references/INSTRUCTIONS.md` then `references/run-with-agents.md`; verify `references/run-preflight.md` before `references/run-phases.md` |
+| brief a runner | `references/RUNNER.md` + `references/RUNNER_TOOL_CONTEXT.md`; choose its arm's `references/primer-octocode.md`, `references/primer-gh.md`, `references/primer-gh-rtk.md`, or `references/primer-gh-headroom.md` |
 | judge a question | `references/JUDGING.md` + `references/example-verdict.md` |
 | score + aggregate | `references/SCORING.md` then `references/aggregation-and-stats.md` |
 | write the report | `references/REPORT_TEMPLATE.md` |

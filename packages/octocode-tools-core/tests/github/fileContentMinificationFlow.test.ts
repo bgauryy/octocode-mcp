@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
 import { processFileContentAPI } from '../../src/github/fileContentProcess.js';
 import { readFileEntry } from '../../src/tools/github_fetch_content/finalizer/entryParsers.js';
-import { FileContentBulkQueryLocalSchema } from '../../src/tools/github_fetch_content/scheme.js';
-import { paginateContentWindow } from '../../src/tools/local_fetch_content/fetchContent/pagination.js';
+import { FileContentBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { paginateContentWindow } from '../../src/utils/file/contentPagination.js';
 import type { FileContentExecutionQuery } from '../../src/tools/github_fetch_content/types.js';
 
 const fixture = vi.hoisted(() => ({ source: '' }));
@@ -40,10 +40,10 @@ describe('GitHub content evidence and executable minification windows', () => {
     });
     if (!('data' in out) || !out.data) throw new Error(JSON.stringify(out));
     expect(out.data.contentView).toBe('standard');
-    expect(out.data.warnings?.join(' ')).not.toContain(
+    expect(out.data.warnings?.join(' ') ?? '').not.toContain(
       'not supported for this file type'
     );
-    expect(out.data.warnings?.join(' ')).toContain('outline');
+    expect(out.data.minifyFallback?.reason).toBe('outline-unavailable');
   });
   it.each(['none', 'standard'] as const)(
     'preserves matched comments in %s mode',
@@ -79,7 +79,7 @@ describe('GitHub content evidence and executable minification windows', () => {
         noTimestamp: true,
       });
       expect('data' in whole && whole.data?.content).toBeTruthy();
-      let query: Record<string, unknown> = { ...base, minify, charLength: 40 };
+      let query: Record<string, unknown> = { ...base, minify, chunkType: 'bytes', limit: 40 };
       let joined = '';
       let pages = 0;
       for (;;) {
@@ -97,11 +97,11 @@ describe('GitHub content evidence and executable minification windows', () => {
         joined += file.content;
         pages++;
         expect(pages).toBeLessThan(200);
-        const next = file.next?.continueChars;
+        const next = file.next?.continue;
         if (!next) break;
         expect(next.query.minify).toBe(minify);
-        expect(next.query.charLength).toBe(40);
-        expect(next.query.charOffset).toBe(joined.length);
+        expect(next.query.limit).toBe(40);
+        expect(next.query.offset).toBe(joined.length);
         query = next.query;
       }
       expect(pages).toBeGreaterThan(1);
@@ -109,15 +109,8 @@ describe('GitHub content evidence and executable minification windows', () => {
     }
   );
 
-  it('honors an explicit outline window with fullContent', async () => {
-    const out = await fetchGitHubFileContentAPI({
-      ...base,
-      minify: 'symbols',
-      fullContent: true,
-      charLength: 40,
-      noTimestamp: true,
-    });
-    expect('data' in out && out.data?.pagination?.hasMore).toBe(true);
+  it('rejects chunk controls alongside an unpaged fullContent request', () => {
+    expect(FileContentBulkQueryLocalSchema.safeParse({ queries: [{ ...base, minify: 'symbols', fullContent: true, chunkType: 'bytes', limit: 40 }] }).success).toBe(false);
   });
 
   it.each([{ matchString: 'target' }, { startLine: 1, endLine: 3 }])(
@@ -133,35 +126,36 @@ describe('GitHub content evidence and executable minification windows', () => {
 });
 
 describe('smart local windows', () => {
-  it('honors a full-content offset without an explicit length', async () => {
+  it('honors a byte offset without an explicit limit', async () => {
     const out = await paginateContentWindow(
       source,
       {
         path: '/fixture.ts',
         minify: 'none',
-        fullContent: true,
-        charOffset: 100,
+        chunkType: 'bytes',
+        offset: 100,
       },
-      20000
+      'localFetch'
     );
     expect(out.windowedContent).toBe(source.slice(100));
-    expect(out.pagination.charOffset).toBe(100);
+    expect(out.pagination.offset).toBe(100);
   });
-  it('keeps the requested target stable and labels page counts as estimates', async () => {
+  it('keeps the requested byte limit stable and reports exact view totals', async () => {
     let query = {
       path: '/fixture.ts',
       minify: 'none' as const,
-      charLength: 40,
-      charOffset: 0,
+      chunkType: 'bytes' as const,
+      limit: 40,
+      offset: 0,
     };
     let joined = '';
     for (let page = 0; page < 200; page++) {
-      const out = await paginateContentWindow(source, query, 20000);
+      const out = await paginateContentWindow(source, query, 'localFetch');
       joined += out.windowedContent;
-      expect(out.pagination.pageCountsKind).toBe('estimated');
+      expect(out.pagination.totalBytes).toBe(Buffer.byteLength(source));
       if (!out.next) break;
-      expect(out.next.continueChars.query.charLength).toBe(40);
-      query = out.next.continueChars.query as typeof query;
+      expect(out.next.continue.query.limit).toBe(40);
+      query = out.next.continue.query as typeof query;
     }
     expect(joined).toBe(source);
   });

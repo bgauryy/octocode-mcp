@@ -15,7 +15,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { getDeliveryFingerprint, setDeliveryFingerprint } from './db-runtime.js';
 import { fillScope } from './git.js';
 import { assertKnownOptions, normalizeArtifact, summarizeText } from './helpers.js';
-import { getMemory } from './memory-recall.js';
+import { queryMemory } from './memory-recall.js';
 import { getNotifications } from './notifications-inbox.js';
 import { compactBriefItems, notificationBriefText, summarizeUtf8 } from './maintenance-brief-format.js';
 import { BriefItem, NotifyGetBriefResult, NotifyGetResult, openRefinementCount } from './maintenance-stale.js';
@@ -215,7 +215,7 @@ export function notifyGet(
     let memRows: BriefMemory[] = [];
     if (format === 'hook') {
       if (interventionQuery) {
-        const recall = getMemory(db, {
+        const recall = queryMemory(db, {
           query: interventionQuery,
           // Grounding is stricter than retrieval. Inspect the full normal recall
           // budget so high-importance one-token hits cannot starve a lower-ranked

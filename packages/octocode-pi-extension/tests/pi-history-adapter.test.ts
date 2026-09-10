@@ -34,7 +34,7 @@ describe('Pi history adapter', () => {
   it('ignores paths from read, shell, MCP, and unknown tools', async () => {
     const run = vi.fn(async () => ({ exitCode: 0, payload: {"ok":true} }));
     const adapter = createPiHistoryAdapter({ run, agentId: () => 'pi:test' });
-    for (const toolName of ['bash', 'MCPTool', 'localGetFileContent', 'mystery']) {
+    for (const toolName of ['bash', 'MCPTool', 'localFetch', 'mystery']) {
       await adapter.before({ toolCallId: toolName, toolName, input: { queries: [{ type: 'write', path: 'src/a.ts' }] } });
     }
     expect(run).not.toHaveBeenCalled();

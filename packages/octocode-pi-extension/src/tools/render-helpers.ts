@@ -305,7 +305,7 @@ export function buildToolCallSummary(toolName: string, args: unknown): string {
       return `${modeTag}${kw ? `"${kw}"` : ''}${p ? ` in ${shortPath(p)}` : ''}`.trim();
     }
 
-    if (toolName === 'localGetFileContent') {
+    if (toolName === 'localFetch') {
       const p = str(q.path);
       const start = q.startLine != null ? `:${q.startLine}` : '';
       const end = q.endLine != null ? `-${q.endLine}` : '';
@@ -347,10 +347,10 @@ export function buildToolCallSummary(toolName: string, args: unknown): string {
     return shortPath(p).trim();
   }
 
-  // ── npm ──────────────────────────────────────────────────────────────────
-  if (toolName === 'npmSearch') {
-    const pkg = str(q.packageName);
-    return pkg.trim();
+  // ── packages ──────────────────────────────────────────────────────────────────
+  if (toolName === 'artifactSearch') {
+    const identity = str(q.packageName) || arr(q.keywords).join(' ');
+    return [str(q.type), identity].filter(Boolean).join(': ');
   }
 
   // ── fallback: pick the 3 most informative string values ──────────────────
@@ -467,7 +467,7 @@ export function buildResultStats(toolName: string, details: unknown): ResultStat
     return { queryCount, summary: parts.join(', ') || undefined };
   }
 
-  if (toolName === 'localGetFileContent') {
+  if (toolName === 'localFetch') {
     const paths: string[] = [];
     const previews: string[] = [];
     let lines = 0;
@@ -518,17 +518,18 @@ export function buildResultStats(toolName: string, details: unknown): ResultStat
     };
   }
 
-  if (toolName === 'npmSearch') {
+  if (toolName === 'artifactSearch') {
     const paths: string[] = [];
     for (const r of results) {
       const data = (r.data ?? {}) as Record<string, unknown>;
-      const name = str(data.name ?? data.packageName);
-      const version = str(data.version);
-      if (name) paths.push(version ? `${name}@${version}` : name);
+      for (const item of (Array.isArray(data.artifacts) ? data.artifacts : []) as Record<string, unknown>[]) {
+        const name = str(item.name);
+        const version = str(item.version);
+        if (name) paths.push(version ? `${name}@${version}` : name);
+      }
     }
     return { queryCount, paths: paths.slice(0, 3) };
   }
-
   if (toolName === 'ghSearchHistory' || toolName === 'ghGetHistoryItem') {
     // One operation family per call, but the key differs by operation
     // (pullRequests/issues/commits) and detail reads return a single item.

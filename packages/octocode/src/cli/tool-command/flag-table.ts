@@ -1,7 +1,7 @@
 // Derives each tool's CLI flag surface from its canonical JSON schema — the
 // exact schema MCP serves — so flags never drift from validation. Consumed by
 // flags-to-query.ts, which parses argv against this table.
-import { formatDirectToolSchemaText } from '@octocodeai/octocode-tools-core/schema';
+import { formatDirectToolSchemaText } from '@octocodeai/octocode-core/schema';
 
 export type FieldKind = 'string' | 'number' | 'boolean' | 'array' | 'object';
 

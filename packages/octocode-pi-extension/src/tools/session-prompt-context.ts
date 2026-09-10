@@ -10,12 +10,15 @@ const SEGMENTS = [
   { id: 'awareness-cli-runtime', kind: 'tool-contract', origin: 'octocode-harness', authority: 'product', visibility: 'inspectable', rehydrate: 'always', tokenBudget: 2_000 },
 ] as const;
 
-export type SessionPromptContents = Record<(typeof SEGMENTS)[number]['id'], string>;
+export type SessionPromptContents = Record<(typeof SEGMENTS)[number]['id'], string> & { 'agents-protocol'?: string };
 
 /** One policy/budget contract for initial prompts and recovery source validation. */
 export function assembleSessionPromptContext(contents: SessionPromptContents) {
   return {
-    ...assembleContextSegments(SEGMENTS.map(segment => ({ ...segment, scope: 'session', content: contents[segment.id] })), { totalTokenBudget: INITIAL_CONTEXT_TOKEN_BUDGET }),
-    contents,
+    ...assembleContextSegments([
+      ...SEGMENTS.map(segment => ({ ...segment, scope: 'session' as const, content: contents[segment.id] })),
+      { id: 'agents-protocol', kind: 'project-instruction', origin: 'agents-protocol', authority: 'user', visibility: 'inspectable', scope: 'session', rehydrate: 'always', tokenBudget: 20_000, content: contents['agents-protocol'] ?? '' },
+    ], { totalTokenBudget: INITIAL_CONTEXT_TOKEN_BUDGET }),
+    contents: { ...contents, 'agents-protocol': contents['agents-protocol'] ?? '' },
   };
 }

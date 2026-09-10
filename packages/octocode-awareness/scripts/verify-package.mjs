@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -130,7 +130,10 @@ for (const group of topLevelGroups) {
 }
 assert(pkg.types === './out/types/src/index.d.ts', `package types must point at the verified declaration entry, got ${String(pkg.types)}`);
 assert(readFileSync(join(packageRoot, 'out/types/src/index.d.ts'), 'utf8').includes('export'), 'declaration entry is empty or malformed');
-assert(Object.keys(pkg.dependencies ?? {}).length === 0, 'Awareness must keep zero npm runtime dependencies');
+assert(Object.keys(pkg.dependencies ?? {}).length === 0, 'Awareness must keep zero mandatory npm runtime dependencies');
+assert(Object.keys(pkg.optionalDependencies ?? {}).join(',') === '@octocodeai/octocode-extension-rust',
+  'file evidence must use the separately installed optional extension native package');
+assert(!files.some((path) => path.endsWith('.node')), 'Awareness must not bundle a platform-native addon');
 assert(!files.some((path) => path.startsWith('dist/')), 'legacy dist/ artifacts must not ship');
 assert(packageSkills.length > 0, 'skill discovery found zero skills under package skills/');
 for (const skill of packageSkills) {
@@ -172,7 +175,7 @@ try {
   run('tar', ['-xzf', join(isolated, archive), '-C', isolated]);
   const installed = join(isolated, 'package');
   const cli = join(installed, 'out/octocode-awareness.js');
-  const installedOptions = { cwd: installed, env: { ...process.env, OCTOCODE_HOME: join(isolated, 'home') } };
+  const installedOptions = { cwd: installed, env: { ...process.env, NODE_PATH: '', OCTOCODE_HOME: join(isolated, 'home') } };
   for (const tree of ['skills', 'out/skills']) {
     const skill = join(installed, tree, 'octocode-awareness');
     for (const file of ['SKILL.md', 'references/architecture.md', 'scripts/awareness.mjs', 'scripts/hook-runner.mjs']) {
@@ -200,6 +203,26 @@ try {
   const skillInstall = JSON.parse(run(process.execPath, [cli, 'skill', 'install', '--platform', 'shared', '--project-dir', skillProject, '--compact'], installedOptions));
   assert(skillInstall.ok === true && skillInstall.changed === true, 'published CLI did not install its bundled skill');
   assert(readFileSync(join(skillDestination, 'SKILL.md')).equals(readFileSync(join(installed, 'out/skills/octocode-awareness/SKILL.md'))), 'installed skill differs from the CLI bundle');
+  const evidenceWorkspace = join(isolated, 'evidence-workspace');
+  mkdirSync(evidenceWorkspace);
+  writeFileSync(join(evidenceWorkspace, 'source.ts'), 'export const fixture = 1;\n');
+  const standaloneRunner = join(skillDestination, 'scripts/awareness.mjs');
+  for (const [name, entry] of [['CLI', cli], ['installed standalone skill', standaloneRunner]]) {
+    run(process.execPath, [entry, 'maintenance', 'self-test', '--compact'], installedOptions);
+    const binding = ['--workspace', evidenceWorkspace, '--db', join(isolated, `${name.replaceAll(' ', '-')}.sqlite3`), '--agent-id', 'pack-check', '--compact'];
+    for (const [operation, expected] of [
+      [['memory', 'record', '--task-context', 'capture fixture', '--observation', 'inspect source bytes', '--importance', '5', '--file', 'source.ts', '--capture-fingerprint'], /source_inaccessible/],
+      [['history', 'capture', '--phase', 'before', '--file', 'source.ts'], /native filesystem is unavailable/],
+    ]) {
+      const failed = spawnSync(process.execPath, [entry, ...operation, ...binding], { ...installedOptions, encoding: 'utf8', timeout: 30_000 });
+      assert(!failed.error && failed.status !== null && failed.status !== 0,
+        `${name} must reject explicit file evidence when the optional native addon is absent`);
+      assert(expected.test(`${failed.stdout}\n${failed.stderr}`), `${name} reported the wrong unavailable-native failure: ${failed.stdout} ${failed.stderr}`);
+    }
+    const recalled = JSON.parse(run(process.execPath, [entry, 'memory', 'recall', ...binding.filter((value, index) => value !== '--agent-id' && binding[index - 1] !== '--agent-id')], installedOptions));
+    assert(recalled.count === 0, `${name} persisted a weaker memory after failed fingerprint capture`);
+    assert(readFileSync(join(evidenceWorkspace, 'source.ts'), 'utf8') === 'export const fixture = 1;\n', `${name} modified source bytes during a failed capture`);
+  }
   // Schemas are served dynamically by the CLI — no static out/schemas files.
   const names = JSON.parse(run(process.execPath, [cli, 'schema', 'list', '--compact'], installedOptions));
   assert(Array.isArray(names) && names.length > 0, 'schema list must return a non-empty schema name array');
@@ -215,11 +238,34 @@ try {
   const libraryImport = run(process.execPath, [
     '--input-type=module',
     '--eval',
-    `const m = await import(${JSON.stringify(pathToFileURL(join(installed, 'out/index.js')).href)}); if (!Object.keys(m).length) process.exit(1);`,
+    `
+      import assert from 'node:assert/strict';
+      import { createRequire } from 'node:module';
+      import { DatabaseSync } from 'node:sqlite';
+      const entry = ${JSON.stringify(pathToFileURL(join(installed, 'out/index.js')).href)};
+      const require = createRequire(entry);
+      assert.throws(() => require.resolve('@octocodeai/octocode-extension-rust'), { code: 'MODULE_NOT_FOUND' });
+      const m = await import(entry);
+      assert.ok(Object.keys(m).length);
+      const db = new DatabaseSync(':memory:');
+      try {
+        m.initDb(db);
+        const workspace = ${JSON.stringify(evidenceWorkspace)};
+        const params = { taskContext: 'fixture', observation: 'inspect file evidence', importance: 5, workspacePath: workspace, cwd: workspace, references: ['file:source.ts'] };
+        await assert.rejects(m.insertMemory(db, { ...params, captureFingerprint: true }), /source_inaccessible/);
+        assert.equal((await m.getMemory(db, { workspacePath: workspace })).count, 0);
+        await m.insertMemory(db, { ...params, fileTreeFingerprint: 'awareness-evidence-v1:' + 'a'.repeat(64) });
+        const unchecked = await m.getMemory(db, { workspacePath: workspace });
+        assert.equal(unchecked.memories[0].evidence.reason, 'unchecked');
+        const checked = await m.getMemory(db, { workspacePath: workspace, checkFingerprint: true });
+        assert.equal(checked.memories[0].evidence.state, 'unknown');
+        assert.equal(checked.memories[0].evidence.reason, 'source_inaccessible');
+      } finally { db.close(); }
+    `,
   ], installedOptions);
   assert(libraryImport === '', 'importing the library entry must not run the CLI or write output');
 } finally {
   rmSync(isolated, { recursive: true, force: true });
 }
 
-console.log(`✓ ${pkg.name}@${pkg.version}: isolated zero-dependency package artifact verified (${files.length} files).`);
+console.log(`✓ ${pkg.name}@${pkg.version}: isolated package verified without its optional native dependency (${files.length} files).`);

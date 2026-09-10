@@ -5,10 +5,7 @@ import {
   searchPullRequestsWithREST,
 } from '../../src/github/pullRequestSearch/restSearch.js';
 import type { GitHubAPIError } from '../../src/github/githubAPI.js';
-import {
-  GITHUB_SEARCH_DEFAULT_LIMIT,
-  GITHUB_SEARCH_MAX_LIMIT,
-} from '../../src/config.js';
+import { GITHUB_SEARCH_DEFAULT_LIMIT, GITHUB_SEARCH_MAX_LIMIT } from '@octocodeai/octocode-core/schema';
 
 // ---------------------------------------------------------------------------
 // createPullRequestErrorResult (pure)

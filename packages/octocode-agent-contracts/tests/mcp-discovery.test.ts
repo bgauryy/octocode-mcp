@@ -77,9 +77,9 @@ describe('host-neutral MCP discovery', () => {
     const result = discoverMcpSystem(cwd, { homeDir });
 
     expect(result.definitions).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'agents.shared', config: expect.objectContaining({ disabled: true }) }),
       expect.objectContaining({ name: 'antigravity.drive', config: expect.objectContaining({ disabled: true, auth: 'oauth' }) }),
     ]));
+    expect(result.configs.find(config => config.path === agents)).toMatchObject({ active: true });
     expect(result.configs.find((config) => config.path === malformed)).toMatchObject({
       host: 'cursor', active: false, servers: [], error: expect.any(String),
     });
@@ -107,7 +107,8 @@ describe('host-neutral MCP discovery', () => {
     const result = discoverMcpSystem(cwd, { homeDir });
     const discovered = result.definitions.map(({ config }) => config.discovered);
 
-    expect(discovered).toEqual(expect.arrayContaining(jsonSources.map(([file]) => expect.objectContaining({ path: file }))));
+    expect(discovered).toEqual(expect.arrayContaining(jsonSources.filter(([file]) => !file.includes(`${path.sep}.pi${path.sep}`)).map(([file]) => expect.objectContaining({ path: file }))));
+    expect(result.configs.filter(config => config.host === 'pi')).toEqual([]);
     expect(discovered).toEqual(expect.arrayContaining([
       expect.objectContaining({ host: 'codex', scope: 'project', path: path.join(cwd, '.codex', 'config.toml') }),
       expect.objectContaining({ host: 'codex', scope: 'user', path: path.join(homeDir, '.codex', 'config.toml') }),

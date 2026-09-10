@@ -85,10 +85,12 @@ export class SessionRuntime {
     this.disposePromise = (async () => {
       this.store.getState().disposing();
       this.controller.abort(new Error(`Session runtime disposed: ${reason}`));
+      // Stop UI delivery before awaiting teardown: late MCP/task publications from
+      // the retiring generation must never paint through a replaced Pi context.
+      this.rendererDisposer({ clearUi: reason === 'quit' });
       try {
         await this.onDispose?.(reason);
       } finally {
-        this.rendererDisposer({ clearUi: reason === 'quit' });
         this.store.getState().disposed();
       }
     })();

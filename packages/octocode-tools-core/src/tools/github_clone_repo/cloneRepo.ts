@@ -5,7 +5,7 @@ import { resolveDefaultBranch } from '../../github/client.js';
 import { getServerConfig } from '../../serverConfig.js';
 import type { AuthInfo } from '@modelcontextprotocol/server';
 import type { WithOptionalMeta } from '../../types/execution.js';
-import type { CloneRepoQueryLocalSchema } from './scheme.js';
+import type { CloneRepoQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import type { z } from 'zod';
 import type { CloneRepoResult } from './types.js';
 import { getCloneDir, getCloneLockDir } from './cachePaths.js';

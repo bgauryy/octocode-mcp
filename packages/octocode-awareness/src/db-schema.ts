@@ -1,3 +1,5 @@
+import { PLAN_STATUSES, TASK_STATUSES, AGENT_STATUSES, PLAN_MEMBER_ROLES, PLAN_DOC_KINDS, TASK_RUN_ORIGINS, TASK_RUN_STATUSES } from '@octocodeai/agent-contracts/entities';
+import { sqlEnum } from '@octocodeai/agent-contracts/schema';
 import { CONTINUITY_SCHEMA_DDL } from './db-continuity-schema.js';
 import { LOCAL_HISTORY_INDEX_DDL, LOCAL_HISTORY_SCHEMA_DDL } from './db-history-schema.js';
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ export const SCHEMA_DDL = `
       objective      TEXT NOT NULL,
       lead_agent_id  TEXT NOT NULL,
       status         TEXT NOT NULL DEFAULT 'DRAFT'
-                     CHECK(status IN ('DRAFT','ACTIVE','PAUSED','COMPLETED','CANCELLED')),
+                     CHECK(status IN (${sqlEnum(PLAN_STATUSES)})),
       workspace_path TEXT NOT NULL,
       artifact       TEXT,
       doc_dir        TEXT NOT NULL,
@@ -92,7 +94,7 @@ export const SCHEMA_DDL = `
     CREATE TABLE IF NOT EXISTS plan_members (
       plan_id    TEXT NOT NULL REFERENCES awareness_plans(plan_id) ON DELETE CASCADE,
       agent_id   TEXT NOT NULL,
-      role       TEXT NOT NULL DEFAULT 'CONTRIBUTOR' CHECK(role IN ('LEAD','CONTRIBUTOR')),
+      role       TEXT NOT NULL DEFAULT 'CONTRIBUTOR' CHECK(role IN (${sqlEnum(PLAN_MEMBER_ROLES)})),
       joined_at  TEXT NOT NULL,
       PRIMARY KEY(plan_id, agent_id)
     );
@@ -101,7 +103,7 @@ export const SCHEMA_DDL = `
       plan_id       TEXT NOT NULL REFERENCES awareness_plans(plan_id) ON DELETE CASCADE,
       relative_path TEXT NOT NULL,
       title         TEXT NOT NULL,
-      kind          TEXT NOT NULL DEFAULT 'SUPPORTING' CHECK(kind IN ('PRIMARY','SUPPORTING')),
+      kind          TEXT NOT NULL DEFAULT 'SUPPORTING' CHECK(kind IN (${sqlEnum(PLAN_DOC_KINDS)})),
       ordinal       INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY(plan_id, relative_path)
     );
@@ -115,7 +117,7 @@ export const SCHEMA_DDL = `
       source_step_key TEXT,
       check_command TEXT,
       status       TEXT NOT NULL DEFAULT 'OPEN'
-                   CHECK(status IN ('OPEN','IN_PROGRESS','BLOCKED','VERIFY','DONE','FAILED','CANCELLED')),
+                   CHECK(status IN (${sqlEnum(TASK_STATUSES)})),
       priority     INTEGER NOT NULL DEFAULT 0,
       created_by   TEXT NOT NULL,
       created_at   TEXT NOT NULL,
@@ -142,14 +144,14 @@ export const SCHEMA_DDL = `
     CREATE TABLE IF NOT EXISTS task_runs (
       run_id         TEXT PRIMARY KEY,
       task_id        TEXT REFERENCES awareness_tasks(task_id) ON DELETE SET NULL,
-      origin         TEXT NOT NULL DEFAULT 'TASK' CHECK(origin IN ('TASK','WORK','HOOK')),
+      origin         TEXT NOT NULL DEFAULT 'TASK' CHECK(origin IN (${sqlEnum(TASK_RUN_ORIGINS)})),
       agent_id       TEXT NOT NULL,
       session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
       rationale      TEXT NOT NULL,
       test_plan      TEXT NOT NULL,
       context_ref    TEXT,
       status         TEXT NOT NULL DEFAULT 'ACTIVE'
-                     CHECK(status IN ('PENDING','ACTIVE','SUCCESS','FAILED')),
+                     CHECK(status IN (${sqlEnum(TASK_RUN_STATUSES)})),
       workspace_path TEXT,
       artifact       TEXT,
       created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -283,7 +285,7 @@ export const SCHEMA_DDL = `
       artifact       TEXT,
       context        TEXT,
       role           TEXT,
-      status         TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN ('ACTIVE','IDLE','LEFT')),
+      status         TEXT NOT NULL DEFAULT 'ACTIVE' CHECK(status IN (${sqlEnum(AGENT_STATUSES)})),
       metadata_json  TEXT NOT NULL DEFAULT '{}',
       registered_at  TEXT NOT NULL,
       last_seen_at   TEXT NOT NULL,

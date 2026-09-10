@@ -51,8 +51,8 @@
       "description": "Read one GitHub pull request, issue, commit, or ref comparison"
     },
     {
-      "name": "npmSearch",
-      "description": "Search npm packages and source repositories"
+      "name": "artifactSearch",
+      "description": "Find packages by capability or resolve dependency metadata and upstream source across eight ecosystems"
     },
     {
       "name": "ghCloneRepo",
@@ -67,7 +67,7 @@
       "description": "Inspect local syntax, symbols, structural matches, files, trees, and graph topology"
     },
     {
-      "name": "localGetFileContent",
+      "name": "localFetch",
       "description": "Read local file content with minification and exact slices"
     },
     {

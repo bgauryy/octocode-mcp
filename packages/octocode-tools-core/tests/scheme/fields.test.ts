@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import {
-  clampedInt,
-  createRelaxedBulkQuerySchema,
-} from '../../src/scheme/fields.js';
+import { clampedInt, createRelaxedBulkQuerySchema } from '@octocodeai/octocode-core/schema';
 
 describe('shared schema fields', () => {
   it('clamps finite integer input into the configured bounds', () => {

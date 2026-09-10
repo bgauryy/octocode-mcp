@@ -1,7 +1,7 @@
 import { readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GitHubDirectoryFileEntry } from '@octocodeai/octocode-core/extra-types';
-import type { DirectoryFetchResult } from '../../tools/github_fetch_content/types.js';
+import type { DirectoryFetchResult } from './types.js';
 import { DIRECTORY_META_FILE } from './cacheMetadata.js';
 
 export const MAX_DIRECTORY_FILES = 50;

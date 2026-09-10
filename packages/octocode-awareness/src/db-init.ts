@@ -12,6 +12,7 @@ import { withSqliteBusyRetry } from '@octocodeai/agent-contracts/sqlite';
 import { AWARENESS_APPLICATION_ID } from './storage-scope.js';
 import { FTS_SCHEMA_DDL, SCHEMA_DDL, SCHEMA_INDEX_DDL } from './db-schema.js';
 import { hasFts, rebuildFts } from './db-maintenance.js';
+import { HISTORY_CAPTURE_DURABILITY_DDL } from './db-history-schema.js';
 
 export function initDb(db: DatabaseSync, knownState?: SchemaState): void {
   const state = knownState ?? inspectSchemaState(db);
@@ -31,6 +32,12 @@ export function initDb(db: DatabaseSync, knownState?: SchemaState): void {
     began = true;
     const lockedState = inspectSchemaState(db);
     if (lockedState === 'fresh') initializeFreshDb(db);
+    else if (lockedState === 'history-durability-upgrade') {
+      // Absent evidence stays unknown; never backfill a durability claim.
+      db.exec(HISTORY_CAPTURE_DURABILITY_DDL);
+      assertCanonicalSchemaFingerprint(db);
+      assertDatabaseIntegrity(db);
+    }
     db.exec('COMMIT');
     began = false;
   } catch (error) {

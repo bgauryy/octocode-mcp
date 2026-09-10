@@ -15,6 +15,7 @@ describe('local history canonical contracts', () => {
     db.exec(SCHEMA_INDEX_DDL);
     const tables = db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE 'local_history_%' ORDER BY name").all();
     expect(tables).toEqual([
+      { name: 'local_history_durability' },
       { name: 'local_history_operations' },
       { name: 'local_history_restores' },
       { name: 'local_history_versions' },

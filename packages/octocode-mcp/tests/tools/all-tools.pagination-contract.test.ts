@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   formatDirectToolSchemaText,
-} from '@octocodeai/octocode-tools-core';
+} from '@octocodeai/octocode-core/schema';
 
 const LOSS_LANGUAGE: RegExp[] = [
   /may be truncated/i,
@@ -15,7 +15,7 @@ const TOOL_PAGINATION_CONTRACT: Record<
   { controls: string[]; exemption?: string }
 > = {
   ghSearch: { controls: ['page', 'pageSize'] },
-  ghGetFileContent: { controls: ['charOffset', 'charLength'] },
+  ghGetFileContent: { controls: ['chunkType', 'offset', 'limit'] },
   ghSearchHistory: { controls: ['page', 'pageSize'] },
   ghGetHistoryItem: {
     controls: [
@@ -28,14 +28,14 @@ const TOOL_PAGINATION_CONTRACT: Record<
       'charLength',
     ],
   },
-  npmSearch: { controls: ['page', 'pageSize'] },
+  artifactSearch: { controls: ['cursor', 'pageSize'] },
   ghCloneRepo: {
     controls: [],
     exemption: 'bounded clone/materialization operation',
   },
   localSearch: { controls: ['page', 'pageSize'] },
   astSearch: { controls: ['page', 'pageSize'] },
-  localGetFileContent: { controls: ['charOffset', 'charLength'] },
+  localFetch: { controls: ['chunkType', 'offset', 'limit'] },
   lspSearch: { controls: ['page', 'pageSize'] },
 };
 
@@ -63,8 +63,11 @@ describe('all-tools pagination contract', () => {
         }
       });
 
-      it('uses limit only as a supported pre-pagination total cap', () => {
-        if (TOTAL_CAP_TOOLS.has(toolName)) {
+      it('declares limit only for tools with an explicit limit contract', () => {
+        if (
+          TOTAL_CAP_TOOLS.has(toolName) ||
+          ['localFetch', 'ghGetFileContent'].includes(toolName)
+        ) {
           expect(schemaText).toContain('"limit"');
         } else {
           expect(schemaText).not.toContain('"limit"');

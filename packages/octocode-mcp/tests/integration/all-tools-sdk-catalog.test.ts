@@ -16,7 +16,7 @@ describe('all-tool real SDK catalog parity', () => {
     vi.resetModules();
 
     const { DIRECT_TOOL_DISCOVERY_DEFINITIONS } =
-      await import('@octocodeai/octocode-tools-core');
+      await import('@octocodeai/octocode-core/schema');
     const { ALL_TOOLS } = await import('../../src/tools/toolConfig.js');
 
     const expectedNames = [
@@ -24,11 +24,11 @@ describe('all-tool real SDK catalog parity', () => {
       'ghGetFileContent',
       'ghSearchHistory',
       'ghGetHistoryItem',
-      'npmSearch',
+      'artifactSearch',
       'ghCloneRepo',
       'localSearch',
       'astSearch',
-      'localGetFileContent',
+      'localFetch',
       'lspSearch',
     ];
     const legacyNames = [

@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   createExecutionState,
   reduceExecutionEvent,
-  replayExecutionEvents,
-  serializeExecutionEvents,
   type ExecutionEvent,
 } from '../src/tools/execution-events.js';
+import {
+  replayExecutionEvents,
+  serializeExecutionEvents,
+} from '../src/tools/execution-event-io.js';
+import { EXECUTION_HISTORY_LIMIT } from '../src/tools/execution-retention.js';
 
 function event(
   type: ExecutionEvent['type'],
@@ -211,5 +214,46 @@ describe('execution event projection', () => {
     expect(state.activeToolIds).toEqual([]);
     expect(state.messages.m.status).toBe('interrupted');
     expect(state.compacting).toBe(false);
+  });
+
+  it('bounds terminal execution history while preserving active work and lifetime totals', () => {
+    let state = createExecutionState();
+    let sequence = 0;
+    const completed = EXECUTION_HISTORY_LIMIT * 3;
+    for (let index = 0; index < completed; index++) {
+      const id = `tool-${index}`;
+      state = reduceExecutionEvent(
+        state,
+        event(
+          'tool.started',
+          { toolCallId: id, tool: 'bash', title: id },
+          ++sequence
+        )
+      );
+      state = reduceExecutionEvent(
+        state,
+        event('tool.completed', { toolCallId: id, summary: 'done' }, ++sequence)
+      );
+      state = reduceExecutionEvent(
+        state,
+        event('user.message', { messageId: `message-${index}` }, ++sequence)
+      );
+    }
+    state = reduceExecutionEvent(
+      state,
+      event(
+        'tool.started',
+        { toolCallId: 'active', tool: 'bash', title: 'active' },
+        ++sequence
+      )
+    );
+
+    expect(Object.keys(state.tools)).toHaveLength(EXECUTION_HISTORY_LIMIT + 1);
+    expect(Object.keys(state.messages)).toHaveLength(EXECUTION_HISTORY_LIMIT);
+    expect(state.tools.active?.status).toBe('running');
+    expect(state.activeToolIds).toEqual(['active']);
+    expect(state.toolCount).toBe(completed + 1);
+    expect(state.tools['tool-0']).toBeUndefined();
+    expect(state.tools[`tool-${completed - 1}`]?.status).toBe('succeeded');
   });
 });

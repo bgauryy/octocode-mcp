@@ -1,10 +1,7 @@
-import type { PaginationInfo } from '../../../types/toolResults.js';
-import { buildContinueCharsContinuation } from '../../../scheme/pagination.js';
-import { isCloneEnabled } from '../../../serverConfig.js';
+import { fetchContinuation } from '../../../utils/file/contentPagination.js';
+import type { FetchPagination } from '@octocodeai/octocode-core/extra-types';
 import { classifyFileType } from '../../../utils/file/configFiles.js';
 import type {
-  DirectoryEntry,
-  DirectoryPartialReason,
   FileContentNextMap,
   FileEntry,
   PartialFileContentQuery,
@@ -32,175 +29,33 @@ export function readStringArray(value: unknown): string[] | undefined {
   return strings.length > 0 ? strings : undefined;
 }
 
-function readRequiredNumber(
-  record: Record<string, unknown>,
-  key: string
-): number {
-  return readNumber(record[key]) ?? 0;
-}
-
-function readDirectorySkipped(
-  value: unknown
-): DirectoryEntry['skipped'] | undefined {
-  if (!isRecord(value)) return undefined;
-  return {
-    nonFile: readRequiredNumber(value, 'nonFile'),
-    oversized: readRequiredNumber(value, 'oversized'),
-    binary: readRequiredNumber(value, 'binary'),
-    fileLimit: readRequiredNumber(value, 'fileLimit'),
-    fetchFailed: readRequiredNumber(value, 'fetchFailed'),
-    totalSizeLimit: readRequiredNumber(value, 'totalSizeLimit'),
-    pathTraversal: readRequiredNumber(value, 'pathTraversal'),
-  };
-}
-
-function readDirectoryLimits(
-  value: unknown
-): DirectoryEntry['limits'] | undefined {
-  if (!isRecord(value)) return undefined;
-  return {
-    maxDirectoryFiles: readRequiredNumber(value, 'maxDirectoryFiles'),
-    maxTotalSize: readRequiredNumber(value, 'maxTotalSize'),
-    maxFileSize: readRequiredNumber(value, 'maxFileSize'),
-  };
-}
-
-const OPTIONAL_PAGINATION_NUMERIC_FIELDS = [
-  'charOffset',
-  'charLength',
-  'totalChars',
-  'nextCharOffset',
-  'nextBlockChar',
-  'nextPage',
-  'nextMatchPage',
-  'filesPerPage',
-  'totalFiles',
-  'entriesPerPage',
-  'totalEntries',
-  'matchesPerPage',
-  'totalMatches',
-] as const satisfies ReadonlyArray<keyof PaginationInfo>;
-
-export function readPagination(value: unknown): PaginationInfo | undefined {
-  if (!isRecord(value)) return undefined;
-  const { currentPage, totalPages, hasMore } = value;
+export function readPagination(value: unknown): FetchPagination | undefined {
   if (
-    typeof currentPage !== 'number' ||
-    typeof totalPages !== 'number' ||
-    typeof hasMore !== 'boolean'
-  ) {
+    !isRecord(value) ||
+    !['lines', 'bytes'].includes(String(value.chunkType)) ||
+    typeof value.hasMore !== 'boolean'
+  )
     return undefined;
-  }
-  const result: PaginationInfo = { currentPage, totalPages, hasMore };
-  if (value.pageCountsKind === 'estimated') result.pageCountsKind = 'estimated';
-  if (value.chunkMode === 'semantic' || value.chunkMode === 'char-limit')
-    result.chunkMode = value.chunkMode;
-  for (const field of OPTIONAL_PAGINATION_NUMERIC_FIELDS) {
-    const candidate = value[field];
-    if (typeof candidate === 'number' && Number.isFinite(candidate)) {
-      result[field] = candidate;
-    }
-  }
-  return result;
-}
-
-function buildContinueChars(
-  pagination: PaginationInfo | undefined,
-  query: PartialFileContentQuery
-): FileContentNextMap | undefined {
-  const {
-    goal: _goal,
-    reasoning: _reasoning,
-    charOffset: _charOffset,
-    ...continuationQuery
-  } = query as PartialFileContentQuery & Record<string, unknown>;
-  return buildContinueCharsContinuation(
-    'ghGetFileContent',
-    {
-      ...continuationQuery,
-      charLength: query.charLength ?? pagination?.charLength,
-    },
-    pagination
-  ) as FileContentNextMap | undefined;
-}
-
-function buildContinueLines(
-  data: Record<string, unknown>,
-  query: PartialFileContentQuery
-): FileContentNextMap['continueLines'] | undefined {
-  if (query.matchString !== undefined) return undefined;
-  const startLine = readNumber(data.startLine);
-  const endLine = readNumber(data.endLine);
-  const totalLines = readNumber(data.totalLines);
-  if (
-    data.isPartial !== true ||
-    startLine === undefined ||
-    endLine === undefined ||
-    totalLines === undefined ||
-    endLine >= totalLines
-  ) {
+  const fields = [
+    'offset',
+    'length',
+    'limit',
+    'totalLines',
+    'totalBytes',
+  ] as const;
+  if (fields.some(field => readNumber(value[field]) === undefined))
     return undefined;
-  }
-  const windowSize = Math.max(1, endLine - startLine + 1);
-  const nextStartLine = endLine + 1;
-  const nextEndLine = Math.min(totalLines, endLine + windowSize);
   return {
-    tool: 'ghGetFileContent',
-    query: {
-      owner: query.owner,
-      repo: query.repo,
-      ...(query.branch !== undefined ? { branch: query.branch } : {}),
-      path: query.path,
-      startLine: nextStartLine,
-      endLine: nextEndLine,
-      ...(query.minify !== undefined ? { minify: query.minify } : {}),
-    },
-    why: `Continue the file at lines ${nextStartLine}-${nextEndLine}.`,
-    confidence: 'exact',
-  };
-}
-
-// This was the ONLY fetch/search tool that could emit zero next-hints (a
-// fully-read, non-paginated file has nothing left to continue). lspSearch
-// only resolves definitions/references against local files, not GitHub reads
-// directly, so hand the agent the one-step bridge instead of a dead end.
-function buildCloneForSemanticsHint(
-  query: PartialFileContentQuery
-): FileContentNextMap['cloneForSemantics'] {
-  return {
-    tool: 'ghCloneRepo',
-    query: {
-      owner: query.owner,
-      repo: query.repo,
-      ...(query.branch !== undefined ? { branch: query.branch } : {}),
-      sparsePath: query.path,
-    },
-    why: 'lspSearch (definitions/references) only works on local files — clone this path locally, then run localSearch or lspSearch on it',
-    confidence: 'exact',
-  };
-}
-
-function cloneHintEnabled(): boolean {
-  try {
-    return isCloneEnabled();
-  } catch {
-    return false;
-  }
-}
-
-function buildCloneForCompletenessHint(
-  query: PartialFileContentQuery
-): NonNullable<DirectoryEntry['next']>['escalateToClone'] {
-  return {
-    tool: 'ghCloneRepo',
-    query: {
-      owner: query.owner,
-      repo: query.repo,
-      ...(query.branch !== undefined ? { branch: query.branch } : {}),
-      sparsePath: query.path,
-    },
-    why: 'Clone this directory to retrieve content omitted by remote directory-fetch limits or failures.',
-    confidence: 'exact',
+    chunkType: value.chunkType as 'lines' | 'bytes',
+    offset: value.offset as number,
+    length: value.length as number,
+    limit: value.limit as number,
+    totalLines: value.totalLines as number,
+    totalBytes: value.totalBytes as number,
+    hasMore: value.hasMore,
+    ...(readNumber(value.nextOffset) !== undefined
+      ? { nextOffset: value.nextOffset as number }
+      : {}),
   };
 }
 
@@ -209,18 +64,10 @@ export function readFileEntry(
   query: PartialFileContentQuery
 ): FileEntry {
   const pagination = readPagination(data.pagination);
-  // Only offer the ghCloneRepo bridge when clone is actually enabled —
-  // otherwise the hint names a tool that isn't registered in this session.
-  // Fail-safe: an uninitialized config must suppress the hint, never throw.
-  const canClone = cloneHintEnabled();
-  const continueLines =
-    pagination?.hasMore === true ? undefined : buildContinueLines(data, query);
+  const continuation = fetchContinuation(query, pagination, 'ghGetFileContent');
   const next: FileContentNextMap = {
-    ...buildContinueChars(pagination, query),
-    ...(continueLines ? { continueLines } : {}),
-    ...(canClone
-      ? { cloneForSemantics: buildCloneForSemanticsHint(query) }
-      : {}),
+    ...(continuation ? { continue: continuation } : {}),
+    ...(isRecord(data.next) ? (data.next as FileContentNextMap) : {}),
   };
   if (
     data.errorCode === 'contentSecurityLimit' &&
@@ -239,7 +86,7 @@ export function readFileEntry(
         endLine: line,
         minify: 'none',
       },
-      why: 'The selected view is too large to scan safely. Read one source line; this starts a different source-line view, not a continuation of the rejected character view.',
+      why: 'The selected view is too large to scan safely. Read one source line; this starts a different source-line view, not a continuation of the rejected view.',
       confidence: 'exact',
     };
   }
@@ -257,8 +104,6 @@ export function readFileEntry(
         }
       : {}),
     ...(fileType ? { fileType } : {}),
-    localPath: readString(data.localPath),
-    repoRoot: readString(data.repoRoot),
     contentView:
       data.contentView === 'none' ||
       data.contentView === 'standard' ||
@@ -266,10 +111,24 @@ export function readFileEntry(
         ? data.contentView
         : undefined,
     totalLines: readNumber(data.totalLines),
-    // sourceChars is the single size unit (char-based, matching charOffset/
-    // charLength pagination); fileSize (served slice, derivable from content)
-    // and sourceBytes (duplicates sourceChars for ASCII) were dropped.
     sourceChars: readNumber(data.sourceChars),
+    sourceBytes: readNumber(data.sourceBytes),
+    returnedChars: readNumber(data.returnedChars),
+    returnedBytes: readNumber(data.returnedBytes),
+    returnedLines: readNumber(data.returnedLines),
+    selectedMatchCount: readNumber(data.selectedMatchCount),
+    ...(isRecord(data.minifyFallback)
+      ? { minifyFallback: data.minifyFallback as FileEntry['minifyFallback'] }
+      : {}),
+    ...(data.errorCode === 'noMatches'
+      ? { errorCode: 'noMatches' as const }
+      : {}),
+    ...(data.errorCode === 'fullContentLimit'
+      ? {
+          errorCode: 'fullContentLimit' as const,
+          partialReasons: ['full-content-size-limit' as const],
+        }
+      : {}),
     resolvedBranch: readString(data.resolvedBranch),
     ...(typeof data.commitSha === 'string' && data.commitSha.length === 40
       ? { commitSha: data.commitSha }
@@ -299,74 +158,5 @@ export function readFileEntry(
     ...(data.matchNotFound === true ? { matchNotFound: true } : {}),
     searchedFor: readString(data.searchedFor),
     ...(data.cached === true ? { cached: true } : {}),
-  };
-}
-
-export function readDirectoryEntry(
-  data: Record<string, unknown>,
-  query: PartialFileContentQuery
-): DirectoryEntry {
-  const rawFiles = Array.isArray(data.files) ? data.files : [];
-  const files = rawFiles.filter(isRecord).map(file => ({
-    path: readString(file.path) ?? '',
-    size: readNumber(file.size) ?? 0,
-    type: readString(file.type) ?? 'file',
-  }));
-
-  const skipped = readDirectorySkipped(data.skipped);
-  const hasSubdirectories =
-    data.hasSubdirectories === true || (skipped ? skipped.nonFile > 0 : false);
-  const skippedSummaryEntries = skipped
-    ? Object.entries(skipped).filter(([, v]) => v > 0)
-    : [];
-  const skippedSummary =
-    skippedSummaryEntries.length > 0
-      ? Object.fromEntries(skippedSummaryEntries)
-      : undefined;
-  const incomplete = data.complete === false;
-  const partialReasons: DirectoryPartialReason[] = incomplete
-    ? skippedSummaryEntries.length > 0
-      ? skippedSummaryEntries.map(
-          ([reason]) => reason as DirectoryPartialReason
-        )
-      : ['providerDirectoryIncomplete']
-    : [];
-  const canClone = incomplete && cloneHintEnabled();
-
-  return {
-    path: String(query.path ?? ''),
-    localPath: readString(data.localPath) ?? '',
-    repoRoot: readString(data.repoRoot),
-    fileCount: readNumber(data.fileCount) ?? files.length,
-    totalSize: readNumber(data.totalSize) ?? 0,
-    complete: data.complete === true,
-    verified: data.verified === true,
-    ...(typeof data.commitSha === 'string' && data.commitSha.length === 40
-      ? { commitSha: data.commitSha }
-      : {}),
-    ...(hasSubdirectories ? { hasSubdirectories: true } : {}),
-    ...(skippedSummary ? { skippedSummary } : {}),
-    directoryEntryCount: readNumber(data.directoryEntryCount),
-    eligibleFileCount: readNumber(data.eligibleFileCount),
-    savedFileCount: readNumber(data.savedFileCount),
-    skipped: skipped,
-    limits: readDirectoryLimits(data.limits),
-    warnings: readStringArray(data.warnings),
-    ...(files.length > 0 ? { files } : {}),
-    ...(data.cached === true ? { cached: true } : {}),
-    resolvedBranch: readString(data.resolvedBranch),
-    ...(incomplete
-      ? {
-          isPartial: true,
-          partialReasons,
-          ...(canClone
-            ? {
-                next: {
-                  escalateToClone: buildCloneForCompletenessHint(query),
-                },
-              }
-            : { terminalLimit: true }),
-        }
-      : {}),
   };
 }

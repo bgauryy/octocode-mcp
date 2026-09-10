@@ -3,7 +3,7 @@ import { open, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { GraphFacts } from '@octocodeai/octocode-engine';
 import { contextUtils } from '../../utils/contextUtils.js';
-import type { AstSearchQuery } from './scheme.js';
+import type { AstSearchQuery } from '@octocodeai/octocode-core/schema';
 
 type SyntaxQuery = Extract<AstSearchQuery, { treeKind: 'syntax' }>;
 type SymbolsQuery = Extract<AstSearchQuery, { operation: 'symbols' }>;

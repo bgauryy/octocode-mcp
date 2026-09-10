@@ -381,7 +381,7 @@ Pick the cheapest surface that answers the next question. Start with tree/discov
 astSearch (operation:"tree" to orient)
   → astSearch (operation:"files" for paths)
   → localSearch (searchText for snippets)
-  → localGetFileContent (matchString → returns matchRanges line anchors)
+  → localFetch (matchString → returns matchRanges line anchors)
   → lspSearch (operation:"references"/"callers", lineHint from matchRanges)
 ```
 
@@ -416,7 +416,7 @@ astSearch (operation:"match", pattern or YAML rule)
 **5. Discover → orient → read**
 
 ```
-ghSearch (operation:"repositories", concise:true) or npmSearch (package → source repo)
+ghSearch (operation:"repositories", concise:true) or artifactSearch (package → source repo)
   → ghSearch (operation:"tree"; resolvedBranch confirms the ref)
   → ghSearch (operation:"code", match:"path" first; match:"file" for snippets)
   → ghGetFileContent (matchString → matchRanges, same anchor contract as local)
@@ -433,7 +433,7 @@ ghSearchHistory (operation:"commits", path-scoped)       ← who touched this an
   → patches mode:"selected" + files/ranges               ← cheapest diff read
 ```
 
-**7. Remote → local (materialize for proof)** — choose a *bounded* subtree first via structure/search, then `ghGetFileContent (type:"directory")` or `ghCloneRepo (sparsePath)` → `result.localPath` → all local workflows apply unchanged. This is the Static/Dynamic Context bridge from Part 3.
+**7. Remote → local (materialize for proof)** — choose a *bounded* subtree first via structure/search, then `ghCloneRepo (sparsePath)` → `result.location.localPath` → all local workflows apply unchanged. This is the Static/Dynamic Context bridge from Part 3.
 
 ### Token discipline
 

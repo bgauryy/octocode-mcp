@@ -13,6 +13,7 @@ import { resolveMcpCallContent, resolveMcpCallTable, resolveMcpCallText, summari
 import { OCTOCODE_MCP_ENV_DEFAULTS } from '../src/tools/mcp/config.js';
 import { buildMcpCatalogSnapshot } from "../src/tools/mcp/catalog.js";
 import { projectMcpPath } from "../src/tools/mcp/config.js";
+import { createDelayedMcpFixture } from './helpers/mcp-fixture.js';
 
 const MCP_SERVER_ENTRY = import.meta.resolve("@modelcontextprotocol/server");
 const MCP_STDIO_ENTRY = import.meta.resolve("@modelcontextprotocol/server/stdio");
@@ -153,10 +154,11 @@ test("mode-aware artifact persistence creates a validated compact guide only whe
   const guidePath = path.join(path.dirname(persisted.snapshotPath), "mcp.md");
   const guide = fs.readFileSync(guidePath, "utf8");
 
-  assert.match(guide, /^<!-- octocode-mcp-guide:v3 /);
+  assert.match(guide, /^<!-- octocode-mcp-guide:v4 /);
   assert.match(guide, /<mcp_catalog_index>/);
   assert.match(guide, /tool: echo/);
-  assert.match(guide, /text \(string, required\)/);
+  assert.doesNotMatch(guide, /text \(string, required\)/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(persisted.snapshotPath, 'utf8')).servers[0].tools[0].inputSchema, snapshot.servers[0]!.tools[0]!.inputSchema);
 });
 
 function tmpMcpJson(content: unknown): string {
@@ -373,7 +375,7 @@ const CATALOG_TOOLS = [
     },
   },
   {
-    name: "localGetFileContent",
+    name: "localFetch",
     description: "Read a local file.",
     inputSchema: {
       type: "object",
@@ -461,7 +463,7 @@ test("default compact catalog excludes tools disabled for the active workspace",
     openOctocodeDb(),
     path.resolve(mcpCtx.cwd!),
     "octocode",
-    "localGetFileContent",
+    "localFetch",
     false,
   );
 
@@ -469,7 +471,7 @@ test("default compact catalog excludes tools disabled for the active workspace",
   const addendum = getCachedMcpCatalogAddendum(mcpCtx);
 
   assert.match(addendum, /tool: localSearch/);
-  assert.doesNotMatch(addendum, /tool: localGetFileContent/);
+  assert.doesNotMatch(addendum, /tool: localFetch/);
   assert.doesNotMatch(addendum, /description: Read a local file\./);
 });
 
@@ -730,7 +732,7 @@ test("catalog addendum is byte-stable: tools appear in the output sorted regardl
       cachedAt: Date.now(),
       tools: [
         {
-          name: "localGetFileContent",
+          name: "localFetch",
           description: "Read.",
           inputSchema: { type: "object" },
         },
@@ -749,11 +751,11 @@ test("catalog addendum is byte-stable: tools appear in the output sorted regardl
   ]);
   const out = getCachedMcpCatalogAddendum(mcpCtx);
   const findIdx = out.indexOf("tool: localSearch");
-  const getIdx = out.indexOf("tool: localGetFileContent");
+  const getIdx = out.indexOf("tool: localFetch");
   const lspIdx = out.indexOf("tool: lspSearch");
   assert.ok(
     getIdx < findIdx,
-    "localGetFileContent before localSearch (alphabetical)",
+    "localFetch before localSearch (alphabetical)",
   );
   assert.ok(
     findIdx < lspIdx,
@@ -761,7 +763,7 @@ test("catalog addendum is byte-stable: tools appear in the output sorted regardl
   );
 });
 
-test("catalog addendum retains every reachable tool even for oversized server entries", () => {
+test("catalog addendum exposes an executable continuation for oversized server entries", () => {
   mcpTestHooks.setCachedMcpCatalog(mcpCtx, [
     {
       name: "bigserver",
@@ -778,9 +780,9 @@ test("catalog addendum retains every reachable tool even for oversized server en
     },
   ]);
   const addendum = getCachedMcpCatalogAddendum(mcpCtx);
-  assert.equal(addendum.match(/^tool: tool-/gm)?.length, 300);
-  assert.match(addendum, /tool: tool-299/);
-  assert.doesNotMatch(addendum, /catalog index truncated/i);
+  assert.ok((addendum.match(/^tool: tool-/gm)?.length ?? 0) < 300);
+  assert.match(addendum, /catalog_continuation:/);
+  assert.match(addendum, /"action":"list"/);
 });
 
 test("catalog addendum never exposes oversized schemas and keeps sibling routing metadata", () => {
@@ -870,56 +872,30 @@ function renderMockSystemPrompt(
     .join("\n\n");
 }
 
-function createDelayedMcpFixture(delayMs: number): {
-  ctx: import("../src/types.js").PiContext;
-  serverPath: string;
-  discoveryMarker: string;
-  cleanup: () => void;
-} {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), ".tmp-mcp-warm-flow-"));
-  process.env["OCTOCODE_HOME"] = path.join(cwd, ".octocode-home");
-  const serverPath = path.join(cwd, "server.mjs");
-  const discoveryMarker = path.join(cwd, "listed.marker");
-  fs.writeFileSync(
-    serverPath,
-    `
-    import fs from 'node:fs';
-    import { Server } from ${JSON.stringify(MCP_SERVER_ENTRY)};
-    import { StdioServerTransport } from ${JSON.stringify(MCP_STDIO_ENTRY)};
-    const server = new Server({ name: 'mock-cache-server', version: '1.0.0' }, { capabilities: { tools: {} } });
-    server.setRequestHandler('tools/list', async () => {
-      await new Promise((resolve) => setTimeout(resolve, ${delayMs}));
-      fs.writeFileSync(${JSON.stringify(discoveryMarker)}, 'listed');
-      return { tools: [{ name: 'mockTool', description: 'Mocked cache-flow tool', inputSchema: { type: 'object' } }] };
-    });
-    await server.connect(new StdioServerTransport());
-  `,
-  );
-  const configPath = projectMcpPath(cwd);
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(
-    configPath,
-    JSON.stringify({
-      mcpServers: {
-        octocode: {
-          command: process.execPath,
-          args: [serverPath],
-          cwd,
-          timeoutMs: 5_000,
-        },
-      },
-    }),
-  );
-  return {
-    ctx: {
-      cwd,
-      isProjectTrusted: () => true,
-    } as unknown as import("../src/types.js").PiContext,
-    serverPath,
-    discoveryMarker,
-    cleanup: () => fs.rmSync(cwd, { recursive: true, force: true }),
-  };
-}
+test('public MCP list continuations cover a real server catalog without losing descriptions', async () => {
+  const tools = Array.from({ length: 90 }, (_, index) => ({ name: 'page-' + String(index).padStart(2, '0'), description: index === 20 ? 'Detailed guide. '.repeat(1_000) : 'Tool ' + index, inputSchema: { type: 'object' } }));
+  const fixture = createDelayedMcpFixture(0, tools);
+  try {
+    await warmMcpCatalog(fixture.ctx);
+    const def = buildMcpToolDef();
+    const found = new Map<string, string>();
+    let params: Record<string, unknown> | undefined = { queries: [{ reasoning: 'Inspect all enabled tools', action: 'list', limit: 7 }] };
+    let calls = 0;
+    while (params) {
+      assert.ok(++calls < 100);
+      const output = await def.execute('page', params, undefined, undefined, fixture.ctx);
+      assert.equal(output.isError, false);
+      const page = output.details as import('../src/tools/mcp/catalog-pages.js').McpCatalogPage;
+      for (const item of page.items) if (item.kind === 'tool') found.set(item.tool!, (found.get(item.tool!) ?? '') + (item.description ?? ''));
+      params = page.next?.params;
+    }
+    assert.deepEqual(found, new Map(tools.map(tool => [tool.name, tool.description])));
+  } finally {
+    stopAllMcpServers();
+    await waitForMcpShutdown();
+    fixture.cleanup();
+  }
+});
 
 function createCallGateMcpFixture(): {
   ctx: import("../src/types.js").PiContext;
@@ -1052,13 +1028,13 @@ test("lazy startup persists a cold index, freezes snapshot-hit prompt bytes, and
     const beforeRefresh = renderMockSystemPrompt(fixture.ctx);
     await refreshWarm;
     const afterRefresh = renderMockSystemPrompt(fixture.ctx);
-    assert.equal(
+    assert.notEqual(
       afterRefresh,
       beforeRefresh,
-      "same-session background refresh must not change prompt bytes",
+      "next-turn routing adopts the completed capability revision",
     );
-    assert.match(afterRefresh, /Mocked cache-flow tool/);
-    assert.doesNotMatch(afterRefresh, /Changed cache-flow tool/);
+    assert.match(afterRefresh, /Changed cache-flow tool/);
+    assert.doesNotMatch(afterRefresh, /Mocked cache-flow tool/);
 
     stopAllMcpServers();
     const nextWarm = warmMcpCatalog(fixture.ctx);
@@ -1233,13 +1209,12 @@ test("mock LLM keeps a cache hit when MCP discovery finishes after the first-tur
     const second = llm.complete(renderMockSystemPrompt(fixture.ctx));
     assert.equal(
       second.cacheHit,
-      true,
-      "late discovery must not change prompt bytes after turn one",
+      false,
+      "late discovery is adopted on the next turn",
     );
-    assert.deepEqual(llm.systemPrompts, [
-      "fixed system prompt",
-      "fixed system prompt",
-    ]);
+    assert.equal(llm.systemPrompts[0], 'fixed system prompt');
+    assert.match(llm.systemPrompts[1]!, /mcp_catalog_index/);
+    assert.equal(llm.complete(renderMockSystemPrompt(fixture.ctx)).cacheHit, true, 'unchanged revision keeps the provider cache');
   } finally {
     stopAllMcpServers();
     fixture.cleanup();
@@ -1849,7 +1824,7 @@ test("renderCall: nested MCP queries render independently with unlabeled reasons
           reasoning: "read both source files",
           action: "call",
           server: "octocode",
-          tool: "localGetFileContent",
+          tool: "localFetch",
           arguments: {
             queries: [
               { path: "/src/a.ts", reasoning: "read alpha" },
@@ -1892,10 +1867,9 @@ test("prompt guidance distinguishes the MCP envelope from nested server argument
     ...(def.promptGuidelines ?? []),
   ].join("\n");
 
-  assert.match(guidance, /MCP action fields belong in queries\[\]/);
-  assert.match(guidance, /input belongs in queries\[\]\.arguments/);
-  assert.match(guidance, /nests its own queries\[\] inside arguments/);
-  assert.match(guidance, /inner field placed at the MCPTool level is rejected/i);
+  assert.match(guidance, /Put actions in queries\[\]/);
+  assert.match(guidance, /input in queries\[\]\.arguments/);
+  assert.match(guidance, /octocode tools nest queries\[\] there/);
 });
 
 test("schema: call queries expose the compact table response view", () => {
@@ -1936,7 +1910,7 @@ test("schema: per-query item requires reasoning", () => {
   );
 });
 
-test("schema: action is required and public MCP tool listing is removed", () => {
+test("schema: action is required and paginated MCP tool listing is available", () => {
   const def = buildMcpToolDef();
   type S = {
     properties?: {
@@ -1950,7 +1924,7 @@ test("schema: action is required and public MCP tool listing is removed", () => 
   };
   const items = (def.parameters as S).properties?.queries?.items;
   assert.ok(items?.required?.includes("action"));
-  assert.ok(!items?.properties?.["action"]?.enum?.includes("list"));
+  assert.ok(items?.properties?.["action"]?.enum?.includes("list"));
 });
 
 test("schema: per-query item exposes tool, resource, prompt, completion, and management fields", () => {
@@ -2078,13 +2052,13 @@ test("multi-query: preflight rejects the entire batch before any action runs", a
       { reasoning: "call tool", action: "call", tool: "search" }, // no server
     ],
   };
-  const res = await def.execute(
+  const res = await failedToolResult(def.execute(
     "tc-1",
     params,
     undefined,
     undefined,
     undefined,
-  );
+  ));
   assert.equal(
     res.isError,
     true,
@@ -2246,3 +2220,4 @@ test("multi-query: every MCP result is returned directly to the agent", async ()
     fixture.cleanup();
   }
 });
+import { failedToolResult } from './helpers/failed-tool-result.js';

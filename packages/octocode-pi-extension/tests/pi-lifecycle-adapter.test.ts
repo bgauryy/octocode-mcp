@@ -75,6 +75,17 @@ test('maps canonical deny and rewrite decisions back to Pi without widening auth
   assert.deepEqual(inputResult, { action: 'transform', text: 'normalized', images: [] });
 });
 
+test('preserves a denied input as handled through the lifecycle bus', async () => {
+  const { pi, handlers } = hostHarness();
+  const bus = new LifecycleBus<Record<string, unknown>>({
+    eventType: 'input.received', authority: ['rewrite', 'context', 'stop'],
+    validate: (payload): payload is Record<string, unknown> => Boolean(payload) && typeof payload === 'object',
+  });
+  bus.subscribe({ id: 'input-guard', source: 'user', handler: async () => ({ kind: 'stop', reason: 'Reviewed input hook denied' }) });
+  bindPiLifecycleBus(pi, 'input', bus);
+  assert.deepEqual(await handlers.get('input')?.({ text: 'blocked' }, { cwd: '/w' }), { action: 'handled' });
+});
+
 test('serializes concurrent tool_execution_end dispatches to prevent LifecycleBus reentrancy', async () => {
   // Reproduces: Extension error: Recursive intercepting event: tool.ended
   // Root cause: Pi fires tool_execution_end concurrently for parallel tools.

@@ -24,7 +24,7 @@ function firstData<T>(
   )?.results?.[0]?.data;
 }
 
-describe('localGetFileContent direct text output', () => {
+describe('localFetch direct text output', () => {
   let dir: string;
 
   beforeAll(async () => {
@@ -48,7 +48,7 @@ describe('localGetFileContent direct text output', () => {
     ].join('\n');
     await writeFile(file, source, 'utf8');
 
-    const result = await executeDirectTool('localGetFileContent', {
+    const result = await executeDirectTool('localFetch', {
       queries: [{ path: file, minify: 'none', fullContent: true }],
     });
 
@@ -75,7 +75,7 @@ describe('localGetFileContent direct text output', () => {
 
     // No explicit minify: the schema must not inject 'standard', and execution
     // must resolve fullContent→none so the whole file comes back byte-exact.
-    const result = await executeDirectTool('localGetFileContent', {
+    const result = await executeDirectTool('localFetch', {
       queries: [{ path: file, fullContent: true }],
     });
 
@@ -94,7 +94,7 @@ describe('localGetFileContent direct text output', () => {
       'utf8'
     );
 
-    const result = await executeDirectTool('localGetFileContent', {
+    const result = await executeDirectTool('localFetch', {
       queries: [{ path: file }],
     });
 
@@ -103,7 +103,7 @@ describe('localGetFileContent direct text output', () => {
     );
   });
 
-  it('line ranges default to verbatim numbered slices', async () => {
+  it('line ranges default to verbatim source slices', async () => {
     const file = join(dir, 'range.ts');
     await writeFile(
       file,
@@ -111,7 +111,7 @@ describe('localGetFileContent direct text output', () => {
       'utf8'
     );
 
-    const result = await executeDirectTool('localGetFileContent', {
+    const result = await executeDirectTool('localFetch', {
       queries: [{ path: file, startLine: 1, endLine: 4 }],
     });
 
@@ -125,7 +125,7 @@ describe('localGetFileContent direct text output', () => {
     expect(data?.startLine).toBe(1);
     expect(data?.endLine).toBe(4);
     expect(data?.content).toBe(
-      ['1→ // keep me', '2→ const a = 1;', '3→ ', '4→ const b = 2;'].join('\n')
+      '// keep me\nconst a = 1;\n\nconst b = 2;\n'
     );
   });
 
@@ -133,7 +133,7 @@ describe('localGetFileContent direct text output', () => {
     const file = join(dir, 'symbols-range.ts');
     await writeFile(file, 'export const a = 1;\nexport const b = 2;\n', 'utf8');
 
-    const result = await executeDirectTool('localGetFileContent', {
+    const result = await executeDirectTool('localFetch', {
       queries: [{ path: file, minify: 'symbols', startLine: 1, endLine: 1 }],
     });
 
@@ -146,7 +146,7 @@ describe('localGetFileContent direct text output', () => {
     const file = join(dir, 'symbols-match.ts');
     await writeFile(file, 'export const a = 1;\nexport const b = 2;\n', 'utf8');
 
-    const result = await executeDirectTool('localGetFileContent', {
+    const result = await executeDirectTool('localFetch', {
       queries: [{ path: file, minify: 'symbols', matchString: 'a' }],
     });
 

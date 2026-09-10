@@ -7,7 +7,7 @@
  *   - Tool allowlist (no nested spawning; role prompts bound repository edits and shell use)
  *   - Resource mode (always 'octocode' so the extension's own tools are available)
  *   - SYSTEM_PROMPT.md path loaded at runtime from dist/subagents/<name>/
- *   - Canonical enabled skills, plus any subagent-local skill dirs
+ *   - Focused role skills, plus any subagent-local skill dirs
  *
  * The spawnSubagent tool reads this registry, loads the system prompt,
  * and calls spawnRpcAgent (same internal fn as spawnAgent, same agents Map →
@@ -56,10 +56,12 @@ export interface SubagentConfig {
   systemPromptPath: string;
   /**
    * Static extra skill paths specific to this subagent (e.g. browser-agent's local
-   * skill dir). Combined with all canonically discovered skills at spawn time by
+   * skill dir). Combined with focused enabled role skills at spawn time by
    * resolveSubagentSkills(). If `skills` is set explicitly, these are ignored.
    */
   extraSkillPaths?: string[];
+  /** Focused role defaults. Other enabled skills require an explicit parent grant. */
+  skillNames?: string[];
   /**
    * Explicit skill override. When set, resolveSubagentSkills returns it as-is.
    * If undefined (the normal case for SUBAGENT_REGISTRY entries), skills are
@@ -92,18 +94,20 @@ function subagentSkillPath(name: SubagentName, skillName: string): string {
 }
 
 /**
- * Resolves the full skill list for a subagent at CALL TIME (not at import time).
+ * Resolves focused role skills at call time; never inherits the full inventory.
  *
  * - If config.skills is set explicitly, returns it as-is (override path).
  * - Otherwise runs canonical discovery and appends valid extraSkillPaths,
  *   so late-installed skills (added after process start) are discovered without restart.
  */
 export function resolveSubagentSkills(
-  config: SubagentConfig | { skills?: string[]; extraSkillPaths?: string[] },
+  config: SubagentConfig | { skills?: string[]; extraSkillPaths?: string[]; skillNames?: string[] },
   cwd = process.cwd(),
 ): string[] {
   if (config.skills !== undefined) return config.skills;
-  const discovered = discoverSkills(cwd)
+  const selectedNames = new Set(config.skillNames ?? []);
+  const discovered = (selectedNames.size ? discoverSkills(cwd) : [])
+    .filter(skill => selectedNames.has(skill.name))
     .map((skill) => skill.dir)
     .filter((dir) => Boolean(dir) && fs.existsSync(path.join(dir, 'SKILL.md')));
   const extras = (config.extraSkillPaths ?? []).filter((dir) => fs.existsSync(path.join(dir, 'SKILL.md')));
@@ -152,7 +156,7 @@ export const SUBAGENT_REGISTRY = {
     tools: [
       'chromeDebug', // CDP execution — primary tool
       'web',         // CDP docs + web research
-      'MCPTool',     // Octocode MCP server: localGetFileContent, localSearch, astSearch, etc.
+      'MCPTool',     // Octocode MCP server: localFetch, localSearch, astSearch, etc.
       'file',        // only parent-assigned durable handback artifacts
       'skill',       // load bundled/user workflows, including Awareness
       'awareness',   // native coordination, memory, verification, and history gateway
@@ -162,6 +166,7 @@ export const SUBAGENT_REGISTRY = {
     thinking: 'low',
     systemPromptPath: subagentPromptPath('browser-agent'),
     extraSkillPaths: [subagentSkillPath('browser-agent', 'browser-agent')],
+    skillNames: ['octocode-chrome-devtools', 'octocode-awareness'],
   },
   researcher: {
     name: 'researcher' as SubagentName,
@@ -180,12 +185,13 @@ export const SUBAGENT_REGISTRY = {
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
     systemPromptPath: subagentPromptPath('researcher'),
+    skillNames: ['octocode-research', 'octocode-awareness'],
   },
   planner: {
     name: 'planner' as SubagentName,
     label: 'Planner',
     description:
-      'Implementation planning specialist. Has all Octocode research surfaces and all bundled skills. ' +
+      'Implementation planning specialist. Has focused research and planning workflows. ' +
       'Use for dependency-ordered plans, risks, verification strategy, and RFC handoff packets.',
     tools: [
       'web',
@@ -198,12 +204,13 @@ export const SUBAGENT_REGISTRY = {
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'low',
     systemPromptPath: subagentPromptPath('planner'),
+    skillNames: ['octocode-research', 'octocode-rfc-generator', 'octocode-awareness'],
   },
   architect: {
     name: 'architect' as SubagentName,
     label: 'Architect',
     description:
-      'Root-cause and local-code architecture specialist. Has all Octocode skills, local/LSP/binary tools, ' +
+      'Root-cause and local-code architecture specialist. Has focused research and architecture workflows, local/LSP tools, ' +
       'GitHub history, web, and bash for targeted debug/test loops.',
     tools: [
       'bash',
@@ -216,6 +223,7 @@ export const SUBAGENT_REGISTRY = {
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'medium',
     systemPromptPath: subagentPromptPath('architect'),
+    skillNames: ['octocode-research', 'octocode-code-graph', 'octocode-awareness'],
   },
   implementer: {
     name: 'implementer' as SubagentName,
@@ -232,5 +240,6 @@ export const SUBAGENT_REGISTRY = {
     resourceMode: 'octocode' as ResourceMode,
     thinking: 'medium',
     systemPromptPath: subagentPromptPath('implementer'),
+    skillNames: ['octocode-research', 'octocode-awareness'],
   },
 } satisfies Record<SubagentName, SubagentConfig>;

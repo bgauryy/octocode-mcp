@@ -125,6 +125,7 @@ export function dispatchAwarenessCommand(
         case 'recall-verified':
           return done(aw.recallVerifiedMemory({
             memoryId: str(p['memoryId']),
+            strictScope: bool(p['strictScope']),
             query: str(p['query']), label: str(p['label']), sourceDigest: str(p['sourceDigest']),
             scope: str(p['scope']) as 'project' | 'artifact' | undefined,
             artifact: str(p['artifact']), offset: num(p['offset']), revision: str(p['revision']),

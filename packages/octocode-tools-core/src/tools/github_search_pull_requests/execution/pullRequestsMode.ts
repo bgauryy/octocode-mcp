@@ -1,4 +1,4 @@
-import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '../../toolNames.js';
+import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { createSuccessResult } from '../../utils.js';
 import {
   mapPullRequestProviderResultData,

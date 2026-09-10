@@ -3,7 +3,8 @@
  * Pure functions: detectGit returns data; fillScope returns a NEW scope object.
  */
 
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { realpathSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { Scope, ScopePartial } from './types/locks-reflection.js';
@@ -30,6 +31,88 @@ export interface GitChange {
 }
 
 const MAX_STATUS_BYTES = 2 * 1024 * 1024;
+
+interface RepositoryScope {
+  candidate: string;
+  root: string;
+  paths: string[];
+  active: boolean;
+}
+const repositoryScope = new AsyncLocalStorage<RepositoryScope>();
+
+function currentRepositoryScope(workspace: string): RepositoryScope | undefined {
+  const scope = repositoryScope.getStore();
+  if (!scope?.active) return undefined;
+  if (workspace === scope.candidate || workspace === scope.root) return scope;
+  const candidate = canonicalizePath(workspace);
+  return candidate === scope.candidate || candidate === scope.root ? scope : undefined;
+}
+
+function runGitAsync(args: string[], cwd: string, deadline: number): Promise<string | null> {
+  return new Promise((done, reject) => {
+    const timeout = deadline - Date.now();
+    if (timeout <= 0) { reject(new Error('Repository scope discovery timed out')); return; }
+    try {
+      execFile('git', args, { cwd, env: safeGitEnv(), encoding: 'utf8', timeout, maxBuffer: 1024 * 1024 }, (error, stdout) => {
+        if (error) {
+          // Missing/non-repository candidates are expected for removed worktrees.
+          // Resource limits are not evidence of absence: never shrink membership.
+          if (error.killed || error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') reject(error);
+          else done(null);
+        } else done(stdout.replace(/\r?\n$/, ''));
+      });
+    } catch (error) { reject(error); }
+  });
+}
+
+function listedWorktrees(listing: string | null): string[] {
+  if (listing === null || !listing.endsWith('\0\0')) {
+    throw new Error('Cannot enumerate Git worktrees completely; repository coordination scope is unavailable');
+  }
+  const paths: string[] = [];
+  for (const record of listing.split('\0\0')) {
+    if (!record) continue;
+    const fields = record.split('\0');
+    const field = fields.find(value => value.startsWith('worktree '));
+    if (!field || !field.slice('worktree '.length)) throw new Error('Malformed Git worktree enumeration');
+    if (!fields.includes('bare')) paths.push(canonicalizePath(field.slice('worktree '.length)));
+  }
+  return paths;
+}
+
+/**
+ * Discover physical Git membership asynchronously once for this operation. Only
+ * this owner can install the scope; callers cannot supply trusted membership.
+ * Synchronous storage methods reuse it without subprocesses inside transactions.
+ * No membership survives callback completion, even in detached async children.
+ */
+export async function withRepositoryWorkspaceScope<T>(workspace: string, operation: () => T | Promise<T>): Promise<T> {
+  if (currentRepositoryScope(workspace)) return operation();
+  const candidate = canonicalizePath(workspace);
+  const deadline = Date.now() + 5000;
+  const detected = await runGitAsync(['rev-parse', '--show-toplevel'], candidate, deadline);
+  const root = detected ? canonicalizePath(detected) : candidate;
+  const paths = new Set([root]);
+  if (detected) {
+    const common = await runGitAsync(['rev-parse', '--path-format=absolute', '--git-common-dir'], root, deadline);
+    if (!common) throw new Error('Cannot determine physical repository coordination scope');
+    const canonicalCommon = canonicalizePath(common);
+    const candidates = listedWorktrees(await runGitAsync(['worktree', 'list', '--porcelain', '-z'], root, deadline));
+    // Cap simultaneous children while covering every entry, under one deadline.
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(4, candidates.length) }, async () => {
+      while (next < candidates.length) {
+        const peer = candidates[next++]!;
+        if (peer === root) continue;
+        const peerCommon = await runGitAsync(['rev-parse', '--path-format=absolute', '--git-common-dir'], peer, deadline);
+        if (peerCommon && canonicalizePath(peerCommon) === canonicalCommon) paths.add(peer);
+      }
+    }));
+  }
+  const scope: RepositoryScope = { candidate, root, paths: [...paths].sort(), active: true };
+  try { return await repositoryScope.run(scope, operation); }
+  finally { scope.active = false; }
+}
 
 function safeGitEnv(): NodeJS.ProcessEnv {
   return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))), GIT_OPTIONAL_LOCKS: '0' };
@@ -165,6 +248,8 @@ export function fillScope(partial: ScopePartial, cwd?: string): Scope {
  */
 export function normalizeWorkspacePath(workspacePath?: string | null, cwd?: string): string | null {
   const candidate = workspacePath ? resolve(workspacePath) : cwd ? resolve(cwd) : null;
+  const scope = currentRepositoryScope(candidate ?? process.cwd());
+  if (scope) return scope.root;
   const root = runCmd('git', ['rev-parse', '--show-toplevel'], candidate ?? process.cwd());
   return root ? canonicalizePath(root) : candidate ? canonicalizePath(candidate) : null;
 }
@@ -186,20 +271,14 @@ function commonGitDirectory(workspace: string): string | null {
  * Keep normalizeWorkspacePath physical: locks, writes and recovery use that key.
  */
 export function repositoryWorkspacePaths(workspace: string): string[] {
+  const scope = currentRepositoryScope(workspace);
+  if (scope) return [...scope.paths];
   const root = normalizeWorkspacePath(workspace, workspace) ?? canonicalizePath(workspace);
   const common = commonGitDirectory(root);
   if (!common) return [root];
   const listing = runCmd('git', ['worktree', 'list', '--porcelain', '-z'], root);
-  if (listing === null || !listing.endsWith('\0')) {
-    throw new Error('Cannot enumerate Git worktrees completely; repository coordination scope is unavailable');
-  }
   const paths = new Set([root]);
-  for (const record of listing.split('\0\0')) {
-    const fields = record.split('\0');
-    if (fields.includes('bare')) continue;
-    const field = fields.find(value => value.startsWith('worktree '));
-    if (!field) continue;
-    const candidate = canonicalizePath(field.slice('worktree '.length));
+  for (const candidate of listedWorktrees(listing)) {
     // A stale registration can point at a path now occupied by an unrelated repo.
     if (candidate !== root && commonGitDirectory(candidate) === common) paths.add(candidate);
   }

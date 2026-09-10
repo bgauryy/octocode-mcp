@@ -1,5 +1,7 @@
 # CDP Quick Reference (Chrome 150 — 57 domains)
 
+Load when a selected browser phase needs CDP domain or method details; verify supported fields against the connected browser's live protocol.
+
 Official docs: `https://chromedevtools.github.io/devtools-protocol/tot/<Domain>/`
 Live: `curl -s http://localhost:9222/json/protocol`
 

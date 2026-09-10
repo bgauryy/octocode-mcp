@@ -32,10 +32,10 @@ comparisons.
 - [ghSearch](./ghSearch.md)
 - [ghGetFileContent](./ghGetFileContent.md)
 - [ghSearchHistory and ghGetHistoryItem](./githubHistory.md)
-- [npmSearch](./npmSearch.md)
+- [artifactSearch](./artifactSearch.md)
 - [ghCloneRepo](./ghCloneRepo.md)
 - [localSearch](./localSearch.md)
-- [localGetFileContent](./localGetFileContent.md)
+- [localFetch](./localFetch.md)
 - [astSearch](../../../docs/OCTOCODE_TOOLS.md#astsearch)
 - [lspSearch](./lspSearch.md)
 

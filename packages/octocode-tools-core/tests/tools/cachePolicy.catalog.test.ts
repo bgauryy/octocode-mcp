@@ -7,13 +7,13 @@ const CACHE_WORKFLOWS = {
     'ghSearch',
     'ghSearchHistory',
     'ghGetHistoryItem',
-    'npmSearch',
+    'artifactSearch',
   ],
   conditionalMaterialization: ['ghGetFileContent'],
   clone: ['ghCloneRepo'],
   liveWorkspace: [
     'localSearch',
-    'localGetFileContent',
+    'localFetch',
     'astSearch',
     'lspSearch',
   ],
@@ -45,7 +45,7 @@ describe('public tool cache-workflow policy', () => {
       const tool = tools.get(name);
       expect(tool, name).toBeDefined();
       expect(tool?.isLocal, name).toBe(false);
-      if (name === 'npmSearch') {
+      if (name === 'artifactSearch') {
         expect(tool?.direct.requiresProviders, name).not.toBe(true);
       } else {
         expect(tool?.direct.requiresProviders, name).toBe(true);

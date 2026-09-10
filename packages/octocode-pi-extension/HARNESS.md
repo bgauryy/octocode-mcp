@@ -1,4 +1,4 @@
-# `@octocodeai/pi-extension` — Full Harness Reference
+# `@octocodeai/pi-extension` — Full harness reference
 
 Everything the extension registers with Pi on load: tools, system-prompt sections, MCP, subagents, skills, slash commands, flags, lifecycle hooks, and UI surfaces.
 
@@ -6,21 +6,24 @@ Everything the extension registers with Pi on load: tools, system-prompt section
 
 ## System Prompt
 
-The first-turn prompt is assembled from a small Pi host adapter, the canonical coder kernel from `@octocodeai/agent-contracts/prompts`, and the canonical `EXTERNAL_AGENT_AWARENESS_PROMPT`. The kernel owns intent classification, execution and delegation, verification, continuation, repository/tool routing, lifecycle, and output rules. Full Awareness recipes remain on demand through `guide` and the skill. The built prompt is supplied through `before_agent_start`; no regex-triggered repo-state, output-recovery, or editor-comment prompts are injected.
+The prompt is assembled from a small Pi host adapter, the canonical coder kernel from `@octocodeai/agent-contracts/prompts`, and the canonical `EXTERNAL_AGENT_AWARENESS_PROMPT`. The kernel owns intent classification, execution and delegation, verification, continuation, repository/tool routing, lifecycle, and output rules. Full Awareness recipes remain on demand through `guide` and the skill. The built prompt is supplied through `before_agent_start`; no regex-triggered repo-state, output-recovery, or editor-comment prompts are injected.
 
-On the first main-agent turn, the hook freezes seven stable system segments:
-product policy, MCP catalog, runtime capabilities, dynamic tool contracts, available
-skills, session artifact contract and `awareness-cli-runtime`. The last segment
-binds the canonical guide to the installed CLI and current store/workspace/identity.
-The active plan remains separate attributed turn context. Runtime plan/tool results
-remain in the transcript; compaction adds a bounded recovery marker. With
-`--no-context` set, the hook suppresses project context before freezing the prompt.
+Before every turn, the hook refreshes a versioned effective capability snapshot
+and replaces its owned prompt projection. The seven core segments contain product
+policy, MCP catalog, runtime capabilities, dynamic tool contracts, available skills,
+session artifacts, and `awareness-cli-runtime`. An additional `agents-protocol`
+segment carries user-authority instructions from native `AGENTS.md` sources.
+Unchanged content remains byte-stable; changed MCP/skill catalogs appear on the
+next turn without `/new`. The active plan remains separate attributed turn context.
+Runtime plan/tool results remain in the transcript; compaction adds a bounded
+recovery marker. `--no-context` suppresses project context and native instruction
+projection. See [capability snapshots](docs/CAPABILITIES.md#versioned-prompt-and-catalogs).
 
 ---
 
 ## Tools
 
-### Native Research Tools — 0 (removed — MCP-only)
+### Native research tools — 0 (removed — MCP-only)
 
 All 10 catalogued Octocode research tools (GitHub, local, graph, LSP, npm) are **not registered as native Pi tools**. They are served via the built-in `octocode` MCP server through `MCPTool`, keeping their schemas out of Pi’s direct `tools[]` array.
 
@@ -30,15 +33,15 @@ MCPTool({queries:[{reasoning:"Search remote code.", action:"call", server:"octoc
   arguments:{queries:[{reasoning:"Find candidate files.", operation:"code", keywords:["..."]}]}}]})
 ```
 
-Catalogued tools via `MCPTool server:"octocode"`: `ghSearch` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` · `ghCloneRepo` · `npmSearch` · `localSearch` · `astSearch` · `localGetFileContent` · `lspSearch`. Runtime availability can disable individual tools such as cloning.
+Catalogued tools via `MCPTool server:"octocode"`: `ghSearch` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` · `ghCloneRepo` · `artifactSearch` · `localSearch` · `astSearch` · `localFetch` · `lspSearch`. Runtime availability can disable individual tools such as cloning.
 
-`warmMcpCatalog()` runs at `session_start`. The default first-turn prompt consumes the concise deterministic `mcp.md` guide while exact schemas stay private for validation. Set `OCTOCODE_COMPACT_MCP=0` only to inject the exact catalog for debugging; set `OCTOCODE_MCP_AI_GUIDE=1` to opt into model-authored guide generation. Calls always validate against the exact private catalog; use `MCPTool action:"describe"` before calling an unfamiliar tool or whenever the compact guide leaves an operation ambiguous.
+`warmMcpCatalog()` runs at `session_start`. The default prompt uses a bounded routing index; exact schemas stay private for validation. `MCPTool action:"list"` returns server instructions and tool descriptions in revision-bound pages. Copy any executable `next` call unchanged, then use `action:"describe"` for the chosen tool's exact schema. Calls validate against the current enabled catalog. Set `OCTOCODE_COMPACT_MCP=0` to inspect the exact catalog projection for debugging; `OCTOCODE_MCP_AI_GUIDE=1` opts into model-authored guide generation.
 
-**Edit stale-check**: `MCPTool` intercepts `server:"octocode" tool:"localGetFileContent"` calls and runs `recordFileReadState()` so `file` operations with `type:"edit"` can detect stale targets.
+**Edit stale-check**: `MCPTool` intercepts `server:"octocode" tool:"localFetch"` calls and runs `recordFileReadState()` so `file` operations with `type:"edit"` can detect stale targets.
 
 ### Support Tools — 14
 
-Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `file`, `web`, `chromeDebug`, `agent`, `callTool`, `skill`, `plan`, `localServer`, `awareness`, `MCPTool`, `askUser`, `inspectMedia`, `media`, and `runFfmpeg`. Together with the guarded `bash` override, these form the 15-tool direct palette. Every direct tool exposes only a top-level `queries[]` array; each query requires concise `reasoning`. `/configuration` is the local management page, not a model-callable support-tool alias.
+Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `file`, `web`, `chromeDebug`, `agent`, `callTool`, `skill`, `plan`, `localServer`, `awareness`, `MCPTool`, `askUser`, `inspectMedia`, `media`, and `runFfmpeg`. Together with the guarded `bash` override, these form the 15-tool direct palette. Every direct tool exposes only a top-level `queries[]` array; each query requires concise `reasoning`. `/config` and its `/configuration` alias open the OS browser management page.
 
 | Tool | Label | Description |
 |---|---|---|
@@ -52,7 +55,7 @@ Registered from extension sources and named in `OCTOCODE_SUPPORT_TOOL_NAMES`: `f
 | `localServer` | Local Server | Serve an inspected local static directory over loopback for user review |
 | `awareness` | Awareness | List, describe, and execute canonical Awareness commands with host-injected identity and storage bindings |
 | `MCPTool` | MCPTool | Call automatically discovered tools, describe one selected tool, and manage configured MCP servers |
-| `askUser` | Ask User | Ask the user through an interactive picker, form, or non-TUI fallback |
+| `askUser` | Ask User | Request input through an interactive picker, form, or non-TUI fallback |
 | `inspectMedia` | Inspect Media | Perceive images, video frames/contact sheets, and audio metadata/visualizations |
 | `media` | Media | Author images/PDFs or transform media into path-guarded output files |
 | `runFfmpeg` | Run FFmpeg | Run advanced ffmpeg/ffprobe argv with path guards, timeout, cancellation, and progress |
@@ -74,7 +77,7 @@ and on `session_start`. Named in `DISABLED_BUILTIN_TOOL_NAMES`.
 
 | Removed | Replaced by |
 |---|---|
-| `read` | `localGetFileContent` (records read state for `file` edit stale-check) |
+| `read` | `localFetch` (records read state for `file` edit stale-check) |
 | `edit` | `file` with `type:"edit"` |
 | `write` | `file` with `type:"write"` |
 | `grep` | `localSearch` with `searchText` |
@@ -92,36 +95,39 @@ Auto-configured — no user action required.
 | Field | Value |
 |---|---|
 | Server name | `octocode` |
-| Command | Pinned local `octocode-mcp` through Node; fallback `npx -y octocode-mcp@latest` |
+| Command | Package-local `octocode-mcp` through Node; fallback version range owned by `mcp/config.ts` |
 | NPX cache | `$OCTOCODE_HOME/extension/cache/mcp-npx` for the fallback (no `--prefer-online`) |
 | Timeout | 30 s |
 | Connection | **Pre-warmed at `session_start`** via `warmMcpCatalog()`; catalog injected into system prompt before turn 1 |
 
 ### User-defined servers
 
-The harness merges active files from lowest to highest precedence. A later entry with the same server name wins.
+The harness merges native active files from lowest to highest precedence. A later entry with the same server name wins.
 
 | Precedence | Scope | Path |
 |---|---|---|
 | 1 | Built-in | pinned-local-first `octocode` server |
-| 2 | Global | `$OCTOCODE_HOME/extension/mcp/servers.json` |
-| 3 | Workspace | `$OCTOCODE_HOME/extension/workspaces/<workspace-key>/mcp/servers.json` |
+| 2 | Global | Retained private files, then `$OCTOCODE_HOME/mcp.json` |
+| 3 | Workspace | Repository ancestors toward the current directory: private files, then `.agents/mcp.json` |
 
-Project files load only after workspace trust. `MCPTool` `action:"add"|"remove"` manages the canonical files; direct edits hot-refresh connections and artifacts, while `/new` refreshes the frozen agent prompt.
+Project files load only after workspace trust. `MCPTool` `action:"add"|"remove"` manages `.agents/mcp.json` or `$OCTOCODE_HOME/mcp.json`. Direct edits refresh connections and artifacts; the next turn projects the effective catalog. Pi defaults and `PI_CODING_AGENT_DIR` apply only to models. Foreign Claude, Codex, Cursor, and other recognized sources remain disabled until their source ID and exact definition revision are reviewed and linked. Changed links require review again; removed sources remain unavailable. See [source paths and review](docs/CAPABILITIES.md#source-paths).
 
-Format: `{ "mcpServers": { "<name>": { "command": "...", "args": [], "env": {}, "cwd": "...", "disabled": false, "timeoutMs": 30000 } } }`. See [`docs/TOOLS.md`](docs/TOOLS.md#mcp-servers) for the complete setup, precedence, and security contract.
+The native JSON container is `mcpServers`. Definitions support stdio or HTTP, environment/header references, authentication, optional instructions, timeouts, and tool filters. [MCP configuration](src/tools/mcp/config.ts) owns validation and serialization; unsupported foreign fields remain explicit diagnostics.
 
 ### Settings and MCP slash commands
 
-`/configuration` rebuilds local `settings.html` from Pi's live public command registry and opens the overview. The page contains skills, MCP connections/tools, enablement overrides, display controls, and prompt-state information. Section links navigate within the page. See [docs/SETTINGS.md](docs/SETTINGS.md) for persistence, security, and refresh behavior.
+`/config` and `/configuration` rebuild local `settings.html` from Pi's live public command registry and open the OS browser. The page contains source review, skills, MCP connections/tools, models, hooks, worker grants, enablement, display controls, and prompt state. See [docs/SETTINGS.md](docs/SETTINGS.md) for persistence, security, and refresh behavior.
 
 ---
 
 ## Bundled Skills
 
 Served via the `resources_discover` hook and installed at `dist/skills/`. Canonical
-discovery in `src/tools/skill-discovery.ts` merges enabled skills from Pi metadata,
-supported platform roots, Octocode roots, and this bundled directory. The bundled
+discovery in `src/tools/skill-discovery.ts` resolves one effective skill per name
+from valid Pi metadata, native roots, reviewed foreign links, and the bundle.
+Bundled names win unless an exact source is explicitly selected. Ordinary workspace
+definitions outrank global ones; the nearest repository ancestor wins. Recursive
+and linked directories retain source identity and change diagnostics. The bundled
 `octocode-awareness` skill is loadable and owns detailed operating guidance. See the
 [15-skill inventory](README.md#bundled-skills-15) for the complete enabled bundle.
 
@@ -154,7 +160,15 @@ worker uses native `awareness` for scoped communication and bookkeeping;
 `bash` does not replace MCP research. Architect additionally permits bounded
 non-destructive test, build and debug checks. Typed profiles use the current
 `file` and `skill` names rather than removed standalone memory/write wrappers.
-Browser workers load the Octocode extension, enabled skills, and Awareness bindings. Custom workers receive the shared bounded-worker contract before their required caller role prompt. Explicit `tools:[]` maps to `--no-tools`; explicit lean mode disables extension and skill loading for isolated tool-less workers.
+Browser workers load the Octocode extension and Awareness bindings. Every worker
+receives a versioned grant limited to the parent's enabled native tools, exact
+skill source IDs, and MCP server/tool pairs. Parent `agent type:"configure"`
+replaces selected arrays using the current `snapshotRevision` and optional
+`grantRevision`: removals apply immediately, additions before the next worker turn.
+MCP calls use the parent broker, and worker skill/prompt inventories use the same
+grant. Workers request missing access from the parent. Custom workers receive the
+shared bounded-worker contract before their caller role prompt. Explicit `tools:[]`
+maps to `--no-tools`; lean mode disables extension and skill loading.
 
 ---
 
@@ -164,14 +178,15 @@ Registered via `pi.registerCommand`:
 
 | Command | Description |
 |---|---|
+| `/config` | Open configuration in the OS browser. |
 | `/octocode-rewind` | Select bounded local history, preview file changes, and explicitly apply the reviewed preview. |
 | `/octocode-inbox` | Pick a spawned worker, then view its transcript, steer it, stop it, or dismiss the overlay. |
 | `/octocode-status` | Inspect usage, tools, skills, plan, workers, and pending decisions in a scrollable terminal view. |
 | `/octocode-status events` | Inspect the selected branch’s semantic JSONL journal; `export` writes a session artifact. |
-| `/configuration` | Open the local browser configuration page from its overview. |
+| `/configuration` | Alias for `/config`. |
 
-The footer displays the same entry. Configuration includes MCP, skills, display,
-effort, permission controls, and an explicit Review plan action. Browser plan
+The footer displays `/config`. Configuration includes MCP, skills, models, hooks,
+worker grants, display, effort, permission controls, and Review plan. Browser plan
 Start and Request changes use typed HTTP actions; feedback remains plain user text.
 Other workflow actions remain in the native tools, including `awareness`.
 
@@ -203,7 +218,14 @@ Registered via `createHookComposer(pi, …)` (middleware composer that catches a
 | `tool_execution_end` | `octocode-tool-error-log` | On tool error, logs structured error with latency; notifies UI |
 | `before_provider_request` | `octocode-provider-error-timing` | Records provider request start time |
 | `after_provider_response` | `octocode-provider-error-log` | On non-2xx status, logs provider error with latency + headers |
-| `before_agent_start` | `octocode-system-prompt` | Builds the complete prompt/catalog once, then reuses byte-identical system-prompt content for the session |
+| `before_agent_start` | `octocode-system-prompt` | Refreshes effective capabilities and projects the current version into the prompt; unchanged content remains byte-identical |
+
+The [model and declarative hook adapters](docs/CAPABILITIES.md) initialize after
+environment propagation and refresh before turns. Models merge into Pi's registry
+while preserving authentication and unrelated providers. Hook discovery remains
+inert; reviewed command definitions execute through bounded lifecycle handlers
+with cancellation, timeout, and output limits. Native Pi extension handlers retain
+their host ownership.
 
 ### Direct `pi.on` handlers
 
@@ -232,7 +254,7 @@ Each Pi session also writes one version 2 contract across `manifest.json`, `sess
 
 ---
 
-## UI Status Surfaces
+## UI status surfaces
 
 Set via `ctx.ui.setStatus(name, value)` and `ctx.ui.setWidget(name, value)`.
 
@@ -268,15 +290,16 @@ Read from env at runtime (not set by harness):
 | Variable | Purpose |
 |---|---|
 | `OCTOCODE_HOME` | Octocode home directory (default: `~/.octocode`) |
+| `PI_CODING_AGENT_DIR` | Pi model source directory (default: `~/.pi/agent`); Octocode uses Pi defaults only for models |
+| `CODEX_HOME` | Codex sources for disabled foreign discovery (default: `~/.codex`) |
 | `ALLOWED_PATHS` | Colon/comma-separated extra roots for path-guard (`file`/`bash`) |
 | `OCTOCODE_AGENT_MAX_ACTIVE` | Cap on concurrent spawned workers |
 | `ENABLE_CLONE` | Enables `ghCloneRepo` tool |
 | `ENABLE_LOCAL` | Set `false` to disable all `local*` tools |
-| `OCTOCODE_EDIT_NATIVE_DIFF` | Set `1` to use native Rust diff engine for large files |
 
 ---
 
-## Conformance Testing Entrypoint
+## Conformance testing entrypoint
 
 Production Pi SDK probes are test-only and are not published with the package. The
 probe corpus lives in the test corpus, not in `src/`, so it never reaches `dist`:
@@ -314,9 +337,9 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
 14  support tools            (see Support Tools table)
  1  guarded built-in override (bash)
  6  disabled built-ins       (read, edit, write, grep, find, ls → replaced)
-4  slash commands           (recovery, worker inbox, status, and configuration)
+5  slash commands           (config, configuration alias, recovery, worker inbox, and status)
  1  flag                     (--no-context)
-12  lifecycle hooks          (hookComposer; session_start pre-warms MCP catalog)
+    lifecycle hooks          (hookComposer plus reviewed declarative event adapters)
     direct pi.on handlers    (metrics, UI, worker inbox, Awareness, and Pi-owned compaction observation)
 15  bundled skills           (including the canonical octocode-awareness skill)
  6  worker profiles          (researcher, architect, planner, implementer, browser, custom)
@@ -324,9 +347,11 @@ Resolved by `getAssetPaths()` in `src/assets.ts`.
  1  composed system prompt     (host facts + canonical coder kernel + Awareness guide + runtime bindings)
 ```
 
-## Token Savings
+## Catalog delivery
 
-| | Per-turn `tools[]` definitions |
+| Surface | Delivery |
 |---|---|
-| Before | 13 native tool schemas — not prompt-cached, paid every turn |
-| After | 1 (`MCPTool`) — catalog lives in `<mcp_cached_catalog>` in system prompt (prompt-cached, paid once) |
+| Direct Pi palette | 14 support schemas plus guarded `bash` |
+| MCP routing | Bounded index, revision-bound list pages, exact describe on demand |
+| Skills | Bounded effective inventory, list pages, selected instruction load |
+| Updates | A changed effective revision is projected before the next turn |

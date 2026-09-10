@@ -11,7 +11,7 @@ import {
   finalizeGraphOutput,
   paginateGraphResults,
 } from '../../../../src/tools/ast_search/topology/pagination.js';
-import { AstSearchQuerySchema } from '../../../../src/tools/ast_search/scheme.js';
+import { AstSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 import { GraphAnalysisQuerySchema } from '../../../../src/tools/ast_search/topology/scheme.js';
 import { buildToolResultMeta } from '../../../../src/utils/response/bulk/response.js';
 import { runPublicTopology } from './publicAdapter.js';

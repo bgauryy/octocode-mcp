@@ -6,7 +6,7 @@ Audit trail for the local evidence used to create this skill. Paths are reposito
 
 | Source | Used for |
 |---|---|
-| `packages/octocode-tools-core/src/tools/ast_search/topology/analyzeTopology.ts` | topology operation behavior, pagination, warnings, syntactic confidence, and dead-code LSP continuation |
+| `packages/octocode-tools-core/src/tools/ast_search/topology/analyzeTopology.ts` | topology operation behavior, pagination, warnings, syntactic confidence, and dead-code candidate evidence |
 | `packages/octocode-tools-core/src/tools/ast_search/topology/scheme.ts` | topology output and dead-code candidate contracts |
 | `packages/octocode-tools-core/src/tools/ast_search/topology/retention.ts` | re-export, lexical fallback, and liveness limitations |
 | `packages/octocode-tools-core/src/graph/advancedOperations.ts` | SCC condensation, topological layers, transitive edges, dominators, and weighted-path primitive |

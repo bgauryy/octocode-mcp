@@ -1,5 +1,5 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
-import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '../toolNames.js';
+import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { executeBulkOperation } from '../../utils/response/bulk/response.js';
 import type { ToolExecutionArgs } from '../../types/execution.js';
 import { handleCatchError, safeParseOrError } from '../utils.js';
@@ -7,7 +7,7 @@ import { createLazyProviderContext } from '../providerExecution.js';
 import { handleIssuesMode } from './execution/issuesMode.js';
 import { handleCommitsMode } from './execution/commitsMode.js';
 import { handlePullRequestsMode } from './execution/pullRequestsMode.js';
-import { GitHubPullRequestSearchQueryLocalSchema } from './scheme.js';
+import { GitHubPullRequestSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import type { GitHubPullRequestSearchInput } from './execution/types.js';
 
 export async function searchMultipleGitHubPullRequests(

@@ -8,10 +8,8 @@ import type {
   ToolExecutionArgs,
   ToolInvocationCallback,
 } from '@octocodeai/octocode-tools-core';
-import {
-  ALL_TOOLS as CORE_ALL_TOOLS,
-  STATIC_TOOL_NAMES,
-} from '@octocodeai/octocode-tools-core';
+import { ALL_TOOLS as CORE_ALL_TOOLS } from '@octocodeai/octocode-tools-core';
+import { STATIC_TOOL_NAMES } from '@octocodeai/octocode-core/schema';
 
 import { createToolRegistration } from './registerTool.js';
 

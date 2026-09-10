@@ -18,6 +18,7 @@ import { registerUniqueTool } from '../src/tools/octocode-tools.js';
 import { isAlwaysAllowed, resetApprovalStore } from '../src/tools/approval.js';
 import { enterPlanMode, exitPlanMode } from '../src/tools/plan-mode.js';
 import type { PiContext, ToolCallResult, ToolDefinition } from '../src/types.js';
+import { failedToolResult } from './helpers/failed-tool-result.js';
 
 let restoreProcessGuard: () => void;
 beforeAll(() => {
@@ -58,7 +59,7 @@ test('extractBashWriteTargets finds cp/mv destinations', () => {
   assert.deepEqual(targets, [path.join(cwd, 'b.ts')]);
 });
 
-test('bash abort terminates the shell process and resolves without hanging', async () => {
+test('bash abort terminates the shell process and rejects without hanging', async () => {
   const { default: extension } = await import('../src/index.js');
   const tools = new Map<
     string,
@@ -94,10 +95,10 @@ test('bash abort terminates the shell process and resolves without hanging', asy
       { cwd: tmp },
     );
     setTimeout(() => controller.abort(), 50);
-    const result = await Promise.race([
+    const result = await failedToolResult(Promise.race([
       promise,
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('bash abort timed out')), 2_000)),
-    ]);
+    ]));
     assert.equal(result.isError, true);
     assert.match((result.content[0] as { text: string }).text, /err|\(aborted\)/);
   } finally {
@@ -265,7 +266,7 @@ test('bash streams output beyond the in-memory preview cap to a chunk-readable a
   const visible = result.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('');
   const details = result.details as { outputPath?: string; stdout?: string; totalChars?: number };
   assert.ok(visible.length <= BASH_CONTEXT_MAX_CHARS + 1_000);
-  assert.match(visible, /localGetFileContent/);
+  assert.match(visible, /localFetch/);
   assert.ok(visible.endsWith('TAIL'), 'bounded model preview retains the actual process tail');
   assert.equal(details.stdout, undefined, 'raw stdout is not duplicated into details');
   assert.equal(details.totalChars, 200_004, 'metadata reports actual output, not the capped preview source');

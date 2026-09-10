@@ -1,5 +1,7 @@
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { McpServer, Implementation } from '@modelcontextprotocol/server';
+import { buildMcpInstructions } from '@octocodeai/octocode-core/mcp';
+import type { McpToolConfig } from './tools/toolConfig.js';
 import {
   clearAllCache,
   clearOctokitInstances,
@@ -9,11 +11,9 @@ import {
   getActiveProvider,
   initializeProviders,
   clearProviderCache,
-  loadToolContent,
   STARTUP_ERRORS,
   startCacheGC,
   stopCacheGC,
-  completeMetadata,
   getOctocodeDir,
   configureSecurity,
   securityRegistry,
@@ -94,7 +94,10 @@ function setupProcessHandlers(
   });
 }
 
-export async function registerAllTools(server: McpServer) {
+export async function registerAllTools(
+  server: McpServer,
+  enabledTools?: McpToolConfig[]
+) {
   const activeProvider = getActiveProvider();
 
   if (activeProvider === 'github') {
@@ -103,8 +106,9 @@ export async function registerAllTools(server: McpServer) {
   }
 
   const { registerTools } = await import('./tools/toolsManager.js');
-  const { successCount, failedTools, failedToolErrors } =
-    await registerTools(server);
+  const { successCount, failedTools, failedToolErrors } = enabledTools
+    ? await registerTools(server, undefined, { enabledTools })
+    : await registerTools(server);
 
   if (failedTools.length > 0) {
     const details = Object.entries(failedToolErrors ?? {})
@@ -120,7 +124,7 @@ export async function registerAllTools(server: McpServer) {
   }
 }
 
-async function createServer(): Promise<McpServer> {
+async function createServer(enabledTools: McpToolConfig[]): Promise<McpServer> {
   const capabilities: {
     tools: { listChanged: boolean };
   } = {
@@ -129,7 +133,7 @@ async function createServer(): Promise<McpServer> {
 
   return new McpServer(SERVER_CONFIG, {
     capabilities,
-    instructions: completeMetadata.systemPrompt,
+    instructions: buildMcpInstructions(enabledTools.map(tool => tool.name)),
   });
 }
 
@@ -141,10 +145,11 @@ async function startServer() {
     configureSecurity({});
     securityRegistry.addAllowedRoots([getOctocodeDir()]);
     await initializeProviders();
-    await loadToolContent();
 
-    const server = await createServer();
-    await registerAllTools(server);
+    const { getEnabledTools } = await import('./tools/toolsManager.js');
+    const enabledTools = await getEnabledTools();
+    const server = await createServer(enabledTools);
+    await registerAllTools(server, enabledTools);
 
     const gracefulShutdown = createShutdownHandler(server, shutdownState);
     setupProcessHandlers(gracefulShutdown);

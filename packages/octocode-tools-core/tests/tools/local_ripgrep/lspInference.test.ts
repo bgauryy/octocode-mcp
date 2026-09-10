@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { inferLspSymbolName } from '../../../src/tools/local_ripgrep/ripgrepResultBuilder/searchNext.js';
 import { type LocalSearchEngine } from '../../../src/tools/local_ripgrep/ripgrepResultBuilder/buildResult.js';
-import type { RipgrepQuery } from '../../../src/tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core/schema';
 
 // inferLspSymbolName only reads a few fields off the query; the rest of the
 // RipgrepQuery surface is irrelevant to the inference decision.

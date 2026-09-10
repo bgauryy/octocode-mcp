@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/server';
-import { registerTools } from '../../src/tools/toolsManager.js';
+import {
+  getEnabledTools,
+  registerTools,
+} from '../../src/tools/toolsManager.js';
 import { ALL_TOOLS, type McpToolConfig } from '../../src/tools/toolConfig.js';
 
 vi.mock(
@@ -17,7 +20,11 @@ vi.mock('../../src/utils/secureServer.js', () => ({
   withOutputSanitization: vi.fn((server: unknown) => server),
 }));
 
-import { getServerConfig } from '../../../octocode-tools-core/src/serverConfig.js';
+import {
+  getServerConfig,
+  isLocalEnabled,
+  isCloneEnabled,
+} from '../../../octocode-tools-core/src/serverConfig.js';
 
 const mockGetServerConfig = vi.mocked(getServerConfig);
 
@@ -47,6 +54,8 @@ describe('ToolsManager filter validation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(isLocalEnabled).mockReturnValue(false);
+    vi.mocked(isCloneEnabled).mockReturnValue(false);
     mockGetServerConfig.mockReturnValue(
       {} as ReturnType<typeof getServerConfig>
     );
@@ -100,5 +109,37 @@ describe('ToolsManager filter validation', () => {
       expect.stringMatching(/ghGetHistory.*ghGetHistoryItem/i)
     );
     stderr.mockRestore();
+  });
+
+  it('shares local and clone gates with the catalog used for instructions', async () => {
+    vi.mocked(isLocalEnabled).mockReturnValue(false);
+    vi.mocked(isCloneEnabled).mockReturnValue(false);
+    const candidates = [
+      'ghSearch',
+      'ghCloneRepo',
+      'astSearch',
+      'localSearch',
+    ].map(name => toolWithRegistration(name, () => registeredTool()));
+    expect(
+      (await getEnabledTools(() => candidates)).map(tool => tool.name)
+    ).toEqual(['ghSearch']);
+
+    vi.mocked(isLocalEnabled).mockReturnValue(true);
+    vi.mocked(isCloneEnabled).mockReturnValue(true);
+    mockGetServerConfig.mockReturnValue({
+      toolsToRun: ['astSearch', 'ghCloneRepo'],
+    } as ReturnType<typeof getServerConfig>);
+    expect(
+      (await getEnabledTools(() => candidates)).map(tool => tool.name)
+    ).toEqual(['ghCloneRepo', 'astSearch']);
+  });
+
+  it('registers the already selected catalog without reloading configuration', async () => {
+    const fn = vi.fn(() => registeredTool());
+    const enabledTools = [toolWithRegistration('ghSearch', fn)];
+    const result = await registerTools(mockServer, undefined, { enabledTools });
+    expect(result.successCount).toBe(1);
+    expect(fn).toHaveBeenCalledOnce();
+    expect(mockGetServerConfig).not.toHaveBeenCalled();
   });
 });

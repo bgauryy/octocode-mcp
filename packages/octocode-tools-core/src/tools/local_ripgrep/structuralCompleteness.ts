@@ -3,7 +3,7 @@ import type {
   StructuralDiagnostic,
   StructuralSearchFilesResult,
 } from '@octocodeai/octocode-engine';
-import type { LocalSearchCodeData } from './scheme.js';
+import type { LocalSearchCodeData } from './resultTypes.js';
 
 type StructuralToolResult = LocalSearchCodeToolResult &
   Pick<

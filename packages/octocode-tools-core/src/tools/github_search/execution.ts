@@ -7,9 +7,12 @@ import { searchGitHubCode } from '../github_search_code/execution.js';
 import { searchGitHubRepos } from '../github_search_repos/execution.js';
 import { exploreRepositoryStructure } from '../github_view_repo_structure/execution.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
-import { GITHUB_SEARCH_TOOL_NAME } from '../toolNames.js';
+import { GITHUB_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { buildGitHubSearchFinalizer } from './finalizer.js';
-import { GitHubSearchQuerySchema, type GitHubSearchQuery } from './scheme.js';
+import {
+  GitHubSearchQuerySchema,
+  type GitHubSearchQuery,
+} from '@octocodeai/octocode-core/schema';
 
 export async function executeGitHubSearch(
   args: ToolExecutionArgs<GitHubSearchQuery>

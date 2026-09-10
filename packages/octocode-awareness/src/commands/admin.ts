@@ -275,7 +275,7 @@ export function cmdInit(db: DatabaseSync, dbPath: string, opts: EmitOptions): nu
   return emit({ db_path: dbPath, initialized: true, memory_count: memCount }, 0, opts);
 }
 
-export function cmdSelfTest(opts: EmitOptions): number {
+export async function cmdSelfTest(opts: EmitOptions): Promise<number> {
   const testDb = new DatabaseSyncCtor(':memory:');
   testDb.exec('PRAGMA foreign_keys = ON');
   initDb(testDb);
@@ -283,17 +283,17 @@ export function cmdSelfTest(opts: EmitOptions): number {
   const testAgent = 'self-test-agent';
 
   // Write
-  const { memoryId } = insertMemory(testDb, {
+  const { memoryId } = (await insertMemory(testDb, {
     agentId: testAgent,
     taskContext: 'self-test task',
     observation: 'This is a smoke-test memory.',
     importance: 7,
     label: 'GOTCHA',
     tags: ['smoke-test'],
-  });
+  }));
 
   // Get
-  const { memories: results } = getMemory(testDb, { query: 'smoke-test', limit: 5 });
+  const { memories: results } = (await getMemory(testDb, { query: 'smoke-test', limit: 5 }));
   if (results.length === 0) {
     return emit({ ok: false, error: 'FTS recall returned no results' }, 1, opts);
   }

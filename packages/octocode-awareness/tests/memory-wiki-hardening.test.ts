@@ -15,19 +15,19 @@ function freshDb(): DatabaseSync {
 }
 
 describe('memory trust with lean retrieval', () => {
-  it('keeps explicit smart filters until the requested result set under-fills', () => {
+  it('keeps explicit smart filters until the requested result set under-fills', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'cache invalidation rule', observation: 'high confidence rule', importance: 5,
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'cache invalidation rule', observation: 'lower confidence rule', importance: 4,
-    });
+    }));
 
-    const result = getMemory(db, {
+    const result = (await getMemory(db, {
       query: 'cache invalidation rule', minImportance: 5, limit: 1, smart: true, explain: true,
       recordAccess: false,
-    });
+    }));
 
     expect(result.count).toBe(1);
     expect(result.smart_expanded).toBeUndefined();
@@ -51,25 +51,25 @@ describe('memory trust with lean retrieval', () => {
       .toBeGreaterThan(decayComponents(staleButRead, 1).recency);
   });
 
-  it('rejects missing, foreign-owner, cross-scope, and inactive supersession targets atomically', () => {
+  it('rejects missing, foreign-owner, cross-scope, and inactive supersession targets atomically', async () => {
     const db = freshDb();
-    const old = insertMemory(db, {
+    const old = (await insertMemory(db, {
       agentId: 'owner', taskContext: 'old rule', observation: 'old evidence', importance: 5,
       workspacePath: '/workspace/a',
-    });
+    }));
 
-    expect(() => insertMemory(db, {
+    await expect((async () => (await insertMemory(db, {
       agentId: 'intruder', taskContext: 'replacement', observation: 'foreign owner', importance: 5,
       workspacePath: '/workspace/a', supersedes: [old.memoryId],
-    })).toThrow(/owner/i);
-    expect(() => insertMemory(db, {
+    })))()).rejects.toThrow(/owner/i);
+    await expect((async () => (await insertMemory(db, {
       agentId: 'owner', taskContext: 'replacement', observation: 'cross scope', importance: 5,
       workspacePath: '/workspace/b', supersedes: [old.memoryId],
-    })).toThrow(/scope/i);
-    expect(() => insertMemory(db, {
+    })))()).rejects.toThrow(/scope/i);
+    await expect((async () => (await insertMemory(db, {
       agentId: 'owner', taskContext: 'replacement', observation: 'missing target', importance: 5,
       workspacePath: '/workspace/a', supersedes: ['mem_missing'],
-    })).toThrow(/not found/i);
+    })))()).rejects.toThrow(/not found/i);
 
     const row = db.prepare('SELECT state, superseded_by FROM awareness_memories WHERE memory_id = ?').get(old.memoryId) as Record<string, unknown>;
     expect(row).toEqual({ state: 'ACTIVE', superseded_by: null });

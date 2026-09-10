@@ -1,16 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import {
-  GITHUB_SEARCH_DEFAULT_LIMIT,
-  GITHUB_SEARCH_MAX_LIMIT,
-  GITHUB_STRUCTURE_DEFAULT_ENTRIES_PER_PAGE,
-  GITHUB_STRUCTURE_MAX_ENTRIES_PER_PAGE,
-} from '../../src/config.js';
+import { GITHUB_SEARCH_DEFAULT_LIMIT, GITHUB_SEARCH_MAX_LIMIT, GITHUB_STRUCTURE_DEFAULT_ENTRIES_PER_PAGE, GITHUB_STRUCTURE_MAX_ENTRIES_PER_PAGE } from '@octocodeai/octocode-core/schema';
 import { buildRepoSearchQuery } from '../../src/github/queryBuilders/codeAndRepo.js';
-import { GitHubSearchQuerySchema } from '../../src/tools/github_search/scheme.js';
-import { GitHubCodeSearchQueryLocalSchema } from '../../src/tools/github_search_code/scheme.js';
-import { GitHubReposSearchSingleQueryLocalSchema } from '../../src/tools/github_search_repos/scheme.js';
-import { GitHubViewRepoStructureQueryLocalSchema } from '../../src/tools/github_view_repo_structure/scheme.js';
+import { GitHubSearchQuerySchema } from '@octocodeai/octocode-core/schema';
+import { GitHubCodeSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubReposSearchSingleQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubViewRepoStructureQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { mapRepoSearchToolQuery } from '../../src/tools/providerMappers/repoSearch.js';
 import { hasValidRepositorySearchParams } from '../../src/tools/github_search_repos/execution/queryVariants.js';
 

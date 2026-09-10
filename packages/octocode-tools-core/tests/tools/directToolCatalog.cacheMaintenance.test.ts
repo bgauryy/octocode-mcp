@@ -12,7 +12,7 @@ import {
   _resetInitialize,
   executeDirectTool,
 } from '../../src/tools/directToolCatalog.exec.js';
-import { AST_SEARCH_TOOL_NAME } from '../../src/tools/toolNames.js';
+import { AST_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 
 describe('direct CLI cache bootstrap', () => {
   beforeEach(() => {

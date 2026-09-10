@@ -8,13 +8,13 @@ import { runAwarenessToolOperation, ROUTABLE_OPERATIONS } from '../src/tool-oper
 import { startWork } from '../src/work.js';
 
 describe('runAwarenessToolOperation unsupported-operation error', () => {
-  it('lists routable operations and points unrouted nouns to the complete API', () => {
+  it('lists routable operations and points unrouted nouns to the complete API', async () => {
     const db = new DatabaseSync(':memory:');
     db.exec('PRAGMA foreign_keys = ON');
     initDb(db);
-    expect(() => runAwarenessToolOperation(db, 'memory' as never, {}, {})).toThrow(/executeAwarenessCommand/);
+    await expect((async () => (await runAwarenessToolOperation(db, 'memory' as never, {}, {})))()).rejects.toThrow(/executeAwarenessCommand/);
     try {
-      runAwarenessToolOperation(db, 'memory' as never, {}, {});
+      (await runAwarenessToolOperation(db, 'memory' as never, {}, {}));
     } catch (e) {
       const msg = (e as Error).message;
       expect(msg).toContain('"memory"');
@@ -30,22 +30,22 @@ function freshDb(): DatabaseSync {
   return db;
 }
 
-function run(
+async function run(
   db: DatabaseSync,
   operation: Parameters<typeof runAwarenessToolOperation>[1],
   request: Record<string, unknown>,
   cwd: string,
   agentId = 'agent-a',
 ) {
-  return runAwarenessToolOperation(db, operation, request, { cwd, agentId, sessionId: `sess-test-${agentId}` });
+  return (await runAwarenessToolOperation(db, operation, request, { cwd, agentId, sessionId: `sess-test-${agentId}` }));
 }
 
 describe('runAwarenessToolOperation', () => {
-  it('maps validated memory scope/filter fields and supports empty-query browsing', () => {
+  it('maps validated memory scope/filter fields and supports empty-query browsing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-tool-memory-scope-'));
     try {
       const db = freshDb();
-      const first = run(db, 'record', {
+      const first = (await run(db, 'record', {
         task_context: 'artifact alpha memory',
         observation: 'alpha scoped lesson',
         label: 'GOTCHA',
@@ -56,8 +56,8 @@ describe('runAwarenessToolOperation', () => {
         repo: 'owner/repo',
         ref: 'feature-a',
         file_tree_fingerprint: 'tree-a',
-      }, dir);
-      const second = run(db, 'record', {
+      }, dir));
+      const second = (await run(db, 'record', {
         task_context: 'artifact beta memory',
         observation: 'beta scoped lesson',
         label: 'DECISION',
@@ -67,7 +67,7 @@ describe('runAwarenessToolOperation', () => {
         artifact: 'service-b',
         repo: 'owner/repo',
         ref: 'feature-b',
-      }, dir);
+      }, dir));
       const firstId = (first.payload as { memory_id: string }).memory_id;
       const secondId = (second.payload as { memory_id: string }).memory_id;
 
@@ -77,7 +77,7 @@ describe('runAwarenessToolOperation', () => {
         artifact: 'service-a', repo: 'owner/repo', ref: 'feature-a', file_tree_fingerprint: 'tree-a',
       });
 
-      const recalled = run(db, 'recall', {
+      const recalled = (await run(db, 'recall', {
         query: '',
         labels: ['GOTCHA'],
         tags: ['alpha-tag'],
@@ -90,7 +90,7 @@ describe('runAwarenessToolOperation', () => {
         strict_scope: true,
         explain: true,
         limit: 10,
-      }, dir);
+      }, dir));
       const ids = (recalled.payload as { memories: Array<{ memory_id: string }> }).memories
         .map(memory => memory.memory_id);
       expect(ids).toEqual([firstId]);
@@ -100,34 +100,34 @@ describe('runAwarenessToolOperation', () => {
     }
   });
 
-  it('covers memory, reflection, refinement, query, view, digest, and harness operations', () => {
+  it('covers memory, reflection, refinement, query, view, digest, and harness operations', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-tool-ops-'));
     try {
       const db = freshDb();
-      const recorded = run(db, 'record', {
+      const recorded = (await run(db, 'record', {
         task_context: 'auth migration',
         observation: 'Run schema before data backfill',
         label: 'GOTCHA',
         tags: ['auth'],
         files: ['src/auth.ts'],
-      }, dir);
+      }, dir));
       expect(recorded.exitCode).toBe(0);
       const memoryId = (recorded.payload as { memory_id: string }).memory_id;
       expect(db.prepare('SELECT workspace_path FROM awareness_memories WHERE memory_id = ?').get(memoryId))
         .toEqual({ workspace_path: realpathSync(dir) });
 
-      const duplicate = run(db, 'record', {
+      const duplicate = (await run(db, 'record', {
         task_context: 'auth migration',
         observation: 'Run schema before data backfill',
         label: 'GOTCHA',
         workspace_path: dir,
-      }, dir);
+      }, dir));
       expect(duplicate.exitCode).toBe(0);
 
-      const recall = run(db, 'recall', { query: 'schema backfill', smart: true, files: ['src/auth.ts'] }, dir);
+      const recall = (await run(db, 'recall', { query: 'schema backfill', smart: true, files: ['src/auth.ts'] }, dir));
       expect((recall.payload as { count: number }).count).toBeGreaterThanOrEqual(1);
 
-      const reflected = run(db, 'reflect', {
+      const reflected = (await run(db, 'reflect', {
         task: 'auth migration',
         outcome: 'failed',
         lesson: 'Auth migrations need schema first',
@@ -137,7 +137,7 @@ describe('runAwarenessToolOperation', () => {
         fix_instructions: 'Explain the migration-order precondition',
         eval_failures: [{ id: 'eval-auth', failure_signature: 'mechanism:auth|cause:order' }],
         workspace_path: dir,
-      }, dir);
+      }, dir));
       expect(reflected.exitCode).toBe(0);
       expect(reflected.payload).toMatchObject({
         outcome: 'failed',
@@ -145,23 +145,23 @@ describe('runAwarenessToolOperation', () => {
       });
       expect(String((reflected.payload as { next: string }).next)).toContain('npx @octocodeai/octocode-awareness refinement get');
 
-      const refinements = run(db, 'refine_get', { workspace_path: dir, include_handoffs: true }, dir);
+      const refinements = (await run(db, 'refine_get', { workspace_path: dir, include_handoffs: true }, dir));
       expect((refinements.payload as { count: number }).count).toBeGreaterThanOrEqual(1);
 
-      const weakness = run(db, 'mine_weakness', { workspace_path: dir, min_count: 1 }, dir);
+      const weakness = (await run(db, 'mine_weakness', { workspace_path: dir, min_count: 1 }, dir));
       expect((weakness.payload as { total_memories: number }).total_memories).toBeGreaterThanOrEqual(1);
       expect(String((weakness.payload as { next: string }).next)).toContain('npx @octocodeai/octocode-awareness reflect record');
 
-      const harness = run(db, 'export_harness', { workspace_path: dir, min_importance: 1, limit: 5 }, dir);
+      const harness = (await run(db, 'export_harness', { workspace_path: dir, min_importance: 1, limit: 5 }, dir));
       expect(String((harness.payload as { markdown: string }).markdown)).toContain('auth');
       expect(String((harness.payload as { next: string }).next)).toContain('Human review required');
-      const emptyHarness = run(freshDb(), 'export_harness', { workspace_path: dir, min_importance: 10, limit: 1 }, dir);
+      const emptyHarness = (await run(freshDb(), 'export_harness', { workspace_path: dir, min_importance: 10, limit: 1 }, dir));
       expect(String((emptyHarness.payload as { next: string }).next)).toContain('No harness proposals');
 
-      const query = run(db, 'query', { view: 'all', workspace_path: dir, limit: 10 }, dir);
+      const query = (await run(db, 'query', { view: 'all', workspace_path: dir, limit: 10 }, dir));
       expect((query.payload as { view: string }).view).toBe('all');
 
-      const attended = run(db, 'attend', {
+      const attended = (await run(db, 'attend', {
         workspace_path: dir,
         artifact: 'service-a',
         repo: 'octocode/test',
@@ -172,88 +172,88 @@ describe('runAwarenessToolOperation', () => {
         include_bodies: true,
         explain_organ: true,
         compact: true,
-      }, dir);
+      }, dir));
       expect(attended.exitCode).toBe(0);
       expect(attended.payload).toHaveProperty('counts');
 
       const htmlPath = join(dir, 'awareness.html');
-      const view = run(db, 'view', { view: 'all', workspace_path: dir, out: htmlPath }, dir);
+      const view = (await run(db, 'view', { view: 'all', workspace_path: dir, out: htmlPath }, dir));
       expect(view.payload).toMatchObject({ ok: true, path: htmlPath });
       expect(existsSync(htmlPath)).toBe(true);
 
-      const forgotten = run(db, 'forget', { memory_id: memoryId, dry_run: true, workspace_path: dir }, dir);
+      const forgotten = (await run(db, 'forget', { memory_id: memoryId, dry_run: true, workspace_path: dir }, dir));
       expect(forgotten.exitCode).toBe(0);
 
-      expect(() => run(db, 'digest', { workspace: dir, dry_run: true }, dir)).toThrow('unknown options: workspace');
-      const digest = run(db, 'digest', { dry_run: true, export_doc: true, workspace_path: dir }, dir);
+      await expect((async () => (await run(db, 'digest', { workspace: dir, dry_run: true }, dir)))()).rejects.toThrow('unknown options: workspace');
+      const digest = (await run(db, 'digest', { dry_run: true, export_doc: true, workspace_path: dir }, dir));
       expect(digest.payload).toMatchObject({ dry_run: true });
-      const nonDryDigest = run(db, 'digest', { retention_days: 1 }, dir);
+      const nonDryDigest = (await run(db, 'digest', { retention_days: 1 }, dir));
       expect(nonDryDigest.payload).toHaveProperty('fts_rebuilt');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('covers lock, verify, signal, and workspace status operations', () => {
+  it('covers lock, verify, signal, and workspace status operations', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-tool-locks-'));
     try {
       const db = freshDb();
       const file = join(dir, 'src', 'a.ts');
-      const lock = run(db, 'file_lock', {
+      const lock = (await run(db, 'file_lock', {
         type: 'lock',
         target_files: [file],
         reasoning: 'edit file',
         test_plan: 'run focused lock tests',
         ttl_ms: 60_000,
-      }, dir);
+      }, dir));
       expect(lock.exitCode).toBe(0);
       const runId = (lock.payload as { run_id: string }).run_id;
       expect(runId).toMatch(/^run_/);
 
-      const status = run(db, 'file_lock', { type: 'status', target_files: [file] }, dir);
+      const status = (await run(db, 'file_lock', { type: 'status', target_files: [file] }, dir));
       expect(status.exitCode).toBe(0);
 
-      const conflict = run(db, 'file_lock', {
+      const conflict = (await run(db, 'file_lock', {
         type: 'lock',
         target_files: [file],
         reasoning: 'other edit',
         test_plan: 'confirm exclusive lock conflict',
-      }, dir, 'agent-b');
+      }, dir, 'agent-b'));
       expect(conflict.exitCode).toBe(2);
 
-      const pending = run(db, 'file_lock', {
+      const pending = (await run(db, 'file_lock', {
         type: 'release',
         run_id: runId,
         status: 'PENDING',
-      }, dir);
+      }, dir));
       expect(pending.exitCode).toBe(0);
 
-      const audit = run(db, 'verify_audit', {}, dir);
+      const audit = (await run(db, 'verify_audit', {}, dir));
       expect(audit.exitCode).toBe(1);
       expect((audit.payload as { count: number }).count).toBe(1);
 
-      const verified = run(db, 'verify', { all_pending: true, status: 'SUCCESS', message: 'lock operation checks passed' }, dir);
+      const verified = (await run(db, 'verify', { all_pending: true, status: 'SUCCESS', message: 'lock operation checks passed' }, dir));
       expect(verified.exitCode).toBe(0);
 
-      const first = run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'b.ts')], reasoning: 'batch 1', test_plan: 'verify first batch item' }, dir);
-      const second = run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'c.ts')], reasoning: 'batch 2', test_plan: 'verify second batch item' }, dir);
+      const first = (await run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'b.ts')], reasoning: 'batch 1', test_plan: 'verify first batch item' }, dir));
+      const second = (await run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'c.ts')], reasoning: 'batch 2', test_plan: 'verify second batch item' }, dir));
       const firstTask = (first.payload as { run_id: string }).run_id;
       const secondTask = (second.payload as { run_id: string }).run_id;
-      run(db, 'file_lock', { type: 'release', run_id: firstTask, status: 'PENDING' }, dir);
-      run(db, 'file_lock', { type: 'release', run_id: secondTask, status: 'PENDING' }, dir);
-      const batch = run(db, 'verify', { run_ids: [firstTask, secondTask, firstTask], status: 'FAILED' }, dir);
+      (await run(db, 'file_lock', { type: 'release', run_id: firstTask, status: 'PENDING' }, dir));
+      (await run(db, 'file_lock', { type: 'release', run_id: secondTask, status: 'PENDING' }, dir));
+      const batch = (await run(db, 'verify', { run_ids: [firstTask, secondTask, firstTask], status: 'FAILED' }, dir));
       expect(batch.payload).toMatchObject({ count: 2 });
 
-      const third = run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'd.ts')], reasoning: 'mixed pending', test_plan: 'verify mixed pending item' }, dir);
-      const fourth = run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'e.ts')], reasoning: 'mixed pending two', test_plan: 'verify second mixed item' }, dir);
+      const third = (await run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'd.ts')], reasoning: 'mixed pending', test_plan: 'verify mixed pending item' }, dir));
+      const fourth = (await run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'e.ts')], reasoning: 'mixed pending two', test_plan: 'verify second mixed item' }, dir));
       const thirdTask = (third.payload as { run_id: string }).run_id;
       const fourthTask = (fourth.payload as { run_id: string }).run_id;
-      run(db, 'file_lock', { type: 'release', run_id: thirdTask, status: 'PENDING' }, dir);
-      run(db, 'file_lock', { type: 'release', run_id: fourthTask, status: 'PENDING' }, dir);
-      const mixed = run(db, 'verify', { run_id: thirdTask, all_pending: true, status: 'SUCCESS', message: 'mixed batch checks passed' }, dir);
+      (await run(db, 'file_lock', { type: 'release', run_id: thirdTask, status: 'PENDING' }, dir));
+      (await run(db, 'file_lock', { type: 'release', run_id: fourthTask, status: 'PENDING' }, dir));
+      const mixed = (await run(db, 'verify', { run_id: thirdTask, all_pending: true, status: 'SUCCESS', message: 'mixed batch checks passed' }, dir));
       expect(mixed.exitCode).toBe(0);
 
-      const published = run(db, 'agent_signal', {
+      const published = (await run(db, 'agent_signal', {
         action: 'publish',
         kind: 'question',
         subject: 'Need review',
@@ -261,26 +261,26 @@ describe('runAwarenessToolOperation', () => {
         to_agents: ['agent-b'],
         files: [file],
         refs: ['task:test'],
-      }, dir);
+      }, dir));
       expect(published.exitCode).toBe(0);
       const signalId = (published.payload as { signal_id: string }).signal_id;
 
-      const inbox = run(db, 'agent_signal', { action: 'list', agent_id: 'agent-b', mark_read: true }, dir);
+      const inbox = (await run(db, 'agent_signal', { action: 'list', agent_id: 'agent-b', mark_read: true }, dir));
       expect((inbox.payload as { count: number }).count).toBeGreaterThanOrEqual(1);
 
-      const reply = run(db, 'agent_signal', {
+      const reply = (await run(db, 'agent_signal', {
         action: 'reply',
         in_reply_to: signalId,
         subject: 'Reviewed',
         body: 'Reviewed',
         to_agent: 'agent-a',
-      }, dir, 'agent-b');
+      }, dir, 'agent-b'));
       expect(reply.exitCode).toBe(0);
 
-      const ack = run(db, 'agent_signal', { action: 'ack', signal_ids: [signalId], agent_id: 'agent-b' }, dir);
+      const ack = (await run(db, 'agent_signal', { action: 'ack', signal_ids: [signalId], agent_id: 'agent-b' }, dir));
       expect(ack.exitCode).toBe(0);
 
-      const resolved = run(db, 'agent_signal', { action: 'resolve', signal_ids: [signalId] }, dir);
+      const resolved = (await run(db, 'agent_signal', { action: 'resolve', signal_ids: [signalId] }, dir));
       expect(resolved.exitCode).toBe(0);
 
       const advisoryFile = join(dir, 'src', 'advisory.ts');
@@ -293,15 +293,15 @@ describe('runAwarenessToolOperation', () => {
         ttlMs: 60_000,
       });
       const sensitiveFile = join(dir, 'src', 'sensitive.ts');
-      const exclusive = run(db, 'file_lock', {
+      const exclusive = (await run(db, 'file_lock', {
         type: 'lock',
         target_files: [sensitiveFile],
         reasoning: 'exclusive migration',
         test_plan: 'run migration regression',
         ttl_ms: 60_000,
-      }, dir);
+      }, dir));
       expect(exclusive.exitCode).toBe(0);
-      const workspace = run(db, 'workspace_status', { workspace_path: dir }, dir);
+      const workspace = (await run(db, 'workspace_status', { workspace_path: dir }, dir));
       expect(workspace.exitCode).toBe(0);
       expect(workspace.payload).toHaveProperty('active_runs');
       const workspacePayload = workspace.payload as {
@@ -321,23 +321,23 @@ describe('runAwarenessToolOperation', () => {
       const sensitiveLock = workspacePayload.locks.find((entry) => entry.path.endsWith('/src/sensitive.ts'));
       expect(sensitiveLock?.expires_at).toBeTruthy();
 
-      const stale = run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'stale.ts')], reasoning: 'stale active', test_plan: 'inspect stale work audit' }, dir);
+      const stale = (await run(db, 'file_lock', { type: 'lock', target_files: [join(dir, 'stale.ts')], reasoning: 'stale active', test_plan: 'inspect stale work audit' }, dir));
       const staleTask = (stale.payload as { run_id: string }).run_id;
       db.prepare('DELETE FROM awareness_locks WHERE run_id = ?').run(staleTask);
       db.prepare('UPDATE run_files SET expires_at = ? WHERE run_id = ?')
         .run('2000-01-01T00:00:00Z', staleTask);
-      const staleAudit = run(db, 'verify_audit', {}, dir);
+      const staleAudit = (await run(db, 'verify_audit', {}, dir));
       expect(staleAudit.exitCode).toBe(1);
       expect(staleAudit.payload).toHaveProperty('stale_active');
 
-      expect(() => run(db, 'verify', {}, dir)).toThrow('memory_verify requires');
-      expect(() => run(db, 'agent_signal', { action: 'bad' }, dir)).toThrow('agent_signal requires');
-      expect(() => run(db, 'file_lock', { type: 'bad' }, dir)).toThrow('file_lock requires');
-      expect(() => run(db, 'reflect', {
+      await expect((async () => (await run(db, 'verify', {}, dir)))()).rejects.toThrow('memory_verify requires');
+      await expect((async () => (await run(db, 'agent_signal', { action: 'bad' }, dir)))()).rejects.toThrow('agent_signal requires');
+      await expect((async () => (await run(db, 'file_lock', { type: 'bad' }, dir)))()).rejects.toThrow('file_lock requires');
+      await expect((async () => (await run(db, 'reflect', {
         task: 'invalid reflection',
         outcome: 'INVALID',
         lesson: 'invalid outcomes must never coerce',
-      }, dir)).toThrow('invalid outcome');
+      }, dir)))()).rejects.toThrow('invalid outcome');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CONTINUATION_GUIDANCE } from '@octocodeai/octocode-core/mcp';
+import { formatConciseToolDescription } from '@octocodeai/octocode-core/schema';
 
 describe('main-help', () => {
   let stdoutSpy: ReturnType<typeof vi.spyOn>;
@@ -24,7 +26,10 @@ describe('main-help', () => {
     expect(output).toContain('<AGENT_INSTRUCTIONS>');
     expect(output).toContain('localSearch');
     expect(output).toContain('lspSearch');
-    expect(output).toContain('npmSearch');
+    expect(output).toContain('artifactSearch');
+    expect(output).toContain(
+      formatConciseToolDescription('artifactSearch', 82)
+    );
     expect(output).not.toContain('[path*');
     expect(output).toContain('install');
     expect(output).toContain('manage bundled Octocode skills');
@@ -39,9 +44,7 @@ describe('main-help', () => {
     expect(output).toContain('TOOLS (9 enabled / 10 cataloged)');
     expect(output).toContain('tools <name> --scheme --json --compact');
     expect(output).not.toContain('tools <name> --scheme --brief');
-    expect(output).toContain(
-      'Follow executable next.* continuations in row data and nested payloads when their pagination or partial state indicates more; scan/depth limits can require continuation even when pagination.hasMore is false.'
-    );
+    expect(output).toContain(CONTINUATION_GUIDANCE);
     expect(output).not.toContain(
       'Follow data.next/data.pagination only when hasMore.'
     );
@@ -262,7 +265,7 @@ describe('help (dynamic fallback)', () => {
 });
 
 describe('agent protocol help', () => {
-  it('shows protocol with login, auth status, tools, and context steps', async () => {
+  it('reports unavailable context without publishing an alternate protocol', async () => {
     const stdoutSpy = vi
       .spyOn(console, 'log')
       .mockImplementation(() => undefined);
@@ -274,16 +277,34 @@ describe('agent protocol help', () => {
     const output = stdoutSpy.mock.calls
       .map((c: unknown[]) => c.map(String).join(' '))
       .join('\n');
-    // Smart commands temporarily unhooked — fallback now shows protocol steps.
-    // Command examples omit the `octocode` prefix — agents know how to invoke the CLI.
-    expect(output).toContain('login');
-    expect(output).toContain('auth status');
     expect(output).toContain('tools <name>');
     expect(output).toContain('context');
-    expect(output).toContain('auth status --json');
-    expect(output).toContain('MCP prompt + full tool descriptions');
+    expect(output).toContain('Context unavailable');
+    expect(output).not.toContain('Protocol:');
     expect(output).not.toContain('full schemas when runtime loads');
 
     stdoutSpy.mockRestore();
+  });
+});
+
+describe('runtime-unavailable fallback', () => {
+  it('declines per-tool help without inventing schemas', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const { showLightToolHelp } =
+      await import('../../src/cli/light-tool-help.js');
+    expect(showLightToolHelp('artifactSearch')).toBe(false);
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes available schema summaries from unavailable execution', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const { printToolRuntimeUnavailable } =
+      await import('../../src/cli/light-tool-help.js');
+    printToolRuntimeUnavailable();
+    const output = log.mock.calls.flat().join('\n');
+    expect(output).toContain('tool runtime failed to load');
+    expect(output).toContain('Schema summaries are available');
+    expect(output).toContain('tool execution requires the packaged runtime');
+    expect(output).not.toContain('Protocol:');
   });
 });

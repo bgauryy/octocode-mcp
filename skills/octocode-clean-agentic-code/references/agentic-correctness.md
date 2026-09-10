@@ -30,7 +30,7 @@ Route confirmed findings through `references/test-hygiene.md` for the excision p
 
 | Signal | Verification required |
 |--------|----------------------|
-| Dependency that does not resolve on the registry | `npmSearch` returns no package under that exact name |
+| Dependency that does not resolve on the registry | `artifactSearch` with the dependency ecosystem `type` and exact `packageName` returns empty; provider errors do not establish absence |
 | Plausible-looking package published recently with near-zero adoption | Name compared against the real package it imitates |
 | Import of a package absent from any manifest | Phantom dependency confirmed via `references/dependency-hygiene.md` |
 | Placeholder key, token, or URL standing in for a real integration | The integration has never run against a real credential |

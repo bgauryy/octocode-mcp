@@ -158,15 +158,15 @@ describe('config/resolver', () => {
       });
 
       it('parses TOOLS_TO_RUN as string array', () => {
-        process.env.TOOLS_TO_RUN = 'github.code,npmSearch';
+        process.env.TOOLS_TO_RUN = 'github.code,artifactSearch';
         const config = resolveConfigSync();
-        expect(config.tools.enabled).toEqual(['github.code', 'npmSearch']);
+        expect(config.tools.enabled).toEqual(['github.code', 'artifactSearch']);
       });
 
       it('parses DISABLE_TOOLS as string array', () => {
-        process.env.DISABLE_TOOLS = 'npmSearch';
+        process.env.DISABLE_TOOLS = 'artifactSearch';
         const config = resolveConfigSync();
-        expect(config.tools.disabled).toEqual(['npmSearch']);
+        expect(config.tools.disabled).toEqual(['artifactSearch']);
       });
 
       it('parses REQUEST_TIMEOUT as number', () => {

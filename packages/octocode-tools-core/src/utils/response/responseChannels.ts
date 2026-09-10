@@ -4,6 +4,7 @@ import {
   sanitizeStructuredContent,
 } from '../../responses.js';
 import { hoistSharedFields, relativizeResultPaths } from './pathRelativize.js';
+import { applyHintPolicy } from './hintPolicy.js';
 
 export function buildResponseChannels<T extends object>(
   responseData: T,
@@ -14,6 +15,7 @@ export function buildResponseChannels<T extends object>(
   const rows = (responseData as { results?: unknown }).results;
 
   if (Array.isArray(rows)) {
+    applyHintPolicy(rows);
     const rowRefs = rows as Array<{ data?: unknown }>;
     const base = relativizeResultPaths(rowRefs);
     if (base) responseRecord.base = base;

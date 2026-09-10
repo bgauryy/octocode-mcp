@@ -1,3 +1,4 @@
+import { expectExecutableNext } from '../helpers/executableNext.js';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -8,10 +9,10 @@ import {
 import { grammarFixtures } from '../fixtures/grammarFixtures.js';
 import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
 import { readFileEntry } from '../../src/tools/github_fetch_content/finalizer/entryParsers.js';
-import { FileContentBulkQueryLocalSchema } from '../../src/tools/github_fetch_content/scheme.js';
+import { FileContentBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import type { FileContentExecutionQuery } from '../../src/tools/github_fetch_content/types.js';
 import { executeDirectTool } from '../../src/tools/directToolCatalog.exec.js';
-import { findDirectToolDefinition } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
+import { findDirectToolDefinition } from '@octocodeai/octocode-core/schema';
 
 const fixture = vi.hoisted(() => ({ source: '' }));
 vi.mock('../../src/github/fileContentRaw/cache.js', () => ({
@@ -39,15 +40,16 @@ type Continuation = { tool: string; query: Record<string, unknown> };
 type FileView = {
   content: string;
   contentView?: string;
-  next?: { continueChars?: Continuation };
+  next?: { continue?: Continuation };
 };
 
 async function local(query: Record<string, unknown>): Promise<FileView> {
-  const schema = findDirectToolDefinition('localGetFileContent')!.schema;
+  const schema = findDirectToolDefinition('localFetch')!.schema;
   expect(schema.safeParse(query).success, JSON.stringify(query)).toBe(true);
-  const out = await executeDirectTool('localGetFileContent', {
+  const out = await executeDirectTool('localFetch', {
     queries: [query],
   });
+  expectExecutableNext(out.structuredContent);
   const row = (
     out.structuredContent as {
       results: Array<{ status?: string; data: FileView }>;
@@ -95,31 +97,30 @@ async function assertWindows(
   let query: Record<string, unknown> = {
     ...base,
     minify: mode,
-    charLength: 7,
-    fullContent,
+    ...(fullContent ? { fullContent: true } : { chunkType: 'bytes', limit: 7 }),
   };
   let joined = '';
   let pages = 0;
   const visited = new Set<number>();
   for (;;) {
     const page = await run(query);
+    expectExecutableNext(page);
     expect(page.content.length).toBeGreaterThan(0);
     expect(page.contentView).toBe(expectedMode);
     joined += page.content;
     pages++;
     expect(pages).toBeLessThan(100);
-    const next = page.next?.continueChars;
+    const next = page.next?.continue;
     if (!next) break;
     expect(next.tool).toBe(tool);
-    expect(next.query.charOffset).toBe(joined.length);
-    expect(visited.has(next.query.charOffset as number)).toBe(false);
-    visited.add(next.query.charOffset as number);
+    const offset = next.query.offset;
+    expect(offset).toBe(Buffer.byteLength(joined));
+    expect(visited.has(offset as number)).toBe(false);
+    visited.add(offset as number);
     query = next.query;
   }
   expect(joined).toBe(whole.content);
-  // Semantic local windows may expand to a complete declaration. GitHub's
-  // character windows must exercise actual continuations for every fixture.
-  if (tool === 'ghGetFileContent') expect(pages).toBeGreaterThan(1);
+  if (!fullContent) expect(pages).toBeGreaterThan(1);
 }
 
 describe('local/GitHub minification and executable pagination across every grammar', () => {
@@ -166,7 +167,7 @@ describe('local/GitHub minification and executable pagination across every gramm
       async ({ mode, fullContent }) => {
         await assertWindows(
           local,
-          'localGetFileContent',
+          'localFetch',
           { path: join(root, `fixture.${extension}`) },
           extension,
           source,

@@ -10,9 +10,9 @@
 export type { CompleteMetadata } from '@octocodeai/octocode-tools-core';
 
 export {
-  DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   executeDirectTool,
   initialize,
   initializeProviders,
-  loadToolContent,
 } from '@octocodeai/octocode-tools-core';
+
+export { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-core/schema';

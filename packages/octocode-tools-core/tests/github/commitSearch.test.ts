@@ -12,10 +12,7 @@ vi.mock('../../src/github/client.js', () => ({
   OctokitWithThrottling: class {},
 }));
 import { searchMultipleGitHubHistory } from '../../src/tools/github_search_pull_requests/historyExecutions.js';
-import {
-  GitHubSearchHistoryQueryLocalSchema,
-  GitHubGetHistoryItemQueryLocalSchema,
-} from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubSearchHistoryQueryLocalSchema, GitHubGetHistoryItemQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { clearAllCache } from '../../src/utils/http/cache/management.js';
 
 const query = {

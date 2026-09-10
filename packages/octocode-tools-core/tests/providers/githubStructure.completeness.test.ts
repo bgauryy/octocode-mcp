@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getRepoStructure } from '../../src/providers/github/githubStructure.js';
 import { exploreRepositoryStructure } from '../../src/tools/github_view_repo_structure/execution.js';
-import { GitHubSearchQuerySchema } from '../../src/toolContract/input/resources/tools/ghSearch.js';
+import { BaseGitHubSearchQuerySchema as GitHubSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 import { buildGitHubSearchFinalizer } from '../../src/tools/github_search/finalizer.js';
 import { cache } from '../../src/utils/http/cache/store.js';
 
@@ -235,7 +235,7 @@ describe('GitHub tree provider to public result completeness', () => {
             string,
             { tool: string; query: Record<string, unknown> }
           >
-        )[kind];
+        )?.[kind];
         if (!next) break;
         expect(next.tool).toBe('ghSearch');
         expect(result.isPartial).toBe(true);
@@ -323,7 +323,9 @@ describe('GitHub tree provider to public result completeness', () => {
       terminalLimit: true,
       partialReasons: ['metadataPageLimit'],
     });
-    expect((result.next as Record<string, unknown>).tags).toBeUndefined();
+    expect(
+      (result.next as Record<string, unknown> | undefined)?.tags
+    ).toBeUndefined();
   });
 
   it('preserves independent metadata continuation and failed-tree retry through the public finalizer', async () => {

@@ -24,7 +24,7 @@ vi.mock('../../src/utils/http/cache/dataCache.js', () => ({
 import { fetchCommit } from '../../src/github/commit.js';
 import { compareRefs } from '../../src/github/compare.js';
 import { getMultipleGitHubHistoryItems } from '../../src/tools/github_search_pull_requests/historyExecutions.js';
-import { GitHubGetHistoryItemQueryLocalSchema } from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubGetHistoryItemQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { searchRepos } from '../../src/providers/github/githubSearch.js';
 
 const file = (name: string) => ({
@@ -149,6 +149,48 @@ describe('GitHub history completeness regression and request budget', () => {
       isPartial: true,
       terminalLimit: true,
       providerLimit: { maxFiles: 3000 },
+    });
+  });
+
+  it('reports an out-of-range commit provider batch instead of silently presenting it as a zero-file commit', async () => {
+    mocks.getCommit.mockResolvedValue({
+      data: { ...commit('pinned'), files: [] },
+      headers: {},
+    });
+
+    const result = row(
+      await getMultipleGitHubHistoryItems({
+        queries: [
+          {
+            operation: 'commit',
+            owner: 'o',
+            repo: 'r',
+            ref: 'main',
+            fileBatch: 2,
+            includeDiff: true,
+          },
+        ],
+      })
+    );
+
+    expect(result).toMatchObject({
+      changedFiles: 0,
+      changedFilesCountScope: 'providerBatch',
+      isPartial: true,
+      partialReasons: ['providerBatchOutOfRange'],
+      next: {
+        restartFromFirstBatch: {
+          tool: 'ghGetHistoryItem',
+          query: {
+            operation: 'commit',
+            owner: 'o',
+            repo: 'r',
+            ref: 'pinned',
+            includeDiff: true,
+            filePage: 1,
+          },
+        },
+      },
     });
   });
 

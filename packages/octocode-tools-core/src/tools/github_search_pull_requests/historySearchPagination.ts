@@ -1,6 +1,6 @@
-import { MAX_PAGE_NUMBER } from '../../config.js';
+import { MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 import type { ProcessedBulkResult } from '../../types/toolResults.js';
-import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '../toolNames.js';
+import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { publicSearchContinuationQuery } from './historyContinuations.js';
 import {
   mergePartialReasons,

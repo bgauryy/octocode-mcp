@@ -2,7 +2,7 @@ import { parseArgs } from './command-parser.js';
 import { getAwarenessCommandDescriptor } from './schema/cli.js';
 import type { AwarenessCommandCall } from './command-api.js';
 
-/** Decode legacy continuation metadata once at the package boundary. */
+/** Decode CLI continuation metadata at the package boundary. */
 export function awarenessContinuationCall(command: string, args: string[]): AwarenessCommandCall {
   const descriptor = getAwarenessCommandDescriptor(command);
   if (!descriptor) throw new Error(`Unknown continuation command: ${command}`);
@@ -23,6 +23,16 @@ export function awarenessContinuationCall(command: string, args: string[]): Awar
 /** Library continuations are executable request objects; shell output retains argv. */
 export function structuredAwarenessContinuations(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(structuredAwarenessContinuations);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).map(([key, child]) => [
+    key,
+    ['next', 'actions', 'continuations'].includes(key) ? structuredContinuation(child)
+      : key === 'rows' ? structuredAwarenessContinuations(child) : child,
+  ]));
+}
+
+function structuredContinuation(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(structuredContinuation);
   if (!value || typeof value !== 'object') return value;
   const object = value as Record<string, unknown>;
   if (object.operation === 'agent_signal' && object.request && typeof object.request === 'object') {
@@ -50,8 +60,8 @@ export function structuredAwarenessContinuations(value: unknown): unknown {
         delete rest.args;
         delete rest.db;
       }
-      return { ...structuredAwarenessContinuations(rest) as object, call: awarenessContinuationCall(name, argv.slice(2)) };
+      return { ...structuredContinuation(rest) as object, call: awarenessContinuationCall(name, argv.slice(2)) };
     }
   }
-  return Object.fromEntries(Object.entries(object).map(([key, child]) => [key, structuredAwarenessContinuations(child)]));
+  return Object.fromEntries(Object.entries(object).map(([key, child]) => [key, structuredContinuation(child)]));
 }

@@ -8,7 +8,7 @@ import { fetchContent } from '../../../src/tools/local_fetch_content/fetchConten
 // managed test sandbox allow them.
 const ROOT = process.cwd();
 
-describe('fetchContent next.continueChars', () => {
+describe('fetchContent next.continue', () => {
   let dir: string;
   let bigFile: string;
   let smallFile: string;
@@ -31,28 +31,28 @@ describe('fetchContent next.continueChars', () => {
   });
 
   it('emits a ready continuation query when char pagination hasMore', async () => {
-    // Explicit charLength forces a partial page regardless of the configured
+    // Explicit limit forces a partial page regardless of the configured
     // default output limit, so hasMore is deterministic.
     const result = await fetchContent({
       path: bigFile,
       minify: 'none',
-      charOffset: 0,
-      charLength: 2000,
+      offset: 0,
+      chunkType: 'bytes', limit: 2000,
     } as never);
 
     const pagination = result.pagination as {
       hasMore?: boolean;
-      nextCharOffset?: number;
+      nextOffset?: number;
     };
     expect(pagination?.hasMore).toBe(true);
 
-    const next = (result as { next?: { continueChars?: unknown } }).next;
-    expect(next?.continueChars).toMatchObject({
-      tool: 'localGetFileContent',
+    const next = (result as { next?: { continue?: unknown } }).next;
+    expect(next?.continue).toMatchObject({
+      tool: 'localFetch',
       query: {
         path: bigFile,
-        charOffset: pagination.nextCharOffset,
-        charLength: 2000,
+        offset: pagination.nextOffset,
+        chunkType: 'bytes', limit: 2000,
         minify: 'none',
       },
     });
@@ -95,7 +95,7 @@ describe('fetchContent next.continueChars', () => {
   });
 });
 
-describe('fetchContent next.continueLines', () => {
+describe('fetchContent next.continue', () => {
   let dir: string;
   let lineFile: string;
 
@@ -117,8 +117,8 @@ describe('fetchContent next.continueLines', () => {
     let query: Record<string, unknown> = {
       path: lineFile,
       minify: 'none',
-      startLine: 1,
-      endLine: 2,
+      chunkType: 'lines',
+      limit: 2,
     };
     const pages: string[] = [];
     const partialStates: Array<boolean | undefined> = [];
@@ -131,16 +131,16 @@ describe('fetchContent next.continueLines', () => {
       const continuation = (
         result as {
           next?: {
-            continueLines?: {
+            continue?: {
               tool?: string;
               query?: Record<string, unknown>;
             };
           };
         }
-      ).next?.continueLines;
+      ).next?.continue;
 
       if (page < 2) {
-        expect(continuation?.tool).toBe('localGetFileContent');
+        expect(continuation?.tool).toBe('localFetch');
         expect(continuation?.query).toBeDefined();
         query = continuation!.query!;
       } else {
@@ -150,9 +150,9 @@ describe('fetchContent next.continueLines', () => {
 
     expect(partialStates).toEqual([true, true, undefined]);
     expect(pages).toEqual([
-      ['1→ alpha', '2→ bravo'].join('\n'),
-      ['3→ charlie', '4→ delta'].join('\n'),
-      '5→ echo',
+      'alpha\nbravo\n',
+      'charlie\ndelta\n',
+      'echo',
     ]);
   });
 
@@ -189,24 +189,24 @@ describe('fetchContent next.continueLines', () => {
       minify: 'none',
       matchString: 'a',
       contextLines: 0,
-      charLength: 10,
+      chunkType: 'bytes', limit: 10,
     } as never);
     const continuation = (
       result as {
-        next?: { continueChars?: { query?: Record<string, unknown> } };
+        next?: { continue?: { query?: Record<string, unknown> } };
       }
-    ).next?.continueChars?.query;
+    ).next?.continue?.query;
 
     expect(result.isPartial).toBe(true);
     expect(continuation).toMatchObject({
       path: lineFile,
       matchString: 'a',
       contextLines: 0,
-      charLength: 10,
+      chunkType: 'bytes', limit: 10,
     });
     const next = await fetchContent(continuation as never);
     expect(next.content).not.toBe(result.content);
-    expect(next.matchedLines).toEqual([1, 2, 3, 4]);
+    expect(next.matchedLines).toEqual([2, 3]);
   });
 });
 
@@ -243,37 +243,37 @@ describe('fetchContent minify:"symbols" char pagination', () => {
     const result = await fetchContent({
       path: manyFnFile,
       minify: 'symbols',
-      charOffset: 0,
-      charLength: 400,
+      offset: 0,
+      chunkType: 'bytes', limit: 400,
     } as never);
 
     expect(result.contentView).toBe('symbols');
 
     const pagination = result.pagination as {
       hasMore?: boolean;
-      nextCharOffset?: number;
-      totalChars?: number;
-      charOffset?: number;
-      charLength?: number;
+      nextOffset?: number;
+      totalBytes?: number;
+      offset?: number;
+      limit?: number;
     };
     expect(pagination?.hasMore).toBe(true);
-    expect(pagination?.charOffset).toBe(0);
-    expect(typeof pagination?.nextCharOffset).toBe('number');
-    // Pagination reflects the SKELETON's totalChars, not the raw file length.
-    expect(pagination?.totalChars).toBeLessThan(buildFns(60).length);
+    expect(pagination?.offset).toBe(0);
+    expect(typeof pagination?.nextOffset).toBe('number');
+    // Pagination reflects the SKELETON's totalBytes, not the raw file length.
+    expect(pagination?.totalBytes).toBeLessThan(buildFns(60).length);
     // Partial window is shorter than the whole skeleton.
     expect((result.content as string).length).toBeLessThan(
-      pagination!.totalChars!
+      pagination!.totalBytes!
     );
 
-    const next = (result as { next?: { continueChars?: unknown } }).next;
-    expect(next?.continueChars).toMatchObject({
-      tool: 'localGetFileContent',
+    const next = (result as { next?: { continue?: unknown } }).next;
+    expect(next?.continue).toMatchObject({
+      tool: 'localFetch',
       query: {
         path: manyFnFile,
-        charOffset: pagination.nextCharOffset,
+        offset: pagination.nextOffset,
         // Keep the caller's target stable; only the offset follows the snapped boundary.
-        charLength: 400,
+        chunkType: 'bytes', limit: 400,
         minify: 'symbols',
       },
     });
@@ -283,31 +283,31 @@ describe('fetchContent minify:"symbols" char pagination', () => {
     const first = await fetchContent({
       path: manyFnFile,
       minify: 'symbols',
-      charOffset: 0,
-      charLength: 400,
+      offset: 0,
+      chunkType: 'bytes', limit: 400,
     } as never);
 
     const continuation = (
       first as {
         next?: {
-          continueChars?: {
+          continue?: {
             query?: Record<string, unknown>;
           };
         };
       }
-    ).next?.continueChars?.query;
+    ).next?.continue?.query;
     expect(continuation).toBeDefined();
 
     const second = await fetchContent(continuation as never);
 
     expect(second.contentView).toBe('symbols');
     const secondPagination = second.pagination as {
-      charOffset?: number;
+      offset?: number;
       hasMore?: boolean;
     };
     // Second window starts where the first left off.
-    expect(secondPagination?.charOffset).toBe(
-      (first.pagination as { nextCharOffset?: number }).nextCharOffset
+    expect(secondPagination?.offset).toBe(
+      (first.pagination as { nextOffset?: number }).nextOffset
     );
     // Different slice of the skeleton than the first window.
     expect(second.content).not.toBe(first.content);
@@ -321,7 +321,7 @@ describe('fetchContent minify:"symbols" char pagination', () => {
 
     expect(result.contentView).toBe('symbols');
     expect((result as { next?: unknown }).next).toBeUndefined();
-    expect(result.pagination).toBeUndefined();
+    expect(result.pagination?.hasMore).toBe(false);
     // Skeleton lists all three function signatures.
     expect(result.content).toContain('fn0');
     expect(result.content).toContain('fn2');

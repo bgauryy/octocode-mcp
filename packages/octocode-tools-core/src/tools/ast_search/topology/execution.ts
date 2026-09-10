@@ -9,7 +9,7 @@ import {
   validateToolPath,
 } from '../../../utils/file/toolHelpers.js';
 import { executeWithToolBoundary } from '../../executionGuard.js';
-import { AST_SEARCH_TOOL_NAME } from '../../toolNames.js';
+import { AST_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { safeParseOrError } from '../../utils.js';
 import { analyzeTopology } from './analyzeTopology.js';
 import { inferRootFromAbsoluteFile } from './rootInference.js';

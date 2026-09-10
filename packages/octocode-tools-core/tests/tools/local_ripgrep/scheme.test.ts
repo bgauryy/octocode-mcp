@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  LocalRipgrepBulkQuerySchema,
-  LocalRipgrepQuerySchema,
-} from '../../../src/tools/local_ripgrep/scheme.js';
+import { LocalRipgrepBulkQuerySchema, LocalRipgrepQuerySchema } from '@octocodeai/octocode-core/schema';
 
 describe('local.text schema', () => {
   const baseQuery = { searchText: 'token', path: '/repo' };

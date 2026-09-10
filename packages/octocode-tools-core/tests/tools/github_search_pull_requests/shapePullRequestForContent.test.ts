@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 import { shapePullRequestForContent } from '../../../src/tools/github_search_pull_requests/contentResponse.js';
 import { normalizePullRequestContentRequest } from '../../../src/tools/github_search_pull_requests/contentRequest.js';
-import { GitHubGetHistoryItemQueryLocalSchema } from '../../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubGetHistoryItemQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 const PR = {
   number: 42,

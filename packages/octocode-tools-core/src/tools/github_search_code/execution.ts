@@ -1,6 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
-import type { GitHubCodeSearchQuerySchema } from '../../toolContract/input/resources/tools/githubCodeOperation.js';
+import type { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 import type { GitHubSearchCodeData } from '@octocodeai/octocode-core/types';
 
 type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;

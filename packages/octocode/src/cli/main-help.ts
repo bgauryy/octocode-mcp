@@ -1,24 +1,17 @@
-// ── Help surface sync contract ────────────────────────────────────────────────
-// ALL locations must be updated together when changing help text:
-//   1. THIS FILE (main-help.ts)                    — top-level `--help`
-//   2. packages/octocode/src/cli/tool-command/context.ts — agent-context dump
-//   3. octocode-mcp-host/…/resources/systemPrompt.ts — MCP + CLI system prompt
-// ─────────────────────────────────────────────────────────────────────────────
 import { c, bold, dim, underline } from '../utils/colors.js';
 import { getAuthStatus } from '../features/github-oauth.js';
 import {
   DIRECT_TOOL_CATEGORIES,
   getDirectToolCategory,
-  getDirectToolDescription,
-  loadToolContent,
+  formatConciseToolDescription,
   sortDirectToolNames,
-} from '@octocodeai/octocode-tools-core/schema';
+} from '@octocodeai/octocode-core/schema';
 import { COMMAND_SPECS } from './commands/specs.js';
 import { REGISTERED_COMMAND_NAMES } from './commands/index.js';
 import {
   AGENT_TOOL_COMMANDS,
-  CONTINUATION_GUIDANCE,
-} from './tool-command/agent-contract.js';
+  CLI_HELP_USAGE_GUIDANCE,
+} from '@octocodeai/octocode-core/mcp';
 import { TOOL_DEFINITIONS } from './tool-command/registry.js';
 
 // Quick (read-first) commands get a rich arg hint; every other command is
@@ -32,79 +25,14 @@ const REGISTERED_COMMAND_NAME_SET = new Set(REGISTERED_COMMAND_NAMES);
  * stay behind `context --full` so top-level help remains a cheap router.
  */
 function buildAgentInstructionsBlock(): string[] {
-  const usage = [
-    'AGENT: inspect schema before unfamiliar calls; never guess fields.',
-    '  tools --json --compact                    lean catalog',
-    '  tools <name> --scheme --json --compact    lean machine schema',
-    '  tools <name> --scheme                     full descriptions + relations',
-    "  tools <name> --queries '<json>'            batch run: queries[] rows, indexed results",
-    '  tools <name> [op] --<field> <value>        single query via schema flags (kebab-case; repeat array flags)',
-    '  Batch with queries[]; results[] preserve zero-based index and isolate errors.',
-    `  ${CONTINUATION_GUIDANCE}`,
-    '  Full MCP protocol + tool guidance: context --full; cheapest index: context --minimal.',
-  ];
   return [
     `  ${dim('<AGENT_INSTRUCTIONS>')}`,
-    ...usage.map(line => `  ${dim(line)}`),
+    ...CLI_HELP_USAGE_GUIDANCE.map(line => `  ${dim(line)}`),
     `  ${dim('</AGENT_INSTRUCTIONS>')}`,
   ];
 }
 
-const DESCRIPTION_PREFIXES = new Set([
-  'github',
-  'local',
-  'npm',
-  'package',
-  'search',
-  'other',
-]);
-
-function truncateDescription(desc: string, maxLen: number): string {
-  if (desc.length <= maxLen) return desc;
-  const cut = desc.lastIndexOf(' ', maxLen - 1);
-  return cut > maxLen * 0.6
-    ? desc.slice(0, cut) + '…'
-    : desc.slice(0, maxLen - 1) + '…';
-}
-
-function extractShortDescription(fullDescription: string): string {
-  return fullDescription
-    .split('\n')[0]
-    .trim()
-    .replace(/^##\s*/, '');
-}
-
-async function getOptionalToolMetadata(): Promise<Awaited<
-  ReturnType<typeof loadToolContent>
-> | null> {
-  try {
-    return await loadToolContent();
-  } catch {
-    return null;
-  }
-}
-
-function formatConciseToolDescription(
-  toolName: string,
-  metadata: Awaited<ReturnType<typeof loadToolContent>> | null
-): string {
-  const raw = extractShortDescription(
-    getDirectToolDescription(toolName, metadata)
-  );
-  const parts = raw
-    .split(/\s+\|\s+/)
-    .map(part => part.trim())
-    .filter(Boolean);
-  const concise =
-    parts.find(part => !DESCRIPTION_PREFIXES.has(part.toLowerCase())) ??
-    raw.replace(/^(?:github|local|npm|package|search|other)\s*\|\s*/i, '');
-
-  return truncateDescription(concise.replace(/\s+/g, ' ').trim(), 82);
-}
-
-function buildToolBlock(
-  metadata: Awaited<ReturnType<typeof loadToolContent>> | null
-): string[] {
+function buildToolBlock(): string[] {
   const lines: string[] = [];
   const allNames = sortDirectToolNames(
     TOOL_DEFINITIONS.filter(tool => !tool.disabled).map(tool => tool.name)
@@ -118,7 +46,7 @@ function buildToolBlock(
     for (const name of names) {
       const namePad = name.padEnd(28);
       lines.push(
-        `      ${c('cyan', namePad)} ${dim(formatConciseToolDescription(name, metadata))}`
+        `      ${c('cyan', namePad)} ${dim(formatConciseToolDescription(name, 82))}`
       );
     }
   }
@@ -162,8 +90,7 @@ function quick(name: string, argHint: string, description: string): string {
 export async function showHelp(): Promise<void> {
   const toolCount = TOOL_DEFINITIONS.filter(tool => !tool.disabled).length;
   const catalogCount = TOOL_DEFINITIONS.length;
-  const metadata = await getOptionalToolMetadata();
-  const toolLines = buildToolBlock(metadata);
+  const toolLines = buildToolBlock();
   const agentInstructions = buildAgentInstructionsBlock();
 
   let isAuthenticated = false;

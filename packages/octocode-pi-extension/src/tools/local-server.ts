@@ -50,6 +50,7 @@ export interface LocalServerMountInfo extends LocalMount {
 
 /** Mount names must be a single safe URL path segment. */
 const MOUNT_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
+export function isValidMountName(name: string): boolean { return MOUNT_NAME.test(name); }
 
 const CONTENT_TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -318,7 +319,7 @@ export async function serveDirectory(
     actionToken?: string;
   },
 ): Promise<ServedMount | undefined> {
-  if (!MOUNT_NAME.test(name)) return undefined;
+  if (!isValidMountName(name)) return undefined;
   mounts.set(name, {
     dir: path.resolve(dir),
     indexFile: opts?.indexFile ?? 'index.html',

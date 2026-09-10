@@ -134,7 +134,7 @@ describe('toolFilters', () => {
         toolsToRun: ['ghSearchHistory', 'ghGetHistory'],
         disableTools: ['local.text', 'missing'],
       },
-      ['ghSearchHistory', 'ghGetHistoryItem', 'npmSearch', 'local.text']
+      ['ghSearchHistory', 'ghGetHistoryItem', 'artifactSearch', 'local.text']
     );
 
     expect(result.config).toEqual({

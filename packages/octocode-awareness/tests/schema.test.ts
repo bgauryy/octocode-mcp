@@ -97,6 +97,7 @@ describe('initDb table set', () => {
       'edit_log',
       'harness_log',
       'local_history_operations',
+      'local_history_durability',
       'local_history_versions',
       'local_history_restores',
     ]);

@@ -3,8 +3,8 @@
  *
  * Native Octocode research tools (GitHub, local, LSP, npm) are no longer registered
  * as individual Pi tools. They are served via the bundled octocode MCP server through
- * MCPTool. This removes 13 tool definitions from the Pi tool palette, cutting per-turn
- * token cost. Full MCP discovery runs at session_start via warmMcpCatalog() and
+ * MCPTool. The shared catalog owns the available research capabilities.
+ * Full MCP discovery runs at session_start via warmMcpCatalog() and
  * before_agent_start awaits it (mcpCatalogReady). By default the first system
  * prompt receives the compact <mcp_catalog_index>; OCTOCODE_COMPACT_MCP=0 opts
  * into exact descriptions and schemas for debugging.
@@ -12,6 +12,8 @@
 import { withOctocodeRender } from '../branding/renderers.js';
 import type { ToolDefinition } from '../types.js';
 import { PLAN_USAGE_GUIDANCE } from '@octocodeai/agent-contracts/prompts';
+import { QueryBatchError } from './query-envelope.js';
+import { ToolResultError } from './tool-result-error.js';
 
 // ─── Registration helper ─────────────────────────────────────────────────────
 
@@ -23,14 +25,14 @@ export const DIRECT_TOOL_DESCRIPTIONS: Readonly<Record<string, string>> = Object
   runFfmpeg: 'Run ffmpeg/ffprobe argv for operations such as filter_complex, loudnorm, or VMAF. Use media for a standard trim or conversion. Raw arguments can overwrite files; path guards are not consent. Pass argv without a shell or binary name, choose an authorized destination, and check the result.',
   web: 'Browse the live web for external facts. query discovers pages; url reads one. A search snippet is a lead, not proof of the page contents. Use repository/MCP tools for code evidence. Fetch the relevant source and follow needed continuation pages before making a claim.',
   chromeDebug: 'Inspect or operate Chrome through CDP. One screenshot uses this tool; dependent browser phases may use agent profile:browser. url navigates before inspection and can disturb current state. Preserve state outside the authorized journey. Attach to the known target, then run the smallest necessary scheme.',
-  agent: 'Delegate bounded work to researcher, planner, architect, implementer, browser, or custom workers. Independent lanes fit; dependent edits risk conflicts. Custom requires tools and systemPrompt. Workers use MCPTool for repository research; the parent owns integration. Spawn first, use agentId later, verify the handback, and release the worker.',
+  agent: 'Delegate bounded researcher, planner, architect, implementer, browser, or custom work. Custom requires tools and systemPrompt. Use MCPTool for repository research. The parent integrates, verifies the handback, and releases the worker.',
   callTool: 'Reuse or maintain a dynamic function. A recurring calculation may fit; a one-off shell command does not. Creating duplicates adds maintenance without capability. Reuse first; on a miss, research alternatives and obtain creation approval. Pass a reason, grant only approved capabilities, and verify the result.',
-  skill: 'Load an installed skill for a specialized workflow or manage a reusable dynamic skill. Routine edits need no skill; repeated multi-step procedures may. Unnecessary loading adds context without changing the decision. Use type:load for installed instructions and type:call for dynamic lifecycle; read required instructions before acting.',
+  skill: 'Load an installed skill for a specialized workflow or manage a reusable dynamic skill. Routine edits need none. Use type:load for installed instructions and type:call for dynamic lifecycle; read required instructions before acting.',
   plan: `${PLAN_USAGE_GUIDANCE} Extra tracking adds noise. Use set for authorized work, propose for review; complete only after an observed check.`,
   localServer: 'Serve an inspected static artifact on 127.0.0.1. Mount its directory, not an entire home or repository: every file in a mount may be exposed. Keep the served scope minimal. Use serve for a URL, open:true only with user authorization, and unmount when finished.',
   askUser: 'Collect one missing choice that changes the next action. A material trade-off needs an answer; routine authorized work does not need confirmation. Redundant questions stall work, and cancellation grants no authority. Choose one input mode, ask once, and use the explicit outcome.',
-  awareness: 'Attend once and communicate when a peer needs to act. A blocker merits a signal; a routine edit needs no work or memory record. Repeated bookkeeping adds noise and can duplicate host state. Reuse the host briefing, describe unfamiliar commands once, and call only the feature needed for the next action.',
-  MCPTool: 'Call a connected MCP server\'s tools, resources, and prompts; server:"octocode" holds the code, GitHub, history, npm, and semantic research catalog. MCP action fields belong in queries[]; the selected tool\'s input belongs in queries[].arguments, and an octocode tool nests its own queries[] inside arguments. An inner field placed at the MCPTool level is rejected. Describe an unfamiliar tool once, then reuse that schema.',
+  awareness: 'Attend once and communicate when a peer must act. A blocker merits a signal; routine edits need no record. Reuse the host briefing, describe unfamiliar commands once, and call only the needed feature.',
+  MCPTool: 'Call MCP tools, resources, and prompts; server:"octocode" holds the code, GitHub, history, npm, and semantic research catalog. Put actions in queries[] and input in queries[].arguments; octocode tools nest queries[] there. Describe an unfamiliar tool once, then reuse that schema.',
 });
 
 /** One executable discovery recipe; workers inherit it through the MCP gateway. */
@@ -102,6 +104,17 @@ export function registerUniqueTool(
     description,
     parameters,
     prepareArguments: (args: unknown) => prepareQueryEnvelope(toolDefinition.name, args),
+    async execute(id, args, signal, onUpdate, ctx) {
+      try {
+        const result = await toolDefinition.execute(id, args, signal, onUpdate, ctx);
+        if (result.isError) throw new ToolResultError(result, ctx, id, toolDefinition.name);
+        return result;
+      }
+      catch (error) {
+        if (error instanceof QueryBatchError && error.completedCount > 0) throw error.withHostReceipt(ctx, id);
+        throw error;
+      }
+    },
   }));
 
   registeredToolNames.add(toolDefinition.name);

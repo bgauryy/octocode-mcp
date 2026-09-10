@@ -7,7 +7,7 @@ const config = {
   tools: { enabled: null, disabled: null },
 };
 
-it.each(['localSearch', 'localGetFileContent', 'astSearch', 'lspSearch', 'ghCloneRepo'])(
+it.each(['localSearch', 'localFetch', 'astSearch', 'lspSearch', 'ghCloneRepo'])(
   'local gate takes precedence over allowlisting %s', name => {
     expect(getToolAvailability(name, { ...config, local: { ...config.local, enabled: false }, tools: { enabled: [name], disabled: null } }))
       .toEqual({ enabled: false, envVar: 'ENABLE_LOCAL' });
@@ -22,9 +22,9 @@ it('requires persistent storage for clone and gives the effective gate', () => {
 });
 
 it('uses the allowlist before the denylist', () => {
-  const tools = { enabled: ['npmSearch'], disabled: ['npmSearch'] };
-  expect(getToolAvailability('npmSearch', { ...config, tools })).toEqual({ enabled: true });
+  const tools = { enabled: ['artifactSearch'], disabled: ['artifactSearch'] };
+  expect(getToolAvailability('artifactSearch', { ...config, tools })).toEqual({ enabled: true });
   expect(getToolAvailability('ghSearch', { ...config, tools })).toEqual({ enabled: false, envVar: 'TOOLS_TO_RUN' });
-  expect(getToolAvailability('npmSearch', { ...config, tools: { enabled: null, disabled: ['npmSearch'] } }))
+  expect(getToolAvailability('artifactSearch', { ...config, tools: { enabled: null, disabled: ['artifactSearch'] } }))
     .toEqual({ enabled: false, envVar: 'DISABLE_TOOLS' });
 });

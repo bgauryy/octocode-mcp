@@ -8,7 +8,6 @@ import { performance } from 'node:perf_hooks';
 import { test } from 'vitest';
 import {
   diffOps,
-  diffOpsJs,
   generateDiffArtifacts,
 } from '../src/tools/edit-tool.js';
 
@@ -38,8 +37,6 @@ test('diffOps: identical content is all same', () => {
 });
 
 test('diffOps: append and delete reconstruct both sides', () => {
-  // Avoid trailing-newline empty-line edge: native `similar` and JS `split('\n')`
-  // disagree on a final empty segment; edit previews do not need that phantom line.
   const oldContent = 'a\nb';
   const appended = 'a\nb\nc';
   const deleted = 'a';
@@ -109,21 +106,12 @@ test('PERF: 3000-line single-change Myers diff stays under 5ms', () => {
   );
 });
 
-test('diffOpsJs and native engine agree on changed lines when native is available', () => {
-  const js = diffOpsJs('a\nb\nc', 'a\nB\nc').filter((op) => op.type !== 'same');
-  assert.deepEqual(js, [
-    { type: 'remove', line: 'b' },
-    { type: 'add', line: 'B' },
-  ]);
-  const previous = process.env['OCTOCODE_EDIT_NATIVE_DIFF'];
-  process.env['OCTOCODE_EDIT_NATIVE_DIFF'] = '1';
-  try {
-    const native = diffOps('a\nb\nc', 'a\nB\nc').filter((op) => op.type !== 'same');
-    // If native failed to load, diffOps falls back to JS — still a pass.
-    assert.deepEqual(native, js);
-  } finally {
-    if (previous === undefined) delete process.env['OCTOCODE_EDIT_NATIVE_DIFF'];
-    else process.env['OCTOCODE_EDIT_NATIVE_DIFF'] = previous;
+test('native diff reconstructs both inputs including final empty lines and Unicode', () => {
+  const cases = ['', '\n', 'a', 'a\n', 'a\n\n', 'a\nb', '😀\r\n界', 'a\na\nb'];
+  for (const oldContent of cases) for (const newContent of cases) {
+    const ops = diffOps(oldContent, newContent);
+    assert.equal(ops.filter(op => op.type !== 'add').map(op => op.line).join('\n'), oldContent);
+    assert.equal(ops.filter(op => op.type !== 'remove').map(op => op.line).join('\n'), newContent);
   }
 });
 

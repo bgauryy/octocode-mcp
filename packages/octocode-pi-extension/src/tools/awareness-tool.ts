@@ -10,6 +10,8 @@ import { z } from 'zod';
 import type { PiContext, PiInstance, PiTheme, ToolCallResult } from '../types.js';
 import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
+import { nativeContinuations } from './awareness-continuations.js';
+import { awarenessWriteReceipt } from './awareness-output.js';
 import { buildAwarenessContext } from './awareness-context.js';
 import { assertPersistentAwarenessEnabled } from './storage-policy.js';
 import { requestApproval } from './approval.js';
@@ -115,44 +117,11 @@ function modelDescriptor(
   };
 }
 
-function nativeContinuations(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(nativeContinuations);
-  const object = record(value);
-  if (!object) return value;
-  if (
-    typeof object.command === 'string' &&
-    record(object.params) &&
-    getAwarenessCommandDescriptor(object.command)
-  ) {
-    const params = Object.fromEntries(
-      Object.entries(record(object.params)!).filter(
-        ([key]) => !RESERVED_PARAMS.has(key)
-      )
-    );
-    return {
-      tool: 'awareness',
-      queries: [
-        {
-          reasoning: 'Continue the requested Awareness results',
-          action: 'call',
-          command: object.command,
-          params,
-        },
-      ],
-    };
-  }
-  return Object.fromEntries(
-    Object.entries(object).map(([key, child]) => [
-      key,
-      nativeContinuations(child),
-    ])
-  );
-}
-
 function boundedOutput(
   raw: string,
   retry?: Record<string, unknown>,
-  completedWrite = false
+  completedWrite = false,
+  receipt?: Record<string, unknown>
 ): { text: string; totalChars: number; truncated: boolean } {
   if (raw.length <= AWARENESS_OUTPUT_MAX_CHARS)
     return { text: raw, totalChars: raw.length, truncated: false };
@@ -168,6 +137,7 @@ function boundedOutput(
       },
       ...(retry ? { next: { retry } } : {}),
       ...(completedWrite ? { commandCompleted: true } : {}),
+      ...(receipt ? { receipt } : {}),
       hint: completedWrite
         ? 'The command completed, but its response exceeds the native output limit. Do not repeat the write to recover output; inspect the resulting state with a read command.'
         : 'The response exceeds the native output limit. Describe this command and narrow its limit, filters or detail options before retrying. This is not a complete result page.',
@@ -368,10 +338,20 @@ async function callCommand(
     );
   }
 
-  const parsedOutput = nativeContinuations(execution.payload);
+  const parsedOutput = nativeContinuations(execution.payload, RESERVED_PARAMS, command);
   const rawText = execution.text ?? JSON.stringify(parsedOutput);
   const diagnostics = execution.diagnostics?.join('\n');
-  const narrower = { ...params, limit: 1 };
+  // History limits count bytes, not rows. A one-byte retry preserves correctness
+  // but can turn one read into tens of thousands of model/tool round trips.
+  const limitSchema = record(record(descriptor.inputSchema['properties'])?.['limit']);
+  const historyContent = command === 'history read' ? record(parsedOutput)?.['content'] : undefined;
+  const currentLimit = typeof historyContent === 'string'
+    ? Buffer.byteLength(historyContent, 'base64')
+    : Number(params['limit'] ?? limitSchema?.['default']);
+  const retryLimit = command === 'history read' && Number.isSafeInteger(currentLimit) && currentLimit > 1
+    ? Math.max(1, Math.min(currentLimit - 1, Math.floor(currentLimit * AWARENESS_OUTPUT_MAX_CHARS * 0.75 / rawText.length)))
+    : 1;
+  const narrower = { ...params, limit: retryLimit };
   const canRetry =
     descriptor.effect === 'read' &&
     rawText.length > AWARENESS_OUTPUT_MAX_CHARS &&
@@ -382,6 +362,7 @@ async function callCommand(
     ) &&
     compileMcpSchemaValidator(nativeInputSchema(descriptor)).validate(narrower)
       .valid;
+  const completedWrite = descriptor.effect !== 'read' && execution.exitCode === 0 && !execution.cancelled;
   const bounded = boundedOutput(
     rawText,
     canRetry
@@ -397,7 +378,8 @@ async function callCommand(
           ],
         }
       : undefined,
-    descriptor.effect !== 'read' && execution.exitCode === 0 && !execution.cancelled
+    completedWrite,
+    completedWrite && rawText.length > AWARENESS_OUTPUT_MAX_CHARS ? awarenessWriteReceipt(parsedOutput) : undefined
   );
   const boundedStderr = diagnostics ? boundedOutput(diagnostics) : undefined;
   const validReportExit =
@@ -424,7 +406,7 @@ async function callCommand(
       piMode: descriptor.piMode,
       code: execution.exitCode,
       killed: Boolean(execution.cancelled),
-      output: bounded.truncated
+      output: bounded.truncated && !completedWrite
         ? { truncated: true, totalChars: bounded.totalChars }
         : parsedOutput,
       truncated: bounded.truncated,

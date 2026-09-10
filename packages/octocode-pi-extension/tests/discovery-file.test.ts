@@ -19,8 +19,8 @@ function tmpCtx(): PiContext {
 }
 
 const SKILLS: DiscoveredSkillState[] = [
-  { name: 'demo-flow', description: 'Demo workflow.', path: '/x/demo-flow/SKILL.md', dir: '/x/demo-flow', source: 'project', enabled: true },
-  { name: 'paused-flow', description: 'Paused workflow.', path: '/x/paused-flow/SKILL.md', dir: '/x/paused-flow', source: 'user', enabled: false },
+  { name: 'demo-flow', description: 'Demo workflow.', path: '/x/demo-flow/SKILL.md', dir: '/x/demo-flow', source: 'project', sourceId: 'demo-source', enabled: true },
+  { name: 'paused-flow', description: 'Paused workflow.', path: '/x/paused-flow/SKILL.md', dir: '/x/paused-flow', source: 'user', sourceId: 'paused-source', enabled: false },
 ];
 
 test('discovery snapshot inventories skills, native tools (sorted), and full MCP configuration', async () => {
@@ -60,7 +60,7 @@ test('discovery context accounting includes direct tool contracts in the provide
       mcpServers: 1,
       mcpTools: 14,
       skills: 1,
-      status: 'frozen',
+      status: 'ready',
       mode: 'exact',
       contextAwarenessEstimates: { method: 'ceil-utf16-chars/4', total: 100, awarenessInstructions: 25, byKind: { 'product-policy': 100 } },
     },
@@ -78,7 +78,7 @@ test('discovery context accounting includes direct tool contracts in the provide
     mcpServers: 1,
     mcpTools: 14,
     skills: 1,
-    status: 'frozen',
+    status: 'ready',
     mode: 'exact',
   });
 });
@@ -150,7 +150,8 @@ test('discoverMcpConfigs inventories official and compatibility MCP locations wi
   assert.deepEqual(byPath(projectClaude).servers, [{ name: 'linear', command: 'npx' }]);
   assert.equal(byPath(projectClaude).host, 'claude');
   assert.deepEqual(byPath(projectCursor).servers, [{ name: 'figma' }], 'remote URL and headers are not exposed');
-  assert.deepEqual(byPath(projectCodex).servers, [{ name: 'github', command: 'gh-mcp' }], 'invalid TOML entries without command/url are skipped');
+  assert.deepEqual(byPath(projectCodex).servers, [{ name: 'github', command: 'gh-mcp' }, { name: 'jira' }], 'invalid TOML entries stay visible for review');
+  assert.ok(byPath(projectCodex).diagnostics?.some(item => item.server === 'jira' && item.code === 'invalid-field'));
   assert.equal(byPath(projectCodex).format, 'toml');
   assert.equal(byPath(projectAgents).host, 'agents');
   assert.equal(byPath(projectAntigravity).host, 'antigravity');
@@ -165,6 +166,7 @@ test('discoverMcpConfigs inventories official and compatibility MCP locations wi
   assert.equal(JSON.stringify(configs).includes('never-report-me'), false, 'env secrets never enter discovery output');
 
   const expectedActive = new Set([
+    projectAgents,
     projectOctocode,
     userOctocode,
   ]);
@@ -240,7 +242,7 @@ test('writeDiscoveryFile never writes into an invalid workspace path', async () 
 });
 
 
-test('Pi discovery uses canonical admission and keeps native Pi imports disabled', () => {
+test('Pi discovery uses canonical admission and ignores Pi MCP files', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-admission-'));
   const cwd = path.join(root, 'workspace');
   const homeDir = path.join(root, 'home');
@@ -253,9 +255,8 @@ test('Pi discovery uses canonical admission and keeps native Pi imports disabled
     fs.symlinkSync(nativePi, linked);
     write(oversized, ' '.repeat(1024 * 1024 + 1));
     const result = discoverMcpSystem(cwd, { homeDir });
-    assert.equal(result.definitions.length, 1);
-    assert.equal(result.definitions[0]?.name, 'pi.native');
-    assert.equal(result.definitions[0]?.config.disabled, true);
+    assert.equal(result.definitions.length, 0);
+    assert.equal(result.configs.find(config => config.path === nativePi), undefined);
     assert.match(result.configs.find((config) => config.path === linked)?.error ?? '', /non-symbolic-link/);
     assert.match(result.configs.find((config) => config.path === oversized)?.error ?? '', /exceeds/);
   } finally {

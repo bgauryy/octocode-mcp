@@ -1,8 +1,8 @@
 // Parses/validates raw CLI args into a tool's JSON input text and flags
 // known input footguns before the tool actually runs.
 import type { ParsedArgs } from '../types.js';
-import { DirectToolInputError } from '@octocodeai/octocode-tools-core/schema';
-import { formatToolExampleCommand } from './formatting.js';
+import { DirectToolInputError } from '@octocodeai/octocode-core/schema';
+import { formatToolExampleCommand } from '@octocodeai/octocode-core/schema';
 import { TOOL_RUNTIME_FLAGS } from './flags-to-query.js';
 
 // The shared runtime set plus `format`, which is runtime-only when paired

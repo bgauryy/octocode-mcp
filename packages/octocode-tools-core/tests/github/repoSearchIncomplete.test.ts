@@ -8,7 +8,7 @@ import { clearAllCache } from '../../src/utils/http/cache/management.js';
 import { searchRepos } from '../../src/providers/github/githubSearch.js';
 import { searchGitHubRepos } from '../../src/tools/github_search_repos/execution.js';
 import { buildGitHubSearchFinalizer } from '../../src/tools/github_search/finalizer.js';
-import { GitHubSearchQuerySchema } from '../../src/tools/github_search/scheme.js';
+import { GitHubSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 beforeEach(() => {
   clearAllCache();

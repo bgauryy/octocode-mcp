@@ -3,7 +3,7 @@ import { DEFAULT_CONFIG } from '@octocodeai/config';
 import {
   DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   getDirectToolCategory,
-} from '@octocodeai/octocode-tools-core/schema';
+} from '@octocodeai/octocode-core/schema';
 
 type ToolCategory = 'github' | 'package' | 'local';
 

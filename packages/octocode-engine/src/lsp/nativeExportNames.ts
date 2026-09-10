@@ -51,7 +51,6 @@ export const PUBLIC_NATIVE_EXPORT_NAMES = [
   'sliceContent',
   'extractMatchingLines',
   'filterPatch',
-  'computeLineDiff',
   'PatchLineType',
   'NativeLspClient',
   'resolvePosition',

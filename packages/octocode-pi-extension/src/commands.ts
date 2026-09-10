@@ -20,6 +20,10 @@ export const EXTENSION_COMMANDS = {
     name: 'configuration',
     description: 'Open Octocode configuration in your local browser.',
   },
+  config: {
+    name: 'config',
+    description: 'Open Octocode configuration in your default browser.',
+  },
 } as const;
 
 /** Read the current host command registry, hiding internal trampoline commands. */

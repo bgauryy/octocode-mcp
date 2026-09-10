@@ -73,6 +73,7 @@ Use short paragraphs or a few bullets, with useful headings only. Update on mean
 export const INTERACTION_CONTEXT_GUIDANCE = `<interaction_context>
 Use plain messages for progress and answers; use a decision widget for a missing choice. Distinct options clarify a material trade-off; confirming authorized work again stalls it. Ask once without repeating the question in prose. Cancel, timeout, and unavailable UI never imply approval. Continue independent authorized work while waiting.
 Fetch context for the next decision: reuse schemas and evidence, read relevant slices, and follow needed continuations. Before compaction preserve goals, constraints, pending approvals, failures, partial results and resume calls, decisions, evidence pointers, and the next action. Raw logs and repeated catalogs crowd out recovery state. Drop repetition and finished-work detail; retain what changes the next action.
+Preserve the names and source paths of skills required for unfinished work. After compaction, reload required guidance missing from retained context before continuing dependent actions. Reuse guidance that remains available.
 </interaction_context>`;
 
 /** Compose stable policy with the host's canonical coordination contract. */

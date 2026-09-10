@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { LocalFetchContentQuerySchema } from '../../../src/tools/local_fetch_content/scheme.js';
-import { FileContentQueryLocalSchema } from '../../../src/tools/github_fetch_content/scheme.js';
+import { LocalFetchContentQuerySchema } from '@octocodeai/octocode-core/schema';
+import { FileContentQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
-describe('localGetFileContent schema', () => {
+describe('localFetch schema', () => {
   // The schema must NOT inject a minify default: the direct-tool executor parses
   // inputSchema before execution, so a schema default would erase "caller omitted
   // minify" and silently defeat the fullContent→none resolution done in
@@ -29,22 +29,23 @@ describe('localGetFileContent schema', () => {
   });
 
   it('accepts continuation offsets beyond the former artificial 100MB ceiling', () => {
-    const charOffset = 100_000_001;
+    const offset = 100_000_001;
     expect(
       LocalFetchContentQuerySchema.parse({
         path: '/repo/src/index.ts',
-        charOffset,
-        charLength: 100,
-      }).charOffset
-    ).toBe(charOffset);
+        offset,
+        chunkType: 'bytes', limit: 100,
+      }).offset
+    ).toBe(offset);
     expect(
       FileContentQueryLocalSchema.parse({
         owner: 'octo',
         repo: 'repo',
         path: 'src/index.ts',
-        charOffset,
-        charLength: 100,
-      }).charOffset
-    ).toBe(charOffset);
+        offset,
+        chunkType: 'bytes',
+        limit: 100,
+      }).offset
+    ).toBe(offset);
   });
 });

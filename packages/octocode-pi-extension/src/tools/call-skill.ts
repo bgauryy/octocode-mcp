@@ -7,9 +7,8 @@
  * maintain. Skills orchestrate; tools (callTool) execute. Any executable `scripts/` a skill
  * ships should be run through the callTool sandbox.
  *
- * Skills are written to `~/.pi/agent/skills/<name>/` so Pi discovers them: spawned
- * subagents see a new skill immediately; the main process surfaces it after a reload or by
- * `read`ing the returned SKILL.md path.
+ * Skills are written to `$OCTOCODE_HOME/skills/<name>/`; the next turn discovers them
+ * and the main agent can grant them to subagents.
  */
 
 import type { ToolDefinition, PiContext } from '../types.js';

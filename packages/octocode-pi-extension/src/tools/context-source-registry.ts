@@ -116,7 +116,8 @@ export function captureCurrentContextSources(
 ): CurrentContextSourceCapture {
   const owners = [...(ownersBySession.get(registryKey(ctx))?.values() ?? [])]
     .filter(({ owner }) => options.includeRestoreOnly === true || owner.capture !== false)
-    .sort((a, b) => a.sequence - b.sequence || a.owner.id.localeCompare(b.owner.id));
+    .sort((a, b) => Number(b.owner.kind === 'user-request') - Number(a.owner.kind === 'user-request')
+      || a.sequence - b.sequence || a.owner.id.localeCompare(b.owner.id));
   const contents: Record<string, string> = {};
   const segments: ContextSegmentV1[] = [];
   const sources: CurrentRehydrationSource[] = [];

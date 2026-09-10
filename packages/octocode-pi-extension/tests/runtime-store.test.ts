@@ -8,7 +8,7 @@ test('runtime store resets session state and tracks ordered initialization work'
   const firstGeneration = store.getState().begin('loading configuration');
   store.getState().setStatus('worker', 'running');
   store.getState().setContext({
-    status: 'frozen',
+    status: 'ready',
     mode: 'compact',
     systemPromptChars: 12_000,
     directToolChars: 40_000,
@@ -23,7 +23,7 @@ test('runtime store resets session state and tracks ordered initialization work'
   assert.equal(store.getState().tasks['environment']?.status, 'ready');
   assert.equal(store.getState().statuses['worker'], 'running');
   assert.equal(store.getState().context.providerSubtotalChars, 52_000);
-  assert.equal(store.getState().context.status, 'frozen');
+  assert.equal(store.getState().context.status, 'ready');
 
   const secondGeneration = store.getState().begin();
   assert.equal(secondGeneration, 2);

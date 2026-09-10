@@ -10,7 +10,7 @@ import { MEMORY_SORTS, ParsedArgs } from './args.js';
 import { EmitOptions, die, emit } from '../command-output.js';
 import { resolveAgentId, valuesFor } from './args.js';
 
-export function cmdTellMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): number {
+export async function cmdTellMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): Promise<number> {
   const agentId = resolveAgentId(args);
   const taskContext = String(args['task_context'] ?? '');
   const observation = String(args['observation'] ?? '');
@@ -41,7 +41,7 @@ export function cmdTellMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string
   const supersedes = Array.isArray(rawSup) ? rawSup : rawSup ? [String(rawSup)] : [];
   const rawLabel = args['label'];
   const label = Array.isArray(rawLabel) ? rawLabel[0] : String(rawLabel ?? '');
-  const guarded = insertMemoryWithSimilarityGate(db, {
+  const guarded = (await insertMemoryWithSimilarityGate(db, {
     agentId, taskContext, observation, importance: imp,
     label,
     tags, references: [...references, ...fileReferences], supersedes,
@@ -54,7 +54,7 @@ export function cmdTellMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string
     ref: args['ref'] ? String(args['ref']) : null,
     fileTreeFingerprint: args['file_tree_fingerprint'] ? String(args['file_tree_fingerprint']) : null,
     captureFingerprint: args['capture_fingerprint'] === true,
-  }, Boolean(args['allow_similar']));
+  }, Boolean(args['allow_similar'])));
 
   if (guarded.skipped) {
     return emit({
@@ -83,7 +83,7 @@ export function cmdTellMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string
   return emit(payload, 0, opts);
 }
 
-export function cmdGetMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): number {
+export async function cmdGetMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string, opts: EmitOptions): Promise<number> {
   const rawLabel = args['label'];
   const labelArr = Array.isArray(rawLabel) ? rawLabel : rawLabel ? [String(rawLabel)] : undefined;
   const rawTag = args['tag'];
@@ -130,7 +130,7 @@ export function cmdGetMemory(db: DatabaseSync, args: ParsedArgs, dbPath: string,
   };
   const payload: Record<string, unknown> = {
     db_path: dbPath,
-    ...recallMemory(db, recallParams, Boolean(args['semantic'])),
+    ...(await recallMemory(db, recallParams, Boolean(args['semantic']))),
   };
   if (opts.compact && payload['count'] === 0) {
     return emit({ count: 0, memories: [],

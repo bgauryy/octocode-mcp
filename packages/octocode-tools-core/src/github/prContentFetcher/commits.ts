@@ -11,7 +11,7 @@ import {
   fetchCollectionPage,
   type CollectionState,
 } from './collectionPaging.js';
-import { PR_CONTENT_DEFAULT_ITEMS_PER_PAGE } from '../../config.js';
+import { PR_CONTENT_DEFAULT_ITEMS_PER_PAGE } from '@octocodeai/octocode-core/schema';
 import { COMMIT_FILE_LIMIT, fetchCommitDetail } from '../commitDetail.js';
 import {
   attachRawResponseChars,

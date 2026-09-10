@@ -12,7 +12,7 @@
  */
 import { resolve } from 'node:path';
 import { agentDbPath } from './paths.js';
-import { AGENT_APPLICATION_ID, initOctocodeSchema } from './schema.js';
+import { AGENT_APPLICATION_ID, initOctocodeSchema, readSchemaObjects, assertSchemaObjects, type SchemaObject } from './schema.js';
 import {
   DatabaseSync,
   SQLITE_BUSY_DEADLINE_MS,
@@ -25,15 +25,24 @@ import { hardenSqliteFiles, preparePrivateSqlitePath } from './permissions.js';
 // isolated while the common (single-home) case reuses one handle.
 const _cache = new Map<string, DatabaseSync>();
 
+let canonicalObjects: SchemaObject[] | undefined;
+function agentSchemaObjects(): SchemaObject[] {
+  if (canonicalObjects) return canonicalObjects;
+  const db = new DatabaseSync(':memory:');
+  try {
+    initOctocodeSchema(db);
+    canonicalObjects = readSchemaObjects(db);
+    return canonicalObjects;
+  } finally { db.close(); }
+}
+
 export function assertAgentDatabaseIdentity(db: DatabaseSync): 'fresh' | 'agent' {
   const { application_id: applicationId } = db.prepare('PRAGMA application_id').get() as { application_id: number };
-  const relations = db.prepare(`SELECT name FROM sqlite_schema
-    WHERE type IN ('table', 'view')
-      AND name NOT LIKE 'sqlite_%'
-      AND name NOT GLOB 'memories_fts_*'
-      AND name NOT GLOB 'memory_fts_*'
-    ORDER BY name`).all() as Array<{ name: string }>;
-  if (applicationId === AGENT_APPLICATION_ID) return 'agent';
+  const relations = readSchemaObjects(db);
+  if (applicationId === AGENT_APPLICATION_ID) {
+    assertSchemaObjects(relations, agentSchemaObjects());
+    return 'agent';
+  }
   if (applicationId !== 0) {
     throw new Error(`refusing foreign SQLite application_id ${applicationId}; the agent database requires ${AGENT_APPLICATION_ID}`);
   }
@@ -70,8 +79,11 @@ export function openOctocodeDb(
       if (identity === 'agent' && lockedIdentity !== 'agent') {
         throw new Error('agent database identity changed while opening');
       }
-      initOctocodeSchema(db);
-      if (lockedIdentity !== 'agent') db.exec(`PRAGMA application_id = ${AGENT_APPLICATION_ID}`);
+      if (lockedIdentity === 'fresh') {
+        initOctocodeSchema(db);
+        assertSchemaObjects(readSchemaObjects(db), agentSchemaObjects());
+        db.exec(`PRAGMA application_id = ${AGENT_APPLICATION_ID}`);
+      }
       db.exec('COMMIT');
     } catch (error) {
       try { db.exec('ROLLBACK'); } catch { /* transaction already ended */ }

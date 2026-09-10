@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { GitHubCodeSearchQueryLocalSchema } from '../../src/tools/github_search_code/scheme.js';
-import { GitHubReposSearchSingleQueryLocalSchema } from '../../src/tools/github_search_repos/scheme.js';
-import { GitHubPullRequestSearchQueryLocalSchema } from '../../src/tools/github_search_pull_requests/scheme.js';
-import { LocalRipgrepQuerySchema } from '../../src/tools/local_ripgrep/scheme.js';
+import { GitHubCodeSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubReposSearchSingleQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubPullRequestSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { LocalRipgrepQuerySchema } from '@octocodeai/octocode-core/schema';
 
 function fieldDescription(schema: unknown, field: string): string | undefined {
   const shape = (schema as { shape?: Record<string, { description?: string }> })

@@ -10,6 +10,8 @@ Load when checking why a tool constraint or research rule exists. Verify current
 | Provider pagination and efficiency | [Pagination](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api) and [REST best practices](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api) | provider links, conditional requests, rate limits |
 | PR and commit evidence | [Pull requests](https://docs.github.com/en/rest/pulls/pulls) and [Commits](https://docs.github.com/en/rest/commits/commits) | identities, patches, pagination, comparison bounds |
 | npm lookup/discovery | [npm registry API](https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md) | exact package metadata, search text/size/from, published provenance |
+| Python exact lookup | [PyPI JSON API](https://docs.pypi.org/api/json/) and [disabled search API](https://warehouse.pypa.io/api-reference/xml-rpc/) | exact project metadata; unsupported keyword discovery is not an empty result |
+| Go package/module lookup | [Go API](https://pkg.go.dev/v1/api) | module and package identity, opaque continuation tokens, empty pages with continuation |
 | Semantic capabilities | [Language Server Protocol](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/) | negotiated providers, requests, locations; actual server support can differ |
 | Skill structure | [Agent Skills specification](https://agentskills.io/specification) | frontmatter, focused references, progressive disclosure, standalone scripts |
 

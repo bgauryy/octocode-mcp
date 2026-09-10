@@ -1,9 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 
-import {
-  AstSearchQuerySchema,
-  type AstSearchQuery,
-} from '../../../../src/tools/ast_search/scheme.js';
+import { AstSearchQuerySchema, type AstSearchQuery } from '@octocodeai/octocode-core/schema';
 import { executeAstSearch } from '../../../../src/tools/ast_search/execution.js';
 import {
   GraphAnalysisQuerySchema,

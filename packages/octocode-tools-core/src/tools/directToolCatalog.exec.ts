@@ -3,7 +3,7 @@
  * native addon here; `ALL_TOOLS` loads each execution handler only when called.
  * This entry is reached only when a tool actually runs. Schema, help, and
  * context use the engine-free
- * `@octocodeai/octocode-tools-core/schema` entry point.
+ * `@octocodeai/octocode-core/schema` entry point.
  */
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import { initialize } from '../serverConfig.js';
@@ -23,10 +23,9 @@ import {
   withSecurityValidation,
 } from '../security/bridge.js';
 import {
-  DirectToolInputError,
   type DirectToolDefinition,
   type DirectToolInput,
-} from './directToolCatalog/toolCatalogDefinitions.js';
+} from '@octocodeai/octocode-core/schema';
 
 type DirectToolRuntimeDefinition = DirectToolDefinition & {
   execute: (input: DirectToolInput) => Promise<CallToolResult>;
@@ -273,7 +272,3 @@ async function runBasicDirectTool(
 
   return handler(input);
 }
-
-// Re-export DirectToolInputError so existing `/direct` consumers that import it
-// alongside executeDirectTool keep a single import site.
-export { DirectToolInputError };

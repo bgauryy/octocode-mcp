@@ -8,6 +8,9 @@ The orchestrated research campaign itself has **no harness and no JSON
 schemas**. Its questions and grading flow remain markdown you can read and
 edit. A separate deterministic regression gate measures the retired local-tool
 removal contract: [Local-tool removal held-out eval](docs/UNIFIED_ROUTING_EVAL.md).
+The [artifact routing diagnostic v2](evals/artifact-routing-v2/README.md) separately
+compares native and emulated tool calls with frozen canonical input schemas,
+executable validators, and deterministic grader tests.
 
 ## Characters delivered per tool (≈ tokens)
 

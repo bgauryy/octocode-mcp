@@ -12,7 +12,7 @@ import {
   registerSkillTool,
   resetSkillUsageForTests,
 } from '../src/tools/skill-tool.js';
-import { discoverSkillStates, discoverSkills } from '../src/tools/skill-discovery.js';
+import { discoverSkillStates, discoverSkills, discoverSkillCandidates } from '../src/tools/skill-discovery.js';
 import { setSkillEnabled } from '@octocodeai/agent-contracts/mcp-state';
 import { openOctocodeDb } from '../src/tools/storage-policy.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
@@ -76,14 +76,14 @@ test('skill overrides keep disabled skills in settings inventory but remove them
   }
 });
 
-test('discoverSkills: Pi-provided entries take precedence over disk scan for the same name', () => {
+test('discoverSkills ignores missing Pi paths and retains the concrete workspace skill', () => {
   const cwd = tmpWorkspace();
   makeSkillDir(path.join(cwd, '.agents', 'skills'), 'demo-flow', 'Disk description.');
   const piSkills: SkillInfo[] = [{ name: 'demo-flow', description: 'Pi description.', path: '/pi/demo-flow/SKILL.md', source: 'user', scope: 'global' }];
   const skills = discoverSkills(cwd, piSkills);
   const demo = skills.find((s) => s.name === 'demo-flow');
-  assert.equal(demo!.description, 'Pi description.', 'Pi is the live session authority');
-  assert.equal(demo!.source, 'user/global');
+  assert.equal(demo!.description, 'Disk description.');
+  assert.equal(demo!.source, 'project');
 });
 
 test('discoverSkills resolves Pi prompt metadata without a path to the loadable disk skill', () => {
@@ -93,11 +93,11 @@ test('discoverSkills resolves Pi prompt metadata without a path to the loadable 
   const demo = skills.find((skill) => skill.name === 'demo-flow')!;
 
   assert.equal(demo.path, path.join(dir, 'SKILL.md'));
-  assert.equal(demo.source, 'pi');
-  assert.equal(demo.description, 'Prompt-only metadata.');
+  assert.equal(demo.source, 'project');
+  assert.equal(demo.description, 'Disk description.');
 });
 
-test('discoverSkills scans the common ecosystem roots (claude/cursor/codex/octocode/pi) in both scopes', () => {
+test('discoverSkills scans native and foreign roots in both scopes while ignoring Pi defaults', () => {
   const cwd = tmpWorkspace();
   const home = tmpWorkspace();
   makeSkillDir(path.join(cwd, '.claude', 'skills'), 'claude-skill', 'From project claude.');
@@ -109,14 +109,16 @@ test('discoverSkills scans the common ecosystem roots (claude/cursor/codex/octoc
   makeSkillDir(path.join(home, '.agents', 'skills'), 'home-agents-skill', 'From user agents.');
   makeSkillDir(path.join(home, '.pi', 'agent', 'skills'), 'home-pi-skill', 'From user pi.');
   const bySource = Object.fromEntries(discoverSkills(cwd, undefined, home).map((s) => [s.name, s.source]));
-  assert.equal(bySource['claude-skill'], 'project:claude');
+  assert.equal(bySource['claude-skill'], undefined);
   assert.equal(bySource['home-agents-skill'], 'user:agents');
-  assert.equal(bySource['cursor-skill'], 'project:cursor');
-  assert.equal(bySource['codex-skill'], 'project:codex');
+  assert.equal(bySource['cursor-skill'], undefined);
+  assert.equal(bySource['codex-skill'], undefined);
   assert.equal(bySource['octo-skill'], 'project:octocode');
-  assert.equal(bySource['pi-skill'], 'project:pi');
-  assert.equal(bySource['home-claude-skill'], 'user:claude');
-  assert.equal(bySource['home-pi-skill'], 'user', 'the primary pi user root keeps its plain label');
+  assert.equal(bySource['pi-skill'], undefined);
+  assert.equal(bySource['home-claude-skill'], undefined);
+  const foreign = discoverSkillCandidates(cwd, undefined, home).filter(skill => ['claude', 'cursor', 'codex'].includes(skill.vendor));
+  assert.equal(foreign.filter(skill => skill.status === 'disabled').length, 4);
+  assert.equal(bySource['home-pi-skill'], undefined);
 });
 
 test('discoverSkills dedupes by NAME across roots — most-authoritative root wins', () => {
@@ -136,7 +138,7 @@ test('discoverSkills rejects names that violate Agent Skills lowercase naming', 
   const cwd = tmpWorkspace();
   const home = tmpWorkspace();
   makeSkillDir(path.join(cwd, '.agents', 'skills'), 'Release-Check', 'Project version.');
-  makeSkillDir(path.join(home, '.pi', 'skills'), 'release-check', 'User copy.');
+  makeSkillDir(path.join(home, '.agents', 'skills'), 'release-check', 'User copy.');
   const matches = discoverSkills(cwd, undefined, home)
     .filter((skill) => skill.name.toLowerCase() === 'release-check');
 
@@ -151,7 +153,7 @@ test('discoverSkills skips directories without SKILL.md and missing roots withou
   assert.ok(!discoverSkills(cwd).some((s) => s.name === 'not-a-skill'));
 });
 
-test('discoverSkills uses canonical containment, symlink, and size defenses', () => {
+test('discoverSkills supports linked directories while rejecting oversized definitions', () => {
   const cwd = tmpWorkspace();
   const root = path.join(cwd, '.agents', 'skills');
   const outside = tmpWorkspace();
@@ -162,20 +164,23 @@ test('discoverSkills uses canonical containment, symlink, and size defenses', ()
   fs.appendFileSync(path.join(oversized, 'SKILL.md'), 'x'.repeat(600_000));
 
   const names = discoverSkills(cwd).map((skill) => skill.name);
-  assert.ok(!names.includes('escaped-skill'));
+  assert.ok(names.includes('escaped-skill'));
   assert.ok(!names.includes('oversized-skill'));
 });
 
-test('discoverSkills keeps Awareness loadable with normal Pi-over-disk precedence', () => {
+test('discoverSkills protects bundled Awareness from workspace and explicit Pi collisions', () => {
   const cwd = tmpWorkspace();
   const name = 'octocode-awareness';
   makeSkillDir(path.join(cwd, '.agents', 'skills'), name, 'External-agent skill copy.');
-  const piSkills: SkillInfo[] = [{ name, description: 'Pi copy.', path: `/pi/${name}/SKILL.md` }];
-  const skills = discoverSkills(cwd, piSkills);
+  const bundledDir = tmpWorkspace();
+  const bundledSkillDir = makeSkillDir(bundledDir, name, 'Bundled copy.');
+  const piDir = makeSkillDir(tmpWorkspace(), name, 'Pi copy.');
+  const piSkills: SkillInfo[] = [{ name, description: 'Pi copy.', path: path.join(piDir, 'SKILL.md') }];
+  const skills = discoverSkills(cwd, piSkills, os.homedir(), { bundledDir });
   const awareness = skills.filter((skill) => skill.name === name);
   assert.equal(awareness.length, 1);
-  assert.equal(awareness[0]!.description, 'Pi copy.');
-  assert.equal(awareness[0]!.path, '/pi/octocode-awareness/SKILL.md');
+  assert.equal(awareness[0]!.description, 'Bundled copy.');
+  assert.equal(awareness[0]!.path, path.join(bundledSkillDir, 'SKILL.md'));
 });
 
 test('registered skill tool loads the bundled Awareness instructions when no user copy exists', async () => {
@@ -235,7 +240,7 @@ async function makeTool(piSkills?: SkillInfo[]): Promise<ToolDefinition> {
 
 async function run(def: ToolDefinition, params: Record<string, unknown>, cwd: string): Promise<ToolCallResult> {
   try {
-    return await (def.execute('id', params, undefined, undefined, { cwd } as unknown as PiContext) as Promise<ToolCallResult>);
+    return await (def.execute('id', params, undefined, undefined, { cwd, isProjectTrusted: () => true } as unknown as PiContext) as Promise<ToolCallResult>);
   } catch (err) {
     // executeQueryBatch throws QueryBatchError on validation/execution failures;
     // convert to an isError result so tests can assert on the text.
@@ -310,7 +315,7 @@ test('partial skill content and file lists recover completely through executable
     assert.ok(details.partialReasons.includes('file-filter'));
     const visible = res.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n');
     assert.ok(visible.includes(original.slice(0, details.content.returnedChars)), 'the entire first page survives the model-visible result budget');
-    assert.ok(visible.includes('MCPTool') && visible.includes('charOffset'), 'recovery is visible to the model');
+    assert.ok(visible.includes('MCPTool') && visible.includes('"chunkType":"bytes"'), 'recovery is visible to the model');
     const cli = fileURLToPath(new URL('../../octocode/out/octocode.js', import.meta.url));
     const execute = (tool: string, query: Record<string, unknown>) => {
       const child = spawnSync(process.execPath, [cli, 'tools', tool, '--queries', JSON.stringify(query), '--compact'], { cwd, encoding: 'utf8', timeout: 20_000, env: { ...process.env, ENABLE_LOCAL: 'true' } });
@@ -335,7 +340,7 @@ test('partial skill content and file lists recover completely through executable
       assert.ok(++pages < 30, 'content recovery makes bounded progress');
       const data = execute(contentNext.tool, contentNext.query);
       recovered += data.content;
-      contentNext = data.next?.continueChars;
+      contentNext = data.next?.continue;
       if (data.isPartial) assert.ok(contentNext, 'every partial read supplies its next call');
     }
     assert.equal(recovered, original, 'prefix and canonical continuation pages cover every instruction exactly');
@@ -391,7 +396,28 @@ test('type:load action:list shows every discovered skill with source and session
   const res = await run(def, q([{ reasoning: 'List all skills.', type: 'load', action: 'list' }]), cwd);
   const text = (res.content[0] as { text: string }).text;
   assert.match(text, /skill\(\{queries:/);
-  assert.match(text, /- demo-flow \[project\] \(loaded 1× this session\): Demo workflow\./);
+  assert.match(text, /- demo-flow \[project\] id:sha256:[a-f0-9]+ \(loaded 1× this session\): Demo workflow\./);
+});
+
+test('skill list continuations execute through the public tool and cover every enabled source', async () => {
+  const cwd = tmpWorkspace();
+  for (let i = 0; i < 65; i++) makeSkillDir(path.join(cwd, '.agents', 'skills'), 'page-' + String(i).padStart(2, '0'), i === 20 ? 'Long description. '.repeat(50) : 'Description ' + i + '.');
+  const def = await makeTool();
+  const found = new Map<string, string>();
+  let params: Record<string, unknown> | undefined = q([{ reasoning: 'Inspect enabled source identities.', type: 'load', action: 'list', limit: 7 }]);
+  let calls = 0;
+  while (params) {
+    assert.ok(++calls < 100, 'continuations make progress');
+    const output = await run(def, params, cwd);
+    assert.equal(output.isError, false);
+    const page = output.details as import('../src/tools/skill-pages.js').SkillPage;
+    for (const skill of page.skills) {
+      assert.ok(skill.sourceId);
+      found.set(skill.name, (found.get(skill.name) ?? '') + skill.description);
+    }
+    params = page.next?.params;
+  }
+  for (let i = 0; i < 65; i++) assert.equal(found.get('page-' + String(i).padStart(2, '0')), i === 20 ? 'Long description. '.repeat(50).trim() : 'Description ' + i + '.');
 });
 
 // ─── ordered multi-query ──────────────────────────────────────────────────────────────────

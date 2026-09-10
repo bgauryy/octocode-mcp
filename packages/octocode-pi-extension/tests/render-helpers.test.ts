@@ -101,13 +101,14 @@ test('buildToolCallSummary formats each Octocode direct-tool family', () => {
     ['ghCloneRepo', { queries: [{ owner: 'octo', repo: 'repo', sparsePath: 'src' }] }, /octo\/repo\/src/],
     ['ghUnknown', { queries: [{ owner: 'octo', repo: 'repo' }] }, /octo\/repo/],
     ['astSearch', { queries: [{ operation: 'match', pattern: 'class $A', path: '/very/long/path/to/project/src' }, { operation: 'text', searchText: 'next', path: '/tmp' }] }, /\[match\] "class \$A".*project\/src/],
-    ['localGetFileContent', { queries: [{ path: '/tmp/src/file.ts', startLine: 10, endLine: 12 }] }, /file\.ts:10-12/],
-    ['localGetFileContent', { queries: [{ path: '/tmp/src/file.ts', matchString: 'export function longName' }] }, /file\.ts \/export function long/],
+    ['localFetch', { queries: [{ path: '/tmp/src/file.ts', startLine: 10, endLine: 12 }] }, /file\.ts:10-12/],
+    ['localFetch', { queries: [{ path: '/tmp/src/file.ts', matchString: 'export function longName' }] }, /file\.ts \/export function long/],
     ['astSearch', { queries: [{ operation: 'tree', path: '/tmp/workspace', maxDepth: 4 }] }, /workspace depth:4/],
     ['astSearch', { queries: [{ operation: 'files', path: '/tmp/workspace', names: ['a.ts', 'b.ts'], pathPattern: 'src/**' }] }, /workspace \[a\.ts, b\.ts\] src\/\*\*/],
     ['astSearch', { queries: [{ operation: 'topology', analysis: 'deadCode', path: '/tmp/workspace', entrypoints: ['src/index.ts'] }] }, /workspace entries:\[src\/index\.ts\]/],
     ['lspSearch', { queries: [{ operation: 'references', symbolName: 'run', uri: 'file:///tmp/src/main.ts?x=1', lineHint: 42 }] }, /references "run" in main\.ts:42/],
-    ['npmSearch', { queries: [{ packageName: 'vitest' }] }, /vitest/],
+    ['artifactSearch', { queries: [{ type: 'npm', packageName: 'vitest' }] }, /npm: vitest/],
+    ['artifactSearch', { queries: [{ type: 'crates', keywords: ['async', 'runtime'] }] }, /crates: async runtime/],
     ['customTool', { queries: [{ id: 'skip', reasoning: 'skip', alpha: 'one', beta: 'two', gamma: 'three', delta: 'four' }] }, /one two three/],
   ];
 
@@ -116,7 +117,7 @@ test('buildToolCallSummary formats each Octocode direct-tool family', () => {
   }
 
   assert.equal(buildToolCallSummary('ghSearch', {}), '');
-  assert.equal(buildToolCallSummary('localGetFileContent', { queries: [{ path: 'short.ts' }] }), 'short.ts');
+  assert.equal(buildToolCallSummary('localFetch', { queries: [{ path: 'short.ts' }] }), 'short.ts');
 });
 
 test('buildResultStats extracts meaningful per-tool result summaries', () => {
@@ -153,7 +154,7 @@ test('buildResultStats extracts meaningful per-tool result summaries', () => {
     queryCount: 2,
     summary: '5 matches, 2 files',
   });
-  assert.deepEqual(buildResultStats('localGetFileContent', { results: [result({ resolvedPath: '/tmp/a.ts', totalLines: 9, content: 'function run() {}' })] }), {
+  assert.deepEqual(buildResultStats('localFetch', { results: [result({ resolvedPath: '/tmp/a.ts', totalLines: 9, content: 'function run() {}' })] }), {
     queryCount: 1,
     paths: ['a.ts'],
     summary: '9 lines',
@@ -172,7 +173,7 @@ test('buildResultStats extracts meaningful per-tool result summaries', () => {
     paths: ['a.ts:12'],
     summary: '3 refs',
   });
-  assert.deepEqual(buildResultStats('npmSearch', { results: [result({ name: 'pkg', version: '1.2.3' }), result({ packageName: 'other' })] }), {
+  assert.deepEqual(buildResultStats('artifactSearch', { results: [result({ artifacts: [{ name: 'pkg', version: '1.2.3' }] }), result({ artifacts: [{ name: 'other' }] })] }), {
     queryCount: 2,
     paths: ['pkg@1.2.3', 'other'],
   });
@@ -226,14 +227,14 @@ test('Octocode renderers cover partial, collapsed, expanded, stats, and error st
   assert.match(collapsed, /4 matches, 2 files/);
   assert.match(collapsed, /→ ok/, 'collapsed rows carry the first line of the result');
 
-  const bare = buildOctocodeRenderResult('npmSearch', textResult('found 3 packages\nsecond line'), { expanded: false }, theme).render(180)[0]!;
+  const bare = buildOctocodeRenderResult('artifactSearch', textResult('found 3 packages\nsecond line'), { expanded: false }, theme).render(180)[0]!;
   assert.match(bare, /<dim>→ found 3 packages<\/dim>/, 'no stats → the response text is the result');
   assert.doesNotMatch(bare, /second line/);
   assert.match(bare, /Ctrl\+O details/, 'multi-line results advertise their disclosure key inline');
   assert.doesNotMatch(collapsed, /Ctrl\+O details/, 'complete one-line results do not advertise empty detail');
 
   const withPreview = buildOctocodeRenderResult(
-    'localGetFileContent',
+    'localFetch',
     textResult('ok', { results: [{ data: { resolvedPath: '/tmp/a.ts', totalLines: 2, content: 'const answer = 42;' } }] }),
     { expanded: false },
     theme,
@@ -243,7 +244,7 @@ test('Octocode renderers cover partial, collapsed, expanded, stats, and error st
   assert.doesNotMatch(withPreview, /→ ok/, 'a structured preview replaces the raw-text fallback');
 
   const providerRows = buildOctocodeRenderResult(
-    'localGetFileContent',
+    'localFetch',
     textResult('batch complete', {
       results: [
         { data: { resolvedPath: '/tmp/a.ts', totalLines: 2 } },
@@ -299,20 +300,20 @@ test('Octocode renderers cover partial, collapsed, expanded, stats, and error st
   assert.match(expanded.join('\n'), /response:/);
   assert.match(expanded.at(-1)!, /5 more lines hidden/);
 
-  const error = buildOctocodeRenderResult('npmSearch', textResult('bad', {}, true), { expanded: false }, theme).render(120)[0]!;
+  const error = buildOctocodeRenderResult('artifactSearch', textResult('bad', {}, true), { expanded: false }, theme).render(120)[0]!;
   assert.match(error, /<error>✗<\/error>/);
 });
 
 test('error result rows surface the failure text and honor system-level context.isError', () => {
   // result.isError path now shows the message text, not just the glyph.
-  const r1 = buildOctocodeRenderResult('npmSearch', textResult('boom: it failed', {}, true), { expanded: false }, theme).render(200)[0]!;
+  const r1 = buildOctocodeRenderResult('artifactSearch', textResult('boom: it failed', {}, true), { expanded: false }, theme).render(200)[0]!;
   assert.match(r1, /<error>✗<\/error>/);
   assert.match(r1, /<error>boom: it failed<\/error>/);
 
   // context.isError (system-level) marks the row as an error even when the
   // returned result.isError is false — Pi ignores the returned flag.
   const r2 = buildOctocodeRenderResult(
-    'localGetFileContent',
+    'localFetch',
     textResult('arguments: must be object', {}, false),
     { expanded: false },
     theme,
@@ -323,7 +324,7 @@ test('error result rows surface the failure text and honor system-level context.
 
   // A success result with no error stays a success row (no regression).
   const okRow = buildOctocodeRenderResult(
-    'localGetFileContent',
+    'localFetch',
     textResult('ok', { results: [{ data: { path: 'a.ts', totalLines: 1 } }] }, false),
     { expanded: false },
     theme,

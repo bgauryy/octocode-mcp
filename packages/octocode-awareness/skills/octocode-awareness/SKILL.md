@@ -66,6 +66,6 @@ Local Git supplies optional selected evidence behind shared reasoning. Share why
 
 Default `coordination` hooks provide presence/delivery. Tracking, stop verification, handoffs and history are opt-in. Pi uses native events; shell hosts use installed hooks. Installation needs a scoped preview and authorization; choose one hook surface per host.
 
-Load only the needed reference: [workflow routing](references/flow-matrix.md), [storage](references/architecture.md), [configuration](references/configuration.md), [hooks](references/hooks.md), [plans](references/plan-task-workflow.md), [locks](references/lock-protocol.md), [history](references/local-history.md), [reflection](references/self-reflection-dialogue.md).
+Load only the needed reference: [workflow routing](references/flow-matrix.md), [storage](references/architecture.md), [configuration](references/configuration.md), [hooks](references/hooks.md), [plans](references/plan-task-workflow.md), [locks](references/lock-protocol.md), [history](references/local-history.md), [reflection](references/self-reflection-dialogue.md), [Octocode tools](references/octocode.md) when repository evidence needs a tool call.
 
 Source changes sync via `yarn workspace @octocodeai/octocode-awareness build`.

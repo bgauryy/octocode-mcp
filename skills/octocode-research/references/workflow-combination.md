@@ -5,7 +5,7 @@ Load when a local clue points upstream or remote source needs local AST, LSP, gr
 ## Local to external
 - Resolve the local package/version or exact error/config anchor before searching upstream.
 - For a repository concept without a known owner/name, start with `ghSearch operation:"repositories"`; keep alternative concepts in separate queries.
-- Use npm metadata to locate the repository and package subdirectory; match a release/tag/commit before comparing behavior.
+- Use `artifactSearch` with the observed ecosystem `type` and `packageName` to locate the repository and package subdirectory; match a release/tag/commit before comparing behavior.
 - For a known commit, read it directly. For history discovery, search the relevant repository/path or message, then fetch the chosen commit/PR.
 - Return to local callers, configuration, and tests before claiming an upstream change fixes the running system.
 
@@ -14,13 +14,13 @@ Choose the smallest scope that supplies the required evidence:
 | Need | Tool | Scope and caveat |
 |---|---|---|
 | One remote read | `ghGetFileContent` | exact file/ref; no materialization needed |
-| Directory inspection | `ghGetFileContent type:"directory"` | inspect returned completeness and skipped/partial state |
+| Directory inspection | `ghSearch operation:"tree"` | remote paths; use `ghCloneRepo.sparsePath` when local content is needed |
 | Repeated reads of a known subtree/file | `ghCloneRepo` with optional `sparsePath` | checkout may include root files; complete is relative to the requested scope |
 | Repository-wide graph or semantic project | `ghCloneRepo` without `sparsePath` | shallow checkout; shallow history is not full history |
 
-Use the returned `location.localPath` for clone results, or the directory result's returned local path; never synthesize cache paths. Preserve requested/resolved ref, `commitSha`, and scope. Clone `branch` accepts a branch, tag, or full 40-character commit SHA. For reproducible evidence, select an immutable SHA and retain the returned identity.
+Use the returned `location.localPath` for clone results; never synthesize cache paths. Preserve requested/resolved ref, `commitSha`, and scope. Clone `branch` accepts a branch, tag, or full 40-character commit SHA. For reproducible evidence, select an immutable SHA and retain the returned identity.
 
-Availability depends on the live catalog, `ENABLE_LOCAL`, `ENABLE_CLONE`, and `OCTOCODE_STORAGE_MODE`. Clone and directory materialization require persistent storage. Declare a disabled capability; use remote evidence or an existing checkout without changing global configuration automatically.
+Availability depends on the live catalog, `ENABLE_LOCAL`, `ENABLE_CLONE`, and `OCTOCODE_STORAGE_MODE`. Cloning requires persistent storage. `ghGetFileContent` reads files without creating a checkout. Declare a disabled capability; use remote evidence or an existing checkout without changing global configuration automatically.
 
 ## Scope is part of proof
 - Choose materialization based on needed evidence and cost, not a read-count threshold.

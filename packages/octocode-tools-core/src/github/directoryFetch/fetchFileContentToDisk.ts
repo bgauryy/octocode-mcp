@@ -8,7 +8,7 @@ import {
 import { join, dirname, resolve, sep } from 'node:path';
 import { getOctocodeDir } from '../../shared/paths.js';
 import type { AuthInfo } from '@modelcontextprotocol/server';
-import type { FileMaterializationResult } from '../../tools/github_fetch_content/types.js';
+import type { FileMaterializationResult } from './types.js';
 import { fetchCachedRawGitHubFileContent } from '../fileContentRaw/cache.js';
 import {
   isCacheHit,
@@ -81,7 +81,6 @@ export async function fetchFileContentToDisk(
         owner,
         repo,
         path,
-        type: 'file',
         branch: commitSha,
         fullContent: true,
         contextLines: 0,

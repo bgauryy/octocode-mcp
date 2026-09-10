@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import type { Octokit } from 'octokit';
 import { AuthInfo } from '@modelcontextprotocol/server';
-import type { GitHubViewRepoStructureQuerySchema } from '../../toolContract/input/resources/tools/githubTreeOperation.js';
+import type { GitHubViewRepoStructureQuerySchema } from '@octocodeai/octocode-core/schema';
 
 type GitHubViewRepoStructureQuery = z.infer<
   typeof GitHubViewRepoStructureQuerySchema

@@ -8,11 +8,11 @@ export const CANONICAL_ADAPTER_TOOL_NAMES = [
   'ghGetFileContent',
   'ghSearchHistory',
   'ghGetHistoryItem',
-  'npmSearch',
+  'artifactSearch',
   'ghCloneRepo',
   'localSearch',
   'astSearch',
-  'localGetFileContent',
+  'localFetch',
   'lspSearch',
 ] as const;
 
@@ -58,7 +58,7 @@ const CASE_QUERIES: Readonly<
     repo: 'fixture-repo',
     ref: 'fixture-ref',
   },
-  npmSearch: { packageName: 'fixture-package' },
+  artifactSearch: { type: 'npm', packageName: 'fixture-package' },
   ghCloneRepo: {
     owner: 'fixture-owner',
     repo: 'fixture-repo',
@@ -77,7 +77,7 @@ const CASE_QUERIES: Readonly<
     file: 'src/index.ts',
     depth: 1,
   },
-  localGetFileContent: {
+  localFetch: {
     path: '/adapter-parity/fixture.ts',
     startLine: 1,
     endLine: 1,

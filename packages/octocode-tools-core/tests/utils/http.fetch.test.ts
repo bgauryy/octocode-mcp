@@ -51,11 +51,26 @@ describe('fetchWithRetries', () => {
   });
 
   it('returns null for a successful empty response', async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
 
     await expect(
       fetchWithRetries('https://api.example.test/no-content')
     ).resolves.toBeNull();
+  });
+
+  it('returns exact text when a metadata endpoint is not JSON', async () => {
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('<metadata><version>1</version></metadata>')
+      );
+    await expect(
+      fetchWithRetries('https://repo.example.test/metadata.xml', {
+        responseType: 'text',
+      })
+    ).resolves.toBe('<metadata><version>1</version></metadata>');
   });
 
   it('retries retryable failures and then succeeds', async () => {
@@ -113,12 +128,14 @@ describe('fetchWithRetries', () => {
     const url = 'https://api.example.test/failing';
     globalThis.fetch = vi
       .fn()
-      .mockRejectedValue(Object.assign(new Error('offline'), { retryable: true }));
+      .mockRejectedValue(
+        Object.assign(new Error('offline'), { retryable: true })
+      );
 
     for (let attempt = 0; attempt < 5; attempt++) {
-      await expect(
-        fetchWithRetries(url, { maxRetries: 0 })
-      ).rejects.toThrow(/failed to fetch after 1 attempts/i);
+      await expect(fetchWithRetries(url, { maxRetries: 0 })).rejects.toThrow(
+        /failed to fetch after 1 attempts/i
+      );
     }
 
     expect(isCircuitOpen(url)).toBe(true);
@@ -126,4 +143,29 @@ describe('fetchWithRetries', () => {
       /circuit open/i
     );
   });
+
+  it.each([429, 503])(
+    'preserves HTTP status and cause after exhausting %i retries',
+    async status => {
+      globalThis.fetch = vi.fn().mockImplementation(
+        async () =>
+          new Response('busy', {
+            status,
+            headers: { 'Retry-After': '2' },
+          })
+      );
+      await expect(
+        fetchWithRetries('https://api.example.test/exhausted', {
+          maxRetries: 1,
+          initialDelayMs: 0,
+          maxDelayMs: 0,
+        })
+      ).rejects.toMatchObject({
+        status,
+        retryable: true,
+        headers: expect.any(Headers),
+        cause: expect.objectContaining({ status }),
+      });
+    }
+  );
 });

@@ -4,7 +4,7 @@ import { relative, resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { assertKnownOptions } from './helpers.js';
-import { getMemory } from './memory-recall.js';
+import { queryMemory } from './memory-recall.js';
 import { queryAwareness } from './repo-query.js';
 import { AttendEvidence, AttendParams, AttendResult, chooseMode, compactRow, compactWorkboard, evidenceTrust, groupWorkboard, limitOf, ORGAN_REFERENCE, profileMap, resourceLeads, stringList, summarize, TEAM_NORMS, uniqueStrings } from './attend-model.js';
 import { attendContinuations } from './attend-continuations.js';
@@ -124,7 +124,7 @@ export function attendAwareness(db: DatabaseSync, params: AttendParams = {}): At
 
   const memoryQuery = query || files.join(' ');
   const recall = memoryQuery
-    ? getMemory(db, {
+    ? queryMemory(db, {
       query: memoryQuery,
       // Recall is a ranked top-k read. Keep the selected packet small but
       // retain a bounded probe so the revision sees rows beyond the visible

@@ -55,7 +55,8 @@ export interface RuntimeNotice {
 }
 
 export interface RuntimeContextState {
-  status: 'pending' | 'frozen' | 'stale';
+  /** Projection readiness; provider cache hits are separate usage receipts. */
+  status: 'pending' | 'ready' | 'stale';
   mode: 'exact' | 'compact';
   systemPromptChars: number;
   mcpChars: number;

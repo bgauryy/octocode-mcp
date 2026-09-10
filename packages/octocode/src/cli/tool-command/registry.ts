@@ -1,16 +1,12 @@
-// Tool registry access: definitions, categories, and lazily-loaded metadata
-// (descriptions/system prompt). Kept engine-FREE — it only pulls the
-// `/schema` subpath so schema/help/list paths work on runtimes that cannot
-// load the native engine (e.g. Codex.app Node).
+// Core supplies public tool definitions; this adapter attaches runtime availability.
 import {
   DIRECT_TOOL_CATEGORIES,
   DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   getDirectToolDisplayFields,
-  loadToolContent,
-  getToolAvailability,
   type DirectToolDefinition,
   type DirectToolDisplayField,
-} from '@octocodeai/octocode-tools-core/schema';
+} from '@octocodeai/octocode-core/schema';
+import { getToolAvailability } from '@octocodeai/octocode-tools-core/schema';
 
 export type ToolDefinition = DirectToolDefinition & {
   disabled?: { envVar: string };
@@ -40,10 +36,6 @@ export function getToolEnableInstruction(toolName: string): string | undefined {
   return `set ${availability.envVar}=true`;
 }
 
-let toolMetadataPromise: Promise<
-  Awaited<ReturnType<typeof loadToolContent>>
-> | null = null;
-
 export function findToolDefinition(name: string): ToolDefinition | undefined {
   return TOOL_DEFINITIONS.find(tool => tool.name === name);
 }
@@ -52,24 +44,4 @@ export function getDisplayFields(
   tool: ToolDefinition
 ): DirectToolDisplayField[] {
   return getDirectToolDisplayFields(tool.name);
-}
-
-export async function loadToolMetadata(): Promise<
-  Awaited<ReturnType<typeof loadToolContent>>
-> {
-  if (!toolMetadataPromise) {
-    toolMetadataPromise = loadToolContent();
-  }
-
-  return toolMetadataPromise;
-}
-
-export async function getOptionalToolMetadata(): Promise<Awaited<
-  ReturnType<typeof loadToolContent>
-> | null> {
-  try {
-    return await loadToolMetadata();
-  } catch {
-    return null;
-  }
 }

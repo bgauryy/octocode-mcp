@@ -5,15 +5,15 @@ import {
   GITHUB_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
-} from '../../../octocode-tools-core/src/tools/toolNames.js';
-import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+} from '@octocodeai/octocode-core/schema';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
+import { executeDirectTool } from '@octocodeai/octocode-tools-core';
 import {
   DIRECT_TOOL_CATEGORIES,
   DIRECT_TOOL_DEFINITIONS,
   DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   DirectToolInputError,
   buildDirectToolExampleQuery,
-  executeDirectTool,
   findDirectToolDefinition,
   formatDirectToolMetadataSchemaText,
   formatDirectToolSchemaText,
@@ -25,7 +25,7 @@ import {
   prepareDirectToolInput,
   prepareDirectToolInputFromJsonText,
   sortDirectToolNames,
-} from '@octocodeai/octocode-tools-core';
+} from '@octocodeai/octocode-core/schema';
 import { z } from 'zod';
 
 describe('directToolCatalog', () => {
@@ -42,11 +42,11 @@ describe('directToolCatalog', () => {
       'ghGetFileContent',
       'ghSearchHistory',
       'ghGetHistoryItem',
-      'npmSearch',
+      'artifactSearch',
       'ghCloneRepo',
       'localSearch',
       'astSearch',
-      'localGetFileContent',
+      'localFetch',
       'lspSearch',
     ]);
     expect(names).not.toEqual(
@@ -143,16 +143,7 @@ describe('directToolCatalog', () => {
     expect(formatDirectToolMetadataSchemaText({ foo: 'bar' })).toContain(
       '"foo": "bar"'
     );
-    expect(
-      getDirectToolDescription(LOCAL_SEARCH_TOOL_NAME, {
-        tools: {
-          [LOCAL_SEARCH_TOOL_NAME]: {
-            description: 'Local search metadata',
-          },
-        },
-      })
-    ).toBe(findDirectToolDefinition(LOCAL_SEARCH_TOOL_NAME)!.description);
-    expect(getDirectToolDescription(LOCAL_SEARCH_TOOL_NAME, null)).toBe(
+    expect(getDirectToolDescription(LOCAL_SEARCH_TOOL_NAME)).toBe(
       findDirectToolDefinition(LOCAL_SEARCH_TOOL_NAME)!.description
     );
   });
@@ -274,7 +265,7 @@ describe('directToolCatalog', () => {
     );
   });
 
-  it('warns on unknown fields but does NOT hard-fail — strips them and proceeds', () => {
+  it('filters unknown fields only when the adapter explicitly opts out of strict validation', () => {
     const warnings: Array<{ fields: string[]; index: number }> = [];
 
     const prepared = prepareDirectToolInput(
@@ -290,6 +281,7 @@ describe('directToolCatalog', () => {
       ],
       {
         sourceLabel: 'unit-test',
+        rejectUnknownFields: false,
         onUnknownFields: (fields, index) => warnings.push({ fields, index }),
       }
     ) as { queries: Array<Record<string, unknown>> };

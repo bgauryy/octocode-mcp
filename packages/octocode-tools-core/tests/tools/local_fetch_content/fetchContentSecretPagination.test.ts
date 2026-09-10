@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { executeDirectTool } from '../../../src/tools/directToolCatalog.exec.js';
-import { findDirectToolDefinition } from '../../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
+import { findDirectToolDefinition } from '@octocodeai/octocode-core/schema';
 
 type View = {
   content: string;
@@ -11,17 +11,16 @@ type View = {
   sourceChars?: number;
   totalLines?: number;
   terminalLimit?: boolean;
-  next?: { continueChars?: { tool: string; query: Record<string, unknown> } };
+  next?: { continue?: { tool: string; query: Record<string, unknown> } };
 };
 async function run(
   query: Record<string, unknown>,
   allowError = false
 ): Promise<View> {
   expect(
-    findDirectToolDefinition('localGetFileContent')!.schema.safeParse(query)
-      .success
+    findDirectToolDefinition('localFetch')!.schema.safeParse(query).success
   ).toBe(true);
-  const result = await executeDirectTool('localGetFileContent', {
+  const result = await executeDirectTool('localFetch', {
     queries: [query],
   });
   const row = (
@@ -55,12 +54,17 @@ describe('local secret redaction precedes character pagination', () => {
       const whole = await run({ path, minify, fullContent: true });
       expect(whole.content).not.toContain(token);
       expect(whole.content).toContain('REDACTED');
-      let query: Record<string, unknown> = { path, minify, charLength: 7 };
+      let query: Record<string, unknown> = {
+        path,
+        minify,
+        chunkType: 'bytes',
+        limit: 7,
+      };
       let joined = '';
       for (let page = 0; page < 50; page++) {
         const view = await run(query);
         joined += view.content;
-        const next = view.next?.continueChars;
+        const next = view.next?.continue;
         if (!next) break;
         query = next.query;
       }
@@ -82,7 +86,7 @@ describe('local secret redaction precedes character pagination', () => {
     );
     await writeFile(largePath, source);
     const rejected = await run(
-      { path: largePath, minify: 'none', charLength: 7 },
+      { path: largePath, minify: 'none', chunkType: 'bytes', limit: 7 },
       true
     );
     expect(rejected.errorCode).toBe('contentSecurityLimit');
@@ -96,8 +100,8 @@ describe('local secret redaction precedes character pagination', () => {
         { tool: string; query: Record<string, unknown> }
       >
     ).readBoundedLines;
-    expect(recovery.tool).toBe('localGetFileContent');
-    expect(recovery.query).not.toHaveProperty('charOffset');
+    expect(recovery.tool).toBe('localFetch');
+    expect(recovery.query).not.toHaveProperty('offset');
     const bounded = await run(recovery.query);
     expect(bounded.content).toContain('safe first line');
     expect(bounded.sourceChars).toBe(source.length);
@@ -115,13 +119,14 @@ describe('local secret redaction precedes character pagination', () => {
     const atLimit = await run({
       path: boundaryPath,
       minify: 'none',
-      charLength: 7,
+      chunkType: 'bytes',
+      limit: 7,
     });
     expect(atLimit.errorCode).not.toBe('contentSecurityLimit');
     expect(atLimit.content).toContain('safe');
     await writeFile(boundaryPath, 'x'.repeat(10_000_001));
     const overLimit = await run(
-      { path: boundaryPath, minify: 'none', charLength: 7 },
+      { path: boundaryPath, minify: 'none', chunkType: 'bytes', limit: 7 },
       true
     );
     expect(overLimit.errorCode).toBe('contentSecurityLimit');

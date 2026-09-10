@@ -37,11 +37,12 @@ describe('canonical subagent skill discovery', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('discovers any valid skill name rather than a fixed Octocode allowlist', () => {
+  it('keeps unrelated enabled skills out of role defaults and allows explicit role selection', () => {
     const skillDir = path.join(tmpDir, '.agents', 'skills', 'future-octocode-workflow');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: future-octocode-workflow\ndescription: Future workflow.\n---\n');
-    expect(resolveSubagentSkills(SUBAGENT_REGISTRY.researcher, tmpDir)).toContain(skillDir);
+    expect(resolveSubagentSkills(SUBAGENT_REGISTRY.researcher, tmpDir)).not.toContain(skillDir);
+    expect(resolveSubagentSkills({ skillNames: ['future-octocode-workflow'] }, tmpDir)).toContain(skillDir);
   });
 });
 
@@ -119,7 +120,7 @@ describe('resolveSubagentSkills', () => {
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: late-installed-workflow\ndescription: Late workflow.\n---\n');
 
-    const skills = resolveSubagentSkills(SUBAGENT_REGISTRY['researcher'], tmpDir);
+    const skills = resolveSubagentSkills({ ...SUBAGENT_REGISTRY['researcher'], skillNames: ['late-installed-workflow'] }, tmpDir);
     expect(skills).toContain(skillDir);
   });
 
@@ -156,6 +157,11 @@ describe('resolveSubagentSkills', () => {
     // skills override: if provided, skip all lazy resolution
     const result = resolveSubagentSkills({ skills: explicitSkills } as any);
     expect(result).toEqual(explicitSkills);
+  });
+
+  it('keeps explicit empty skills and unspecified custom defaults empty', () => {
+    expect(resolveSubagentSkills({ skills: [], skillNames: ['octocode-research'] }, tmpDir)).toEqual([]);
+    expect(resolveSubagentSkills({}, tmpDir)).toEqual([]);
   });
 
   it('includes browser-agent extraSkillPaths in the resolved list when the path exists', () => {

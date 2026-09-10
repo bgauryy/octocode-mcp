@@ -156,7 +156,7 @@ Most tools do one slice (web search, or grep your repository) and hand back a fi
 | Need | Use Octocode to |
 |------|-----------------|
 | **Codebase questions** | Search local or GitHub code, read exact regions, browse trees, and carry file/line anchors into the answer. |
-| **Implementation research** | Compare patterns across repositories, npm packages, pull requests, commits, and local files before changing code. |
+| **Implementation research** | Compare patterns across repositories, package registries, pull requests, commits, and local files before changing code. |
 | **Semantic navigation** | Resolve definitions, references, callers/callees, call hierarchy, hovers, symbols, diagnostics, and type relationships through LSP. |
 | **Structural matching** | Run AST-shaped searches with patterns or YAML rules so comments and strings do not become false positives. |
 | **Large-file context** | Minify, skeletonize, or paginate code so agents spend tokens on relevant structure instead of boilerplate. |
@@ -215,15 +215,15 @@ or trees with its strict `operation` field.
 
 | Tool | What it does | Knob |
 |------|--------------|------|
-| `localSearch` | Find lexical text and regex matches using `searchText` and an absolute `path`. | `searchText` |
-| `astSearch` | Inspect syntax, files, trees, symbols, and bounded topology analyses. | `operation` |
-| `localGetFileContent` | Read a local file or region: exact slice, match string, line range, or paginated chars. | `minify` |
+| `localSearch` | Lexical text and regex search over local files. | `searchText` |
+| `astSearch` | AST shape, file, tree, symbol, and topology queries. | `operation` |
+| `localFetch` | Read a local file or region: exact slice, match string, line range, or paginated chars. | `minify` |
 
 ### Package search
 
 | Tool | What it does | Knob |
 |------|--------------|------|
-| `npmSearch` | npm package lookup and keyword search; returns metadata and the source repository for GitHub handoff. | `concise` |
+| `artifactSearch` | Package lookup and capability discovery across eight ecosystems; returns registry metadata and upstream source links. | `type`, `packageName` / `keywords` |
 
 ### LSP
 
@@ -384,7 +384,7 @@ Create a token at [github.com/settings/tokens](https://github.com/settings/token
 **Every byte to the model is scanned and redacted first.** All content passes through the Rust engine's secret scanner on the way *in* and *out*, so secrets never reach the model. That covers local files, GitHub and npm responses, errors, and tool output. The behavior is identical under MCP and the CLI.
 
 - **Secret redaction, in and out.** 300+ provider credential patterns (AWS, Azure, GCP, GitHub, OpenAI, Anthropic, Stripe, Slack, 1Password, and more) plus generic JWTs, PEM/private keys, bearer tokens, database connection strings, and high-entropy strings. Masked values surface a redaction warning so the agent knows.
-- **Content sanitized at the source.** Local reads (`localGetFileContent`, ripgrep, structural search, binary, file discovery, structure) and external fetches (GitHub code/files, npm) are scanned as they are read, not only at the boundary.
+- **Content sanitized at the source.** Local reads (`localFetch`, ripgrep, structural search, binary, file discovery, structure) and external fetches (GitHub code/files, npm) are scanned as they are read, not only at the boundary.
 - **Path safety.** Relative inputs resolve from `WORKSPACE_ROOT` / config / `cwd`, then local reads are bounded to the engine's allowed roots (home by default, plus `ALLOWED_PATHS` and Octocode-registered roots). Symlinks are resolved and the real target is **re-validated**, so a link cannot escape into a blocked location.
 - **Sensitive files blocked by default.** Reads of known secret-bearing files and folders return a redacted error instead of contents: keys/certs, `.env*`, `.npmrc`/`.netrc`, cloud/infra credentials (`.aws/`, `.kube/`, `*.tfstate`), `.git/`, browser logins, OS keychains, and wallets. Full list in [SECURITY.md](https://github.com/bgauryy/octocode/blob/main/docs/SECURITY.md).
 - **Command safety.** Normal local search runs in-process inside `octocode-engine`. External helpers are fixed per lane, command/argument allowlisted, and run through `spawn` with argument arrays: no shell strings, no injection.
@@ -402,7 +402,7 @@ Four code-intelligence axes; three are native to the Rust engine and need no ext
 | Axis | What it does | How to use it |
 |------|--------------|---------------|
 | **Structural AST** | Tree-sitter shape queries (`pattern` or YAML `rule`) across 60+ extensions. | `astSearch operation:"match"` · CLI `tools astSearch --scheme` |
-| **Signature outline** | Body-free skeleton with line numbers from real tree-sitter parsing, no heuristics. An anti-growth guard returns the real file when a skeleton is not smaller. | `minify:"symbols"` · CLI `tools localGetFileContent --scheme` |
+| **Signature outline** | Body-free skeleton with line numbers from real tree-sitter parsing, no heuristics. An anti-growth guard returns the real file when a skeleton is not smaller. | `minify:"symbols"` · CLI `tools localFetch --scheme` |
 | **Content minification** | Comment/whitespace stripping for 70+ languages and config formats; HTML/Vue/Svelte also minify embedded `<style>`/`<script>`. | `minify:"standard"` (default) |
 | **LSP navigation** | definition, references, callers/callees, callHierarchy, hover, typeDefinition, implementation, documentSymbols, through an installed language server; JS/TS also have a native, no-server path. | `lspSearch` · CLI `tools lspSearch --scheme` |
 

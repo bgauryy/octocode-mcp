@@ -17,7 +17,7 @@ import { fetchPRCommitsWithFiles } from '../../src/github/prContentFetcher/commi
 import { transformPullRequestResult } from '../../src/providers/github/githubPullRequests.js';
 import { mapPullRequestProviderResultData } from '../../src/tools/providerMappers/pullRequests.js';
 import { withSearchPageContinuation } from '../../src/tools/github_search_pull_requests/historySearchPagination.js';
-import { GitHubSearchHistoryQueryLocalSchema } from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubSearchHistoryQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { shapeCommits } from '../../src/tools/github_search_pull_requests/contentResponse/commentsShaping.js';
 
 const commits = Array.from({ length: 6 }, (_, i) => ({

@@ -60,9 +60,7 @@ export function createErrorResult(
   }
 
   if (extra) {
-    const { hints: _hints, ...restExtra } = extra;
-    void _hints;
-    Object.assign(result, restExtra);
+    Object.assign(result, extra);
   }
 
   return options.rawResponse === undefined

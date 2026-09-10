@@ -2,7 +2,7 @@
 
 The Octocode CLI is the terminal interface over the same research engine used by
 the Octocode MCP server. One binary — `npx octocode` — covers code search, exact
-file reads, directory trees, LSP symbol navigation, GitHub repos, npm packages,
+file reads, directory trees, LSP symbol navigation, GitHub repos, package registries,
 PRs, commits, MCP client setup, and GitHub auth.
 
 ```text
@@ -40,7 +40,7 @@ npx octocode tools
 npx octocode tools localSearch --scheme
 npx octocode tools astSearch --queries '{"operation":"tree","path":"/ABS/repo/src"}'
 npx octocode tools localSearch --queries '{"path":"/ABS/repo/src","searchText":"createServer"}'
-npx octocode tools localGetFileContent --queries '{"path":"./src/index.ts","fullContent":true}'
+npx octocode tools localFetch --queries '{"path":"./src/index.ts","fullContent":true}'
 npx octocode skill list
 npx octocode skill install octocode-research --platform pi
 ```
@@ -79,8 +79,8 @@ resolve from the command cwd, which may differ from the repository root.
 | Category | Default enabled tools |
 |---|---|
 | GitHub | `ghSearch` · `ghGetFileContent` · `ghSearchHistory` · `ghGetHistoryItem` · `ghCloneRepo` |
-| Local Code | `localSearch` · `astSearch` · `localGetFileContent` · `lspSearch` |
-| Package | `npmSearch` |
+| Local Code | `localSearch` · `astSearch` · `localFetch` · `lspSearch` |
+| Package | `artifactSearch` |
 
 ### Research loop
 
@@ -91,7 +91,7 @@ map cheaply → search narrowly → read exact evidence → follow symbols or hi
 ```bash
 npx octocode tools astSearch --queries '{"operation":"tree","path":"/ABS/repo/packages/octocode/src"}'
 npx octocode tools localSearch --queries '{"path":"/ABS/repo/packages/octocode/src","searchText":"executeDirectTool","resultView":"discovery"}'
-npx octocode tools localGetFileContent --queries '{"path":"/ABS/repo/packages/octocode/src/cli/tool-command/execute.ts","matchString":"executeDirectTool"}'
+npx octocode tools localFetch --queries '{"path":"/ABS/repo/packages/octocode/src/cli/tool-command/execute.ts","matchString":"executeDirectTool"}'
 npx octocode tools lspSearch --queries '{"uri":"/ABS/repo/packages/octocode/src/cli/tool-command/execute.ts","operation":"references","symbolName":"executeToolCommand","lineHint":111}'
 ```
 
@@ -121,7 +121,7 @@ npx octocode tools ghCloneRepo --queries '{"owner":"vercel","repo":"next.js","br
 Use `ghCloneRepo` when you need to inspect several files, run structural (AST)
 search, or use LSP on remote code. Cloning is enabled by default in both CLI and MCP unless
 `ENABLE_CLONE=false`. After cloning, run
-`tools localSearch`, `tools localGetFileContent`,
+`tools localSearch`, `tools localFetch`,
 or `tools lspSearch` on the returned absolute local path.
 
 ---
@@ -155,7 +155,7 @@ Direct CLI tool execution performs the persisted maintenance due-check once per 
 
 `cache status` reports the total `tmp` size plus clone, tree, and response usage. `cache clear --clone` and `cache clear --tree` are selective. `cache clear --all` removes the entire `tmp` directory. This deletes response entries and maintenance metadata. There is no response-only clear flag. See [Cache storage and lifecycle](https://github.com/bgauryy/octocode/blob/main/docs/CONFIGURATION.md#cache-storage-and-lifecycle) for per-response freshness, the 24-hour cleanup gate, and configuration.
 
-Use the returned absolute local path with `tools localSearch`, `tools localGetFileContent`,
+Use the returned absolute local path with `tools localSearch`, `tools localFetch`,
 or `tools lspSearch`.
 
 ---
@@ -269,7 +269,7 @@ Prints the research protocol and active tool descriptions. Use `--minimal` for t
 ```bash
 npx octocode tools astSearch --queries '{"operation":"tree","path":"/ABS/repo/src"}'
 npx octocode tools localSearch --queries '{"path":"/ABS/repo/src","searchText":"parseArgs","resultView":"discovery"}'
-npx octocode tools localGetFileContent --queries '{"path":"/ABS/repo/src/cli/parser.ts","matchString":"parseArgs"}'
+npx octocode tools localFetch --queries '{"path":"/ABS/repo/src/cli/parser.ts","matchString":"parseArgs"}'
 ```
 
 ### Remote repo to local proof
@@ -295,7 +295,7 @@ npx octocode tools lspSearch --queries '{"uri":"/ABS/repo/src/index.ts","operati
 ### Package to source
 
 ```bash
-npx octocode tools npmSearch --queries '{"packageName":"zod"}'
+npx octocode tools artifactSearch --queries '{"type":"npm","packageName":"zod"}'
 npx octocode tools ghSearch --queries '{"operation":"code","keywords":["ZodObject"],"owner":"colinhacks","repo":"zod"}'
 ```
 

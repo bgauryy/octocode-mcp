@@ -1,9 +1,9 @@
 import type { BulkFinalizer } from '../../types/bulk.js';
 import type { FlatQueryResult } from '../../types/toolResults.js';
-import { MAX_PAGE_NUMBER } from '../../config.js';
+import { MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 import { formatFinalizedResponse } from '../../utils/response/groupedFinalizer.js';
 import { buildGhSearchCodeFinalizer } from '../github_search_code/finalizer/build.js';
-import type { GitHubSearchQuery } from './scheme.js';
+import type { GitHubSearchQuery } from '@octocodeai/octocode-core/schema';
 
 const GITHUB_SEARCH_RESULT_WINDOW = 1000;
 

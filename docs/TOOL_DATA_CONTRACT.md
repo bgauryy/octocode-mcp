@@ -13,7 +13,8 @@ The CLI discovery catalog includes disabled tools: ten tools are discoverable an
 
 | Contract | Owner | What it establishes |
 |---|---|---|
-| Names, descriptions, input schemas | [tools-core tool contract](../packages/octocode-tools-core/src/toolContract/) and [specifications](../packages/octocode-tools-core/src/tools/directToolCatalog/toolSpecifications.ts) | Public requests and tool selection. |
+| Names, descriptions, input schemas, relations | `@octocodeai/octocode-core/schema` in the sibling `octocode-mcp-host` repository | Public requests and tool selection, independent of execution. |
+| Shared server instructions | `@octocodeai/octocode-core/mcp`: `buildMcpInstructions(enabledToolNames)` | Workflow and evidence guidance for the exposed tool subset. |
 | Execution, provider mapping, topology algorithms | [tools-core registry and runners](../packages/octocode-tools-core/src/tools/toolConfig.ts) | Validated request dispatch, provider calls, and result construction. |
 | Search, syntax, minification, LSP primitives | [engine](../packages/octocode-engine/ARCHITECTURE.md) | Native and language-server operations used by tools-core. |
 | Output TypeScript types | [bulk envelope](../packages/octocode-tools-core/src/types/toolOutput.ts) and per-tool types | Compile-time descriptions; these types do not validate external data at runtime. |
@@ -26,9 +27,9 @@ MCP publishes no `outputSchema`. It returns `structuredContent` and text content
 
 Each call uses one tool and an outer `queries` array of 1–5 queries. Independent queries can batch; a query that needs a prior result must wait for that result. Optional `goal` and `reasoning` provide task context and do not supply missing runtime fields.
 
-For example, this is a `localGetFileContent` request. Substitute an observed path and line range:
+For example, this is a `localFetch` request. Substitute an observed path and line range:
 
-<!-- tool: localGetFileContent -->
+<!-- tool: localFetch -->
 ```json
 {
   "queries": [
@@ -86,7 +87,7 @@ The CLI accepts the returned query or envelope through `tools <next.tool> --quer
 | Pagination layer | Typical controls | Identity and stopping rule |
 |---|---|---|
 | Collection | `page`, `pageSize`, `matchPage`, or operation-specific cursors | Follow the emitted next call until that collection is complete. Mutable provider searches do not all offer snapshot isolation. |
-| Selected content | Line windows or `charOffset`/`charLength` | Use returned offsets and selectors. Do not recompute them from displayed text or byte lengths. |
+| Selected content | File readers: `chunkType`/`offset`/`limit`; history text: `charOffset`/`charLength` | Use returned offsets and selectors. Do not recompute them from displayed text or byte lengths. |
 | Snapshot-aware operation | An operation's `snapshot` token, where supported | Preserve it in that operation's continuation. On a changed-result restart, discard its prior pages and rerun the returned restart query. |
 | Whole-response text | Outer `responseCharOffset`, `responseCharLength`, `responseSnapshot` | Preserve the response token. `responsePagination.restart:true` requires discarding the prior text pages and executing its offset-zero continuation. |
 
@@ -116,11 +117,10 @@ Document LSP operations use `uri` without symbol anchors. `workspaceSymbol` requ
 | `ghSearch` | `ghGetFileContent` | Owner, repository, observed path, and applicable ref. Indexed code search has no reliable source-line identity; fetch the source to establish it. |
 | `ghSearchHistory` | `ghGetHistoryItem` | PR/issue number or commit ref, owner/repository, and the singular detail operation. Prefer the emitted detail call. |
 | `ghGetHistoryItem` | `ghGetFileContent` or another history read | Changed-file path and the correct revision or diff side; continue each selected history surface independently. |
-| `npmSearch` | Repository search or clone | Verify repository host, owner/name, and any package subdirectory before constructing a repository query. A repository link is metadata, not source content. |
+| `artifactSearch` | Repository search or clone | Verify repository host, owner/name, and any package subdirectory before constructing a repository query. A repository link is metadata, not source content. |
 | `ghCloneRepo` | Local tools | `data.location.localPath` and checkout metadata. Completeness is relative to the selected sparse scope. Cached working-tree contents are not reverified merely because HEAD has a SHA. |
-| `ghGetFileContent` directory mode | Local tools | Returned `data.localPath` and materialization scope/revision; requires clone enablement and persistent local access. |
-| `localSearch` or `astSearch` | `localGetFileContent` | Observed path and source range, preferably through an executable `next` call. |
-| `localGetFileContent` | `lspSearch` | Exact path, symbol and actual source line, or an observed UTF-16 position. |
+| `localSearch` or `astSearch` | `localFetch` | Observed path and source range, preferably through an executable `next` call. |
+| `localFetch` | `lspSearch` | Exact path, symbol and actual source line, or an observed UTF-16 position. |
 | `lspSearch` | Exact read or lexical/structural recovery | Returned source locations, `readSite`, or an explicit recovery call; retain provider and completeness qualifications. |
 
 Check these handoffs through the public interface, not only by asserting that a `next` object exists. The [quality and acceptance guide](MCP_TOOL_QUALITY_AND_AGENT_WORKFLOW.md) separates schema checks, executed continuations, fixture coverage, and live-provider evidence. Distinguishable tools and task-based evaluations are also central to [Anthropic's tool-design guidance](https://www.anthropic.com/engineering/writing-tools-for-agents).

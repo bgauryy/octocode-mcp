@@ -10,9 +10,13 @@ describe('prompt lifecycle matrix', () => {
   });
 
   it('keeps cacheable contracts frozen and mutable state out of frozen bytes', () => {
-    for (const kind of ['product-policy', 'project-instruction', 'tool-contract', 'skill'] as const) {
+    for (const kind of ['product-policy'] as const) {
       expect(promptLifecycleFor(kind).placement).toBe('frozen-system');
       expect(promptLifecycleFor(kind).mutable).toBe(false);
+    }
+    for (const kind of ['project-instruction', 'tool-contract', 'skill'] as const) {
+      expect(promptLifecycleFor(kind).placement).toBe('versioned-system');
+      expect(promptLifecycleFor(kind).mutable).toBe(true);
     }
     for (const kind of ['plan', 'peer-event', 'memory-lead'] as const) {
       expect(promptLifecycleFor(kind).placement).not.toBe('frozen-system');

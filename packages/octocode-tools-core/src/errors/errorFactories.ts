@@ -61,7 +61,7 @@ export const ToolErrors = {
       (() => {
         const fmt = (n: number) =>
           Number.isInteger(n) ? `${n}KB` : `${n.toFixed(1)}KB`;
-        return `File too large: ${fmt(sizeKB)} (limit: ${fmt(limitKB)}). Use startLine/endLine, matchString, or charOffset/charLength to read a bounded slice.`;
+        return `File too large: ${fmt(sizeKB)} (limit: ${fmt(limitKB)}). Follow next.continue to retrieve the complete file in bounded chunks, or select startLine/endLine or matchString.`;
       })(),
       { path: filePath, sizeKB, limitKB }
     ),

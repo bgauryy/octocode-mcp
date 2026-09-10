@@ -17,6 +17,8 @@ import type { PiContext } from '../src/types.js';
 import { execHistoryCli, type AwarenessEventStore, type OutboxEventV1 } from '@octocodeai/octocode-awareness';
 import { registerAwarenessEventConsumer } from '../src/tools/awareness-event-consumer.js';
 import type { PiInstance } from '../src/types.js';
+import { registerUniqueTool } from '../src/tools/octocode-tools.js';
+import { executeQueryBatch } from '../src/tools/query-envelope.js';
 
 const PROVIDER = 'octocode-real-runtime-test';
 const API = 'octocode-real-runtime-test-api';
@@ -138,7 +140,59 @@ afterEach(() => {
 });
 
 describe.sequential('real Pi runtime contract', () => {
+  it.each(['partial batch', 'returned error'] as const)('marks a %s as failed while retaining evidence for the next model turn', async mode => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-real-pi-batch-'));
+    temporaryRoots.push(root);
+    const agentDir = path.join(root, 'agent');
+    fs.mkdirSync(agentDir);
+    const contexts: string[] = [];
+    const scripted = [
+      response([{ type: 'toolCall', id: 'partial-batch', name: 'batchFixture', arguments: {
+        queries: mode === 'partial batch' ? [{ reasoning: 'first' }, { reasoning: 'second' }, { reasoning: 'third' }] : [{ reasoning: 'failed' }],
+      } }], 'toolUse'),
+      response([{ type: 'text', text: 'observed partial failure' }], 'stop'),
+    ];
+    const executed: number[] = [];
+    const extension: ExtensionFactory = pi => {
+      registerUniqueTool(pi as unknown as PiInstance, new Set(), {
+        name: 'batchFixture', label: 'Batch fixture', description: 'Fixture',
+        parameters: Type.Object({ queries: Type.Array(Type.Object({ reasoning: Type.String() })) }),
+        execute: async (toolCallId, raw, signal, _onUpdate, ctx) => executeQueryBatch({
+          toolCallId, raw, signal, ctx, passthroughSingle: true,
+          execute: async (_query, index) => {
+            executed.push(index);
+            if (index === 1) throw new Error('second failed');
+            return { isError: mode === 'returned error', content: [{ type: 'text', text: 'header\nimportant complete evidence' }] };
+          },
+        }),
+      });
+      pi.registerProvider(PROVIDER, {
+        name: 'Local batch audit', api: API, baseUrl: 'http://127.0.0.1:0', apiKey: 'local-fixture',
+        models: [{ id: MODEL, name: 'Local batch audit', api: API, reasoning: false, input: ['text'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 8192, maxTokens: 1024 }],
+        streamSimple: (_model, context) => {
+          contexts.push(JSON.stringify(context));
+          return scriptedStream(scripted.shift() ?? response([{ type: 'text', text: 'done' }], 'stop')) as never;
+        },
+      });
+    };
+    const settings = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
+    const loader = new DefaultResourceLoader({ cwd: root, agentDir, settingsManager: settings, extensionFactories: [{ name: 'batch-audit', factory: extension }], noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
+    await loader.reload();
+    const { session } = await createAgentSession({ cwd: root, agentDir, tools: ['batchFixture'], resourceLoader: loader, sessionManager: SessionManager.create(root, path.join(root, 'sessions')), settingsManager: settings });
+    try {
+      await session.bindExtensions({ mode: 'json', shutdownHandler() {} });
+      await session.setModel(session.modelRuntime.getModel(PROVIDER, MODEL)!);
+      await session.prompt('Run the batch fixture.', { expandPromptTemplates: false });
+      await session.waitForIdle();
+      expect(executed).toEqual(mode === 'partial batch' ? [0, 1] : [0]);
+      expect(contexts).toHaveLength(2);
+      expect(contexts[1]).toContain('important complete evidence');
+      if (mode === 'partial batch') expect(contexts[1]).toContain('not-run');
+      expect(contexts[1]).toContain('"isError":true');
+    } finally { session.dispose(); await settings.flush(); }
+  }, 30_000);
   it('starts one real host turn for two durable actionable peer messages without copying their bodies', async () => {
+    restoreProcesses = allowLocalFixtureProcesses();
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-real-pi-wake-')));
     temporaryRoots.push(root);
     const workspace = path.join(root, 'workspace');
@@ -173,7 +227,7 @@ describe.sequential('real Pi runtime contract', () => {
       await session.bindExtensions({ mode: 'json', shutdownHandler() {} });
       await session.setModel(session.modelRuntime.getModel(PROVIDER, MODEL)!);
       await session.prompt('Initial authorized task.', { expandPromptTemplates: false });
-      for (let attempt = 0; attempt < 20 && contexts.length < 2; attempt++) await new Promise<void>(resolve => setImmediate(resolve));
+      await vi.waitFor(() => expect(contexts).toHaveLength(2), { timeout: 5_000, interval: 10 });
       await session.waitForIdle();
       expect(contexts).toHaveLength(2);
       expect(contexts[1]).toContain('exact-challenge-1');
@@ -211,6 +265,8 @@ describe.sequential('real Pi runtime contract', () => {
     const usages: Array<{ phase: string; tokens: number | null; contextWindow: number }> = [];
     const providerPrompts: string[] = [];
     const providerContexts: string[] = [];
+    let toolsBeforeCompaction: string[] = [];
+    let toolsAfterCompaction: string[] = [];
     let activeContext: PiContext | undefined;
     const scripted = [
       response([{
@@ -274,6 +330,7 @@ describe.sequential('real Pi runtime contract', () => {
         if (usage) usages.push({ phase: 'turn_end', tokens: usage.tokens, contextWindow: usage.contextWindow });
       });
       pi.on('session_before_compact', (event) => {
+        toolsBeforeCompaction = pi.getActiveTools();
         lifecycle.push('session_before_compact');
         return { compaction: {
           summary: 'deterministic local compaction summary',
@@ -283,6 +340,7 @@ describe.sequential('real Pi runtime contract', () => {
         } };
       });
       pi.on('session_compact', (_event, ctx) => {
+        toolsAfterCompaction = pi.getActiveTools();
         lifecycle.push('session_compact');
         activeContext = retainPhysiologySensors(ctx);
         const usage = ctx.getContextUsage?.();
@@ -321,7 +379,7 @@ describe.sequential('real Pi runtime contract', () => {
       await created.session.prompt('Verify the installed Awareness skill and CLI bindings.', { expandPromptTemplates: false });
       await created.session.waitForIdle();
 
-      expect(providerPrompts[0]).toContain('<awareness_runtime>');
+      expect(providerPrompts[0]).toContain('<awareness>');
       expect(providerPrompts[0]).toContain('octocode-awareness');
       expect(providerPrompts[0]).toContain(path.resolve(workspace));
       expect(providerPrompts[0]).toContain(octocodeHome);
@@ -364,6 +422,8 @@ describe.sequential('real Pi runtime contract', () => {
       expect(providerContexts.at(-1)).toContain('inspect_recent_tool_failures');
 
       await created.session.compact('real runtime contract');
+      expect(toolsBeforeCompaction.length).toBeGreaterThan(0);
+      expect(toolsAfterCompaction).toEqual(toolsBeforeCompaction);
       expect(lifecycle).toEqual(expect.arrayContaining(['session_before_compact', 'session_compact']));
       expect(usages).toContainEqual({ phase: 'compacted', tokens: null, contextWindow: 8_192 });
       const physiologyAfterCompact = readPiPhysiology(activeContext!);
@@ -377,6 +437,10 @@ describe.sequential('real Pi runtime contract', () => {
       const checkpointEntries = entries.filter((entry) => JSON.stringify(entry).includes(COMPACTION_CHECKPOINT_TYPE));
       expect(checkpointEntries).toHaveLength(1);
       expect(JSON.stringify(checkpointEntries[0])).toContain('tokensBefore');
+      await created.session.prompt('Check the remaining acceptance criteria.', { expandPromptTemplates: false });
+      await created.session.waitForIdle();
+      expect(providerContexts.at(-1)).toContain('Verify the installed Awareness skill and CLI bindings.');
+      expect(providerContexts.at(-1)).toContain('Check the remaining acceptance criteria.');
 
       const homeSnapshot = JSON.stringify(fs.readdirSync(octocodeHome, { recursive: true }));
       expect(homeSnapshot).toContain('compaction');

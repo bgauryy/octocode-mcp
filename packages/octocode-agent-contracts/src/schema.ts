@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * schema.ts — the agent/session-owned tables of the shared local store.
  *
@@ -14,6 +16,70 @@
 export interface SqliteLike {
   exec(sql: string): void;
   prepare(sql: string): { run(...params: unknown[]): unknown };
+}
+
+export interface ReadableSqlite extends SqliteLike {
+  prepare(sql: string): {
+    run(...params: unknown[]): unknown;
+    get(...params: unknown[]): unknown;
+    all(...params: unknown[]): unknown[];
+  };
+}
+
+export interface SchemaObject {
+  type: string;
+  name: string;
+  tableName: string;
+  sql: string;
+}
+
+/** Normalize SQL tokens without changing quoted identifiers or literal values. */
+export function normalizeSchemaSql(sql: string): string {
+  const tokens = sql.match(/--[^\n]*|\/\*[\s\S]*?\*\/|'(?:''|[^'])*'|"(?:""|[^"])*"|`(?:``|[^`])*`|\[[^\]]*\]|[a-zA-Z_][a-zA-Z_0-9$]*|\d+(?:\.\d+)?|!=|<>|<=|>=|==|\|\||->>|->|\S/g) ?? [];
+  const normalized = tokens
+    .filter(token => !token.startsWith('--') && !token.startsWith('/*'))
+    .map(token => /^[\w]/.test(token) ? token.toLowerCase() : token);
+  // SQLite removes this clause from sqlite_schema when it persists CREATE DDL.
+  if (normalized[0] === 'create') {
+    const kindIndex = ['unique', 'virtual', 'temp', 'temporary'].includes(normalized[1] ?? '') ? 2 : 1;
+    const clause = kindIndex + 1;
+    if (normalized.slice(clause, clause + 3).join(' ') === 'if not exists') normalized.splice(clause, 3);
+  }
+  if (normalized.at(-1) === ';') normalized.pop();
+  return JSON.stringify(normalized);
+}
+
+/** Inspect only durable application objects; SQLite identifies its own shadow tables. */
+export function readSchemaObjects(db: ReadableSqlite): SchemaObject[] {
+  const shadows = new Set((db.prepare("SELECT name FROM pragma_table_list WHERE schema = 'main' AND type = 'shadow'").all() as Array<{ name: string }>).map(row => row.name));
+  const rows = db.prepare(`SELECT type, name, tbl_name, sql FROM main.sqlite_schema
+    WHERE type IN ('table', 'view', 'index', 'trigger') AND name NOT GLOB 'sqlite_*'
+    ORDER BY type, name`).all() as Array<{ type: string; name: string; tbl_name: string; sql: string | null }>;
+  return rows.filter(row => !shadows.has(row.tbl_name)).map(row => ({
+    type: row.type, name: row.name, tableName: row.tbl_name, sql: normalizeSchemaSql(row.sql ?? ''),
+  }));
+}
+
+export function schemaObjectsFingerprint(objects: SchemaObject[]): string {
+  return createHash('sha256').update(JSON.stringify(objects)).digest('hex');
+}
+
+export function assertSchemaObjects(actual: SchemaObject[], expected: SchemaObject[]): void {
+  const actualFingerprint = schemaObjectsFingerprint(actual);
+  const expectedFingerprint = schemaObjectsFingerprint(expected);
+  if (actualFingerprint === expectedFingerprint) return;
+  const key = (item: SchemaObject) => `${item.type}:${item.name}`;
+  const actualByKey = new Map(actual.map(item => [key(item), item]));
+  const expectedByKey = new Map(expected.map(item => [key(item), item]));
+  const missing = [...expectedByKey.keys()].filter(name => !actualByKey.has(name));
+  const unexpected = [...actualByKey.keys()].filter(name => !expectedByKey.has(name));
+  const changed = expected.filter(item => actualByKey.has(key(item)) && JSON.stringify(actualByKey.get(key(item))) !== JSON.stringify(item)).map(key);
+  throw new Error(`canonical schema fingerprint mismatch (missing: ${missing.join(', ') || 'none'}; unexpected: ${unexpected.join(', ') || 'none'}; changed: ${changed.join(', ') || 'none'}; expected ${expectedFingerprint}, got ${actualFingerprint}). Select a current canonical store; the database has not been changed.`);
+}
+
+/** SQL enum literals are generated from the owning runtime/type contract. */
+export function sqlEnum(values: readonly string[]): string {
+  return values.map(value => `'${value.replaceAll("'", "''")}'`).join(',');
 }
 
 /** ASCII "OCTA": the database is exclusively owned by the Octocode agent. */

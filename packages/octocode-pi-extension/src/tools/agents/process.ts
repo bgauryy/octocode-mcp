@@ -15,7 +15,9 @@ import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs';
 import path from 'node:path';
-import { formatExternalAgentCoordinationContext } from '@octocodeai/octocode-awareness';
+import { fileURLToPath } from 'node:url';
+import { withPeerCoordination } from './coordination.js';
+export { withPeerCoordination } from './coordination.js';
 import { getInstallSource } from '../../assets.js';
 import { extensionTmpRoot, extensionWorkspaceRoot } from '../../extension-paths.js';
 import { inspectWorkerAwarenessAutomatically } from '../awareness-worker-audit.js';
@@ -73,6 +75,7 @@ import {
 } from './ledger.js';
 import { killAgent, syncWorkerRegistry, removePromptFiles } from './kill.js';
 import { buildAwarenessContext } from '../awareness-context.js';
+import { bindSpawnedWorkerCapabilities, revokeWorkerCapabilities } from '../worker-capabilities.js';
 
 // ─── UI callback wiring ────────────────────────────────────────────────────────
 
@@ -313,34 +316,6 @@ function cleanupRecordWorktree(record: AgentRecord): void {
 
 // ─── Awareness helpers ────────────────────────────────────────────────────────────
 
-/**
- * Append an Awareness coordination footer so the worker knows its own durable id
- * and peer ids. The package owns usage policy; Pi adds only its handback path.
- */
-export function withPeerCoordination(
-  task: string,
-  selfId: string | undefined,
-  peerIds: string[],
-  opts: { parentId?: string; handbackPath?: string } = {}
-): string {
-  if (!selfId) return task;
-  const coordination = formatExternalAgentCoordinationContext({
-    selfId,
-    parentId: opts.parentId,
-    peerIds,
-  });
-  const lines = [
-    coordination,
-    opts.handbackPath
-      ? `- durable handback file: ${opts.handbackPath}`
-      : undefined,
-    opts.handbackPath
-      ? '- before a terminal [DONE]/[BLOCKED]/[FAILED] when findings are long or important, write concise Markdown to that exact file (Status, Result, Evidence, Verification, Next), then include `[ARTIFACT] <path>` in your final output.'
-      : undefined,
-  ].filter((line): line is string => Boolean(line));
-  return `${task}\n\n${lines.join('\n')}`;
-}
-
 /** Awareness ids of other still-alive workers, for peer-messaging discovery. */
 function collectPeerAwarenessIds(excludeId: string): string[] {
   const ids: string[] = [];
@@ -369,7 +344,9 @@ function buildPiArgs(
 
   if (params.noSession !== false) args.push('--no-session');
   // Load specific skills even when --no-skills is active (additive)
-  for (const skillPath of params.skills ?? []) args.push('--skill', skillPath);
+  if (resourceMode !== 'lean') {
+    for (const skillPath of params.skills ?? []) args.push('--skill', skillPath);
+  }
   args.push('--name', name);
   args.push('--exclude-tools', [...FORBIDDEN_WORKER_TOOLS].join(','));
 
@@ -379,17 +356,19 @@ function buildPiArgs(
     args.push('--thinking', 'off');
   else if (params.thinking) args.push('--thinking', params.thinking);
   if (workerTools.length) args.push('--tools', workerTools.join(','));
-  else if (params.tools !== undefined) args.push('--no-tools');
+  else args.push('--no-tools');
   args.push('--no-context-files');
 
   if (resourceMode === 'lean') {
+    const guardPath = fileURLToPath(new URL('../../worker-guard.js', import.meta.url));
     args.push(
       '--no-extensions',
+      '-e', fs.existsSync(guardPath) ? guardPath : guardPath.replace(/\.js$/, '.ts'),
       '--no-skills',
       '--no-prompt-templates',
       '--no-themes'
     );
-  } else if (resourceMode === 'octocode') {
+  } else {
     args.push(
       '--no-extensions',
       '-e',
@@ -721,8 +700,6 @@ export function spawnRpcAgent(
     ctx
   );
   validateWorkerModelParams(effectiveParams, ctx);
-  const args = buildPiArgs(effectiveParams, name, promptFiles);
-  const invocation = getPiInvocation(args);
   const awarenessAgentId = workerAwarenessAgentId(id);
 
   // M7: Enforce a hard cap on active (non-droppable) agents before spawning a new process.
@@ -732,6 +709,7 @@ export function spawnRpcAgent(
   evictStaleAgents();
   const policyResult = evaluateSpawnPolicy(effectiveParams, activeAgentCount());
   if (!policyResult.allowed) {
+    revokeWorkerCapabilities(id);
     cleanupPromptFiles(promptFiles);
     throw new Error(
       `${policyResult.reason} Kill or wait for existing agents before spawning more.`
@@ -743,6 +721,7 @@ export function spawnRpcAgent(
   let cwd = requestedCwd;
   if (effectiveParams.isolation === 'worktree') {
     if (effectiveParams.worktreeDecision !== 'create') {
+      revokeWorkerCapabilities(id);
       cleanupPromptFiles(promptFiles);
       throw new Error(
         'isolation:"worktree" requires explicit user approval before creating a git worktree.'
@@ -774,6 +753,17 @@ export function spawnRpcAgent(
     }
   );
 
+  let childCapabilities: ReturnType<typeof bindSpawnedWorkerCapabilities>;
+  let invocation: ReturnType<typeof getPiInvocation>;
+  try {
+    childCapabilities = bindSpawnedWorkerCapabilities(id, effectiveParams);
+    invocation = getPiInvocation(buildPiArgs(childCapabilities.params, name, promptFiles));
+  } catch (error) {
+    revokeWorkerCapabilities(id);
+    cleanupPromptFiles(promptFiles);
+    if (worktree) removeAgentWorktree(worktree, { force: true });
+    throw error;
+  }
   let proc;
   try {
     proc = getProcessFactory()(invocation.command, invocation.args, {
@@ -782,6 +772,7 @@ export function spawnRpcAgent(
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
+        ...childCapabilities.env,
         [SUBAGENT_ENV_VAR]: '1',
         [AWARENESS_AGENT_ENV_VAR]: awarenessAgentId,
         OCTOCODE_AWARENESS_DB: awarenessDatabase,
@@ -796,6 +787,7 @@ export function spawnRpcAgent(
       },
     });
   } catch (error) {
+    revokeWorkerCapabilities(id);
     // processFactory threw before the record was added to `agents`, so removePromptFiles()
     // (wired to the record's 'close'/'error' handlers) would never run. Clean up the temp
     // system-prompt files buildPiArgs wrote so a failing factory does not leak files.
@@ -842,6 +834,7 @@ export function spawnRpcAgent(
     awarenessAgentId,
     awarenessWorkspace,
     awarenessDatabase,
+    capabilityGrant: childCapabilities.grant,
   };
   pushLedgerEvent(record, 'spawned', `spawned ${name}`, { awarenessAgentId });
   if (record.worktree)
@@ -882,6 +875,7 @@ export function spawnRpcAgent(
     _refreshUi(ctx);
   });
   proc.on('error', error => {
+    revokeWorkerCapabilities(id);
     record.error = error instanceof Error ? error.message : String(error);
     pushLedgerEvent(record, 'error', record.error);
     // Dead process: no agent_start will ever arrive to drain queued turns, so
@@ -895,6 +889,7 @@ export function spawnRpcAgent(
     _refreshUi(ctx);
   });
   proc.on('close', (code, signal) => {
+    revokeWorkerCapabilities(id);
     stdoutBuffer += rpcDecoder.end();
     if (stdoutBuffer.trim()) processRpcLine(record, stdoutBuffer);
     stdoutBuffer = '';

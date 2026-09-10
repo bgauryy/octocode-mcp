@@ -1,8 +1,12 @@
 import type { z } from 'zod';
-import type { FileContentQuerySchema } from '../../../toolContract/input/resources/tools/ghGetFileContent.js';
+import type { FileContentQuerySchema } from '@octocodeai/octocode-core/schema';
 
 type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
-import type { PaginationInfo } from '../../../types/toolResults.js';
+import type {
+  FetchPagination,
+  LocalFetchToolResult,
+} from '@octocodeai/octocode-core/extra-types';
+import type { ToolContinuation } from '../../../scheme/pagination.js';
 import type { QueryWithPagination } from '../../../utils/response/groupedFinalizer.js';
 import type { WithOptionalMeta } from '../../../types/execution.js';
 
@@ -14,22 +18,28 @@ export type FileEntry = {
   content: string;
   /** Coarse file bucket to guide how bytes are read; omitted when uncertain. */
   fileType?: 'code' | 'config' | 'lock' | 'doc';
-  localPath?: string;
-  repoRoot?: string;
   contentView?: 'none' | 'standard' | 'symbols';
   totalLines?: number;
   sourceChars?: number;
+  sourceBytes?: number;
+  returnedChars?: number;
+  returnedBytes?: number;
+  returnedLines?: number;
+  selectedMatchCount?: number;
+  minifyFallback?: LocalFetchToolResult['minifyFallback'];
   resolvedBranch?: string;
   commitSha?: string;
-  pagination?: PaginationInfo;
+  pagination?: FetchPagination;
   isPartial?: boolean;
-  errorCode?: 'contentSecurityLimit';
+  errorCode?: 'contentSecurityLimit' | 'fullContentLimit' | 'noMatches';
   terminalLimit?: boolean;
-  partialReasons?: Array<'security-selected-view-size-limit'>;
+  partialReasons?: Array<
+    'security-selected-view-size-limit' | 'full-content-size-limit'
+  >;
   startLine?: number;
   endLine?: number;
   matchRanges?: Array<{ start: number; end: number }>;
-  /** Exact matched-line numbers (matchRanges are ±contextLines windows around them). */
+  /** Exact matched-line numbers; matchRanges span the selected source windows. */
   matchedLines?: number[];
   lastModified?: string;
   lastModifiedBy?: string;
@@ -40,74 +50,6 @@ export type FileEntry = {
   next?: FileContentNextMap;
 };
 
-export type FileContentNextMap = {
-  readBoundedLines?: {
-    tool: 'ghGetFileContent';
-    query: Record<string, unknown>;
-    why: string;
-    confidence: 'exact';
-  };
-  continueChars?: {
-    tool: 'ghGetFileContent';
-    query: Record<string, unknown>;
-  };
-  continueLines?: {
-    tool: 'ghGetFileContent';
-    query: Record<string, unknown>;
-    why: string;
-    confidence: 'exact';
-  };
-  cloneForSemantics?: {
-    tool: 'ghCloneRepo';
-    query: Record<string, unknown>;
-    why: string;
-    confidence: 'exact';
-  };
-  escalateToClone?: {
-    tool: 'ghCloneRepo';
-    query: Record<string, unknown>;
-    why: string;
-    confidence: 'exact';
-  };
-};
-
-export type DirectoryPartialReason =
-  keyof NonNullable<DirectoryEntry['skipped']> | 'providerDirectoryIncomplete';
-
-export type DirectoryEntry = {
-  path: string;
-  localPath: string;
-  repoRoot?: string;
-  fileCount: number;
-  totalSize: number;
-  complete?: boolean;
-  verified?: boolean;
-  commitSha?: string;
-  hasSubdirectories?: boolean;
-  skippedSummary?: Record<string, number>;
-  directoryEntryCount?: number;
-  eligibleFileCount?: number;
-  savedFileCount?: number;
-  skipped?: {
-    nonFile: number;
-    oversized: number;
-    binary: number;
-    fileLimit: number;
-    fetchFailed: number;
-    totalSizeLimit: number;
-    pathTraversal: number;
-  };
-  limits?: {
-    maxDirectoryFiles: number;
-    maxTotalSize: number;
-    maxFileSize: number;
-  };
-  warnings?: string[];
-  files?: Array<{ path: string; size: number; type: string }>;
-  cached?: boolean;
-  resolvedBranch?: string;
-  isPartial?: boolean;
-  terminalLimit?: boolean;
-  partialReasons?: DirectoryPartialReason[];
-  next?: Pick<FileContentNextMap, 'escalateToClone'>;
-};
+export type FileContentNextMap = Partial<
+  Record<'continue' | 'readBoundedLines', ToolContinuation>
+>;

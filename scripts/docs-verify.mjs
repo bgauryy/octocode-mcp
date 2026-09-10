@@ -252,7 +252,7 @@ function validatePrimaryToolGuidance() {
       ],
       forbidden: [
         'all 15 tools',
-        'ghSearchRepos / npmSearch',
+        'ghSearchRepos / artifactSearch',
         '-> ghViewRepoStructure',
         '-> ghSearchCode(',
       ],
@@ -315,7 +315,7 @@ function validatePrimaryToolGuidance() {
     },
     {
       file: 'docs/CONFIGURATION.md',
-      required: ['Example: ["ghSearch", "localSearch", "npmSearch"]'],
+      required: ['Example: ["ghSearch", "localSearch", "artifactSearch"]'],
       forbidden: ['Example: `["ghSearchCode", "localSearch"]`'],
     },
   ];

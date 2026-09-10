@@ -27,10 +27,10 @@ function seedPendingTasks(db: DatabaseSync, workspace: string, file: string): vo
        VALUES (?, ?, 'EXPLICIT', ?, ?, ?)`).run(runId, file, now, now, new Date(Date.now() + 60000).toISOString());
     }
 }
-function seededDb(workspace: string): {
+async function seededDb(workspace: string): Promise<{
     db: DatabaseSync;
     file: string;
-} {
+}> {
     const db = freshDb();
     const file = join(workspace, 'src', 'auth.ts');
     registerAgent(db, {
@@ -40,7 +40,7 @@ function seededDb(workspace: string): {
         artifact: 'svc',
         context: 'repo-context test',
     });
-    insertMemory(db, {
+    (await insertMemory(db, {
         agentId: 'agent-a',
         taskContext: 'auth gotcha',
         observation: 'Token migration order matters for auth',
@@ -51,8 +51,8 @@ function seededDb(workspace: string): {
         workspacePath: workspace,
         artifact: 'svc',
         failureSignature: 'mechanism:auth|cause:order',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
         agentId: 'agent-a',
         taskContext: 'auth decision',
         observation: 'Use schema before data backfill',
@@ -60,7 +60,7 @@ function seededDb(workspace: string): {
         label: 'DECISION',
         workspacePath: workspace,
         artifact: 'svc',
-    });
+    }));
     const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
     const future = new Date(Date.now() + 60000).toISOString();
     db.prepare(`INSERT INTO task_runs (run_id, origin, agent_id, rationale, test_plan, status, workspace_path, artifact, created_at, updated_at)
@@ -105,17 +105,17 @@ function seededDb(workspace: string): {
 }
 
 describe('repo context query and projections', () => {
-it('rejects removed query aliases before they can change the workspace scope', () => {
+it('rejects removed query aliases before they can change the workspace scope', async () => {
     const db = freshDb();
     try {
-      insertMemory(db, {
+      (await insertMemory(db, {
         agentId: 'agent-a', taskContext: 'alpha', observation: 'alpha only', importance: 1,
         workspacePath: '/workspace/alpha',
-      });
-      insertMemory(db, {
+      }));
+      (await insertMemory(db, {
         agentId: 'agent-b', taskContext: 'beta', observation: 'beta only', importance: 1,
         workspacePath: '/workspace/beta',
-      });
+      }));
 
       expect(queryAwareness(db, { view: 'memories', workspacePath: '/workspace/alpha' }).rows)
         .toHaveLength(1);
@@ -127,10 +127,10 @@ it('rejects removed query aliases before they can change the workspace scope', (
     }
   });
 
-it('queries every view and renders all supported formats', () => {
+it('queries every view and renders all supported formats', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-repo-context-'));
     try {
-      const { db, file } = seededDb(dir);
+      const { db, file } = (await seededDb(dir));
       const base = { workspacePath: dir, artifact: 'svc', limit: 20 };
 
       for (const view of ['repo-profile', 'memories', 'gotchas', 'lessons', 'plans', 'tasks', 'runs', 'locks', 'agents', 'signals', 'refinements', 'files', 'activity', 'workboard'] as const) {
@@ -170,10 +170,10 @@ it('queries every view and renders all supported formats', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-it('builds a delta-sized compact attend packet with only actionable work', () => {
+it('builds a delta-sized compact attend packet with only actionable work', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-attend-'));
     try {
-      const { db, file } = seededDb(dir);
+      const { db, file } = (await seededDb(dir));
       const accessBefore = db.prepare(
         'SELECT COALESCE(SUM(access_count), 0) AS count FROM awareness_memories'
       ).get() as { count: number };
@@ -236,10 +236,10 @@ it('clusters repeated handoff signals in compact attend packets', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-it('keeps global Verify totals exact while routing only the current agent', () => {
+it('keeps global Verify totals exact while routing only the current agent', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-attend-owner-'));
     try {
-      const { db, file } = seededDb(dir);
+      const { db, file } = (await seededDb(dir));
       const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
       const insertRun = db.prepare(`INSERT INTO task_runs
         (run_id, origin, agent_id, rationale, test_plan, status, workspace_path, artifact, created_at, updated_at)

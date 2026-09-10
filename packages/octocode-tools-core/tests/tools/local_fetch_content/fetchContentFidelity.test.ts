@@ -37,7 +37,7 @@ describe('exact file-read batch invariance', () => {
       expect(row.data.content).toBe(source);
       expect(
         result.content?.some(
-          block => 'text' in block && block.text.includes(source.trimEnd())
+          block => 'text' in block && block.text.includes(source)
         )
       ).toBe(true);
     }
@@ -52,7 +52,7 @@ describe('exact file-read batch invariance', () => {
     let query: Record<string, unknown> = {
       path: file,
       minify: 'none',
-      charLength: 250,
+      chunkType: 'bytes', limit: 250,
     };
     const chunks: string[] = [];
 
@@ -66,7 +66,7 @@ describe('exact file-read batch invariance', () => {
             data: {
               content: string;
               next?: {
-                continueChars?: {
+                continue?: {
                   tool: string;
                   query: Record<string, unknown>;
                 };
@@ -76,9 +76,9 @@ describe('exact file-read batch invariance', () => {
         }
       ).results[0]!;
       chunks.push(row.data.content);
-      const next = row.data.next?.continueChars;
+      const next = row.data.next?.continue;
       if (!next) break;
-      expect(next.tool).toBe('localGetFileContent');
+      expect(next.tool).toBe('localFetch');
       expect(next.query.path).toBe(file);
       query = next.query;
     }

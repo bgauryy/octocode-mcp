@@ -1,6 +1,6 @@
 # Trend and momentum sources
 
-Load when generic/undated web results cannot show momentum, crowdedness, published research, or whether a platform already shipped the idea. Skip for internal-only ideas or when `octocode-research` already settles repository/package activity. Recurring monitoring belongs in `octocode-news`.
+Load when generic/undated web results cannot show momentum, crowdedness, published research, or whether a platform already shipped the idea. Skip for internal-only ideas or when `octocode-research` already settles repository/package activity. Use the host's scheduled-task capability for recurring monitoring; this reference covers a bounded research pass.
 
 | Need | Sources |
 |---|---|

@@ -26,7 +26,7 @@ describe('ghGetFileContent — contentView is always surfaced', () => {
     expect(out.contentView).toBe('none');
   });
 
-  it('minify:"standard" (the default) reports contentView:"standard", not silently omitted', async () => {
+  it('explicit minify:"standard" reports contentView:"standard", not silently omitted', async () => {
     const out = await processFileContentAPI(
       SRC,
       'octo',
@@ -42,8 +42,6 @@ describe('ghGetFileContent — contentView is always surfaced', () => {
       undefined,
       'standard'
     );
-    // Regression: this used to be omitted entirely for "standard" — the one
-    // mode that both alters content AND wasn't marked, unlike none/symbols.
     expect(out.contentView).toBe('standard');
     expect(out.content).not.toBe(SRC);
   });
@@ -55,7 +53,7 @@ describe('ghGetFileContent — out-of-range line requests are signaled, not sile
     (_, i) => `line ${i + 1}`
   ).join('\n');
 
-  it('an in-range startLine/endLine returns just that range with isPartial:true', async () => {
+  it('an in-range startLine/endLine returns just that range as a complete selection', async () => {
     const out = await processFileContentAPI(
       TWENTY_LINES,
       'octo',
@@ -71,12 +69,12 @@ describe('ghGetFileContent — out-of-range line requests are signaled, not sile
       undefined,
       'none'
     );
-    expect(out.isPartial).toBe(true);
+    expect(out.isPartial).not.toBe(true);
     expect(out.startLine).toBe(5);
     expect(out.endLine).toBe(10);
   });
 
-  it('a startLine beyond the file length warns instead of silently returning the whole file unmarked', async () => {
+  it('a startLine beyond the file length returns a typed empty selection', async () => {
     const out = await processFileContentAPI(
       TWENTY_LINES,
       'octo',
@@ -92,14 +90,12 @@ describe('ghGetFileContent — out-of-range line requests are signaled, not sile
       undefined,
       'none'
     );
-    // Regression: this used to return the full file with isPartial left
-    // undefined/false and no warning — indistinguishable from a genuinely
-    // valid 100-105 request on a longer file.
     expect(out.isPartial).toBeFalsy();
-    expect(out.warnings?.some(w => w.includes('out of range'))).toBe(true);
+    expect(out.content).toBe('');
+    expect(out.errorCode).toBe('noMatches');
   });
 
-  it('endLine before startLine warns instead of silently returning the whole file unmarked', async () => {
+  it('endLine before startLine returns a typed empty selection', async () => {
     const out = await processFileContentAPI(
       TWENTY_LINES,
       'octo',
@@ -116,6 +112,7 @@ describe('ghGetFileContent — out-of-range line requests are signaled, not sile
       'none'
     );
     expect(out.isPartial).toBeFalsy();
-    expect(out.warnings?.some(w => w.includes('invalid'))).toBe(true);
+    expect(out.content).toBe('');
+    expect(out.errorCode).toBe('noMatches');
   });
 });

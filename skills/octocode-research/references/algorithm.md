@@ -30,7 +30,7 @@ Evidence kinds are not a universal ranking: LSP answers identity, AST answers sy
 - Prefer `matchString` anchors, then line ranges; use full exact content only for small files.
 - Quote/edit only exact content. Symbols orient; standard/minified output might rewrite text.
 - Let `references/workflow-combination.md` decide materialization from evidence needs and scope.
-- Read the tool/schema contract immediately before raw calls; graph compact schemas might flatten operation variants, so use full JSON when `file`/`target` requirements are unclear.
+- Read an unfamiliar tool/schema contract once and reuse it until the tool/version changes; use full JSON when compact fields and relations do not resolve operation requirements.
 - Honor repository access restrictions before inspecting vendor/generated files; record any unresolved version gap.
 
 ## Failure Signals

@@ -1,3 +1,4 @@
+import { expectExecutableNext } from '../../helpers/executableNext.js';
 import { describe, expect, it } from 'vitest';
 
 import { withSemanticNext } from '../../../src/tools/lsp/semantic_content/semanticNext.js';
@@ -6,7 +7,7 @@ import type {
   LspSearchQuery,
   LspSemanticEnvelope,
 } from '../../../src/tools/lsp/shared/semanticTypes.js';
-import { prepareDirectToolInput } from '../../../src/tools/directToolCatalog/toolInputPreparation.js';
+import { prepareDirectToolInput } from '@octocodeai/octocode-core/schema';
 
 /**
  * The tool description promises: "Empty/incomplete: re-anchor or fall back to
@@ -15,6 +16,7 @@ import { prepareDirectToolInput } from '../../../src/tools/directToolCatalog/too
  */
 describe('withSemanticNext — empty-state fallback', () => {
   function expectExecutableContinuations(value: unknown): void {
+    expectExecutableNext(value);
     if (!value || typeof value !== 'object') return;
     if (
       'tool' in value &&
@@ -247,7 +249,7 @@ describe('withSemanticNext — empty-state fallback', () => {
       },
     };
     const withNext = withSemanticNext(query, result) as LspSemanticEnvelope;
-    expect(withNext.next?.readSite?.tool).toBe('localGetFileContent');
+    expect(withNext.next?.readSite?.tool).toBe('localFetch');
     expect(withNext.next?.textSearch).toBeUndefined();
   });
 

@@ -12,6 +12,7 @@ import { captureCurrentContextSources } from './context-source-registry.js';
 import { redactCompactionText } from './compaction-redaction.js';
 import { openPersistentAwareness } from './storage-policy.js';
 import { appendSessionAuditEntry } from './session-audit.js';
+import { renderUserRequestContext } from './user-request-context.js';
 
 export interface CompactionRehydrationCapture {
   segments: ContextSegmentV1[];
@@ -149,7 +150,7 @@ function formatFileList(title: string, files: string[]): string {
 function formatPendingDecisions(pending: PendingCompactionDecision[]): string | undefined {
   if (pending.length === 0) return undefined;
   const lines = pending.slice(0, 10).map(
-    ({ kind, question }) => `- ${kind}: ${truncateText(question, 300)}`,
+    ({ kind, question }) => `- [${kind}] ${truncateText(question, 120)}`,
   );
   return [
     '## Pending decisions (awaiting the user; not granted)',
@@ -193,23 +194,24 @@ function buildDeterministicCompaction(
     '## Octocode deterministic compaction checkpoint',
     `Reason: ${reason}`,
     `Tokens before compaction: ${tokensBefore}`,
-    focus ? `Focus instructions: ${redactCompactionText(focus)}` : undefined,
     '## Resume instructions\nRecover the unfinished objective, its constraints, unresolved failures, partial results with the calls that resume them, decisions already made, and evidence pointers from retained messages and current authoritative sources. Resume authorized work, using the next runnable step when a plan exists; routine work needs no new plan. A passed substep does not complete the request. Continue until acceptance, a real blocker or approval gate, or a user pause. If no work remains, stop.',
     formatPendingDecisions(pendingDecisions),
+    truncateText(renderUserRequestContext([...messagesToSummarize, ...turnPrefixMessages]), 3_000),
+    focus ? `Focus instructions: ${truncateText(focus, 500)}` : undefined,
     continuationContext?.trim()
-      ? `## Active plan and authoritative references\n${truncateText(continuationContext, 2_500)}`
+      ? `## Active plan and authoritative references\n${truncateText(continuationContext, 1_800)}`
       : '## Active plan and authoritative references\n(none)',
-    truncateText(formatFileList('Read files', readFiles), 1_200),
-    truncateText(formatFileList('Modified files', modifiedFiles), 1_200),
+    truncateText(formatFileList('Read files', readFiles), 500),
+    truncateText(formatFileList('Modified files', modifiedFiles), 500),
     turnPrefixMessages.length > 0
       ? [
           '---',
           SPLIT_TURN_COMPACTION_HEADER,
-          truncateText(summarizeMessages(turnPrefixMessages, 'Split-turn prefix checkpoint', 6), 2_500),
+          truncateText(summarizeMessages(turnPrefixMessages, 'Split-turn prefix checkpoint', 6), 1_000),
         ].join('\n\n')
       : undefined,
-    previousSummary ? `## Previous summary\n${truncateText(previousSummary, 1_000)}` : undefined,
-    truncateText(summarizeMessages(messagesToSummarize, 'Discarded history checkpoint', 4), 1_500),
+    previousSummary ? `## Previous summary\n${truncateText(previousSummary, 500)}` : undefined,
+    truncateText(summarizeMessages(messagesToSummarize, 'Discarded history checkpoint', 4), 500),
   ].filter(Boolean).join('\n\n');
 
   return {
@@ -311,34 +313,7 @@ export function resetCompactionCheckpointDedupe(): void {
 export function registerCompactionHooks(pi: PiInstance, notify: NotifyFn): void {
   if (!pi.on) return;
 
-  // Some hosts rebuild their active-tool set while replacing compacted context.
-  // Preserve the user's exact pre-compaction selection (including profile scoping)
-  // rather than blindly enabling every registered extension tool afterward.
-  let activeToolsBeforeCompaction: string[] | undefined;
-  const snapshotActiveTools = (): void => {
-    try {
-      const active = pi.getActiveTools?.();
-      activeToolsBeforeCompaction = Array.isArray(active) ? [...active] : undefined;
-    } catch {
-      activeToolsBeforeCompaction = undefined;
-    }
-  };
-  const restoreActiveTools = (): void => {
-    const active = activeToolsBeforeCompaction;
-    activeToolsBeforeCompaction = undefined;
-    if (!active || !pi.setActiveTools) return;
-    try {
-      const current = pi.getActiveTools?.();
-      if (!Array.isArray(current) || current.join('\0') !== active.join('\0')) {
-        pi.setActiveTools(active);
-      }
-    } catch {
-      // Tool restoration is defensive; compaction continuity must still complete.
-    }
-  };
-
   pi.on('session_shutdown', async () => {
-    activeToolsBeforeCompaction = undefined;
     // Replacement shutdown can deliberately provide a stale context proxy.
     // The extension owns one active session, so cleanup must not dereference it.
     // clearCurrentContextSources() is intentionally ABSENT here: the no-ctx
@@ -349,7 +324,6 @@ export function registerCompactionHooks(pi: PiInstance, notify: NotifyFn): void 
   });
 
   pi.on('session_before_compact', async (event: SessionBeforeCompactEvent, ctx: PiContext) => {
-    snapshotActiveTools();
     try {
       // `/compact` is an explicit user action. Never second-guess it from brittle
       // assistant-text heuristics; Pi owns cancellation and failure presentation.
@@ -397,14 +371,9 @@ export function registerCompactionHooks(pi: PiInstance, notify: NotifyFn): void 
     }
   });
 
-  pi.on('session_compact_failed', async () => {
-    // Failure/cancellation also ends the host's temporary context replacement.
-    // Pi owns its error notification; do not emit a successful checkpoint here.
-    restoreActiveTools();
-  });
-
   pi.on('session_compact', async (event: SessionCompactEvent, ctx: PiContext) => {
-    restoreActiveTools();
+    // Pi owns active tool selection. Replaying a pre-compaction snapshot can
+    // undo a newer user selection or capability revocation.
     try {
       // Pi emits this event exactly once after it has appended the successful
       // compaction and rebuilt context. `willRetry` means Pi will retry the

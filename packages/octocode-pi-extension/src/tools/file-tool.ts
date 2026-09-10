@@ -1,15 +1,17 @@
-import { lstat, unlink } from 'node:fs/promises';
-import type { Stats } from 'node:fs';
+import path from 'node:path';
+import type { FileSnapshot } from '@octocodeai/octocode-extension-rust';
 import type { ToolCallResult, ToolDefinition, PiTheme } from '../types.js';
 import { CLI_STATUS_TEXT } from '../tui/cli-design.js';
 import { buildQueryCallBlocks, buildToolView } from './render-helpers.js';
-import { assertPathAllowed } from './path-guard.js';
+import { assertPathAllowed, canonicalPathKey, resolveCanonicalPath } from './path-guard.js';
 import {
-  forgetFileReadState,
   resolveFilePath,
   withFileMutationQueue,
 } from './file-state.js';
-import { markOwnWrite, peerWipNotice } from './peer-wip.js';
+import { peerWipNotice } from './peer-wip.js';
+import { finishFileMutation } from './file-mutation-receipt.js';
+import { deleteNativeFile, snapshotNativeFile } from './native-files.js';
+import { assertWellFormedText } from './file-text.js';
 import {
   commitPreparedEdit,
   prepareEdit,
@@ -17,7 +19,7 @@ import {
   validateEditQuery,
   type PreparedEdit,
 } from './edit-tool.js';
-import { commitWrite, resolveWritePath, validateWriteParams } from './write-tool.js';
+import { commitWrite, prepareWrite, validateWriteParams, type PreparedWrite } from './write-tool.js';
 import { DIRECT_TOOL_DESCRIPTIONS, type registerUniqueTool } from './octocode-tools.js';
 import { buildQueryEnvelopeSchema, executeQueryBatch, QUERY_BATCH_MAX_ITEMS, type QueryRecord } from './query-envelope.js';
 
@@ -25,26 +27,12 @@ import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 type FileOperation = 'edit' | 'write' | 'delete';
 
-interface PreparedWrite {
-  operation: 'write';
-  path: string;
-  content: string;
-}
-
-interface DeleteSnapshot {
-  dev: number;
-  ino: number;
-  mode: number;
-  size: number;
-  mtimeMs: number;
-  ctimeMs: number;
-}
-
 interface PreparedDelete {
   operation: 'delete';
   path: string;
   absolutePath: string;
-  snapshot: DeleteSnapshot;
+  canonicalPath: string;
+  snapshot: FileSnapshot;
 }
 
 interface PreparedEditOperation {
@@ -55,26 +43,6 @@ interface PreparedEditOperation {
 type PreparedFileOperation = PreparedWrite | PreparedDelete | PreparedEditOperation;
 
 const FILE_TOOL_DISPLAY_NAME = 'file (Octocode)';
-
-function snapshot(stats: Stats): DeleteSnapshot {
-  return {
-    dev: stats.dev,
-    ino: stats.ino,
-    mode: stats.mode,
-    size: stats.size,
-    mtimeMs: stats.mtimeMs,
-    ctimeMs: stats.ctimeMs,
-  };
-}
-
-function sameSnapshot(left: DeleteSnapshot, right: DeleteSnapshot): boolean {
-  return left.dev === right.dev
-    && left.ino === right.ino
-    && left.mode === right.mode
-    && left.size === right.size
-    && left.mtimeMs === right.mtimeMs
-    && left.ctimeMs === right.ctimeMs;
-}
 
 function assertOnlyFields(query: QueryRecord, allowed: readonly string[], operation: FileOperation): void {
   const allowedSet = new Set(['reasoning', 'type', ...allowed]);
@@ -91,6 +59,7 @@ function validateBase(query: QueryRecord): { operation: FileOperation; path: str
   if (typeof path !== 'string' || path.trim().length === 0) {
     throw new Error(`${operation} requires a non-empty path.`);
   }
+  assertWellFormedText(path, 'path');
   return { operation, path };
 }
 
@@ -99,8 +68,7 @@ async function prepareOperation(query: QueryRecord, index: number, cwd: string):
   if (operation === 'write') {
     assertOnlyFields(query, ['path', 'content'], operation);
     const validated = validateWriteParams(query);
-    assertPathAllowed(resolveWritePath(validated.path, cwd), cwd, 'file write');
-    return { operation, path: validated.path, content: validated.content };
+    return prepareWrite(validated.path, validated.content, cwd);
   }
 
   if (operation === 'edit') {
@@ -108,6 +76,7 @@ async function prepareOperation(query: QueryRecord, index: number, cwd: string):
     if (!Array.isArray(query['edits']) || query['edits'].length === 0) {
       throw new Error('edit requires a non-empty edits array.');
     }
+    fileItemSchema.parse(query);
     const edits = query['edits'].map((value) => {
       if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
       return { ...(value as Record<string, unknown>), reasoning: query.reasoning };
@@ -115,7 +84,7 @@ async function prepareOperation(query: QueryRecord, index: number, cwd: string):
     const editQuery = validateEditQuery({
       path,
       edits,
-      ...(query['requireRecentRead'] === true ? { requireRecentRead: true } : {}),
+      ...(query['requireRecentRead'] === undefined ? {} : { requireRecentRead: query['requireRecentRead'] }),
     }, index);
     return { operation, edit: await prepareEdit(editQuery, cwd, false) };
   }
@@ -123,33 +92,42 @@ async function prepareOperation(query: QueryRecord, index: number, cwd: string):
   assertOnlyFields(query, ['path'], operation);
   const absolutePath = resolveFilePath(path, cwd);
   assertPathAllowed(absolutePath, cwd, 'file delete');
-  const stats = await lstat(absolutePath);
-  if (!stats.isFile() && !stats.isSymbolicLink()) {
-    throw new Error(`delete supports files and symbolic links, not directories: ${path}`);
-  }
-  return { operation, path, absolutePath, snapshot: snapshot(stats) };
+  const canonicalPath = canonicalDeletePath(absolutePath);
+  const snapshot = await snapshotNativeFile(canonicalPath, false, true).catch((error: unknown) => {
+    if (error instanceof Error && error.message.startsWith('NOT_REGULAR_FILE:')) {
+      throw new Error(`delete supports files and symbolic links, not directories or other nonregular entries: ${path}`);
+    }
+    throw error;
+  });
+  if (!snapshot.exists) throw new Error(`File does not exist: ${path}`);
+  return { operation, path, absolutePath, canonicalPath, snapshot };
+}
+
+/** Canonicalize the parent only: delete removes the link itself. */
+function canonicalDeletePath(absolutePath: string): string {
+  return path.join(resolveCanonicalPath(path.dirname(absolutePath)), path.basename(absolutePath));
 }
 
 async function commitDelete(prepared: PreparedDelete, cwd: string, signal?: AbortSignal): Promise<ToolCallResult> {
   if (signal?.aborted) throw new Error('Operation aborted');
   const peerNotice = peerWipNotice(prepared.absolutePath, prepared.path);
-  await withFileMutationQueue(prepared.absolutePath, async () => {
+  const { receipt, warnings } = await withFileMutationQueue(prepared.absolutePath, async () => {
     if (signal?.aborted) throw new Error('Operation aborted');
-    const current = snapshot(await lstat(prepared.absolutePath));
-    if (!sameSnapshot(prepared.snapshot, current)) {
+    assertPathAllowed(prepared.absolutePath, cwd, 'file delete');
+    if (canonicalDeletePath(prepared.absolutePath) !== prepared.canonicalPath) {
       throw new Error(`${prepared.path} changed after delete preflight. Re-inspect it and retry.`);
     }
-    await unlink(prepared.absolutePath);
-    forgetFileReadState(prepared.absolutePath, cwd);
-    markOwnWrite(prepared.absolutePath);
+    const receipt = await deleteNativeFile(prepared.canonicalPath, prepared.snapshot.version, signal);
+    const warnings = [...receipt.warnings, ...await finishFileMutation(prepared.absolutePath)];
+    return { receipt, warnings };
   });
   return {
-    content: [{ type: 'text', text: `Deleted ${prepared.path}.${peerNotice}` }],
-    details: { operation: 'delete', path: prepared.path, absolutePath: prepared.absolutePath },
+    content: [{ type: 'text', text: `Deleted ${prepared.path}.${peerNotice}${warnings.length ? `\n${warnings.join('\n')}` : ''}` }],
+    details: { operation: 'delete', committed: true, durable: receipt.durable, path: prepared.path, absolutePath: prepared.absolutePath, ...(warnings.length ? { warnings } : {}) },
   };
 }
 
-const fileEditOperationSchema = z.object({
+const fileEditOperationSchema = z.strictObject({
   oldText: z.string().optional().describe('Current text; required except for lineRange.'),
   newText: z.string().describe('Replacement text.'),
   replaceAll: z.boolean().optional().describe('Replace every match; default false.'),
@@ -180,7 +158,7 @@ export function registerFileTool(
       'Use type:"edit" for targeted replacements, type:"write" for new files or intentional full rewrites, and type:"delete" only when removal is explicitly in scope.',
       'After reasoning and type, write accepts path+content; delete accepts path; edit accepts path+edits+requireRecentRead. Extra fields such as confirm, force, or dryRun fail preflight.',
       'Read and understand existing files before edit/delete. Use exact oldText by default; normalized or lineRange matching is opt-in.',
-      'For requireRecentRead or a lineRange edit without oldText, read through MCPTool localGetFileContent first; shell reads do not refresh the stale-edit guard.',
+      'For requireRecentRead or a lineRange edit without oldText, read through MCPTool localFetch first; shell reads do not refresh the stale-edit guard.',
       'Keep replacements bounded with the smallest unique anchor, and split large mutations across separate calls before the model output limit.',
       'Batch edits to one path in a single query. All queries are preflighted before mutation; duplicate target paths are rejected.',
     ],
@@ -190,10 +168,13 @@ export function registerFileTool(
     async execute(toolCallId, params, signal, onUpdate, ctx): Promise<ToolCallResult> {
       const cwd = ctx?.cwd ?? process.cwd();
       const rawQueries = Array.isArray(params['queries']) ? params['queries'] as Array<Record<string, unknown>> : [];
+      for (const query of rawQueries) {
+        if (typeof query?.['path'] === 'string') assertWellFormedText(query['path'], 'path');
+      }
       const resolved = rawQueries
-        .map((query) => typeof query?.['path'] === 'string' ? resolveFilePath(query['path'], cwd) : '')
+        .map((query) => typeof query?.['path'] === 'string' ? resolveCanonicalPath(resolveFilePath(query['path'], cwd)) : '')
         .filter(Boolean);
-      if (new Set(resolved).size !== resolved.length) {
+      if (new Set(resolved.map(value => canonicalPathKey(value))).size !== resolved.length) {
         throw new Error('file queries must not contain duplicate target paths.');
       }
 
@@ -212,7 +193,7 @@ export function registerFileTool(
         async execute(_query, index) {
           const operation = prepared.get(index)!;
           if (operation.operation === 'edit') return commitPreparedEdit(operation.edit, signal);
-          if (operation.operation === 'write') return commitWrite(operation.path, operation.content, cwd, signal);
+          if (operation.operation === 'write') return commitWrite(operation, signal);
           return commitDelete(operation, cwd, signal);
         },
         summarize(result) {

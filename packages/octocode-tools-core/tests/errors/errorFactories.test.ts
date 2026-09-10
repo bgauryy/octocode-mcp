@@ -106,9 +106,10 @@ describe('ToolErrors.fileTooLarge', () => {
     expect(err.message).toContain('1.5KB');
   });
 
-  it('mentions charOffset/charLength in the message', () => {
+  it('directs full-file recovery to the executable continuation', () => {
     const err = ToolErrors.fileTooLarge('/big.ts', 100, 50);
-    expect(err.message).toMatch(/charOffset|charLength/i);
+    expect(err.message).toContain('next.continue');
+    expect(err.message).not.toMatch(/charOffset|charLength/i);
   });
 });
 

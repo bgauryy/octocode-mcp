@@ -10,7 +10,7 @@
   roots so agents can self-correct in one step. The `Symlink target …` wording is
   reserved for genuine symlink escapes (a path inside a root whose target resolves
   outside). Applies uniformly across lexical `localSearch`, `astSearch` structural,
-  file/tree/topology queries, `localGetFileContent`, and `lspSearch`.
+  file/tree/topology queries, `localFetch`, and `lspSearch`.
 - **`.octocoderc` `local.allowedPaths` now takes effect.** The file-config
   allowlist was validated but never reached the path validator, so only the
   `ALLOWED_PATHS` env var worked. `local.allowedPaths` now adds roots on top of

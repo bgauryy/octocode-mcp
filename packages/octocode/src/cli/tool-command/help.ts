@@ -7,8 +7,8 @@ import {
   getDirectToolDescription,
   getDirectToolDisplayFields,
   getDirectToolSchemaRelations,
-} from '@octocodeai/octocode-tools-core/schema';
-import { findToolDefinition, getOptionalToolMetadata } from './registry.js';
+} from '@octocodeai/octocode-core/schema';
+import { findToolDefinition } from './registry.js';
 import { getCompactToolSchemaShape } from './catalog-json.js';
 import {
   LSP_TOOL_NAME,
@@ -17,7 +17,7 @@ import {
   formatConciseToolDescription,
   formatToolExampleCommand,
   getToolSchemaGuidance,
-} from './formatting.js';
+} from '@octocodeai/octocode-core/schema';
 import { LSP_TYPE_EXAMPLES } from './lsp-examples.js';
 import { formatToolFlagExample } from './flags-to-query.js';
 
@@ -57,10 +57,9 @@ export async function showToolHelpBrief(toolName: string): Promise<boolean> {
     return false;
   }
 
-  const metadata = await getOptionalToolMetadata();
   const fields = getDirectToolDisplayFields(tool.name);
   const compactShape = getCompactToolSchemaShape(tool.name);
-  const shortDesc = formatConciseToolDescription(tool.name, metadata, 140);
+  const shortDesc = formatConciseToolDescription(tool.name, 140);
   const guidance = getToolSchemaGuidance(tool.name);
 
   console.log();
@@ -109,11 +108,10 @@ export async function showToolHelp(toolName: string): Promise<boolean> {
     return false;
   }
 
-  const metadata = await getOptionalToolMetadata();
   const fields = getDirectToolDisplayFields(tool.name);
   const autoFilledFields = getDirectToolAutoFilledFields(tool.name);
   const commandPatterns = buildDirectToolCommandPatterns(tool.name);
-  const fullDescription = getDirectToolDescription(tool.name, metadata);
+  const fullDescription = getDirectToolDescription(tool.name);
   const shortDesc = extractShortDescription(fullDescription);
   const extendedDesc = formatFullDescription(fullDescription);
   const guidance = getToolSchemaGuidance(tool.name);
@@ -214,8 +212,6 @@ export async function showToolHelp(toolName: string): Promise<boolean> {
 export async function showMultipleToolSchemas(
   toolNames: string[]
 ): Promise<void> {
-  const metadata = await getOptionalToolMetadata();
-
   for (const toolName of toolNames) {
     const tool = findToolDefinition(toolName);
     if (!tool) {
@@ -225,7 +221,7 @@ export async function showMultipleToolSchemas(
     }
 
     const shortDesc = extractShortDescription(
-      getDirectToolDescription(tool.name, metadata)
+      getDirectToolDescription(tool.name)
     );
     const fields = getDirectToolDisplayFields(tool.name);
     const autoFilledFields = getDirectToolAutoFilledFields(tool.name);

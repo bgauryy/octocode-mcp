@@ -1,13 +1,15 @@
 import * as os from 'os';
 import * as path from 'path';
+import type { ConfigKey } from './mcpConfig';
 
 export type McpClientDef = {
   name: string;
   getConfigPath: () => string;
-  configKey: 'mcpServers' | 'servers';
+  configKey: ConfigKey;
 };
 
-type EditorInfo = {
+export type EditorInfo = {
+  configKey: ConfigKey;
   name: string;
   scheme: string;
   mcpConfigPath: string | null;
@@ -100,6 +102,7 @@ export function detectEditorInfo(
       return {
         name: 'Cursor',
         scheme: 'cursor',
+        configKey: 'mcpServers',
         mcpConfigPath: cursorConfigPath,
       };
     }
@@ -108,6 +111,7 @@ export function detectEditorInfo(
       return {
         name: 'Windsurf',
         scheme: 'windsurf',
+        configKey: 'mcpServers',
         mcpConfigPath: path.join(
           homeDir,
           '.codeium',
@@ -121,6 +125,7 @@ export function detectEditorInfo(
       return {
         name: 'Antigravity',
         scheme: 'antigravity',
+        configKey: 'mcpServers',
         mcpConfigPath: path.join(
           homeDir,
           '.gemini',
@@ -134,6 +139,7 @@ export function detectEditorInfo(
       return {
         name: 'Trae',
         scheme: 'trae',
+        configKey: 'mcpServers',
         mcpConfigPath: path.join(
           getPlatformConfigBase(options),
           'Trae',
@@ -145,16 +151,19 @@ export function detectEditorInfo(
     return {
       name: 'VS Code',
       scheme: 'vscode',
+      configKey: 'servers',
       mcpConfigPath: path.join(
         getPlatformConfigBase(options),
-        'Claude',
-        'claude_desktop_config.json'
+        normalizedAppName.includes('insiders') ? 'Code - Insiders' : 'Code',
+        'User',
+        'mcp.json'
       ),
     };
   } catch {
     return {
       name: 'VS Code',
       scheme: 'vscode',
+      configKey: 'servers',
       mcpConfigPath: null,
     };
   }

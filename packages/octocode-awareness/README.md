@@ -10,6 +10,8 @@ This is the canonical Awareness overview for CLI users, agents, and host integra
 
 Default flow: meet workspace peers once, work, and communicate when needed. Work tracking, verification gates, automatic history, and durable learning are opt-in.
 
+Awareness has zero mandatory npm runtime dependencies. File fingerprints and workspace history capture/restore use the optional `@octocodeai/octocode-extension-rust` package and its matching platform addon. Ordinary coordination, memory storage, and unchecked recall run without loading it. See [native dependency and async API requirements](docs/API.md#optional-native-file-operations).
+
 ## Start
 
 ```bash

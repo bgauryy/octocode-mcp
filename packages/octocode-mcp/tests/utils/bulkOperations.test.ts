@@ -213,7 +213,7 @@ describe('executeBulkOperation', () => {
       expect(responseText).not.toContain('instructions:');
       expect(responseText).not.toContain('status: hasResults');
       expect(responseText).toContain('path: test.ts');
-      expect(responseText).toContain('Test hint for hasResults');
+      expect(responseText).not.toContain('Test hint for hasResults');
     });
 
     it('should process single query with empty status', async () => {
@@ -604,7 +604,7 @@ describe('executeBulkOperation', () => {
       expect(responseText).toContain('index: 0');
       expect(responseText).toContain('index: 2');
       expect(responseText).not.toContain(': 0 empty');
-      expect(responseText).toContain('Test hint for success');
+      expect(responseText).not.toContain('Test hint for success');
       expect(responseText).toContain('Test hint for error');
     });
 
@@ -845,7 +845,7 @@ describe('executeBulkOperation', () => {
   });
 
   describe('Custom hints handling', () => {
-    it('should include custom hints for hasResults status', async () => {
+    it('should omit custom hints for successful results', async () => {
       const queries = [{ id: 'q1' }];
       const processor = vi.fn().mockResolvedValue({
         hints: ['Custom hint 1', 'Custom hint 2'],
@@ -857,8 +857,8 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Custom hint 1');
-      expect(responseText).toContain('Custom hint 2');
+      expect(responseText).not.toContain('Custom hint 1');
+      expect(responseText).not.toContain('Custom hint 2');
     });
 
     it('should include custom hints for empty status', async () => {
@@ -895,10 +895,11 @@ describe('executeBulkOperation', () => {
       expect(responseText).toContain('Use authentication');
     });
 
-    it('should deduplicate hints across multiple queries with same hints', async () => {
+    it('should deduplicate recovery hints within each empty query', async () => {
       const queries = [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }];
       const processor = vi.fn().mockResolvedValue({
-        hints: ['Same hint for all'],
+        status: 'empty' as const,
+        hints: ['Same hint for all', 'Same hint for all'],
         data: { test: true },
       });
 
@@ -912,7 +913,7 @@ describe('executeBulkOperation', () => {
       expect(hintMatches).toBe(3);
     });
 
-    it('should collect and deduplicate hints from mixed statuses', async () => {
+    it('should retain only recovery hints in mixed statuses', async () => {
       const queries = [
         { id: 'q1', type: 'hasResults' },
         { id: 'q2', type: 'hasResults' },
@@ -940,12 +941,12 @@ describe('executeBulkOperation', () => {
       });
 
       const responseText = getTextContent(result.content);
-      expect(responseText).toContain('Success hint');
+      expect(responseText).not.toContain('Success hint');
       expect(responseText).toContain('Empty hint');
       const successHintMatches = (responseText.match(/Success hint/g) || [])
         .length;
       const emptyHintMatches = (responseText.match(/Empty hint/g) || []).length;
-      expect(successHintMatches).toBe(2);
+      expect(successHintMatches).toBe(0);
       expect(emptyHintMatches).toBe(2);
     });
   });
@@ -1520,7 +1521,7 @@ describe('executeBulkOperation', () => {
       expect(responseText).toContain('Simple error without hints');
     });
 
-    it('should handle mixed hasResults, empty, and error with hints from all', async () => {
+    it('should preserve empty/error hints and omit success hints in a mixed batch', async () => {
       const queries = [
         { id: 'q1', type: 'hasResults' },
         { id: 'q2', type: 'empty' },
@@ -1556,7 +1557,7 @@ describe('executeBulkOperation', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('index: 0');
       expect(responseText).toContain('index: 2');
-      expect(responseText).toContain('Success hint from processor');
+      expect(responseText).not.toContain('Success hint from processor');
       expect(responseText).toContain('Empty hint from processor');
       expect(responseText).toContain('Error hint from processor');
     });
@@ -1689,7 +1690,7 @@ describe('executeBulkOperation', () => {
       const responseText = getTextContent(result.content);
       expect(responseText).toContain('index: 0');
       expect(responseText).toContain('index: 1');
-      expect(responseText).toContain('Success hint');
+      expect(responseText).not.toContain('Success hint');
       expect(responseText).toContain('Error recovery hint');
     });
 

@@ -241,7 +241,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
     });
   });
 
-  describe('localGetFileContent - File Content Reading', () => {
+  describe('localFetch - File Content Reading', () => {
     let testFile: string | null = null;
 
     it('should find a test file first', async () => {
@@ -295,7 +295,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing full content fetch',
       });
 
-      verifySmartData(result, 'localGetFileContent');
+      verifySmartData(result, 'localFetch');
 
       if (result.status === undefined) {
         expect(result.content).toBeDefined();
@@ -310,15 +310,15 @@ describe('Integration Tests: All Tools on node_modules', () => {
 
       const result = await fetchContent({
         path: testFile,
-        charOffset: 0,
-        charLength: 2000,
+        startLine: 1,
+        endLine: 20,
         contextLines: 5,
         minify: 'standard',
         goal: 'Read first 20 lines',
         reasoning: 'Testing line range fetch',
       });
 
-      verifySmartData(result, 'localGetFileContent');
+      verifySmartData(result, 'localFetch');
 
       if (result.status === undefined) {
         expect(result.content).toBeDefined();
@@ -339,7 +339,7 @@ describe('Integration Tests: All Tools on node_modules', () => {
         reasoning: 'Testing pattern-based extraction',
       });
 
-      verifySmartData(result, 'localGetFileContent');
+      verifySmartData(result, 'localFetch');
 
       if (result.status === undefined) {
         expect(result.content).toBeDefined();

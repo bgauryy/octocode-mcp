@@ -1,297 +1,247 @@
 # Octocode configuration
 
-`/configuration` is the browser-based inventory and configuration surface for the
-running Pi extension. It combines the live slash-command registry, MCP
-connections and tools, MCP discovery, agent prompt artifacts, skills, and
-persisted enablement overrides in one loopback-only page.
+`/config` opens the running Pi extension's configuration page in the OS browser.
+`/configuration` is an alias. The loopback page brings together commands, MCP
+connections and tools, skill sources, models, declarative hooks, worker grants,
+prompt artifacts, and session controls.
 
-This document describes the implemented behavior in
-`src/tools/mcp-html.ts`. MCP protocol behavior remains owned by
-[`docs/MCP.md`](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_MCP.md), and session initialization is
-owned by [`RUNTIME_STATE.md`](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/RUNTIME_STATE.md).
+Changes take effect on the next turn and bind the exact source ID. Worker grants
+remain explicit and reviewable.
+
+The implementation is in [`mcp/html.ts`](../src/tools/mcp/html.ts).
+[Capability sources](CAPABILITIES.md) owns source paths, precedence, review,
+adapter contracts, and worker grants. [Runtime state](RUNTIME_STATE.md) owns
+session initialization and disposal.
 
 ## Entry points
 
 | Command | Opens |
 |---|---|
-| `/configuration` | Local browser configuration, starting at the overview. |
+| `/config` | Configuration in the OS browser, starting at the overview. |
+| `/configuration` | The same page through an alias. |
 
-The terminal footer shows `/configuration` as a command cue. Running it regenerates
-the HTML, snapshots the live registry, and opens the local browser. If the system
-browser cannot open, the notification includes the URL for manual opening.
+The footer shows `/config`. Running either command regenerates the HTML,
+snapshots the live registry, and opens the browser. If the browser cannot open,
+the notification includes a URL for manual opening.
 
 Runtime controls change footer density and permissions immediately. Appearance
-controls change theme and effort (thinking depth and worker concurrency) when the
-host supports them. These settings apply to the current session. Disabled controls
-indicate unavailable host APIs. Review plan opens the current live plan with explicit
-Start and Request changes buttons; those actions never inject commands into a prompt.
+controls change theme and effort when the host supports them. Effort sets
+thinking depth and worker concurrency. These controls apply to the current
+session; unavailable host APIs leave their controls disabled. Review plan opens
+the current plan with explicit Start and Request changes actions.
 
 ## Page overview
 
-The hero reports five current counts:
-
-- live public slash commands;
-- enabled MCP servers;
-- discovered foreign MCP imports;
-- tools in the cached MCP catalog;
-- enabled skills versus all discovered skills.
-
-The left navigation links to every section. On narrow screens it becomes a
-horizontal scrolling navigation bar; cards, filters, statistics, and forms
-collapse to one or two columns through the shared Octocode HTML theme.
+The overview reports public commands, enabled MCP servers, foreign imports,
+cached MCP tools, and enabled versus discovered skills. Section links lead to
+runtime, appearance, hooks, commands, MCP, source discovery, agent context,
+models, skills, and override state. The layout adapts to narrow screens.
 
 ## Commands
 
-The Commands section is built from `pi.getCommands()` each time the page opens.
-The extension contributes only `/configuration`; other entries belong to the host, prompts, or installed skills.
+The Commands section snapshots `pi.getCommands()` each time the page opens.
+The extension contributes five entries: `/config`, `/configuration`,
+`/octocode-rewind`, `/octocode-inbox`, and `/octocode-status`.
+Host-provided commands, prompts, and skill commands remain in the inventory.
 
-Implemented behavior:
-
-- trims names, removes blank entries, deduplicates by command name, and sorts
-  alphabetically;
-- excludes internal commands whose names begin with `_`;
-- includes extension, skill, and prompt commands registered in the running
-  session;
-- shows `/name`, description, source type, registration path, source package,
-  scope, and origin;
-- searches names, descriptions, source types, and registration sources;
-- filters by All, Extension, Skills, or Prompts.
-
-This is a read-only runtime inventory. The page does not execute commands or
-enable/disable them. Re-run `/configuration` after installing or registering a new
-command to rebuild the snapshot.
+The page trims and deduplicates names, hides internal names beginning with `_`,
+and sorts entries alphabetically. Each entry shows its description and available
+registration source, package, scope, and origin. Search and source filters narrow
+the list. This inventory is read-only; run commands in Pi. Reopen `/config` after
+registering a new command to refresh the snapshot.
 
 ## MCP connections and tools
 
-The Connections section includes enabled, disabled, managed, built-in, and
-read-only imported definitions. Server cards show:
-
-- managed or discovered origin and the source host;
-- connected/offline and enabled/disabled badges;
-- stdio or Streamable HTTP transport;
-- cached tool count;
-- OAuth status: not required, authorized, or authorization required;
-- effective scope, owning source path, and a redacted configuration summary;
-- each cached tool's name, description, and effective enablement.
-
-Server controls:
+Connections include managed, built-in, imported, enabled, and disabled servers.
+Cards show source path and scope, transport, connection and OAuth status, cached
+tool count, redacted configuration, user/server instructions, tool descriptions,
+exact input schemas, and effective tool enablement.
 
 | Control | Behavior |
 |---|---|
-| Edit | Loads a managed definition into the transport-aware editor. Imported definitions remain read-only. |
-| Enable / Disable | Writes a workspace or global SQLite override, stops any old connection, invalidates the server/workspace catalog, and starts a background refresh. |
-| Enable import | Explicitly authorizes a namespaced foreign definition; imports are disabled by default. |
-| Connect / retry | Restarts the connection, rediscovers the catalog, and initiates OAuth when required. |
-| Remove | Removes a managed definition from canonical JSON, closes the connection, revokes stored OAuth credentials when applicable, and refreshes artifacts. |
-| Tool Enable / Disable | Writes a per-tool SQLite override and refreshes the server catalog. |
+| Edit | Loads a managed definition into the transport-aware editor. |
+| Review and link import | Reviews the current source ID and definition revision in the selected scope. The foreign file remains authoritative. |
+| Enable / Disable | Changes server enablement. Enable import requires a valid reviewed revision and cannot bypass pending review. |
+| Connect / retry | Restarts the connection and catalog discovery; starts OAuth when needed. |
+| Remove | Removes a managed definition, closes its connection, and attempts OAuth credential revocation when applicable. |
+| Tool Enable / Disable | Changes a per-tool override, subject to server enablement and source tool filters. |
 
-The built-in `octocode` server cannot be removed, but a managed definition may
-override it. Foreign definitions cannot be edited or removed from their owning
-application's file.
-
-Server search matches name, description, and source label. The Discovered
-filter limits the view to imported definitions. A server without a cached tool
-catalog explains that it must be enabled and connected before discovery.
+Imported definitions cannot be edited or removed from their owning application's
+file through this page. The built-in `octocode` server cannot be removed; a
+managed definition can override it. Servers need an enabled connection before
+their tools can be discovered. Search matches name, description, and source;
+the Discovered filter selects imported definitions.
 
 ## Add or edit a managed MCP server
 
-The editor writes canonical Octocode JSON and refreshes the affected connection
-and catalog. It supports:
+The editor supports project/global scope, stdio or Streamable HTTP transport,
+server name, description, optional server instructions, and a timeout from
+1,000 to 120,000 ms. Stdio fields include command, one argument per line, and
+working directory. HTTP fields include URL and authentication through references
+or OAuth. Environment and header references map destination keys to environment
+variable names.
 
-- project or global scope;
-- stdio or Streamable HTTP transport;
-- server name, description, and timeout from 1,000 to 120,000 ms;
-- stdio command, one argument per line, and working directory;
-- HTTP(S) URL;
-- environment references as `destination key -> environment variable name`;
-- HTTP header references as `header name -> environment variable name`;
-- HTTP authentication mode: references/none or OAuth.
+Transport fields appear only when relevant. Save validates one typed action,
+writes atomically, refreshes the connection/catalog, and reloads the page.
+Errors leave the form available for correction.
 
-Transport-specific fields appear only when relevant. Save shows progress,
-posts one typed action, regenerates the page, and reloads on success. Mutation
-errors appear in the page without losing the current form state.
-
-Canonical definition files:
-
-| Scope | Source of truth |
+| Scope | Definition file |
 |---|---|
-| Workspace | `$OCTOCODE_HOME/extension/workspaces/<workspace-key>/mcp/servers.json` |
-| Global | `$OCTOCODE_HOME/extension/mcp/servers.json` |
+| Workspace | `.agents/mcp.json` |
+| Global | `$OCTOCODE_HOME/mcp.json` (default `~/.octocode/mcp.json`) |
 
-Project writes require a trusted workspace. Definitions are validated and
-written atomically while preserving the supported JSON container shape.
+Workspace writes require trust. Writes preserve supported JSON container shapes.
+Direct JSON definitions also support startup timeouts and tool filters; the
+browser editor exposes its supported subset.
 
 ## Discovery sources
 
-Octocode owns only its two canonical files. The page also discovers compatible
-definitions from other hosts and presents them as namespaced, read-only,
-disabled-by-default imports.
+Native sources are active by default, subject to definition enablement and
+workspace trust. Global sources use `OCTOCODE_HOME`, and workspace sources use
+`.agents/`. Pi defaults are used only for models: `~/.pi/agent/models.json`,
+relocated by `PI_CODING_AGENT_DIR`. Bundled skills and explicit skill files outside
+Pi default directories remain supported. Existing private Octocode
+MCP paths remain lower-precedence inputs. The [source path table](CAPABILITIES.md#source-paths)
+lists native locations and precedence.
 
-Project locations:
+Claude, Codex, Cursor, and other recognized foreign MCP/skill files appear as
+disabled candidates. Discovery includes `.mcp.json`, `.cursor/mcp.json`,
+`$CODEX_HOME/config.toml`, and Claude's user-file project entries. Discovery does
+not execute their code, connect their servers, or copy their configuration.
 
-- `.mcp.json` and `.claude/mcp.json`;
-- `.cursor/mcp.json`;
-- `.codex/config.toml`;
-- `.agents/mcp_config.json` and `.agents/mcp.json`;
-- `.agent/mcp_config.json` and `.agent/mcp.json`;
-- `.vscode/mcp.json`.
-
-User locations:
-
-- `~/.claude.json` and `~/.claude/mcp.json`;
-- `~/.cursor/mcp.json`;
-- `~/.codex/config.toml`;
-- `~/.agents/mcp_config.json` and `~/.agents/mcp.json`;
-- `~/.agent/mcp_config.json` and `~/.agent/mcp.json`;
-- `~/.gemini/config/mcp_config.json`;
-- `~/.gemini/antigravity/mcp_config.json`;
-- `~/.gemini/antigravity-cli/mcp_config.json`;
-- Claude Desktop's macOS and XDG configuration locations;
-- `~/.vscode/mcp.json`.
-
-The Discovery section shows the host, exact source path, trust status,
-read-only/active classification, and parse/import warnings. Untrusted project
-sources are not imported. Name collisions are resolved with host and scope
-namespacing rather than silently overwriting another definition.
+The page shows the host, exact path, trust state, review status, and parse or
+unsupported-field diagnostics. Review binds a source ID and definition revision
+to project or global scope. Changed linked definitions become pending review;
+removed reviewed definitions become unavailable. Namespaced MCP display names
+avoid collisions, while source IDs retain exact identity.
 
 ## Agent context and prompt artifacts
 
-The Agent context section explains what MCP routing data the next agent call
-will receive. It shows:
+The Agent context section shows catalog mode and readiness, prompt character
+count, artifact paths, guide state, and the last published effective capability
+revision. Parent capabilities lists enabled native tools, exact skill identities,
+and MCP server/tool pairs. Worker grants shows each worker's selected access.
 
-- exact or compact mode;
-- prompt readiness (`pending`, `ready`, `frozen`, `stale`, or degraded state as
-  reported by the runtime);
-- injected MCP prompt character count;
-- `mcp.md` availability and capture time;
-- exact `catalog.json` and compact `mcp.md` paths when present;
-- a `/new` warning when the current session prompt is frozen and stale.
-
-Mode behavior:
-
-| `OCTOCODE_COMPACT_MCP` | Agent prompt |
+| `OCTOCODE_COMPACT_MCP` | Prompt projection |
 |---|---|
-| Unset/enabled | Token-efficient deterministic `mcp.md`; exact `catalog.json` remains private for validation. |
-| `0`/disabled | Exact enabled server instructions, tool descriptions, and normalized input schemas from `catalog.json`. |
+| Unset/enabled | Bounded routing index with continuations; exact `catalog.json` remains private for validation. |
+| `0`/disabled | Exact enabled catalog projection for debugging. |
 
-Set `OCTOCODE_MCP_AI_GUIDE=1` to opt into a model-authored compact guide. The
-default avoids the extra model request and uses the deterministic schema-aware index.
+The default compact guide is deterministic. `OCTOCODE_MCP_AI_GUIDE=1` opts into
+model-authored guide generation. The exact `catalog.json` and compact `mcp.md`
+artifacts live under `$OCTOCODE_HOME/extension/mcp/workspaces/<workspace-key>/`.
 
-Artifacts live under
-`$OCTOCODE_HOME/extension/mcp/workspaces/<workspace-key>/`. MCP and skill changes
-take effect in runtime routing immediately, but a system prompt already frozen
-for the session remains byte-stable. Start `/new` to expose the refreshed
-catalog or skill list to the model.
+The runtime resolves effective capabilities before every turn. Changes appear in
+the next turn's prompt/catalog without starting a new session. An unchanged
+projection stays byte-stable. A `stale` badge means a changed source is awaiting
+the next projection; it does not require `/new`.
+
+MCP discovery follows bounded list → describe: `MCPTool action:"list"` returns
+instructions and descriptions, and `action:"describe"` returns exact schemas.
+Skill list → load follows the same staged discovery pattern. Copy a partial
+result's executable `next` call unchanged; it carries the catalog revision and
+any field-fragment position. [Catalog contracts](CAPABILITIES.md#versioned-prompt-and-catalogs)
+describe continuation and revision failures.
 
 ## Skills
 
-The Skills section deliberately shows the complete inventory, including
-disabled skills that the agent cannot currently load. It supports text search
-and All, Enabled, and Disabled filters.
+The Skills section shows effective names and all their source alternatives,
+including disabled, shadowed, pending-review, unavailable, invalid, and untrusted
+candidates. Search and All/Enabled/Disabled filters narrow the inventory. Cards
+show name, description, `SKILL.md` path, source, revision, selection, and effective
+enablement. A scope selector chooses This workspace or All workspaces.
 
-Each skill card shows:
+Review and select source approves the exact file revision and selects its source
+ID. Bundled skills win by default; an explicit selection can override that
+collision. Ordinary workspace skills outrank global skills, with the nearest
+repository ancestor first. Pi metadata must resolve to a valid skill file. A changed
+or removed selected source stays selected and blocks fallback; review its current
+revision or explicitly select another source to restore access.
 
-- source, name, description, and `SKILL.md` path;
-- enabled/disabled state;
-- whether the effective value came from a workspace override, global override,
-  or the default;
-- a This workspace / All workspaces scope selector;
-- an Enable skill / Disable skill control.
+Enable skill and Disable skill change name enablement. They do not authorize
+an unreviewed foreign source. Disabled or changed sources disappear from the
+effective loader and the next turn's prompt inventory, while remaining visible
+for review. Recursive and linked skill directories use realpath cycle and change
+checks. See [effective skills](CAPABILITIES.md#effective-skills).
 
-Discovery merges Pi-provided metadata, bundled skills, and `SKILL.md` files
-from these roots, in precedence order:
+## Models and hooks
 
-- project `.agent/skills`, `.agents/skills`, `.claude/skills`, `.cursor/skills`,
-  `.codex/skills`, `.octocode/skills`, `.pi/agent/skills`, and `.pi/skills`;
-- user `~/.agent/skills`, `~/.agents/skills`, `~/.pi/agent/skills`, `~/.pi/skills`, `~/.claude/skills`,
-  `~/.cursor/skills`, `~/.codex/skills`, and `~/.octocode/skills`;
-- extension-bundled skills.
+The Models section shows provider/model metadata and discovery diagnostics.
+Global `$OCTOCODE_HOME/models.json` and workspace `.agents/models.json` contribute
+to Pi's registry while retaining built-in models, active authentication, native
+Pi configuration, and other extension registrations. Credentials, headers, and
+endpoint URLs are omitted from the page. Edit the owning source file to change
+model definitions.
 
-Disabled skills disappear immediately from the effective skill loader,
-autocomplete, discovery inventory, dashboards, and generated agent skill
-catalog. If the agent prompt is already frozen, `/new` is still required to
-remove or add its prompt entry.
+The Hooks section shows declarative command sources, event names, exact revisions,
+status, and execution health. Review definition approves the current definition;
+Enable and Disable control reviewed execution. Workspace commands also require
+current trust. Changing a normalized hook definition requires another review.
+Discovery never executes commands. [Model and hook adapters](CAPABILITIES.md#model-definitions)
+documents field validation, event mapping, decisions, timeout, and cancellation.
 
 ## Overrides and persistence
 
-The Overrides section exposes normalized state for diagnosis; it never becomes
-a second definition store.
+The Overrides section exposes state for diagnosis.
 
 | Data | Authoritative store |
 |---|---|
-| Managed MCP definitions | Canonical project/global JSON files. |
-| Foreign MCP definitions | Their owning host files; Octocode imports them read-only. |
-| Server/tool enablement | Shared Octocode SQLite `mcp_server_overrides` and `mcp_tool_overrides`. |
-| Skill enablement | Shared Octocode SQLite `skill_overrides`. |
+| Managed MCP definitions | Native project/global JSON files. |
+| Foreign MCP and skill definitions | Original files, read through reviewed links. |
+| Server/tool enablement | Extension SQLite `mcp_server_overrides` and `mcp_tool_overrides`. |
+| Skill name enablement | Extension SQLite `skill_overrides`. |
+| Source reviews and selections | Extension-owned capability state, keyed by scope and source ID. |
 | OAuth access/refresh tokens | OS credential store. |
-| Exact schemas/instructions | Workspace `catalog.json`. |
+| Exact MCP schemas/instructions | Workspace `catalog.json`. |
 | Compact guide | Workspace `mcp.md`. |
-| Generated control-center page | `$OCTOCODE_HOME/extension/tmp/settings/<workspace-digest>/settings.html`. |
+| Generated configuration page | `$OCTOCODE_HOME/extension/tmp/settings/<workspace-digest>/settings.html`. |
 
-Precedence:
-
-- skills: workspace override -> global override -> enabled by default;
-- servers: workspace override -> global override -> definition default;
-- tools: workspace tool -> workspace server -> global tool -> global server ->
-  definition default.
-
-The page does not duplicate definitions, schemas, health, or credentials in
-SQLite. If SQLite diagnostics are unavailable, the page remains readable and
-uses safe defaults, but override details may be absent.
+Workspace overrides precede global overrides. Tool enablement considers the
+workspace tool/server overrides before global tool/server defaults. Source
+review, supported definitions, workspace trust, and source tool filters are
+additional gates. Memory storage mode keeps runtime review and enablement state
+in memory. If the state store is unavailable, the page explains the failure and
+disables controls that cannot save their changes.
 
 ## Security model
 
-The settings page is a local privileged surface, not a public web application.
-Protections include:
+The page uses one process-shared HTTP server bound to `127.0.0.1` on an ephemeral
+port. It checks the exact loopback Host, mutation origin, POST method, JSON body
+limit of 32 KiB, and an unguessable 32-byte per-page token carried in
+`x-octocode-action-token`.
 
-- one process-shared HTTP server bound only to `127.0.0.1` on an ephemeral port;
-- an exact loopback Host allowlist to resist DNS rebinding;
-- same-origin checks on mutation requests;
-- an unguessable 32-byte per-page action token sent in
-  `x-octocode-action-token`;
-- POST-only JSON mutation endpoints with a 32 KiB body ceiling;
-- strict action, scope, server/tool/skill name, configuration-field, environment
-  name, and HTTP header-name validation;
-- project-trust enforcement before project definition or skill mutations;
-- lexical and realpath/symlink containment checks for every served file;
-- `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`;
-- HTML escaping for commands, descriptions, paths, MCP metadata, skills, and
-  diagnostics;
-- URL redaction of user info, query, and fragment;
-- display of environment/header keys and references rather than their values;
-- OAuth tokens kept in the OS credential store and never rendered.
+Actions validate names, scopes, configuration fields, environment/header
+references, current source revisions, and project trust. Served files pass lexical
+and realpath containment checks. Responses use `Cache-Control: no-store` and
+`X-Content-Type-Options: nosniff`. Dynamic HTML is escaped. URLs redact user info,
+query, and fragment; environment/header values and OAuth tokens are not rendered.
 
-The form rejects raw `env` and `headers` maps. Arguments and descriptions are
-configuration text and remain visible for managed definitions, so credentials
-must never be placed in them; use environment/header references or OAuth.
-Imported stdio arguments are summarized by count rather than rendered.
+The form rejects raw `env` and `headers` maps. Arguments and descriptions remain
+visible for managed definitions, so use references or OAuth for credentials.
+Imported stdio arguments are summarized by count.
 
 ## Refresh and lifecycle behavior
 
-After a successful MCP mutation, Octocode stops the affected connection,
-invalidates server/workspace caches, marks a frozen prompt stale, warms the MCP
-catalog in the background, regenerates `settings.html`, and reloads the page.
-Connect/retry performs a real reconnect before refresh. Removing an OAuth
-server also attempts credential revocation.
+MCP mutations stop affected connections, invalidate caches, and refresh the
+catalog and page. Connect/retry performs a reconnect. Skill mutations update
+state and regenerate the page. Adapter refresh reads current model and hook
+sources. The effective prompt/catalog projection updates on the next turn;
+worker removals also apply immediately at their execution boundary.
 
-Skill mutations update SQLite immediately, mark a frozen prompt stale, announce
-the change through the unified runtime store, regenerate the page, and reload.
-
-The shared local server is lazy, reused by other Octocode HTML surfaces,
-`unref`'d so it cannot keep the process alive. Configuration mounts and cached session
-controls are retired on session shutdown. Reopening rotates the action token, so old
-tabs cannot mutate the new page. Actions are serialized; stale revisions are rejected.
+The local server is lazy, reused by other HTML surfaces, and `unref`'d so it
+cannot keep the process alive. Session shutdown retires configuration mounts
+and cached controls. Reopening rotates the action token. Actions are serialized
+and stale configuration revisions are rejected with an instruction to reopen
+`/config` and review current definitions.
 
 ## Current boundaries
 
-- Commands are a live read-only inventory; command execution remains in Pi.
-- Enablement controls apply to MCP servers/tools and skills, not arbitrary Pi
-  commands or direct provider tools.
-- The Connections section shows the cached MCP tool catalog, not MCP resources,
-  resource templates, or prompts; those remain available through `MCPTool`.
-- Experimental MCP drafts and legacy SSE are outside the supported stable
-  surface.
-- A page already open does not poll for newly registered commands. Run
-  `/configuration` again for a new live registry snapshot.
-- `/new` is required whenever a frozen system prompt must reflect changed MCP
-  routing or skill metadata.
+- Commands and model definitions are inventories; run commands in Pi and edit
+  model definitions in their source files.
+- Enablement and review controls cover MCP, skills, and declarative hooks.
+  They do not grant worker access; parents use `agent type:"configure"`.
+- Connections lists cached tools. MCP resources, templates, and prompts remain
+  available through `MCPTool`.
+- Unsupported foreign fields and legacy SSE are reported instead of activated.
+- Open pages do not poll for new commands or source changes. Reopen `/config`
+  for a fresh snapshot; prompt changes apply at the next turn boundary.

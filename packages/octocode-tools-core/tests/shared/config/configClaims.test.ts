@@ -143,9 +143,9 @@ describe('README/CONFIGURATION config claims', () => {
       ]);
     });
     it('DISABLE_TOOLS env populates the remove list', () => {
-      process.env.DISABLE_TOOLS = 'npmSearch';
+      process.env.DISABLE_TOOLS = 'artifactSearch';
       const t = resolveTools(undefined);
-      expect(t.disabled).toEqual(['npmSearch']);
+      expect(t.disabled).toEqual(['artifactSearch']);
     });
   });
 

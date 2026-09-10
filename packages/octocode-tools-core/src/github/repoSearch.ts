@@ -4,7 +4,7 @@ import type {
   GitHubAPIResponse,
 } from './githubAPI.js';
 import type { z } from 'zod';
-import type { GitHubReposSearchSingleQuerySchema } from '../toolContract/input/resources/tools/githubRepositoriesOperation.js';
+import type { GitHubReposSearchSingleQuerySchema } from '@octocodeai/octocode-core/schema';
 import type { GitHubRepositoryOutput } from '@octocodeai/octocode-core/extra-types';
 
 type GitHubReposSearchSingleQuery = z.infer<
@@ -24,7 +24,7 @@ import { normalizeResponseHeaders } from './responseHeaders.js';
 import {
   GITHUB_SEARCH_DEFAULT_LIMIT,
   GITHUB_SEARCH_MAX_LIMIT,
-} from '../config.js';
+} from '@octocodeai/octocode-core/schema';
 
 const RAW_API_DEFAULT_LIMIT = GITHUB_SEARCH_DEFAULT_LIMIT;
 

@@ -1,7 +1,7 @@
 import { buildNextPageContinuation } from '../../../scheme/pagination.js';
-import { MAX_PAGE_NUMBER } from '../../../config.js';
+import { MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 import { prepareGraphDiagnostics } from '../../../graph/diagnosticSnapshot.js';
-import { LSP_SEARCH_TOOL_NAME } from '../../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import type {
   TopologyAnalysisOutput,
   TopologyAnalysisQuery,

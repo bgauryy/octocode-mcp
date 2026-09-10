@@ -7,10 +7,8 @@
  * model reads and follows via `read` / `/skill:<name>`. Any executable `scripts/` a skill
  * ships should be run through the callTool sandbox — skills orchestrate, tools execute.
  *
- * Skills are written to the user's Pi skill directory so Pi discovers them:
- *   - `~/.pi/agent/skills/<name>/` (default) — surfaced to spawned subagents immediately
- *     (their skill dirs are re-scanned per spawn); the main process needs a restart or a
- *     direct `read` of the returned SKILL.md path to surface it in its own prompt.
+ * Skills are written to `$OCTOCODE_HOME/skills/<name>/` (default: `~/.octocode/skills`).
+ * The main agent discovers them on the next turn and can grant them to workers.
  *
  * This module owns everything deterministic and unit-testable: registry read/write,
  * O(1) resolve, frontmatter+structure validation (the skill verification gate, weaker
@@ -21,7 +19,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { parseAgentSkill } from '@octocodeai/agent-contracts/agent-skills';
-import { getPiUserSkillsDir } from '../utils.js';
+import { getOctocodeHome } from '@octocodeai/config';
 import { KEYWORD_MATCH_THRESHOLD, tokenize, withRegistryLock, writeJsonAtomic, readJsonSafe } from './registry-store.js';
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
 
@@ -74,13 +72,13 @@ const MAX_DESCRIPTION = 1024;
 // ─── paths ──────────────────────────────────────────────────────────────────
 
 /**
- * Skills registry root. Defaults to `~/.pi/agent/skills` so Pi discovers created skills.
+ * Skills registry root. Defaults to `$OCTOCODE_HOME/skills` for native discovery.
  * Overridable via env for tests / non-default homes.
  */
 export function getSkillsDir(env: NodeJS.ProcessEnv = process.env): string {
   const override = env.OCTOCODE_DYNAMIC_SKILLS_DIR;
   if (override) return override;
-  return getPiUserSkillsDir(env.HOME || env.USERPROFILE || process.cwd());
+  return path.join(getOctocodeHome(env), 'skills');
 }
 
 /** The registry index lives beside the skill dirs but is ignored by Pi's SKILL.md scan. */

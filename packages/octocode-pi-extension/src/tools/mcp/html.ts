@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 import {
@@ -12,14 +11,13 @@ import {
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
 import { openOctocodeDb } from '../storage-policy.js';
 import type { PiCommand, PiContext, PiInstance, SkillInfo } from '../../types.js';
-import { getOctocodeHome } from '@octocodeai/config';
 import { extensionTmpRoot } from '../../extension-paths.js';
 import { escapeHtml, renderOctocodePage } from '../../tui/html-page.js';
-import { loadMcpConfig, type McpServerConfig } from './config.js';
-import { getMcpDiscoverySnapshot, getMcpPromptArtifactStatus, handleMcpAction, isMcpServerConnected } from '../mcp-tool.js';
+import { loadMcpConfig, reviewMcpSource, isPlainRecord, type McpServerConfig } from './config.js';
+import { getMcpDiscoverySnapshot, getMcpPromptArtifactStatus, handleMcpAction, isMcpServerConnected, getMcpServerInspection, isConfiguredMcpToolEnabled, refreshMcpCapabilities } from '../mcp-tool.js';
 import { runtimeStoreFor } from '../runtime-renderer.js';
 import { hasStoredMcpOAuthTokens } from './oauth.js';
-import { discoverSkillStates } from '../skill-discovery.js';
+import { discoverSkillStates, discoverSkillCandidates, reviewSkillSource } from '../skill-discovery.js';
 import { serveDirectory, unmount } from '../local-server.js';
 import { openPlanReview } from '../planning/plan-command.js';
 import { openLocalUrl } from '../local-url-opener.js';
@@ -34,108 +32,35 @@ import {
   type SettingsSnapshot,
 } from '@octocodeai/agent-core';
 import { PiSettingsAdapter } from '../../adapters/pi-settings-adapter.js';
-import { applyDialLevel, EFFORT_LEVELS, getActiveDialLevel, type EffortLevel } from '../effort-dial.js';
+import { applyDialLevel, EFFORT_LEVELS, getActiveDialLevel } from '../effort-dial.js';
 import { updateOctocodeMetricsUi } from '../../extension-ui.js';
 import { OCTOCODE_THEME_DARK, OCTOCODE_THEME_LIGHT } from '../../ui-extras.js';
-import { discoverCodexHookSources, type CodexHookDiscoveryResult } from '../../adapters/pi-hook-discovery.js';
+import { refreshCapabilityAdapters } from '../../adapters/pi-capability-adapters.js';
+import { capabilityDefinitionRevision } from '@octocodeai/agent-contracts/capability-sources';
+import { configurationRevision } from '../configuration-snapshot.js';
+import { getSessionCapabilities } from '../capability-session.js';
+import { inspectWorkerCapabilityGrants } from '../worker-capabilities.js';
 
 export const SETTINGS_HTML_FILE = 'settings.html';
+
+function skillSourcePreview(file: string, expectedRevision?: string): string {
+  try {
+    if (fs.statSync(file).size > 512 * 1024) return '<p>Source exceeds the skill size limit.</p>';
+    const raw = fs.readFileSync(file, 'utf8');
+    if (capabilityDefinitionRevision({ raw, realPath: fs.realpathSync(file) }) !== expectedRevision) return '<p>Source changed. Reopen /config before reviewing.</p>';
+    return `<details><summary>Review complete skill instructions</summary><pre>${escapeHtml(raw)}</pre></details>`;
+  } catch { return '<p>Source unavailable. Reopen /config before reviewing.</p>'; }
+}
 
 function managerDir(cwd: string): string {
   const key = createHash('sha256').update(path.resolve(cwd)).digest('hex').slice(0, 32);
   return path.join(extensionTmpRoot(), 'settings', key);
 }
 
-export type McpManagerAction =
-  | { action: 'open-plan' }
-  | { action: 'enable' | 'disable'; server: string; tool?: string; scope: 'project' | 'global' }
-  | { action: 'add'; server: string; scope: 'project' | 'global'; config: Record<string, unknown> }
-  | { action: 'remove' | 'restart' | 'connect' | 'retry'; server: string; scope: 'project' | 'global' }
-  | { action: 'enable-skill' | 'disable-skill'; skill: string; scope: 'project' | 'global' }
-  | { action: 'set-footer-density'; density: FooterDensity; expectedRevision?: string }
-  | { action: 'set-permission-level'; level: PermissionLevel; expectedRevision?: string }
-  | { action: 'set-effort'; level: EffortLevel; expectedRevision?: string }
-  | { action: 'set-theme'; theme: 'dark' | 'light'; expectedRevision?: string }
-  | { action: 'review-hook'; source: string; hash: string; expectedRevision?: string }
-  | { action: 'enable-hook' | 'disable-hook'; source: string; expectedRevision?: string };
-
-const SERVER_NAME = /^[A-Za-z0-9_.-]{1,64}$/;
-const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const HTTP_HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
-const SKILL_NAME = /^[^\0\r\n]{1,160}$/;
-
-export function parseMcpManagerAction(raw: unknown): McpManagerAction {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid MCP action');
-  const value = raw as Record<string, unknown>;
-  for (const key of Object.keys(value)) {
-    if (!['action', 'server', 'scope', 'tool', 'config', 'skill', 'density', 'level', 'theme', 'source', 'hash', 'expectedRevision'].includes(key)) throw new Error(`Unsupported settings action field: ${key}`);
-  }
-  const action = value['action'];
-  if (action === 'open-plan') return { action };
-  const expectedRevision = typeof value['expectedRevision'] === 'string' ? value['expectedRevision'] : undefined;
-  const server = value['server'];
-  if (action === 'set-effort') {
-    if (!EFFORT_LEVELS.includes(value['level'] as EffortLevel)) throw new Error('Invalid effort level');
-    return { action, level: value['level'] as EffortLevel, ...(expectedRevision ? { expectedRevision } : {}) };
-  }
-  if (action === 'set-theme') {
-    if (value['theme'] !== 'dark' && value['theme'] !== 'light') throw new Error('Invalid theme');
-    return { action, theme: value['theme'], ...(expectedRevision ? { expectedRevision } : {}) };
-  }
-  if (action === 'set-footer-density') {
-    if (!['compact', 'default', 'full'].includes(String(value['density']))) throw new Error('Invalid footer density');
-    return { action, density: value['density'] as FooterDensity, ...(expectedRevision ? { expectedRevision } : {}) };
-  }
-  if (action === 'set-permission-level') {
-    if (!['default', 'relaxed', 'strict'].includes(String(value['level']))) throw new Error('Invalid permission level');
-    return { action, level: value['level'] as PermissionLevel, ...(expectedRevision ? { expectedRevision } : {}) };
-  }
-  if (action === 'review-hook' || action === 'enable-hook' || action === 'disable-hook') {
-    if (typeof value['source'] !== 'string' || value['source'].length > 2048) throw new Error('Invalid hook source');
-    if (action === 'review-hook' && (typeof value['hash'] !== 'string' || !/^[a-f0-9]{64}$/.test(value['hash']))) throw new Error('Invalid hook review hash');
-    return {
-      action,
-      source: value['source'],
-      ...(action === 'review-hook' ? { hash: value['hash'] as string } : {}),
-      ...(expectedRevision ? { expectedRevision } : {}),
-    } as McpManagerAction;
-  }
-  if (value['scope'] !== undefined && value['scope'] !== 'project' && value['scope'] !== 'global') throw new Error('Invalid MCP scope');
-  const scope = value['scope'] === 'global' ? 'global' : 'project';
-  if (action === 'enable-skill' || action === 'disable-skill') {
-    const skill = value['skill'];
-    if (typeof skill !== 'string' || !SKILL_NAME.test(skill)) throw new Error('Invalid skill name');
-    return { action, skill, scope };
-  }
-  if (!['enable', 'disable', 'add', 'remove', 'restart', 'connect', 'retry'].includes(String(action))) throw new Error('Unsupported settings action');
-  if (typeof server !== 'string' || !SERVER_NAME.test(server)) throw new Error('Invalid MCP server');
-  if (action === 'enable' || action === 'disable') {
-    const tool = value['tool'];
-    if (tool !== undefined && (typeof tool !== 'string' || !SERVER_NAME.test(tool))) throw new Error('Invalid MCP tool');
-    return { action, server, scope, ...(typeof tool === 'string' ? { tool } : {}) };
-  }
-  if (action === 'add') {
-    if (!value['config'] || typeof value['config'] !== 'object' || Array.isArray(value['config'])) throw new Error('MCP add requires config');
-    const config = value['config'] as Record<string, unknown>;
-    const allowed = new Set(['command', 'args', 'cwd', 'url', 'timeoutMs', 'description', 'envRefs', 'headerRefs', 'auth']);
-    for (const key of Object.keys(config)) if (!allowed.has(key)) throw new Error(`Unsupported MCP config field: ${key}`);
-    for (const field of ['envRefs', 'headerRefs'] as const) {
-      const refs = config[field];
-      if (refs === undefined) continue;
-      if (!refs || typeof refs !== 'object' || Array.isArray(refs)) throw new Error(`${field} must be an object`);
-      for (const [destination, source] of Object.entries(refs as Record<string, unknown>)) {
-        const validDestination = field === 'envRefs' ? ENV_NAME.test(destination) : HTTP_HEADER_NAME.test(destination);
-        if (!validDestination) throw new Error(`Invalid ${field} destination: ${destination}`);
-        if (typeof source !== 'string' || !ENV_NAME.test(source)) throw new Error(`${field} values must be environment variable names`);
-      }
-    }
-    return { action, server, scope, config };
-  }
-  return { action, server, scope } as McpManagerAction;
-}
+import { parseMcpManagerAction, type McpManagerAction } from './manager-actions.js';
+export { parseMcpManagerAction, type McpManagerAction } from './manager-actions.js';
 
 const settingsAdapters = new WeakMap<object, PiSettingsAdapter>();
-const hookDiscovery = new Map<string, CodexHookDiscoveryResult>();
 const pluginContributions = new ContributionRegistry();
 
 function settingsAdapter(ctx?: PiContext): PiSettingsAdapter {
@@ -157,16 +82,15 @@ function settingsAdapter(ctx?: PiContext): PiSettingsAdapter {
   return adapter;
 }
 
-function hooksFor(ctx?: PiContext): CodexHookDiscoveryResult {
-  const key = path.resolve(ctx?.cwd ?? process.cwd());
-  const cached = hookDiscovery.get(key);
-  if (cached) return cached;
-  const discovered = discoverCodexHookSources({ workspace: key });
-  hookDiscovery.set(key, discovered);
-  return discovered;
-}
 
-export async function applyMcpManagerAction(action: McpManagerAction, ctx?: PiContext, pi?: PiInstance): Promise<void> {
+export async function applyMcpManagerAction(action: McpManagerAction, ctx?: PiContext, pi?: PiInstance, piSkills?: SkillInfo[]): Promise<void> {
+  if (action.capabilityRevision && action.capabilityRevision !== await configurationRevision(ctx, piSkills)) throw new Error('Capabilities changed since this page was generated. Reopen /config and review the current definitions.');
+  if (action.action === 'review-skill' || action.action === 'review-mcp') {
+    if (action.action === 'review-skill') reviewSkillSource(ctx?.cwd ?? process.cwd(), action.source, action.hash, action.scope, piSkills, { trusted: ctx?.isProjectTrusted?.() === true });
+    else reviewMcpSource(ctx?.cwd ?? process.cwd(), action.source, action.hash, action.scope, { trusted: ctx?.isProjectTrusted?.() === true });
+    await refreshMcpCapabilities(ctx);
+    return;
+  }
   if (action.action === 'open-plan') {
     const url = await openPlanReview(ctx);
     if (!url) throw new Error('Could not open the current plan');
@@ -203,14 +127,14 @@ export async function applyMcpManagerAction(action: McpManagerAction, ctx?: PiCo
     return;
   }
   if (action.action === 'review-hook' || action.action === 'enable-hook' || action.action === 'disable-hook') {
-    const hooks = hooksFor(ctx);
-    const snapshot = hooks.catalog.snapshot();
-    if (action.expectedRevision && action.expectedRevision !== snapshot.revision) throw new Error('Hook catalog changed since this page was generated');
-    const entry = snapshot.entries.find((candidate) => candidate.source.id === action.source);
+    const hooks = refreshCapabilityAdapters(ctx).hooks;
+    const snapshot = hooks.snapshot();
+    if (action.expectedRevision && action.expectedRevision !== capabilityDefinitionRevision(snapshot.sources)) throw new Error('Hook catalog changed since this page was generated');
+    const entry = snapshot.sources.find((candidate) => candidate.id === action.source);
     if (!entry) throw new Error('Unknown hook source');
-    if (entry.source.scope === 'workspace' && ctx?.isProjectTrusted && !(await ctx.isProjectTrusted())) throw new Error('Workspace hook review refused because the workspace is not trusted');
-    if (action.action === 'review-hook') hooks.catalog.review(action.source, action.hash);
-    else hooks.catalog.setEnabled(action.source, action.action === 'enable-hook');
+    if (entry.scope === 'workspace' && ctx?.isProjectTrusted && !(await ctx.isProjectTrusted())) throw new Error('Workspace hook review refused because the workspace is not trusted');
+    if (action.action === 'review-hook') hooks.review(action.source, action.hash);
+    else hooks.setEnabled(action.source, action.action === 'enable-hook');
     return;
   }
   if (action.action === 'enable-skill' || action.action === 'disable-skill') {
@@ -220,8 +144,8 @@ export async function applyMcpManagerAction(action: McpManagerAction, ctx?: PiCo
     const scopeKey = action.scope === 'global' ? '*' : path.resolve(ctx?.cwd ?? process.cwd());
     setSkillEnabled(openOctocodeDb(), scopeKey, action.skill, action.action === 'enable-skill');
     const state = runtimeStoreFor(ctx)?.getState();
-    if (state?.context.status === 'frozen') state.setContext({ status: 'stale' });
-    state?.announce(`Skill ${action.skill} ${action.action === 'enable-skill' ? 'enabled' : 'disabled'} for ${action.scope}. Start /new to refresh the frozen prompt.`, 'info');
+    if (state?.context.status === 'ready') state.setContext({ status: 'stale' });
+    state?.announce(`Skill ${action.skill} ${action.action === 'enable-skill' ? 'enabled' : 'disabled'} for ${action.scope}. The prompt refreshes on the next turn.`, 'info');
     return;
   }
   const toolAction = action.action === 'connect' || action.action === 'retry' ? { ...action, action: 'restart' as const } : action;
@@ -251,6 +175,7 @@ function safeConfig(config: McpServerConfig): Record<string, unknown> {
         auth: config.auth ?? 'none',
         timeoutMs: config.timeoutMs,
         description: config.description,
+        instructions: config.instructions,
       }
     : {
         transport: 'stdio',
@@ -261,12 +186,17 @@ function safeConfig(config: McpServerConfig): Record<string, unknown> {
         envRefs: config.envRefs ?? {},
         timeoutMs: config.timeoutMs,
         description: config.description,
+        instructions: config.instructions,
       };
 }
 
 export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', piSkills?: SkillInfo[], commands: readonly PiCommand[] = [], pi?: PiInstance): Promise<string> {
   const cwd = path.resolve(ctx?.cwd ?? process.cwd());
-  const skills = discoverSkillStates(cwd, piSkills);
+  const trusted = ctx?.isProjectTrusted?.() === true;
+  const skills = discoverSkillStates(cwd, piSkills, undefined, { trusted });
+  const candidates = discoverSkillCandidates(cwd, piSkills, undefined, { trusted });
+  const capabilityRevision = await configurationRevision(ctx, piSkills);
+  const effective = getSessionCapabilities(cwd);
   const loaded = await loadMcpConfig(ctx);
   const discovery = await getMcpDiscoverySnapshot(ctx);
   const artifacts = getMcpPromptArtifactStatus(ctx);
@@ -300,11 +230,13 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
     const imported = Boolean(config.discovered || source?.readOnly);
     const connected = isMcpServerConnected(name);
     const authHealth = config.auth === 'oauth' ? (oauthHealth.get(name) ? 'authorized' : 'authorization required') : 'not required';
-    const tools = catalog.get(name)?.tools ?? [];
+    const inspection = getMcpServerInspection(name, ctx);
+    const tools = (inspection?.tools ?? catalog.get(name)?.tools ?? []).flatMap(tool => isPlainRecord(tool) && typeof tool['name'] === 'string' ? [{ name: tool['name'], description: typeof tool['description'] === 'string' ? tool['description'] : '', inputSchema: tool['inputSchema'] }] : []);
     const toolRows = tools.map((tool) => {
-      const toolEnabled = !db ? !imported : getMcpEnablement(db, cwd, name, tool.name, !imported);
+      const allowed = isConfiguredMcpToolEnabled(config, tool.name);
+      const toolEnabled = enabled && allowed && (!db || getMcpEnablement(db, cwd, name, tool.name, true));
       const action = toolEnabled ? 'disable' : 'enable';
-      return `<div class="tool-row"><span><code>${escapeHtml(tool.name)}</code><small>${escapeHtml(tool.description)}</small></span><button class="${toolEnabled ? '' : 'primary'}" data-action="${action}" data-server="${escapeHtml(name)}" data-tool="${escapeHtml(tool.name)}"${enablementAttributes}>${toolEnabled ? 'Disable' : 'Enable'}</button></div>`;
+      return `<div class="tool-row"><span><code>${escapeHtml(tool.name)}</code><small>${escapeHtml(tool.description ?? '')}</small><details><summary>Exact input schema</summary><pre>${escapeHtml(JSON.stringify(tool.inputSchema ?? 'Connect to inspect this tool schema.', null, 2))}</pre></details></span><button class="${toolEnabled ? '' : 'primary'}" data-action="${action}" data-server="${escapeHtml(name)}" data-tool="${escapeHtml(tool.name)}"${allowed ? enablementAttributes : ' disabled title="Excluded by source configuration"'}>${toolEnabled ? 'Disable' : 'Enable'}</button></div>`;
     }).join('');
     const encodedConfig = Buffer.from(JSON.stringify({
       name,
@@ -318,18 +250,23 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
       <p class="server-description">${escapeHtml(config.description ?? (imported ? 'Found automatically. Disabled until you explicitly enable it.' : 'No description provided.'))}</p>
       <div class="server-facts"><span><b>${config.transport === 'http' || config.url ? 'HTTP' : 'STDIO'}</b> transport</span><span><b>${tools.length}</b> cached tool${tools.length === 1 ? '' : 's'}</span><span><b>${escapeHtml(authHealth)}</b> OAuth</span></div>
       <details><summary>Configuration and source</summary><p class="muted">Effective scope: ${escapeHtml(source?.scope ?? 'unknown')} · <code>${escapeHtml(source?.path ?? 'unknown')}</code></p><pre>${escapeHtml(JSON.stringify(safeConfig(config), null, 2))}</pre></details>
+      ${config.instructions ? `<details><summary>User instructions</summary><pre>${escapeHtml(config.instructions)}</pre></details>` : ''}
+      ${inspection?.instructions ? `<details><summary>Connected server instructions</summary><pre>${escapeHtml(inspection.instructions)}</pre></details>` : ''}
       ${tools.length ? `<details class="tool-list"><summary>${tools.length} tools · ${imported ? 'disabled by default' : 'enablement controls'}</summary><div>${toolRows}</div></details>` : '<p class="empty-note">No cached tools yet. Enable the server, then connect to discover its catalog.</p>'}
-      <div class="reply-actions">${imported ? '' : `<button data-action="edit" data-config="${encodedConfig}">Edit</button>`}<button class="${enabled ? '' : 'primary'}" data-action="${enabled ? 'disable' : 'enable'}" data-server="${escapeHtml(name)}" data-scope="${editScope}"${enablementAttributes}>${enabled ? 'Disable' : imported ? 'Enable import' : 'Enable'}</button>${enabled ? `<button data-action="restart" data-server="${escapeHtml(name)}" data-scope="${editScope}">${config.auth === 'oauth' && !oauthHealth.get(name) ? 'Authorize / connect' : 'Connect / retry'}</button>` : ''}${name === 'octocode' || imported ? '' : `<button data-action="remove" data-server="${escapeHtml(name)}" data-scope="${editScope}">Remove</button>`}</div>
+      <div class="reply-actions">${imported && config.discovered?.sourceId && config.discovered?.revision ? `<button class="primary" data-action="review-mcp" data-source="${escapeHtml(config.discovered.sourceId)}" data-hash="${escapeHtml(config.discovered.revision)}" data-scope="${editScope}"${enablementAttributes}>Review and link import</button>` : ''}${imported ? '' : `<button data-action="edit" data-config="${encodedConfig}">Edit</button>`}${!imported || enabled ? `<button class="${enabled ? '' : 'primary'}" data-action="${enabled ? 'disable' : 'enable'}" data-server="${escapeHtml(name)}" data-scope="${editScope}"${enablementAttributes}>${enabled ? 'Disable' : 'Enable'}</button>` : ''}${enabled ? `<button data-action="restart" data-server="${escapeHtml(name)}" data-scope="${editScope}">${config.auth === 'oauth' && !oauthHealth.get(name) ? 'Authorize / connect' : 'Connect / retry'}</button>` : ''}${name === 'octocode' || imported ? '' : `<button data-action="remove" data-server="${escapeHtml(name)}" data-scope="${editScope}">Remove</button>`}</div>
     </section>`;
   }).join('');
   const sources = loaded.sources.map((source) => `<li><span class="badge ${source.trusted ? 'on' : ''}">${escapeHtml(source.host ?? source.scope)}</span><span><code>${escapeHtml(source.path)}</code><small>${source.readOnly ? 'discovered · read-only · disabled by default' : source.trusted ? 'active definition source' : 'untrusted · not imported'}</small></span></li>`).join('');
-  const skillRows = skills.map((skill) => {
+  const skillGroups = new Map(skills.map(skill => [normalizeSkillKey(skill.name), skill]));
+  for (const candidate of candidates) if (!skillGroups.has(normalizeSkillKey(candidate.name))) skillGroups.set(normalizeSkillKey(candidate.name), { ...candidate, enabled: false });
+  const skillRows = [...skillGroups.values()].map((skill) => {
     const key = normalizeSkillKey(skill.name);
     const workspaceOverride = skillOverrides.find((override) => override.scopeKey === cwd && override.skillKey === key);
     const globalOverride = skillOverrides.find((override) => override.scopeKey === '*' && override.skillKey === key);
     const effectiveSource = workspaceOverride ? 'workspace override' : globalOverride ? 'global override' : 'default';
     const globalSelected = !workspaceOverride && Boolean(globalOverride);
-    return `<article class="skill-card" data-skill-search="${escapeHtml(`${skill.name} ${skill.description} ${skill.source}`.toLowerCase())}" data-skill-state="${skill.enabled ? 'enabled' : 'disabled'}"><div class="skill-card-head"><div><span class="badge">${escapeHtml(skill.source)}</span><h3>${escapeHtml(skill.name)}</h3></div><span class="badge ${skill.enabled ? 'on' : ''}">${skill.enabled ? 'enabled' : 'disabled'}</span></div><p>${escapeHtml(skill.description || '(no description)')}</p><details><summary>Source and effective state</summary><code>${escapeHtml(skill.path)}</code><small>${escapeHtml(effectiveSource)}</small></details><div class="skill-actions"><select aria-label="Scope for ${escapeHtml(skill.name)}" data-skill-scope><option value="project"${globalSelected ? '' : ' selected'}>This workspace</option><option value="global"${globalSelected ? ' selected' : ''}>All workspaces</option></select><button class="${skill.enabled ? '' : 'primary'}" data-action="${skill.enabled ? 'disable-skill' : 'enable-skill'}" data-skill="${escapeHtml(skill.name)}"${enablementAttributes}>${skill.enabled ? 'Disable skill' : 'Enable skill'}</button></div></article>`;
+    const alternatives = candidates.filter(candidate => normalizeSkillKey(candidate.name) === key).map(candidate => `<div class="row"><span><code>${escapeHtml(candidate.path)}</code><small>${escapeHtml(candidate.status)}${candidate.selected ? ' · selected' : ''}${candidate.bundled ? ' · bundled default' : ''}</small><p>${escapeHtml(candidate.description)}</p>${candidate.parseStatus === 'valid' && candidate.status !== 'untrusted' ? skillSourcePreview(candidate.path, candidate.revision) : ''}<small>${escapeHtml(candidate.revision ?? '')}</small></span>${candidate.sourceId && candidate.revision && candidate.parseStatus === 'valid' && candidate.status !== 'untrusted' && candidate.status !== 'unavailable' ? `<button data-action="review-skill" data-skill="${escapeHtml(skill.name)}" data-source="${escapeHtml(candidate.sourceId)}" data-hash="${escapeHtml(candidate.revision)}">Review and select source</button>` : ''}</div>`).join('');
+    return `<article class="skill-card" data-skill-search="${escapeHtml(`${skill.name} ${skill.description} ${skill.source}`.toLowerCase())}" data-skill-state="${skill.enabled ? 'enabled' : 'disabled'}"><div class="skill-card-head"><div><span class="badge">${escapeHtml(skill.source)}</span><h3>${escapeHtml(skill.name)}</h3></div><span class="badge ${skill.enabled ? 'on' : ''}">${skill.enabled ? 'enabled' : 'disabled'}</span></div><p>${escapeHtml(skill.description || '(no description)')}</p><details><summary>Source and effective state</summary><code>${escapeHtml(skill.path)}</code><small>${escapeHtml(effectiveSource)}</small></details><details><summary>Import or choose a source</summary>${alternatives}</details><div class="skill-actions"><select aria-label="Scope for ${escapeHtml(skill.name)}" data-skill-scope><option value="project"${globalSelected ? '' : ' selected'}>This workspace</option><option value="global"${globalSelected ? ' selected' : ''}>All workspaces</option></select><button class="${skill.enabled ? '' : 'primary'}" data-action="${skill.enabled ? 'disable-skill' : 'enable-skill'}" data-skill="${escapeHtml(skill.name)}"${enablementAttributes}>${skill.enabled ? 'Disable skill' : 'Enable skill'}</button></div></article>`;
   }).join('');
   const commandRows = commands.map((command) => {
     const description = command.description?.trim() || 'No description provided.';
@@ -351,10 +288,11 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
   const settingValue = (key: string): unknown => canonicalSettings.values.find((value) => value.key === key)?.value;
   const canonicalFooterDensity = settingValue('runtime.footer-density') as FooterDensity ?? footerDensity;
   const canonicalPermissionLevel = settingValue('runtime.permission-level') as PermissionLevel ?? permissionLevel;
-  const hooks = hooksFor(ctx);
-  const hookSnapshot = hooks.catalog.snapshot();
-  const hookRows = hookSnapshot.entries.map((entry) => `<div class="row"><span><strong>${escapeHtml(entry.source.scope)}</strong> · <code>${escapeHtml(entry.source.provenance)}</code><br><small>${escapeHtml(entry.source.normalizedHash)} · ${entry.source.managed ? 'managed' : 'exact-definition review'}</small></span><span class="reply-actions"><span class="badge ${entry.executable ? 'on' : ''}">${entry.executable ? 'trusted' : 'review required'}</span>${entry.executable ? '' : `<button data-action="review-hook" data-source="${escapeHtml(entry.source.id)}" data-hash="${entry.source.normalizedHash}">Review exact hash</button>`}<button data-action="${entry.enabled ? 'disable-hook' : 'enable-hook'}" data-source="${escapeHtml(entry.source.id)}">${entry.enabled ? 'Disable' : 'Enable'}</button></span></div>`).join('');
-  const modelSources = [path.join(getOctocodeHome(), 'agent', 'models.json'), path.join(cwd, '.octocode', 'agent', 'models.json'), path.join(os.homedir(), '.pi', 'agent', 'models.json'), path.join(cwd, '.pi', 'models.json')];
+  const adapters = refreshCapabilityAdapters(ctx);
+  const hookState = adapters.hooks.snapshot();
+  const hookSnapshot = { revision: capabilityDefinitionRevision(hookState.sources) };
+  const hookRows = hookState.sources.map(source => `<div class="row"><span><strong>${escapeHtml(source.name)}</strong> · <code>${escapeHtml(source.path)}</code><small>${escapeHtml(source.scope)} · ${escapeHtml(source.status)} · ${escapeHtml(source.revision)}</small><p>${escapeHtml(source.events.join(', '))}</p></span><span class="reply-actions">${source.status === 'active' ? '<span class="badge on">active</span>' : `<button data-action="review-hook" data-source="${escapeHtml(source.id)}" data-hash="${escapeHtml(source.revision)}">Review definition</button>`}<button data-action="${source.enabled ? 'disable-hook' : 'enable-hook'}" data-source="${escapeHtml(source.id)}">${source.enabled ? 'Disable' : 'Enable'}</button></span></div>`).join('');
+  const modelState = adapters.models.snapshot();
   const pluginSnapshot = pluginContributions.list();
   const bodyHtml = `<style>
       .settings-shell>*,.row>*,.server-head>*,.skill-card-head>*{min-width:0}.row{gap:.8rem;flex-wrap:wrap}.row code,.row small,.source-list code,.source-list small{overflow-wrap:anywhere;word-break:break-word}.settings-shell section{min-width:0}.row .reply-actions{flex-wrap:wrap}
@@ -373,17 +311,17 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
     </style>
     <section class="control-hero" id="overview"><h2>Your configuration</h2><p>Choose the connections, tools, and skills available to your agent. Display and permission controls apply to this session.</p><p><button data-action="open-plan">Review plan</button></p><div class="stats"><div class="stat"><b>${commands.length}</b><span>live commands</span></div><div class="stat"><b>${loaded.servers.size}</b><span>enabled servers</span></div><div class="stat"><b>${importedCount}</b><span>discovered imports</span></div><div class="stat"><b>${discoveredToolCount}</b><span>known MCP tools</span></div><div class="stat"><b>${enabledSkillCount}/${skills.length}</b><span>enabled skills</span></div></div></section>
     ${storageError ? `<p class="security-note" id="enablement-status" role="status"><strong>Saved enablement is unavailable.</strong> Server, tool, and skill enablement cannot be saved. Displayed defaults may differ from saved preferences. Session controls remain available. ${escapeHtml(storageError)}</p>` : ''}
-    <div class="settings-shell"><nav class="settings-nav" aria-label="Settings sections"><a href="#overview">Overview</a><a href="#runtime">Runtime</a><a href="#appearance">Appearance</a><a href="#models">Models</a><a href="#hooks">Hooks</a><a href="#plugins">Plugins</a><a href="#commands">Commands</a><a href="#connections">Connections</a><a href="#add-server">Add server</a><a href="#sources">Discovery</a><a href="#agent-context">Agent context</a><a href="#skills">Skills</a><a href="#overrides">Overrides</a><a href="#diagnostics">Diagnostics</a><p class="nav-tip">Run <code>/configuration</code> anytime to rebuild this page from the live registry.</p></nav><div>
+    <div class="settings-shell"><nav class="settings-nav" aria-label="Settings sections"><a href="#overview">Overview</a><a href="#runtime">Runtime</a><a href="#appearance">Appearance</a><a href="#models">Models</a><a href="#hooks">Hooks</a><a href="#plugins">Plugins</a><a href="#commands">Commands</a><a href="#connections">Connections</a><a href="#add-server">Add server</a><a href="#sources">Discovery</a><a href="#agent-context">Agent context</a><a href="#skills">Skills</a><a href="#overrides">Overrides</a><a href="#diagnostics">Diagnostics</a><p class="nav-tip">Run <code>/config</code> anytime to rebuild this page from the live registry.</p></nav><div>
     <div class="section-heading" id="runtime"><div><h2>Runtime controls</h2><p>Session-scoped display and safety controls. Changes apply immediately.</p></div></div>
     <section data-settings-revision="${settingsRevision}"><div class="row"><span><strong>Footer density</strong><br><small>Choose how much detail appears below the conversation.</small></span><span class="reply-actions">${(['compact', 'default', 'full'] as const).map((density) => `<button data-action="set-footer-density" data-density="${density}"${density === canonicalFooterDensity ? ' class="primary"' : ''}>${density}</button>`).join('')}</span></div><div class="row"><span><strong>Permission level</strong><br><small>Strict asks more often; relaxed permits more actions automatically.</small></span><span class="reply-actions">${(['default', 'relaxed', 'strict'] as const).map((level) => `<button data-action="set-permission-level" data-level="${level}"${level === canonicalPermissionLevel ? ' class="primary"' : ''}>${level}</button>`).join('')}</span></div></section>
     <div class="section-heading" id="appearance"><div><h2>Appearance and effort</h2><p>Changes apply to this session.</p></div></div>
     <section><div class="row"><span><strong>Terminal theme</strong><br><small>Choose a light or dark terminal appearance.</small></span><span class="reply-actions">${(['dark', 'light'] as const).map((theme) => `<button data-action="set-theme" data-theme="${theme}" aria-pressed="${settingValue('runtime.theme') === theme}"${settingValue('runtime.theme') === theme ? ' class="primary"' : ''}${ctx?.ui?.setTheme ? '' : ' disabled'}>${theme}</button>`).join('')}</span></div>
     <div class="row"><span><strong>Effort</strong><br><small>Thinking depth and concurrent workers. Current: ${escapeHtml(getActiveDialLevel() ?? 'host settings')}. ${pi?.setThinkingLevel ? '' : 'Changing effort is unavailable in this host.'}</small></span><span class="reply-actions">${EFFORT_LEVELS.map((level) => `<button data-action="set-effort" data-level="${level}"${level === getActiveDialLevel() ? ' class="primary"' : ''}${pi?.setThinkingLevel ? '' : ' disabled'}>${level}</button>`).join('')}</span></div></section>
-    <div class="section-heading" id="models"><div><h2>Models</h2><p>The model used by this session.</p></div></div><section><div class="row"><span><strong>${escapeHtml(ctx?.model?.provider ?? 'unknown provider')} / ${escapeHtml(ctx?.model?.id ?? 'unknown model')}</strong><br><small>Change the active model using the host model selector.</small></span><span class="badge">current session</span></div>${modelSources.map((sourcePath) => `<div class="row"><code>${escapeHtml(sourcePath)}</code><span class="badge ${fs.existsSync(sourcePath) ? 'on' : ''}">${fs.existsSync(sourcePath) ? 'present · import-only' : 'not present'}</span></div>`).join('')}<p class="muted">Model configuration files are shown for reference. This page cannot edit them.</p></section>
-    <div class="section-heading" id="hooks"><div><h2>Hooks</h2><p>Codex-compatible lifecycle definitions and safe execution health.</p></div><span>revision ${hookSnapshot.revision}</span></div><section>${hookRows || '<p>No Codex hook sources discovered.</p>'}${hooks.errors.map((error) => `<p class="security-note">${escapeHtml(error.path)}: ${escapeHtml(error.message)}</p>`).join('')}<p class="muted">Enablement and exact-definition trust review are distinct. Workspace sources additionally require current workspace trust.</p></section>
+    <div class="section-heading" id="models"><div><h2>Models</h2><p>Pi defaults and resolved Octocode definitions.</p></div></div><section><p>Native Pi models: <code>${escapeHtml(modelState.nativeModelsPath)}</code></p>${modelState.sources.map(source => `<div class="row"><span><code>${escapeHtml(source.path)}</code><small>${escapeHtml(source.provider)} · ${escapeHtml(source.modelIds.join(', '))}</small></span><span class="badge">${escapeHtml(source.status)}</span></div>`).join('')}<details><summary>Available models</summary><pre>${escapeHtml(JSON.stringify(modelState.models, null, 2))}</pre></details>${modelState.errors.map(error => `<p>${escapeHtml(error.message)}</p>`).join('')}<p>Use the host model selector to change the active model.</p></section>
+    <div class="section-heading" id="hooks"><div><h2>Hooks</h2><p>Reviewed lifecycle commands and execution health.</p></div><span>revision ${hookSnapshot.revision}</span></div><section>${hookRows || '<p>No declarative hooks discovered.</p>'}${hookState.errors.map((error) => `<p class="security-note">${escapeHtml(error.path)}: ${escapeHtml(error.message)}</p>`).join('')}<p class="muted">Enablement and exact-definition trust review are distinct. Workspace sources additionally require current workspace trust.</p></section>
     <div class="section-heading" id="plugins"><div><h2>Plugins</h2><p>Extensions active in this session.</p></div></div><section><div class="row"><span>Registered extensions</span><span class="badge">${pluginSnapshot.length} active</span></div><p class="muted">Reload the host after changing installed extensions.</p></section>
     <div class="section-heading" id="commands"><div><h2>Commands</h2><p>Every public slash command registered in this running session.</p></div><span>${commands.length} available now</span></div>
-    <section><div class="command-toolbar"><input id="command-filter" type="search" placeholder="Search commands and descriptions…" aria-label="Search commands"><button class="active" data-command-filter="all">All</button><button data-command-filter="extension">Extension</button><button data-command-filter="skill">Skills</button><button data-command-filter="prompt">Prompts</button></div><div id="command-list" class="command-grid">${commandRows || '<p>No live commands were reported by the host. Reopen settings after command registration completes.</p>'}</div><p class="muted">This snapshot is rebuilt from <code>pi.getCommands()</code> every time you run <code>/configuration</code>; internal commands beginning with <code>_</code> are excluded.</p></section>
+    <section><div class="command-toolbar"><input id="command-filter" type="search" placeholder="Search commands and descriptions…" aria-label="Search commands"><button class="active" data-command-filter="all">All</button><button data-command-filter="extension">Extension</button><button data-command-filter="skill">Skills</button><button data-command-filter="prompt">Prompts</button></div><div id="command-list" class="command-grid">${commandRows || '<p>No live commands were reported by the host. Reopen settings after command registration completes.</p>'}</div><p class="muted">This snapshot is rebuilt from <code>pi.getCommands()</code> every time you run <code>/config</code>; internal commands beginning with <code>_</code> are excluded.</p></section>
     <div class="section-heading" id="connections"><div><h2>MCP connections</h2><p>Managed and system-discovered definitions. Foreign imports are namespaced and disabled by default.</p></div></div>
     <div class="filterbar"><input id="server-filter" type="search" placeholder="Search name, description, or source…" aria-label="Search MCP servers"><button class="active" data-filter="all">All</button><button data-filter="discovered">Discovered</button></div>
     <div id="server-list">${rows || '<section><p>No MCP servers configured or discovered.</p></section>'}</div>
@@ -395,6 +333,7 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
       <label>Timeout ms <input name="timeoutMs" type="number" min="1000" max="120000" value="30000"></label>
       <label data-transport-field="stdio">Command <input name="command" placeholder="node"></label><label data-transport-field="http" class="hidden">URL <input name="url" type="url" placeholder="https://example.test/mcp"></label>
       <label class="wide-field" data-transport-field="stdio">Arguments, one per line <textarea name="args" rows="3"></textarea></label><label data-transport-field="stdio">Working directory <input name="cwd"></label><label>Description <input name="description"></label>
+      <label class="wide-field">Server instructions <textarea name="instructions" rows="3"></textarea></label>
       <label class="wide-field">Environment references (JSON: destination key → environment variable) <textarea name="envRefs" rows="3" placeholder='{"API_KEY":"MY_MCP_API_KEY"}'></textarea></label>
       <label class="wide-field hidden" data-transport-field="http">Header references (JSON: header → environment variable) <textarea name="headerRefs" rows="3" placeholder='{"Authorization":"MY_MCP_AUTH_HEADER"}'></textarea></label>
       <label class="hidden" data-transport-field="http">Authentication <select name="auth"><option value="none">None / references</option><option value="oauth">OAuth (authorize after saving)</option></select></label>
@@ -403,13 +342,13 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
     <div class="section-heading" id="sources"><div><h2>Discovery sources</h2><p>Definitions remain owned by their original files; enablement lives in SQLite.</p></div></div><section><ul class="source-list">${sources}</ul>${loaded.warnings.length ? `<details><summary>${loaded.warnings.length} discovery warning${loaded.warnings.length === 1 ? '' : 's'}</summary><pre>${escapeHtml(loaded.warnings.join('\n'))}</pre></details>` : ''}</section>
     <div class="section-heading" id="agent-context"><div><h2>Agent context</h2><p>What the next agent call will receive.</p></div></div><section><h2>Agent prompt catalog</h2>
       <div class="row"><span><span class="badge on">${escapeHtml(artifacts.mode)}</span> <strong>${escapeHtml(promptState)}</strong></span><span>${artifacts.promptChars.toLocaleString()} prompt chars</span></div>
-      <p>${escapeHtml(modeSummary)}</p>
+      <p>${escapeHtml(modeSummary)}</p><p>Effective capability revision: <code>${escapeHtml(effective?.revision ?? 'pending first turn')}</code></p><details><summary>Parent capabilities</summary><pre>${escapeHtml(JSON.stringify(effective ? { revision: effective.revision, nativeTools: effective.nativeTools, skills: effective.skills.map(skill => ({ id: skill.id, name: skill.name, path: skill.path })), mcpTools: effective.mcpTools.map(tool => ({ server: tool.server, tool: tool.tool })) } : {}, null, 2))}</pre></details><details><summary>Worker grants</summary><pre>${escapeHtml(JSON.stringify(inspectWorkerCapabilityGrants(), null, 2))}</pre></details>
       <p class="muted">Mode source: <code>OCTOCODE_COMPACT_MCP</code> (${artifacts.mode === 'compact' ? 'default/enabled' : 'explicitly disabled'}) · mcp.md: ${escapeHtml(artifacts.guideState)}${artifacts.capturedAt ? ` · captured ${escapeHtml(artifacts.capturedAt)}` : ''}</p>
       ${artifacts.catalogPath ? `<p>Exact catalog: <code>${escapeHtml(artifacts.catalogPath)}</code></p>` : '<p class="muted">Exact catalog is pending startup discovery.</p>'}
       ${artifacts.guidePath ? `<p>Compact guide: <code>${escapeHtml(artifacts.guidePath)}</code></p>` : ''}
-      ${promptState === 'stale' ? '<p class="callout">Execution catalog changed after the system prompt froze. Start <code>/new</code> to expose the updated MCP routing catalog to the model.</p>' : ''}
+      ${promptState === 'stale' ? '<p class="callout">Capabilities changed. The updated catalog takes effect on the next turn.</p>' : ''}
     </section>
-    <div class="section-heading" id="skills"><div><h2>Skills</h2><p>Disabled skills disappear from the agent catalog, autocomplete, discovery inventory, and skill loader.</p></div></div><section><div class="skill-toolbar"><input id="skill-filter" type="search" placeholder="Search skills…" aria-label="Search skills"><button class="active" data-skill-filter="all">All</button><button data-skill-filter="enabled">Enabled</button><button data-skill-filter="disabled">Disabled</button></div><div id="skill-list" class="skill-grid">${skillRows || '<p>No skills discovered. Install skills, then reload the session.</p>'}</div><p class="muted">${enabledSkillCount} enabled · ${skills.length - enabledSkillCount} disabled. Changes block or allow loading immediately; start <code>/new</code> to refresh an already-frozen agent prompt.</p></section>
+    <div class="section-heading" id="skills"><div><h2>Skills</h2><p>Disabled skills disappear from the agent catalog, autocomplete, discovery inventory, and skill loader.</p></div></div><section><div class="skill-toolbar"><input id="skill-filter" type="search" placeholder="Search skills…" aria-label="Search skills"><button class="active" data-skill-filter="all">All</button><button data-skill-filter="enabled">Enabled</button><button data-skill-filter="disabled">Disabled</button></div><div id="skill-list" class="skill-grid">${skillRows || '<p>No skills discovered. Install skills, then reload the session.</p>'}</div><p class="muted">${enabledSkillCount} enabled · ${skills.length - enabledSkillCount} disabled. Changes block or allow loading immediately; the agent prompt refreshes on its next turn.</p></section>
     <div class="section-heading" id="overrides"><div><h2>Workspace overrides</h2><p>Normalized SQLite state; no definitions, schemas, health, or secrets are duplicated.</p></div></div><section><pre>${escapeHtml(JSON.stringify(overrides, null, 2))}</pre></section>
     <div class="section-heading" id="diagnostics"><div><h2>Diagnostics</h2><p>Redacted host and source health for this generated snapshot.</p></div></div><section><div class="row"><span>Host compatibility</span><span class="badge on">Pi 0.84.4</span></div><div class="row"><span>Settings output</span><code>${escapeHtml(path.join(managerDir(cwd), SETTINGS_HTML_FILE))}</code></div><div class="row"><span>Action transport</span><span>loopback · same-origin · token protected</span></div></section>
     </div></div><div id="mcp-toast" class="toast hidden" role="status"></div>
@@ -445,7 +384,7 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
         button.textContent = 'Updating…';
         try {
           const skillScope = button.dataset.skill ? button.closest('.skill-card')?.querySelector('[data-skill-scope]')?.value : undefined;
-          await post({ action:button.dataset.action, server:button.dataset.server, tool:button.dataset.tool || undefined, skill:button.dataset.skill || undefined, density:button.dataset.density || undefined, level:button.dataset.level || undefined, theme:button.dataset.theme || undefined, source:button.dataset.source || undefined, hash:button.dataset.hash || undefined, expectedRevision:button.dataset.action?.includes('hook') ? ${JSON.stringify(hookSnapshot.revision)} : ${JSON.stringify(settingsRevision)}, scope:skillScope || button.dataset.scope || 'project' });
+          await post({ action:button.dataset.action, server:button.dataset.server, tool:button.dataset.tool || undefined, skill:button.dataset.skill || undefined, density:button.dataset.density || undefined, level:button.dataset.level || undefined, theme:button.dataset.theme || undefined, source:button.dataset.source || undefined, hash:button.dataset.hash || undefined, capabilityRevision:${JSON.stringify(capabilityRevision)}, expectedRevision:button.dataset.action?.includes('hook') ? ${JSON.stringify(hookSnapshot.revision)} : ${JSON.stringify(settingsRevision)}, scope:skillScope || button.dataset.scope || 'project' });
           location.reload();
         } catch (error) { notice(error.message); button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = originalLabel; }
       });
@@ -478,12 +417,13 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
           ...(String(data.get('cwd') || '').trim() ? { cwd:String(data.get('cwd')).trim() } : {}),
           timeoutMs:Number(data.get('timeoutMs') || 30000),
           ...(String(data.get('description') || '').trim() ? { description:String(data.get('description')).trim() } : {}),
+          ...(String(data.get('instructions') || '').trim() ? { instructions:String(data.get('instructions')).trim() } : {}),
           ...(parseRefs('envRefs') ? { envRefs:parseRefs('envRefs') } : {}),
           ...(parseRefs('headerRefs') ? { headerRefs:parseRefs('headerRefs') } : {}),
           auth:String(data.get('auth') || 'none'),
         };
         const status = document.querySelector('#mcp-status');
-        try { status.textContent = 'Saving and refreshing catalog…'; await post({ action:'add', server:String(data.get('server')), scope:String(data.get('scope')), config }); location.reload(); }
+        try { status.textContent = 'Saving and refreshing catalog…'; await post({ action:'add', server:String(data.get('server')), scope:String(data.get('scope')), config, capabilityRevision:${JSON.stringify(capabilityRevision)} }); location.reload(); }
         catch (error) { status.textContent = error.message; }
       });
     </script>`;
@@ -492,7 +432,7 @@ export async function renderMcpManagerPage(ctx?: PiContext, actionToken = '', pi
     eyebrow: 'Octocode · extension control center',
     wide: true,
     bodyHtml,
-    footerHtml: 'Everything lives here: live commands, MCP discovery, connections, per-tool enablement, skills, and prompt mode. Close safely and run <code>/configuration</code> whenever you want a fresh snapshot.',
+    footerHtml: 'Everything lives here: live commands, MCP discovery, connections, per-tool enablement, skills, and prompt mode. Close safely and run <code>/config</code> whenever you want a fresh snapshot.',
   });
 }
 
@@ -515,7 +455,7 @@ export async function openMcpManager(ctx?: PiContext, piSkills?: SkillInfo[], se
     onAction: (raw) => {
       const pending = actionQueue.then(async () => {
         const action = parseMcpManagerAction(raw);
-        await applyMcpManagerAction(action, ctx, pi);
+        await applyMcpManagerAction(action, ctx, pi, piSkills);
         await write();
         return { updated: true };
       });
@@ -540,5 +480,4 @@ export function closeConfiguration(ctx?: PiContext): void {
   const cwd = path.resolve(ctx?.cwd ?? process.cwd());
   unmount(configurationMountName(cwd));
   if (ctx && typeof ctx === 'object') settingsAdapters.delete(ctx);
-  hookDiscovery.delete(cwd);
 }

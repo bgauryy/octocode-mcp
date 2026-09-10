@@ -13,7 +13,7 @@ export const MANAGED_BLOCK_END = '<!-- OCTOCODE_PI_EXTENSION_APPEND_SYSTEM_END -
 // Research tools (GitHub, local, LSP, npm) are served via MCPTool → octocode MCP server.
 // They are NOT registered as native Pi tools. See mcp-tool.ts DEFAULT_OCTOCODE_MCP_SERVER.
 
-// Replaced by Octocode MCPTool-backed equivalents: localGetFileContent and localSearch operations.
+// Replaced by Octocode MCPTool-backed equivalents: localFetch and localSearch operations.
 export const DISABLED_BUILTIN_TOOL_NAMES = ['read', 'edit', 'write', 'grep', 'find', 'ls'] as const;
 
 // Same-name registerTool overrides (Pi keeps the name; Octocode owns the implementation).

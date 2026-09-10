@@ -37,18 +37,14 @@ import * as mcpPromptContext from '../src/tools/mcp-tool.js';
 import { projectMcpPath } from '../src/tools/mcp/config.js';
 import { createSessionArtifactContext } from '../src/tools/session-artifacts.js';
 import { SESSION_MEMORY_RELATIVE_PATH } from '../src/tools/session-memory.js';
+import { assertFocusedWorkerSkills, assertRevokedWorkerPrompt, initializePackageWorkerCapabilities, installAuthenticatedWorkerCapabilityView } from './helpers/worker-capabilities.js';
+import * as skillDiscovery from '../src/tools/skill-discovery.js';
 
 const MCP_SERVER_ENTRY = import.meta.resolve('@modelcontextprotocol/server');
 const MCP_STDIO_ENTRY = import.meta.resolve('@modelcontextprotocol/server/stdio');
 
 const packageRoot = path.resolve(import.meta.dirname, '..');
 const distDir = path.join(packageRoot, 'dist');
-const EXPECTED_OCTOCODE_SKILLS = [
-  'octocode-brainstorming', 'octocode-prompt-optimizer', 'octocode-research',
-  'octocode-rfc-generator', 'octocode-roast',
-  'octocode-skills', 'octocode-subagent',
-];
-
 let distAssetsReady = false;
 
 function ensureDistAssetsForUnitTests(): void {
@@ -218,6 +214,7 @@ async function captureExtensions(): Promise<CaptureResult> {
   const pi = {
     registerTool: (def: ToolDef) => {
       tools.set(def.name, def);
+      if (!activeTools.includes(def.name)) activeTools.push(def.name);
     },
     registerCommand: (name: string, cmd: CommandDef) => {
       commands.set(name, cmd);
@@ -280,6 +277,9 @@ async function captureExtensions(): Promise<CaptureResult> {
     }
   ).default;
   await extension(pi);
+  if (process.env['OCTOCODE_PI_SUBAGENT'] !== '1') {
+    await initializePackageWorkerCapabilities([...activeTools]);
+  }
 
   return {
     tools,
@@ -359,22 +359,6 @@ function promptFileContent(args: string[]): string {
   const promptPath = args[args.indexOf('--append-system-prompt') + 1];
   assert.ok(promptPath, 'missing --append-system-prompt value');
   return fs.readFileSync(promptPath, 'utf8');
-}
-
-function assertHasAllOctocodeSkills(skillArgs: string[]): void {
-  // Assert every Octocode skill the package actually bundles (per listBundledSkills)
-  // is passed to the subagent. Subset checkouts ship no skills here, so this is a
-  // no-op when the package bundles none.
-  const bundled = listBundledSkills(packageRoot);
-  const expected = EXPECTED_OCTOCODE_SKILLS.filter(name => bundled.includes(name));
-  for (const skillName of expected) {
-    assert.ok(
-      skillArgs.some(skillPath =>
-        skillPath.endsWith(path.join('skills', skillName))
-      ),
-      `missing bundled skill: ${skillName}`
-    );
-  }
 }
 
 // ─── Build artifact tests ─────────────────────────────────────────────────────
@@ -618,10 +602,11 @@ test('path, asset, and output helpers cover edge cases', () => {
   }
 });
 
-test('workers discover research tools and skills with one frozen Awareness guide, without main-agent policy', async () => {
+test('workers project granted research tools and skills with one Awareness guide, without main-agent policy', async () => {
   const previous = process.env['OCTOCODE_PI_SUBAGENT'];
   process.env['OCTOCODE_PI_SUBAGENT'] = '1';
   try {
+    const broker = await installAuthenticatedWorkerCapabilityView(['MCPTool', 'skill', 'bash']);
     const ready = vi.spyOn(mcpPromptContext, 'mcpCatalogReady').mockResolvedValue(true);
     const catalog = vi.spyOn(mcpPromptContext, 'getCachedMcpCatalogAddendum').mockReturnValue('<mcp_catalog_index>\nserver: octocode\ntool: localSearch\n</mcp_catalog_index>');
     const { handlers, pi } = await captureExtensions();
@@ -647,6 +632,7 @@ test('workers discover research tools and skills with one frozen Awareness guide
     assert.doesNotMatch(result!.systemPrompt!, /<octocode>/, 'workers preserve their typed prompt without the parent host addendum');
     const repeated = await handlers.get('before_agent_start')!.at(-1)!({ systemPrompt: result!.systemPrompt! }, { cwd: packageRoot });
     assert.deepEqual(repeated, result, 'worker turns reuse the trusted composed prompt without duplicating runtime guidance');
+    await assertRevokedWorkerPrompt(broker, result!.systemPrompt!, handlers.get('before_agent_start')!.at(-1)!, { cwd: packageRoot }, () => pi.getActiveTools());
     ready.mockRestore();
     catalog.mockRestore();
   } finally {
@@ -660,6 +646,7 @@ test('restricted workers omit instructions for unavailable skills and Awareness 
   const previous = process.env['OCTOCODE_PI_SUBAGENT'];
   process.env['OCTOCODE_PI_SUBAGENT'] = '1';
   try {
+    await installAuthenticatedWorkerCapabilityView(['MCPTool'], false);
     vi.spyOn(mcpPromptContext, 'mcpCatalogReady').mockResolvedValue(true);
     vi.spyOn(mcpPromptContext, 'getCachedMcpCatalogAddendum').mockReturnValue('<mcp_catalog_index>localSearch</mcp_catalog_index>');
     const { handlers, pi } = await captureExtensions();
@@ -674,8 +661,10 @@ test('restricted workers omit instructions for unavailable skills and Awareness 
   }
 });
 
-test('main-session system prompt is byte-stable after the initial complete discovery pass', async () => {
+test('main-session capabilities refresh between turns while product policy remains stable', async () => {
   const { handlers } = await captureExtensions();
+  let name = 'initial-skill';
+  const discovery = vi.spyOn(skillDiscovery, 'discoverSkills').mockImplementation(() => [{ name, description: 'Current effective skill.', source: 'bundled', sourceId: name, path: `/fixture/${name}/SKILL.md`, dir: `/fixture/${name}` }]);
   const beforeStart = handlers.get('before_agent_start')!.at(-1)!;
   const ctx = { cwd: packageRoot, hasUI: false };
   const first = (await beforeStart({
@@ -684,17 +673,20 @@ test('main-session system prompt is byte-stable after the initial complete disco
       skills: [{ name: 'initial-skill', description: 'Loaded at session initialization.', source: 'bundled' }],
     },
   }, ctx)) as { systemPrompt?: string } | undefined;
+  name = 'late-skill';
   const second = (await beforeStart({
-    systemPrompt: 'Pi base prompt v2 must not replace frozen bytes',
+    systemPrompt: 'Pi base prompt v1',
     systemPromptOptions: {
       skills: [{ name: 'late-skill', description: 'Must wait for a new session.', source: 'dynamic' }],
     },
   }, ctx)) as { systemPrompt?: string } | undefined;
+  discovery.mockRestore();
 
   assert.ok(first?.systemPrompt);
-  assert.equal(second?.systemPrompt, first.systemPrompt);
+  assert.notEqual(second?.systemPrompt, first.systemPrompt);
   assert.match(first.systemPrompt, /initial-skill/);
-  assert.doesNotMatch(second!.systemPrompt!, /late-skill|Pi base prompt v2/);
+  assert.match(second!.systemPrompt!, /late-skill/);
+  assert.doesNotMatch(second!.systemPrompt!, /initial-skill/);
 });
 
 test('session restart refreshes prompt source while turns inside a session keep frozen bytes', withTempMemoryHome(async (tmp) => {
@@ -1089,12 +1081,12 @@ test('enum tool params use string-enum schemas (Google API compat), never litera
 
   const mcpAction = prop('MCPTool', 'action');
   assert.equal(mcpAction['type'], 'string');
-  assert.deepEqual(mcpAction['enum'], ['describe', 'call', 'resources', 'read-resource', 'prompts', 'get-prompt', 'complete', 'enable', 'disable', 'status', 'restart', 'stop', 'config', 'add', 'remove']);
+  assert.deepEqual(mcpAction['enum'], ['list', 'describe', 'call', 'resources', 'read-resource', 'prompts', 'get-prompt', 'complete', 'enable', 'disable', 'status', 'restart', 'stop', 'config', 'add', 'remove']);
   const mcpScope = prop('MCPTool', 'scope');
   assert.equal(mcpScope['type'], 'string');
   assert.deepEqual(mcpScope['enum'], ['project', 'global']);
   const agentTypes = queryPropertySchemas(tools.get('agent')!, 'type');
-  assert.deepEqual([...new Set(agentTypes.flatMap((schema) => schema['enum'] as string[]))], ['spawn', 'inspect', 'wait', 'message', 'steer', 'abort', 'kill']);
+  assert.deepEqual([...new Set(agentTypes.flatMap((schema) => schema['enum'] as string[]))], ['spawn', 'inspect', 'configure', 'wait', 'message', 'steer', 'abort', 'kill']);
 
   for (const [name, schema] of [['MCPTool.action', mcpAction], ['MCPTool.scope', mcpScope], ...agentTypes.map((schema, index) => [`agent.type[${index}]`, schema] as const)] as const) {
     assert.equal(schema['type'], 'string');
@@ -1121,15 +1113,15 @@ test('footer diagnostics surface MCP and skill counts when density permits', () 
   assert.deepEqual(buildCapabilitySegments(metrics, 'compact'), []);
 });
 
-test('disable built-in read in favor of localGetFileContent (records read state for edit stale-check)', async () => {
+test('disable built-in read in favor of localFetch (records read state for edit stale-check)', async () => {
   const { activeTools, tools } = await captureExtensions();
-  // The built-in `read` tool is removed so agents use localGetFileContent, which
+  // The built-in `read` tool is removed so agents use localFetch, which
   // records read state via recordFileReadState — the input the edit tool's stale
   // check relies on (see edit-tool.ts checkReadState).
   assert.equal(
     activeTools.includes('read'),
     false,
-    'built-in read is disabled in favor of localGetFileContent'
+    'built-in read is disabled in favor of localFetch'
   );
   assert.equal(activeTools.includes('bash'), true, 'bash remains available');
   assert.equal(
@@ -1142,12 +1134,12 @@ test('disable built-in read in favor of localGetFileContent (records read state 
   assert.equal(
     tools.has('MCPTool'),
     true,
-    'MCPTool is registered — all Octocode research tools (including localGetFileContent) are served via MCP'
+    'MCPTool is registered — all Octocode research tools (including localFetch) are served via MCP'
   );
   assert.equal(
-    tools.has('localGetFileContent'),
+    tools.has('localFetch'),
     false,
-    'localGetFileContent is NOT registered as a native Pi tool — served via MCPTool octocode server'
+    'localFetch is NOT registered as a native Pi tool — served via MCPTool octocode server'
   );
 });
 
@@ -2027,7 +2019,7 @@ test('BREAK: multi-file edit is all-or-nothing when one query requires read stat
             },
           ],
         }),
-      /No prior localGetFileContent read state recorded/
+      /No prior localFetch read state recorded/
     );
     assert.equal(fs.readFileSync(a, 'utf8'), 'A\n', 'atomicity: a not written');
     assert.equal(fs.readFileSync(b, 'utf8'), 'B\n', 'atomicity: b not written');
@@ -2095,7 +2087,7 @@ test('per-edit line numbers stay in ORIGINAL-file coordinates even when earlier 
   // computed from the ORIGINAL file's line spans — so each edit's reported
   // startLine/endLine is its position BEFORE any edits, independent of other edits.
   // This matches the git/unified-diff convention (@@ -<oldStart>,<oldCount> uses OLD-file lines)
-  // and what localGetFileContent showed the agent when it chose the edit.
+  // and what localFetch showed the agent when it chose the edit.
   // Regression-lock: a future switch to cumulative/post-prior-edits coordinates must fail here.
   const original = 'L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10\n';
   const result = applyCustomEditsToContent(
@@ -2330,7 +2322,7 @@ test('custom edit requireRecentRead rejects an edit with no prior read state', a
           ],
           requireRecentRead: true,
         }] }),
-      /No prior localGetFileContent read state recorded for this file/
+      /No prior localFetch read state recorded for this file/
     );
     // The rejected edit must NOT have written the file.
     assert.equal(fs.readFileSync(target, 'utf8'), 'original\n');
@@ -2426,8 +2418,8 @@ test('research tools served via MCPTool — not registered as native Pi tools', 
   // native Pi tools. This keeps the Pi tool palette lean (fewer tokens per turn).
   const nativeResearchTools = [
     'ghSearch', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem',
-    'ghCloneRepo', 'npmSearch', 'localSearch', 'astSearch',
-    'localGetFileContent', 'lspSearch',
+    'ghCloneRepo', 'artifactSearch', 'localSearch', 'astSearch',
+    'localFetch', 'lspSearch',
   ];
   for (const toolName of nativeResearchTools) {
     assert.equal(
@@ -2447,7 +2439,7 @@ test('mcp initialization reads canonical project config before the agent calls t
   assert.match(mcpTool.promptSnippet!, /mcp_catalog_index/);
   assert.match(mcpTool.promptSnippet!, /Gateway to connected MCP servers/i);
   assert.match(mcpTool.description!, /tools, resources, and prompts/i);
-  assert.match(mcpTool.description!, /inner field placed at the MCPTool level is rejected/i);
+  assert.match(mcpTool.description!, /input in queries\[\]\.arguments/i);
   assert.doesNotMatch(mcpTool.description!, /prepare/i);
   const mcpGuidelines = mcpTool.promptGuidelines?.join('\n') ?? '';
   assert.match(mcpGuidelines, /\$OCTOCODE_HOME\/extension\/mcp\/servers\.json/);
@@ -2508,12 +2500,12 @@ test('mcp initialization reads canonical project config before the agent calls t
     assert.match(cachedPrompt, /tool: echo/);
     assert.match(cachedPrompt, /description: Echo text/);
     assert.doesNotMatch(cachedPrompt, /inputSchema:/);
-    assert.match(cachedPrompt, /Input: text \(string, required\)/);
+    assert.match(cachedPrompt, /tool: echo/);
     assert.match(cachedPrompt, /<runtime_capabilities>/);
     assert.match(cachedPrompt, /effective_inline_images: false/);
     assert.match(cachedPrompt, /<available_skills>/);
-    assert.match(cachedPrompt, /octocode-awareness:/, 'the bundled Awareness skill remains discoverable and loadable');
-    assert.match(cachedPrompt, /octocode-roast: Critical review and adversarial critique\. \[user\/global\]/);
+    assert.doesNotMatch(cachedPrompt, /octocode-awareness: Shared workspace coordination/, 'pathless Pi metadata does not become an executable skill');
+    assert.doesNotMatch(cachedPrompt, /octocode-roast: Critical review and adversarial critique/, 'pathless metadata cannot shadow an effective skill source');
     assert.doesNotMatch(cachedPrompt, /BEFORE acting/);
 
     const called = await invokeMcp({ action: 'call', server: 'fake', tool: 'echo', arguments: { text: 'ok' } });
@@ -2524,9 +2516,10 @@ test('mcp initialization reads canonical project config before the agent calls t
     assert.match((described.content[0] as { text: string }).text, /"name": "echo"/);
     assert.match((described.content[0] as { text: string }).text, /"inputSchema"/);
 
-    const invalid = await invokeMcp({ action: 'call', server: 'fake', tool: 'echo', arguments: { text: 42 } });
-    assert.equal(invalid.isError, true);
-    assert.match((invalid.content[0] as { text: string }).text, /MCP_SCHEMA_INVALID/);
+    await assert.rejects(
+      invokeMcp({ action: 'call', server: 'fake', tool: 'echo', arguments: { text: 42 } }),
+      /MCP_SCHEMA_INVALID/,
+    );
 
     // Prompt-caching contract: the catalog block is byte-stable — call/describe
     // activity must NOT change the rendered <mcp_catalog> bytes (any churn would
@@ -2548,16 +2541,16 @@ test('mcp initialization reads canonical project config before the agent calls t
     const renderedResult = (mcpTool.renderResult as unknown as (result: unknown, opts: unknown, theme: unknown, context: unknown) => { render(width?: number): string[] })(described, {}, { fg: (_color: string, text: string) => text, bold: (text: string) => text }, { args: { queries: [{ reasoning: 'inspect echo', action: 'describe', server: 'fake', tool: 'echo' }] }, invalidate: () => undefined }).render(80).join('\n');
     assert.match(renderedResult, /mcp describe · fake\/echo/);
 
-    const renderedOctocodeCall = mcpTool.renderCall!({ queries: [{ reasoning: 'read file', action: 'call', tool: 'localGetFileContent', arguments: { queries: [{ path: '/tmp/a.ts', startLine: 1 }] } }] }, { fg: (_color: string, text: string) => text, bold: (text: string) => text }).render(120).join('\n');
-    assert.match(renderedOctocodeCall, /localGetFileContent/);
+    const renderedOctocodeCall = mcpTool.renderCall!({ queries: [{ reasoning: 'read file', action: 'call', tool: 'localFetch', arguments: { queries: [{ path: '/tmp/a.ts', startLine: 1 }] } }] }, { fg: (_color: string, text: string) => text, bold: (text: string) => text }).render(120).join('\n');
+    assert.match(renderedOctocodeCall, /localFetch/);
     assert.match(renderedOctocodeCall, /a\.ts:1/);
     const renderedOctocodeResult = (mcpTool.renderResult as unknown as (result: unknown, opts: unknown, theme: unknown, context: unknown) => { render(width?: number): string[] })(
       { content: [{ type: 'text', text: 'ok' }], details: { results: [{ data: { resolvedPath: '/tmp/a.ts', totalLines: 2, content: 'const answer = 42;' } }] } },
       {},
       { fg: (_color: string, text: string) => text, bold: (text: string) => text },
-      { args: { queries: [{ reasoning: 'read file', action: 'call', tool: 'localGetFileContent' }] }, invalidate: () => undefined },
+      { args: { queries: [{ reasoning: 'read file', action: 'call', tool: 'localFetch' }] }, invalidate: () => undefined },
     ).render(120).join('\n');
-    assert.match(renderedOctocodeResult, /localGetFileContent/);
+    assert.match(renderedOctocodeResult, /localFetch/);
     assert.match(renderedOctocodeResult, /2 lines/);
     assert.match(renderedOctocodeResult, /const answer = 42;/);
 
@@ -2588,7 +2581,7 @@ test('agent browser profile spawns with routed context without launching Chrome'
     assert.match(prompt, /Network, Runtime, DOM, DOMDebugger/);
     assert.match(prompt, /Inspect the parent-assigned browser phase with chromeDebug/);
     assert.match(prompt, /https:\/\/example\.com\/account/);
-    assert.equal(argValues(spawned[0]!.args, '--tools')[0], 'chromeDebug,MCPTool,skill,awareness,bash');
+    assert.deepEqual(argValues(spawned[0]!.args, '--tools')[0]!.split(',').sort(), ['chromeDebug', 'MCPTool', 'skill', 'awareness', 'bash'].sort());
     assert.match(browserTool.renderResult!(result, { expanded: false }).render(120)[0]!, /agent.*SPAWNED/);
   } finally {
     setAgentProcessFactoryForTests(null);
@@ -2879,7 +2872,7 @@ test('extension commands and lifecycle handlers execute user-visible wiring path
     for (const handler of handlers.get('session_shutdown')!) {
       await handler({ reason: 'new' }, staleReplacementCtx);
     }
-    assert.equal(statuses.length, statusesBeforeReplacement, 'replacement teardown never paints through old UI');
+    assert.deepEqual(statuses.slice(statusesBeforeReplacement), [], 'replacement teardown never paints through old UI');
 
     // A duplicate shutdown after replacement is idempotent and cannot clear
     // surfaces that belonged to the already-disposed generation.
@@ -2958,8 +2951,8 @@ test('session_shutdown clears harness-persisted image fallbacks but keeps explic
 
 test('extension slash commands expose configuration and explicit file recovery', async () => {
   const { commands } = await captureExtensions();
-  assert.deepEqual([...commands.keys()].sort(), ['configuration', 'octocode-inbox', 'octocode-rewind', 'octocode-status']);
-  assert.deepEqual(listExtensionHarness().extensionCommands, ['/octocode-rewind', '/octocode-inbox', '/octocode-status', '/configuration']);
+  assert.deepEqual([...commands.keys()].sort(), ['config', 'configuration', 'octocode-inbox', 'octocode-rewind', 'octocode-status']);
+  assert.deepEqual(listExtensionHarness().extensionCommands, ['/octocode-rewind', '/octocode-inbox', '/octocode-status', '/configuration', '/config']);
 });
 
 test('input hooks preserve repo-related user prompts without probing Git', async () => {
@@ -3310,8 +3303,8 @@ test('research tools are NOT registered as native Pi tools — served via MCPToo
   const { tools } = await captureExtensions();
   const absent = [
     'ghSearch', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem',
-    'ghCloneRepo', 'npmSearch', 'localSearch', 'astSearch',
-    'localGetFileContent', 'lspSearch',
+    'ghCloneRepo', 'artifactSearch', 'localSearch', 'astSearch',
+    'localFetch', 'lspSearch',
   ];
   for (const name of absent) {
     assert.equal(tools.has(name), false, `${name} must not be a native Pi tool`);
@@ -3870,7 +3863,7 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
         model: 'sonnet:high',
         provider: 'guy-provider-anthropic',
         thinking: 'medium',
-        tools: ['localSearch', 'web', 'read', 'grep'], }] },
+        tools: ['bash'], }] },
       { cwd: '/repo' }
     );
     const collapsedSpawn = spawnTool.renderResult!(result, {
@@ -3883,7 +3876,8 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
     assert.equal(spawned.length, 1);
     assert.ok(spawned[0]!.args.includes('--mode'));
     assert.ok(spawned[0]!.args.includes('rpc'));
-    assert.ok(spawned[0]!.args.includes('--no-extensions'));
+      assert.ok(spawned[0]!.args.includes('--no-extensions'));
+      assert.match(spawned[0]!.args[spawned[0]!.args.indexOf('-e') + 1]!, /worker-guard\.(?:js|ts)$/);
     assert.ok(spawned[0]!.args.includes('--no-skills'));
     assert.equal(
       spawned[0]!.args.includes('--skill'),
@@ -3897,9 +3891,9 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
     assert.ok(spawned[0]!.args.includes('--thinking'));
     assert.ok(spawned[0]!.args.includes('medium'));
     assert.ok(spawned[0]!.args.includes('--exclude-tools'));
-    assert.ok(spawned[0]!.args.includes('agent'));
+    assert.ok(argValues(spawned[0]!.args, '--exclude-tools')[0]!.split(',').includes('agent'));
     assert.ok(spawned[0]!.args.includes('--tools'));
-    assert.ok(spawned[0]!.args.includes('localSearch,web,read,grep'));
+    assert.deepEqual(argValues(spawned[0]!.args, '--tools'), ['bash']);
     assert.equal(spawned[0]!.options.cwd, '/repo');
     assert.match(
       spawned[0]!.proc.stdinWrites[0]!,
@@ -3963,7 +3957,7 @@ test('agent spawn starts a lean RPC Pi process and agent lifecycle can list/stat
       && entry.model === 'sonnet:high'
       && entry.provider === 'guy-provider-anthropic'
       && entry.thinking === 'medium'
-      && entry.tools?.join(',') === 'localSearch,web,read,grep'
+      && entry.tools?.join(',') === 'bash'
       && entry.result === 'docs are current'
       && entry.verification === 'inspected docs/a.md'
     ));
@@ -4198,7 +4192,7 @@ test('agent spawn covers octocode resource options, prompt file cleanup, list re
     assert.ok(args.includes('gpt-test'));
     assert.ok(args.includes('--thinking'));
     assert.ok(args.includes('low'));
-    assert.ok(argValues(args, '--skill').length > 0, 'Octocode custom workers receive the enabled skill inventory');
+    assert.deepEqual(argValues(args, '--skill'), [], 'Custom workers start with no implicit skill grant');
     assert.ok(args.includes('--tools'));
     assert.ok(
       args.includes('web'),
@@ -4266,7 +4260,7 @@ test('agent spawn covers octocode resource options, prompt file cleanup, list re
   }
 });
 
-test('agentSpecialist starts researcher, planner, and architect with all Octocode skills', async () => {
+test('agentSpecialist starts researcher, planner, and architect with focused enabled skills', async () => {
   const spawned: Array<{
     args: string[];
     options: { cwd?: string };
@@ -4315,7 +4309,7 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
         args.includes('--no-skills'),
         'typed subagents use explicit skill paths with --no-skills'
       );
-      assertHasAllOctocodeSkills(argValues(args, '--skill'));
+      assertFocusedWorkerSkills(argValues(args, '--skill'));
       assert.equal(
         argValues(args, '--skill').some(skillPath =>
           skillPath.includes(
@@ -4355,7 +4349,7 @@ test('agentSpecialist starts researcher, planner, and architect with all Octocod
 
     const plannerTools = plannerArgs![plannerArgs!.indexOf('--tools') + 1]!;
     assert.match(plannerTools, /MCPTool/);
-    assert.doesNotMatch(plannerTools, /localGetFileContent/, 'localGetFileContent served via MCPTool, not natively');
+    assert.doesNotMatch(plannerTools, /localFetch/, 'localFetch served via MCPTool, not natively');
     assert.match(plannerTools, /bash/, 'planner can invoke the Awareness CLI');
     assert.ok(plannerArgs!.includes('--model'));
     assert.ok(plannerArgs!.includes('sonnet:high'));
@@ -4912,15 +4906,14 @@ test('RPC response with success:false surfaces error in agent result', async () 
     });
 
     // Status must surface the RPC error
-    const status = await invokeExecute(messageTool, { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'inspect',
-      agentId, }] });
-    assert.match(
-      (status.content[0] as { text: string }).text,
-      /already streaming|streamingBehavior|RPC command failed/,
-      'RPC error must appear in agent status output'
-    );
-    const det = status.details as { agent: { error?: string } };
-    assert.ok(det.agent.error, 'error field must be set on the agent record');
+    await assert.rejects(invokeExecute(messageTool, { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'inspect',
+      agentId, }] }), (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /already streaming|streamingBehavior|RPC command failed/);
+      const det = (error as Error & { result: { details: { agent: { error?: string } } } }).result.details;
+      assert.ok(det.agent.error, 'error field must be set on the agent record');
+      return true;
+    });
   } finally {
     setAgentProcessFactoryForTests(null);
   }
@@ -4984,11 +4977,11 @@ test('cleanupSpawnedAgentsForShutdown kills only non-terminal spawned workers', 
   }
 });
 
-test('agent lifecycle send with broken stdin (EPIPE) sets isError:true on result', async () => {
+test('agent lifecycle send with broken stdin (EPIPE) rejects through the host failure channel', async () => {
   // When sendRpc throws (e.g. EPIPE because the process already exited but
   // exitCode/signalCode haven't been reaped yet), record.error is set while
-  // status stays 'running'. renderSingleAgentResult must flag isError:true so
-  // the LLM sees the failure rather than a misleading successful-looking result.
+  // status can still be 'running'. Registration must translate the error result
+  // into a thrown failure so Pi records the failed operation.
   let brokenProc: MockAgentProcess | undefined;
   setAgentProcessFactoryForTests((_command, _args, _options) => {
     brokenProc = createMockAgentProcess();
@@ -5017,18 +5010,10 @@ test('agent lifecycle send with broken stdin (EPIPE) sets isError:true on result
     const agentId = (spawnResult.details as { agentId: string }).agentId;
 
     // Second write (callCount = 2) triggers the EPIPE throw.
-    const sendResult = await invokeExecute(
+    await assert.rejects(invokeExecute(
       messageTool,
       { queries: [{ reasoning: 'Exercise worker lifecycle.', type: 'message', agentId, message: 'hello' }] }
-    );
-
-    assert.equal(
-      sendResult.isError,
-      true,
-      'result must be isError:true when sendRpc catches EPIPE'
-    );
-    assert.match(
-      (sendResult.content[0] as { text: string }).text,
+    ),
       /EPIPE|write/,
       'error text must surface the EPIPE message'
     );

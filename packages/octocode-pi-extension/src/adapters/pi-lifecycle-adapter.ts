@@ -103,6 +103,7 @@ export async function createPiEventEnvelope<T extends Record<string, unknown>>(
 
 function mapDecisionToPi(piEvent: PiLifecycleEvent, result: LifecycleDispatchResult<Record<string, unknown>>): unknown {
   const decision = result.decision;
+  if (piEvent === 'input' && decision.kind === 'stop') return { action: 'handled' };
   if (piEvent === 'tool_call' && (decision.kind === 'deny' || decision.kind === 'stop')) return { block: true, reason: decision.reason };
   if ((piEvent === 'session_before_switch' || piEvent === 'session_before_fork' || piEvent === 'session_before_compact') && decision.kind === 'stop') return { cancel: true };
   if (piEvent === 'project_trust' && decision.kind === 'deny') return { trusted: 'no' };

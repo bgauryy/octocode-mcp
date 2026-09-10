@@ -15,7 +15,7 @@ import { fetchContent } from './fetchContent.js';
 import {
   LocalFetchContentQuerySchema,
   type FetchContentQuery,
-} from './scheme.js';
+} from '@octocodeai/octocode-core/schema';
 import { safeParseOrError } from '../utils.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
 import { classifyFileType } from '../../utils/file/configFiles.js';
@@ -34,7 +34,7 @@ export async function executeFetchContent(
       executeWithToolBoundary({
         toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
         query,
-        contextMessage: 'localGetFileContent execution failed',
+        contextMessage: 'localFetch execution failed',
         execute: async () => {
           const parsed = safeParseOrError<FetchContentQuery>(
             LocalFetchContentQuerySchema,
@@ -155,5 +155,5 @@ function formatLocalFetchContentText(responseData: BulkToolResponse): string {
     );
   }
 
-  return lines.join('\n').trimEnd() + '\n';
+  return lines.join('\n') + '\n';
 }

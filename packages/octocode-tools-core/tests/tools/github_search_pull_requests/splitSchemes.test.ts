@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import {
-  SearchPullRequestsLocalSchema,
-  SearchPullRequestsBulkLocalSchema,
-  SearchIssuesLocalSchema,
-  SearchIssuesBulkLocalSchema,
-  SearchCommitsLocalSchema,
-  SearchCommitsBulkLocalSchema,
-} from '../../../src/tools/github_search_pull_requests/splitSchemes.js';
-import { GITHUB_SEARCH_MAX_LIMIT } from '../../../src/config.js';
+import { SearchPullRequestsLocalSchema, SearchPullRequestsBulkLocalSchema, SearchIssuesLocalSchema, SearchIssuesBulkLocalSchema, SearchCommitsLocalSchema, SearchCommitsBulkLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GITHUB_SEARCH_MAX_LIMIT } from '@octocodeai/octocode-core/schema';
 
 // ---------------------------------------------------------------------------
 // SearchPullRequestsLocalSchema (ghSearchPullRequests)

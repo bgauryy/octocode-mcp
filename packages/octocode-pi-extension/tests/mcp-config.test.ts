@@ -5,12 +5,15 @@ import path from 'node:path';
 import { test } from 'vitest';
 import { setMcpServerEnabled } from '@octocodeai/agent-contracts/mcp-state';
 import { openOctocodeDb } from '../src/tools/storage-policy.js';
+import { extensionWorkspaceRoot } from '../src/extension-paths.js';
+import { discoverMcpSystem } from '../src/tools/mcp/discovery.js';
 import {
   buildServerHeaders,
   globalMcpConfigPaths,
   loadMcpConfig,
   projectMcpPath,
   projectMcpConfigPaths,
+  reviewMcpSource,
 } from '../src/tools/mcp/config.js';
 import type { PiContext } from '../src/types.js';
 
@@ -24,15 +27,18 @@ function writeServers(filePath: string, servers: Record<string, { command: strin
   fs.writeFileSync(filePath, JSON.stringify({ mcpServers: servers }), 'utf8');
 }
 
-test('MCP config has one canonical global and project location', () => {
+test('MCP public native paths win after retained private and Pi resources', () => {
   const cwd = '/workspace/project';
   const homeDir = '/users/demo';
   const octocodeHome = '/custom/octocode-home';
 
   assert.deepEqual(globalMcpConfigPaths({ homeDir, octocodeHome }), [
+    path.join(octocodeHome, 'agent', 'mcp', 'servers.json'),
     path.join(octocodeHome, 'extension', 'mcp', 'servers.json'),
+    path.join(octocodeHome, 'mcp.json'),
   ]);
   assert.deepEqual(projectMcpConfigPaths(cwd, octocodeHome), [
+    path.join(extensionWorkspaceRoot(cwd, octocodeHome), 'mcp', 'servers.json'),
     projectMcpPath(cwd, octocodeHome),
   ]);
 });
@@ -54,7 +60,7 @@ test('loadMcpConfig merges canonical global and project config deterministically
   for (const name of ['globalOnly', 'projectOnly']) {
     assert.ok(loaded.servers.has(name), `${name} loaded`);
   }
-  assert.deepEqual(loaded.sources.slice(1).map((source) => source.path), [...globalPaths, ...projectPaths]);
+  assert.deepEqual(loaded.sources.slice(1).map((source) => source.path), [globalPaths[0], projectPaths[0]]);
   assert.deepEqual(loaded.warnings, []);
 });
 
@@ -109,7 +115,7 @@ test('untrusted projects skip every project alias but still load global aliases'
   assert.equal(loaded.warnings.filter((warning) => warning.includes('project is not trusted')).length, projectPaths.length);
 });
 
-test.each(['cursor', 'pi'])('foreign MCP definitions are discovered read-only and disabled by default (%s)', async (host) => {
+test.each(['cursor', 'claude'])('foreign MCP definitions are discovered read-only and disabled by default (%s)', async (host) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-cwd-'));
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-home-'));
   const cursorPath = path.join(cwd, `.${host}`, 'mcp.json');
@@ -128,7 +134,7 @@ test.each(['cursor', 'pi'])('foreign MCP definitions are discovered read-only an
   });
 });
 
-test.each(['cursor', 'pi'])('an explicit SQLite override enables a discovered definition without copying it (%s)', async (host) => {
+test.each(['cursor', 'claude'])('a reviewed linked definition enables an import without copying it (%s)', async (host) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-enable-'));
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-config-import-enable-home-'));
   const octocodeHome = path.join(homeDir, '.octocode');
@@ -140,6 +146,8 @@ test.each(['cursor', 'pi'])('an explicit SQLite override enables a discovered de
     const cursorPath = path.join(cwd, `.${host}`, 'mcp.json');
     writeServer(cursorPath, 'docs', 'docs-mcp');
     setMcpServerEnabled(openOctocodeDb(), path.resolve(cwd), `${host}.docs`, true);
+    const candidate = discoverMcpSystem(cwd, { homeDir, octocodeHome }).definitions.find(item => item.name === `${host}.docs`)!;
+    reviewMcpSource(cwd, candidate.sourceId, candidate.revision, 'project', { homeDir, octocodeHome, trusted: true });
 
     const loaded = await loadMcpConfig(
       { cwd, isProjectTrusted: () => true } as unknown as PiContext,
@@ -165,8 +173,10 @@ test.each(['cursor', 'pi'])('untrusted projects inventory but never import forei
     { cwd, isProjectTrusted: () => false } as unknown as PiContext,
     { homeDir, octocodeHome: path.join(homeDir, '.octocode-custom') },
   );
-  assert.equal(loaded.configuredServers.has(`${host}.docs`), false);
-  assert.equal(loaded.sources.some((source) => source.path === cursorPath && !source.trusted), true);
+  assert.equal(loaded.servers.has(`${host}.docs`), false);
+  assert.equal(loaded.servers.has('docs'), false);
+  if (host === 'cursor') assert.equal(loaded.configuredServers.get('cursor.docs')?.discovered?.reviewStatus, 'untrusted');
+  assert.equal(loaded.sources.some((source) => source.path === cursorPath && !source.trusted), host !== 'pi');
 });
 
 

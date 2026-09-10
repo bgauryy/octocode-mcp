@@ -1,5 +1,8 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
-import { type RipgrepQuery, LocalRipgrepQuerySchema } from './scheme.js';
+import {
+  type RipgrepQuery,
+  LocalRipgrepQuerySchema,
+} from '@octocodeai/octocode-core/schema';
 import { TOOL_NAMES } from '../toolMetadata/names.js';
 import { executeBulkOperation } from '../../utils/response/bulk/response.js';
 import { searchContentRipgrep } from './searchContentRipgrep.js';

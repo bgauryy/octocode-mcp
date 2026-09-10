@@ -10,7 +10,7 @@ Octocode enforces a hard boundary between untrusted content and the model:
 
 You get this by default, for every tool call, over both MCP and CLI.
 
-The boundary applies to all execution classes: external provider tools (`ghSearch`, GitHub history/content, and `npmSearch`), internal local tools (`localSearch`, `localGetFileContent`, `astSearch`, and `lspSearch`), and hybrid materialization (`ghCloneRepo` and directory fetch). Their data sources differ, but all still pass schema validation, capability and configuration gates, provider and path checks, bounded execution, and output sanitization. See [`OCTOCODE_TOOLS.md`](OCTOCODE_TOOLS.md#internal-external-and-hybrid-tools) for the execution map.
+The boundary applies to all execution classes: external provider tools (`ghSearch`, GitHub history/content, and `artifactSearch`), internal local tools (`localSearch`, `localFetch`, `astSearch`, and `lspSearch`), and hybrid materialization (`ghCloneRepo` and directory fetch). Their data sources differ, but all still pass schema validation, capability and configuration gates, provider and path checks, bounded execution, and output sanitization. See [`OCTOCODE_TOOLS.md`](OCTOCODE_TOOLS.md#internal-external-and-hybrid-tools) for the execution map.
 
 ---
 

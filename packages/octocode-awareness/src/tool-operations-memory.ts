@@ -18,12 +18,12 @@ interface RecallResult {
   smart_dropped_filters?: string[];
 }
 
-export function runMemoryOperation(
+export async function runMemoryOperation(
   db: DatabaseSync,
   operation: AwarenessToolOperation,
   request: Record<string, unknown>,
   context: AwarenessToolOperationContext,
-): AwarenessToolOperationResult | null {
+): Promise<AwarenessToolOperationResult | null> {
   const cwd = context.cwd ?? process.cwd();
   const agentId = context.agentId ?? 'agent';
   switch (operation) {
@@ -39,7 +39,7 @@ case 'recall': {
       const rawStates = request['states'] ?? request['state'];
       const recallStates = Array.isArray(rawStates) ? rawStates.map(String) : rawStates ? [String(rawStates)] : undefined;
       const useSemantic = Boolean(request['semantic']);
-      const result = recallMemory(db, {
+      const result = (await recallMemory(db, {
         query: optionalQuery(request),
         limit: (request['limit'] as number | undefined) ?? 3,
         minImportance: request['min_importance'] as number | undefined,
@@ -66,7 +66,7 @@ case 'recall': {
         explain: Boolean(request['explain']),
         checkFingerprint: request['check_fingerprint'] === true,
         cwd,
-      }, useSemantic) as unknown as RecallResult;
+      }, useSemantic)) as unknown as RecallResult;
       type MemRecord = {
         memory_id: string;
         observation?: string;
@@ -131,7 +131,7 @@ case 'record': {
       const label = ((request['label'] as string | undefined)?.toUpperCase()) ?? 'OTHER';
       const supersedes = normalizeSupersedes(request['supersedes']);
       const memoryWorkspace = (request['workspace_path'] as string | undefined) ?? cwd;
-      const guarded = insertMemoryWithSimilarityGate(db, {
+      const guarded = (await insertMemoryWithSimilarityGate(db, {
         agentId,
         taskContext,
         observation,
@@ -150,7 +150,7 @@ case 'record': {
         fileTreeFingerprint: request['file_tree_fingerprint'] as string | undefined,
         captureFingerprint: request['capture_fingerprint'] === true,
         cwd,
-      }, request['allow_similar'] === true);
+      }, request['allow_similar'] === true));
       if (guarded.skipped) {
         return {
           payload: {

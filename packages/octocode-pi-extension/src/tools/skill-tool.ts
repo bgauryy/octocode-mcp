@@ -10,11 +10,14 @@ import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js
 import { orchestrate } from './call-skill.js';
 import { MODEL_VISIBLE_TOOL_RESULT_MAX_CHARS } from './tool-result-budget.js';
 import { discoverSkills, type DiscoveredSkill } from './skill-discovery.js';
+import { readSkillPage } from './skill-pages.js';
+import { capabilityDefinitionRevision } from '@octocodeai/agent-contracts/capability-sources';
+import { isWorkerCapabilityClient, getCurrentWorkerCapabilities, refreshCurrentWorkerCapabilities, assertCurrentWorkerNativeTool } from './worker-capabilities.js';
 
 import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
-// Leave room for identity, file discovery, and recovery calls inside the 12k
+// Leave room for identity, file discovery, and recovery calls inside the current
 // model-visible tool-result budget; otherwise the initial page itself spills.
 const SKILL_CONTENT_CAP = 8_000;
 
@@ -56,7 +59,7 @@ function result(text: string, details?: unknown, isError = false): ToolCallResul
 
 type SkillPartialReason = 'content-limit' | 'file-limit' | 'file-depth' | 'file-filter' | 'file-read-error';
 
-function skillContinuation(tool: 'localGetFileContent' | 'astSearch', query: Record<string, unknown>, why: string) {
+function skillContinuation(tool: 'localFetch' | 'astSearch', query: Record<string, unknown>, why: string) {
   return {
     tool: 'MCPTool' as const,
     query: { queries: [{ reasoning: why, action: 'call' as const, server: 'octocode', tool, arguments: { queries: [query] } }] },
@@ -98,6 +101,7 @@ function loadSkill(skill: DiscoveredSkill): ToolCallResult {
   let text: string;
   try {
     text = fs.readFileSync(skill.path, 'utf8');
+    if (skill.revision && skill.revision !== capabilityDefinitionRevision({ raw: text, realPath: fs.realpathSync(skill.path) })) return result('Skill source changed during loading; refresh the catalog and review its current definition.', undefined, true);
   } catch (error) {
     return result(`skill "${skill.name}": cannot read ${skill.path}: ${(error as Error).message}`, undefined, true);
   }
@@ -108,8 +112,8 @@ function loadSkill(skill: DiscoveredSkill): ToolCallResult {
     const contentPartial = returnedChars < text.length;
     const partialReasons: SkillPartialReason[] = [...(contentPartial ? ['content-limit' as const] : []), ...filePartialReasons];
     const next = {
-      ...(contentPartial ? { content: skillContinuation('localGetFileContent', {
-        path: skill.path, minify: 'none', charOffset: returnedChars, charLength: SKILL_CONTENT_CAP,
+      ...(contentPartial ? { content: skillContinuation('localFetch', {
+        path: skill.path, minify: 'none', chunkType: 'bytes', offset: Buffer.byteLength(text.slice(0, returnedChars)), limit: SKILL_CONTENT_CAP,
       }, 'Read the next page of skill instructions before acting.') } : {}),
       ...(filePartialReasons.length ? { files: skillContinuation('astSearch', {
         operation: 'files', path: skill.dir, entryType: 'f', excludeDir: [], maxDepth: 100, limit: 10_000, pageSize: 50, sort: 'path',
@@ -145,14 +149,14 @@ function loadSkill(skill: DiscoveredSkill): ToolCallResult {
   return page;
 }
 
-function formatSkillList(skills: DiscoveredSkill[]): string {
+function formatSkillList(skills: DiscoveredSkill[], total = skills.length): string {
   if (skills.length === 0) return 'No skills discovered. Install with: npx octocode skill install <skill> --platform pi';
   const lines = skills.map((skill) => {
     const used = usage.get(skill.name);
     const usedNote = used ? ` (loaded ${used.count}× this session)` : '';
-    return `- ${skill.name} [${skill.source}]${usedNote}: ${skill.description || '(no description)'}`;
+    return `- ${skill.name} [${skill.source}] id:${skill.sourceId ?? skill.path}${usedNote}: ${skill.description || '(no description)'}`;
   });
-  return [`${skills.length} skill(s) available — load one with skill({queries:[{reasoning:"load matching skill", type:"load", action:"load", name:"…", reason:"why it matches"}]}) when the task matches:`, ...lines].join('\n');
+  return [`${total} skill(s) available — load one with skill({queries:[{reasoning:"load matching skill", type:"load", action:"load", name:"…", reason:"why it matches"}]}) when the task matches:`, ...lines].join('\n');
 }
 
 // ─── Per-query executors ───────────────────────────────────────────────────────
@@ -161,10 +165,17 @@ function executeLoadItem(
   query: Record<string, unknown>,
   cwd: string,
   getPiSkills: () => SkillInfo[] | undefined,
+  ctx?: PiContext,
 ): ToolCallResult {
   const action = query['action'] === 'list' ? 'list' : 'load';
-  const skills = discoverSkills(cwd, getPiSkills());
-  if (action === 'list') return result(formatSkillList(skills), { skills });
+  const skills: DiscoveredSkill[] = isWorkerCapabilityClient()
+    ? (getCurrentWorkerCapabilities()?.snapshot.skills ?? []).map(skill => ({ ...skill, sourceId: skill.id, description: skill.description ?? '', dir: path.dirname(skill.path), source: 'parent grant' }))
+    : discoverSkills(cwd, getPiSkills(), undefined, { trusted: ctx?.isProjectTrusted?.() === true });
+  if (action === 'list') {
+    const page = readSkillPage(skills, query);
+    const continuation = page.partial ? `\n${JSON.stringify({ partial: true, fragment: page.fragment, diagnostic: page.diagnostic, next: page.next })}` : '';
+    return result((page.diagnostic?.message ?? formatSkillList(page.skills, page.total)) + continuation, page, Boolean(page.diagnostic));
+  }
   const name = typeof query['name'] === 'string' ? query['name'].trim() : '';
   if (!name) return result('skill load requires name. Use skill({queries:[{reasoning:"…", type:"load", action:"list"}]}) for the catalog.', undefined, true);
   const reason = typeof query['reason'] === 'string' ? query['reason'].trim() : '';
@@ -249,8 +260,12 @@ export function registerSkillTool(
       'load (default): work with installed SKILL.md skills (load or list). call: manage dynamic skills (reuse, create, enhance, fix, list, delete).',
     ),
     action: z.enum(['load', 'list']).optional().describe(
-      'load (default): bounded SKILL.md and file preview with continuations when partial. list: discovered skill catalog.',
+      'load (default): bounded SKILL.md and file preview. list: enabled skill identities and descriptions; follow next when partial.',
     ),
+    offset: z.number().int().min(0).optional().describe('Catalog continuation row (action:list).'),
+    textOffset: z.number().int().min(0).optional().describe('Description continuation offset (action:list).'),
+    limit: z.number().int().min(1).max(50).optional().describe('Catalog page size (action:list).'),
+    catalogRevision: z.string().optional().describe('Copy from the catalog continuation to detect discovery changes.'),
     name: z.string().optional().describe('Skill name for type:load action:load (exact name from <available_skills> or action:list).'),
     reason: z.string().optional().describe('Required for type:load action:load. One concise, user-facing clause explaining why this skill matches the current task. Also used as skill creation reason for type:call.'),
     skillType: z.string().optional().describe('Skill name / workflow id (lowercase a-z, 0-9, hyphens). Required for type:call.'),
@@ -281,12 +296,34 @@ export function registerSkillTool(
       onUpdate: onUpdate as ((r: ToolCallResult) => void) | undefined,
       ctx,
       passthroughSingle: true,
+      preflight(query) {
+        // Preserve single-query error results; multi-query calls must reject
+        // malformed later items before any dynamic skill lifecycle effects.
+        if ((params['queries'] as unknown[]).length < 2) return;
+        itemSchema.parse(query);
+        const type = query['type'] ?? 'load';
+        const text = (key: string) => typeof query[key] === 'string' && (query[key] as string).trim().length > 0;
+        if (type === 'call') {
+          if (query['mode'] !== 'list' && !text('skillType')) throw new Error('skill call requires skillType.');
+          if (['create', 'enhance', 'fix'].includes(String(query['mode'])) && !text('reason')) throw new Error('Skill creation requires reason.');
+        } else if (query['action'] !== 'list') {
+          if (!text('name')) throw new Error('skill load requires name.');
+          if (!text('reason')) throw new Error('skill load requires reason explaining why it matches the current task.');
+        }
+      },
       execute: async (query) => {
+        if (isWorkerCapabilityClient()) {
+          await refreshCurrentWorkerCapabilities({ signal });
+          assertCurrentWorkerNativeTool('skill');
+        }
         const type = typeof query['type'] === 'string' ? query['type'] : 'load';
         if (type === 'call') {
+          if (isWorkerCapabilityClient()) return result('Dynamic skill authoring is parent-owned. Request the required skill from the parent.', undefined, true);
           return executeCallItem(query, ctx, signal);
         }
-        return executeLoadItem(query, cwd, getPiSkills);
+        const output = executeLoadItem(query, cwd, getPiSkills, ctx);
+        if (isWorkerCapabilityClient() && output.isError) throw new Error(output.content.filter(part => part.type === 'text').map(part => part.text).join('\n'));
+        return output;
       },
     });
   };

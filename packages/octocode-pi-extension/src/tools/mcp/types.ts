@@ -6,6 +6,7 @@ import type { McpCompiledSchemaValidator } from './schema-validator.js';
 
 
 export type McpAction =
+  | "list"
   | "describe"
   | "call"
   | "resources"

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { captureHistory } from './history-capture.js';
+import type { HistoryGitStore } from './history-git.js';
 import { captureWorkspaceFiles, restoreWorkspaceFile, type WorkspaceFileSnapshot } from './history-files.js';
 import { activeLockRecords, preFlightIntent } from './intents-preflight.js';
 import { releaseFileLock } from './intents-release.js';
@@ -86,10 +87,11 @@ function undoPreviewCall(workspace: string, agentId: string, operationId: string
   } : undefined;
 }
 function appliedReceipt(preview: ReturnType<typeof historyEntitySchemas.local_history_restore.parse>) {
-  const stored = preview.result_json ? JSON.parse(preview.result_json) as { results?: unknown[]; verification_run_id?: string } : {};
+  const stored = preview.result_json ? JSON.parse(preview.result_json) as { results?: unknown[]; verification_run_id?: string; storage_durability?: Awaited<ReturnType<HistoryGitStore['flush']>> } : {};
   const undoPreview = undoPreviewCall(preview.workspace_path, preview.agent_id, preview.undo_operation_id);
   return { ok: true as const, status: 'applied' as const, preview_id: preview.preview_id, undo_operation_id: preview.undo_operation_id,
     verification_run_id: stored.verification_run_id ?? preview.lease_run_id, results: stored.results ?? [],
+    ...(stored.storage_durability ? { storage_durability: stored.storage_durability } : {}),
     ...(undoPreview ? { undo_preview: undoPreview } : {}) };
 }
 
@@ -154,6 +156,7 @@ export async function applyHistoryRestore(ctx: HistoryContext, input: HistoryRes
     throw new HistoryError('HISTORY_REPLAY', 'Restore preview was already claimed.');
   }
   let undo: Awaited<ReturnType<typeof captureHistory>> | undefined;
+  let storageDurability: Awaited<ReturnType<HistoryGitStore['flush']>> | undefined;
   const results: unknown[] = [];
   try {
   const fencedBatch = await captureWorkspaceFiles({ workspace: ctx.workspace, paths: files });
@@ -191,6 +194,8 @@ export async function applyHistoryRestore(ctx: HistoryContext, input: HistoryRes
       }
     }
   }
+  // An undo checkpoint must survive independently before the first workspace mutation.
+  storageDurability = await store.flush();
   const locksAtClaim = activeLockRecords(ctx.db, { workspacePath: ctx.workspace })
     .filter(lock => lock.agent_id !== input.agent_id && selected.has(historyPathSafe(ctx, lock.file_path)));
   if (locksAtClaim.length) {
@@ -211,24 +216,24 @@ export async function applyHistoryRestore(ctx: HistoryContext, input: HistoryRes
       const renewed = renewWorkLease(ctx.db, { agentId: input.agent_id, runId: leaseRunId, ttlMs: 120_000 }, { exclusiveOnly: true });
       if (renewed.locksRenewed !== files.length) throw new HistoryError('HISTORY_LEASE_EXPIRED', 'Restore could not renew its complete lock fence.');
       const restored = await restoreWorkspaceFile({ workspace: ctx.workspace, path: files[index]!, expectedCurrent, target: restoreTarget });
-      results.push({ path: restored.path, status: restored.status, previous: publicSnapshot(restored.previous), current: publicSnapshot(restored.current) });
+      results.push({ path: restored.path, status: restored.status, previous: publicSnapshot(restored.previous), current: publicSnapshot(restored.current), receipt: restored.receipt, warnings: restored.warnings });
       ctx.db.prepare("UPDATE local_history_restores SET result_json=? WHERE preview_id=? AND status='applying'")
-        .run(JSON.stringify({ results }), preview.preview_id);
+        .run(JSON.stringify({ results, storage_durability: storageDurability }), preview.preview_id);
     }
     endWork(ctx.db, { agentId: input.agent_id, runId: leaseRunId });
     ctx.db.prepare("UPDATE local_history_restores SET status='applied',result_json=? WHERE preview_id=?")
-      .run(JSON.stringify({ results, verification_run_id: leaseRunId }), preview.preview_id);
+      .run(JSON.stringify({ results, verification_run_id: leaseRunId, storage_durability: storageDurability }), preview.preview_id);
     return { ok: true as const, status: 'applied' as const, preview_id: preview.preview_id, undo_operation_id: undo.operation.operation_id,
-      verification_run_id: leaseRunId, results,
+      verification_run_id: leaseRunId, results, storage_durability: storageDurability,
       undo_preview: undoPreviewCall(ctx.workspace, input.agent_id, undo.operation.operation_id) };
   } catch (error) {
     const status = results.length > 0 ? 'partial' : error instanceof Error && /stale restore preview/i.test(error.message) ? 'conflict' : 'failed';
     const message = error instanceof Error ? error.message : String(error);
     ctx.db.prepare("UPDATE local_history_restores SET status=?,result_json=? WHERE preview_id=?")
-      .run(status, JSON.stringify({ results, error: message }), preview.preview_id);
+      .run(status, JSON.stringify({ results, error: message, storage_durability: storageDurability }), preview.preview_id);
     releaseLease('FAILED');
     return { ok: false as const, status, preview_id: preview.preview_id, undo_operation_id: undo?.operation.operation_id,
-      verification_run_id: leaseRunId, results, error: message,
+      verification_run_id: leaseRunId, results, error: message, storage_durability: storageDurability,
       ...(undo ? { undo_preview: undoPreviewCall(ctx.workspace, input.agent_id, undo.operation.operation_id) } : {}) };
   }
 }

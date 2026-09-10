@@ -39,13 +39,14 @@ const SOURCE_PATHS = {
   // Optional in subset checkouts: if missing, the published `octocode` runtime dep is
   // resolved at runtime by getCLIPath() instead and bundleOctocodeCLI() skips gracefully.
   octocodeCLI: path.join(repoRoot, 'packages', 'octocode', 'out'),
-  // Developer docs bundled so agents can load them at runtime via the MCP localGetFileContent
+  // Developer docs bundled so agents can load them at runtime via the MCP localFetch
   // surface — no separate checkout or docs site needed.
   docs: path.join(packageRoot, 'docs'),
 };
 
 const OUTPUT_PATHS = {
   extension: path.join(distDir, 'index.js'),
+  workerGuard: path.join(distDir, 'worker-guard.js'),
   skills: path.join(distDir, 'skills'),
   subagents: path.join(distDir, 'subagents'),
   systemPrompt: path.join(distDir, 'system', 'SYSTEM_PROMPT.md'),
@@ -406,6 +407,7 @@ async function build() {
 
   // 1. Compile TypeScript -> dist/ (generates .js + .d.ts for all src/ modules).
   compileTsc();
+  if (!fs.existsSync(OUTPUT_PATHS.workerGuard)) throw new Error('Build did not emit the minimal worker capability guard entry.');
 
   inlineConfigRuntime();
   // The system prompt is one inlined document; compileTsc() emits dist/prompts/system-prompt.js.

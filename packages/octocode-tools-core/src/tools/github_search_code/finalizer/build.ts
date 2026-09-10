@@ -8,7 +8,7 @@ import {
 import type {
   GitHubCodeSearchData,
   GitHubCodeSearchOutputLocal,
-} from '../scheme.js';
+} from '../resultTypes.js';
 import type { RepoState } from '../execution.js';
 
 import { type CodeSearchPagination } from '../../providerMappers/codeSearch.js';

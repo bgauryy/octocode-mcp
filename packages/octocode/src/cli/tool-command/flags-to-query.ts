@@ -4,7 +4,7 @@
 // schema (the same one MCP serves) — new fields become flags automatically and
 // nothing here can drift from validation, which still runs through
 // prepareDirectToolInput* like every other input path.
-import { DirectToolInputError } from '@octocodeai/octocode-tools-core/schema';
+import { DirectToolInputError } from '@octocodeai/octocode-core/schema';
 import {
   getToolFlagTable,
   toCamelCase,

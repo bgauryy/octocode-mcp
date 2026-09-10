@@ -3,7 +3,7 @@ import {
   type LspSemanticEnvelope,
 } from '../shared/semanticTypes.js';
 import { buildNextPageContinuation } from '../../../scheme/pagination.js';
-import { MAX_PAGE_NUMBER } from '../../../config.js';
+import { MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 import { isRecord, isSemanticEnvelope } from './semanticPresentation.js';
 
 // Empty-state categories that warrant a ready-to-run fallback. Anything that
@@ -136,7 +136,7 @@ function paginationContinuation(
 }
 
 // Ready-to-run follow-up. On a hit: read the top result location with context,
-// so the agent doesn't have to assemble the localGetFileContent call from
+// so the agent doesn't have to assemble the localFetch call from
 // ranges. On an empty/incomplete result: re-anchor or fall back to
 // localSearch text, so the agent isn't left at a dead end.
 export function withSemanticNext(
@@ -284,7 +284,7 @@ export function withSemanticNext(
       next: {
         ...baseNext,
         readSite: {
-          tool: 'localGetFileContent',
+          tool: 'localFetch',
           query: {
             path,
             startLine: Math.max(1, start - 3),

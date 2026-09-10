@@ -57,13 +57,13 @@ output schemas are intentionally not published.
 | `ghSearch` | 9 | 10 | 10 | 9 | 9 | 9.4 | Output fields vary by operation |
 | `ghSearchHistory` | 9 | 10 | 10 | 9 | 9 | 9.4 | Three operation-specific candidate shapes |
 | `ghGetHistoryItem` | 9 | 10 | 10 | 9 | 9 | 9.4 | Four operation-specific detail shapes |
-| `ghGetFileContent` | 10 | 10 | 10 | 9 | 9 | 9.6 | Directory materialization remains specialized |
+| `ghGetFileContent` | 10 | 10 | 10 | 9 | 9 | 9.6 | File reads only; ghCloneRepo owns checkouts |
 | `ghCloneRepo` | 9 | 9 | 9 | 9 | 9 | 9.0 | Materialization remains intentionally specialized |
 | `localSearch` | 10 | 10 | 10 | 9 | 9 | 9.6 | Lexical matches with bounded output views |
 | `astSearch` | 10 | 9 | 10 | 9 | 9 | 9.4 | Graph edges remain candidate evidence |
-| `localGetFileContent` | 10 | 10 | 10 | 9 | 9 | 9.6 | Local path identity remains specialized |
+| `localFetch` | 10 | 10 | 10 | 9 | 9 | 9.6 | Local path identity remains specialized |
 | `lspSearch` | 10 | 10 | 10 | 9 | 9 | 9.6 | Workspace inference is cwd-sensitive |
-| `npmSearch` | 9 | 10 | 10 | 9 | 9 | 9.4 | Registry/provider availability varies |
+| `artifactSearch` | 9 | 10 | 10 | 9 | 9 | 9.4 | Registry/provider availability varies |
 
 ## Alignment gaps
 
@@ -121,9 +121,9 @@ for GitHub/npm provider drift; it must not weaken or replace offline CI.
   compact form.
 - The lean catalog is bounded below 4 KB and minimal context below 750 bytes in
   contract tests.
-- The `npmSearch` keyword-discovery example now sends
-  `keywords: ["schema", "validation"]`.
-- Generated Draft 2020-12 schemas now encode npm XOR, content selector modes,
+- The `artifactSearch` keyword-discovery example now sends
+  `type: "npm", keywords: ["schema", "validation"]`.
+- Generated Draft 2020-12 schemas now encode package-selector XOR, content selector modes,
   GitHub directory/file separation, PR/issue list-detail modes, PR patch modes,
   commit history/compare modes, and LSP operation requirements as item unions.
 - Generated-schema tests round-trip the actual input view and compare invalid
@@ -169,13 +169,13 @@ for GitHub/npm provider drift; it must not weaken or replace offline CI.
 
 - Keep `ghSearchHistory` and `ghGetHistoryItem` separate. Candidate discovery
   and exact detail have different identities, costs, and output bounds.
-- Keep `ghGetFileContent` and `localGetFileContent` separate. Authentication,
+- Keep `ghGetFileContent` and `localFetch` separate. Authentication,
   caching, path identity, and evidence provenance differ.
 - Keep `ghGetFileContent` and `ghCloneRepo` separate. One is a bounded read; the
   other materializes state for repeated local analysis.
 - Keep `astSearch` topology and `lspSearch` separate. File topology is
   syntactic candidate evidence; LSP resolves symbol identity.
-- Keep `npmSearch` and `ghSearch` separate. Package identity and registry
+- Keep `artifactSearch` and `ghSearch` separate. Package identity and registry
   metadata are not repository-search semantics.
 ## Recommended implementation order
 

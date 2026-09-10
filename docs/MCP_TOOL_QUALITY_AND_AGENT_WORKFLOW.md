@@ -18,7 +18,7 @@ After building the CLI, run these commands from the monorepo root:
 
 ```bash
 node packages/octocode/out/octocode.js tools --json
-node packages/octocode/out/octocode.js tools localGetFileContent --scheme --json --compact
+node packages/octocode/out/octocode.js tools localFetch --scheme --json --compact
 node packages/octocode/out/octocode.js tools ghGetHistoryItem --scheme --json
 ```
 
@@ -27,8 +27,8 @@ clone, storage, and allowlist settings. Record the effective configuration and
 unavailable capabilities with each acceptance run. Enabling a tool does not
 install its external language server or grant provider access.
 
-Tool runners, schemas, and descriptions are owned by
-[tools-core](https://github.com/bgauryy/octocode/blob/main/packages/octocode-tools-core/ARCHITECTURE.md). CLI and MCP expose
+Public schemas, descriptions, and shared instructions belong to `@octocodeai/octocode-core`.
+[Tools-core](https://github.com/bgauryy/octocode/blob/main/packages/octocode-tools-core/ARCHITECTURE.md) owns execution and response shaping. CLI and MCP expose
 those contracts through their respective interfaces. Test both when changing
 registration, schema projection, output formatting, or continuation rendering.
 
@@ -44,6 +44,29 @@ registration, schema projection, output formatting, or continuation rendering.
   A schema-valid example alone does not establish runtime correctness.
 - Remove renamed public aliases and duplicated interface guidance when replacing
   a contract. Preserve a compatibility path only when explicitly required.
+- Execute invalid-input recovery through the actual adapter: the rejected call
+  must identify a valid correction, and the corrected call must pass validation.
+  MCP validates registered schemas before invoking the tool callback.
+
+### Agent routing measurements
+
+Export JSON Schema for inputs so fields with defaults remain optional. Test the
+actual host envelope and separate tool selection, semantic arguments, schema
+validity, transport validity, and completed execution. A correct tool name with
+the wrong branch or search string is an incorrect request.
+
+Freeze cases, graders, schemas, instructions, executable validators, model digest,
+and runtime before inference. Preserve historical runs when repairing a grader.
+Include negative grader tests for wrong refs, unrelated keywords, unnecessary
+calls, and prose that mentions a capability without satisfying the request.
+Report sensor failures separately from model failures. Compare native calling and
+JSON emulation with the same canonical information and budget, and report first
+attempts separately from bounded repair using actual errors. Use untouched cases
+for acceptance; fixture checks and a small routing sample do not establish
+reliability across all models and hosts.
+Check context after provider-specific tool rendering. Disable silent truncation
+where supported and retain server diagnostics; a returned token count may describe
+an already-truncated prompt.
 
 ### Evidence and output integrity
 
@@ -101,15 +124,15 @@ for measured comparisons; record commands and artifacts with the result.
 | Tool | Routing and schema checks | Content, pagination, and failure checks |
 |---|---|---|
 | `localSearch` | Exercise lexical text and regex queries independently. | Verify match continuations, exclusions, and zero-result diagnostics. |
-| `localGetFileContent` | Exercise path-only, full, range, match, and each supported view. | Preserve matched anchors; reconstruct transformed windows; verify effective fallback mode, redaction, and source lines. |
+| `localFetch` | Exercise path-only, full, range, match, and each supported view. | Preserve matched anchors; reconstruct transformed windows; verify effective fallback mode, redaction, and source lines. |
 | `astSearch` | Exercise `match`, `files`, filesystem/syntax `tree`, `symbols`, and all six `topology` analyses. | Validate pattern/rule exclusivity and language selection; traverse captures, nodes, results, and diagnostics; expose parser/scan limits and unresolved edges; corroborate deletion candidates. |
 | `lspSearch` | Exercise document, workspace, anchored, and hierarchy operations. | Distinguish unavailable server, unsupported capability, failed anchor, and valid empty result; verify server provenance and paginated snapshots. |
 | `ghSearch` | Exercise code, repository, and tree variants; reject branch selection for indexed code search. | Preserve candidate matches, selected operation, immutable tree identity, metadata pages, indexing uncertainty, and provider-limit diagnostics. |
-| `ghGetFileContent` | Exercise file views and directory materialization separately. | Compare local/remote matching and windows; verify pinned refs, repeated-outline prevention, security redaction, and materialization failures. |
+| `ghGetFileContent` | Exercise exact, compact, full, and paginated file views. | Compare local/remote matching and windows; verify pinned refs, repeated-outline prevention, security redaction, and rejection of directory inputs. |
 | `ghSearchHistory` | Exercise PR, issue, and commit discovery with operation-specific scope. | Traverse discovery pages; preserve filters and exact-detail hints; check supported minification modes and provider-incomplete results. |
 | `ghGetHistoryItem` | Exercise PR/issue identities, exact commits, comparisons, and selected content. | Independently traverse files, comments, reviews, commits, bodies, and patches; preserve omitted-patch/error state and immutable refs. |
 | `ghCloneRepo` | Exercise default ref, full SHA, sparse path, refresh, and availability gates. | Verify checkout identity, reusable cache, isolated snapshots, concurrent mutation handling, rollback, and cleanup; report crash-recovery coverage separately. |
-| `npmSearch` | Exercise exact names, scoped names, and keyword discovery; reject mixed or empty selectors. | Follow keyword continuations, preserve repository subdirectory, distinguish registry failures, and verify authenticated-registry behavior where available. |
+| `artifactSearch` | Exercise exact names, scoped names, and keyword discovery; reject mixed or empty selectors. | Follow keyword continuations, preserve repository subdirectory, distinguish registry failures, and verify authenticated-registry behavior where available. |
 
 ## Minification and smart-window matrix
 
@@ -118,8 +141,8 @@ Test controls where the public operation supports them. Do not add `minify` or
 
 | Surface | Supported content controls | Required comparisons |
 |---|---|---|
-| Local file fetch | `none`, `standard`, `symbols`; source selectors and character windows. | Exact selected source, matched-text preservation, whole-file outline, fallback metadata, and continuation union. |
-| GitHub file fetch | `none`, `standard`, `symbols`; source selectors and character windows. | Same fixture pinned to a commit, extraction parity, and repeated calls at distinct offsets. |
+| Local file fetch | `none`, `standard`, `symbols`; source selectors and line or UTF-8 byte windows. | Exact selected source, matched-text preservation, whole-file outline, fallback metadata, and continuation union. |
+| GitHub file fetch | `none`, `standard`, `symbols`; source selectors and line or UTF-8 byte windows. | Same fixture pinned to a commit, extraction parity, and repeated calls at distinct offsets. |
 | GitHub code search | `concise`; no public `minify` field. | Snippet transformation retains useful matched evidence and correct positions; exact fetch remains available. |
 | PR/issue discovery | `concise`; no public `minify` field. | Verify metadata selection and list continuations; reject unsupported content controls. |
 | PR detail | `none`, `standard`; selected bodies, patches, comments, reviews, and commits. | Preserve exact requested text with `none`; exercise every content surface and independent continuation. |

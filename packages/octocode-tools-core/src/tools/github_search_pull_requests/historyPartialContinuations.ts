@@ -1,6 +1,6 @@
 import type { ProcessedBulkResult } from '../../types/toolResults.js';
-import { GITHUB_GET_HISTORY_ITEM_TOOL_NAME } from '../toolNames.js';
-import { GitHubGetHistoryItemQueryLocalSchema } from './historySchemes.js';
+import { GITHUB_GET_HISTORY_ITEM_TOOL_NAME } from '@octocodeai/octocode-core/schema';
+import { GitHubGetHistoryItemQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 type ContentAxis =
   | 'body'

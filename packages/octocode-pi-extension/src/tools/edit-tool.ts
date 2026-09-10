@@ -1,18 +1,20 @@
 import { truncateToWidth } from '../tui/width.js';
 import { paint, ANSI_RESET } from '../tui/palette.js';
 import { constants } from 'node:fs';
-import { access, readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import { isUtf8 } from 'node:buffer';
+import { access } from 'node:fs/promises';
+import { computeLineDiff, computeLineDiffAsync, generateDiffArtifacts as nativeDiffArtifactsSync, generateDiffArtifactsAsync as nativeDiffArtifacts } from '@octocodeai/octocode-extension-rust';
 import { CLI_STATUS_TEXT, cliStatusGlyph, cliStatusToken, cliToolTitle, ansiForToken } from '../tui/cli-design.js';
 import type { ToolCallResult, PiTheme, RenderCallReturn } from '../types.js';
 import { makeComponentRenderer, wrapText } from './render-helpers.js';
 import { collapsedEditRationales } from './edit-render-ux.js';
-import { assertPathAllowed } from './path-guard.js';
-import { atomicWriteUtf8, withFileMutationQueue, recordFileReadStateFromContent, checkReadState, resolveFilePath, type ReadStateCheck } from './file-state.js';
-import { peerWipNotice, markOwnWrite } from './peer-wip.js';
+import { withFileMutationQueue, checkReadState, type ReadStateCheck } from './file-state.js';
+import { assertFileContentSize, replaceNativeFile } from './native-files.js';
+import { peerWipNotice } from './peer-wip.js';
+import { finishFileMutation } from './file-mutation-receipt.js';
+import { normalizeToLF, restoreEditedText, assertWellFormedText } from './file-text.js';
+import { prepareFileMutationTarget, assertFileMutationTargetCurrent, type FileMutationTarget } from './file-mutation-target.js';
 
-
-const require = createRequire(import.meta.url);
 
 type MatchMode = 'exact' | 'normalized' | 'lineRange';
 
@@ -41,6 +43,7 @@ interface MatchedReplacement {
 }
 
 interface AppliedEditResult {
+  changes: MatchedReplacement[];
   baseContent: string;
   newContent: string;
   replacements: number;
@@ -63,11 +66,10 @@ interface AppliedEditEvidence {
 }
 
 export interface PreparedEdit {
+  target: FileMutationTarget;
   requestPath: string;
   absolutePath: string;
   edits: EditOperation[];
-  requireRecentRead: boolean;
-  rawContent: string;
   finalContent: string;
   result: AppliedEditResult;
   readState: ReadStateCheck;
@@ -85,26 +87,6 @@ interface RenderableEditFile {
   edits?: Array<AppliedEditEvidence>;
 }
 
-// ReadStateCheck is imported from file-state.ts above (type re-used in PreparedEdit).
-
-function normalizeToLF(text: string): string {
-  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
-function detectLineEnding(text: string): '\n' | '\r\n' {
-  // Only report CRLF when the file is UNIFORMLY CRLF (every LF is part of a CRLF).
-  // A mixed file (some bare LF, some CRLF) reports '\n' so restoreLineEndings leaves
-  // it untouched — otherwise editing one line would rewrite every originally-LF line
-  // to CRLF (spurious whole-file churn).
-  if (!text.includes('\r\n')) return '\n';
-  // Strip CRLF pairs; if any bare LF remains, the file is mixed → treat as LF.
-  return text.replace(/\r\n/g, '').includes('\n') ? '\n' : '\r\n';
-}
-
-function restoreLineEndings(text: string, ending: '\n' | '\r\n'): string {
-  return ending === '\r\n' ? text.replace(/\n/g, '\r\n') : text;
-}
-
 function stripBom(text: string): { bom: string; text: string } {
   return text.startsWith('\uFEFF') ? { bom: '\uFEFF', text: text.slice(1) } : { bom: '', text };
 }
@@ -116,7 +98,7 @@ function findOccurrences(content: string, needle: string): number[] {
   let index = content.indexOf(needle);
   while (index !== -1) {
     indices.push(index);
-    index = content.indexOf(needle, index + needle.length);
+    index = content.indexOf(needle, index + 1);
   }
   return indices;
 }
@@ -222,13 +204,19 @@ function assertIntegerLine(value: unknown, name: string, editIndex: number): num
 }
 
 function validateOperation(edit: unknown, index: number): EditOperation {
-  if (!edit || typeof edit !== 'object') {
+  if (!edit || typeof edit !== 'object' || Array.isArray(edit)) {
     throw new Error(`Edit tool input is invalid. edits[${index}] must be an object.`);
   }
   const item = edit as Record<string, unknown>;
+  const allowed = new Set(['oldText', 'newText', 'replaceAll', 'reasoning', 'matchMode', 'startLine', 'endLine']);
+  const extra = Object.keys(item).filter(key => !allowed.has(key));
+  if (extra.length) throw new Error(`Edit tool input is invalid. edits[${index}] has unknown fields: ${extra.join(', ')}.`);
   const matchMode = (item['matchMode'] ?? 'exact') as MatchMode;
   if (!['exact', 'normalized', 'lineRange'].includes(matchMode)) {
     throw new Error(`Edit tool input is invalid. edits[${index}].matchMode must be exact, normalized, or lineRange.`);
+  }
+  if (matchMode !== 'lineRange' && (item['startLine'] !== undefined || item['endLine'] !== undefined)) {
+    throw new Error('startLine and endLine require matchMode:"lineRange".');
   }
   if (typeof item['newText'] !== 'string') {
     throw new Error(`Edit tool input is invalid. edits[${index}].newText must be a string.`);
@@ -236,6 +224,8 @@ function validateOperation(edit: unknown, index: number): EditOperation {
   if (item['oldText'] !== undefined && typeof item['oldText'] !== 'string') {
     throw new Error(`Edit tool input is invalid. edits[${index}].oldText must be a string.`);
   }
+  assertWellFormedText(item['newText'], 'newText');
+  if (typeof item['oldText'] === 'string') assertWellFormedText(item['oldText'], 'oldText');
   if (matchMode !== 'lineRange' && (typeof item['oldText'] !== 'string' || item['oldText'].length === 0)) {
     throw new Error(`Edit tool input is invalid. edits[${index}].oldText must be a non-empty string unless matchMode:"lineRange" is used.`);
   }
@@ -269,6 +259,9 @@ function validateOperation(edit: unknown, index: number): EditOperation {
 }
 
 export function validateEditQuery(item: Record<string, unknown>, index: number): EditQuery {
+  if (item['requireRecentRead'] !== undefined && typeof item['requireRecentRead'] !== 'boolean') {
+    throw new Error('requireRecentRead must be a boolean.');
+  }
   if (typeof item['path'] !== 'string' || item['path'].trim().length === 0) {
     throw new Error(`Edit tool input is invalid. queries[${index}].path must be a non-empty string.`);
   }
@@ -287,7 +280,13 @@ function exactReplacements(content: string, edit: EditOperation, editIndex: numb
   const occurrences = findOccurrences(content, oldText);
   if (occurrences.length === 0) throw notFoundError(filePath, editIndex, totalEdits, oldText, content);
   if (!edit.replaceAll && occurrences.length > 1) throw duplicateError(filePath, editIndex, totalEdits, occurrences.length);
-  return (edit.replaceAll ? occurrences : [occurrences[0]!]).map((start) => ({
+  let end = -1;
+  const selected = edit.replaceAll ? occurrences.filter(start => {
+    if (start < end) return false;
+    end = start + oldText.length;
+    return true;
+  }) : [occurrences[0]!];
+  return selected.map((start) => ({
     editIndex,
     start,
     end: start + oldText.length,
@@ -299,7 +298,7 @@ function exactReplacements(content: string, edit: EditOperation, editIndex: numb
 function normalizedReplacements(content: string, spans: ReturnType<typeof lineSpans>, edit: EditOperation, editIndex: number, totalEdits: number, filePath: string): MatchedReplacement[] {
   const oldText = normalizeToLF(edit.oldText ?? '');
   const normalizedOld = normalizeForFuzzyMatch(oldText);
-  const oldLineCount = oldText.split('\n').length;
+  const oldLineCount = oldText.split('\n').length - (oldText.endsWith('\n') ? 1 : 0);
   const matches: MatchedReplacement[] = [];
   for (let i = 0; i <= spans.length - oldLineCount; i++) {
     const candidateWithEnding = spans.slice(i, i + oldLineCount).map((span) => span.line).join('');
@@ -428,6 +427,7 @@ export function applyCustomEditsToContent(content: string, edits: EditOperation[
   const editEvidence = [...editEvidenceMap.values()].sort((a, b) => a.editIndex - b.editIndex);
 
   return {
+    changes: replacements,
     baseContent: content,
     newContent,
     replacements: replacements.length,
@@ -438,6 +438,7 @@ export function applyCustomEditsToContent(content: string, edits: EditOperation[
 }
 
 interface DiffOp { type: 'same' | 'add' | 'remove'; line: string }
+const evidenceDiffs = new WeakMap<AppliedEditEvidence, DiffOp[]>();
 
 // Myers line diff is O((N+M)·D). Agent edits are almost always small D on large
 // files, so this stays fast where the old LCS DP (O(N·M) time+memory) stalled
@@ -451,141 +452,9 @@ function diffTooLarge(oldContent: string, newContent: string): boolean {
   return oldContent.split('\n').length + newContent.split('\n').length > MAX_DIFF_LINES;
 }
 
-/**
- * Myers O((N+M)D) line diff. Returns a full edit script of same/add/remove ops.
- * Default: pure JS Myers (typically sub-ms for agent-sized edits).
- * Opt-in native engine path via OCTOCODE_EDIT_NATIVE_DIFF=1 (useful for release
- * napi builds / shared CLI callers; debug napi can be slower than JS).
- * Exported for unit/perf tests.
- */
+/** Native diff for synchronous rendering; preparation uses the async worker. */
 export function diffOps(oldContent: string, newContent: string): DiffOp[] {
-  if (process.env['OCTOCODE_EDIT_NATIVE_DIFF'] === '1') {
-    const native = tryNativeDiffOps(oldContent, newContent);
-    if (native) return native;
-  }
-  return diffOpsJs(oldContent, newContent);
-}
-
-type NativeLineDiffOp = { opType: string; line: string };
-let nativeComputeLineDiff:
-  | ((oldText: string, newText: string) => NativeLineDiffOp[])
-  | null
-  | undefined;
-
-function tryNativeDiffOps(oldContent: string, newContent: string): DiffOp[] | null {
-  if (nativeComputeLineDiff === undefined) {
-    try {
-      const eng = require('@octocodeai/octocode-engine') as {
-        computeLineDiff?: (a: string, b: string) => NativeLineDiffOp[];
-      };
-      nativeComputeLineDiff =
-        typeof eng.computeLineDiff === 'function' ? eng.computeLineDiff.bind(eng) : null;
-    } catch {
-      nativeComputeLineDiff = null;
-    }
-  }
-  if (!nativeComputeLineDiff) return null;
-  try {
-    const ops = nativeComputeLineDiff(oldContent, newContent);
-    return ops.map((op) => ({
-      type: op.opType as DiffOp['type'],
-      line: op.line,
-    }));
-  } catch {
-    return null;
-  }
-}
-
-/** Pure JS Myers — used when the native addon is unavailable. */
-export function diffOpsJs(oldContent: string, newContent: string): DiffOp[] {
-  const a = oldContent.split('\n');
-  const b = newContent.split('\n');
-  const n = a.length;
-  const m = b.length;
-  if (n === 0 && m === 0) return [];
-  if (n === 0) return b.map((line) => ({ type: 'add' as const, line }));
-  if (m === 0) return a.map((line) => ({ type: 'remove' as const, line }));
-
-  const max = n + m;
-  const offset = max;
-  const v = new Int32Array(2 * max + 1);
-  v.fill(-1);
-  v[offset + 1] = 0;
-  const trace: Int32Array[] = [];
-
-  let dFound = -1;
-  outer: for (let d = 0; d <= max; d++) {
-    for (let k = -d; k <= d; k += 2) {
-      let x: number;
-      if (k === -d || (k !== d && v[offset + k - 1]! < v[offset + k + 1]!)) {
-        x = v[offset + k + 1]!;
-      } else {
-        x = v[offset + k - 1]! + 1;
-      }
-      let y = x - k;
-      while (x < n && y < m && a[x] === b[y]) {
-        x++;
-        y++;
-      }
-      v[offset + k] = x;
-      if (x >= n && y >= m) {
-        trace.push(Int32Array.from(v));
-        dFound = d;
-        break outer;
-      }
-    }
-    trace.push(Int32Array.from(v));
-  }
-
-  if (dFound < 0) {
-    return [
-      ...a.map((line) => ({ type: 'remove' as const, line })),
-      ...b.map((line) => ({ type: 'add' as const, line })),
-    ];
-  }
-
-  const opsRev: DiffOp[] = [];
-  let x = n;
-  let y = m;
-  for (let d = dFound; d > 0; d--) {
-    const vPrev = trace[d - 1]!;
-    const k = x - y;
-    let prevK: number;
-    if (k === -d || (k !== d && vPrev[offset + k - 1]! < vPrev[offset + k + 1]!)) {
-      prevK = k + 1;
-    } else {
-      prevK = k - 1;
-    }
-    const prevX = vPrev[offset + prevK]!;
-    const prevY = prevX - prevK;
-    while (x > prevX && y > prevY) {
-      x--;
-      y--;
-      opsRev.push({ type: 'same', line: a[x]! });
-    }
-    if (x === prevX) {
-      y--;
-      opsRev.push({ type: 'add', line: b[y]! });
-    } else {
-      x--;
-      opsRev.push({ type: 'remove', line: a[x]! });
-    }
-  }
-  while (x > 0 && y > 0) {
-    x--;
-    y--;
-    opsRev.push({ type: 'same', line: a[x]! });
-  }
-  while (x > 0) {
-    x--;
-    opsRev.push({ type: 'remove', line: a[x]! });
-  }
-  while (y > 0) {
-    y--;
-    opsRev.push({ type: 'add', line: b[y]! });
-  }
-  opsRev.reverse();
-  return opsRev;
+  return computeLineDiff(oldContent, newContent).map((op) => ({ type: op.opType, line: op.line }));
 }
 
 /**
@@ -616,43 +485,22 @@ export function generateDiffArtifacts(
   filePath: string,
   oldContent: string,
   newContent: string,
-): { diff: string; patch: string; ops: DiffOp[] } {
+): { diff: string; patch: string } {
   if (diffTooLarge(oldContent, newContent)) {
     return {
       diff: '(diff omitted: file too large — see the per-edit changes in details)',
       patch: `--- ${filePath}\n+++ ${filePath}\n@@ patch omitted: file too large @@\n`,
-      ops: [],
     };
   }
-  const ops = diffOps(oldContent, newContent);
-  const diff = ops
-    .filter((op) => op.type !== 'same')
-    .map((op) => `${op.type === 'add' ? '+' : '-'} ${op.line}`)
-    .join('\n');
-
-  let start = 0;
-  while (start < ops.length && ops[start]!.type === 'same') start++;
-  let end = ops.length;
-  while (end > start && ops[end - 1]!.type === 'same') end--;
-  const hunkOps = ops.slice(start, end);
-  const oldCount = hunkOps.filter((op) => op.type !== 'add').length;
-  const newCount = hunkOps.filter((op) => op.type !== 'remove').length;
-  const oldStart = start + 1;
-  const newStart = start + 1;
-  const lines = [`--- ${filePath}`, `+++ ${filePath}`, `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`];
-  for (const op of hunkOps) {
-    if (op.type === 'same') lines.push(` ${op.line}`);
-    else lines.push(`${op.type === 'add' ? '+' : '-'}${op.line}`);
-  }
-  return { diff, patch: `${lines.join('\n')}\n`, ops };
+  return nativeDiffArtifactsSync(filePath, oldContent, newContent);
 }
 
-
+async function generateDiffArtifactsAsync(filePath: string, oldContent: string, newContent: string) {
+  if (diffTooLarge(oldContent, newContent)) return generateDiffArtifacts(filePath, oldContent, newContent);
+  return nativeDiffArtifacts(filePath, oldContent, newContent);
+}
 
 const EDIT_TOOL_DISPLAY_NAME = 'edit (Octocode)';
-
-
-
 function editReasoningEntries(edits: EditOperation[]): EditReasoningEntry[] {
   return edits.map((edit, index) => ({ editIndex: index, reasoning: edit.reasoning.trim() }));
 }
@@ -680,7 +528,11 @@ function renderEditDiffItems(files: RenderableEditFile[], theme?: PiTheme): Arra
   for (const file of files) {
     items.push({ text: paint(theme, 'path', `  ${file.path}`), truncate: true });
     for (const edit of file.edits ?? []) {
-      const ops = diffOps(edit.removedLines.join('\n'), edit.addedLines.join('\n'));
+      let ops = evidenceDiffs.get(edit);
+      if (!ops) {
+        ops = diffOps(edit.removedLines.join('\n'), edit.addedLines.join('\n')).filter(op => op.type !== 'same');
+        evidenceDiffs.set(edit, ops);
+      }
       for (const op of ops) {
         if (op.type === 'same') continue;
         const label = op.type === 'remove' ? '- ' : '+ ';
@@ -710,37 +562,40 @@ function renderCollapsedEditDiffLines(header: string, files: RenderableEditFile[
 }
 
 export async function prepareEdit(query: EditQuery, cwd: string, inheritedRequireRecentRead: boolean): Promise<PreparedEdit> {
-  const absolutePath = resolveFilePath(query.path, cwd);
-  // Bound writes to home + ALLOWED_PATHS + cwd/tmp (same model as the native tools).
-  assertPathAllowed(absolutePath, cwd, 'edit');
+  const target = await prepareFileMutationTarget(query.path, cwd, false, true);
+  const absolutePath = target.canonicalPath;
   await access(absolutePath, constants.R_OK | constants.W_OK);
-  // Content-anchored when every edit matches by exact/normalized oldText (self-
-  // verifying); a lineRange edit is position-anchored and needs strict freshness.
-  // An edit is content-anchored when exact/normalized oldText matching is used, OR when
-  // lineRange is used with an explicit oldText — lineRangeReplacement validates oldText
-  // against the actual lines, so the edit is self-verifying even if the read is stale.
+  // Position-only edits require freshness; supplied oldText verifies current content.
   const contentAnchored = query.edits.every((e) => {
     const mode = e.matchMode ?? 'exact';
     return mode !== 'lineRange' || e.oldText !== undefined;
   });
+  const bytes = target.snapshot.content!;
+  if (!isUtf8(bytes) || bytes.includes(0)) throw new Error(`Edit requires valid UTF-8 text, not binary data: ${query.path}`);
+  const rawContent = bytes.toString('utf8');
+  // Commit needs the token, not a second retained copy of the original file.
+  delete target.snapshot.content;
+  const requireRecentRead = inheritedRequireRecentRead || query.requireRecentRead === true || !contentAnchored;
   const readState = await checkReadState(
     absolutePath,
-    inheritedRequireRecentRead || query.requireRecentRead === true,
-    { contentAnchored },
+    requireRecentRead,
+    { contentAnchored, currentDigest: target.snapshot.digest },
   );
-  const rawContent = await readFile(absolutePath, 'utf8');
   const { bom, text } = stripBom(rawContent);
-  const lineEnding = detectLineEnding(text);
   const normalizedContent = normalizeToLF(text);
   const result = applyCustomEditsToContent(normalizedContent, query.edits, query.path);
-  const finalContent = bom + restoreLineEndings(result.newContent, lineEnding);
-  const artifacts = generateDiffArtifacts(query.path, result.baseContent, result.newContent);
+  const finalContent = bom + restoreEditedText(text, result.changes);
+  assertFileContentSize(finalContent);
+  const artifacts = await generateDiffArtifactsAsync(query.path, result.baseContent, result.newContent);
+  for (const edit of result.edits) {
+    const ops = await computeLineDiffAsync(edit.removedLines.join('\n'), edit.addedLines.join('\n'));
+    evidenceDiffs.set(edit, ops.filter(op => op.opType !== 'same').map(op => ({ type: op.opType, line: op.line })));
+  }
   return {
+    target,
     requestPath: query.path,
     absolutePath,
     edits: query.edits,
-    requireRecentRead: inheritedRequireRecentRead || query.requireRecentRead === true,
-    rawContent,
     finalContent,
     result,
     readState,
@@ -753,21 +608,13 @@ export async function prepareEdit(query: EditQuery, cwd: string, inheritedRequir
 export async function commitPreparedEdit(prepared: PreparedEdit, signal?: AbortSignal): Promise<ToolCallResult> {
   if (signal?.aborted) throw new Error('Operation aborted');
   const peerNotice = peerWipNotice(prepared.absolutePath, prepared.requestPath);
-  await withFileMutationQueue(prepared.absolutePath, async () => {
+  const { receipt, warnings } = await withFileMutationQueue(prepared.absolutePath, async () => {
     if (signal?.aborted) throw new Error('Operation aborted');
-    const currentRaw = await readFile(prepared.absolutePath, 'utf8');
-    if (currentRaw !== prepared.rawContent) {
-      throw new Error(
-        `${prepared.requestPath} changed on disk after it was read for editing ` +
-          `(concurrent edit or external write). Re-read the file and retry.`,
-      );
-    }
-    if (signal?.aborted) throw new Error('Operation aborted');
-    await atomicWriteUtf8(prepared.absolutePath, prepared.finalContent);
-    await recordFileReadStateFromContent(prepared.absolutePath, prepared.finalContent);
-    markOwnWrite(prepared.absolutePath);
+    assertFileMutationTargetCurrent(prepared.target);
+    const receipt = await replaceNativeFile(prepared.absolutePath, prepared.finalContent, prepared.target.snapshot.version, signal);
+    const warnings = [...receipt.warnings, ...await finishFileMutation(prepared.absolutePath, prepared.finalContent)];
+    return { receipt, warnings };
   });
-  if (signal?.aborted) throw new Error('Operation aborted');
   const replacements = prepared.result.replacements;
   const editCount = prepared.edits.length;
   const firstChangedLine = prepared.result.firstChangedLine;
@@ -778,10 +625,13 @@ export async function commitPreparedEdit(prepared: PreparedEdit, signal?: AbortS
   return {
     content: [{
       type: 'text',
-      text: `Successfully replaced ${replacements} occurrence(s) across ${editCount} edit(s) in 1 file(s).${lineSuffix} Read state: ${readStates}.${peerNotice}${reasoning}${changes}`,
+      text: `Successfully replaced ${replacements} occurrence(s) across ${editCount} edit(s) in 1 file(s).${lineSuffix} Read state: ${readStates}.${peerNotice}${reasoning}${changes}${warnings.length ? `\n${warnings.join('\n')}` : ''}`,
     }],
     details: {
       operation: 'edit',
+      committed: true,
+      durable: receipt.durable,
+      ...(warnings.length ? { warnings } : {}),
       path: prepared.requestPath,
       replacements,
       firstChangedLine,
@@ -804,11 +654,7 @@ export async function commitPreparedEdit(prepared: PreparedEdit, signal?: AbortS
 }
 
 
-/**
- * Shared renderer for edit results — used by both the `edit` tool and the `file` tool
- * (which wraps edit operations). Accepts a `displayName` so callers can substitute
- * their own tool label (e.g. 'file (Octocode)') without changing the rendering logic.
- */
+/** Render edit evidence under the caller's tool label. */
 export function renderEditResult(
   result: ToolCallResult,
   opts: { expanded?: boolean; isPartial?: boolean },

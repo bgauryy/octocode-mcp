@@ -9,14 +9,14 @@ import { searchContentRipgrep } from '../local_ripgrep/searchContentRipgrep.js';
 import {
   LocalRipgrepQuerySchema,
   type RipgrepQuery,
-} from '../local_ripgrep/scheme.js';
+} from '@octocodeai/octocode-core/schema';
 import {
   LocalSearchQuerySchema,
   type LocalTextResultView,
   type LocalSearchQuery,
-  toLegacyTextQuery,
-} from './scheme.js';
-import { LOCAL_SEARCH_TOOL_NAME } from '../toolNames.js';
+} from '@octocodeai/octocode-core/schema';
+import { toLegacyTextQuery } from './nativeQuery.js';
+import { LOCAL_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 
 export async function executeLocalSearch(
   args: ToolExecutionArgs<LocalSearchQuery>

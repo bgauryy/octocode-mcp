@@ -1,10 +1,11 @@
-import fs from 'node:fs';
-import { chmod, link, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { lstat, opendir, realpath, stat } from 'node:fs/promises';
 import { relative, resolve, sep } from 'node:path';
 import * as git from 'isomorphic-git';
 import { inspectOrphanObjects, type HistoryMaintenanceResult } from './history-git-maintenance.js';
 import { ensureHistoryIgnoreMarker } from './history-ignore.js';
+import { readHistoryObject, parseHistoryTree, parseHistoryCommit, MAX_HISTORY_OBJECT_BYTES } from './history-git-object.js';
+import { createPrivateHistoryIo } from './history-git-storage.js';
+import type { FileDurability } from '@octocodeai/octocode-extension-rust';
 
 export function historyGitBackend() {
   return { name: 'isomorphic-git', version: git.version(), bundled: true, system_git_required: false };
@@ -42,14 +43,15 @@ export interface HistoryGitStore {
   readonly rootDir: string;
   readonly gitdir: string;
   writeBlob(bytes: Uint8Array): Promise<HistoryBlob>;
-  readBlob(oid: string, maxBytes?: number): Promise<Uint8Array>;
+  readBlob(oid: string, maxBytes?: number, signal?: AbortSignal): Promise<Uint8Array>;
   writeTree(entries: HistoryTreeEntry[]): Promise<string>;
-  readTree(oid: string): Promise<HistoryTreeEntry[]>;
+  readTree(oid: string, signal?: AbortSignal): Promise<HistoryTreeEntry[]>;
   writeCommit(input: HistoryCommitInput): Promise<string>;
-  readCommit(oid: string): Promise<HistoryCommit>;
+  readCommit(oid: string, signal?: AbortSignal): Promise<HistoryCommit>;
   verifyObject(oid: string, expectedType?: 'blob' | 'tree' | 'commit'): Promise<boolean>;
   publishRef(ref: string, oid: string): Promise<void>;
   resolveRef(ref: string): Promise<string | null>;
+  flush(): Promise<FileDurability>;
   inspectOrphanObjects(options: { retainedOids: string[]; graceMs: number; limit: number; cursor?: string }): Promise<HistoryMaintenanceResult>;
 }
 
@@ -59,6 +61,7 @@ export interface OpenHistoryGitStoreOptions {
   workspaceId: string;
   boundaryRoot?: string;
   ignoreMarkerPath?: string;
+  readOnly?: boolean;
 }
 
 const OID = /^[0-9a-f]{40}$/;
@@ -79,13 +82,6 @@ async function rejectSymlink(path: string, label: string): Promise<void> {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
-}
-
-async function privateObject(gitdir: string, oid: string): Promise<void> {
-  const directory = resolve(gitdir, 'objects', oid.slice(0, 2));
-  await rejectSymlink(directory, 'Git object directory');
-  await chmod(directory, 0o700);
-  await chmod(resolve(directory, oid.slice(2)), 0o600);
 }
 
 async function withInitializationLock(key: string, task: () => Promise<void>): Promise<void> {
@@ -155,26 +151,35 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
   const gitdir = resolve(rootDir, 'repo.git');
   if (boundaryRoot) await assertDirectoryChain(boundaryRoot, historyRoot, 'history boundary ancestor');
   await rejectSymlink(historyRoot, 'history root');
-  await mkdir(historyRoot, { recursive: true, mode: 0o700 });
-  await rejectSymlink(historyRoot, 'history root');
-  await chmod(historyRoot, 0o700);
   await rejectSymlink(storeDir, 'history store directory');
-  await mkdir(storeDir, { recursive: true, mode: 0o700 });
   await rejectSymlink(rootDir, 'history workspace directory');
-  await mkdir(rootDir, { recursive: true, mode: 0o700 });
-  const canonicalRoot = await realpath(historyRoot);
-  const canonicalStore = await realpath(rootDir);
+  // Resolve the existing anchor once (including OS aliases such as /var on macOS).
+  // Native code creates every missing component without following symlinks.
+  let anchor = resolve(historyRoot, '..');
+  for (;;) {
+    try { await lstat(anchor); break; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const parent = resolve(anchor, '..');
+      if (parent === anchor) throw error;
+      anchor = parent;
+    }
+  }
+  const canonicalRoot = resolve(await realpath(anchor), relative(anchor, historyRoot));
+  const canonicalStore = resolve(canonicalRoot, options.storeId, options.workspaceId);
+  const canonicalGitdir = resolve(canonicalStore, 'repo.git');
+  const { privateFs, readPrivateFile, writePrivateFile, privateObject, assertWritable, flush } = await createPrivateHistoryIo(rootDir, canonicalStore, canonicalGitdir, options.readOnly);
   if (!canonicalStore.startsWith(`${canonicalRoot}${sep}`)) throw new Error('history store resolved outside its root');
-  await chmod(storeDir, 0o700);
-  await chmod(rootDir, 0o700);
   const assertMetadataSafe = async (ref?: string): Promise<void> => {
-    if (ignoreMarkerPath) await ensureHistoryIgnoreMarker(ignoreMarkerPath, boundaryRoot, assertDirectoryChain, rejectSymlink);
+    if (ignoreMarkerPath && !options.readOnly) await ensureHistoryIgnoreMarker(ignoreMarkerPath, boundaryRoot, assertDirectoryChain, rejectSymlink);
     if (boundaryRoot) await assertDirectoryChain(boundaryRoot, historyRoot, 'history boundary ancestor');
     for (const [candidate, label] of [[historyRoot, 'history root'], [storeDir, 'history store directory'], [rootDir, 'history workspace directory'], [gitdir, 'Git directory'], [resolve(gitdir, 'objects'), 'Git objects directory'], [resolve(gitdir, 'refs'), 'Git refs directory']] as const) {
       await rejectSymlink(candidate, label);
     }
     try {
-      for (const entry of await readdir(resolve(gitdir, 'objects'), { withFileTypes: true })) {
+      let count = 0;
+      for await (const entry of await opendir(resolve(gitdir, 'objects'))) {
+        if (++count > 1024) throw new Error('HISTORY_OBJECT_LIMIT: unexpected object directory fanout');
         if (entry.isSymbolicLink()) throw new Error(`Git object ancestor must not be a symlink: ${entry.name}`);
       }
     } catch (error) {
@@ -191,7 +196,7 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
   const markerPath = resolve(rootDir, 'history-store.json');
   const marker = { formatVersion: 1, storeId: options.storeId, workspaceId: options.workspaceId, objectFormat: 'sha1' } as const;
   const validateMarker = async (): Promise<void> => {
-    const existing = JSON.parse(await readFile(markerPath, 'utf8')) as unknown;
+    const existing = JSON.parse(await readPrivateFile(markerPath, 'utf8') as string) as unknown;
     if (JSON.stringify(existing) !== JSON.stringify(marker)) throw new Error('history store identity marker does not match requested store');
   };
   const ensureMarker = async (): Promise<void> => {
@@ -201,25 +206,28 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
-    const temporary = resolve(rootDir, `.history-store-${randomUUID()}.tmp`);
-    await writeFile(temporary, `${JSON.stringify(marker)}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
     try {
-      await link(temporary, markerPath).catch(async error => {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        await validateMarker();
-      });
-    } finally {
-      await rm(temporary, { force: true });
+      await writePrivateFile(markerPath, `${JSON.stringify(marker)}\n`, true);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' && !(error instanceof Error && /PRECONDITION_FAILED/.test(error.message))) throw error;
+      await validateMarker();
     }
   };
   await withInitializationLock(rootDir, async () => {
+    if (options.readOnly) {
+      await assertMetadataSafe();
+      try { await validateMarker(); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('HISTORY_STORE_UNAVAILABLE: source history store is missing');
+        throw error;
+      }
+      return;
+    }
     if (ignoreMarkerPath) await ensureHistoryIgnoreMarker(ignoreMarkerPath, boundaryRoot, assertDirectoryChain, rejectSymlink);
     await assertMetadataSafe();
     await ensureMarker();
     await rejectSymlink(gitdir, 'Git directory');
-    await git.init({ fs, dir: rootDir, gitdir, bare: true, defaultBranch: 'octocode' });
-    await Promise.all([mkdir(gitdir, { recursive: true, mode: 0o700 }), realpath(rootDir)]);
-    await chmod(gitdir, 0o700);
+    await git.init({ fs: privateFs, dir: rootDir, gitdir, bare: true, defaultBranch: 'octocode' });
     await assertMetadataSafe();
   });
 
@@ -234,8 +242,8 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
         tree.push({ mode: value.mode, path: name, oid: value.oid, type: 'blob' });
       }
     }
-    const oid = await git.writeTree({ fs, dir: rootDir, gitdir, tree });
-    await privateObject(gitdir, oid);
+    const oid = await git.writeTree({ fs: privateFs, dir: rootDir, gitdir, tree });
+    await privateObject(oid);
     return oid;
   };
 
@@ -243,9 +251,11 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
     if (!HISTORY_REF.test(ref)) throw new Error(`invalid history ref: ${JSON.stringify(ref)}`);
     await assertMetadataSafe(ref);
     try {
-      return await git.resolveRef({ fs, dir: rootDir, gitdir, ref });
+      const value = (await readPrivateFile(resolve(gitdir, ref), 'utf8') as string).trim();
+      validateOid(value);
+      return value;
     } catch (error) {
-      if (error instanceof Error && /not found|could not find/i.test(error.message)) return null;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
     }
   };
@@ -254,20 +264,24 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
     rootDir,
     gitdir,
     async writeBlob(bytes) {
+      assertWritable();
       await assertMetadataSafe();
+      if (bytes.byteLength > MAX_HISTORY_OBJECT_BYTES) throw new Error('HISTORY_OBJECT_LIMIT: blob exceeds write limit');
       const copy = Uint8Array.from(bytes);
-      const oid = await git.writeBlob({ fs, dir: rootDir, gitdir, blob: copy });
-      await privateObject(gitdir, oid);
+      const oid = await git.writeBlob({ fs: privateFs, dir: rootDir, gitdir, blob: copy });
+      await privateObject(oid);
       return { oid, size: copy.byteLength };
     },
-    async readBlob(oid, maxBytes = 16 * 1024 * 1024) {
+    async readBlob(oid, maxBytes = 16 * 1024 * 1024, signal) {
+      signal?.throwIfAborted();
       await assertMetadataSafe();
       validateOid(oid);
-      const { blob } = await git.readBlob({ fs, dir: rootDir, gitdir, oid });
-      if (blob.byteLength > maxBytes) throw new Error(`history blob exceeds read limit: ${blob.byteLength} > ${maxBytes}`);
-      return Uint8Array.from(blob);
+      const object = await readHistoryObject(canonicalGitdir, oid, maxBytes, true, signal);
+      if (object.objectType !== 'blob') throw new Error('HISTORY_OBJECT_INVALID: expected blob');
+      return object.content!;
     },
     async writeTree(entries) {
+      assertWritable();
       const root: TreeNode = new Map();
       const seen = new Set<string>();
       for (const raw of entries) {
@@ -289,20 +303,32 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
         node.set(leaf, entry);
       }
       const oid = await writeTreeNode(root);
-      await privateObject(gitdir, oid);
+      await privateObject(oid);
       return oid;
     },
-    async readTree(oid) {
+    async readTree(oid, signal) {
+      signal?.throwIfAborted();
       await assertMetadataSafe();
       validateOid(oid);
       const result: HistoryTreeEntry[] = [];
-      const visit = async (treeOid: string, prefix: string): Promise<void> => {
-        const { tree } = await git.readTree({ fs, dir: rootDir, gitdir, oid: treeOid });
+      const deadline = Date.now() + 10_000;
+      let visited = 0;
+      let bytes = 0;
+      let pathBytes = 0;
+      const visit = async (treeOid: string, prefix: string, depth = 0): Promise<void> => {
+        if (++visited > 10_000 || depth > 128 || Date.now() >= deadline) throw new Error('HISTORY_OBJECT_LIMIT: tree traversal exceeds bounded work');
+        const object = await readHistoryObject(canonicalGitdir, treeOid, Math.min(MAX_HISTORY_OBJECT_BYTES, 64 * 1024 * 1024 - bytes), true, signal, Math.max(0, deadline - Date.now()));
+        bytes += object.size;
+        const tree = parseHistoryTree(object);
         for (const entry of tree) {
+          if (prefix.length + entry.path.length + 1 > 32768) throw new Error('HISTORY_OBJECT_LIMIT: tree path exceeds length limit');
           const entryPath = prefix ? `${prefix}/${entry.path}` : entry.path;
-          if (entry.type === 'tree') await visit(entry.oid, entryPath);
+          if (entry.type === 'tree') await visit(entry.oid, entryPath, depth + 1);
           else if (entry.type === 'blob' && ['100644', '100755', '120000'].includes(entry.mode)) {
+            pathBytes += Buffer.byteLength(entryPath);
+            if (pathBytes > 16 * 1024 * 1024) throw new Error('HISTORY_OBJECT_LIMIT: expanded tree paths exceed byte limit');
             result.push({ path: entryPath, oid: entry.oid, mode: entry.mode as HistoryFileMode });
+            if (result.length > 100_000) throw new Error('HISTORY_OBJECT_LIMIT: tree traversal exceeds 100000 entries');
           }
         }
       };
@@ -310,54 +336,50 @@ export async function openHistoryGitStore(options: OpenHistoryGitStoreOptions): 
       return result.sort((a, b) => a.path.localeCompare(b.path));
     },
     async writeCommit(input) {
+      assertWritable();
       await assertMetadataSafe();
       validateOid(input.tree);
       for (const parent of input.parents ?? []) validateOid(parent);
       const timestamp = Math.floor((input.timestampMs ?? Date.now()) / 1000);
       const person = { name: 'Octocode Awareness', email: 'awareness@localhost', timestamp, timezoneOffset: 0 };
-      const oid = await git.writeCommit({ fs, dir: rootDir, gitdir, commit: { message: input.message, tree: input.tree, parent: input.parents ?? [], author: person, committer: person } });
-      await privateObject(gitdir, oid);
+      const oid = await git.writeCommit({ fs: privateFs, dir: rootDir, gitdir, commit: { message: input.message, tree: input.tree, parent: input.parents ?? [], author: person, committer: person } });
+      await privateObject(oid);
       return oid;
     },
-    async readCommit(oid) {
+    async readCommit(oid, signal) {
+      signal?.throwIfAborted();
       await assertMetadataSafe();
       validateOid(oid);
-      const value = await git.readCommit({ fs, dir: rootDir, gitdir, oid });
-      return { oid: value.oid, tree: value.commit.tree, parents: value.commit.parent, message: value.commit.message, timestampMs: value.commit.committer.timestamp * 1000 };
+      return { oid, ...parseHistoryCommit(await readHistoryObject(canonicalGitdir, oid, MAX_HISTORY_OBJECT_BYTES, true, signal)) };
     },
     async verifyObject(oid, expectedType) {
       try {
         await assertMetadataSafe();
         validateOid(oid);
-        const object = await git.readObject({ fs, dir: rootDir, gitdir, oid, format: 'content' });
-        return expectedType ? object.type === expectedType : true;
+        const object = await readHistoryObject(canonicalGitdir, oid, MAX_HISTORY_OBJECT_BYTES, false);
+        return expectedType ? object.objectType === expectedType : true;
       } catch {
         return false;
       }
     },
     async inspectOrphanObjects({ retainedOids, graceMs, limit, cursor }) {
-      return inspectOrphanObjects({ fs, git, rootDir, gitdir, retainedOids, graceMs, limit, cursor, assertMetadataSafe });
+      return inspectOrphanObjects({ gitdir: canonicalGitdir, retainedOids, graceMs, limit, cursor, assertMetadataSafe });
     },
     async publishRef(ref, oid) {
+      assertWritable();
       if (!HISTORY_REF.test(ref)) throw new Error(`invalid history ref: ${JSON.stringify(ref)}`);
       validateOid(oid);
       await assertMetadataSafe(ref);
       if (await resolveHistoryRef(ref)) throw new Error(`history ref already exists: ${ref}`);
       const refPath = resolve(gitdir, ...ref.split('/'));
-      const refDirectory = resolve(refPath, '..');
-      await mkdir(refDirectory, { recursive: true, mode: 0o700 });
-      await assertMetadataSafe(ref);
-      const temporary = resolve(gitdir, `.octocode-ref-${randomUUID()}.tmp`);
-      await writeFile(temporary, `${oid}\n`, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
       try {
-        await link(temporary, refPath);
+        await writePrivateFile(refPath, `${oid}\n`, true);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`history ref already exists: ${ref}`);
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST' || (error instanceof Error && /PRECONDITION_FAILED/.test(error.message))) throw new Error(`history ref already exists or changed: ${ref}`);
         throw error;
-      } finally {
-        await rm(temporary, { force: true });
       }
     },
+    flush,
     resolveRef: resolveHistoryRef,
   };
 }

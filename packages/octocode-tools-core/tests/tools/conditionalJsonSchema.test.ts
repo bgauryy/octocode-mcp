@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { FileContentBulkQueryLocalSchema } from '../../src/tools/github_fetch_content/scheme.js';
+import { FileContentBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import {
   SearchCommitsBulkLocalSchema,
   SearchIssuesBulkLocalSchema,
   SearchPullRequestsBulkLocalSchema,
-} from '../../src/tools/github_search_pull_requests/splitSchemes.js';
-import { LocalFetchContentBulkQuerySchema } from '../../src/tools/local_fetch_content/scheme.js';
-import { BulkLspSearchSchema } from '../../src/tools/lsp/semantic_content/scheme.js';
-import { NpmSearchBulkQueryLocalSchema } from '../../src/tools/package_search/scheme.js';
+} from '@octocodeai/octocode-core/schema';
+import { LocalFetchContentBulkQuerySchema } from '@octocodeai/octocode-core/schema';
+import { BulkLspSearchSchema } from '@octocodeai/octocode-core/schema';
+import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 function acceptsGeneratedSchema(
   schema: z.ZodTypeAny,
@@ -45,14 +45,14 @@ function expectRejected(
 describe('generated conditional input schemas', () => {
   it('encodes npm packageName xor keywords', () => {
     expectAccepted(
-      NpmSearchBulkQueryLocalSchema,
-      { packageName: 'zod' },
-      { keywords: ['schema', 'validation'] }
+      ArtifactSearchBulkQueryLocalSchema,
+      { type: 'npm', packageName: 'zod' },
+      { type: 'npm', keywords: ['schema', 'validation'] }
     );
     expectRejected(
-      NpmSearchBulkQueryLocalSchema,
+      ArtifactSearchBulkQueryLocalSchema,
       {},
-      { packageName: 'zod', keywords: ['schema'] }
+      { type: 'npm', packageName: 'zod', keywords: ['schema'] }
     );
   });
 
@@ -81,14 +81,14 @@ describe('generated conditional input schemas', () => {
     );
   });
 
-  it('keeps GitHub directory materialization separate from file extraction', () => {
+  it('rejects the removed GitHub directory mode in generated schemas', () => {
     const base = {
       owner: 'octo',
       repo: 'repo',
       path: 'src',
       type: 'directory',
     };
-    expectAccepted(FileContentBulkQueryLocalSchema, base);
+    expectRejected(FileContentBulkQueryLocalSchema, base);
     expectRejected(
       FileContentBulkQueryLocalSchema,
       { ...base, fullContent: true },
@@ -178,7 +178,11 @@ describe('generated conditional input schemas', () => {
       },
       { uri: '/repo/src/a.ts', operation: 'documentSymbols' },
       { uri: '/repo/src/a.ts', operation: 'diagnostic' },
-      { operation: 'workspaceSymbol', symbolName: 'Schema', workspaceRoot: '/repo' },
+      {
+        operation: 'workspaceSymbol',
+        symbolName: 'Schema',
+        workspaceRoot: '/repo',
+      },
       {
         operation: 'workspaceSymbol',
         symbolName: 'Schema',

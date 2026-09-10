@@ -12,7 +12,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { searchPackages } from '../../../src/tools/package_search/execution.js';
-import { NpmSearchBulkQueryLocalSchema } from '../../../src/tools/package_search/scheme.js';
+import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { resolveNpmRegistryContext } from '../../../src/utils/package/npm/npmRegistry.js';
 
 const receipts: Array<{ path: string; authorized: boolean }> = [];
@@ -88,7 +88,9 @@ async function configure(auth = true) {
 }
 
 async function query(input: Record<string, unknown>) {
-  const parsed = NpmSearchBulkQueryLocalSchema.parse({ queries: [input] });
+  const parsed = ArtifactSearchBulkQueryLocalSchema.parse({
+    queries: [{ type: 'npm', ...input }],
+  });
   const result = await searchPackages({ queries: parsed.queries });
   return (
     result.structuredContent as {
@@ -105,7 +107,7 @@ describe('private registry public tool contract', () => {
     for (let page = 0; page < 3; page++) {
       const data = await query(input);
       expect(data.error).toBeUndefined();
-      found.push(...data.packages.map((p: { name: string }) => p.name));
+      found.push(...data.artifacts.map((p: { name: string }) => p.name));
       if (!data.pagination.hasMore) break;
       input = data.next.nextPage.query;
     }
@@ -117,7 +119,7 @@ describe('private registry public tool contract', () => {
   it('reads exact private metadata in one authenticated request', async () => {
     await configure();
     expect(
-      (await query({ packageName: 'private-exact' })).packages[0].version
+      (await query({ packageName: 'private-exact' })).artifacts[0].version
     ).toBe('1.0.0');
     expect(receipts).toHaveLength(1);
     expect(receipts[0]!.authorized).toBe(true);
@@ -126,7 +128,7 @@ describe('private registry public tool contract', () => {
   it('honors the scope registry even when the default registry has a matching name', async () => {
     await configure();
     const data = await query({ packageName: '@fixture/collision' });
-    expect(data.packages[0].version).toBe('2.0.0');
+    expect(data.artifacts[0].version).toBe('2.0.0');
     expect(receipts).toEqual([
       { path: '/scoped/@fixture%2Fcollision/latest', authorized: false },
     ]);
@@ -135,7 +137,7 @@ describe('private registry public tool contract', () => {
   it('reloads credentials and does not reuse authenticated results after their removal', async () => {
     await configure();
     expect(
-      (await query({ packageName: 'private-cache' })).packages
+      (await query({ packageName: 'private-cache' })).artifacts
     ).toHaveLength(1);
     await configure(false);
     const data = await query({ packageName: 'private-cache' });
@@ -149,7 +151,7 @@ describe('private registry public tool contract', () => {
       packageName: '@fixture/override',
       registry: base + '/public/',
     });
-    expect(data.packages[0].version).toBe('1.0.0');
+    expect(data.artifacts[0].version).toBe('1.0.0');
     expect(receipts).toEqual([
       { path: '/public/@fixture%2Foverride/latest', authorized: false },
     ]);
@@ -162,7 +164,7 @@ describe('private registry public tool contract', () => {
     vi.stubEnv('NPM_CONFIG_REGISTRY', base + '/public/');
     vi.stubEnv('npm_config_registry', base + '/public/');
     const second = await query(first.next.nextPage.query);
-    expect(second.packages.map((p: { name: string }) => p.name)).toEqual([
+    expect(second.artifacts.map((p: { name: string }) => p.name)).toEqual([
       'private-three',
     ]);
     expect(
@@ -178,7 +180,7 @@ describe('private registry public tool contract', () => {
       `//127.0.0.1:${(server.address() as { port: number }).port}/private/:_authToken=\${OCTOCODE_FIXTURE_NPM_TOKEN}\n`
     );
     expect(
-      (await query({ packageName: 'interpolated' })).packages
+      (await query({ packageName: 'interpolated' })).artifacts
     ).toHaveLength(1);
     vi.stubEnv('NPM_CONFIG_REGISTRY', base + '/public/');
     vi.stubEnv('npm_config_registry', base + '/public/');
@@ -196,7 +198,7 @@ describe('private registry public tool contract', () => {
     async registry => {
       await configure();
       expect(() =>
-        NpmSearchBulkQueryLocalSchema.parse({
+        ArtifactSearchBulkQueryLocalSchema.parse({
           queries: [{ packageName: 'fixture', registry }],
         })
       ).toThrow();

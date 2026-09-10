@@ -1,16 +1,16 @@
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { FileContentQueryBaseLocalSchema } from '../../../octocode-tools-core/src/tools/github_fetch_content/scheme.js';
-import { GitHubCodeSearchQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_search_code/scheme.js';
-import { GitHubReposSearchSingleQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_search_repos/scheme.js';
-import { GitHubPullRequestSearchQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_search_pull_requests/scheme.js';
-import { GitHubViewRepoStructureQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_view_repo_structure/scheme.js';
-import { NpmSearchQueryLocalSchema } from '../../../octocode-tools-core/src/tools/package_search/scheme.js';
-import { LocalFetchContentQuerySchema } from '../../../octocode-tools-core/src/tools/local_fetch_content/scheme.js';
-import { LocalFindFilesQuerySchema } from '../../../octocode-tools-core/src/tools/local_find_files/scheme.js';
-import { LocalRipgrepQuerySchema } from '../../../octocode-tools-core/src/tools/local_ripgrep/scheme.js';
-import { LocalViewStructureQuerySchema } from '../../../octocode-tools-core/src/tools/local_view_structure/scheme.js';
-import { LspSearchQuerySchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
+import { FileContentQueryBaseLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubCodeSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubReposSearchSingleQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubPullRequestSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { GitHubViewRepoStructureQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { ArtifactSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { LocalFetchContentQuerySchema } from '@octocodeai/octocode-core/schema';
+import { AstFilesQuerySchema } from '@octocodeai/octocode-core/schema';
+import { LocalRipgrepQuerySchema } from '@octocodeai/octocode-core/schema';
+import { AstFilesystemTreeQuerySchema } from '@octocodeai/octocode-core/schema';
+import { LspSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 const SENTINEL = 9007199254740991;
 
@@ -20,17 +20,17 @@ const schemas: Record<string, z.ZodTypeAny> = {
   'repos(remote)': GitHubReposSearchSingleQueryLocalSchema,
   'pullRequests(remote)': GitHubPullRequestSearchQueryLocalSchema,
   'viewRepoStructure(remote)': GitHubViewRepoStructureQueryLocalSchema,
-  'npmSearch(remote)': NpmSearchQueryLocalSchema,
+  'artifactSearch(remote)': ArtifactSearchQueryLocalSchema,
   'fetchContent(local)': LocalFetchContentQuerySchema,
-  findFiles: LocalFindFilesQuerySchema,
+  astFiles: AstFilesQuerySchema,
   ripgrep: LocalRipgrepQuerySchema,
-  viewStructure: LocalViewStructureQuerySchema,
+  astFilesystemTree: AstFilesystemTreeQuerySchema,
   lspSemantic: LspSearchQuerySchema,
 };
 
 describe('numeric schema fields are bounded (#C1)', () => {
   for (const [name, schema] of Object.entries(schemas)) {
-    it(`${name}: no field uses the ±MAX_SAFE_INTEGER sentinel as a bound`, () => {
+    it(`${name}: result caps avoid sentinel bounds; view offsets use safe integers`, () => {
       const js = z.toJSONSchema(schema) as {
         properties?: Record<string, { minimum?: number; maximum?: number }>;
       };
@@ -43,9 +43,26 @@ describe('numeric schema fields are bounded (#C1)', () => {
               Math.abs(v.maximum ?? 0) === SENTINEL)
         )
         .map(([k]) => k);
-      expect(offenders).toEqual([]);
+      expect(offenders).toEqual(
+        ['fetchContent(local)', 'fileContent(remote)'].includes(name)
+          ? ['offset']
+          : []
+      );
     });
   }
+
+  it('local view offsets accept safe integers and reject fractional or unsafe values', () => {
+    const query = { path: '/fixture.txt', chunkType: 'bytes' as const };
+    expect(
+      LocalFetchContentQuerySchema.safeParse({ ...query, offset: SENTINEL })
+        .success
+    ).toBe(true);
+    for (const offset of [-1, 0.5, SENTINEL + 1]) {
+      expect(
+        LocalFetchContentQuerySchema.safeParse({ ...query, offset }).success
+      ).toBe(false);
+    }
+  });
 
   it('github.code clamps page 0 to page 1 (relaxed page field)', () => {
     const r = GitHubCodeSearchQueryLocalSchema.safeParse({

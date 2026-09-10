@@ -31,7 +31,7 @@ import { searchGitHubCode } from '../../src/tools/github_search_code/execution.j
 import { searchGitHubCodeAPI } from '../../src/github/codeSearch.js';
 import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
 import { buildGitHubSearchFinalizer } from '../../src/tools/github_search/finalizer.js';
-import { GitHubSearchQuerySchema } from '../../src/tools/github_search/scheme.js';
+import { GitHubSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 beforeEach(() => {
   clearAllCache();

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { LocalSearchCodeFile } from '@octocodeai/octocode-core/types';
-import { findFiles } from '../../src/tools/local_find_files/findFiles.js';
-import { viewStructure } from '../../src/tools/local_view_structure/local_view_structure.js';
+import { findFiles } from '../../src/tools/ast_search/filesystem/files.js';
+import { viewFilesystemTree } from '../../src/tools/ast_search/filesystem/tree.js';
 import { buildSearchResult } from '../../src/tools/local_ripgrep/ripgrepResultBuilder/buildResult.js';
 import {
   resetContextUtilsNativeLoaderForTesting,
@@ -51,17 +51,19 @@ describe('localSearch schema page ceiling', () => {
   it('marks files and tree page 1000 terminal without page 1001 continuations', async () => {
     installEntries(1001);
     const files = await findFiles({
+      operation: 'files',
       path: process.cwd(),
-      itemsPerPage: 1,
+      pageSize: 1,
       page: 1000,
       limit: 2000,
       detail: 'basic',
     } as never);
     expectTerminalPage(files as unknown as Record<string, unknown>);
 
-    const tree = await viewStructure({
+    const tree = await viewFilesystemTree({
+      operation: 'tree',
       path: process.cwd(),
-      itemsPerPage: 1,
+      pageSize: 1,
       page: 1000,
       limit: 2000,
       detail: 'full',
@@ -99,8 +101,9 @@ describe('localSearch schema page ceiling', () => {
   it('makes files and tree pre-pagination limits explicit and expandable', async () => {
     installEntries(3);
     const files = (await findFiles({
+      operation: 'files',
       path: process.cwd(),
-      itemsPerPage: 1,
+      pageSize: 1,
       page: 1,
       limit: 1,
       detail: 'basic',
@@ -113,14 +116,15 @@ describe('localSearch schema page ceiling', () => {
     expect(files.terminalLimit).toBeUndefined();
     expect(files.next).toMatchObject({
       expandLimit: {
-        tool: 'local.files',
+        tool: 'astSearch',
         query: { limit: 2, page: 1 },
       },
     });
 
-    const tree = (await viewStructure({
+    const tree = (await viewFilesystemTree({
+      operation: 'tree',
       path: process.cwd(),
-      itemsPerPage: 1,
+      pageSize: 1,
       page: 1,
       limit: 1,
       detail: 'full',
@@ -133,7 +137,7 @@ describe('localSearch schema page ceiling', () => {
     expect(tree.terminalLimit).toBeUndefined();
     expect(tree.next).toMatchObject({
       expandLimit: {
-        tool: 'local.tree',
+        tool: 'astSearch',
         query: { limit: 2, page: 1 },
       },
     });

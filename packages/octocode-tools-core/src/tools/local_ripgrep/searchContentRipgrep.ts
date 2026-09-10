@@ -1,4 +1,4 @@
-import type { RipgrepQuery as LocalRipgrepQuery } from './scheme.js';
+import type { RipgrepQuery as LocalRipgrepQuery } from '@octocodeai/octocode-core/schema';
 
 type RipgrepQuery = LocalRipgrepQuery;
 import { createErrorResult } from '../../utils/file/toolHelpers.js';

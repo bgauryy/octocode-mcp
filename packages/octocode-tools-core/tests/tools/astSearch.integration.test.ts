@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { executeAstSearch } from '../../src/tools/ast_search/execution.js';
-import { AstSearchQuerySchema } from '../../src/tools/ast_search/scheme.js';
+import { AstSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 let root: string;
 async function run(query: Record<string, unknown>) {

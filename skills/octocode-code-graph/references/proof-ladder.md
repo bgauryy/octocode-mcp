@@ -13,7 +13,7 @@ graph candidate
 
 ## Tool roles
 
-- `localGetFileContent`: exact content is the default; use `minify:"none"` explicitly when documenting the intent, with `matchString` or a line range for bounded imports, exports, registrations, and anchors. Path-only reads are valid; exhaust returned continuations. In match results, `matchedLines` are exact anchors and `matchRanges` include context padding.
+- `localFetch`: exact content is the default; use `minify:"none"` explicitly when documenting the intent, with `matchString` or a line range for bounded imports, exports, registrations, and anchors. Path-only reads are valid; exhaust returned continuations. In match results, `matchedLines` are exact anchors and `matchRanges` include context padding.
 - `astSearch operation:"match"`: distinguish code shapes; use `pattern` or YAML `rule`, and prefer `rule: kind: …` when fragment parsing is unreliable.
 - `lspSearch`: prove definitions, references, callers/callees, symbols, and diagnostics when a semantic provider is available. Check `lsp.source`, completeness, and terminal/partial state; native graph-facts results are syntactic evidence. Use `includeDeclaration:false` for unused claims.
 - Text search: cover configs, strings, scripts, tests, reflection, generated registries, and LSP blind spots; lexical hits do not prove identity.

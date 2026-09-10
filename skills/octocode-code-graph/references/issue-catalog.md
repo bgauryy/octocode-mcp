@@ -12,7 +12,7 @@ Load after a graph signal appears. Why: translate topology into falsifiable code
 | Transitive condensation edge | redundant dependency or bypassed layer | distinct binding/side-effect contract on the direct edge | exact imports and side effects; semantic references |
 | Topological layer | migration/build ordering opportunity | SCC condensation hides meaningful intra-component order | inspect SCC membership and runtime edges |
 | Unreachable file/cluster | stale feature, alternate entrypoint, or generated/plugin path | dynamic/framework/config registration | explicit roots; broad text/config search; LSP; build/tests |
-| Unreferenced export | dead public surface | re-export, reflection, CLI/config string, external consumer | follow graph `next.verifyReferences`; AST/export chain; package contract |
+| Unreferenced export | dead public surface | re-export, reflection, CLI/config string, external consumer | read the declaration and query `lspSearch` references; AST/export chain; package contract |
 
 ## Ranking
 

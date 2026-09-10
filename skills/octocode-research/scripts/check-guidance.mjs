@@ -27,7 +27,7 @@ const cases = [
     required: [/uri[^\n]*symbolName[^\n]*lineHint/, /includeDeclaration:false/, /warmup/, /capabilit/i] },
   { name: 'graph coverage has independent diagnostics', file: 'references/workflow-local.md',
     required: [/diagnosticPage/, /unresolved[^\n]*CommonJS/, /rustWorkspace/, /syntactic/] },
-  { name: 'npm intent and version provenance', file: 'references/workflow-external.md',
+  { name: 'artifact intent and version provenance', file: 'references/workflow-external.md',
     required: [/packageName[^\n]*exact/i, /keywords[^\n]*discovery/i, /(?:version|release)[^\n]*(?:gitHead|tag|commit)/i] },
   { name: 'GitHub indexed search has explicit boundaries', file: 'references/workflow-external.md',
     required: [/code[^\n]*default branch/i, /1,000/, /(?:incomplete|partial)/i] },

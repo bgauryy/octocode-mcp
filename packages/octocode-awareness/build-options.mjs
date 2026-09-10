@@ -6,7 +6,7 @@ export const baseOptions = {
   platform: 'node',
   format: 'esm',
   target: 'node22',
-  external: nodeExternals,
+  external: [...nodeExternals, '@octocodeai/octocode-extension-rust'],
   // Bundled Git dependencies contain CommonJS calls to Node builtins. Every
   // split chunk and standalone hook needs its own ESM-compatible require.
   banner: { js: "import { createRequire as __awarenessCreateRequire } from 'node:module'; const require = __awarenessCreateRequire(import.meta.url);" },

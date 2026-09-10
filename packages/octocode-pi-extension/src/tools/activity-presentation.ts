@@ -1,6 +1,6 @@
 import type { ForegroundActivity, RuntimeState } from './runtime-store.js';
 import type { SemanticToken } from '../tui/palette.js';
-import { activeExecutionTools } from './execution-events.js';
+import { activeExecutionTools } from './execution-event-io.js';
 
 export interface ActivityPresentation {
   visible: boolean;

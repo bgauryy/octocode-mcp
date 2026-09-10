@@ -24,14 +24,14 @@ describe('attention evidence and continuations', () => {
   it('distinguishes selected memory leads from bounded recall and executes continuation', async () => {
     const { db, dbPath, workspace } = fixture();
     for (let i = 0; i < 5; i++) {
-      insertMemory(db, {
+      (await insertMemory(db, {
         agentId: 'peer',
         taskContext: `attention contract ${i}`,
         observation: `Inspect attention contract ${i} before editing.`,
         importance: 5,
         workspacePath: workspace,
         references: [`file:${join(workspace, `source-${i}.ts`)}`],
-      });
+      }));
     }
     const params = { workspacePath: workspace, agentId: 'owner', query: 'attention contract',
       file: Array.from({ length: 5 }, (_, i) => `source-${i}.ts`), compact: true };

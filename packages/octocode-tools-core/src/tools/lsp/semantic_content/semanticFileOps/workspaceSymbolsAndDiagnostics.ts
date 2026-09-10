@@ -19,7 +19,7 @@ import { symbolKindName } from '../semanticPresentation.js';
 import { resolveWorkspaceSymbolAnchor, throwLspUnavailable } from './anchor.js';
 import type { CompactSymbol } from './documentSymbols.js';
 import { resolveFileAnchor } from '../../shared/resolveSymbolAnchor.js';
-import { LSP_SEARCH_TOOL_NAME } from '../../../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 
 type CompactWorkspaceSymbol = CompactSymbol & { uri: string };
 

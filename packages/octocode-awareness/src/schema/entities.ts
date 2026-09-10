@@ -71,6 +71,7 @@ const FAMILY_BY_NAME: Record<string, string> = {
   local_history_operations: 'history',
   local_history_versions: 'history',
   local_history_restores: 'history',
+  local_history_durability: 'history',
 };
 
 /**

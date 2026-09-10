@@ -1,10 +1,10 @@
 import type { DatabaseSync } from 'node:sqlite';
-import { getMemory } from './memory-recall.js';
+import { queryMemory, attachMemoryEvidence } from './memory-recall.js';
 import { bumpAccess } from './memory-write.js';
 import { searchByEmbedding, storeEmbedding, embeddingCandidateCount, EMBEDDING_CANDIDATE_LIMIT } from './memory-embeddings.js';
 import { memoryRecallBounds } from './memory-limits.js';
 import { resolveEmbedCommand, runHostEmbedder } from '@octocodeai/agent-contracts/embed';
-import type { GetMemoryParams } from './types/identity-memory.js';
+import type { GetMemoryParams, GetMemoryResult } from './types/identity-memory.js';
 
 export type StoreMemoryEmbeddingResult =
   | { stored: true; model: string; dims: number }
@@ -47,11 +47,24 @@ export function storeMemoryEmbeddingIfConfigured(
  * with an explanatory warning in `warnings` — requesting semantic mode never
  * throws or returns an error, only ever a lexical fallback plus a reason.
  */
-export function recallMemory(
+export async function recallMemory(
   db: DatabaseSync,
   recallParams: GetMemoryParams,
   useSemantic: boolean,
+): Promise<Record<string, unknown>> {
+  const { checkFingerprint: _checkFingerprint, ...queryParams } = recallParams;
+  const result = queryMemorySemantic(db, queryParams, useSemantic);
+  if (recallParams.checkFingerprint) await attachMemoryEvidence(result['memories'] as GetMemoryResult['memories'], recallParams);
+  return result;
+}
+
+/** SQL/embedding selection only; explicit evidence validation belongs to recallMemory. */
+export function queryMemorySemantic(
+  db: DatabaseSync,
+  recallParams: Omit<GetMemoryParams, 'checkFingerprint'>,
+  useSemantic: boolean,
 ): Record<string, unknown> {
+  if ('checkFingerprint' in recallParams && recallParams.checkFingerprint) throw new Error('Use recallMemory for filesystem evidence checks');
   // Deferred access recording: when semantic mode is requested, the initial/
   // fallback getMemory call must not bump access itself — access is recorded
   // exactly once at the end, on whichever result set (semantic or fallback)
@@ -90,7 +103,7 @@ export function recallMemory(
           // provenance, file, regex, label, tags, importance) to the embedding
           // candidates, then re-rank the survivors by cosine similarity.
           const simById = new Map(hits.map((hit) => [hit.memory_id, hit.similarity]));
-          const scopedResult = getMemory(db, {
+          const scopedResult = queryMemory(db, {
             ...baseParams,
             query: '',
             limit: hits.length,
@@ -138,7 +151,7 @@ export function recallMemory(
   if (payload['mode'] !== 'semantic') {
     // Lexical run — the direct path without semantic, and the fallback for
     // every non-success semantic branch above (warnings already in payload).
-    Object.assign(payload, getMemory(db, baseParams));
+    Object.assign(payload, queryMemory(db, baseParams));
     if (semanticCandidateLimited) Object.assign(payload, memoryRecallBounds(true, payload['partial'] === true, EMBEDDING_CANDIDATE_LIMIT, Number(recallParams.limit ?? 3)));
   }
   if (useSemantic && payload['mode'] !== 'semantic' && recallParams.recordAccess !== false) {

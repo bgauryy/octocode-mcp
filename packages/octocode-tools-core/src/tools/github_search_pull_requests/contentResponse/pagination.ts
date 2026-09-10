@@ -5,7 +5,7 @@ import type {
 import {
   MAX_PAGE_NUMBER,
   PR_CONTENT_DEFAULT_ITEMS_PER_PAGE,
-} from '../../../config.js';
+} from '@octocodeai/octocode-core/schema';
 import { publicPullRequestContinuationQuery } from '../historyContinuations.js';
 
 export type QueryLike = {

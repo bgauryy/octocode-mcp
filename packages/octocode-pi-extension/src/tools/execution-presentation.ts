@@ -73,7 +73,7 @@ export function executionToolTitle(tool: string, args: unknown): string {
     title = `${q.type === 'edit' ? 'Edit' : q.type === 'write' ? 'Write' : q.type === 'delete' ? 'Delete' : 'File'} ${path}`;
   else if (tool === 'skill')
     title = `Skill ${executionLabel(q.name ?? q.skillType ?? q.action)}`;
-  else if (tool === 'localGetFileContent' || tool === 'ghGetFileContent')
+  else if (tool === 'localFetch' || tool === 'ghGetFileContent')
     title = `Read ${path}${q.startLine ? `:${q.startLine}${q.endLine ? `-${q.endLine}` : ''}` : ''}`;
   else if (tool === 'localSearch' || tool === 'astSearch' || tool === 'ghSearch')
     title = `${operation === 'tree' || operation === 'files' ? 'Browse' : 'Search'} ${executionLabel(q.searchText ?? q.pattern ?? (Array.isArray(q.keywords) ? q.keywords.join(' ') : ''))}${path ? ` ${path}` : ''}`;

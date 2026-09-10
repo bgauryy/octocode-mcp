@@ -155,7 +155,7 @@ export async function executeAwarenessCommand(request: AwarenessCommandCall, con
       } else if (request.command === 'maintenance self-test') {
         const { cmdSelfTest } = await import('./commands/admin.js');
         context.signal?.throwIfAborted();
-        exitCode = cmdSelfTest(opts);
+        exitCode = await cmdSelfTest(opts);
       } else if (request.command === 'skill install') {
         const { runSkillInstall } = await import('./skill-install-command.js');
         context.signal?.throwIfAborted();

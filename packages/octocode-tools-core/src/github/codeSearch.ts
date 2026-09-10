@@ -5,7 +5,7 @@ import type {
   OptimizedCodeSearchResult,
 } from './githubAPI.js';
 import type { z } from 'zod';
-import type { GitHubCodeSearchQuerySchema } from '../toolContract/input/resources/tools/githubCodeOperation.js';
+import type { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
 import type { WithOptionalMeta } from '../types/execution.js';
 import { ContentSanitizer } from '@octocodeai/octocode-engine/contentSanitizer';
@@ -22,7 +22,7 @@ import { normalizeResponseHeaders } from './responseHeaders.js';
 import {
   GITHUB_SEARCH_DEFAULT_LIMIT,
   GITHUB_SEARCH_MAX_LIMIT,
-} from '../config.js';
+} from '@octocodeai/octocode-core/schema';
 export async function searchGitHubCodeAPI(
   params: WithOptionalMeta<GitHubCodeSearchQuery>,
   authInfo?: AuthInfo,

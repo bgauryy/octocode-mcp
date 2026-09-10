@@ -16,7 +16,7 @@ Workspace output contract: chat-only results stay in chat. New eval reports, fro
 - Prefer deterministic outcome graders; use calibrated model or human judgment where deterministic checks cannot capture quality.
 - Public benchmarks orient; private failure suites gate releases. Account for contamination, saturation, and variance.
 - For multi-agent workflows, verify real dependencies, fresh-context verification, counter-metric guardrails, and at least one deterministic anchor.
-- When a benchmark measures tool use, freeze the live catalog and relevant schemas for the run. Keep lexical `localSearch`, structural `astSearch`, exact `localGetFileContent`, and semantic `lspSearch` outcomes distinct; grade the required evidence and result, not a guessed tool sequence.
+- When a benchmark measures tool use, freeze the live catalog and relevant schemas for the run. Keep lexical `localSearch`, structural `astSearch`, exact `localFetch`, and semantic `lspSearch` outcomes distinct; grade the required evidence and result, not a guessed tool sequence.
 
 ## Workflow
 1. Error-analyze traces into a failure taxonomy; frame success, primary/leading metrics, guardrails, and decision rule.

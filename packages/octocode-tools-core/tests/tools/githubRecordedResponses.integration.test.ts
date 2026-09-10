@@ -1,3 +1,4 @@
+import { expectExecutableNext } from '../helpers/executableNext.js';
 import {
   afterAll,
   beforeAll,
@@ -12,7 +13,6 @@ const recordedProvider = vi.hoisted(() => ({
   type: 'github' as const,
   capabilities: {
     cloneRepo: true,
-    fetchDirectoryToDisk: true,
     requiresScopedCodeSearch: false,
     supportsMergedState: true,
     supportsMultiTopicSearch: true,
@@ -29,7 +29,7 @@ vi.mock('../../src/providers/factory.js', () => ({
   getProvider: () => recordedProvider,
 }));
 
-import { prepareDirectToolInput } from '../../src/tools/directToolCatalog/toolInputPreparation.js';
+import { prepareDirectToolInput } from '@octocodeai/octocode-core/schema';
 import { cleanup, initialize } from '../../src/serverConfig.js';
 import { fetchMultipleGitHubFileContents } from '../../src/tools/github_fetch_content/execution.js';
 import { executeGitHubSearch } from '../../src/tools/github_search/execution.js';
@@ -208,6 +208,7 @@ describe('recorded authenticated GitHub response smokes', () => {
         }),
       ],
     });
+    expectExecutableNext(unified.structuredContent);
     const unifiedRows = (
       unified.structuredContent as { results?: Record<string, any>[] }
     ).results;

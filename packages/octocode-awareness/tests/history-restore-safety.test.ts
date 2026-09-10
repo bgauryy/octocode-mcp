@@ -1,14 +1,19 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as native from '@octocodeai/octocode-extension-rust';
 import { connectDb } from '../src/db-runtime.js';
 import { createHistoryContext } from '../src/history-store.js';
 import { applyHistoryRestore, previewHistoryRestore } from '../src/history-restore.js';
 import { preFlightIntent } from '../src/intents-preflight.js';
 
 const roots: string[] = [];
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+vi.mock('@octocodeai/octocode-extension-rust', async importOriginal => {
+  const actual = await importOriginal<typeof import('@octocodeai/octocode-extension-rust')>();
+  return { ...actual, snapshotFile: vi.fn(actual.snapshotFile), deleteFile: vi.fn(actual.deleteFile) };
+});
+afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 async function fixture(capturedTarget = false, currentFile = false) {
   const workspace = mkdtempSync(join(tmpdir(), 'awareness-history-restore-'));
@@ -32,6 +37,79 @@ async function fixture(capturedTarget = false, currentFile = false) {
 }
 
 describe('history restore safety', () => {
+  it('leaves a failed undo capture journal when archive publication cannot be flushed', async () => {
+    const value = await fixture(false, true);
+    const baseStore = await value.ctx.store();
+    const wrapped = { ...baseStore, async flush(): Promise<Awaited<ReturnType<typeof baseStore.flush>>> { throw new Error('archive publication fsync failed'); } };
+    try {
+      const result = await applyHistoryRestore({ ...value.ctx, store: async () => wrapped },
+        { workspace: value.workspace, agent_id: 'owner', preview_id: value.previewId });
+      expect(result).toMatchObject({ ok: false, status: 'failed', error: 'archive publication fsync failed', results: [] });
+      expect(value.db.prepare("SELECT status,after_commit_oid FROM local_history_operations WHERE operation_id!='source'").get())
+        .toEqual({ status: 'failed', after_commit_oid: null });
+      expect(readFileSync(join(value.workspace, 'src/a.ts'), 'utf8')).toBe('current');
+    } finally { value.db.close(); }
+  });
+
+  it('flushes undo evidence before completing its journal and before mutating the workspace', async () => {
+    const value = await fixture(false, true);
+    const baseStore = await value.ctx.store();
+    let flushes = 0;
+    const wrapped = { ...baseStore, async flush() {
+      flushes += 1;
+      expect(readFileSync(join(value.workspace, 'src/a.ts'), 'utf8')).toBe('current');
+      if (flushes === 1) {
+        expect(value.db.prepare("SELECT status FROM local_history_operations WHERE operation_id!='source'").get()).toEqual({ status: 'capturing' });
+        return baseStore.flush();
+      }
+      throw new Error('archive fsync failed');
+    } };
+    try {
+      const result = await applyHistoryRestore({ ...value.ctx, store: async () => wrapped },
+        { workspace: value.workspace, agent_id: 'owner', preview_id: value.previewId });
+      expect(result).toMatchObject({ ok: false, status: 'failed', error: 'archive fsync failed', undo_operation_id: expect.any(String), results: [] });
+      expect(flushes).toBe(2);
+      expect(readFileSync(join(value.workspace, 'src/a.ts'), 'utf8')).toBe('current');
+      expect(value.db.prepare('SELECT status FROM local_history_restores WHERE preview_id=?').get(value.previewId)).toEqual({ status: 'failed' });
+    } finally { value.db.close(); }
+  });
+
+  it('preserves partial archive durability warnings in applied receipts and replay', async () => {
+    const value = await fixture(false, true);
+    const baseStore = await value.ctx.store();
+    const storageDurability = { durable: false, warnings: ['directory flush unavailable on this platform'] };
+    const wrapped = { ...baseStore, async flush() { await baseStore.flush(); return storageDurability; } };
+    const ctx = { ...value.ctx, store: async () => wrapped };
+    const input = { workspace: value.workspace, agent_id: 'owner', preview_id: value.previewId };
+    try {
+      const result = await applyHistoryRestore(ctx, input);
+      expect(result).toMatchObject({ ok: true, storage_durability: storageDurability });
+      expect(await applyHistoryRestore(ctx, input)).toMatchObject({ ok: true, storage_durability: storageDurability });
+      const stored = value.db.prepare('SELECT result_json FROM local_history_restores WHERE preview_id=?').get(value.previewId);
+      expect(JSON.parse(String(stored?.result_json))).toMatchObject({ storage_durability: storageDurability });
+    } finally { value.db.close(); }
+  });
+
+  it('persists and replays committed receipts when postcommit observation fails', async () => {
+    const value = await fixture(false, true);
+    const actual = await vi.importActual<typeof import('@octocodeai/octocode-extension-rust')>('@octocodeai/octocode-extension-rust');
+    vi.mocked(native.deleteFile).mockImplementationOnce(async (...args) => {
+      const receipt = await actual.deleteFile(...args);
+      vi.mocked(native.snapshotFile).mockRejectedValueOnce(new Error('postcommit observation unavailable'));
+      return receipt;
+    });
+    const input = { workspace: value.workspace, agent_id: 'owner', preview_id: value.previewId };
+    try {
+      const result = await applyHistoryRestore(value.ctx, input);
+      expect(result).toMatchObject({ ok: true, status: 'applied', results: [{
+        path: 'src/a.ts', status: 'deleted', receipt: { committed: true },
+        warnings: [expect.stringContaining('postcommit observation unavailable')],
+      }] });
+      if (!('results' in result)) throw new Error('Expected an applied restore receipt');
+      expect(await applyHistoryRestore(value.ctx, input)).toMatchObject({ results: result.results });
+    } finally { value.db.close(); }
+  });
+
   it('rejects expired, replayed, and foreign-owner previews before writing', async () => {
     const expired = await fixture();
     expect(expired.preview).toMatchObject({ changes: [{ path: 'src/a.ts', action: 'unchanged' }], changed_files: 0 });

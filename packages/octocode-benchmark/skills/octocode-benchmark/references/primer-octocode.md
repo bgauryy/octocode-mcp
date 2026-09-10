@@ -14,17 +14,17 @@ use it instead of paying for schema discovery.
 | `ghSearchHistory` | Search or list history with `operation:"pullRequests"`, `"issues"`, or `"commits"`. Use it for discovery, not exact item reads. |
 | `ghGetHistoryItem` | Read one PR or issue by `number`, one commit by `ref`, or compare `base`+`head`. Select only the content or diff you need. |
 | `ghCloneRepo` | Materialize a repo/sparse subtree **only** for repeated reads, structural (AST) matching, or LSP semantics. |
-| `npmSearch` | Resolve an npm package → its source repo. |
+| `artifactSearch` | Resolve dependencies/source or discover packages by capability. Require ecosystem `type` and exact `packageName` or `keywords`; PyPI is exact-only. Skip when source is known or installed behavior needs local evidence. |
 | `localSearch` | Lexical text and regex occurrences with file+line anchors. Choose a result view and follow returned continuations. |
 | `astSearch` | Filesystem, syntax tree, symbols, structural matches, and bounded topology. Use `operation:"topology"` with `analysis` for dependencies, dependents, paths, reachability, cycles, or dead-code candidates. |
-| `localGetFileContent` | Read exact local file bytes or an anchored region. Use `minify:"symbols"` only for an outline; preserve `minify:"none"` for exact content. |
-| `lspSearch` | Definitions, references, callers/callees, symbols, types, and diagnostics — **after** search/read gives a real file+line. `documentSymbols`/`diagnostic` need `uri`; `workspaceSymbol` needs `symbolName`; anchored operations need `uri`+`symbolName`+`lineHint`. |
+| `localFetch` | Read exact local file bytes or an anchored region. Use `minify:"symbols"` only for an outline; preserve `minify:"none"` for exact content. |
+| `lspSearch` | Definitions, references, callers/callees, symbols, types, and diagnostics — **after** search/read gives a real file+line. `documentSymbols`/`diagnostic` need `uri`; `workspaceSymbol` needs `symbolName` plus `uri` or `workspaceRoot`; anchored operations need `uri`+`symbolName`+`lineHint`. |
 
 ## Lean path
 
 - **Use snippets as leads.** A `ghSearch(operation:"code")` result can identify a candidate, but fetch the file when exact source, line identity, or revision matters.
-- **Read regions, not whole files.** `ghGetFileContent` least-cost path: unknown/large file → `minify:"symbols"` outline first, then a region via `matchString` (pairs with `contextLines`, returns padded `matchRanges` + exact `matchedLines`) **or** `startLine`+`endLine`. Choose exactly one of `fullContent` / `matchString` / `startLine+endLine`. `charOffset` pages a partial read.
-- **Structured/config files (package.json, tsconfig, lockfile): read whole with `minify:"none"`** — compaction can elide object boundaries. Exact key/field/value membership requires an unminified read; a partial slice can cut a nested object, so never conclude a field is absent from a slice — continue via `charOffset`/`next` or re-read the small file whole.
+- **Choose the needed source view.** Read a known region directly with `matchString` or `startLine`+`endLine`. For an unfamiliar large file, use `minify:"symbols"` only when its outline can select the decisive region. Path-only reads are valid and exact by default; selectors are optional and mutually exclusive with `fullContent`. Both readers use `chunkType:"lines"|"bytes"`, `offset`, and `limit`; copy `next.continue` unchanged. Match context defaults to five lines or 256 UTF-8 bytes according to chunk type; explicit `contextLines` and `contextBytes` are exclusive.
+- **Structured/config membership needs exact content.** Keep `minify:"none"`; fetch the enclosing object or a small full file. A partial slice cannot establish that a field is absent; follow relevant continuations before an absence claim.
 - **Inspect the returned envelope.** Use fields present in the operation's response, including `meta.evidence`, diagnostics, pagination, and `next` continuations; never invent a field or quote.
 - **Clone only when it pays** — repeated reads, AST/structural matching, or LSP. A single remote read should stay remote.
 
@@ -37,6 +37,8 @@ npx octocode tools ghSearch --queries '{"operation":"tree","owner":"OWNER","repo
 npx octocode tools ghGetFileContent --queries '{"owner":"OWNER","repo":"REPO","path":"PATH","branch":"SHA","matchString":"SYMBOL","contextLines":8}'
 npx octocode tools ghGetFileContent --queries '{"owner":"OWNER","repo":"REPO","path":"PATH","branch":"SHA","minify":"symbols"}'
 npx octocode tools ghSearchHistory --queries '{"operation":"commits","owner":"OWNER","repo":"REPO","path":"PATH"}'
+npx octocode tools artifactSearch --queries '{"type":"npm","packageName":"@octokit/rest"}'
+npx octocode tools artifactSearch --queries '{"type":"crates","keywords":["async","runtime"]}'
 npx octocode tools ghGetHistoryItem --queries '{"operation":"pullRequest","owner":"OWNER","repo":"REPO","number":123,"content":{"body":true}}'
 ```
 

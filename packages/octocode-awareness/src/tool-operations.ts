@@ -40,14 +40,14 @@ export interface AwarenessToolOperationResult {
   exitCode: number;
 }
 
-export function runAwarenessToolOperation(
+export async function runAwarenessToolOperation(
   db: DatabaseSync,
   operation: AwarenessToolOperation,
   request: Record<string, unknown>,
   context: AwarenessToolOperationContext = {},
-): AwarenessToolOperationResult {
+): Promise<AwarenessToolOperationResult> {
   const result = [
-    runMemoryOperation(db, operation, request, context),
+    await runMemoryOperation(db, operation, request, context),
     runLearningOperation(db, operation, request, context),
     runWorkspaceOperation(db, operation, request, context),
     runVerificationOperation(db, operation, request, context),

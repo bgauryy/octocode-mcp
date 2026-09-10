@@ -1,6 +1,6 @@
 import type { CallToolResult } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
-import type { GitHubViewRepoStructureQuerySchema } from '../../toolContract/input/resources/tools/githubTreeOperation.js';
+import type { GitHubViewRepoStructureQuerySchema } from '@octocodeai/octocode-core/schema';
 import type {
   GitHubViewRepoStructureToolResult,
   GitHubRepoStructureDirectoryEntry,
@@ -213,60 +213,6 @@ export async function exploreRepositoryStructure(
         warning: branchFallbackWarning,
       };
     }
-
-    // Ready-to-run follow-ups: read the first listed file, or materialize
-    // the whole directory for local search/LSP.
-    const structure = (
-      resultData as {
-        structure?: Array<{ dir: string; files?: string[] }>;
-      }
-    ).structure;
-    const firstDir = structure?.find(d => (d.files?.length ?? 0) > 0);
-    // `structure[].dir` is RELATIVE to the queried path, so a `fetchFile`
-    // hint must re-prefix `query.path` (like `materialize` below does) —
-    // otherwise it emits a bare filename that 404s for any non-root query.
-    const structureBase = String(query.path ?? '').replace(/\/+$/, '');
-    const firstFile = firstDir
-      ? (() => {
-          const rel =
-            firstDir.dir === '.'
-              ? firstDir.files![0]
-              : `${firstDir.dir}/${firstDir.files![0]}`;
-          return structureBase ? `${structureBase}/${rel}` : rel;
-        })()
-      : undefined;
-    (resultData as Record<string, unknown>).next = {
-      ...(resultData.next as Record<string, unknown> | undefined),
-      ...(firstFile
-        ? {
-            fetchFile: {
-              tool: 'ghGetFileContent',
-              query: {
-                owner: query.owner,
-                repo: query.repo,
-                path: firstFile,
-                // Use the branch actually served — after a fallback,
-                // query.branch is the invalid requested ref.
-                ...(effectiveBranch ? { branch: effectiveBranch } : {}),
-              },
-              why: 'Read the first listed file',
-              confidence: 'low',
-            },
-          }
-        : {}),
-      materialize: {
-        tool: 'ghGetFileContent',
-        query: {
-          owner: query.owner,
-          repo: query.repo,
-          path: String(query.path ?? ''),
-          type: 'directory',
-          ...(effectiveBranch ? { branch: effectiveBranch } : {}),
-        },
-        why: 'Materialize this directory locally for exact line anchors, local search, or LSP',
-        confidence: 'exact',
-      },
-    };
 
     return createSuccessResult(
       query,

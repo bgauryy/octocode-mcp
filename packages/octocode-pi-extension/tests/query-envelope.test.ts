@@ -421,4 +421,24 @@ describe("query envelope", () => {
     ).rejects.toThrow(/aborted/i);
     expect(execute).not.toHaveBeenCalled();
   });
+
+  it('marks queued parallel queries as not-run after cancellation', async () => {
+    const controller = new AbortController();
+    const started: number[] = [];
+    const execution = executeQueryBatch({
+      toolCallId: 'cancel-queued', allowParallel: true, maxParallel: 1,
+      raw: { queryRunType: 'parallel', queries: [0, 1, 2].map(index => ({ reasoning: `query ${index}` })) },
+      signal: controller.signal,
+      execute: async (_query, index) => {
+        started.push(index);
+        controller.abort();
+        return textResult('first completed');
+      },
+    });
+    await expect(execution).rejects.toMatchObject({
+      completedCount: 1,
+      rows: [{ index: 0, status: 'success' }, { index: 1, status: 'not-run' }, { index: 2, status: 'not-run' }],
+    });
+    expect(started).toEqual([0]);
+  });
 });

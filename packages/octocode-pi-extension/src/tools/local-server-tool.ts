@@ -4,6 +4,7 @@ import { assertPathAllowed } from './path-guard.js';
 import { resolveFilePath } from './file-state.js';
 import {
   getLocalServerBaseUrl,
+  isValidMountName,
   listLocalServerMounts,
   serveDirectory,
   stopLocalServer,
@@ -38,6 +39,21 @@ function textResult(text: string, details: Record<string, unknown>): ToolCallRes
 
 function cleanMountName(name: unknown): string {
   return typeof name === 'string' ? name.trim() : '';
+}
+
+function preflightLocalServerQuery(query: Record<string, unknown>, cwd: string): void {
+  const action = query['action'];
+  if (action === 'status' || action === 'stop') return;
+  if (action !== 'serve' && action !== 'unmount') throw new Error(`[localServer] unknown action: ${String(action)}`);
+  const name = cleanMountName(query['name']);
+  if (!name) throw new Error(`[localServer] ${action} requires a mount name.`);
+  if (!isValidMountName(name)) throw new Error('[localServer] invalid mount name: use one safe URL path segment.');
+  if (action === 'unmount') return;
+  const input = typeof query['dir'] === 'string' ? query['dir'].trim() : '';
+  if (!input) throw new Error('[localServer] serve requires dir.');
+  const dir = resolveFilePath(input, cwd);
+  assertPathAllowed(dir, cwd, 'localServer serve');
+  if (!fs.statSync(dir).isDirectory()) throw new Error(`[localServer] not a directory: ${dir}`);
 }
 
 function renderStatus(): string {
@@ -76,7 +92,8 @@ export function registerLocalServerTool(
         .describe('Browser target for action:serve. auto prefers VS Code when available, then Chrome, then the system opener.'),
     }),
     { reasoningDescription: 'Concise reason this local server operation is necessary.' },
-  );registerFn(pi, registeredToolNames, {
+  );
+  registerFn(pi, registeredToolNames, {
     name: 'localServer',
     label: 'Local Server',
     description: DIRECT_TOOL_DESCRIPTIONS.localServer!,
@@ -104,7 +121,9 @@ export function registerLocalServerTool(
         onUpdate: typeof onUpdate === 'function' ? onUpdate as (update: ToolCallResult) => void : undefined,
         ctx,
         passthroughSingle: true,
+        preflight: query => preflightLocalServerQuery(query, cwd),
         async execute(query) {
+          preflightLocalServerQuery(query, cwd);
           const p = query as unknown as LocalServerQuery;
 
           if (p.action === 'status') {

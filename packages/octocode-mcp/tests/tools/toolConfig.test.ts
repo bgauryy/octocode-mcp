@@ -2,13 +2,13 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import { TOOL_NAMES } from '../../../octocode-tools-core/src/tools/toolMetadata/names.js';
-import { PUBLIC_TOOL_DESCRIPTIONS } from '../../../octocode-tools-core/src/toolContract/descriptions.js';
+import { PUBLIC_TOOL_DESCRIPTIONS } from '@octocodeai/octocode-core/schema';
+import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-core/schema';
 import {
-  DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   GITHUB_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
-} from '@octocodeai/octocode-tools-core';
-import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+} from '@octocodeai/octocode-core/schema';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 
 const removedLspToolNames = [
   `lsp${'Goto'}Definition`,

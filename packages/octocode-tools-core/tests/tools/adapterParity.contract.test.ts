@@ -28,11 +28,11 @@ vi.mock(
   })
 );
 vi.mock('../../src/tools/package_search/execution.js', () => ({
-  searchPackages: (input: unknown) => fixtureExecution('npmSearch', input),
+  searchPackages: (input: unknown) => fixtureExecution('artifactSearch', input),
 }));
 vi.mock('../../src/tools/local_fetch_content/execution.js', () => ({
   executeFetchContent: (input: unknown) =>
-    fixtureExecution('localGetFileContent', input),
+    fixtureExecution('localFetch', input),
 }));
 vi.mock('../../src/tools/ast_search/execution.js', () => ({
   executeAstSearch: (input: unknown) =>
@@ -47,7 +47,7 @@ vi.mock('../../src/tools/lsp/semantic_content/execution.js', () => ({
     fixtureExecution('lspSearch', input),
 }));
 
-import { DIRECT_TOOL_SPECIFICATIONS } from '../../src/tools/directToolCatalog/toolSpecifications.js';
+import { DIRECT_TOOL_SPECIFICATIONS } from '@octocodeai/octocode-core/schema';
 import {
   _overrideInitialize,
   _resetInitialize,

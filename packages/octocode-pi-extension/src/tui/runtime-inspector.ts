@@ -5,10 +5,10 @@ import {
   expireExecutionInteractions,
   readExecutionEvents,
 } from '../tools/execution-runtime.js';
-import {
-  serializeExecutionEvents,
-  type ExecutionEvent,
-  type ExecutionState,
+import { serializeExecutionEvents } from '../tools/execution-event-io.js';
+import type {
+  ExecutionEvent,
+  ExecutionState,
 } from '../tools/execution-events.js';
 import { executionLabel } from '../tools/execution-presentation.js';
 import { formatCompact, formatDurationShort } from '../ui-extras.js';
@@ -33,32 +33,50 @@ export function executionStatusLines(
     '',
     'Usage · session totals',
     ...(usage.length ? usage : ['  Provider usage unavailable']),
-    ...section('Needs you', Object.values(state.interactions)
-      .filter(item => item.status === 'waiting')
-      .map(item => `  ${item.kind} · ${executionLabel(item.title)}`)),
-    ...section('Tools', Object.values(state.tools).map(
-      tool =>
-        `  ${tool.status} · ${executionLabel(tool.title)} · ${formatDurationShort(tool.durationMs ?? now - tool.startedAt)}${tool.summary ? ` · ${executionLabel(tool.summary)}` : ''}`
-    )),
-    ...section('Skills', Object.values(state.skills).map(
-      skill =>
-        `  ${skill.status} · ${executionLabel(skill.name)}${skill.source ? ` · ${executionLabel(skill.source)}` : ''}`
-    )),
-    ...section('Plan', state.plan
-      ? [
-          `  ${state.plan.phase}`,
-          ...state.plan.tasks.map(
-            task => `  ${task.status} · ${executionLabel(task.title)}`
-          ),
-        ]
-      : []),
-    ...section('Agents', Object.values(state.agents).map(
-      agent =>
-        `  ${executionLabel(agent.name)} · ${agent.status} · parent ${agent.parentRunId}${agent.task ? ` · ${executionLabel(agent.task)}` : ''}`
-    )),
-    ...section('File operations', Object.values(state.files).map(
-      file => `  ${file.operation} · ${executionLabel(file.path)}`
-    )),
+    ...section(
+      'Needs you',
+      Object.values(state.interactions)
+        .filter(item => item.status === 'waiting')
+        .map(item => `  ${item.kind} · ${executionLabel(item.title)}`)
+    ),
+    ...section(
+      'Tools',
+      Object.values(state.tools).map(
+        tool =>
+          `  ${tool.status} · ${executionLabel(tool.title)} · ${formatDurationShort(tool.durationMs ?? now - tool.startedAt)}${tool.summary ? ` · ${executionLabel(tool.summary)}` : ''}`
+      )
+    ),
+    ...section(
+      'Skills',
+      Object.values(state.skills).map(
+        skill =>
+          `  ${skill.status} · ${executionLabel(skill.name)}${skill.source ? ` · ${executionLabel(skill.source)}` : ''}`
+      )
+    ),
+    ...section(
+      'Plan',
+      state.plan
+        ? [
+            `  ${state.plan.phase}`,
+            ...state.plan.tasks.map(
+              task => `  ${task.status} · ${executionLabel(task.title)}`
+            ),
+          ]
+        : []
+    ),
+    ...section(
+      'Agents',
+      Object.values(state.agents).map(
+        agent =>
+          `  ${executionLabel(agent.name)} · ${agent.status} · parent ${agent.parentRunId}${agent.task ? ` · ${executionLabel(agent.task)}` : ''}`
+      )
+    ),
+    ...section(
+      'File operations',
+      Object.values(state.files).map(
+        file => `  ${file.operation} · ${executionLabel(file.path)}`
+      )
+    ),
     '',
     'Messages and full tool output remain in the Pi transcript. Ctrl+O expands tool results.',
   ];

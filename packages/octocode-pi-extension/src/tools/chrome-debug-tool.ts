@@ -63,7 +63,7 @@ export function registerChromeDebugTool(
       'scheme:"raw" method:"Domain.Method" runs ANY CDP call; the domain is auto-enabled before the call.',
       'Schemes add Debugger.setSkipAllPauses and a dialog guard. These runtime changes do not authorize navigation or other page effects.',
       'Pass launch:true to start a fresh Chrome on the given port; each port gets its own profile dir.',
-      'Screenshots → <workspace>/.octocode/screenshots/. Set OCTOCODE_CDP_DEBUG=1 for cdp-events.jsonl log.',
+      'Screenshots are stored under the private session browser/screenshots directory; use the returned artifact path. Set OCTOCODE_CDP_DEBUG=1 for cdp-events.jsonl logs.',
     ],
     parameters: (() => {
       const itemSchema = z.looseObject({
@@ -148,6 +148,10 @@ export function registerChromeDebugTool(
         onUpdate: typeof onUpdate === 'function' ? (onUpdate as (update: ToolCallResult) => void) : undefined,
         ctx,
         passthroughSingle: true,
+        preflight(query) {
+          if (!SCHEMES.includes(query['scheme'] as Scheme)) throw new Error(`Unknown scheme: "${query['scheme']}". Valid schemes: ${SCHEMES.join(', ')}`);
+          if (query['scheme'] === 'raw' && (typeof query['method'] !== 'string' || !query['method'].trim())) throw new Error('scheme:"raw" requires method:"Domain.method"');
+        },
         async execute(query, _index, _itemToolCallId, itemSignal, _itemOnUpdate, itemCtx) {
       const params = query as unknown as ChromeDebugParams;
       const scheme = params.scheme as Scheme;

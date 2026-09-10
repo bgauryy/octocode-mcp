@@ -350,9 +350,9 @@ test('ordinary shared start restores the prior local status and mapping when pro
     const before = getPlan(workspace).map((step) => ({ ...step }));
     setUnifiedPlanProjectorForTests(() => { throw new Error('injected projection failure'); });
 
-    const failed = await tool.execute('id', {
+    const failed = await failedToolResult(tool.execute('id', {
       queries: [{ reasoning: 'start the peer-conflicted lane', action: 'start', scope: 'shared', index: 2 }],
-    }, undefined, undefined, localCtx);
+    }, undefined, undefined, localCtx));
 
     assert.equal(failed.isError, true);
     assert.match((failed.content[0] as { text: string }).text, /did not start|restored/i);
@@ -386,9 +386,9 @@ test('shared plan.complete requires a matching receipt and preserves verificatio
     }, undefined, undefined, localCtx);
     const [firstLocal, secondLocal] = getPlan(workspace);
 
-    const missing = await tool.execute('id', {
+    const missing = await failedToolResult(tool.execute('id', {
       queries: [{ reasoning: 'complete without fabricated evidence', action: 'complete', index: 1 }],
-    }, undefined, undefined, localCtx);
+    }, undefined, undefined, localCtx));
     assert.equal(missing.isError, true);
     assert.match((missing.content[0] as { text: string }).text, /receipt/i);
     assert.equal(getPlan(workspace)[0]?.status, 'doing', 'missing receipt does not advance local state');
@@ -416,14 +416,14 @@ test('shared plan.complete requires a matching receipt and preserves verificatio
       lite.close();
     }
 
-    const failed = await tool.execute('id', {
+    const failed = await failedToolResult(tool.execute('id', {
       queries: [{
         reasoning: 'record observed failed check',
         action: 'complete',
         index: 2,
         receipt: { command: 'test dependent', status: 'FAILED', message: 'test dependent failed' },
       }],
-    }, undefined, undefined, localCtx);
+    }, undefined, undefined, localCtx));
     assert.equal(failed.isError, true);
     assert.match((failed.content[0] as { text: string }).text, /failed|verification debt/i);
     assert.equal(getPlan(workspace)[1]?.status, 'doing', 'failed check leaves local step in progress');
@@ -913,17 +913,17 @@ test('revision-only reviewed Start cannot bypass in-review or unreceipted accept
     assert.equal(proposePlanReview(scope).ok, true);
     const revision = getPlanReviewState(scope).revision!;
 
-    const inReview = await tool.execute('id', {
+    const inReview = await failedToolResult(tool.execute('id', {
       queries: [{ reasoning: 'must not infer approval', action: 'start', revision }],
-    }, undefined, undefined, localCtx) as { isError?: boolean; details?: { error?: string } };
+    }, undefined, undefined, localCtx)) as { isError?: boolean; details?: { error?: string } };
     assert.equal(inReview.isError, true);
     assert.equal(inReview.details?.error, 'authorization-required');
     assert.equal(getPlanReviewState(scope).phase, 'in_review');
 
     assert.equal(acceptPlanReview(scope, revision).ok, true);
-    const unreceipted = await tool.execute('id', {
+    const unreceipted = await failedToolResult(tool.execute('id', {
       queries: [{ reasoning: 'must require persisted authority', action: 'start', revision }],
-    }, undefined, undefined, localCtx) as { isError?: boolean; details?: { error?: string } };
+    }, undefined, undefined, localCtx)) as { isError?: boolean; details?: { error?: string } };
     assert.equal(unreceipted.isError, true);
     assert.equal(unreceipted.details?.error, 'authorization-required');
     assert.equal(getPlanReviewState(scope).phase, 'accepted');
@@ -936,16 +936,16 @@ test('revision-only reviewed Start cannot bypass in-review or unreceipted accept
 test('review-phase and draft step actions fail instead of reporting a no-op success', async () => {
   const tool = loadTool();
   setPlan(CWD, ['A'], 'draft');
-  const started = await tool.execute('id', {
+  const started = await failedToolResult(tool.execute('id', {
     queries: [{ reasoning: 'must not bypass review', action: 'start', index: 1 }],
-  }, undefined, undefined, ctx) as { isError?: boolean; details?: { error?: string } };
+  }, undefined, undefined, ctx)) as { isError?: boolean; details?: { error?: string } };
   assert.equal(started.isError, true);
   assert.equal(started.details?.error, 'authorization-required');
   assert.equal(getPlan(CWD)[0]?.status, 'todo');
 
-  const completed = await tool.execute('id', {
+  const completed = await failedToolResult(tool.execute('id', {
     queries: [{ reasoning: 'must not complete before Start', action: 'complete', index: 1 }],
-  }, undefined, undefined, ctx) as { isError?: boolean; details?: { error?: string } };
+  }, undefined, undefined, ctx)) as { isError?: boolean; details?: { error?: string } };
   assert.equal(completed.isError, true);
   assert.equal(completed.details?.error, 'phase-not-executing');
 });
@@ -960,9 +960,9 @@ test('reviewed Start fields fail during execution instead of starting a step', a
   }, undefined, undefined, ctx);
   assert.deepEqual(getPlan(CWD).map((step) => step.status), ['done', 'doing', 'todo']);
 
-  const started = await tool.execute('id', {
+  const started = await failedToolResult(tool.execute('id', {
     queries: [{ reasoning: 'must not reinterpret reviewed fields', action: 'start', revision: 'stale-review' }],
-  }, undefined, undefined, ctx) as { isError?: boolean; details?: { error?: string } };
+  }, undefined, undefined, ctx)) as { isError?: boolean; details?: { error?: string } };
   assert.equal(started.isError, true);
   assert.equal(started.details?.error, 'wrong-start-variant');
   assert.deepEqual(getPlan(CWD).map((step) => step.status), ['done', 'doing', 'todo']);
@@ -982,13 +982,13 @@ test('set activates the first dependency-ready step rather than a blocked first 
 
 test('consequential proposals require an RFC unless an explicit justified override is supplied', async () => {
   const tool = loadTool();
-  const result = await tool.execute('id', {
+  const result = await failedToolResult(tool.execute('id', {
     queries: [{
       reasoning: 'exercise inferred consequential review',
       action: 'propose',
       steps: ['One', 'Two', 'Three', 'Four', 'Five'],
     }],
-  }, undefined, undefined, ctx) as { isError?: boolean; details?: { error?: string } };
+  }, undefined, undefined, ctx)) as { isError?: boolean; details?: { error?: string } };
   assert.equal(result.isError, true);
   assert.equal(result.details?.error, 'rfc-required');
 
@@ -1007,9 +1007,9 @@ test('consequential proposals require an RFC unless an explicit justified overri
 test('proposal validation failures settle activity instead of leaving Creating plan stuck', async () => {
   const tool = loadTool();
   const invalidCtx = { cwd: '/tmp/plan-invalid-rfc-activity' } as unknown as PiContext;
-  const invalid = await tool.execute('id', {
+  const invalid = await failedToolResult(tool.execute('id', {
     queries: [{ reasoning: 'exercise invalid RFC cleanup', action: 'propose', rfcPath: '../outside.md', steps: ['A'] }],
-  }, undefined, undefined, invalidCtx) as { isError?: boolean };
+  }, undefined, undefined, invalidCtx)) as { isError?: boolean };
   assert.equal(invalid.isError, true);
   const invalidActivity = runtimeStoreFor(invalidCtx)?.getState().activity;
   assert.ok(!invalidActivity || !('detail' in invalidActivity) || invalidActivity.detail !== 'Creating plan…');
@@ -1070,3 +1070,4 @@ test('renderCall shows every operation and its reasoning for multi-query calls',
   assert.match(lines[6]!, /complete/);
   assert.doesNotMatch(lines.join('\n'), /\+2|why:|reasoning:/i);
 });
+import { failedToolResult } from './helpers/failed-tool-result.js';

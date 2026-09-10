@@ -590,7 +590,7 @@ describe('validateConfig', () => {
     const r = validateConfig({
       github: { apiUrl: 'https://api.github.com', apiURL: 'typo' },
       local: { enabled: true, enableLocl: false },
-      tools: { enabled: null, enableAdditonal: ['npmSearch'] },
+      tools: { enabled: null, enableAdditonal: ['artifactSearch'] },
       network: { timeout: 30000, retries: 2 },
       lsp: { configPath: '/tmp/lsp.json', config: 'typo' },
       output: {

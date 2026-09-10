@@ -1,5 +1,5 @@
 import type { HistoryCommitFile } from '../githubAPI.js';
-import { MAX_PAGE_NUMBER } from '../../config.js';
+import { MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 
 /** A missing provider patch does not establish whether a file is binary or too large. */
 export function patchAvailability(patch: unknown) {

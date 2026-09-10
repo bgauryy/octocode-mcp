@@ -1,20 +1,16 @@
 // The human-facing `tools` (no args) listing: tools grouped by category with
 // concise descriptions, plus the schema/run/json quick-reference footer.
 import { c, bold, dim } from '../../utils/colors.js';
-import {
-  getDirectToolCategory,
-  getToolAvailability,
-} from '@octocodeai/octocode-tools-core/schema';
+import { getDirectToolCategory } from '@octocodeai/octocode-core/schema';
+import { getToolAvailability } from '@octocodeai/octocode-tools-core/schema';
 import {
   TOOL_CATEGORIES,
   TOOL_DEFINITIONS,
-  getOptionalToolMetadata,
   getToolEnableInstruction,
 } from './registry.js';
-import { formatConciseToolDescription } from './formatting.js';
+import { formatConciseToolDescription } from '@octocodeai/octocode-core/schema';
 
 export async function showAvailableTools(): Promise<void> {
-  const metadata = await getOptionalToolMetadata();
   const toolNames = TOOL_DEFINITIONS.map(tool => tool.name);
 
   console.log();
@@ -36,7 +32,7 @@ export async function showAvailableTools(): Promise<void> {
       const availability = getToolAvailability(toolName);
       const namePadded = toolName.padEnd(26);
       console.log(
-        `    ${c('cyan', namePadded)} ${dim(formatConciseToolDescription(toolName, metadata))}${availability.enabled ? '' : ` ${c('yellow', `[disabled: ${getToolEnableInstruction(toolName) ?? availability.envVar}]`)}`}`
+        `    ${c('cyan', namePadded)} ${dim(formatConciseToolDescription(toolName))}${availability.enabled ? '' : ` ${c('yellow', `[disabled: ${getToolEnableInstruction(toolName) ?? availability.envVar}]`)}`}`
       );
     }
     console.log();

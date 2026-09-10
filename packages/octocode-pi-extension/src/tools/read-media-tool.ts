@@ -84,7 +84,7 @@ export function registerReadMediaTool(
     promptSnippet: 'Inspect local pixels, media metadata, or visual summaries.',
     promptGuidelines: [
       'Use type:image for screenshots/diagrams (returns inline pixels to the model for vision); type:video for a frame or contact sheet; type:audio for waveform/spectrogram.',
-      'Use view:metadata when visual content is unnecessary — faster, no ffmpeg rendering required.',
+      'Use view:metadata for video/audio when visual content is unnecessary; image inspection returns pixels.',
     ],
     parameters: buildQueryEnvelopeSchema(readMediaItemSchema, {
       reasoningDescription: 'Why this media must be inspected.',
@@ -101,6 +101,11 @@ export function registerReadMediaTool(
         ctx,
         passthroughSingle: true,
         allowParallel: true,
+        preflight(query) {
+          const parsed = readMediaItemSchema.parse(query);
+          assertPathAllowed(resolveFilePath(parsed.path, cwd), cwd, 'inspectMedia');
+          if (parsed.type !== 'image') resolveView(parsed.type, parsed.view);
+        },
         async execute(query, _index, _callId, batchSignal) {
           if (batchSignal?.aborted) throw new Error('Operation aborted');
           const type = query['type'] as MediaType;

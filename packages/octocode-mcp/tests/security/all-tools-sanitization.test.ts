@@ -245,7 +245,7 @@ const TOOL_RESULT_SHAPES: Record<string, () => CallToolResult> = {
     },
   }),
 
-  npmSearch: () => ({
+  artifactSearch: () => ({
     content: [
       {
         type: 'text',
@@ -254,7 +254,7 @@ const TOOL_RESULT_SHAPES: Record<string, () => CallToolResult> = {
     ],
     structuredContent: {
       data: {
-        packages: [
+        artifacts: [
           {
             name: 'stripe-sdk',
             readme: `Configure with API key: ${SECRETS.STRIPE_KEY}`,
@@ -327,7 +327,7 @@ const TOOL_RESULT_SHAPES: Record<string, () => CallToolResult> = {
     },
   }),
 
-  localGetFileContent: () => ({
+  localFetch: () => ({
     content: [
       {
         type: 'text',

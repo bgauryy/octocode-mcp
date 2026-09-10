@@ -39,8 +39,8 @@ pub use bindings::signatures::{
     structural_search_files_detailed, SIGNATURES_ONLY_HINT,
 };
 pub use bindings::text::{
-    byte_slice_content, byte_to_char_offset, char_to_byte_offset, compute_line_diff,
-    extract_matching_lines, filter_patch, slice_content,
+    byte_slice_content, byte_to_char_offset, char_to_byte_offset, extract_matching_lines,
+    filter_patch, slice_content,
 };
 pub use bindings::yaml::json_to_yaml_string;
 pub use lsp::client::NativeLspClient;

@@ -11,7 +11,7 @@ describe('historyToolEffect', () => {
     ] })).toEqual({ effect: 'workspace-write', files: ['src/a.ts', 'src/b.ts'] });
   });
 
-  it.each(['bash', 'MCPTool', 'localGetFileContent', undefined])(
+  it.each(['bash', 'MCPTool', 'localFetch', undefined])(
     'does not infer writes from %s payload paths',
     (toolName) => {
       expect(historyToolEffect(toolName, {

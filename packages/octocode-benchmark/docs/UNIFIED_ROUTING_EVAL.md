@@ -4,7 +4,7 @@ This deterministic eval freezes the post-migration local-tool surface and
 checks behavior through the built CLI. The original remote routing fixture and
 grader remain in place; this local eval is an additional independent gate. It
 covers the four public local tools:
-`localSearch`, `astSearch`, `localGetFileContent`, and `lspSearch`.
+`localSearch`, `astSearch`, `localFetch`, and `lspSearch`.
 
 ## Goal and decision rule
 

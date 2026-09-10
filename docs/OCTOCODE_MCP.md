@@ -64,8 +64,8 @@ persistent storage.
 | Family | Tools |
 |--------|-------|
 | GitHub | `ghSearch`, `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`, `ghCloneRepo` |
-| Local | `localSearch`, `localGetFileContent`, `astSearch`, `lspSearch` |
-| Package | `npmSearch` |
+| Local | `localSearch`, `localFetch`, `astSearch`, `lspSearch` |
+| Package | `artifactSearch` |
 
 To read the live CLI catalog, run `octocode tools --json`.
 
@@ -120,14 +120,14 @@ active catalog entries.
 | `github_search_pull_requests` | `ghSearchHistory` |
 | `github_clone_repo` | `ghCloneRepo` |
 | `local_analyze_graph` | `astSearch` (`topology` operation) |
-| `local_fetch_content` | `localGetFileContent` |
+| `local_fetch_content` | `localFetch` |
 | `local_dead_code` | `astSearch` (`topology` with `analysis:"deadCode"`) |
 | `local_find_files` | `astSearch` (`files` operation) |
 | `local_ripgrep` | `localSearch` (lexical `searchText`) |
 | `local_view_structure` | `astSearch` (`tree` operation) |
 | `local_search` | `localSearch` ✅ unchanged |
 | `lsp` | `lspSearch` |
-| `package_search` | `npmSearch` |
+| `package_search` | `artifactSearch` |
 
 ## Materialization and response cache
 

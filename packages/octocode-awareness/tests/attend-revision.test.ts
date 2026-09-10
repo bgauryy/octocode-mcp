@@ -31,20 +31,20 @@ function fixture() {
 }
 
 describe('scoped attend revisions', () => {
-  it('suppresses invisible score decay while preserving changed memory ranking and expiry', () => {
+  it('suppresses invisible score decay while preserving changed memory ranking and expiry', async () => {
     const { db, params, workspace } = fixture();
     const initial = Date.now();
     const clock = vi.spyOn(Date, 'now').mockReturnValue(initial);
-    const record = (name: string, age: number, halfLife: number) => {
-      const { memoryId } = insertMemory(db, { agentId: 'reader', taskContext: `source contract ${name}`,
+    const record = async (name: string, age: number, halfLife: number) => {
+      const { memoryId } = (await insertMemory(db, { agentId: 'reader', taskContext: `source contract ${name}`,
         observation: `Inspect source contract ${name} before editing.`, importance: 5, workspacePath: workspace,
-        references: [`file:${join(workspace, 'source.ts')}`] });
+        references: [`file:${join(workspace, 'source.ts')}`] }));
       db.prepare('UPDATE awareness_memories SET created_at = ?, updated_at = ?, decay_half_life_days = ? WHERE memory_id = ?')
         .run(new Date(initial - age).toISOString(), new Date(initial - age).toISOString(), halfLife, memoryId);
       return memoryId;
     };
-    const shortLived = record('rapid', 0, 0.01);
-    const durable = record('durable', 2 * 86400000, 1000);
+    const shortLived = (await record('rapid', 0, 0.01));
+    const durable = (await record('durable', 2 * 86400000, 1000));
     const query = { ...params, query: 'source contract' };
     const first = attendAwareness(db, query);
     expect(first.evidence[0]?.id).toBe(shortLived);

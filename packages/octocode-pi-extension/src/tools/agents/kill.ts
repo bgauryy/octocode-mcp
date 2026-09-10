@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { openPersistentAwareness } from '../storage-policy.js';
 import type { AgentRecord } from './types.js';
+import { revokeWorkerCapabilities } from '../worker-capabilities.js';
 import {
   isProcessAlive,
   findAgentByIdOrPrefix,
@@ -70,6 +71,7 @@ export function syncWorkerRegistry(action: 'join' | 'leave', record: AgentRecord
  * - notifyWaiters AFTER all state mutations so waiters see the final state.
  */
 export function killAgent(record: AgentRecord, opts: { forceKillDelayMs?: number } = {}): void {
+  revokeWorkerCapabilities(record.id);
   pushLedgerEvent(record, 'killed', 'kill requested');
   // The process is going away, so any queued turns will never emit agent_start
   // to decrement this. Strand them at zero here, or isTerminal() stays false

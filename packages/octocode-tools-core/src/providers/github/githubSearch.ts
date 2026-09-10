@@ -12,8 +12,8 @@ import { searchGitHubCodeAPI } from '../../github/codeSearch.js';
 import { searchGitHubReposAPI } from '../../github/repoSearch.js';
 
 import type { z } from 'zod';
-import type { GitHubCodeSearchQuerySchema } from '../../toolContract/input/resources/tools/githubCodeOperation.js';
-import type { GitHubReposSearchSingleQuerySchema } from '../../toolContract/input/resources/tools/githubRepositoriesOperation.js';
+import type { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core/schema';
+import type { GitHubReposSearchSingleQuerySchema } from '@octocodeai/octocode-core/schema';
 import type {
   GitHubRepositoryOutput,
   GitHubSearchRepositoriesData,

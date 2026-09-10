@@ -3,44 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const publicMocks = vi.hoisted(() => ({
   initialize: vi.fn().mockResolvedValue(undefined),
   initializeProviders: vi.fn().mockResolvedValue([]),
-  loadToolContent: vi.fn().mockResolvedValue({
-    systemPrompt: 'Use Octocode tools carefully.',
-    prompts: {},
-    toolNames: {},
-    baseSchema: {
-      goal: 'goal',
-      reasoning: 'reasoning',
-      bulkQuery: (toolName: string) => `queries for ${toolName}`,
-    },
-    tools: {
-      ghSearch: {
-        name: 'ghSearch',
-        description: 'Search GitHub code, repositories, or trees.',
-        schema: { operation: 'Search operation' },
-        hints: { hasResults: [], empty: [] },
-      },
-      localSearch: {
-        name: 'localSearch',
-        description: 'Search local code with ripgrep.',
-        schema: {
-          path: 'Path to search',
-          searchText: 'Pattern to find',
-        },
-        hints: { hasResults: [], empty: [] },
-      },
-      ghCloneRepo: {
-        name: 'ghCloneRepo',
-        description: 'Clone a repository locally.',
-        schema: {
-          owner: 'Repository owner',
-          repo: 'Repository name',
-        },
-        hints: { hasResults: [], empty: [] },
-      },
-    },
-    baseHints: { hasResults: [], empty: [] },
-    genericErrorHints: [],
-  }),
+
   localSearch: vi.fn().mockResolvedValue({
     content: [{ type: 'text', text: 'tool output' }],
   }),
@@ -54,19 +17,6 @@ const publicMocks = vi.hoisted(() => ({
     content: [{ type: 'text', text: 'ok' }],
   }),
 }));
-
-// Schema/help path now imports the engine-free `/schema` subpath (P3) — that is
-// where `loadToolContent` and the meta/schema fns live.
-vi.mock('@octocodeai/octocode-tools-core/schema', async importOriginal => {
-  const actual =
-    await importOriginal<
-      typeof import('@octocodeai/octocode-tools-core/schema')
-    >();
-  return {
-    ...actual,
-    loadToolContent: publicMocks.loadToolContent,
-  };
-});
 
 // Execution path is dynamically imported from `/direct`.
 vi.mock('@octocodeai/octocode-tools-core/direct', async importOriginal => {
@@ -94,7 +44,6 @@ vi.mock('@octocodeai/octocode-tools-core/direct', async importOriginal => {
 
   return {
     ...actual,
-    loadToolContent: publicMocks.loadToolContent,
     executeDirectTool,
   };
 });
@@ -591,10 +540,11 @@ describe('toolCommand', () => {
 
     const context = await getToolsContextString({ full: true });
 
-    expect(publicMocks.loadToolContent).toHaveBeenCalledTimes(1);
     expect(context).toContain('TOOL CALLS');
     expect(context).toContain('tools <name>');
-    expect(context).toContain('Use Octocode tools carefully.');
+    expect(context).toContain(
+      'Choose the available tool that answers the next unresolved question'
+    );
     expect(context).toContain('1. ghSearch');
     expect(context).toContain('2. ghSearchHistory');
     expect(context).toContain('3. ghGetHistoryItem');
@@ -603,13 +553,15 @@ describe('toolCommand', () => {
     expect(context).not.toMatch(
       /\b(?:ghSearchPullRequests|ghSearchIssues|ghSearchCommits|prNumber|issueNumber)\b/
     );
-    expect(context).toContain('`cache fetch` materializes content locally');
+    expect(context).toContain(
+      'use the clone tool when a cached checkout is needed'
+    );
     expect(context).toContain('CLI JSON modes omit that duplicate text');
     expect(context).toContain(
       'ordered rows: index, optional status/meta, and data'
     );
     expect(context).toContain(
-      'Follow executable next.* continuations in row data and nested payloads when their pagination or partial state indicates more; scan/depth limits can require continuation even when pagination.hasMore is false. responsePagination only windows human-readable text; structured results remain complete.'
+      'Follow executable next.* calls with their scope and snapshot unchanged. Partial scan/depth state can require continuation even when hasMore is false. Whole-response pagination may split results; a restart discards earlier pages.'
     );
     expect(context).not.toContain('mode:"discovery"');
     expect(context).not.toContain('Cheap modes: concise:true');
@@ -622,7 +574,9 @@ describe('toolCommand', () => {
       /Quick commands \([^)]*\b(?:search|ls|cat|repo|history|binary|unzip|diff|pkg|lsp|find|grep)\b/
     );
     // full mode includes complete tool descriptions
-    expect(context).toContain('Discover GitHub code with operation:"code"');
+    expect(context).toContain(
+      'Discover GitHub code, repositories, or a known repository tree.'
+    );
     expect(context).toContain('Create a cached, shallow checkout');
   });
 
@@ -637,9 +591,9 @@ describe('toolCommand', () => {
     // lean mode includes short tool descriptions inline
     expect(context).toContain('1. ghSearch — Discover GitHub code');
     expect(context).not.toContain('"$schema"');
-    expect(context).toContain('Protocol: schema first');
+    expect(context).toContain('Protocol: answer the next unresolved question');
     expect(context).toContain(
-      'Follow executable next.* continuations in row data and nested payloads when their pagination or partial state indicates more; scan/depth limits can require continuation even when pagination.hasMore is false. responsePagination only windows human-readable text; structured results remain complete.'
+      'Follow executable next.* calls with their scope and snapshot unchanged. Partial scan/depth state can require continuation even when hasMore is false. Whole-response pagination may split results; a restart discards earlier pages.'
     );
     expect(context).not.toContain('Use Octocode tools carefully.');
     expect(context.length).toBeLessThanOrEqual(4000);
@@ -657,7 +611,7 @@ describe('toolCommand', () => {
     const context = await getToolsContextString({ minimal: true });
 
     expect(context).toContain('Octocode CLI — Minimal Context');
-    expect(context).toContain('Protocol: schema first');
+    expect(context).toContain('Protocol: answer the next unresolved question');
     expect(context).toContain(
       'Output: minified structured JSON by default; --yaml human view. Input validation rejects the call; runtime row errors stay indexed and isolated.'
     );
@@ -732,11 +686,11 @@ describe('toolCommand', () => {
       'ghGetFileContent',
       'ghSearchHistory',
       'ghGetHistoryItem',
-      'npmSearch',
+      'artifactSearch',
       'ghCloneRepo',
       'localSearch',
       'astSearch',
-      'localGetFileContent',
+      'localFetch',
       'lspSearch',
     ]);
     expect(names).not.toEqual(
@@ -932,24 +886,7 @@ describe('toolCommand', () => {
     expect(Buffer.byteLength(output)).toBeLessThanOrEqual(3600);
   });
 
-  it('prints tools-core directory capability errors in compact CLI output', async () => {
-    publicMocks.ghGetFileContent.mockResolvedValueOnce({
-      content: [{ type: 'text', text: 'directory materialization disabled' }],
-      structuredContent: {
-        results: [
-          {
-            index: 0,
-            status: 'error',
-            meta: { diagnostics: { codes: ['localToolsDisabled'] } },
-            data: {
-              error:
-                'Directory fetch requires local materialization. Set ENABLE_LOCAL=true to use type: "directory".',
-            },
-          },
-        ],
-      },
-    });
-
+  it('rejects removed directory mode before invoking the file reader', async () => {
     const { executeToolCommand } =
       await import('../../src/cli/tool-command/execute.js');
     const ok = await executeToolCommand({
@@ -966,9 +903,7 @@ describe('toolCommand', () => {
       },
     });
 
-    expect(ok).toBe(true);
-    expect(consoleSpy.mock.calls.flat().join('\n')).toContain(
-      'localToolsDisabled'
-    );
+    expect(ok).toBe(false);
+    expect(publicMocks.ghGetFileContent).not.toHaveBeenCalled();
   });
 });

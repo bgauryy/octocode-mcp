@@ -21,10 +21,7 @@ import {
   getMultipleGitHubHistoryItems,
   searchMultipleGitHubHistory,
 } from '../../src/tools/github_search_pull_requests/historyExecutions.js';
-import {
-  GitHubGetHistoryItemQueryLocalSchema,
-  GitHubSearchHistoryQueryLocalSchema,
-} from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubGetHistoryItemQueryLocalSchema, GitHubSearchHistoryQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { clearAllCache } from '../../src/utils/http/cache/management.js';
 import { transformPullRequestItemFromSearch } from '../../src/github/prContentFetcher/transform.js';
 import { formatPRForResponse } from '../../src/github/prTransformation.js';

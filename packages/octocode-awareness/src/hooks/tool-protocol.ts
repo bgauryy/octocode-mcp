@@ -77,7 +77,7 @@ function classifyTool(name: string, input: unknown): { category: ToolCategory; e
     const files = extractWriteTargetPaths(name, input, { assumeWrite: true });
     return { category: 'write', effect: 'workspace-write', files };
   }
-  if (['read', 'read_file', 'localgetfilecontent', 'localsearch', 'glob', 'search'].includes(normalized)) {
+  if (['read', 'read_file', 'localfetch', 'localsearch', 'glob', 'search'].includes(normalized)) {
     return { category: 'read', effect: 'workspace-read', files: [] };
   }
   if (normalized === 'bash' || normalized.includes('shell') || normalized === 'exec_command' || normalized === 'write_stdin') {

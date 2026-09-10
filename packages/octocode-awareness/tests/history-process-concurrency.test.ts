@@ -50,7 +50,7 @@ describe('local-history process concurrency', () => {
       return operationId;
     }));
     const failures = captures.filter(result => result.status === 'rejected');
-    expect(failures, failures.map(result => result.status === 'rejected' ? String(result.reason) : '').join('\n')).toHaveLength(0);
+    expect(failures, failures.map(result => result.status === 'rejected' ? `${String(result.reason)}\nstdout: ${String((result.reason as { stdout?: string }).stdout ?? '')}\nstderr: ${String((result.reason as { stderr?: string }).stderr ?? '')}` : '').join('\n')).toHaveLength(0);
     const operationIds = captures.map(result => result.status === 'fulfilled' ? result.value : '').filter(Boolean);
 
     const timelineResult = await execFileAsync(process.execPath, args(db, [

@@ -49,7 +49,12 @@ describe('reliable cooperation contracts', () => {
 
   it('round trips typed payloads and threads without leaking data in compact previews', async () => {
     const context = fixture();
-    const data = { type: 'history.ready', payload: { operationId: 'edit', digest: 'sha256:proof', sizes: [71, 72] } };
+    const data = { type: 'history.ready', payload: {
+      operationId: 'edit', digest: 'sha256:proof', sizes: [71, 72],
+      cli: { name: 'signal list', args: ['--limit', '7'] },
+      action: { operation: 'agent_signal', request: { action: 'ack', signal_id: ['evidence-only'] } },
+      invocation: { argv: ['signal', 'list', '--limit', '7'] },
+    } };
     const sent = await executeAwarenessCommand({ command: 'signal publish', params: {
       kind: 'fyi', subject: 'Evidence available', body: 'Check the two versions.', to_agent: ['reader'], data,
     } }, context);

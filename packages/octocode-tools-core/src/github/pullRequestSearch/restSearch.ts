@@ -1,7 +1,7 @@
 import {
   GITHUB_SEARCH_DEFAULT_LIMIT,
   GITHUB_SEARCH_MAX_LIMIT,
-} from '../../config.js';
+} from '@octocodeai/octocode-core/schema';
 import type {
   GitHubAPIError,
   GitHubPullRequestsSearchParams,

@@ -4,7 +4,7 @@ import {
   resetContextUtilsNativeLoaderForTesting,
   setContextUtilsNativeLoaderForTesting,
 } from '../../../src/utils/contextUtils.js';
-import { extractMatchingLines } from '../../../src/tools/local_fetch_content/contentExtractor.js';
+import { extractMatchingLines } from '../../../src/utils/file/contentExtractor.js';
 
 type NativeContextUtilsModule = typeof import('@octocodeai/octocode-engine');
 

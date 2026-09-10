@@ -21,7 +21,7 @@ vi.mock('../../../src/tools/local_ripgrep/searchContentRipgrep.js', () => ({
 const { executeLspSearch } =
   await import('../../../src/tools/lsp/semantic_content/execution.js');
 const { LspSearchQuerySchema } =
-  await import('../../../src/tools/lsp/semantic_content/scheme.js');
+  await import('@octocodeai/octocode-core/schema');
 
 // Deliberately independent of dispatch: adding a public operation must update
 // acceptance expectations, not silently inherit a passing implementation loop.
@@ -138,6 +138,7 @@ function query(type: string, extra: Record<string, unknown> = {}) {
     ...extra,
   };
   if (type === 'documentSymbols' || type === 'diagnostic') return base;
+  if (type === 'workspaceSymbol') return { symbolName: 'target', ...base };
   return { symbolName: 'target', lineHint: 1, ...base };
 }
 const rows = (data: Record<string, any>) =>

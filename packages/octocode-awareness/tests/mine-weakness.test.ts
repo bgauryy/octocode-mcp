@@ -18,25 +18,25 @@ function freshDb(): DatabaseSync {
   return db;
 }
 
-function recordFailure(
+async function recordFailure(
   db: DatabaseSync,
   signature: string,
   importance = 5,
   observation = 'observed failure',
-): void {
-  insertMemory(db, {
+): Promise<void> {
+  (await insertMemory(db, {
     taskContext: `task for ${signature}`,
     observation,
     importance,
     label: 'GOTCHA',
     failureSignature: signature,
-  });
+  }));
 }
 
 describe('mineWeakness', () => {
-  it('returns nothing below minCount', () => {
+  it('returns nothing below minCount', async () => {
     const db = freshDb();
-    recordFailure(db, 'mechanism:retry-loop|cause:timeout');
+    (await recordFailure(db, 'mechanism:retry-loop|cause:timeout'));
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters).toEqual([]);
     expect(result.total_signatures).toBe(1);
@@ -44,11 +44,11 @@ describe('mineWeakness', () => {
     expect(result.next).toContain('npx @octocodeai/octocode-awareness reflect record');
   });
 
-  it('clusters repeated signatures and reports count/avg_importance', () => {
+  it('clusters repeated signatures and reports count/avg_importance', async () => {
     const db = freshDb();
-    recordFailure(db, 'mechanism:retry-loop|cause:timeout', 4);
-    recordFailure(db, 'mechanism:retry-loop|cause:timeout', 6);
-    recordFailure(db, 'mechanism:retry-loop|cause:timeout', 8);
+    (await recordFailure(db, 'mechanism:retry-loop|cause:timeout', 4));
+    (await recordFailure(db, 'mechanism:retry-loop|cause:timeout', 6));
+    (await recordFailure(db, 'mechanism:retry-loop|cause:timeout', 8));
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters).toHaveLength(1);
     const cluster = result.clusters[0]!;
@@ -60,12 +60,12 @@ describe('mineWeakness', () => {
     expect(result.next).not.toContain('memory_reflect');
   });
 
-  it('merges |surface:Z variants into one base-signature cluster', () => {
+  it('merges |surface:Z variants into one base-signature cluster', async () => {
     const db = freshDb();
-    recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:verify-gate', 5);
-    recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:verify-gate', 5);
-    recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:lock-conflict', 7);
-    recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:lock-conflict', 7);
+    (await recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:verify-gate', 5));
+    (await recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:verify-gate', 5));
+    (await recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:lock-conflict', 7));
+    (await recordFailure(db, 'mechanism:unverified-conclusion|cause:missing-verify|surface:lock-conflict', 7));
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters).toHaveLength(1);
     const cluster = result.clusters[0]!;
@@ -77,10 +77,10 @@ describe('mineWeakness', () => {
     expect(result.total_memories).toBe(4);
   });
 
-  it('merges |surface:Z variants before applying minCount', () => {
+  it('merges |surface:Z variants before applying minCount', async () => {
     const db = freshDb();
-    recordFailure(db, 'mechanism:flaky|cause:race|surface:verify-gate', 8);
-    recordFailure(db, 'mechanism:flaky|cause:race|surface:lock-conflict', 8);
+    (await recordFailure(db, 'mechanism:flaky|cause:race|surface:verify-gate', 8));
+    (await recordFailure(db, 'mechanism:flaky|cause:race|surface:lock-conflict', 8));
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters).toHaveLength(1);
     expect(result.clusters[0]).toMatchObject({
@@ -92,39 +92,39 @@ describe('mineWeakness', () => {
     expect(result.total_memories).toBe(2);
   });
 
-  it('suppresses near-duplicate mechanisms via the Jaccard diversity filter', () => {
+  it('suppresses near-duplicate mechanisms via the Jaccard diversity filter', async () => {
     const db = freshDb();
     // sigTokens strips "mechanism"/"cause" and keeps {retry-loop, timeout, *-flake}.
     // Two of three tokens match (jaccard = 2/4 = 0.5) — at the suppression threshold.
-    recordFailure(db, 'mechanism:retry-loop:timeout|cause:test-flake', 5);
-    recordFailure(db, 'mechanism:retry-loop:timeout|cause:test-flake', 5);
-    recordFailure(db, 'mechanism:retry-loop:timeout|cause:network-flake', 9);
-    recordFailure(db, 'mechanism:retry-loop:timeout|cause:network-flake', 9);
+    (await recordFailure(db, 'mechanism:retry-loop:timeout|cause:test-flake', 5));
+    (await recordFailure(db, 'mechanism:retry-loop:timeout|cause:test-flake', 5));
+    (await recordFailure(db, 'mechanism:retry-loop:timeout|cause:network-flake', 9));
+    (await recordFailure(db, 'mechanism:retry-loop:timeout|cause:network-flake', 9));
     const result = mineWeakness(db, { minCount: 2, limit: 20 });
     expect(result.clusters).toHaveLength(1);
     // Higher score (count * avg_importance = 2*9=18 vs 2*5=10) wins the diversity slot.
     expect(result.clusters[0]!.base_signature).toBe('mechanism:retry-loop:timeout|cause:network-flake');
   });
 
-  it('keeps genuinely distinct mechanisms separate', () => {
+  it('keeps genuinely distinct mechanisms separate', async () => {
     const db = freshDb();
-    recordFailure(db, 'mechanism:retry-loop|cause:timeout', 5);
-    recordFailure(db, 'mechanism:retry-loop|cause:timeout', 5);
-    recordFailure(db, 'mechanism:fts-miss|cause:empty-store', 5);
-    recordFailure(db, 'mechanism:fts-miss|cause:empty-store', 5);
+    (await recordFailure(db, 'mechanism:retry-loop|cause:timeout', 5));
+    (await recordFailure(db, 'mechanism:retry-loop|cause:timeout', 5));
+    (await recordFailure(db, 'mechanism:fts-miss|cause:empty-store', 5));
+    (await recordFailure(db, 'mechanism:fts-miss|cause:empty-store', 5));
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters).toHaveLength(2);
     const sigs = result.clusters.map(c => c.base_signature).sort();
     expect(sigs).toEqual(['mechanism:fts-miss|cause:empty-store', 'mechanism:retry-loop|cause:timeout']);
   });
 
-  it('ranks clusters by count * avg_importance descending', () => {
+  it('ranks clusters by count * avg_importance descending', async () => {
     const db = freshDb();
-    recordFailure(db, 'mechanism:aaa|cause:xxx', 3);
-    recordFailure(db, 'mechanism:aaa|cause:xxx', 3); // score 2*3=6
-    recordFailure(db, 'mechanism:bbb|cause:yyy', 9);
-    recordFailure(db, 'mechanism:bbb|cause:yyy', 9);
-    recordFailure(db, 'mechanism:bbb|cause:yyy', 9); // score 3*9=27
+    (await recordFailure(db, 'mechanism:aaa|cause:xxx', 3));
+    (await recordFailure(db, 'mechanism:aaa|cause:xxx', 3)); // score 2*3=6
+    (await recordFailure(db, 'mechanism:bbb|cause:yyy', 9));
+    (await recordFailure(db, 'mechanism:bbb|cause:yyy', 9));
+    (await recordFailure(db, 'mechanism:bbb|cause:yyy', 9)); // score 3*9=27
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters.map(c => c.base_signature)).toEqual([
       'mechanism:bbb|cause:yyy',
@@ -132,63 +132,63 @@ describe('mineWeakness', () => {
     ]);
   });
 
-  it('excludes SUPERSEDED memories from clustering', () => {
+  it('excludes SUPERSEDED memories from clustering', async () => {
     const db = freshDb();
-    const { memoryId: first } = insertMemory(db, {
+    const { memoryId: first } = (await insertMemory(db, {
       taskContext: 'first', observation: 'old', importance: 5,
       label: 'GOTCHA', failureSignature: 'mechanism:stale|cause:old',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'second', observation: 'new', importance: 5,
       label: 'GOTCHA', failureSignature: 'mechanism:stale|cause:old',
       supersedes: [first],
-    });
+    }));
     // Only one ACTIVE memory remains for this signature — below minCount 2.
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters).toEqual([]);
   });
 
-  it('scopes to workspacePath while still including globally-scoped rows', () => {
+  it('scopes to workspacePath while still including globally-scoped rows', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'scoped', observation: 'a', importance: 5, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped|cause:x', workspacePath: '/repo/a',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'scoped', observation: 'b', importance: 5, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped|cause:x', workspacePath: '/repo/a',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'other-repo', observation: 'c', importance: 5, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped|cause:x', workspacePath: '/repo/b',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'other-repo', observation: 'd', importance: 5, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped|cause:x', workspacePath: '/repo/b',
-    });
+    }));
     const result = mineWeakness(db, { minCount: 2, workspacePath: '/repo/a' });
     expect(result.clusters).toHaveLength(1);
     expect(result.clusters[0]!.count).toBe(2);
   });
 
-  it('scopes totals and representatives to the same workspace as clusters', () => {
+  it('scopes totals and representatives to the same workspace as clusters', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'scoped-a', observation: 'workspace-a representative', importance: 5, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped-total|cause:x', workspacePath: '/repo/a',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'scoped-a', observation: 'workspace-a second', importance: 5, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped-total|cause:x', workspacePath: '/repo/a',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'scoped-b', observation: 'workspace-b must not leak', importance: 10, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped-total|cause:x', workspacePath: '/repo/b',
-    });
-    insertMemory(db, {
+    }));
+    (await insertMemory(db, {
       taskContext: 'scoped-b', observation: 'workspace-b second', importance: 10, label: 'GOTCHA',
       failureSignature: 'mechanism:scoped-total|cause:x', workspacePath: '/repo/b',
-    });
+    }));
 
     const result = mineWeakness(db, { minCount: 2, workspacePath: '/repo/a' });
     expect(result.total_signatures).toBe(1);
@@ -199,11 +199,11 @@ describe('mineWeakness', () => {
     expect(result.clusters[0]!.representative).not.toContain('workspace-b');
   });
 
-  it('truncates the representative observation to 200 chars', () => {
+  it('truncates the representative observation to 200 chars', async () => {
     const db = freshDb();
     const long = 'x'.repeat(300);
-    recordFailure(db, 'mechanism:long|cause:obs', 5, long);
-    recordFailure(db, 'mechanism:long|cause:obs', 5, long);
+    (await recordFailure(db, 'mechanism:long|cause:obs', 5, long));
+    (await recordFailure(db, 'mechanism:long|cause:obs', 5, long));
     const result = mineWeakness(db, { minCount: 2 });
     expect(result.clusters[0]!.representative.length).toBe(200);
   });

@@ -3,6 +3,7 @@
  * and worker model/provider validation.
  */
 import path from 'node:path';
+import { isForbiddenWorkerTool } from '@octocodeai/agent-contracts/capabilities';
 import type { SpawnPolicy, SpawnPolicyResult, PiContext } from '../../types.js';
 import { assertWorktreeSpawnAllowed } from '../worktree.js';
 import {
@@ -12,7 +13,7 @@ import {
 } from './types.js';
 
 /** Recursive-agent tool denied for all spawned workers. */
-export const FORBIDDEN_WORKER_TOOLS = new Set(['agent']);
+export const FORBIDDEN_WORKER_TOOLS = new Set(['agent', 'spawnAgent', 'spawnSubagent', 'callTool', 'callSkill', 'tool-smith', 'skill-smith']);
 
 const SPAWN_POLICY_MAX_ACTIVE_ENV = 'OCTOCODE_AGENT_MAX_ACTIVE';
 const SPAWN_POLICY_WARNING_ACTIVE_ENV = 'OCTOCODE_AGENT_WARNING_ACTIVE';
@@ -75,7 +76,7 @@ export function shouldForceThinkingOffForToolCallingWorker(params: SpawnAgentPar
 }
 
 export function getWorkerTools(params: SpawnAgentParams): string[] {
-  return (params.tools ?? []).filter((toolName) => !FORBIDDEN_WORKER_TOOLS.has(toolName));
+  return (params.tools ?? []).filter((toolName) => !isForbiddenWorkerTool(toolName));
 }
 
 /**
@@ -162,7 +163,7 @@ export function evaluateSpawnPolicy(
   if (shouldForceThinkingOffForToolCallingWorker(params, getWorkerTools(params))) {
     warnings.push('Forced --thinking off for OpenAI GPT-5 tool-calling worker because Chat Completions rejects reasoning_effort with function tools.');
   }
-  const strippedTools = (params.tools ?? []).filter((toolName) => FORBIDDEN_WORKER_TOOLS.has(toolName));
+  const strippedTools = (params.tools ?? []).filter(isForbiddenWorkerTool);
   if (strippedTools.length > 0) {
     warnings.push(`Recursive worker tool(s) stripped: ${strippedTools.join(', ')}.`);
   }

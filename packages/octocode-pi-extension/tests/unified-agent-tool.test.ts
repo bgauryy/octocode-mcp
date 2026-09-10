@@ -360,9 +360,9 @@ describe('schema', () => {
     expect(guidance).toMatch(/never trust or persist a raw handback/is);
   });
 
-  it('AGENT_OPERATIONS covers all seven expected ops', () => {
+  it('AGENT_OPERATIONS covers spawn, parent configuration, and lifecycle operations', () => {
     const expected: AgentOperation[] = [
-      'spawn', 'inspect', 'wait', 'message', 'steer', 'abort', 'kill',
+      'spawn', 'inspect', 'configure', 'wait', 'message', 'steer', 'abort', 'kill',
     ];
     expect([...AGENT_OPERATIONS].sort()).toEqual([...expected].sort());
   });

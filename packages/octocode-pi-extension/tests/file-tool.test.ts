@@ -32,6 +32,16 @@ afterEach(() => rmSync(cwd, { recursive: true, force: true }));
 
 const call = (...queries: Array<Record<string, unknown>>) => tool.execute('file-test', { queries }, undefined, undefined, { cwd });
 
+test('malformed Unicode paths fail before any batch effects or replacement-character aliases', async () => {
+  await assert.rejects(call(
+    { type: 'write', reasoning: 'first fixture', path: 'first', content: 'first' },
+    { type: 'write', reasoning: 'malformed path', path: 'x\ud800', content: 'second' },
+    { type: 'write', reasoning: 'literal replacement character', path: 'x\ufffd', content: 'third' },
+  ), /Unicode|surrogate/i);
+  assert.equal(existsSync(join(cwd, 'first')), false);
+  assert.equal(existsSync(join(cwd, 'x\ufffd')), false);
+});
+
 test('registers one discriminated file mutation contract', () => {
   assert.equal(tool.name, 'file');
   const schema = tool.parameters as {

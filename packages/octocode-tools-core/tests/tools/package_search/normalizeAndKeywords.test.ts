@@ -1,3 +1,8 @@
+import {
+  normalizeRepoUrl,
+  formatPackageData,
+} from '../../../src/tools/package_search/npm.js';
+import { expectExecutableNext } from '../../helpers/executableNext.js';
 import { describe, expect, it, vi } from 'vitest';
 
 const searchPackageMock = vi.fn();
@@ -12,17 +17,10 @@ vi.mock('../../../src/utils/package/common.js', async importOriginal => {
   };
 });
 
-import {
-  normalizeRepoUrl,
-  formatPackageData,
-  searchPackages,
-} from '../../../src/tools/package_search/execution.js';
-import {
-  foldKeywords,
-  isPackageNotFoundError,
-} from '../../../src/tools/package_search/queryHelpers.js';
-import { NpmSearchBulkQueryLocalSchema } from '../../../src/tools/package_search/scheme.js';
-import { NpmSearchQueryLocalSchema } from '../../../src/tools/package_search/scheme.js';
+import { searchPackages } from '../../../src/tools/package_search/execution.js';
+import { isPackageNotFoundError } from '../../../src/tools/package_search/queryHelpers.js';
+import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
+import { ArtifactSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 type AnyPkg = Parameters<typeof formatPackageData>[0];
 
@@ -61,29 +59,10 @@ describe('normalizeRepoUrl — npm shorthand repository URLs', () => {
     );
   });
 
-  it('drives a GitHub tool chain from a shorthand repository', () => {
+  it('preserves source identity without adding unsolicited success advice', () => {
     const data = formatPackageData(npmPkg('github:octokit/rest.js'));
     expect(data.repository).toBe('https://github.com/octokit/rest.js');
-    const next = data.next as
-      { viewTree?: { query?: Record<string, unknown> } } | undefined;
-    expect(next?.viewTree?.query).toMatchObject({
-      owner: 'octokit',
-      repo: 'rest.js',
-    });
-    expect(next).not.toHaveProperty('viewRepoStructure');
-    expect(next).not.toHaveProperty('searchCode');
-  });
-});
-
-describe('foldKeywords', () => {
-  it('joins an array of terms with spaces', () => {
-    expect(foldKeywords(['state', 'management'])).toBe('state management');
-  });
-
-  it('returns undefined for empty inputs', () => {
-    expect(foldKeywords(undefined)).toBeUndefined();
-    expect(foldKeywords([])).toBeUndefined();
-    expect(foldKeywords(['   '])).toBeUndefined();
+    expect(data).not.toHaveProperty('next');
   });
 });
 
@@ -105,162 +84,70 @@ describe('isPackageNotFoundError', () => {
   });
 });
 
-describe('searchPackages — keywords fold drives the registry query', () => {
-  it.each([
-    { packageName: 'react', keywords: ['state'] },
-    { packageName: 'react', pageSize: 10 },
-    { packageName: 'react', page: 1 },
-    { packageName: 'react', page: 2 },
-    { keywords: [' '] },
-  ])(
-    'rejects invalid mode inputs before reaching the registry: %j',
-    async query => {
-      searchPackageMock.mockReset();
-      const result = await searchPackages({ queries: [query] } as never);
-      expect(searchPackageMock).not.toHaveBeenCalled();
-      expect(JSON.stringify(result.structuredContent)).toContain('error');
-    }
-  );
-  it('searches using "state management" when only keywords is given', async () => {
+describe('searchPackages registry dispatch', () => {
+  it('joins discovery terms and uses the keyword default', async () => {
     searchPackageMock.mockReset();
-    searchPackageMock.mockResolvedValue({
-      packages: [],
-      totalFound: 0,
-      rawResponseChars: 0,
-    });
-
+    searchPackageMock.mockResolvedValue({ packages: [], totalFound: 0 });
     await searchPackages({
-      queries: [{ keywords: ['state', 'management'] }],
-    } as never);
-
-    expect(searchPackageMock).toHaveBeenCalledTimes(1);
-    expect(searchPackageMock.mock.calls[0]?.[0]).toMatchObject({
-      name: 'state management',
+      queries: [{ type: 'npm', keywords: ['state', 'management'] }],
     });
-  });
-
-  it('applies keyword pageSize and emits a compact executable next page', async () => {
-    searchPackageMock.mockReset();
-    searchPackageMock.mockResolvedValue({
-      packages: [npmPkg('github:octo/one'), npmPkg('github:octo/two')],
-      totalFound: 20,
-      rawResponseChars: 100,
-    });
-    const firstQuery = {
-      keywords: ['state', 'management'],
-      page: 1,
-      pageSize: 2,
-      goal: 'discover packages',
-      reasoning: 'compare candidates',
-    };
-
-    const first = await searchPackages({ queries: [firstQuery] } as never);
-    expect(searchPackageMock).toHaveBeenLastCalledWith(
+    expect(searchPackageMock).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'state management',
-        page: 1,
-        itemsPerPage: 2,
+        mode: 'keywords',
+        itemsPerPage: 10,
       })
     );
-    const firstRow = (
-      first.structuredContent as {
-        results: Array<{ data: Record<string, any> }>;
-      }
-    ).results[0]!;
-    const continuation = firstRow.data.next.nextPage;
-    expect(continuation).toMatchObject({
-      tool: 'npmSearch',
-      query: {
-        keywords: ['state', 'management'],
-        page: 2,
-        pageSize: 2,
-      },
+  });
+  it('emits a schema-valid executable cursor preserving registry and terms', async () => {
+    searchPackageMock.mockReset();
+    searchPackageMock.mockResolvedValue({
+      packages: [npmPkg('github:octo/one')],
+      totalFound: 2,
+      registry: 'https://registry.example.test',
     });
-    expect(continuation.query).not.toHaveProperty('goal');
-    expect(continuation.query).not.toHaveProperty('reasoning');
-
-    const replay = NpmSearchBulkQueryLocalSchema.parse({
-      queries: [continuation.query],
+    const first = await searchPackages({
+      queries: [{ type: 'npm', keywords: ['state'], pageSize: 1 }],
     });
-    await searchPackages({ queries: replay.queries } as never);
+    const row = (first.structuredContent as any).results[0].data;
+    expectExecutableNext(row);
+    const next = row.next.nextPage;
+    expect(next.query).toMatchObject({
+      type: 'npm',
+      keywords: ['state'],
+      pageSize: 1,
+      registry: 'https://registry.example.test',
+      cursor: expect.any(String),
+    });
+    expect(next.query).not.toHaveProperty('page');
+    const replay = ArtifactSearchBulkQueryLocalSchema.parse({
+      queries: [next.query],
+    });
+    await searchPackages({ queries: replay.queries });
     expect(searchPackageMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 2, itemsPerPage: 2 })
+      expect.objectContaining({
+        offset: 1,
+        registry: 'https://registry.example.test',
+      })
     );
-  });
-
-  it('keeps a one-result keyword page in discovery pagination mode', async () => {
-    searchPackageMock.mockReset();
-    searchPackageMock.mockResolvedValue({
-      packages: [npmPkg('github:octo/one')],
-      totalFound: 11,
-      rawResponseChars: 50,
-    });
-
-    const result = await searchPackages({
-      queries: [{ keywords: ['narrow'], page: 2, pageSize: 10 }],
-    } as never);
-    const row = (
-      result.structuredContent as {
-        results: Array<{ data: Record<string, any> }>;
-      }
-    ).results[0]!;
-    expect(row.data.pagination).toMatchObject({
-      currentPage: 2,
-      perPage: 10,
-      returned: 1,
-    });
-  });
-
-  it('marks the schema page ceiling as a terminal partial result', async () => {
-    searchPackageMock.mockReset();
-    searchPackageMock.mockResolvedValue({
-      packages: [npmPkg('github:octo/one')],
-      totalFound: 1001,
-      rawResponseChars: 50,
-    });
-
-    const result = await searchPackages({
-      queries: [{ keywords: ['schema'], page: 1000, pageSize: 1 }],
-    } as never);
-    const row = (
-      result.structuredContent as {
-        results: Array<{
-          data: Record<string, any>;
-          meta: { diagnostics?: { codes?: string[] } };
-        }>;
-      }
-    ).results[0]!;
-
-    expect(row.data).toMatchObject({
-      terminalLimit: true,
-      pagination: {
-        hasMore: true,
-        continuationUnavailable: {
-          reason: 'schemaPageLimit',
-          maxPage: 1000,
-        },
-      },
-    });
-    expect(row.data.next?.nextPage).toBeUndefined();
-    expect(row.meta.diagnostics?.codes).toContain('terminalLimitReached');
-    expect(row.meta.diagnostics?.codes).not.toContain('continuationMissing');
   });
 });
 
-describe('npmSearch public selector schema', () => {
+describe('artifactSearch public selector schema', () => {
   it('allows pageSize only for keyword discovery', () => {
     expect(
-      NpmSearchBulkQueryLocalSchema.safeParse({
-        queries: [{ keywords: ['schema'], pageSize: 25 }],
+      ArtifactSearchBulkQueryLocalSchema.safeParse({
+        queries: [{ type: 'npm', keywords: ['schema'], pageSize: 25 }],
       }).success
     ).toBe(true);
     expect(
-      NpmSearchBulkQueryLocalSchema.safeParse({
-        queries: [{ packageName: 'zod', pageSize: 25 }],
+      ArtifactSearchBulkQueryLocalSchema.safeParse({
+        queries: [{ type: 'npm', packageName: 'zod', pageSize: 25 }],
       }).success
     ).toBe(false);
     expect(
-      NpmSearchQueryLocalSchema.safeParse({
+      ArtifactSearchQueryLocalSchema.safeParse({
+        type: 'npm',
         packageName: 'zod',
         pageSize: 25,
       }).success
@@ -285,14 +172,14 @@ describe('searchPackages — exact not-found becomes a guided empty', () => {
     });
 
     const result = await searchPackages({
-      queries: [{ packageName: 'defintely-not-a-real-pkg' }],
+      queries: [{ type: 'npm', packageName: 'defintely-not-a-real-pkg' }],
     } as never);
 
     const data = dataOf(result);
     expect(data.status).toBe('empty');
     // The bulk layer strips the empty `packages: []` array; the guidance is the
     // load-bearing signal.
-    expect((data.hints as string[])?.join(' ')).toMatch(/spelling|scoped/i);
+    expect((data.hints as string[])?.join(' ')).toMatch(/name|coordinate/i);
   });
 
   it('a network failure on an exact name stays a hard error', async () => {
@@ -302,7 +189,7 @@ describe('searchPackages — exact not-found becomes a guided empty', () => {
     });
 
     const result = await searchPackages({
-      queries: [{ packageName: 'react' }],
+      queries: [{ type: 'npm', packageName: 'react' }],
     } as never);
 
     const data = dataOf(result);

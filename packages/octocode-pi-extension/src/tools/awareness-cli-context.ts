@@ -36,7 +36,7 @@ export function renderAwarenessCliContext(ctx?: PiContext, options: { nativeTool
   if (!isPersistentStorageEnabled()) return `<awareness_cli_runtime>\n${PERSISTENT_AWARENESS_DISABLED_MESSAGE}. Do not use durable Awareness commands; keep work in session state.\n</awareness_cli_runtime>`;
   if (options.nativeTool) {
     const bindings = buildAwarenessContext(ctx);
-    return `<awareness_runtime>Use the native awareness tool. It imports the Awareness API directly. Host bindings: ${JSON.stringify({ agentId: bindings.agentId, workspace: bindings.workspace, database: bindings.database })}. Other features are on demand.</awareness_runtime>`;
+    return `<awareness_runtime>Use the native awareness tool. Host bindings: ${JSON.stringify({ agentId: bindings.agentId, workspace: bindings.workspace, database: bindings.database })}. Other features are on demand.</awareness_runtime>`;
   }
   const env = buildAwarenessCliEnvironment(ctx);
   if (!env.OCTOCODE_AWARENESS_CLI) return '<awareness_cli_runtime>Awareness CLI dependency is unavailable. Report the missing runtime before relying on shared coordination.</awareness_cli_runtime>';

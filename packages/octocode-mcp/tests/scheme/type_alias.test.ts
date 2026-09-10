@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 
-import { LocalSearchQuerySchema } from '../../../octocode-tools-core/src/tools/local_search/scheme.js';
-import { AstSearchQuerySchema } from '../../../octocode-tools-core/src/tools/ast_search/scheme.js';
+import { LocalSearchQuerySchema } from '@octocodeai/octocode-core/schema';
+import { AstSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 describe('canonical localSearch lexical contract', () => {
   const base = { searchText: 'foo', path: 'src' };

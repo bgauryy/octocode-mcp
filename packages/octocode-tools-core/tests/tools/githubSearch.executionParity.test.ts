@@ -35,7 +35,6 @@ const mocks = vi.hoisted(() => ({
     type: 'github' as const,
     capabilities: {
       cloneRepo: true,
-      fetchDirectoryToDisk: true,
       requiresScopedCodeSearch: false,
       supportsMergedState: true,
       supportsMultiTopicSearch: true,
@@ -74,13 +73,13 @@ vi.mock('../../src/providers/factory.js', () => ({
 import { cleanup, initialize } from '../../src/serverConfig.js';
 import { searchGitHubReposAPI } from '../../src/github/repoSearch.js';
 import { executeGitHubSearch } from '../../src/tools/github_search/execution.js';
-import { GitHubSearchQuerySchema } from '../../src/tools/github_search/scheme.js';
+import { GitHubSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 import { searchMultipleGitHubCode } from '../../src/tools/github_search_code/execution.js';
-import { GitHubCodeSearchQueryLocalSchema } from '../../src/tools/github_search_code/scheme.js';
+import { GitHubCodeSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { searchMultipleGitHubRepos } from '../../src/tools/github_search_repos/execution.js';
-import { GitHubReposSearchSingleQueryLocalSchema } from '../../src/tools/github_search_repos/scheme.js';
+import { GitHubReposSearchSingleQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { exploreMultipleRepositoryStructures } from '../../src/tools/github_view_repo_structure/execution.js';
-import { GitHubViewRepoStructureQueryLocalSchema } from '../../src/tools/github_view_repo_structure/scheme.js';
+import { GitHubViewRepoStructureQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 const pagination = {
   currentPage: 1,

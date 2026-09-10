@@ -20,7 +20,7 @@ import {
   providerSupports,
 } from '../providerExecution.js';
 import { cloneRepo } from './cloneRepo.js';
-import type { CloneRepoQueryLocalSchema } from './scheme.js';
+import type { CloneRepoQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import type { z } from 'zod';
 import { getConfigSync } from '@octocodeai/config';
 
@@ -93,7 +93,7 @@ export async function executeCloneRepo(
           // Tree orientation is ready to run without inventing a search term.
           const next: Record<string, unknown> = {
             viewStructure: {
-              tool: 'localSearch',
+              tool: 'astSearch',
               query: { operation: 'tree', path: result.localPath },
               why: 'Browse the cloned directory before choosing a text, structural, or file-discovery operation.',
               confidence: 'exact',

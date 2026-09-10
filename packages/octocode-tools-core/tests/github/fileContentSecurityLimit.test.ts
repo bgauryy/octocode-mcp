@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fetchGitHubFileContentAPI } from '../../src/github/fileContent.js';
 import { readFileEntry } from '../../src/tools/github_fetch_content/finalizer/entryParsers.js';
-import { FileContentBulkQueryLocalSchema } from '../../src/tools/github_fetch_content/scheme.js';
+import { FileContentBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import type { FileContentExecutionQuery } from '../../src/tools/github_fetch_content/types.js';
 
 const fixture = vi.hoisted(() => ({ source: '' }));
@@ -34,7 +34,7 @@ describe('GitHub selected-view secret scanner limits', () => {
     '%s exposes a typed limit and executable source-line recovery',
     async minify => {
       fixture.source = 'safe first line\n'.padEnd(10_000_001, 'x');
-      const result = await run({ ...base, minify, charLength: 7 });
+      const result = await run({ ...base, minify, chunkType: 'bytes', limit: 7 });
       expect(result).toMatchObject({
         errorCode: 'contentSecurityLimit',
         terminalLimit: true,
@@ -49,18 +49,18 @@ describe('GitHub selected-view secret scanner limits', () => {
       expect(next).toBeDefined();
       expect(next?.query).not.toHaveProperty('charOffset');
       const bounded = await run(next!.query);
-      expect(bounded.content).toBe('safe first line');
+      expect(bounded.content).toBe('safe first line\n');
       expect(bounded.sourceChars).toBe(fixture.source.length);
     }
   );
   it('does not emit an impossible continuation for an oversized single source line', async () => {
     fixture.source = 'x'.repeat(10_000_001);
-    const result = await run({ ...base, minify: 'none', charLength: 7 });
+    const result = await run({ ...base, minify: 'none', chunkType: 'bytes', limit: 7 });
     expect(result).toMatchObject({
       terminalLimit: true,
       errorCode: 'contentSecurityLimit',
     });
     expect(result.next?.readBoundedLines).toBeUndefined();
-    expect(result.next?.continueChars).toBeUndefined();
+    expect(result.next?.continue).toBeUndefined();
   });
 });

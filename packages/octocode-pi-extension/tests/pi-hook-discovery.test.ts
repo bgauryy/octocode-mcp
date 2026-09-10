@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, test } from 'vitest';
-import { discoverCodexHookSources } from '../src/adapters/pi-hook-discovery.js';
+import { discoverCodexHookSources, discoverPiHookSources } from '../src/adapters/pi-hook-discovery.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -72,4 +72,22 @@ test('rejects symlinked and oversized workspace sources before parsing', () => {
   assert.equal(discovered.catalog.snapshot().entries.length, 0);
   assert.ok(discovered.errors.some((error) => /symlink/i.test(error.message)));
   assert.ok(discovered.errors.some((error) => /size limit/i.test(error.message)));
+});
+
+test('native declarative hooks are discovered without execution and workspace filenames shadow global sources', () => {
+  const root = tempRoot();
+  const workspace = path.join(root, 'workspace');
+  const octocodeHome = path.join(root, 'octocode');
+  fs.mkdirSync(path.join(octocodeHome, 'hooks'), { recursive: true });
+  fs.mkdirSync(path.join(workspace, '.agents', 'hooks'), { recursive: true });
+  const config = { hooks: { tool_call: [{ command: 'touch SHOULD_NOT_EXIST', type: 'command' }] } };
+  fs.writeFileSync(path.join(octocodeHome, 'hooks', 'guard.json'), JSON.stringify(config));
+  fs.writeFileSync(path.join(workspace, '.agents', 'hooks', 'guard.json'), JSON.stringify(config));
+  const result = discoverPiHookSources({ workspace, octocodeHome, userCodexDir: path.join(root, 'none') });
+  assert.equal(result.definitions.length, 2);
+  assert.equal(result.definitions.find(source => source.source.scope === 'user')?.status, 'shadowed');
+  assert.equal(result.definitions.find(source => source.source.scope === 'workspace')?.configuration.hooks.PreToolUse?.length, 1);
+  assert.equal(fs.existsSync(path.join(workspace, 'SHOULD_NOT_EXIST')), false);
+  assert.deepEqual(result.catalog.effective(true, false), []);
+  assert.deepEqual(result.errors, []);
 });

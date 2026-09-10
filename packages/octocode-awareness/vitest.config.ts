@@ -29,9 +29,9 @@ export default defineConfig({
       thresholds: {
         // Ratchet after validating the shared API, CLI, stores and host adapters.
         statements: 89.5,
-        branches: 79.5,
-        functions: 94.5,
-        lines: 93,
+        branches: 80,
+        functions: 95.3,
+        lines: 93.4,
       },
     },
   },

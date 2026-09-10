@@ -69,14 +69,14 @@ export async function gitCoordinationScenario(): Promise<void> {
     const closed = agentSignal(db, { action: 'resolve', agentId: 'main-agent', workspacePath: main, threadId: message.thread_id });
     assert.equal(closed.action === 'resolve' && closed.resolved, 2, 'one resolution must cover both worktrees');
 
-    const memory = insertMemory(db, { agentId: 'main-agent', workspacePath: main, taskContext: 'auth contract',
+    const memory = (await insertMemory(db, { agentId: 'main-agent', workspacePath: main, taskContext: 'auth contract',
       observation: 'Check the auth precondition before making changes', label: 'GOTCHA', importance: 8,
-      references: [`file:${join(main, 'src/auth.ts')}`] });
-    assert.ok(getMemory(db, { workspacePath: peer, files: ['src/auth.ts'] }).memories.some(m => m.memory_id === memory.memoryId),
+      references: [`file:${join(main, 'src/auth.ts')}`] }));
+    assert.ok((await getMemory(db, { workspacePath: peer, files: ['src/auth.ts'] })).memories.some(m => m.memory_id === memory.memoryId),
       'file knowledge must be discoverable from a sibling worktree');
     assert.equal(memoryRows(db, { workspacePath: peer, file: 'src/auth.ts' }).length, 1);
-    assert.equal(getMemory(db, { workspacePath: other, files: ['src/auth.ts'] }).memories.length, 0);
-    assert.equal(getMemory(db, { workspacePath: peer, strictScope: true }).memories.length, 0);
+    assert.equal((await getMemory(db, { workspacePath: other, files: ['src/auth.ts'] })).memories.length, 0);
+    assert.equal((await getMemory(db, { workspacePath: peer, strictScope: true })).memories.length, 0);
 
     const dbPath = join(base, 'native.sqlite3');
     const mainStore = openAwarenessStore({ workspace: main, dbPath });

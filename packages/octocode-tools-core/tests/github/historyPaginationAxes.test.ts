@@ -16,7 +16,7 @@ vi.mock('../../src/utils/http/cache/dataCache.js', () => ({
   withDataCache: vi.fn(async (_key, fetcher) => fetcher()),
 }));
 import { getMultipleGitHubHistoryItems } from '../../src/tools/github_search_pull_requests/historyExecutions.js';
-import { GitHubGetHistoryItemQueryLocalSchema } from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubGetHistoryItemQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 const files = [
   { filename: 'first.ts', patch: '0123456789', status: 'modified' },

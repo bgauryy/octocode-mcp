@@ -3,44 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   initialize: vi.fn().mockResolvedValue(undefined),
   initializeProviders: vi.fn().mockResolvedValue([]),
-  loadToolContent: vi.fn().mockResolvedValue({
-    systemPrompt: 'Server instructions.',
-    prompts: {},
-    toolNames: {},
-    baseSchema: {},
-    tools: {
-      ghSearch: {
-        name: 'ghSearch',
-        description: 'Search GitHub code, repositories, or trees.',
-        schema: { operation: 'operation', keywords: 'terms', owner: 'owner' },
-        hints: { hasResults: [], empty: [] },
-      },
-      localSearch: {
-        name: 'localSearch',
-        description: 'Local search.',
-        schema: { path: 'dir', searchText: 'regex' },
-        hints: { hasResults: [], empty: [] },
-      },
-      ghCloneRepo: {
-        name: 'ghCloneRepo',
-        description: 'Clone a repo.',
-        schema: { owner: 'owner', repo: 'repo' },
-        hints: { hasResults: [], empty: [] },
-      },
 
-      legacyTool: {
-        name: 'legacyTool',
-        description: 'Legacy tool.',
-        schema: { foo: 'Foo description', bar: 'Bar description' } as Record<
-          string,
-          string
-        >,
-        hints: { hasResults: [], empty: [] },
-      },
-    },
-    baseHints: { hasResults: [], empty: [] },
-    genericErrorHints: [],
-  }),
   noop: vi.fn().mockResolvedValue({
     content: [{ type: 'text', text: 'ok' }],
   }),
@@ -57,16 +20,6 @@ const mocks = vi.hoisted(() => ({
 }));
 
 // Schema/help path imports the engine-free `/schema` subpath (P3).
-vi.mock('@octocodeai/octocode-tools-core/schema', async importOriginal => {
-  const actual =
-    await importOriginal<
-      typeof import('@octocodeai/octocode-tools-core/schema')
-    >();
-  return {
-    ...actual,
-    loadToolContent: mocks.loadToolContent,
-  };
-});
 
 vi.mock('@octocodeai/octocode-tools-core/direct', async importOriginal => {
   const actual =
@@ -90,7 +43,6 @@ vi.mock('@octocodeai/octocode-tools-core/direct', async importOriginal => {
 
   return {
     ...actual,
-    loadToolContent: mocks.loadToolContent,
     executeDirectTool,
   };
 });
@@ -127,7 +79,9 @@ describe('tool-command coverage', () => {
     expect(output).toContain('localSearch');
     expect(output).toContain('Full protocol: context --full');
     expect(output).toContain('ghSearch');
-    expect(output).toContain('Discover GitHub code with operation:"code"');
+    expect(output).toContain(
+      'Discover GitHub code, repositories, or a known repository tree.'
+    );
     expect(output).toContain('localSearch');
     expect(output).not.toContain('[path*');
     expect(output).not.toContain('workspaceSymbol');
@@ -175,7 +129,7 @@ describe('tool-command coverage', () => {
     const output = consoleSpy.mock.calls.flat().join('\n');
     expect(output).toContain('Octocode CLI — Agent Context');
     expect(output).toContain('tools <name>');
-    expect(output).toContain('Protocol: schema first');
+    expect(output).toContain('Protocol: answer the next unresolved question');
     expect(output).toContain('Tools (');
     expect(output).not.toContain('Server instructions.');
     expect(output).toContain('Output contract');
@@ -190,10 +144,14 @@ describe('tool-command coverage', () => {
 
     // Schemas are no longer embedded in context — read them on demand via octocode tools <name>
     expect(compact).not.toContain('"$schema"');
-    expect(compact).toContain('Protocol: schema first');
-    expect(full).toContain('RESEARCH LOOP');
+    expect(compact).toContain('Protocol: answer the next unresolved question');
+    expect(full).toContain(
+      'Choose the next unresolved question; skip stages already supported by evidence.'
+    );
     // full mode includes the complete description text on a separate line
-    expect(full).toContain('Discover GitHub code with operation:"code"');
+    expect(full).toContain(
+      'Discover GitHub code, repositories, or a known repository tree.'
+    );
     expect(full).toContain('Create a cached, shallow checkout');
   });
 
@@ -813,7 +771,7 @@ describe('tool-command coverage', () => {
 
     const githubTool = TOOL_DEFINITIONS.find(tool => tool.name === 'ghSearch');
     const packageTool = TOOL_DEFINITIONS.find(
-      tool => tool.name === 'npmSearch'
+      tool => tool.name === 'artifactSearch'
     );
 
     expect(githubTool).toBeDefined();
@@ -830,29 +788,27 @@ describe('tool-command coverage', () => {
 
     expect(githubByName['keywords']?.type).toBe('array<string>');
     expect(packageByName['packageName']?.type).toBe('string');
-    expect(packageByName['page']?.type).toBe('integer');
+    expect(packageByName['cursor']?.type).toBe('string');
+    expect(packageByName['page']).toBeUndefined();
     expect(githubByName['id']).toBeUndefined();
     expect(githubByName['researchGoal']).toBeUndefined();
     expect(githubByName['reasoning']).toBeUndefined();
   });
 
-  it('npmSearch example includes the MCP-owned required fields', async () => {
+  it('artifactSearch example includes the MCP-owned required fields', async () => {
     const { toolCommand } =
       await import('../../src/cli/tool-command/command.js');
 
     await toolCommand.handler!({
       command: 'tools',
-      args: ['npmSearch'],
+      args: ['artifactSearch'],
       options: { scheme: true },
     });
 
     const output = consoleSpy.mock.calls.flat().join('\n');
     expect(output).toContain('"packageName"');
     expect(output).toContain('zod');
-    // npmSearch now surfaces two curated examples: the exact-package lookup and a
-    // paged keyword-discovery example ({"packageName":"schema validation","page":1}).
-    // The paged example legitimately includes "page"; assert the primary example stays clean of pagination noise.
-    expect(output).toContain('{"packageName":"zod"}');
+    expect(output).toContain('{"type":"npm","packageName":"zod"}');
     expect(output).not.toContain('"limit"');
   });
 
@@ -952,11 +908,7 @@ describe('tool-command coverage', () => {
     expect(mocks.noop.mock.calls[0]?.[0].queries[0]).not.toHaveProperty('id');
   });
 
-  it('showAvailableTools: returns null metadata gracefully when loadToolContent fails', async () => {
-    mocks.loadToolContent.mockRejectedValueOnce(
-      new Error('metadata unavailable')
-    );
-
+  it('showAvailableTools: lists tools from the canonical static catalog', async () => {
     const { showAvailableTools } =
       await import('../../src/cli/tool-command/list-view.js');
 
@@ -1080,7 +1032,7 @@ describe('tool-command coverage', () => {
 
   it('buildDirectToolExampleQuery: emits concrete top-level tool examples', async () => {
     const { buildDirectToolExampleQuery } =
-      await import('@octocodeai/octocode-tools-core/schema');
+      await import('@octocodeai/octocode-core/schema');
 
     expect(buildDirectToolExampleQuery('ghSearchHistory')).toMatchObject({
       operation: 'pullRequests',

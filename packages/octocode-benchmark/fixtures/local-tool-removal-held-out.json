@@ -32,7 +32,7 @@
     "decisionRule": "ACCEPT only when every held-out behavior assertion and guardrail passes, both retired names are rejected, and no legacy export or runner module is present in tools-core source or built output. Timing is diagnostic only and is not used to claim a speedup."
   },
   "publicSurface": {
-    "tools": ["localSearch", "astSearch", "localGetFileContent", "lspSearch"]
+    "tools": ["localSearch", "astSearch", "localFetch", "lspSearch"]
   },
   "retiredSurface": {
     "tools": [
@@ -76,9 +76,9 @@
       "id": "exact-content",
       "heldOut": true,
       "capability": "local-content",
-      "before": {"tool": "localGetFileContent", "status": "retained"},
+      "before": {"tool": "localFetch", "status": "retained"},
       "after": {
-        "tool": "localGetFileContent",
+        "tool": "localFetch",
         "views": ["none", "standard", "symbols"],
         "preserves": "unicode-and-crlf"
       }

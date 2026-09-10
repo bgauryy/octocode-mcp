@@ -7,6 +7,14 @@ coordination profile captures no file history. Explicit `history` commands remai
 available through the CLI and [API](API.md). Pi imports that API for native capture,
 checkpoints, and restore; it does not launch the Awareness CLI.
 
+Workspace capture and restore require the optional `@octocodeai/octocode-extension-rust`
+package and its matching platform addon. Native work runs asynchronously; SQLite
+journals and private Git objects remain owned by Awareness. Missing native support
+rejects those operations without a JavaScript filesystem fallback. Status, schema
+discovery, and ordinary coordination remain available. See [installation and API
+requirements](API.md#optional-native-file-operations), including copied standalone
+skills.
+
 ## Storage boundary
 
 For a selected persistent Awareness database, local history uses a private store
@@ -29,7 +37,7 @@ with the catch-all `*` rule so generated history stays out of ordinary Git statu
 An existing marker containing that rule is preserved; an incompatible marker or
 symlink is rejected without overwriting its contents.
 
-The implementation bundles the exact `isomorphic-git` version declared in the package manifest. It runs through Node's file-system API, requires no `git` executable or network access, and is distributed under its MIT license. Direct object reads validate a caller-supplied limit after the object is inflated; that limit bounds returned content, not peak compressed-object inflation work.
+The implementation bundles the exact MIT-licensed `isomorphic-git` version declared in the package manifest for object serialization. Its writes publish through the dedicated extension Rust package's private, descriptor-relative filesystem boundary; no `git` executable or network access is needed. Native object reads stream zlib input with a 17 MiB compressed cap, a caller-selected decoded cap of at most 16 MiB, a 64-byte header cap, and two fixed 64 KiB scratch buffers. The decoder validates canonical type/size framing, exact body length, zlib completion, SHA-1 identity, and pinned source metadata. Body allocation happens only after the declared size passes the decoded cap; verification retains no body. Each read has a 10-second deadline including worker queue time and supports cancellation between chunks. Blocking operating-system reads and flushes themselves cannot be interrupted. Recursive tree/reachability work adds aggregate byte, entry and time budgets; exhausted maintenance budgets return an explicit terminal diagnostic. Only loose objects are supported: a missing loose object reports unavailable/packed-unsupported and never falls back to unbounded pack inflation or workspace Git.
 
 History is lazy. Status and in-memory Awareness databases do not create the marker
 or a store. There is no implicit history migration, automatic garbage collection,
@@ -70,9 +78,37 @@ Capture publishes immutable refs under `refs/octocode/<sha256(operation-id)>/{be
 
 ## Restore safety
 
+### Read evidence from a linked checkout
+
+`history inspect --operation-id <id>` pages through one operation's file versions
+and returns executable `history read` requests for captured sides. Follow the
+returned continuation; a changed operation produces an explicit snapshot restart.
+Verified-memory recall supplies this inspection request with source provenance.
+
+For a live linked worktree, `history inspect` and `history read` accept
+`--source-workspace <path>`. The original `--workspace` remains the caller binding
+on every continuation. Membership is revalidated per request; an unrelated clone
+does not qualify. Reads open only an existing private archive, never initialize or
+repair its directories, marker, or Git metadata. A missing archive is reported as
+unavailable. Restore, capture, and checkpoint accept no source selector and remain
+bound to the caller's physical checkout.
+
+### Apply and undo
+
 `history restore-preview` records a preview without changing workspace files. It binds the selected operation side and paths to current existence, byte digest, size, and executable mode. Apply checks the preview owner, workspace, expiry, active peer locks, and current file state. A content, mode, or existence change rejects the stale preview.
 
 Apply acquires a dedicated exclusive work lease, claims the preview once, rechecks all selected files under that lease, and captures a durable undo operation before it changes a file. It checks and renews the complete lease before each write. It restores only selected paths with atomic temporary-file rename for regular files and explicit deletion for a missing target. Multi-file restore can still end partially; the restore record retains per-file results, the undo operation ID, and its lease run ID. It does not rewind coordination state, messages, checks, or external effects.
+
+Capture flushes private object and ref publication before marking its SQLite
+journal complete, and stores the exact durability evidence for each capture side
+in the same transaction. Idempotent capture retries replay that evidence; older
+captures without a durability record report `null` rather than inventing proof.
+The immediately preceding canonical database schema gains this one relation
+through a fingerprint-checked migration. Restore flushes the validated undo archive again before its
+first workspace mutation. A flush error stops application. Platforms without a
+supported directory flush still flush file data and return explicit
+`storage_durability: { durable: false, warnings }`; restore retains this evidence
+in its journal and subsequent receipt replay.
 
 A completed restore leaves its work run `PENDING` and returns `verification_run_id`. Inspect the restored files, run the applicable checks, and use `verify mark` with the observed result. Restoring bytes never grants a successful verification receipt. A failed application releases its own lease as `FAILED`; crash recovery retains the applying journal and uses lease expiry.
 

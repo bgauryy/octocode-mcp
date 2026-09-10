@@ -4,16 +4,17 @@ import type { ToolExecutionArgs } from '../../types/execution.js';
 import { executeBulkOperation } from '../../utils/response/bulk/response.js';
 import { validateToolPath } from '../../utils/file/toolHelpers.js';
 import { executeWithToolBoundary } from '../executionGuard.js';
-import { AST_SEARCH_TOOL_NAME } from '../toolNames.js';
+import { AST_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { createGraphAnalysisRunner } from './topology/execution.js';
 import { GraphAnalysisQuerySchema } from './topology/scheme.js';
-import { findFiles } from '../local_find_files/findFiles.js';
-import { FindFilesQuerySchema } from '../../toolContract/input/resources/tools/localFilesOperation.js';
-import { viewStructure } from '../local_view_structure/local_view_structure.js';
-import { ViewStructureQuerySchema } from '../../toolContract/input/resources/tools/localTreeOperation.js';
+import { findFiles } from './filesystem/files.js';
+import { viewFilesystemTree } from './filesystem/tree.js';
 import { searchContentStructural } from '../local_ripgrep/structuralSearch.js';
-import { LocalRipgrepQuerySchema } from '../local_ripgrep/scheme.js';
-import { AstSearchQuerySchema, type AstSearchQuery } from './scheme.js';
+import { LocalRipgrepQuerySchema } from '@octocodeai/octocode-core/schema';
+import {
+  AstSearchQuerySchema,
+  type AstSearchQuery,
+} from '@octocodeai/octocode-core/schema';
 import { normalizeAstContinuations } from './continuations.js';
 import { inspectSyntax, inspectSymbols } from './inspect.js';
 
@@ -83,46 +84,11 @@ export async function executeAstSearch(
                 )
               );
             }
-            case 'files': {
-              const {
-                operation: _operation,
-                pathRegex,
-                sort,
-                pageSize,
-                ...scope
-              } = input;
-              return normalizeAstContinuations(
-                await findFiles(
-                  FindFilesQuerySchema.parse({
-                    ...scope,
-                    regex: pathRegex,
-                    sortBy: sort,
-                    itemsPerPage: pageSize,
-                  })
-                )
-              );
-            }
-            case 'tree': {
+            case 'files':
+              return findFiles(input);
+            case 'tree':
               if (input.treeKind === 'syntax') return inspectSyntax(input);
-              const {
-                operation: _operation,
-                treeKind: _treeKind,
-                namePattern,
-                sort,
-                pageSize,
-                ...scope
-              } = input;
-              return normalizeAstContinuations(
-                await viewStructure(
-                  ViewStructureQuerySchema.parse({
-                    ...scope,
-                    pattern: namePattern,
-                    sortBy: sort,
-                    itemsPerPage: pageSize,
-                  })
-                )
-              );
-            }
+              return viewFilesystemTree(input);
             case 'symbols':
               return inspectSymbols(input);
           }

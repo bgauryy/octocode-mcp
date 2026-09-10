@@ -20,7 +20,7 @@ skill-name/
 
 Do not ship: unused or duplicate files, development-only metadata, probes, drafts, scratch notes, old renames, nested `node_modules`, secrets, or files that only make sense inside another repository.
 
-**A skill folder is never an artifact root.** Runtime state, caches, browser profiles, and second copies of a helper belong in the workspace `.octocode/` or the global Octocode home (`$OCTOCODE_HOME`, default `~/.octocode`) — never beside `SKILL.md`. A script that resolves its output base as `process.cwd()/.octocode` writes into whichever directory launched it, so a run started from the skill folder silently fills it; treat a git-ignored `.octocode/` inside a skill as that accident and relocate it.
+**A skill folder is never an artifact root.** Task runtime state, caches, browser profiles, and second copies of a helper belong in the workspace `.octocode/` — never beside `SKILL.md` or in a fallback user-home directory. Application-owned global configuration follows that application's contract. A script that resolves its output base as `process.cwd()/.octocode` writes into whichever directory launched it, so a run started from the skill folder silently fills it; treat a git-ignored `.octocode/` inside a skill as that accident and relocate it.
 
 ## Cleanup checklist
 

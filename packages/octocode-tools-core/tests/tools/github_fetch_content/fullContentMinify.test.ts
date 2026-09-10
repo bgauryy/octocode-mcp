@@ -25,8 +25,7 @@ vi.mock('../../../src/providers/factory.js', () => ({
   getProvider: () => fakeProvider,
 }));
 
-// materializeExactFile (triggered by fullContent + minify:none) would otherwise
-// hit disk/network — stub it out.
+// Guard against reintroducing filesystem materialization from a file read.
 vi.mock('../../../src/github/directoryFetch/fetchFileContentToDisk.js', () => ({
   fetchFileContentToDisk,
 }));
@@ -44,7 +43,7 @@ import { fetchMultipleGitHubFileContents } from '../../../src/tools/github_fetch
 import {
   FileContentQueryLocalSchema,
   FileContentBulkQueryLocalSchema,
-} from '../../../src/tools/github_fetch_content/scheme.js';
+} from '@octocodeai/octocode-core/schema';
 import { cleanup } from '../../../src/serverConfig.js';
 import { _resetRuntimeSurface, setRuntimeSurface } from '@octocodeai/config';
 
@@ -93,53 +92,23 @@ describe('ghGetFileContent — fullContent is verbatim (minify:none) by default'
     cleanup();
   });
 
-  it.each([
-    ['ENABLE_LOCAL', 'false', 'localToolsDisabled'],
-    ['ENABLE_CLONE', 'false', 'cloneDisabled'],
-  ] as const)(
-    'rejects directory materialization when %s=%s before touching the filesystem',
-    async (flag, value, errorCode) => {
-      process.env[flag] = value;
+  it.each(['memory', 'persistent'])(
+    'rejects removed directory mode in %s storage before any provider or disk operation',
+    async mode => {
+      process.env.OCTOCODE_STORAGE_MODE = mode;
       cleanup();
-
       const result = await fetchMultipleGitHubFileContents({
-        queries: [
-          {
-            owner: 'o',
-            repo: 'r',
-            path: 'src',
-            branch: 'main',
-            type: 'directory',
-          },
-        ],
+        queries: [{ owner: 'o', repo: 'r', path: 'src', type: 'directory' }],
       } as never);
-
+      expect(getFileContent).not.toHaveBeenCalled();
       expect(fetchDirectoryContents).not.toHaveBeenCalled();
-      expect(JSON.stringify(result.structuredContent)).toContain(errorCode);
+      expect(fetchFileContentToDisk).not.toHaveBeenCalled();
+      expect(
+        (result.structuredContent as { results: Array<{ status?: string }> })
+          .results[0]?.status
+      ).toBe('error');
     }
   );
-
-  it('rejects directory materialization when memory-only storage is selected', async () => {
-    process.env.OCTOCODE_STORAGE_MODE = 'memory';
-    cleanup();
-
-    const result = await fetchMultipleGitHubFileContents({
-      queries: [
-        {
-          owner: 'o',
-          repo: 'r',
-          path: 'src',
-          branch: 'main',
-          type: 'directory',
-        },
-      ],
-    } as never);
-
-    expect(fetchDirectoryContents).not.toHaveBeenCalled();
-    expect(JSON.stringify(result.structuredContent)).toContain(
-      'persistentStorageDisabled'
-    );
-  });
 
   it('defaults fullContent reads to minify:none so comments are not stripped', async () => {
     const result = await fetchMultipleGitHubFileContents({
@@ -156,12 +125,12 @@ describe('ghGetFileContent — fullContent is verbatim (minify:none) by default'
 
     expect(getFileContent).toHaveBeenCalledTimes(1);
     expect(getFileContent.mock.calls[0]?.[0]).toMatchObject({
-      ref: '0123456789abcdef0123456789abcdef01234567',
+      ref: 'main',
     });
     expect(minifyOf()).toBe('none');
-    expect(JSON.stringify(result.structuredContent)).toContain(
-      '0123456789abcdef0123456789abcdef01234567'
-    );
+    expect(fetchFileContentToDisk).not.toHaveBeenCalled();
+    expect(JSON.stringify(result.structuredContent)).toContain('const x = 1');
+    expect(JSON.stringify(result.structuredContent)).not.toContain('localPath');
   });
 
   it('returns full content without materializing it in memory-only mode', async () => {
@@ -224,12 +193,12 @@ describe('ghGetFileContent — fullContent is verbatim (minify:none) by default'
     expect(minifyOf()).toBe('standard');
   });
 
-  it('non-fullContent reads keep the standard minify default', async () => {
+  it('non-fullContent reads use the same exact default', async () => {
     await fetchMultipleGitHubFileContents({
       queries: [{ owner: 'o', repo: 'r', path: 'src/a.ts', branch: 'main' }],
     } as never);
 
-    expect(minifyOf()).toBe('standard');
+    expect(minifyOf()).toBe('none');
   });
 
   // Regression guard for the real executor path: executeDirectTool parses the
@@ -271,6 +240,16 @@ describe('ghGetFileContent — fullContent is verbatim (minify:none) by default'
         startLine: 1,
         endLine: 10,
         isPartial: true,
+        pagination: {
+          chunkType: 'lines',
+          offset: 0,
+          length: 10,
+          limit: 10,
+          totalLines: 20,
+          totalBytes: 100,
+          hasMore: true,
+          nextOffset: 10,
+        },
       },
       status: 200,
       provider: 'github',
@@ -296,7 +275,7 @@ describe('ghGetFileContent — fullContent is verbatim (minify:none) by default'
         }>;
       }
     ).results[0]!;
-    expect(row.data.files[0]?.next?.continueLines).toBeDefined();
+    expect(row.data.files[0]?.next?.continue).toBeDefined();
     expect(row.meta.diagnostics?.partial).toBe(true);
     expect(row.meta.diagnostics?.codes ?? []).not.toContain(
       'continuationMissing'

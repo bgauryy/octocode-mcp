@@ -4,6 +4,8 @@ export interface NpmSearchInput {
   mode: 'exact' | 'keywords';
   itemsPerPage?: number;
   page?: number;
+  /** Native search offset, independent of registry-imposed page-size caps. */
+  offset?: number;
   goal?: string;
   reasoning?: string;
 }

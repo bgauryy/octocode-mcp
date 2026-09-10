@@ -9,7 +9,7 @@ import { createLazyProviderContext } from '../providerExecution.js';
 import {
   GITHUB_GET_HISTORY_ITEM_TOOL_NAME,
   GITHUB_SEARCH_HISTORY_TOOL_NAME,
-} from '../toolNames.js';
+} from '@octocodeai/octocode-core/schema';
 import {
   createErrorResult,
   createSuccessResult,
@@ -27,8 +27,8 @@ import type { ProcessedBulkResult } from '../../types/toolResults.js';
 import {
   GitHubGetHistoryItemQueryLocalSchema,
   GitHubSearchHistoryQueryLocalSchema,
-} from './historySchemes.js';
-import { GitHubPullRequestSearchQueryLocalSchema } from './scheme.js';
+} from '@octocodeai/octocode-core/schema';
+import { GitHubPullRequestSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import { withDiffContinuations } from './historyDiffContinuations.js';
 import { withContentContinuations } from './historyPartialContinuations.js';
 import {

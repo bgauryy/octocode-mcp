@@ -39,7 +39,7 @@ construct or minification transformation correct.
 
 ## Signature extraction / graph facts — `minify:"symbols"`, `astSearch operation:"topology"`
 
-`localGetFileContent minify:"symbols"` provides skeleton outlines. All supported code languages, including JS/TS, use Tree-sitter body queries for signature skeletons. OXC provides JS/TS graph facts, native document symbols and in-file references, and minification. Graph facts are syntax-derived and vary by language; signature capability does not establish complete declaration or call extraction.
+`localFetch minify:"symbols"` provides skeleton outlines. All supported code languages, including JS/TS, use Tree-sitter body queries for signature skeletons. OXC provides JS/TS graph facts, native document symbols and in-file references, and minification. Graph facts are syntax-derived and vary by language; signature capability does not establish complete declaration or call extraction.
 
 Cross-file graph linking covers JavaScript/TypeScript ESM and binding-safe CommonJS, Rust modules, bounded Python absolute and relative imports, and quoted relative C/C++ includes. Explicit relative `package.json` imports become bounded metadata leaves. CommonJS links require an unshadowed literal `require`, `module.require`, or `createRequire(import.meta.url)` binding; dynamic, shadowed, reassigned, and otherwise ambiguous loaders remain coverage diagnostics. Python wildcards, ambiguous package attributes, and ambiguous stub layouts remain diagnostics. C/C++ system and macro includes are not linked. Other languages report unsupported cross-file linking rather than producing heuristic edges.
 

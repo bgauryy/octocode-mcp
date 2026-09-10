@@ -35,6 +35,7 @@ import { CLI_GLYPH } from '../../tui/cli-design.js';
 import { paint } from '../../tui/palette.js';
 
 import { z } from 'zod';
+import { WorkerCapabilitySelectionSchema } from '@octocodeai/agent-contracts/capabilities';
 type RegisterFn = typeof registerUniqueTool;
 
 /** Register the single public agent tool. */
@@ -52,10 +53,10 @@ export function registerUnifiedAgentTool(
     goal: z.string().min(1),
     context: z.string().min(1),
     scope: z.string().min(1),
-    ownership: z.string().min(1).describe('Exclusive write paths/symbols, or explicit read-only ownership.'),
+    ownership: z.string().min(1).describe('Owned paths or read-only.'),
     acceptance: z.string().min(1).describe('Observable done condition.'),
-    returnShape: z.string().min(1).describe('Required evidence and terminal handback shape.'),
-    task: z.string().optional().describe('Additional role instruction; never repeat the packet.'),
+    returnShape: z.string().min(1).describe('Handback format.'),
+    task: z.string().optional(),
     name: z.string().optional(),
     model: z.string().optional().describe('Model id from `pi -ne --list-models`.'),
     provider: z.string().optional(),
@@ -64,6 +65,11 @@ export function registerUnifiedAgentTool(
     isolation: z.enum(['shared', 'worktree']).optional().describe('worktree requires explicit approval.'),
     includeUncommitted: z.boolean().optional(),
     planStep: z.string().optional().describe('Stable task ID from the executing plan.'),
+    capabilities: WorkerCapabilitySelectionSchema.optional(),
+    snapshotRevision: z.string().min(1).optional(),
+    evidence: z.string().max(16_000).optional(),
+    instructions: z.string().max(16_000).optional(),
+    skillResources: z.array(z.string().min(1).max(4096)).max(50).optional(),
   };
   const typedSpawn = z.strictObject({
     reasoning,
@@ -89,21 +95,29 @@ export function registerUnifiedAgentTool(
     type: z.enum(['spawn']),
     profile: z.enum(['custom']),
     ...packetFields,
-    tools: z.array(z.string()).describe('Explicit least-capability tool allowlist; [] requests no tools.'),
-    systemPrompt: z.string().min(1).describe('Required bounded custom role; the shared worker contract is prepended automatically.'),
+    tools: z.array(z.string()).describe('Native allowlist; [] grants none.'),
+    systemPrompt: z.string().min(1).describe('Custom role; shared worker contract is prepended.'),
     resourceMode: z.enum(['lean', 'octocode', 'default']).optional(),
   });
   const inspect = z.strictObject({ reasoning, type: z.enum(['inspect']), agentId: z.string().optional(), full: z.boolean().optional() });
+  const configure = z.strictObject({ reasoning, type: z.enum(['configure']), agentId: z.string().min(1), snapshotRevision: z.string().min(1), grantRevision: z.number().int().positive().optional(), capabilities: WorkerCapabilitySelectionSchema });
   const wait = z.strictObject({ reasoning, type: z.enum(['wait']), agentId: z.string().min(1), timeoutMs: z.number().int().optional(), remove: z.boolean().optional(), full: z.boolean().optional() });
   const message = z.strictObject({ reasoning, type: z.enum(['message']), agentId: z.string().min(1), message: z.string().min(1), delivery: z.enum(['send', 'followUp']).optional() });
   const steer = z.strictObject({ reasoning, type: z.enum(['steer']), agentId: z.string().min(1), message: z.string().min(1) });
   const abort = z.strictObject({ reasoning, type: z.enum(['abort']), agentId: z.string().min(1), full: z.boolean().optional() });
   const kill = z.strictObject({ reasoning, type: z.enum(['kill']), agentId: z.string().min(1), remove: z.boolean().optional(), full: z.boolean().optional() });
-  const query = z.union([typedSpawn, browserSpawn, customSpawn, inspect, wait, message, steer, abort, kill]);
+  const query = z.union([typedSpawn, browserSpawn, customSpawn, inspect, configure, wait, message, steer, abort, kill]);
   const parameters = toToolSchema(z.strictObject({
     queries: z.array(query).min(1).max(100).describe('Operations run one-by-one in source order.'),
     queryRunType: z.enum(['sequential']).default('sequential').optional(),
   }));
+  // One shared definition preserves strict branch validation without repeating
+  // the complete selection contract in each profile and configure operation.
+  const branches = (parameters['properties'] as { queries: { items: { anyOf: Array<{ properties: Record<string, unknown> }> } } }).queries.items.anyOf;
+  for (const branch of branches) {
+    if (branch.properties['capabilities']) branch.properties['capabilities'] = { $ref: '#/definitions/workerCapabilities' };
+  }
+  parameters['definitions'] = { workerCapabilities: toToolSchema(WorkerCapabilitySelectionSchema.describe('Enabled parent identities; omitted fields use role defaults, [] grants none.')) };
 
   registerFn(pi, registeredToolNames, {
     name: 'agent',
@@ -118,6 +132,9 @@ export function registerUnifiedAgentTool(
       'The tool rejects incomplete packets before creating a worker. Wrong: spawn and reference its unknown agentId in one batch. Right: spawn first; use inspect, wait, message, steer, abort, or kill later.',
       'After spawning, continue non-overlapping parent work; use type:wait to collect results. Verify findings/checks, reconcile an existing plan if present, kill or reuse the worker, and continue the user request. Never trust or persist a raw handback as verified memory.',
       'If an executing plan already owns the work, start its runnable step and pass the stable task id as planStep. Delegation alone does not require a plan.',
+      'Grant enabled parent identities only. Workers request missing access; configure with snapshotRevision replaces selected arrays. Removals apply now; additions before the next turn.',
+      'Discover skill IDs with skill action:list and server/tool pairs with MCPTool action:list. Get the current snapshotRevision with agent type:inspect (no agentId) or capability_revision.',
+      'Lean workers expose selected Pi builtins and keep skill/MCP grants empty; use resourceMode:"octocode" for extension tools.',
     ],
 
     parameters,

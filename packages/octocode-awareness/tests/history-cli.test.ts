@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,7 +38,7 @@ function expectOk(result: Invocation): Record<string, unknown> {
   return result.json!;
 }
 
-function isolatedArtifacts(): { root: string; cli: string; runner: string; workspace: string; db: string } {
+function isolatedArtifacts(withNative = false): { root: string; cli: string; runner: string; workspace: string; db: string } {
   const root = mkdtempSync(join(tmpdir(), 'awareness-history-cli-'));
   roots.push(root);
   const artifacts = join(root, 'published-assets');
@@ -49,12 +50,20 @@ function isolatedArtifacts(): { root: string; cli: string; runner: string; works
   chmodSync(cli, 0o755);
   chmodSync(runner, 0o755);
   expect(existsSync(join(artifacts, 'node_modules'))).toBe(false);
+  if (withNative) {
+    // Model an installed optional dependency using the real local package and
+    // addon. The copied Awareness bundles remain separate from that package.
+    const scope = join(root, 'node_modules', '@octocodeai');
+    mkdirSync(scope, { recursive: true });
+    const nativeRoot = dirname(createRequire(import.meta.url).resolve('@octocodeai/octocode-extension-rust'));
+    symlinkSync(nativeRoot, join(scope, 'octocode-extension-rust'), process.platform === 'win32' ? 'junction' : 'dir');
+  }
   return { root, cli, runner, workspace: realpathSync(workspace), db: join(root, 'awareness.sqlite3') };
 }
 
 describe('built local-history CLI contract', () => {
   it('runs strict before/after capture and lossless read continuations without system Git', () => {
-    const { cli, workspace, db } = isolatedArtifacts();
+    const { cli, workspace, db } = isolatedArtifacts(true);
     writeFileSync(join(workspace, 'a.bin'), Buffer.from([0, 1, 2, 3, 255]));
     const common = ['--db', db, 'history'];
     const before = expectOk(invoke(cli, [...common, 'capture', '--workspace', workspace, '--agent-id', 'cli-test', '--phase', 'before', '--operation-id', 'cli-edit', '--file', 'a.bin', '--compact'], workspace));
@@ -79,6 +88,17 @@ describe('built local-history CLI contract', () => {
     }
     const bytes = Buffer.concat(pages.map(page => Buffer.from(String(page['content']), 'base64')));
     expect(bytes).toEqual(Buffer.from([0, 1, 2, 3, 255]));
+  });
+
+  it('rejects explicit capture from both bundles when the optional native package is absent', () => {
+    const { cli, runner, workspace, db } = isolatedArtifacts();
+    writeFileSync(join(workspace, 'source.ts'), 'export const value = 1;');
+    for (const script of [cli, runner]) {
+      const result = invoke(script, ['--db', db, 'history', 'capture', '--workspace', workspace,
+        '--agent-id', 'cli-test', '--phase', 'before', '--file', 'source.ts', '--compact'], workspace);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toContain('native filesystem is unavailable');
+    }
   });
 
   it('keeps memory status read-only and runs both copied standalone bundles without sibling dependencies', () => {

@@ -1,6 +1,8 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+const extensionPackage = JSON.parse(readFileSync(new URL('../packages/octocode-extension-rust/package.json', import.meta.url), 'utf8'));
 
 export const OCTOCODE_CORE_PACKAGE = '@octocodeai/octocode-core';
 export const SHARED_PACKAGE = '@octocodeai/agent-contracts';
@@ -18,7 +20,9 @@ export function workspaceResolutionPackages(enginePackage) {
     '@octocodeai/octocode-tools-core',
     '@octocodeai/config',
     '@octocodeai/octocode-engine',
+    '@octocodeai/octocode-extension-rust',
     ...enginePlatformPackages(enginePackage),
+    ...Object.keys(extensionPackage.optionalDependencies ?? {}),
   ];
 }
 

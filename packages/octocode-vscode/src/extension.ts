@@ -1,7 +1,4 @@
 import * as vscode from 'vscode';
-import * as fsPromises from 'fs/promises';
-import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
 
 import {
   createMcpClients,
@@ -10,36 +7,24 @@ import {
 } from './configPaths';
 import { readJsonFile } from './jsonUtils';
 
-const MCP_SERVER_NAME = 'octocode';
-const MCP_COMMAND = 'npx';
-const MCP_ARGS = ['octocode-mcp@latest'];
+import {
+  configureMcpServer,
+  updateMcpConfigToken,
+  type ConfigKey,
+} from './mcpConfig';
+import { McpProcess } from './mcpProcess';
 
 const GITHUB_AUTH_PROVIDER_ID = 'github';
 const GITHUB_SCOPES = ['repo', 'read:user'];
 
-let mcpProcess: ChildProcess | null = null;
+let mcpProcess: McpProcess;
 let outputChannel: vscode.OutputChannel;
 let statusBarItem: vscode.StatusBarItem;
 let isAuthenticated = false;
 
-type McpServerConfig = {
-  command: string;
-  type: 'stdio';
-  args: string[];
-  env?: Record<string, string>;
-};
-
-type McpConfig = {
-  mcpServers: Record<string, McpServerConfig>;
-};
-
 const MCP_CLIENTS: Record<string, McpClientDef> = createMcpClients();
 
-function getEditorInfo(): {
-  name: string;
-  scheme: string;
-  mcpConfigPath: string | null;
-} {
+function getEditorInfo() {
   return detectEditorInfo(vscode.env.appName);
 }
 
@@ -114,60 +99,46 @@ async function logoutFromGitHub(): Promise<void> {
 
 async function syncTokenToAllConfigs(token: string | undefined): Promise<void> {
   const editorInfo = getEditorInfo();
-  const configPaths: { name: string; path: string }[] = [];
+  const configPaths: { name: string; path: string; configKey: ConfigKey }[] =
+    [];
 
   if (editorInfo.mcpConfigPath) {
-    configPaths.push({ name: editorInfo.name, path: editorInfo.mcpConfigPath });
+    configPaths.push({
+      name: editorInfo.name,
+      path: editorInfo.mcpConfigPath,
+      configKey: editorInfo.configKey,
+    });
   }
 
   for (const client of Object.values(MCP_CLIENTS)) {
     try {
-      configPaths.push({ name: client.name, path: client.getConfigPath() });
+      configPaths.push({
+        name: client.name,
+        path: client.getConfigPath(),
+        configKey: client.configKey,
+      });
     } catch {
       void 0;
     }
   }
 
-  for (const { name, path: configPath } of configPaths) {
+  const failures: string[] = [];
+  const seen = new Set<string>();
+  for (const { name, path: configPath, configKey } of configPaths) {
+    if (seen.has(configPath)) continue;
+    seen.add(configPath);
     try {
-      await updateMcpConfigToken(configPath, token);
+      await updateMcpConfigToken(configPath, token, configKey);
       outputChannel.appendLine(
         `Updated token in ${name} config: ${configPath}`
       );
     } catch (err) {
       outputChannel.appendLine(`Failed to update ${name} config: ${err}`);
+      failures.push(name);
     }
   }
-}
-
-async function updateMcpConfigToken(
-  configPath: string,
-  token: string | undefined
-): Promise<void> {
-  const existingConfig = await readJsonFile<McpConfig>(configPath);
-
-  if (!existingConfig?.mcpServers?.[MCP_SERVER_NAME]) {
-    return;
-  }
-
-  const serverConfig = existingConfig.mcpServers[MCP_SERVER_NAME];
-
-  if (token) {
-    serverConfig.env = { ...serverConfig.env, GITHUB_TOKEN: token };
-  } else {
-    if (serverConfig.env) {
-      delete serverConfig.env.GITHUB_TOKEN;
-      if (Object.keys(serverConfig.env).length === 0) {
-        delete serverConfig.env;
-      }
-    }
-  }
-
-  await fsPromises.writeFile(
-    configPath,
-    JSON.stringify(existingConfig, null, 2),
-    'utf-8'
-  );
+  if (failures.length)
+    throw new Error(`Could not update MCP configs for: ${failures.join(', ')}`);
 }
 
 async function checkGitHubAuthStatus(): Promise<{
@@ -210,96 +181,32 @@ async function checkGitHubAuthStatus(): Promise<{
 async function installMcpServer(
   mcpConfigPath: string,
   showNotification = true,
-  clientName = 'editor'
-): Promise<boolean> {
+  clientName = 'editor',
+  configKey: ConfigKey = 'mcpServers'
+): Promise<'installed' | 'unchanged' | 'failed'> {
   try {
-    if (!mcpConfigPath) {
-      throw new Error('Invalid configuration path provided');
-    }
-
-    const githubToken = await getGitHubToken();
-
-    let mcpConfig: McpConfig = { mcpServers: {} };
-
-    const existingConfig = await readJsonFile<McpConfig>(mcpConfigPath);
-    if (existingConfig && typeof existingConfig === 'object') {
-      mcpConfig = {
-        ...existingConfig,
-        mcpServers: existingConfig.mcpServers || {},
-      };
-    }
-
-    const existingServer = mcpConfig.mcpServers[MCP_SERVER_NAME];
-    if (
-      existingServer &&
-      existingServer.command === MCP_COMMAND &&
-      JSON.stringify(existingServer.args) === JSON.stringify(MCP_ARGS)
-    ) {
-      const currentToken = existingServer.env?.GITHUB_TOKEN;
-      if (currentToken === githubToken) {
-        if (showNotification) {
-          vscode.window.showInformationMessage(
-            `Octocode MCP server is already configured for ${clientName}.`
-          );
-        }
-        return false;
-      }
-    }
-
-    const serverConfig: McpServerConfig = {
-      command: MCP_COMMAND,
-      type: 'stdio',
-      args: MCP_ARGS,
-    };
-
-    if (githubToken) {
-      serverConfig.env = {
-        GITHUB_TOKEN: githubToken,
-      };
-    }
-
-    mcpConfig.mcpServers[MCP_SERVER_NAME] = serverConfig;
-
-    try {
-      const dirPath = path.dirname(mcpConfigPath);
-      await fsPromises.mkdir(dirPath, { recursive: true });
-    } catch (err) {
-      throw new Error(
-        `Failed to create directory ${path.dirname(mcpConfigPath)}: ${err}`,
-        { cause: err }
-      );
-    }
-
-    try {
-      await fsPromises.writeFile(
-        mcpConfigPath,
-        JSON.stringify(mcpConfig, null, 2),
-        'utf-8'
-      );
-    } catch (err) {
-      throw new Error(`Failed to write config file ${mcpConfigPath}: ${err}`, {
-        cause: err,
-      });
-    }
-
-    outputChannel.appendLine(`MCP server configured at: ${mcpConfigPath}`);
-
+    const result = await configureMcpServer(
+      mcpConfigPath,
+      await getGitHubToken(),
+      configKey
+    );
+    outputChannel.appendLine(`MCP config ${result}: ${mcpConfigPath}`);
     if (showNotification) {
       vscode.window.showInformationMessage(
-        `Octocode MCP server configured for ${clientName}! Restart to enable it.`
+        result === 'installed'
+          ? `Octocode MCP server configured for ${clientName}! Restart to enable it.`
+          : `Octocode MCP server is already configured for ${clientName}.`
       );
     }
-
-    return true;
+    return result;
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`Failed to configure MCP server: ${errorMsg}`);
-    if (showNotification) {
+    const message = err instanceof Error ? err.message : String(err);
+    outputChannel.appendLine(`Failed to configure MCP server: ${message}`);
+    if (showNotification)
       vscode.window.showErrorMessage(
-        `Failed to configure MCP server: ${errorMsg}`
+        `Failed to configure MCP server: ${message}`
       );
-    }
-    return false;
+    return 'failed';
   }
 }
 
@@ -312,7 +219,7 @@ async function installForClient(clientKey: string): Promise<void> {
     }
 
     const configPath = client.getConfigPath();
-    await installMcpServer(configPath, true, client.name);
+    await installMcpServer(configPath, true, client.name, client.configKey);
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     vscode.window.showErrorMessage(
@@ -324,98 +231,40 @@ async function installForClient(clientKey: string): Promise<void> {
 
 async function startMcpServer(): Promise<void> {
   try {
-    if (mcpProcess) {
-      vscode.window.showWarningMessage('MCP server is already running.');
-      return;
-    }
-
-    const githubToken = await getGitHubToken();
-
-    const env: Record<string, string | undefined> = { ...process.env };
-    if (githubToken) {
-      env.GITHUB_TOKEN = githubToken;
-    }
-
-    outputChannel.appendLine('Starting Octocode MCP server...');
-
-    try {
-      mcpProcess = spawn('npx', ['octocode-mcp@latest'], {
-        env,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        shell: process.platform === 'win32',
-      });
-    } catch (spawnError) {
-      outputChannel.appendLine(`Failed to spawn process: ${spawnError}`);
-      vscode.window.showErrorMessage(
-        `Failed to start MCP server process: ${spawnError}`
+    const result = await mcpProcess.start();
+    if (result === 'busy')
+      vscode.window.showWarningMessage(
+        'MCP server is already running or starting.'
       );
-      return;
-    }
-
-    if (mcpProcess.stdout) {
-      mcpProcess.stdout.on('data', (data: Buffer) => {
-        outputChannel.appendLine(`[stdout] ${data.toString()}`);
-      });
-    }
-
-    if (mcpProcess.stderr) {
-      mcpProcess.stderr.on('data', (data: Buffer) => {
-        outputChannel.appendLine(`[stderr] ${data.toString()}`);
-      });
-    }
-
-    mcpProcess.on('close', (code: number | null) => {
-      outputChannel.appendLine(`MCP server exited with code ${code}`);
-      mcpProcess = null;
-      updateStatusBar(false);
-    });
-
-    mcpProcess.on('error', (err: Error) => {
-      outputChannel.appendLine(`Failed to start MCP server: ${err.message}`);
-      mcpProcess = null;
-      updateStatusBar(false);
-      vscode.window.showErrorMessage(`MCP Server error: ${err.message}`);
-    });
-
-    updateStatusBar(true);
-    vscode.window.showInformationMessage('Octocode MCP server started.');
+    if (result === 'started')
+      vscode.window.showInformationMessage(
+        'Octocode MCP server process started.'
+      );
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`Unexpected error starting server: ${errorMsg}`);
-    vscode.window.showErrorMessage(
-      `Unexpected error starting server: ${errorMsg}`
-    );
-    if (mcpProcess) {
-      try {
-        (mcpProcess as ChildProcess).kill();
-      } catch {
-        void 0;
-      }
-      mcpProcess = null;
-    }
+    const message = err instanceof Error ? err.message : String(err);
+    outputChannel.appendLine(`Failed to start MCP server: ${message}`);
+    vscode.window.showErrorMessage(`Failed to start MCP server: ${message}`);
   }
 }
 
 function stopMcpServer(): void {
   try {
-    if (!mcpProcess) {
-      vscode.window.showWarningMessage('MCP server is not running.');
-      return;
-    }
-
-    outputChannel.appendLine('Stopping Octocode MCP server...');
-    mcpProcess.kill();
-    mcpProcess = null;
-    updateStatusBar(false);
-    vscode.window.showInformationMessage('Octocode MCP server stopped.');
+    if (mcpProcess.stop())
+      vscode.window.showInformationMessage('Octocode MCP server stopped.');
+    else vscode.window.showWarningMessage('MCP server is not running.');
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`Error stopping server: ${errorMsg}`);
+    const message = err instanceof Error ? err.message : String(err);
+    outputChannel.appendLine(`Error stopping server: ${message}`);
+    vscode.window.showErrorMessage(`Error stopping server: ${message}`);
   }
 }
 
-function updateStatusBar(running: boolean, authenticated?: boolean): void {
+function updateStatusBar(
+  running: boolean,
+  authenticated = isAuthenticated
+): void {
   try {
+    isAuthenticated = authenticated;
     const authTooltip = authenticated
       ? 'GitHub: signed in.'
       : 'GitHub: not signed in. Sign in from the Octocode commands in the Command Palette.';
@@ -447,13 +296,7 @@ export async function activate(
   try {
     outputChannel = vscode.window.createOutputChannel('Octocode MCP');
 
-    let editorInfo;
-    try {
-      editorInfo = getEditorInfo();
-    } catch (e) {
-      outputChannel.appendLine(`Error detecting editor: ${e}`);
-      editorInfo = { name: 'VS Code', scheme: 'vscode', mcpConfigPath: null };
-    }
+    const editorInfo = getEditorInfo();
 
     outputChannel.appendLine(
       `Octocode MCP extension activated in ${editorInfo.name}`
@@ -463,7 +306,17 @@ export async function activate(
       vscode.StatusBarAlignment.Right,
       100
     );
-    context.subscriptions.push(statusBarItem);
+    context.subscriptions.push(statusBarItem, outputChannel);
+    mcpProcess = new McpProcess({
+      getToken: getGitHubToken,
+      output: message => outputChannel.appendLine(message),
+      state: running => updateStatusBar(running),
+      error: error => {
+        outputChannel.appendLine(`MCP server error: ${error.message}`);
+        vscode.window.showErrorMessage(`MCP server error: ${error.message}`);
+      },
+    });
+    context.subscriptions.push({ dispose: () => mcpProcess.stop() });
 
     const initialAuthStatus = await checkGitHubAuthStatus();
     isAuthenticated = initialAuthStatus.authenticated;
@@ -482,7 +335,7 @@ export async function activate(
 
     context.subscriptions.push(
       vscode.commands.registerCommand('octocode.startServer', () => {
-        startMcpServer();
+        return startMcpServer();
       })
     );
 
@@ -494,7 +347,7 @@ export async function activate(
 
     context.subscriptions.push(
       vscode.commands.registerCommand('octocode.showStatus', () => {
-        if (mcpProcess) {
+        if (mcpProcess.running) {
           vscode.window.showInformationMessage(
             "Octocode MCP server is running.\n\nTo use with AI assistants, the server should be configured in your editor's MCP settings."
           );
@@ -510,7 +363,7 @@ export async function activate(
       vscode.commands.registerCommand('octocode.loginGitHub', async () => {
         await loginToGitHub();
         const status = await checkGitHubAuthStatus();
-        updateStatusBar(mcpProcess !== null, status.authenticated);
+        updateStatusBar(mcpProcess.running, status.authenticated);
       })
     );
 
@@ -518,7 +371,7 @@ export async function activate(
       vscode.commands.registerCommand('octocode.logoutGitHub', async () => {
         await logoutFromGitHub();
         const status = await checkGitHubAuthStatus();
-        updateStatusBar(mcpProcess !== null, status.authenticated);
+        updateStatusBar(mcpProcess.running, status.authenticated);
       })
     );
 
@@ -547,27 +400,36 @@ export async function activate(
     context.subscriptions.push(
       vscode.authentication.onDidChangeSessions(async e => {
         if (e.provider.id === GITHUB_AUTH_PROVIDER_ID) {
-          outputChannel.appendLine('GitHub auth session changed');
+          try {
+            outputChannel.appendLine('GitHub auth session changed');
 
-          const session = await vscode.authentication.getSession(
-            GITHUB_AUTH_PROVIDER_ID,
-            GITHUB_SCOPES,
-            { silent: true }
-          );
-
-          if (session) {
-            outputChannel.appendLine(
-              `Session updated for ${session.account.label}`
+            const session = await vscode.authentication.getSession(
+              GITHUB_AUTH_PROVIDER_ID,
+              GITHUB_SCOPES,
+              { silent: true }
             );
-            isAuthenticated = true;
-            await syncTokenToAllConfigs(session.accessToken);
-          } else {
-            outputChannel.appendLine('Session cleared');
-            isAuthenticated = false;
-            await syncTokenToAllConfigs(undefined);
-          }
 
-          updateStatusBar(mcpProcess !== null, isAuthenticated);
+            if (session) {
+              outputChannel.appendLine(
+                `Session updated for ${session.account.label}`
+              );
+              isAuthenticated = true;
+              await syncTokenToAllConfigs(session.accessToken);
+            } else {
+              outputChannel.appendLine('Session cleared');
+              isAuthenticated = false;
+              await syncTokenToAllConfigs(undefined);
+            }
+
+            updateStatusBar(mcpProcess.running, isAuthenticated);
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            outputChannel.appendLine(`GitHub token sync failed: ${message}`);
+            vscode.window.showErrorMessage(
+              `GitHub token sync failed: ${message}`
+            );
+          }
         }
       })
     );
@@ -579,7 +441,8 @@ export async function activate(
             await installMcpServer(
               editorInfo.mcpConfigPath,
               true,
-              editorInfo.name
+              editorInfo.name,
+              editorInfo.configKey
             );
           } else {
             vscode.window.showErrorMessage(
@@ -614,12 +477,17 @@ export async function activate(
             const installed = await installMcpServer(
               configPath,
               false,
-              client.name
+              client.name,
+              client.configKey
             );
-            if (installed) {
+            if (installed === 'installed') {
               results.push(`✅ ${client.name}`);
             } else {
-              results.push(`⏭️ ${client.name} (already configured)`);
+              results.push(
+                installed === 'unchanged'
+                  ? `⏭️ ${client.name} (already configured)`
+                  : `❌ ${client.name} (failed)`
+              );
             }
           } catch {
             results.push(`❌ ${client.name} (failed)`);
@@ -636,19 +504,21 @@ export async function activate(
       if (autoInstall && editorInfo.mcpConfigPath) {
         let needsInstall = true;
 
-        const existingConfig = await readJsonFile<McpConfig>(
-          editorInfo.mcpConfigPath
-        );
-        if (existingConfig?.mcpServers?.[MCP_SERVER_NAME]) {
+        const existingConfig = await readJsonFile<
+          Record<string, Record<string, unknown>>
+        >(editorInfo.mcpConfigPath);
+        if (existingConfig?.[editorInfo.configKey]?.octocode) {
           needsInstall = false;
         }
 
         if (needsInstall) {
           const wasInstalled = await installMcpServer(
             editorInfo.mcpConfigPath,
-            false
+            false,
+            editorInfo.name,
+            editorInfo.configKey
           );
-          if (wasInstalled) {
+          if (wasInstalled === 'installed') {
             vscode.window.showInformationMessage(
               `Octocode MCP server has been configured. Restart ${editorInfo.name} to enable it.`
             );
@@ -658,20 +528,6 @@ export async function activate(
     } catch (autoInstallErr) {
       outputChannel.appendLine(`Auto-install failed: ${autoInstallErr}`);
     }
-
-    context.subscriptions.push({
-      dispose: () => {
-        try {
-          if (mcpProcess) {
-            mcpProcess.kill();
-            mcpProcess = null;
-          }
-          outputChannel.dispose();
-        } catch {
-          void 0;
-        }
-      },
-    });
 
     outputChannel.appendLine('Octocode MCP extension ready.');
   } catch (activationError) {
@@ -685,12 +541,5 @@ export async function activate(
 }
 
 export function deactivate(): void {
-  try {
-    if (mcpProcess) {
-      mcpProcess.kill();
-      mcpProcess = null;
-    }
-  } catch {
-    void 0;
-  }
+  mcpProcess?.stop();
 }

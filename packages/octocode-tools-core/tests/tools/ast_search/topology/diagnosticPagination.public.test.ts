@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { contextUtils } from '../../../../src/utils/contextUtils.js';
-import { AstSearchQuerySchema } from '../../../../src/tools/ast_search/scheme.js';
+import { AstSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 import { runPublicTopology } from './publicAdapter.js';
 
 afterEach(() => vi.restoreAllMocks());

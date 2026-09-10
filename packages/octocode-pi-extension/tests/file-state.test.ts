@@ -153,7 +153,7 @@ test('checkReadState throws when requireRecentRead is true and no state is recor
   fs.writeFileSync(file, 'content');
   await assert.rejects(
     () => checkReadState(file, true),
-    /No prior localGetFileContent read state recorded/,
+    /No prior localFetch read state recorded/,
   );
 });
 
@@ -268,7 +268,7 @@ test('checkReadState: requireRecentRead:true + no state throws even for content-
   // No recordFileReadState call — state is intentionally absent.
   await assert.rejects(
     () => checkReadState(f, true, { contentAnchored: true }),
-    /No prior localGetFileContent read state/,
+    /No prior localFetch read state/,
   );
 });
 
@@ -279,7 +279,7 @@ test('checkReadState: requireRecentRead:true + no state + contentAnchored:false 
   fs.writeFileSync(f, 'line1\nline2\n', 'utf8');
   await assert.rejects(
     () => checkReadState(f, true, { contentAnchored: false }),
-    /No prior localGetFileContent read state/,
+    /No prior localFetch read state/,
   );
 });
 
@@ -289,7 +289,7 @@ test('checkReadState: requireRecentRead:true + no state + no opts still throws',
   fs.writeFileSync(f, 'data', 'utf8');
   await assert.rejects(
     () => checkReadState(f, true),
-    /No prior localGetFileContent read state/,
+    /No prior localFetch read state/,
   );
 });
 

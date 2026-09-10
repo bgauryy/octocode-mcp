@@ -4,7 +4,7 @@ import {
   buildSearchResult,
   type LocalSearchEngine,
 } from '../../../src/tools/local_ripgrep/ripgrepResultBuilder/buildResult.js';
-import type { RipgrepQuery } from '../../../src/tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core/schema';
 import type { LocalSearchCodeFile } from '@octocodeai/octocode-core/types';
 
 // One file with 22 matches — mirrors the benchmark repro (resolveDispatcher

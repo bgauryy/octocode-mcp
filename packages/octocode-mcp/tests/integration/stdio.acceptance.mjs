@@ -32,9 +32,9 @@ const expectedTools = [
   'ghSearchHistory',
   'ghGetHistoryItem',
   'ghCloneRepo',
-  'npmSearch',
+  'artifactSearch',
   'localSearch',
-  'localGetFileContent',
+  'localFetch',
   'astSearch',
   'lspSearch',
 ];
@@ -75,6 +75,30 @@ const check = async (name, fn) => {
 const invoke = async (name, args) => {
   const response = await client.callTool({ name, arguments: args });
   receipt.calls.push({ name, arguments: args, response });
+  for (const row of response.structuredContent?.results ?? []) {
+    const recovery = row.status === 'empty' || row.status === 'error';
+    let hintCount = 0;
+    const inspect = value => {
+      if (!value || typeof value !== 'object') return;
+      for (const [key, child] of Object.entries(value)) {
+        if (['query', 'content', 'body', 'patch', 'text', 'value', 'matches'].includes(key)) continue;
+        if (key === 'hints') {
+          assert.ok(recovery, `${name}: hints on a successful result`);
+          hintCount += child.length;
+          assert.ok(child.every(hint => hint.length <= 160), `${name}: long hint`);
+        }
+        if (key === 'next' && !recovery) {
+          for (const [nextKey, call] of Object.entries(child)) {
+            assert.ok(!['fetch', 'getLines', 'readSite', 'viewTree', 'viewStructure', 'cloneRepo', 'searchRepositoryCode', 'lspDefinition', 'lspReferences'].includes(nextKey), `${name}: unsolicited ${nextKey}`);
+            assert.equal(call.why, undefined, `${name}: success continuation prose`);
+          }
+        }
+        inspect(child);
+      }
+    };
+    inspect(row);
+    assert.ok(hintCount <= 2, `${name}: too many recovery hints`);
+  }
   return response;
 };
 const call = async (name, query) => {
@@ -153,7 +177,7 @@ try {
     'local file read has matching copy-safe text and structured content',
     async () => {
       const file = path.join(fixture, 'math.ts');
-      const data = await call('localGetFileContent', {
+      const data = await call('localFetch', {
         path: file,
         minify: 'none',
       });
@@ -167,6 +191,40 @@ try {
       );
     }
   );
+  await check('localFetch line and byte chunks preserve selected views through real MCP', async () => {
+    const directory = await mkdtemp(path.join(path.resolve('.octocode/tmp'), 'fetch-chunks-'));
+    const file = path.join(directory, 'source.txt');
+    const source = 'skip\r\nneedle 🌍\r\n\r\nneedle café\nlast\n';
+    try {
+      await writeFile(file, source);
+      for (const chunkType of ['lines', 'bytes']) {
+        for (const matched of [false, true]) {
+          let page = await call('localFetch', {
+            path: file, chunkType, limit: chunkType === 'lines' ? 1 : 3,
+            ...(matched ? { matchString: 'needle', contextLines: 0, minify: 'standard' } : {}),
+          });
+          let content = '';
+          let count = 0;
+          for (;;) {
+            assert.ok(++count < 100);
+            assert.equal(page.totalLines, 5);
+            assert.equal(page.sourceBytes, Buffer.byteLength(source));
+            assert.equal(page.returnedBytes, Buffer.byteLength(page.content));
+            if (matched) assert.equal(page.minifyFallback.reason, 'match-evidence');
+            content += page.content;
+            if (!page.next?.continue) break;
+            assert.equal(page.next.continue.tool, 'localFetch');
+            page = await nextCall(page.next.continue);
+          }
+          assert.equal(content, matched ? 'needle 🌍\r\nneedle café\n' : source);
+        }
+      }
+      const invalid = await invoke('localFetch', { queries: [{ path: file, charLength: 3 }] });
+      assert.equal(invalid.isError, true);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   for (const [regex, searchText] of [
     ['literal', 'add'],
     ['rust', '\\badd\\b'],
@@ -202,8 +260,8 @@ try {
         const args = {
           queries: [{ path: path.join(fixture, 'math.ts'), minify: 'none' }],
         };
-        const full = await invoke('localGetFileContent', args);
-        let current = await invoke('localGetFileContent', {
+        const full = await invoke('localFetch', args);
+        let current = await invoke('localFetch', {
           ...args,
           responseCharLength: 150,
         });
@@ -256,7 +314,7 @@ try {
       const file = path.join(directory, 'source.ts');
       try {
         await writeFile(file, 'export const value = 1;\n');
-        const first = await invoke('localGetFileContent', {
+        const first = await invoke('localFetch', {
           queries: [{ path: file, minify: 'none' }],
           responseCharLength: 100,
         });
@@ -398,6 +456,24 @@ try {
   if (values.live && !values.quick) {
     const repo = { owner: 'octocat', repo: 'Hello-World' };
     const sha = '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d';
+    await check('GitHub full file reads return content without a checkout', async () => {
+      const data = await call('ghGetFileContent', { ...repo, branch: sha, path: 'README', fullContent: true });
+      assert.equal(data.files[0].content, 'Hello World!\n');
+      assert.equal(data.files[0].localPath, undefined);
+      assert.equal(data.files[0].repoRoot, undefined);
+      assert.equal(data.directories, undefined);
+    });
+    await check('GitHub file fetch rejects directory paths and removed directory mode', async () => {
+      const directory = await invoke('ghGetFileContent', { queries: [{ ...repo, branch: sha, path: '' }] });
+      assert.equal(directory.isError, true);
+      assert.match(JSON.stringify(directory.structuredContent), /directory/i);
+      let rejected = false;
+      try {
+        const result = await invoke('ghGetFileContent', { queries: [{ ...repo, path: '', type: 'directory' }] });
+        rejected = result.isError === true;
+      } catch { rejected = true; }
+      assert.ok(rejected);
+    });
     await check('GitHub repository search positive', async () => {
       const data = await call('ghSearch', {
         operation: 'repositories',
@@ -419,25 +495,73 @@ try {
       assert.ok(data.files.length > 0);
     });
     await check(
-      'GitHub exact file character continuations preserve all bytes',
+      'GitHub exact file byte continuations preserve all bytes',
       async () => {
         const query = { ...repo, branch: sha, path: 'README', minify: 'none' };
         const full = await call('ghGetFileContent', query);
         let current = await call('ghGetFileContent', {
           ...query,
-          charLength: 5,
+          chunkType: 'bytes', limit: 5,
         });
         let content = current.files[0].content;
         let count = 1;
-        while (current.files[0].next?.continueChars) {
+        while (current.files[0].next?.continue) {
           assert.ok(count++ < 20);
-          current = await nextCall(current.files[0].next.continueChars);
+          current = await nextCall(current.files[0].next.continue);
           content += current.files[0].content;
         }
         assert.ok(count > 1);
         assert.equal(content, full.files[0].content);
       }
     );
+    await check('GitHub/local search-to-match fetch parity in both chunk units', async () => {
+      const repo = { owner: 'jonschlinkert', repo: 'is-number' };
+      const found = await call('ghSearch', { ...repo, operation: 'code', filename: 'index.js', keywords: ['module.exports'], pageSize: 1 });
+      assert.ok(found.files?.length > 0);
+      const remotePath = found.files[0].path;
+      const full = await call('ghGetFileContent', { ...repo, path: remotePath, fullContent: true });
+      const source = full.files[0].content;
+      assert.ok(source.includes('module.exports'));
+      const parent = path.resolve('.octocode/tmp');
+      const directory = await mkdtemp(path.join(parent, 'remote-local-fetch-'));
+      const file = path.join(directory, 'index.js');
+      try {
+        await writeFile(file, source);
+        const localFound = await call('localSearch', { path: directory, searchText: 'module.exports', regex: 'literal' });
+        assert.ok(localFound.files?.length > 0);
+        for (const chunkType of ['lines', 'bytes']) {
+          const selector = { matchString: 'module.exports', contextLines: 2, minify: 'standard', chunkType, limit: chunkType === 'lines' ? 1 : 7 };
+          const contents = [];
+          const anchors = [];
+          for (const remote of [false, true]) {
+            const tool = remote ? 'ghGetFileContent' : 'localFetch';
+            const query = remote ? { ...repo, path: remotePath, ...(full.files[0].commitSha ? { branch: full.files[0].commitSha } : {}), ...selector } : { path: file, ...selector };
+            let result = await call(tool, query);
+            let joined = '';
+            let count = 0;
+            const matched = new Set();
+            while (true) {
+              assert.ok(count++ < 100);
+              const page = remote ? result.files[0] : result;
+              assert.equal(page.sourceBytes, Buffer.byteLength(source));
+              assert.equal(page.returnedBytes, Buffer.byteLength(page.content));
+              assert.equal(page.minifyFallback.reason, 'match-evidence');
+              joined += page.content;
+              for (const line of page.matchedLines ?? []) matched.add(line);
+              if (!page.next?.continue) { assert.equal(page.pagination.hasMore, false); break; }
+              assert.equal(page.next.continue.query.matchString, selector.matchString);
+              result = await nextCall(page.next.continue);
+            }
+            assert.ok(count > 1);
+            contents.push(joined);
+            anchors.push([...matched]);
+          }
+          assert.equal(contents[0], contents[1]);
+          assert.deepEqual(anchors[0], anchors[1]);
+          assert.ok(anchors[0].length > 0);
+        }
+      } finally { await rm(directory, { recursive: true, force: true }); }
+    });
     await check('GitHub commit history search positive', async () => {
       const data = await call('ghSearchHistory', {
         ...repo,
@@ -456,11 +580,12 @@ try {
       assert.ok(JSON.stringify(data).includes(sha));
     });
     await check('npm exact metadata positive', async () => {
-      const data = await call('npmSearch', { packageName: 'is-number' });
+      const data = await call('artifactSearch', { type: 'npm', packageName: 'is-number' });
       assert.ok(JSON.stringify(data).includes('7.0.0'));
     });
     await check('npm discovery continuation is executable', async () => {
-      const data = await call('npmSearch', {
+      const data = await call('artifactSearch', {
+        type: 'npm',
         keywords: ['is-number'],
         pageSize: 1,
       });

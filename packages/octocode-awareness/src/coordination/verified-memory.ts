@@ -3,11 +3,12 @@ import { createHash } from 'node:crypto';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { bytesToEmbedding, cosineSimilarity, isEmbeddingEnabled, runHostEmbedder } from '@octocodeai/agent-contracts/embed';
 import { canonicalMemoryInstant } from '../memory-scoring.js';
-import { insertMemory } from '../memory-write.js';
+import { insertPreparedMemory } from '../memory-write.js';
 import { containsSecretLikeText, MEMORY_EVALUATION_CORPUS_V1, runMemoryEvaluationCorpus, type MemoryEvaluationCorpusV1, type MemoryEvaluationReportV1, type MemoryRecallModeV1 } from '../memory-hardening.js';
 import { normalizeArtifact, normalizeLabel, normalizeReferences, normalizeTags } from '../helpers.js';
 import { DEFAULT_SEMANTIC_MIN_SIMILARITY, splitTags, now } from './coordination-shared.js';
 import { decodeMemoryContent, encodeMemoryContent, renderMemoryContent } from '../memory-content.js';
+import { repositoryWorkspacePaths } from '../git.js';
 
 const MAX_TEXT = 4000;
 const MAX_SOURCE_DIGEST = 512;
@@ -15,12 +16,12 @@ const MAX_LIMIT = 50;
 const MAX_OFFSET = 1_000_000_000;
 const SEMANTIC_CANDIDATE_LIMIT = 2000;
 const MAX_PAGE_BYTES = 16 * 1024;
-
 export type VerifiedMemoryPartialReason = 'limit' | 'terminal-limit' | 'snapshot_changed';
 
 export interface VerifiedMemoryV1 {
   version: 1;
   memoryId: string;
+  workspacePath: string;
   label: string;
   text: string;
   scope: 'project' | 'artifact';
@@ -34,6 +35,11 @@ export interface VerifiedMemoryV1 {
   why?: string;
   constraint?: string;
   historyRef?: string;
+  historyEvidence?: {
+    state: 'recorded' | 'incomplete' | 'unavailable';
+    reason: string;
+    next?: { call: { command: 'history inspect'; params: { operation_id: string; source_workspace: string } } };
+  };
   explanation?: string;
 }
 
@@ -87,8 +93,8 @@ export interface VerifiedMemoryRecallParams {
   file?: string | string[];
   area?: string;
   revision?: string;
+  strictScope?: boolean;
 }
-
 function boundedText(value: string, field: string, max: number): string {
   const text = value.trim();
   if (!text) throw new Error(`${field} is required`);
@@ -165,6 +171,23 @@ function rowReferences(db: DatabaseSync, memoryId: string): string[] {
   }
 }
 
+function historyEvidence(db: DatabaseSync, workspace: string, reference: string): VerifiedMemoryV1['historyEvidence'] {
+  const operationId = reference.slice('history:'.length);
+  try {
+    const operation = db.prepare(`SELECT status, after_commit_oid,
+      (SELECT COUNT(*) FROM local_history_versions WHERE operation_id = local_history_operations.operation_id) AS version_count
+      FROM local_history_operations WHERE operation_id = ? AND workspace_path = ?`).get(operationId, workspace);
+    if (!operation) return { state: 'unavailable', reason: 'The referenced history operation is unavailable in its source workspace.' };
+    const next = { call: { command: 'history inspect' as const, params: { operation_id: operationId, source_workspace: workspace } } };
+    if (operation.status !== 'complete') return { state: 'incomplete', reason: `History capture is ${String(operation.status)}; inspect the available evidence before relying on it.`, next };
+    if (!operation.after_commit_oid || !Number(operation.version_count)) return { state: 'incomplete', reason: 'Completed history metadata is missing its snapshot or file versions; inspect before relying on it.', next };
+    return { state: 'recorded', reason: 'History metadata records a completed capture; inspect it to check byte availability. This does not establish current file freshness.', next };
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('no such table')) return { state: 'unavailable', reason: 'The local history store is unavailable.' };
+    throw error;
+  }
+}
+
 function toVerified(db: DatabaseSync, row: Record<string, unknown>, similarity?: number): VerifiedMemoryV1 {
   const content = decodeMemoryContent(String(row.observation));
   const references = rowReferences(db, String(row.memory_id));
@@ -174,6 +197,7 @@ function toVerified(db: DatabaseSync, row: Record<string, unknown>, similarity?:
   return {
     version: 1,
     memoryId: String(row.memory_id),
+    workspacePath: String(row.workspace_path),
     label: String(row.label),
     ...content,
     scope,
@@ -183,7 +207,7 @@ function toVerified(db: DatabaseSync, row: Record<string, unknown>, similarity?:
     ...(row.valid_to ? { validUntil: String(row.valid_to) } : {}),
     importance: Number(row.importance ?? 5),
     ...(files.length ? { file: files } : {}),
-    ...(historyRef ? { historyRef } : {}),
+    ...(historyRef ? { historyRef, historyEvidence: historyEvidence(db, String(row.workspace_path), historyRef) } : {}),
     explanation: `verified memory; scope=${scope}; source=${String(row.source_digest)}${similarity === undefined ? '' : `; similarity=${similarity.toFixed(4)}`}`,
   };
 }
@@ -226,7 +250,7 @@ export function storeVerifiedMemory(host: VerifiedMemoryHost, params: VerifiedMe
       .get(host.canonicalWorkspace, artifact ?? null, scope, label, observation, JSON.stringify(tags), sourceDigest, importance,
         params.verifiedAt === undefined ? null : verifiedAt, verifiedAt, validUntil ?? null, references.length, JSON.stringify(references));
     if (duplicate && normalizedSupersedes.length === 0) return { memory: toVerified(host.db, duplicate), inserted: false };
-    const inserted = insertMemory(host.db, { agentId: 'awareness', taskContext: label, observation, importance, label, tags, references, supersedes: normalizedSupersedes, workspacePath: host.canonicalWorkspace, artifact, validFrom: verifiedAt, validTo: validUntil });
+    const inserted = insertPreparedMemory(host.db, { agentId: 'awareness', taskContext: label, observation, importance, label, tags, references, supersedes: normalizedSupersedes, workspacePath: host.canonicalWorkspace, artifact, validFrom: verifiedAt, validTo: validUntil });
     host.db.prepare(`UPDATE awareness_memories SET scope_kind = ?, source_digest = ?, verified_at = ?, secret_scan_status = 'passed' WHERE memory_id = ?`)
       .run(scope, sourceDigest, verifiedAt, inserted.memoryId);
     const row = host.db.prepare('SELECT * FROM awareness_memories WHERE memory_id = ?').get(inserted.memoryId) as Record<string, unknown>;
@@ -240,8 +264,9 @@ function baseClauses(host: VerifiedMemoryHost, params: VerifiedMemoryRecallParam
   const scope = params.scope;
   const artifact = normalizeVerifiedArtifact(params.artifact);
   if (scope === 'artifact' && !artifact) throw new Error('artifact is required when scope is artifact');
-  const clauses = ["workspace_path = ?", "state = 'ACTIVE'", 'verified_at IS NOT NULL', "secret_scan_status = 'passed'", '(valid_from IS NULL OR valid_from <= ?)', '(valid_to IS NULL OR valid_to > ?)'];
-  const values: Array<string | number> = [host.canonicalWorkspace, stamp, stamp];
+  const workspaces = params.strictScope ? [host.canonicalWorkspace] : repositoryWorkspacePaths(host.canonicalWorkspace);
+  const clauses = ["workspace_path IN (SELECT value FROM json_each(?))", "state = 'ACTIVE'", 'verified_at IS NOT NULL', "secret_scan_status = 'passed'", '(valid_from IS NULL OR valid_from <= ?)', '(valid_to IS NULL OR valid_to > ?)'];
+  const values: Array<string | number> = [JSON.stringify(workspaces), stamp, stamp];
   if (scope) { clauses.push('scope_kind = ?'); values.push(scope); }
   if (artifact) { clauses.push('artifact = ?'); values.push(artifact); }
   if (params.memoryId) { clauses.push('memory_id = ?'); values.push(params.memoryId); }
@@ -249,8 +274,8 @@ function baseClauses(host: VerifiedMemoryHost, params: VerifiedMemoryRecallParam
   if (params.sourceDigest?.trim()) { clauses.push('source_digest = ?'); values.push(params.sourceDigest.trim()); }
   const files = normalizeFiles(params.file, host.canonicalWorkspace);
   for (const reference of files) {
-    clauses.push('EXISTS (SELECT 1 FROM memory_refs mr_file WHERE mr_file.memory_id = awareness_memories.memory_id AND mr_file.reference = ?)');
-    values.push(reference);
+    clauses.push("EXISTS (SELECT 1 FROM memory_refs mr_file WHERE mr_file.memory_id = awareness_memories.memory_id AND mr_file.reference = 'file:' || awareness_memories.workspace_path || ?)");
+    values.push(`${sep}${relative(host.canonicalWorkspace, reference.slice(5))}`);
   }
   if (params.area?.trim()) {
     clauses.push("CASE WHEN json_valid(observation) THEN json_extract(observation, '$.area') ELSE NULL END = ?");
@@ -272,13 +297,18 @@ function nextCall(params: VerifiedMemoryRecallParams, offset: number, stamp: str
   if (params.minSimilarity !== undefined) nextParams.min_similarity = params.minSimilarity;
   if (params.file !== undefined) nextParams.file = params.file;
   if (params.area !== undefined) nextParams.area = params.area;
+  if (params.memoryId !== undefined) nextParams.memory_id = params.memoryId;
+  if (params.strictScope !== undefined) nextParams.strict_scope = params.strictScope;
   return { call: { command: 'memory recall-verified', params: nextParams } };
 }
 
-function memoryRevision(host: VerifiedMemoryHost, clauses: string[], values: Array<string | number>, mode: MemoryRecallModeV1): string {
-  const hash = createHash('sha256').update(`${mode}\n`);
-  const rows = host.db.prepare(`SELECT memory_id, importance, state, verified_at, valid_from, valid_to, source_digest, embedding_model, length(embedding) AS embedding_bytes FROM awareness_memories WHERE ${clauses.join(' AND ')} ORDER BY memory_id ASC`).iterate(...values) as Iterable<Record<string, unknown>>;
-  for (const row of rows) hash.update(JSON.stringify(row)).update('\n');
+function memoryRevision(host: VerifiedMemoryHost, clauses: string[], values: Array<string | number>, params: VerifiedMemoryRecallParams, mode: MemoryRecallModeV1): string {
+  const hash = createHash('sha256').update(JSON.stringify([host.canonicalWorkspace, mode, params.query?.trim() ?? '', params.minSimilarity ?? DEFAULT_SEMANTIC_MIN_SIMILARITY, clauses, values])).update('\n');
+  const rows = host.db.prepare(`SELECT * FROM awareness_memories WHERE ${clauses.join(' AND ')} ORDER BY memory_id ASC`).iterate(...values) as Iterable<Record<string, unknown>>;
+  for (const row of rows) {
+    // Include presented provenance and evidence metadata, not only sort keys.
+    hash.update(JSON.stringify(row)).update(JSON.stringify(toVerified(host.db, row))).update('\n');
+  }
   return `verified-memory-v1:${hash.digest('hex')}`;
 }
 
@@ -302,7 +332,7 @@ export function recallVerifiedMemory(host: VerifiedMemoryHost, params: VerifiedM
   const base = baseClauses(host, params, stamp);
   const query = params.query?.trim();
   const mode = params.mode ?? 'lexical';
-  const revision = memoryRevision(host, base.clauses, base.values, mode);
+  const revision = memoryRevision(host, base.clauses, base.values, params, mode);
   if ((offset > 0 && !params.revision) || (params.revision !== undefined && params.revision !== revision)) {
     return { memories: [], partial: true, partialReasons: ['snapshot_changed'], revision, next: nextCall(params, 0, stamp, revision) };
   }

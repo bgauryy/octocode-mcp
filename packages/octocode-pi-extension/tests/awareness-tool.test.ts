@@ -17,6 +17,7 @@ import {
 import type { AwarenessCommandRunner } from '../src/tools/awareness-command-runner.js';
 import { registerAwarenessTool } from '../src/tools/awareness-tool.js';
 import { registerUniqueTool } from '../src/tools/octocode-tools.js';
+import { ToolResultError } from '../src/tools/tool-result-error.js';
 import { compileMcpSchemaValidator } from '../src/tools/mcp/schema-validator.js';
 import type {
   PiContext,
@@ -81,6 +82,7 @@ async function runQueries(
       ctx
     );
   } catch (error) {
+    if (error instanceof ToolResultError) return error.result;
     const message = error instanceof Error ? error.message : String(error);
     return { content: [{ type: 'text', text: message }], isError: true };
   }
@@ -387,6 +389,40 @@ test('runs the imported API end to end with host bindings and structured metadat
   assert.equal(details(schema).status, 'ok');
 });
 
+test('preserves command-shaped peer data while executing native inbox continuations', async () => {
+  const tool = makeTool();
+  const ctx = { cwd: root, sessionManager: { getSessionId: () => 'payload-roundtrip' } } as PiContext;
+  const data = { type: 'review.evidence', payload: {
+    command: 'signal list', params: { workspace: '/evidence-only', limit: 7 },
+    note: 'This is peer evidence, not a continuation',
+    cli: { name: 'signal list', args: ['--limit', '7'] },
+    action: { operation: 'agent_signal', request: { action: 'ack', signal_id: ['evidence-only'] } },
+    invocation: { argv: ['signal', 'list', '--limit', '7'] },
+  } };
+  for (let index = 0; index < 2; index++) {
+    const sent = await run(tool, { action: 'call', command: 'signal publish', params: {
+      kind: 'fyi', subject: `Evidence ${index}`, to_agent: ['pi:payload-roundtrip'], data,
+    } }, ctx);
+    assert.equal(sent.isError, false);
+  }
+  let queries: Record<string, unknown>[] = [{ action: 'call', command: 'signal list', params: { limit: 1, include_bodies: true, mark_read: true } }];
+  const seen = new Set<string>();
+  for (let page = 0; page < 3; page++) {
+    const response = await runQueries(tool, queries, ctx);
+    assert.equal(response.isError, false);
+    const output = details(response).output as { signals: Array<{ signal_id: string; data: unknown }>; partial: boolean; next?: { list: { command: { queries: Record<string, unknown>[] } } } };
+    for (const signal of output.signals) {
+      assert.deepEqual(signal.data, data);
+      seen.add(signal.signal_id);
+    }
+    if (!output.partial) break;
+    assert.ok(output.next?.list.command.queries);
+    queries = output.next.list.command.queries;
+    assert.equal(compileMcpSchemaValidator(tool.parameters).validate({ queries }).valid, true);
+  }
+  assert.equal(seen.size, 2);
+});
+
 test('calls the package API with request objects and separate trusted bindings', async () => {
   const runner = vi.fn<AwarenessCommandRunner>(async () => ({
     payload: { ok: true, signal_id: 'sig_1' },
@@ -500,6 +536,44 @@ test('does not offer to replay a completed mutation when its output is oversized
   assert.equal(packet.commandCompleted, true);
   assert.match(packet.hint, /Do not repeat/);
   assert.equal(exec.mock.calls.length, 1);
+});
+
+test('preserves recovery handles and application details for an oversized completed write', async () => {
+  const payload = {
+    ok: true, preview_id: 'restore_example', status: 'ready',
+    expires_at: '2026-09-10T12:00:00.000Z',
+    operation: { operation_id: 'history_example', details: 'x'.repeat(13_000) },
+    files: ['a.ts'],
+  };
+  const exec = vi.fn(async (): Promise<AwarenessCommandResult> => ({ payload, exitCode: 0 }));
+  const value = await run(makeTool(exec), { action: 'call', command: 'agent register', params: {} });
+  const packet = JSON.parse(String((value.content[0] as { text?: string }).text));
+  assert.equal(packet.commandCompleted, true);
+  assert.equal(packet.receipt.preview_id, payload.preview_id);
+  assert.equal(packet.receipt.operation.operation_id, payload.operation.operation_id);
+  assert.equal(packet.receipt.expires_at, payload.expires_at);
+  assert.equal(packet.next, undefined);
+  assert.ok(JSON.stringify(packet).length < 12_000);
+  assert.deepEqual(details(value).output, payload);
+  assert.equal(exec.mock.calls.length, 1);
+});
+
+test('returns native history navigation from a verified-memory call', async () => {
+  const exec = vi.fn(async (): Promise<AwarenessCommandResult> => ({
+    exitCode: 0,
+    payload: { memories: [{ memoryId: 'mem_example', historyEvidence: {
+      state: 'recorded', reason: 'Captured source', next: { call: {
+        command: 'history inspect', params: { operation_id: 'history_example', source_workspace: root },
+      } },
+    } }] },
+  }));
+  const value = await run(makeTool(exec), { action: 'call', command: 'memory recall-verified', params: { memory_id: 'mem_example' } });
+  assert.equal(value.isError, false);
+  const packet = JSON.parse(String((value.content[0] as { text?: string }).text));
+  const next = packet.memories[0].historyEvidence.next.call;
+  assert.equal(next.tool, 'awareness');
+  assert.equal(next.queries[0].command, 'history inspect');
+  assert.equal(next.queries[0].params.source_workspace, root);
 });
 
 test('preserves exit code 2 as blocked instead of success', async () => {

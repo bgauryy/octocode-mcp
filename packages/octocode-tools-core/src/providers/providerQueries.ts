@@ -46,14 +46,17 @@ export interface FileContentQuery extends BaseProviderQuery {
   matchString?: string;
 
   contextLines?: number;
+  contextBytes?: number;
 
   matchStringIsRegex?: boolean;
 
   matchStringCaseSensitive?: boolean;
 
-  charOffset?: number;
+  chunkType?: 'lines' | 'bytes';
 
-  charLength?: number;
+  offset?: number;
+
+  limit?: number;
 
   fullContent?: boolean;
 

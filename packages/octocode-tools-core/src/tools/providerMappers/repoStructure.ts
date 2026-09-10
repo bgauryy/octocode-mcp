@@ -1,6 +1,6 @@
 import type { RepoStructureResult as ProviderRepoStructureResult } from '../../providers/providerResults.js';
 import type { z } from 'zod';
-import type { GitHubViewRepoStructureQuerySchema } from '../../toolContract/input/resources/tools/githubTreeOperation.js';
+import type { GitHubViewRepoStructureQuerySchema } from '@octocodeai/octocode-core/schema';
 import type { WithOptionalMeta } from '../../types/execution.js';
 
 import { GITHUB_STRUCTURE_DEFAULTS } from '../github_view_repo_structure/constants.js';

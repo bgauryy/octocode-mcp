@@ -88,13 +88,13 @@ test('compaction summaries never retain private model reasoning', () => {
   assert.doesNotMatch(summary, /private internal reasoning/);
 });
 
-test('failed compaction restores the selected tools without emitting a success checkpoint', async () => {
+test('failed compaction leaves current host tool selection intact without a success checkpoint', async () => {
   const h = makeHarness();
   const { ctx } = makeCtx();
   await h.fire('session_before_compact', { reason: 'manual' }, ctx);
   h.activeTools.splice(0, h.activeTools.length, 'read');
   await h.fire('session_compact_failed', { reason: 'manual', aborted: false }, ctx);
-  assert.deepEqual(h.activeTools, ['MCPTool', 'file', 'bash']);
+  assert.deepEqual(h.activeTools, ['read']);
   assert.equal(h.sentMessages.length, 0);
 });
 
@@ -160,10 +160,10 @@ test('only public Pi compaction hooks are registered', () => {
   const harness = makeHarness();
   assert.equal(harness.handlerCount('session_before_compact'), 1);
   assert.equal(harness.handlerCount('session_compact'), 1);
-  assert.equal(harness.handlerCount('session_compact_failed'), 1);
+  assert.equal(harness.handlerCount('session_compact_failed'), 0);
 });
 
-test('successful compaction restores the exact pre-compaction tool surface', async () => {
+test('successful compaction preserves a newer host tool selection', async () => {
   const harness = makeHarness();
   const { ctx } = makeCtx();
   Object.assign(ctx, { cwd: testHome });
@@ -178,7 +178,7 @@ test('successful compaction restores the exact pre-compaction tool surface', asy
     reason: 'threshold',
     willRetry: false,
   }, ctx);
-  assert.deepEqual(harness.activeTools, ['MCPTool', 'file', 'bash']);
+  assert.deepEqual(harness.activeTools, ['bash']);
 });
 
 test('session shutdown discards staged smart-resume state without reading Pi stale context', async () => {

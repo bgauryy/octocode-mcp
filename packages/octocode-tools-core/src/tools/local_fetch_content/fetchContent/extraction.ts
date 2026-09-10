@@ -1,54 +1,45 @@
-import { extractMatchingLines } from '../contentExtractor.js';
+import { matchContext } from '../../../utils/file/matchContext.js';
+import { buildSecurityLimitResult } from './pagination.js';
+import { selectMatchingSource } from '../../../utils/file/contentExtractor.js';
 import { countLines } from '../../../utils/core/lines.js';
-import type { LocalGetFileContentToolResult } from '@octocodeai/octocode-core/extra-types';
-import type { FetchContentQuery } from '../scheme.js';
+import type { LocalFetchToolResult } from '@octocodeai/octocode-core/extra-types';
+import type { FetchContentQuery } from '@octocodeai/octocode-core/schema';
 import { LOCAL_TOOL_ERROR_CODES } from '../../../errors/localToolErrors.js';
 import { createNoMatchesResult } from './validation.js';
 
 export interface ExtractionState {
   resultContent?: string;
-  isPartial: boolean;
+  sourceLines?: number[];
   actualStartLine?: number;
   actualEndLine?: number;
   matchRanges?: Array<{ start: number; end: number }>;
-  /**
-   * Exact matched-line numbers (as opposed to `matchRanges`, which are
-   * ±contextLines windows around them) — previously only readable by parsing
-   * the "Found ... on line N" prose in `warnings`.
-   */
+  /** Source lines containing matches before pagination. */
   matchedLines?: number[];
+  selectedMatchCount?: number;
   warnings?: string[];
-  earlyResult?: LocalGetFileContentToolResult;
+  earlyResult?: LocalFetchToolResult;
 }
 
 function buildMatchExtractionState(
   query: FetchContentQuery,
-  lines: string[],
-  totalLines: number
+  totalLines: number,
+  sourceRecords: string[]
 ): ExtractionState {
-  const result = extractMatchingLines(
-    lines,
+  const context = matchContext(query);
+  const result = selectMatchingSource(
+    sourceRecords.join(''),
     query.matchString!,
-    (query as { contextLines?: number }).contextLines ?? 5,
+    context.contextLines ?? 0,
     query.matchStringIsRegex ?? false,
-    query.matchStringCaseSensitive ?? false
+    query.matchStringCaseSensitive ?? false,
+    context.contextBytes,
+    query.path
   );
-
-  if (result.lines.length === 0) {
-    return {
-      isPartial: false,
-      earlyResult: createNoMatchesResult(query, totalLines),
-    };
+  if (result.securityLimited)
+    return { earlyResult: buildSecurityLimitResult(query, totalLines) };
+  if (result.matchCount === 0) {
+    return { earlyResult: createNoMatchesResult(query, totalLines) };
   }
-
-  const resultContent = result.lines.join('\n');
-  const contextLines = (query as { contextLines?: number }).contextLines ?? 5;
-  const shownLines = result.matchingLines.slice(0, 10).join(', ');
-  const extraCount =
-    result.matchingLines.length > 10
-      ? ` (+${result.matchingLines.length - 10} more)`
-      : '';
-  const matchSummary = `Found ${result.matchCount} occurrence${result.matchCount === 1 ? '' : 's'} of "${query.matchString}" on line${result.matchingLines.length === 1 ? '' : 's'} ${shownLines}${extraCount} — all shown as ${result.matchRanges.length} slice${result.matchRanges.length === 1 ? '' : 's'}, ±${contextLines} lines of context each; these lines are lineHint anchors for lspSearch.`;
   let actualStartLine: number | undefined;
   let actualEndLine: number | undefined;
   let matchRanges: Array<{ start: number; end: number }> | undefined;
@@ -67,36 +58,19 @@ function buildMatchExtractionState(
   }
 
   return {
-    resultContent,
-    // matchString is a filtered view, not a truncated one: every matching
-    // slice is present in resultContent. Character windowing, if needed, owns
-    // the partial flag and its executable continuation later in the pipeline.
-    isPartial: false,
+    resultContent: result.content,
+    warnings: result.warnings,
+    sourceLines: result.sourceLines,
     actualStartLine,
     actualEndLine,
     matchRanges,
     matchedLines: result.matchingLines,
-    warnings: [matchSummary],
+    selectedMatchCount: result.matchCount,
   };
 }
 
 function hasLineRangeRequest(query: FetchContentQuery): boolean {
   return query.startLine !== undefined && query.endLine !== undefined;
-}
-
-function formatNumberedLines(
-  lines: string[],
-  startLine: number,
-  endLine: number
-): string {
-  const width = String(endLine).length;
-  return lines
-    .slice(startLine - 1, endLine)
-    .map(
-      (line, index) =>
-        `${String(startLine + index).padStart(width, ' ')}→ ${line}`
-    )
-    .join('\n');
 }
 
 function buildLineRangeExtractionState(
@@ -111,7 +85,6 @@ function buildLineRangeExtractionState(
 
   if (requestedEndLine < requestedStartLine) {
     return {
-      isPartial: false,
       earlyResult: {
         status: 'empty',
         totalLines,
@@ -126,7 +99,6 @@ function buildLineRangeExtractionState(
 
   if (effectiveStartLine > totalLines) {
     return {
-      isPartial: false,
       earlyResult: {
         status: 'empty',
         totalLines,
@@ -147,14 +119,13 @@ function buildLineRangeExtractionState(
   }
 
   return {
-    resultContent: formatNumberedLines(
-      lines,
-      effectiveStartLine,
-      effectiveEndLine
+    resultContent: lines
+      .slice(effectiveStartLine - 1, effectiveEndLine)
+      .join(''),
+    sourceLines: Array.from(
+      { length: effectiveEndLine - effectiveStartLine + 1 },
+      (_, index) => effectiveStartLine + index
     ),
-    // A bounded line view is partial only while reachable source lines remain.
-    // The result builder attaches the executable continuation for that state.
-    isPartial: effectiveEndLine < totalLines,
     actualStartLine: effectiveStartLine,
     actualEndLine: effectiveEndLine,
     warnings,
@@ -163,14 +134,13 @@ function buildLineRangeExtractionState(
 
 export function buildExtractionState(
   query: FetchContentQuery,
-  content: string,
-  _defaultOutputCharLength: number
+  content: string
 ): ExtractionState {
-  const lines = content.split('\n');
+  const lines = content.match(/[^\n]*\n|[^\n]+$/g) ?? [];
   const totalLines = countLines(content);
 
   if (query.matchString) {
-    return buildMatchExtractionState(query, lines, totalLines);
+    return buildMatchExtractionState(query, totalLines, lines);
   }
 
   if (hasLineRangeRequest(query)) {
@@ -179,6 +149,5 @@ export function buildExtractionState(
 
   return {
     resultContent: content,
-    isPartial: false,
   };
 }

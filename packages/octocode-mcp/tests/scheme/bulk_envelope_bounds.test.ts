@@ -1,44 +1,10 @@
 import { describe, it, expect } from 'vitest';
 
-import { LocalRipgrepBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_ripgrep/scheme.js';
-import { LocalFindFilesBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_find_files/scheme.js';
-import { LocalFetchContentBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_fetch_content/scheme.js';
-import { LocalViewStructureBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_view_structure/scheme.js';
-import { FileContentBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_fetch_content/scheme.js';
-import { GitHubCodeSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_search_code/scheme.js';
-import { GitHubViewRepoStructureBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_view_repo_structure/scheme.js';
-import { GitHubReposSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_search_repos/scheme.js';
-import { GitHubPullRequestSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_search_pull_requests/scheme.js';
-import { NpmSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/package_search/scheme.js';
-import { BulkCloneRepoLocalSchema } from '../../../octocode-tools-core/src/tools/github_clone_repo/scheme.js';
-import { BulkLspSearchSchema } from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
+import { DIRECT_TOOL_SPECIFICATIONS } from '@octocodeai/octocode-core/schema';
 
-const ALL_BULK_SCHEMAS = [
-  ['LocalRipgrepBulkQuerySchema', LocalRipgrepBulkQuerySchema],
-  ['LocalFindFilesBulkQuerySchema', LocalFindFilesBulkQuerySchema],
-  ['LocalFetchContentBulkQuerySchema', LocalFetchContentBulkQuerySchema],
-  ['LocalViewStructureBulkQuerySchema', LocalViewStructureBulkQuerySchema],
-  ['FileContentBulkQueryLocalSchema', FileContentBulkQueryLocalSchema],
-  [
-    'GitHubCodeSearchBulkQueryLocalSchema',
-    GitHubCodeSearchBulkQueryLocalSchema,
-  ],
-  [
-    'GitHubViewRepoStructureBulkQueryLocalSchema',
-    GitHubViewRepoStructureBulkQueryLocalSchema,
-  ],
-  [
-    'GitHubReposSearchBulkQueryLocalSchema',
-    GitHubReposSearchBulkQueryLocalSchema,
-  ],
-  [
-    'GitHubPullRequestSearchBulkQueryLocalSchema',
-    GitHubPullRequestSearchBulkQueryLocalSchema,
-  ],
-  ['NpmSearchBulkQueryLocalSchema', NpmSearchBulkQueryLocalSchema],
-  ['BulkCloneRepoLocalSchema', BulkCloneRepoLocalSchema],
-  ['BulkLspSearchSchema', BulkLspSearchSchema],
-] as const;
+const ALL_BULK_SCHEMAS = DIRECT_TOOL_SPECIFICATIONS.map(
+  tool => [tool.name, tool.inputSchema] as const
+);
 
 describe('bulk envelope numeric bounds', () => {
   describe.each(ALL_BULK_SCHEMAS)('%s', (_name, schema) => {

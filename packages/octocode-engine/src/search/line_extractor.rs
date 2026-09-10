@@ -20,6 +20,13 @@ pub(crate) fn extract_matching_lines_inner(
     pattern: &str,
     options: Option<ExtractMatchingLinesOptions>,
 ) -> ExtractMatchingLinesResult {
+    if let Some(byte_options) = options.as_ref().filter(|o| o.context_bytes.is_some()) {
+        return super::byte_extractor::extract_matching_bytes(
+            content,
+            pattern,
+            byte_options.clone(),
+        );
+    }
     let is_regex = options.as_ref().and_then(|o| o.is_regex).unwrap_or(false);
     let case_sensitive = options
         .as_ref()
@@ -37,6 +44,7 @@ pub(crate) fn extract_matching_lines_inner(
             matching_lines: vec![],
             match_count: 0,
             match_ranges: vec![],
+            byte_ranges: None,
         };
     }
 
@@ -70,6 +78,7 @@ pub(crate) fn extract_matching_lines_inner(
             matching_lines: vec![],
             match_count: 0,
             match_ranges: vec![],
+            byte_ranges: None,
         };
     }
 
@@ -80,6 +89,7 @@ pub(crate) fn extract_matching_lines_inner(
     let result_lines = assemble_output(&lines, &ranges);
 
     ExtractMatchingLinesResult {
+        byte_ranges: None,
         lines: result_lines,
         matching_lines: matches.lines.iter().map(|&n| n as u32).collect(),
         match_count: total_match_count as u32,
@@ -277,6 +287,7 @@ mod tests {
             content,
             "hello",
             Some(ExtractMatchingLinesOptions {
+                context_bytes: None,
                 is_regex: None,
                 case_sensitive: Some(true),
                 context_lines: None,
@@ -294,6 +305,7 @@ mod tests {
             content,
             r"(const|let)\s+\w",
             Some(ExtractMatchingLinesOptions {
+                context_bytes: None,
                 is_regex: Some(true),
                 case_sensitive: None,
                 context_lines: None,
@@ -310,6 +322,7 @@ mod tests {
             content,
             "match",
             Some(ExtractMatchingLinesOptions {
+                context_bytes: None,
                 is_regex: None,
                 case_sensitive: None,
                 context_lines: Some(1),
@@ -352,6 +365,7 @@ mod tests {
             content,
             "x",
             Some(ExtractMatchingLinesOptions {
+                context_bytes: None,
                 is_regex: None,
                 case_sensitive: None,
                 context_lines: None,
@@ -369,6 +383,7 @@ mod tests {
             content,
             "x",
             Some(ExtractMatchingLinesOptions {
+                context_bytes: None,
                 is_regex: None,
                 case_sensitive: None,
                 context_lines: Some(1),
@@ -393,6 +408,7 @@ mod tests {
             &content,
             "line 1$",
             Some(ExtractMatchingLinesOptions {
+                context_bytes: None,
                 is_regex: Some(true),
                 case_sensitive: Some(true),
                 context_lines: None,

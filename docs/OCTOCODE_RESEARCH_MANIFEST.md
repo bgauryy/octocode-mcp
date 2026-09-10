@@ -38,15 +38,15 @@ Do not add fields from another operation or assume a former tool name remains an
 | Tool | Question it answers | Evidence boundary |
 |---|---|---|
 | `localSearch` | Where is text, syntax, a path, or a directory entry? | Text proves occurrence; AST proves syntax within the searched scope. |
-| `localGetFileContent` | What does a known local file contain? | `none` preserves selected source apart from security redaction; transformed views are lossy. |
+| `localFetch` | What does a known local file contain? | `none` preserves selected source apart from security redaction; transformed views are lossy. |
 | `astSearch` | Which files depend on one another or form paths and cycles? | Syntactic file topology; unresolved imports and excluded files limit coverage. |
 | `lspSearch` | Which definition, references, callers, or types does the server resolve? | Server and project scope limit semantic evidence. |
 | `ghSearch` | Which indexed code, repositories, or tree paths are candidates? | Code search uses GitHub's indexed default branch; a tree query can select a ref. |
-| `ghGetFileContent` | What is in a known remote file or directory snapshot? | Pin the ref for reproducibility; file views and provider limits still apply. |
+| `ghGetFileContent` | What is in a known remote file? | Pin the ref for reproducibility; file views and provider limits still apply. |
 | `ghSearchHistory` | Which PRs, issues, or commits are candidates? | Discovery identifies records; it does not fetch every detail surface. |
 | `ghGetHistoryItem` | What does a known PR, issue, commit, or comparison contain? | Selected detail can have independent list and content continuations. |
 | `ghCloneRepo` | How can remote source become a local checkout? | Cloning supplies source; local analysis supplies proof. |
-| `npmSearch` | Which package metadata and source repository match the request? | Package metadata does not prove source behavior or installed-version equivalence. |
+| `artifactSearch` | Which package metadata and source repository match the request? | Package metadata does not prove source behavior or installed-version equivalence. |
 
 Tool availability, a recognized extension, a parser fixture, and a running
 language server are separate facts. The
@@ -66,7 +66,7 @@ not need another repository-wide search.
    messages, and literals. Choose the regex mode explicitly when interpretation
    matters. Use `astSearch(operation:"match")` with exactly one of `pattern` or
    `rule` when the question concerns a syntax shape.
-3. **Read the relevant source.** Use `localGetFileContent` with a returned line
+3. **Read the relevant source.** Use `localFetch` with a returned line
    range or `matchString`. Set `minify:"none"` when quoting or examining precise
    syntax. An outline helps identify declarations before reading their bodies.
 4. **Map topology when needed.** Use graph `dependencies`, `dependents`, `path`,
@@ -93,9 +93,10 @@ branch for the installed version without checking the relationship.
 
 ## External workflow
 
-When a repository is unknown, start with `npmSearch` or `ghSearch(operation:"repositories")` repository
-discovery. For npm, choose exactly one of `packageName` or `keywords`; pagination
-applies to keyword discovery. Preserve the returned repository subdirectory when
+When a repository is unknown, start with `artifactSearch` or `ghSearch(operation:"repositories")` repository
+discovery. Package queries require an ecosystem `type` and exactly one of
+`packageName` or `keywords`; PyPI supports exact lookup only. Keyword discovery
+uses opaque `cursor` and `pageSize`; copy the complete `next.nextPage` query. Preserve the returned repository subdirectory when
 the package lives in a monorepo.
 
 Use `ghSearch(operation:"tree")` to establish layout and path case. Use
@@ -119,9 +120,7 @@ themselves prove that the working tree contents are unchanged. A sparse clone is
 complete only relative to its requested subtree.
 
 For repeated reads, AST queries, graph analysis, or semantic verification, use
-`ghCloneRepo` and then the local tools on its returned path. A sparse checkout or
-`ghGetFileContent(type:"directory")` can materialize a smaller scope. These
-operations require persistent storage and their configured availability gates.
+`ghCloneRepo` and then the local tools on its returned path. Use `sparsePath` to check out a smaller scope. Cloning requires persistent storage and their configured availability gates.
 Inspect catalog diagnostics rather than assuming cloning is enabled.
 
 Materialization does not install dependencies or language servers, and a sparse

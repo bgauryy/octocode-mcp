@@ -1,9 +1,9 @@
 import type { PullRequestSearchResult as ProviderPullRequestSearchResult } from '../../providers/providerResults.js';
 import type { z } from 'zod';
-import type { GitHubPullRequestSearchQueryLocalSchema } from '../github_search_pull_requests/scheme.js';
+import type { GitHubPullRequestSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import type { WithOptionalMeta } from '../../types/execution.js';
 
-import { GITHUB_SEARCH_DEFAULT_LIMIT } from '../../config.js';
+import { GITHUB_SEARCH_DEFAULT_LIMIT } from '@octocodeai/octocode-core/schema';
 import { quoteSearchKeyword } from '../../github/searchKeyword.js';
 import { isBotAuthor } from '../../github/botFilter.js';
 import { countMetadata, toProviderProjectId } from './shared.js';

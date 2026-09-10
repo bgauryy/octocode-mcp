@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { existsSync, readdirSync } from 'node:fs';
+import { DIRECT_TOOL_SPECIFICATIONS } from '@octocodeai/octocode-core/schema';
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import {
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
-} from '../../../octocode-tools-core/src/tools/toolNames.js';
-import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+} from '@octocodeai/octocode-core/schema';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 const SHARED_FIELDS = ['goal', 'reasoning'] as const;
 const REMOVED_FIELDS = ['id', 'mainResearchGoal', 'researchGoal'] as const;
 
@@ -14,9 +14,9 @@ const REMOVED_QUERY_ALIASES: Record<
   string,
   ReadonlyArray<Record<string, unknown>>
 > = {
-  npmSearch: [{ name: 'zod' }, { keywords: 'state' }],
+  artifactSearch: [{ name: 'zod' }, { keywords: 'state' }],
   lspSearch: [{ op: 'documentSymbols' }],
-  localGetFileContent: [{ filePath: '/tmp/test.ts' }],
+  localFetch: [{ filePath: '/tmp/test.ts' }],
   localSearch: [
     { keywords: 'needle' },
     { itemsPerPage: 5 },
@@ -78,7 +78,7 @@ const MINIMAL_QUERY: Record<string, Record<string, unknown>> = {
     repo: 'react',
     number: 1,
   },
-  [STATIC_TOOL_NAMES.PACKAGE_SEARCH]: { packageName: 'zod' },
+  [STATIC_TOOL_NAMES.PACKAGE_SEARCH]: { type: 'npm', packageName: 'zod' },
   [STATIC_TOOL_NAMES.GITHUB_CLONE_REPO]: {
     owner: 'facebook',
     repo: 'react',
@@ -431,39 +431,18 @@ describe('all-tools schema contract', () => {
       ).toHaveLength(0);
     });
 
-    it('keeps each tool schema surface in its scheme.ts file', () => {
-      const toolsRoot = new URL(
-        '../../../octocode-tools-core/src/tools/',
-        import.meta.url
+    it('uses the core executable schema without an interface-owned validation layer', () => {
+      expect(ALL_TOOLS.map(tool => tool.name)).toEqual(
+        DIRECT_TOOL_SPECIFICATIONS.map(tool => tool.name)
       );
-      const files = readdirSync(toolsRoot, { recursive: true }).map(String);
-      const schemeFiles = files.filter(file => file.endsWith('scheme.ts'));
-      const splitSchemaFiles = files.filter(
-        file =>
-          /schema\.ts$/i.test(file) &&
-          !file.endsWith('scheme.ts') &&
-          !file.startsWith('toolMetadata/')
-      );
-
-      // The in-catalog history pair shares schema modules instead of a
-      // per-tool scheme.ts, so both tools are excluded from the count.
-      const SPLIT_TOOLS: string[] = ['ghSearchHistory', 'ghGetHistoryItem'];
-      // The former split discovery modules remain internal engine modules,
-      // and github_search_pull_requests/scheme.ts is their internal schema.
-      const outOfCatalogSchemeCount = 8;
-      expect(schemeFiles).toHaveLength(
-        ALL_TOOLS.filter(tool => !SPLIT_TOOLS.includes(tool.name)).length +
-          outOfCatalogSchemeCount
-      );
-      expect(
-        existsSync(
-          new URL(
-            '../../../octocode-tools-core/src/tools/github_search_pull_requests/splitSchemes.ts',
-            import.meta.url
-          )
-        )
-      ).toBe(true);
-      expect(splitSchemaFiles).toEqual([]);
+      for (const tool of ALL_TOOLS) {
+        const canonical = DIRECT_TOOL_SPECIFICATIONS.find(
+          specification => specification.name === tool.name
+        );
+        expect(canonical, tool.name).toBeDefined();
+        expect(tool.direct.inputSchema, tool.name).toBe(canonical?.inputSchema);
+        expect(tool.description, tool.name).toBe(canonical?.description);
+      }
     });
   });
 });

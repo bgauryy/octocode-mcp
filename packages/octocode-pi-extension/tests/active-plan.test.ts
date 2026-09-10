@@ -355,15 +355,15 @@ test('bumpPlanTurn is a no-op when there is no plan', () => {
   assert.equal(renderActivePlanAddendum(cwd), '');
 });
 
-test('before_agent_start bumps plan staleness exactly once before the frozen-prompt return', () => {
+test('before_agent_start bumps plan staleness exactly once before projecting the current prompt', () => {
   const source = fs.readFileSync(path.join(import.meta.dirname, '../src/index.ts'), 'utf8');
   const hookStart = source.indexOf("hooks.on('before_agent_start', 'octocode-system-prompt'");
   const hookEnd = source.indexOf("hooks.on('input'", hookStart);
   const hook = source.slice(hookStart, hookEnd);
   assert.equal(hook.match(/bumpPlanTurn\(planScope\)/g)?.length, 1, 'one bump is wired per hook invocation');
   assert.ok(
-    hook.indexOf('bumpPlanTurn(planScope)') < hook.indexOf('if (session.frozenSystemPrompt !== undefined)'),
-    'the bump runs on frozen turns instead of only during initial prompt construction',
+    hook.indexOf('bumpPlanTurn(planScope)') < hook.indexOf('const promptAssembly = collectPromptContext'),
+    'every turn advances plan state before projecting current capabilities',
   );
 });
 

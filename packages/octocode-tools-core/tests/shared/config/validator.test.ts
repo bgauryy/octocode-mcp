@@ -27,7 +27,7 @@ describe('config/validator', () => {
         },
         tools: {
           enabled: ['github.code'],
-          disabled: ['npmSearch'],
+          disabled: ['artifactSearch'],
         },
         network: {
           timeout: 30000,
@@ -134,7 +134,7 @@ describe('config/validator', () => {
 
       it('rejects non-array disabled', () => {
         const result = validateConfig({
-          tools: { disabled: 'npmSearch' },
+          tools: { disabled: 'artifactSearch' },
         });
         expect(result.valid).toBe(false);
         expect(result.errors.some(e => e.includes('tools.disabled'))).toBe(
@@ -144,7 +144,7 @@ describe('config/validator', () => {
 
       it('accepts valid disabled array', () => {
         const result = validateConfig({
-          tools: { disabled: ['npmSearch'] },
+          tools: { disabled: ['artifactSearch'] },
         });
         expect(result.valid).toBe(true);
       });

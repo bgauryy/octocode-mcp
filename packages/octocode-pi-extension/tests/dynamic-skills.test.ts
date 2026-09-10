@@ -40,9 +40,9 @@ test('registerSkill writes SKILL.md and indexes a valid skill', () => {
   assert.ok(readIndex(dir).skills['release-checklist']);
 });
 
-test('getSkillsDir honors OCTOCODE_DYNAMIC_SKILLS_DIR and defaults under ~/.pi/agent/skills', () => {
+test('getSkillsDir honors OCTOCODE_DYNAMIC_SKILLS_DIR and the Octocode home', () => {
   assert.equal(getSkillsDir({ OCTOCODE_DYNAMIC_SKILLS_DIR: '/tmp/x' } as NodeJS.ProcessEnv), '/tmp/x');
-  assert.equal(getSkillsDir({ HOME: '/home/u' } as NodeJS.ProcessEnv), path.join('/home/u', '.pi', 'agent', 'skills'));
+  assert.equal(getSkillsDir({ OCTOCODE_HOME: '/home/u/.octocode' } as NodeJS.ProcessEnv), path.join('/home/u', '.octocode', 'skills'));
 });
 
 test('parseFrontmatter extracts name and description', () => {

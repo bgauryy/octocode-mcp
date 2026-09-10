@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, test } from 'vitest';
+import { afterEach, beforeEach, test, vi } from 'vitest';
 import { openAwarenessStore } from '@octocodeai/octocode-awareness';
 import type { PiContext } from '../src/types.js';
 import { openPersistentAwareness } from '../src/tools/storage-policy.js';
@@ -103,7 +103,8 @@ test('event consumers bind delivery to the latest context and recipient identity
   recipient = 'second';
   seed('second', 'new recipient');
   await handlers.get('agent_end')!({}, context());
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(sent.length, 3);
+  // Git scope discovery now yields; wait for the observable persistence boundary.
+  await vi.waitFor(() => assert.equal(sent.length, 3));
   assert.match(String(sent[2]?.content), /new recipient/);
+  await handlers.get('session_shutdown')!({}, context());
 });

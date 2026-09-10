@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import type { ContentPart, PiContext, ToolCallResult } from '../types.js';
 import { chunkReadHint, writeEphemeralToolOutput } from './ephemeral-tool-output.js';
 import { createSessionArtifactContext } from './session-artifacts.js';
@@ -27,6 +28,18 @@ function safePart(value: string): string {
 function spillText(content: ContentPart[], options: ToolResultBudgetOptions): string | undefined {
   const text = content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n\n');
   if (!text) return undefined;
+  if (options.ctx?.sessionManager) {
+    try {
+      const artifacts = createSessionArtifactContext(options.ctx);
+      const digest = createHash('sha256').update(text).digest('hex').slice(0, 16);
+      const relative = `tool-results/${safePart(options.toolCallId)}-${safePart(options.toolName)}-${digest}.txt`;
+      artifacts.writeText(relative, text);
+      return artifacts.resolve(relative);
+    } catch {
+      // Session storage can be unavailable; preserve the explicit temporary
+      // reference fallback instead of losing the already-completed tool result.
+    }
+  }
   try {
     return writeEphemeralToolOutput(text, {
       toolName: options.toolName,

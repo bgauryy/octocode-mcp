@@ -13,7 +13,9 @@ The default CLI `attend` route uses `src/attend-presence.ts`: one bounded regist
   and owns handoffs and continuity; it has no separate lifecycle or store.
 - `src/db-runtime.ts`, `src/db-schema.ts`, `src/sql/`, and schema modules own
   SQLite opening, identity, statements, and maintenance. Explicit database
-  conversion writes a new store; opening a database never migrates it.
+  conversion writes a new store. Opening recognizes one exact predecessor
+  fingerprint to add the capture-durability ledger; existing captures retain
+  unknown durability rather than receiving an inferred successful flush.
 - `src/attend-*`, signals, refinements, sessions, query, digest, reflection, and
   maintenance modules own the advanced operating and learning workflows.
 - `src/command-api.ts` exposes the command catalog as structured requests. `command-dispatch.ts` routes to `src/commands/` handlers and `src/hooks/` owns reusable host callback behavior. Request-local output keeps simultaneous callers isolated; handlers throw errors and never terminate the process. `command-cli.ts` owns shell parsing and environment defaults; `bin/awareness.ts` renders the result and owns process exit. The hook entry adapter similarly owns argv/stdin. The native executor imports neither entrypoint. Native hosts never launch or parse the Awareness CLI.
@@ -26,8 +28,12 @@ The default CLI `attend` route uses `src/attend-presence.ts`: one bounded regist
 During root development, `@octocodeai/agent-contracts` resolves to the local workspace
 `packages/octocode-agent-contracts`. Rebuild that owning workspace before building
 Awareness or Pi consumers; no sibling snapshot or dependency reinstall is needed
-for source changes. The published Awareness package has no npm runtime dependencies;
-its build bundles the required shared contracts. Native hosts consume Awareness's
+for source changes. The published Awareness package has zero mandatory npm runtime dependencies;
+its build bundles the required shared contracts. File fingerprints and workspace
+history capture/restore use the optional `@octocodeai/octocode-extension-rust`
+package, loaded through `src/native-files.ts`. That package owns the native
+filesystem boundary separately from the `@octocodeai/octocode-engine` research
+engine; Awareness does not import the research engine. Native hosts consume Awareness's
 public package API, while Pi uses the local Awareness workspace during development. The native tool, checkpoints, history hooks and optional status scheduler all call this API directly. Lock waits yield to the event loop and support cooperative cancellation. History implementation loads only when requested.
 
 ## Compact policy and observations
@@ -40,7 +46,13 @@ bindings, not another copy of the shared policy.
 
 `src/attend-revision.ts` compares fresh scoped observations without a second cache.
 `src/memory-evidence.ts` validates explicit source/dependency bytes through existing
-memory references and fingerprints, outside write transactions. Neither observation
+memory references and fingerprints asynchronously, outside write transactions.
+`memory-write.ts` separates async capture from synchronous insertion and the
+atomic similarity gate; synchronous internal queries cannot request fingerprints.
+`getMemory`, `insertMemory`, `recallMemory`, and `runAwarenessToolOperation` return
+promises. Evidence checks share one 100 ms filesystem budget across returned rows,
+including canonicalization and native worker queue time. First-use native module
+initialization precedes that budget and still contributes to total request latency. Neither observation
 creates authorization or successful verification. See [navigation](docs/MEMORY_NAVIGATION.md)
 and [evidence reuse](skills/octocode-awareness/references/memory-recall.md).
 
@@ -69,8 +81,8 @@ explicit `--db` path has highest precedence for one call. Existing databases are
 preserved and never merged implicitly. Agent control and Rust runtime databases remain
 separate under `$OCTOCODE_HOME/agent/`. Other files and databases under
 `.octocode/` retain their own owners.
-The package uses Node's built-in SQLite runtime and has no npm runtime
-dependencies of its own.
+The package uses Node's built-in SQLite runtime. The optional native file package
+is required only by operations that inspect or restore workspace file bytes.
 
 Local history keeps metadata in canonical Awareness SQLite tables and raw file
 objects under `<workspace>/.octocode/.localGit`, partitioned by canonical database
@@ -122,9 +134,22 @@ CLI actuator. The host still owns admission and authorization.
 acknowledgements and retryable delivery state. Hosts consume its public API and
 `createAwarenessEventObservability` defaults; they do not duplicate the outbox or
 its counters. A failed delivery remains unacknowledged and reports error pressure.
-The host supplies the next lifecycle wake and proves persistence before accepting
+The host supplies lifecycle or database-hint wakes and proves persistence before accepting
 delivery. Delivery acknowledgement, signal handling and thread resolution are
 separate operations.
+
+Each asynchronous consumer drain validates Git membership once through
+`withRepositoryWorkspaceScope`, before opening the store. Its callback scope
+reuses the complete physical membership for synchronous queries and receipts;
+no Git subprocess runs per message or inside acknowledgement transactions.
+The scope expires on callback completion and the next drain rediscovers removed
+worktrees. Synchronous callers retain the uncached discovery path.
+
+`watchAwarenessEventHints` watches the selected database directory, database file
+and WAL. Its coalesced, read-only maximum-outbox-sequence check ignores receipt
+and reader churn. Directory events reattach file watches after WAL recreation;
+watch/read failures get three delayed recovery attempts, with no idle polling.
+Hints contain no message bodies and never substitute for an authoritative drain.
 
 | Boundary | Retry owner and bound |
 |---|---|

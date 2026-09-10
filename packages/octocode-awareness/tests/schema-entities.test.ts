@@ -35,13 +35,13 @@ describe('schema entities', () => {
     expect(result.status, result.stderr || result.stdout).toBe(0);
     const entities = result.parsed?.['entities'] as Array<Record<string, unknown>>;
     expect(result.parsed?.['kind']).toBe('awareness.entities');
-    expect(entities).toHaveLength(35);
+    expect(entities).toHaveLength(36);
     expect(entities.find((entity) => entity['name'] === 'awareness_plans')).toMatchObject({ owner: 'awareness', family: 'planning' });
     expect(entities.find((entity) => entity['name'] === 'plans')).toBeUndefined();
     expect(entities.find((entity) => entity['name'] === 'worker_lifecycle_events')).toMatchObject({ owner: 'awareness', family: 'workers' });
     expect(entities.find((entity) => entity['name'] === 'memories_fts')).toMatchObject({ kind: 'virtual_table', family: 'search' });
     expect(entities.filter((entity) => entity['family'] === 'history').map((entity) => entity['name'])).toEqual([
-      'local_history_operations', 'local_history_restores', 'local_history_versions',
+      'local_history_durability', 'local_history_operations', 'local_history_restores', 'local_history_versions',
     ]);
     expect(result.parsed?.['storage']).toMatchObject({ default_scope: 'global', repo_override: '--db-scope repo', explicit_override: '--db <path>' });
 

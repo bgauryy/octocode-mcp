@@ -3,7 +3,7 @@ import { getOctokit, resolveCacheAuthFingerprint } from './client.js';
 import { handleGitHubAPIError } from './errors.js';
 import type { GitHubAPIResponse, HistoryCommitFile } from './githubAPI.js';
 import { shapeCommitDirFiles } from './history/commitFiles.js';
-import { MAX_PAGE_NUMBER } from '../config.js';
+import { MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 import { generateCacheKey } from '../utils/http/cache/key.js';
 import { withDataCache } from '../utils/http/cache/dataCache.js';
 import { resolveMaterializationRef } from './directoryFetch/refResolution.js';

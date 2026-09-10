@@ -309,6 +309,8 @@ pub struct ExtractMatchingLinesOptions {
     pub case_sensitive: Option<bool>,
     /// Lines of context to include around each match (default 0).
     pub context_lines: Option<u32>,
+    /// UTF-8 context bytes per side; overrides context_lines when present.
+    pub context_bytes: Option<u32>,
     /// Cap the number of matched lines returned.
     pub max_matches: Option<u32>,
 }
@@ -332,6 +334,17 @@ pub struct ExtractMatchingLinesResult {
     /// Total matches before `max_matches` cap.
     pub match_count: u32,
     pub match_ranges: Vec<MatchRange>,
+    /// Zero-based, end-exclusive UTF-8 windows; present only for byte context.
+    pub byte_ranges: Option<Vec<ByteRange>>,
+}
+
+#[napi(object)]
+#[derive(Debug, Clone)]
+pub struct ByteRange {
+    /// Zero-based UTF-8 byte offset.
+    pub start: u32,
+    /// Exclusive UTF-8 byte end offset.
+    pub end: u32,
 }
 
 // ── diff_parser types ─────────────────────────────────────────────────────────
@@ -355,15 +368,6 @@ pub struct FilterPatchOptions {
     pub trim_context: Option<bool>,
     /// Context window size when `trim_context` is true (default 2).
     pub context_lines: Option<u32>,
-}
-
-/// One line in a Myers edit script returned by {@link computeLineDiff}.
-#[napi(object)]
-#[derive(Debug, Clone)]
-pub struct LineDiffOp {
-    /// `"same"` | `"add"` | `"remove"`
-    pub op_type: String,
-    pub line: String,
 }
 
 #[napi(object)]

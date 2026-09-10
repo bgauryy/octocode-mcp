@@ -10,7 +10,7 @@ import { withDataCache } from '../../utils/http/cache/dataCache.js';
 import {
   GITHUB_SEARCH_DEFAULT_LIMIT,
   GITHUB_SEARCH_MAX_LIMIT,
-} from '../../config.js';
+} from '@octocodeai/octocode-core/schema';
 import type { FetchIssuesParams, IssuesResult } from './types.js';
 import {
   buildIssueSearchCacheKey,

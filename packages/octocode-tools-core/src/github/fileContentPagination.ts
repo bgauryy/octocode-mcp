@@ -1,18 +1,13 @@
-import type { GitHubFileContentApiResult } from '../tools/github_fetch_content/types.js';
-import { getOutputCharLimit } from '../utils/pagination/charLimit.js';
-import { GITHUB_FILE_CONTENT_DEFAULT_CHAR_LENGTH } from '../config.js';
-import { applyPagination } from '../utils/pagination/core.js';
+import type {
+  GitHubFileContentApiResult,
+  FileContentExecutionQuery,
+} from '../tools/github_fetch_content/types.js';
 import {
-  snapToSemanticBoundary,
-  isMidBlockCut,
-  findNextBlockBoundary,
-} from '../utils/pagination/boundary.js';
+  paginateContentWindow,
+  pageFields,
+  fullContentLimit,
+} from '../utils/file/contentPagination.js';
 import { OctokitWithThrottling } from './client.js';
-
-function getDefaultContentPageSize(): number {
-  const globalLimit = getOutputCharLimit();
-  return Math.min(globalLimit, GITHUB_FILE_CONTENT_DEFAULT_CHAR_LENGTH);
-}
 
 interface FileTimestampInfo {
   lastModified: string;
@@ -21,60 +16,40 @@ interface FileTimestampInfo {
 
 export async function applyContentPagination(
   data: GitHubFileContentApiResult,
-  charOffset: number,
-  charLength?: number
+  query: FileContentExecutionQuery
 ): Promise<GitHubFileContentApiResult> {
   const content = data.content ?? '';
-  const maxChars = charLength ?? getDefaultContentPageSize();
-
-  if (content.length <= maxChars && charOffset === 0) {
-    return data;
-  }
-
-  const filePath = data.path ?? undefined;
-  const { length: snappedLength, chunkMode } = await snapToSemanticBoundary(
+  const limited = fullContentLimit(
+    query,
     content,
-    charOffset,
-    maxChars,
-    filePath
+    data.totalLines ?? 0,
+    'ghGetFileContent'
   );
-
-  const paginationMeta = applyPagination(content, charOffset, snappedLength, {
-    // snappedLength is snapped to a semantic boundary and varies per page; use
-    // the stable requested page size (maxChars) for an absolute page counter —
-    // same fix as local_fetch_content/fetchContent.ts's paginateContentWindow.
-    pageSize: maxChars,
-  });
-
-  let nextBlockChar: number | undefined;
-  if (paginationMeta.hasMore && chunkMode === 'char-limit') {
-    if (isMidBlockCut(paginationMeta.paginatedContent)) {
-      const cutPos = paginationMeta.charOffset + paginationMeta.charLength;
-      nextBlockChar = await findNextBlockBoundary(content, cutPos, filePath);
-    }
+  if (limited) {
+    return {
+      ...data,
+      content: '',
+      errorCode: 'fullContentLimit',
+      isPartial: true,
+      partialReasons: ['full-content-size-limit'],
+      next: limited.next,
+    };
   }
-
+  const page = await paginateContentWindow(content, query, 'ghGetFileContent');
+  const pageLines = data.sourceLines?.slice(
+    page.firstViewLine - 1,
+    page.lastViewLine
+  );
   return {
     ...data,
-    content: paginationMeta.paginatedContent,
-    pagination: {
-      pageCountsKind: 'estimated',
-      currentPage: paginationMeta.currentPage,
-      totalPages: paginationMeta.totalPages,
-      hasMore: paginationMeta.hasMore,
-      charOffset: paginationMeta.charOffset,
-      charLength: paginationMeta.charLength,
-      totalChars: paginationMeta.totalChars,
-      // `nextCharOffset` is the schema-promised cursor ("take charOffset from
-      // pagination.nextCharOffset; don't compute it yourself"). applyPagination
-      // already computes it; preserve it so the finalizer's buildContinueChars
-      // can emit next.continueChars. Dropping it broke that continuation.
-      ...(paginationMeta.nextCharOffset !== undefined && {
-        nextCharOffset: paginationMeta.nextCharOffset,
-      }),
-      chunkMode,
-      ...(nextBlockChar !== undefined && { nextBlockChar }),
-    },
+    ...pageFields(page),
+    ...(data.matchedLines
+      ? {
+          matchedLines: data.matchedLines.filter(line =>
+            pageLines?.includes(line)
+          ),
+        }
+      : {}),
   };
 }
 

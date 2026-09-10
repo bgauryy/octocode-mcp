@@ -32,8 +32,9 @@ At FRAME/CLASSIFY/MODEL, ground the problem contract, and load-bearing system pa
 - PR/local diff review → `references/workflow-pr-review.md`, then `references/workflow-pr-review-analysis.md`, then `references/workflow-pr-review-report.md`.
 - When proving callers/imports/paths/cycles/reachability/deletion/architecture, load `references/code-research.md`; for Map/Validate/Investigate/Plan across surfaces, load `references/research-flow.md`.
 - When comparing several repos/packages, load `references/github-landscape.md`; for shifting evidence, load `references/loop-mode.md`; for a durable contested brief, load `references/long-research.md`; for campaign budgets/fan-out, load `references/researcher-mindset.md`.
+- When choosing Markdown sections, code outlines, declaration bodies, or full-file reads, load `references/reading-flows.md` for the evidence-driven route and defaults across tools.
 
-Load only the references earned by the current step. `references/octocode.md` owns interfaces, schemas, auth, gates, materialization, diagnostics, and exit codes. `references/improve-loop.md` owns accept/revert when this skill changes.
+Load only the references earned by the current step. `references/octocode.md` explains invocation, auth, gates, materialization, diagnostics, and exit codes; live core-owned contracts remain authoritative for tool names, schemas, descriptions, and MCP context. `references/improve-loop.md` owns accept/revert when this skill changes.
 
 For query templates across all ten tools, load `references/tool-examples.md` and substitute observed paths/identities. For source authority or upstream limits, load `references/references.md` and verify current official documentation.
 

@@ -1,8 +1,11 @@
 import type { LocalSearchCodeFile } from '@octocodeai/octocode-core/types';
-import { MAX_MATCH_CONTENT_LENGTH, MAX_PAGE_NUMBER } from '../../../config.js';
+import {
+  MAX_MATCH_CONTENT_LENGTH,
+  MAX_PAGE_NUMBER,
+} from '@octocodeai/octocode-core/schema';
 import { RESOURCE_LIMITS } from '../../../utils/core/constants.js';
 
-import type { RipgrepQuery } from '../scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core/schema';
 import type { LocalSearchEngine } from './buildResult.js';
 
 const FETCH_CONTEXT_LINES = 8;
@@ -47,7 +50,7 @@ const RESERVED_SYMBOL_WORDS = new Set([
 // bare identifier — anchored, no surrounding regex/punctuation/whitespace.
 const BARE_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
-type NextToolName = 'localGetFileContent' | 'lspSearch' | 'local.text';
+type NextToolName = 'localFetch' | 'lspSearch' | 'local.text';
 
 type NextConfidence = 'exact' | 'low';
 
@@ -133,28 +136,24 @@ export function buildSearchNextMap(
   }
 
   if (firstFile?.path) {
-    // ONE fetch continuation instead of exact/standard/symbols triplets —
-    // the variants only differed by `minify`, while each repeated the full
-    // absolute path (the top token cost of small search responses). The why
-    // documents the knob so agents can still pick a different view.
     if (firstMatch?.line) {
       const range = lineRangeAroundMatch(firstMatch);
       next.fetch = {
-        tool: 'localGetFileContent',
+        tool: 'localFetch',
         query: withoutUndefined({
           path: firstFile.path,
           startLine: range.startLine,
           endLine: range.endLine,
           minify: 'none',
         }),
-        why: 'Read exact source around the first match (set minify:"standard" for a token-lean slice, or drop the line range with minify:"symbols" for a skeleton).',
+        why: 'Read exact context around the first match; use a declaration range when the whole body is needed.',
         confidence: 'exact',
       };
     } else {
       next.fetch = {
-        tool: 'localGetFileContent',
-        query: { path: firstFile.path, minify: 'standard' },
-        why: 'Read the first matched file (minify:"symbols" gives a skeleton for orientation; minify:"none" gives exact bytes).',
+        tool: 'localFetch',
+        query: { path: firstFile.path, minify: 'none' },
+        why: 'Read exact source from the first file; choose minify:"symbols" only for orientation before a targeted read.',
         confidence: options.isFileListMode ? 'low' : 'exact',
       };
     }

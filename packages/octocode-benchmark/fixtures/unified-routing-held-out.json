@@ -9,13 +9,13 @@
     "primary": {
       "name": "totalRoutingBytes",
       "direction": "lower",
-      "baseline": 39318,
-      "target": 39317
+      "baseline": 39300,
+      "target": 39299
     },
     "leading": {
       "toolCalls": { "baseline": 10, "max": 10 },
       "schemaBytes": { "baseline": 33713, "max": 33712 },
-      "promptBytes": { "baseline": 5605, "max": 5604 }
+      "promptBytes": { "baseline": 5587, "max": 5586 }
     },
     "guardrails": { "correctnessCases": 10 },
     "budget": { "cases": 10, "trials": 1 },
@@ -69,7 +69,7 @@
       {
         "name": "localSearchCode",
         "title": "localSearchCode",
-        "description": "Local | Search local files for text, regex, or AST patterns to find file and line. | Find local file+line anchors — not path/name lookup (localFindFiles) or tree shape (localViewStructure). Modes: discovery=paths, paginated=snippets, detailed=context, structural=AST.\ntext/regex need searchText (one string, not array); structural needs pattern XOR rule and rejects search knobs (langType is valid — scopes to that language's extensions). $$$ list captures are budgeted: metavarRanges gives pruned/truncated line anchors, captureText:true for verbatim. matchWindow/unique need output:\"matchOnly\"; maxMatchesPerFile pairs matchPage. Follow with localGetFileContent, lspGetSemantics.",
+        "description": "Local | Search local files for text, regex, or AST patterns to find file and line. | Find local file+line anchors — not path/name lookup (localFindFiles) or tree shape (localViewStructure). Modes: discovery=paths, paginated=snippets, detailed=context, structural=AST.\ntext/regex need searchText (one string, not array); structural needs pattern XOR rule and rejects search knobs (langType is valid — scopes to that language's extensions). $$$ list captures are budgeted: metavarRanges gives pruned/truncated line anchors, captureText:true for verbatim. matchWindow/unique need output:\"matchOnly\"; maxMatchesPerFile pairs matchPage. Follow with localFetch, lspGetSemantics.",
         "schemaBytes": 5038,
         "capabilities": ["local-text"]
       },
@@ -83,7 +83,7 @@
       {
         "name": "localViewStructure",
         "title": "localViewStructure",
-        "description": "Local | Browse a local directory tree — cheapest first orientation step; no content loaded. | Cheapest local orientation before reading. Metadata/name filters → localFindFiles; files containing text → localSearchCode(mode:\"discovery\").\npath is the root; pattern/extensions/entryType filter names; recursive enables maxDepth; detail switches output shape; page advances only on hasMore. Follow paths into localGetFileContent/search/LSP.",
+        "description": "Local | Browse a local directory tree — cheapest first orientation step; no content loaded. | Cheapest local orientation before reading. Metadata/name filters → localFindFiles; files containing text → localSearchCode(mode:\"discovery\").\npath is the root; pattern/extensions/entryType filter names; recursive enables maxDepth; detail switches output shape; page advances only on hasMore. Follow paths into localFetch/search/LSP.",
         "schemaBytes": 2517,
         "capabilities": ["local-tree"]
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-tools-core/schema';
+import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-core/schema';
 import {
   ALL_CONFIG_OPTIONS,
   getAllTools,
@@ -30,7 +30,7 @@ describe('interactive configuration catalog', () => {
         name: tool.title,
         description: tool.description,
         category:
-          tool.name === 'npmSearch'
+          tool.name === 'artifactSearch'
             ? 'package'
             : tool.name.startsWith('gh')
               ? 'github'
@@ -50,14 +50,16 @@ describe('interactive configuration catalog', () => {
     expect(getAllTools().some(tool => tool.id === toolName)).toBe(false);
   });
 
-  it('classifies npm separately and describes only npm package search', () => {
-    expect(getAllTools().find(tool => tool.id === 'npmSearch')).toMatchObject({
+  it('classifies artifact discovery as package search', () => {
+    expect(
+      getAllTools().find(tool => tool.id === 'artifactSearch')
+    ).toMatchObject({
       category: 'package',
-      description: expect.stringMatching(/npm/i),
+      description: expect.stringMatching(/packages|registry/i),
     });
     expect(
-      getAllTools().find(tool => tool.id === 'npmSearch')?.description
-    ).not.toMatch(/python/i);
+      getAllTools().find(tool => tool.id === 'artifactSearch')?.description
+    ).toMatch(/ecosystem|type|PyPI/i);
   });
 
   it('shows the canonical enabled-by-default local setting', () => {

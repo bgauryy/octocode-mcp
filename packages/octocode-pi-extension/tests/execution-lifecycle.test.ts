@@ -3,10 +3,12 @@ import type { PiContext, PiInstance } from '../src/types.js';
 import {
   createExecutionState,
   reduceExecutionEvent,
-  serializeExecutionEvents,
-  replayExecutionEvents,
   type ExecutionEvent,
 } from '../src/tools/execution-events.js';
+import {
+  replayExecutionEvents,
+  serializeExecutionEvents,
+} from '../src/tools/execution-event-io.js';
 
 const { stores } = vi.hoisted(() => ({
   stores: new WeakMap<object, unknown>(),

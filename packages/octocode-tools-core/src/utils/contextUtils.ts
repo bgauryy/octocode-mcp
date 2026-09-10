@@ -244,13 +244,6 @@ export const contextUtils = {
     return loadNative().filterPatch(patch, options);
   },
 
-  computeLineDiff(
-    oldText: string,
-    newText: string
-  ): NativeContextUtils.LineDiffOp[] {
-    return loadNative().computeLineDiff(oldText, newText);
-  },
-
   charToByteOffset(content: string, charIndex: number): number {
     return loadNative().charToByteOffset(content, charIndex);
   },

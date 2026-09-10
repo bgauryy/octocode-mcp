@@ -84,6 +84,8 @@ export interface ExtractMatchingLinesOptions {
   caseSensitive?: boolean
   /** Lines of context to include around each match (default 0). */
   contextLines?: number
+  /** UTF-8 context bytes per side; overrides contextLines when present. */
+  contextBytes?: number
   /** Cap the number of matched lines returned. */
   maxMatches?: number
 }
@@ -96,6 +98,15 @@ export interface ExtractMatchingLinesResult {
   /** Total matches before `max_matches` cap. */
   matchCount: number
   matchRanges: Array<MatchRange>
+  /** Zero-based, end-exclusive UTF-8 windows; present only for byte context. */
+  byteRanges?: Array<ByteRange>
+}
+
+export interface ByteRange {
+  /** Zero-based UTF-8 byte offset. */
+  start: number
+  /** Exclusive UTF-8 byte end offset. */
+  end: number
 }
 
 /**
@@ -385,19 +396,6 @@ export interface FilterPatchOptions {
   trimContext?: boolean
   /** Context window size when `trim_context` is true (default 2). */
   contextLines?: number
-}
-
-/**
- * Myers line diff (`oldText` → `newText`). Returns a full edit script of
- * `{ opType, line }` ops (`same` | `add` | `remove`). Prefer this over an
- * O(N·M) LCS for agent edit previews on mid/large files.
- */
-export declare function computeLineDiff(oldText: string, newText: string): Array<LineDiffOp>
-
-export interface LineDiffOp {
-  /** `"same"` | `"add"` | `"remove"` */
-  opType: string
-  line: string
 }
 
 /** Convert a `file://` URI string back to an absolute filesystem path. */

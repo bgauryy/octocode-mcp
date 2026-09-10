@@ -1,8 +1,8 @@
 import {
   DIRECT_TOOL_SPECIFICATIONS,
   type DirectToolSpecification,
-} from './directToolCatalog/toolSpecifications.js';
-import { LSP_SEARCH_TOOL_NAME } from './toolNames.js';
+} from '@octocodeai/octocode-core/schema';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import {
   GITHUB_SEARCH_TOOL_NAME,
   GITHUB_GET_HISTORY_ITEM_TOOL_NAME,
@@ -10,7 +10,7 @@ import {
   AST_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
-} from './toolNames.js';
+} from '@octocodeai/octocode-core/schema';
 import {
   type ToolConfig,
   type ToolDirectExecutionConfig,

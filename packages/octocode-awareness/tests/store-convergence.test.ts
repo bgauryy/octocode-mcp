@@ -9,7 +9,7 @@ const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
 
 describe('single-store convergence', () => {
-  it('recalls host and root memories through the same canonical store', () => {
+  it('recalls host and root memories through the same canonical store', async () => {
     const workspace = mkdtempSync(join(tmpdir(), 'store-convergence-'));
     roots.push(workspace);
     const store = openAwarenessStore({ workspace, dbPath: join(workspace, 'awareness.sqlite3') });
@@ -17,7 +17,7 @@ describe('single-store convergence', () => {
     try {
       store.storeVerifiedMemory({ label: 'OTHER', text: 'Use one store', sourceDigest: 'sha256:source' });
       store.storeMemory({ label: 'OTHER', text: 'host observation' });
-      insertMemory(db, { taskContext: 'ledger', observation: 'full runtime row', importance: 5, workspacePath: workspace });
+      (await insertMemory(db, { taskContext: 'ledger', observation: 'full runtime row', importance: 5, workspacePath: workspace }));
       expect(db.prepare('SELECT COUNT(*) AS count FROM awareness_memories').get()).toEqual({ count: 3 });
       expect(store.recallMemory({ query: 'full runtime row' }).memories.map(row => row.text)).toContain('full runtime row');
       expect(store.recallVerifiedMemory({ sourceDigest: 'sha256:source' }).memories).toHaveLength(1);

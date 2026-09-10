@@ -2,9 +2,10 @@
 
 Durable files that Octocode writes during a session—plan pages, screenshots,
 compaction snapshots, error logs, and more—land in one **session artifact tree**.
-Large generic tool results and bash logs are the deliberate exception: they use
-private files under `$OCTOCODE_HOME/extension/tmp/tool-results/` and are deleted
-during `session_shutdown` after the bounded result has exposed a chunk-read path.
+Large model-visible text results use `tool-results/` in the session tree when
+session storage is available, preserving their chunk-read references for resume.
+Raw bash logs and results without usable session storage use private files under
+`$OCTOCODE_HOME/extension/tmp/tool-results/`, deleted during `session_shutdown`.
 
 ---
 
@@ -67,6 +68,7 @@ combined with a SHA-256 fingerprint of the session + workspace, so:
 | Chrome CDP event log | `browser/port-<N>/cdp-events.jsonl` | `chromeDebug` (debug mode) |
 | Compaction snapshot | `compaction/<timestamp>-<label>.md` | Compaction hook |
 | Latest compaction snapshot | `compaction/latest.md` | Compaction hook |
+| Heavy text result | `tool-results/<call>-<tool>-<digest>.txt` | Provider output budget |
 | Error / warning log | `logs/error.txt` | Internal error handler |
 | Fallback images (PNGs) | `images/<name>-<timestamp>.png` | `media` |
 | Export HTML reference | `export/latest-ref.json` | `/octocode-export` command |

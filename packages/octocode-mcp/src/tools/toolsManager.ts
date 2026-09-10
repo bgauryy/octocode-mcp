@@ -22,36 +22,44 @@ export async function registerTools(
   callback?: ToolInvocationCallback,
   options: {
     toolLoader?: () => Promise<McpToolConfig[]> | McpToolConfig[];
+    enabledTools?: McpToolConfig[];
   } = {}
 ): Promise<{
   successCount: number;
   failedTools: string[];
   failedToolErrors?: Record<string, string>;
 }> {
+  const secureServer = withOutputSanitization(server);
+  const enabledTools =
+    options.enabledTools ?? (await getEnabledTools(options.toolLoader));
+  const outcomes = await registerToolsBatch(
+    enabledTools,
+    secureServer,
+    callback
+  );
+  return summarizeOutcomes(outcomes);
+}
+
+/** Select once so startup instructions and registration share the same gates. */
+export async function getEnabledTools(
+  toolLoader?: () => Promise<McpToolConfig[]> | McpToolConfig[]
+): Promise<McpToolConfig[]> {
   const localEnabled = isLocalEnabled();
   const cloneEnabled = isCloneEnabled();
   const rawFilterConfig = getToolFilterConfig(getServerConfig);
-  const secureServer = withOutputSanitization(server);
-  const allTools = await loadTools(options.toolLoader);
+  const allTools = await loadTools(toolLoader);
   const { config: filterConfig, warnings } = validateToolFilterConfig(
     rawFilterConfig,
     allTools.map(tool => tool.name)
   );
   for (const warning of warnings) process.stderr.write(warning);
-  const enabledTools = allTools.filter(tool =>
+  return allTools.filter(tool =>
     isToolEnabled(tool, {
       localEnabled,
       cloneEnabled,
       filterConfig,
     })
   );
-  const outcomes = await registerToolsBatch(
-    enabledTools,
-    secureServer,
-    callback
-  );
-
-  return summarizeOutcomes(outcomes);
 }
 
 async function loadTools(

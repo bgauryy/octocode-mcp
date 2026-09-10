@@ -7,6 +7,8 @@ description: "Use when browser work needs multiple Chrome DevTools Protocol phas
 
 Choose the smallest workflow that can produce the required evidence. The skill owns that judgment; `agent` and `chromeDebug` own deterministic execution.
 
+Flow: **choose direct call or worker → inspect live schemas → collect browser evidence → verify the result → release owned workers**.
+
 If you are already a browser worker, complete the assigned phase with chromeDebug
 and return evidence to the parent. The spawn, wait, and cleanup recipes below are
 for the parent; they do not grant workers delegation or direct user contact.

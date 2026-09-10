@@ -5,7 +5,7 @@ import {
 import { resolveWorkspaceRootForFile } from '@octocodeai/octocode-engine/lsp/workspaceRoot';
 import type { LSPRange } from '@octocodeai/octocode-engine/lsp/types';
 import { markdownHeadingOutlineToDocumentSymbols } from '../../../../utils/markdownOutline.js';
-import { LSP_SEARCH_TOOL_NAME } from '../../../toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import {
   type LspSearchQuery,
   type LspSemanticEnvelope,

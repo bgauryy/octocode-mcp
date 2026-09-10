@@ -5,7 +5,7 @@ import type { AuthInfo } from '@modelcontextprotocol/server';
 import { getOctokit } from '../client.js';
 import { fetchCachedRawGitHubFileContent } from '../fileContentRaw/cache.js';
 import type { GitHubDirectoryFileEntry } from '@octocodeai/octocode-core/extra-types';
-import type { DirectoryFetchResult } from '../../tools/github_fetch_content/types.js';
+import type { DirectoryFetchResult } from './types.js';
 import {
   isCacheHit,
   createCacheMeta,
@@ -166,7 +166,6 @@ export async function fetchDirectoryContents(
             repo,
             path: entry.path,
             branch: commitSha,
-            type: 'file',
             fullContent: true,
             minify: 'none',
             contextLines: 0,

@@ -16,7 +16,7 @@ import {
   GITHUB_SEARCH_DEFAULT_LIMIT,
   GITHUB_SEARCH_MAX_LIMIT,
   MAX_PAGE_NUMBER,
-} from '../../config.js';
+} from '@octocodeai/octocode-core/schema';
 import type { FetchIssuesParams, IssueRow, IssuesResult } from './types.js';
 import {
   createIssueError,

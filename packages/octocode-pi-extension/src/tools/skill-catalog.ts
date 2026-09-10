@@ -11,10 +11,7 @@ export interface SkillCatalogEntry {
 // Dashboard caps: on-demand output, so it can afford the full picture.
 const MAX_SKILLS = 80;
 const MAX_DESCRIPTION_CHARS = 512;
-// The prompt is frozen after the complete initial discovery pass. Keep every
-// skill name so routing is correct; descriptions alone are tightly bounded.
-// Preserve complete routing triggers, including when-not-to-use clauses, while
-// retaining an explicit ellipsis for unusually long installed metadata.
+// Prompt discovery refreshes each turn; oversized metadata is recoverable via list.
 const MAX_PROMPT_DESCRIPTION_CHARS = 320;
 
 function clean(text: string): string {
@@ -36,8 +33,8 @@ function skillSortKey(skill: SkillCatalogEntry): string {
  * Pi already includes skills in its own prompt, but Octocode replaces/augments the
  * system prompt and also needs a compaction-durable reminder that every loaded
  * skill has a name + description and should be loaded when context matches. The
- * complete catalog is frozen with the first system prompt; installs/removals
- * take effect in a new session, while in-session loads remain in tool results.
+ * catalog is rebuilt from effective source revisions on each turn. In-session
+ * loads remain in tool results.
  */
 export function canonicalizeSkillCatalog(skills: SkillCatalogEntry[] | undefined): SkillCatalogEntry[] {
   const byName = new Map<string, SkillCatalogEntry>();
@@ -81,7 +78,7 @@ export function renderSkillsDashboard(skills: SkillCatalogEntry[] | undefined, e
     'The agent loads enabled skills with skill({queries:[{reasoning:"load matching skill", type:"load", action:"load", name:"…", reason:"why it matches"}]}). Manage enablement in /configuration.',
     'Invoke a specific enabled skill with /skill:<name>.',
     'Install bundled skills with: npx octocode skill install <skill> --platform pi',
-    'Refresh discovery with /reload after installs/removals.',
+    'Discovery refreshes on the next turn; /reload also reloads Pi resources.',
     ...(extras.discoveryPath ? [`Machine-readable inventory (skills + MCP config + tools): ${extras.discoveryPath}`] : []),
   ].join('\n');
 }
@@ -90,12 +87,21 @@ export function renderAvailableSkillsAddendum(skills: SkillCatalogEntry[] | unde
   const valid = canonicalizeSkillCatalog(skills);
   if (valid.length === 0) return '';
 
-  const lines = valid.map((skill) => formatSkillLine(skill, MAX_PROMPT_DESCRIPTION_CHARS));
+  const lines: string[] = [];
+  let chars = 0;
+  for (const skill of valid) {
+    const line = formatSkillLine(skill, MAX_PROMPT_DESCRIPTION_CHARS);
+    if (chars + line.length > 18_000) break;
+    lines.push(line);
+    chars += line.length + 1;
+  }
+  const partial = lines.length < valid.length || valid.some(skill => clean(skill.description ?? '').length > MAX_PROMPT_DESCRIPTION_CHARS);
 
   return [
     '<available_skills>',
     'Optional skills available by name. The skill tool can list the catalog or load a selected skill.',
     ...lines,
+    ...(partial ? [`catalog_continuation: ${JSON.stringify({ partial: true, next: { tool: 'skill', params: { queries: [{ reasoning: 'Read complete effective skill metadata', type: 'load', action: 'list' }] } } })}`] : []),
     '</available_skills>',
   ].join('\n');
 }

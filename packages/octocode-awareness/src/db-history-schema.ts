@@ -1,4 +1,12 @@
 /** Canonical local-history relations. Payload bytes remain in the private Git sidecar. */
+export const HISTORY_CAPTURE_DURABILITY_DDL = `
+  CREATE TABLE IF NOT EXISTS local_history_durability (
+    operation_id TEXT NOT NULL REFERENCES local_history_operations(operation_id) ON DELETE CASCADE,
+    side TEXT NOT NULL CHECK(side IN ('before','after')),
+    durable INTEGER NOT NULL CHECK(durable IN (0,1)), warnings_json TEXT NOT NULL,
+    PRIMARY KEY(operation_id, side)
+  );
+`;
 export const LOCAL_HISTORY_SCHEMA_DDL = `
   CREATE TABLE IF NOT EXISTS local_history_operations (
     operation_id TEXT PRIMARY KEY, workspace_path TEXT NOT NULL, agent_id TEXT NOT NULL, session_id TEXT,
@@ -33,6 +41,7 @@ export const LOCAL_HISTORY_SCHEMA_DDL = `
     status TEXT NOT NULL CHECK(status IN ('ready','applying','applied','conflict','partial','failed')),
     expires_at TEXT NOT NULL, result_json TEXT, created_at TEXT NOT NULL
   );
+  ${HISTORY_CAPTURE_DURABILITY_DDL}
 `;
 
 export const LOCAL_HISTORY_INDEX_DDL = `

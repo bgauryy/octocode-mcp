@@ -33,7 +33,7 @@ export function inferEvidenceKind(
   if (
     toolName.startsWith('gh') ||
     toolName.startsWith('github.') ||
-    toolName === 'npmSearch'
+    toolName === 'artifactSearch'
   )
     return 'provider';
   return 'exact';

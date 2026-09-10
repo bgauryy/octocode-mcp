@@ -25,7 +25,7 @@ and does not configure Pi built-ins.
 
 | Pi built-in | Decision | Octocode owner |
 |---|---|---|
-| `read` | Remove | `MCPTool` → `localGetFileContent`; `readMedia` for visual/audio/video perception |
+| `read` | Remove | `MCPTool` → `localFetch`; `readMedia` for visual/audio/video perception |
 | `grep` | Remove | `MCPTool` → `localSearch` with `searchText` |
 | `find` | Remove | `MCPTool` → `astSearch` with `operation:"files"` |
 | `ls` | Remove | `MCPTool` → `astSearch` with `operation:"tree"` |

@@ -6,10 +6,10 @@ import type { MemoryRecallPage } from './coordination-core.js';
 import { encodeSignalBody } from '../signal-data.js';
 import { countPresentAgentPresence, countStaleAgentPresence } from './coordination-agent-presence.js';
 import { agentFromCanonicalRow,CanonicalAgentRow,CanonicalMemoryRow,CanonicalMessageRow,cutoffIso,memoryFromCanonicalRow,messageFromCanonicalSignalRow,now,parseMetadata,required,splitFiles,splitTags } from './coordination-shared.js';
-import { insertMemoryWithSimilarityGate } from '../memory-write.js';
+import { insertPreparedMemoryWithSimilarityGate } from '../memory-write.js';
 import { forgetMemory as forgetCanonicalMemory } from '../memory-lifecycle.js';
-import { getMemory as getCanonicalMemory } from '../memory-recall.js';
-import { recallMemory as recallCanonicalMemory } from '../memory-semantic.js';
+import { queryMemory as getCanonicalMemory } from '../memory-recall.js';
+import { queryMemorySemantic as recallCanonicalMemory } from '../memory-semantic.js';
 import { insertNotification } from '../notifications-core.js';
 import { deletePrunableSignals } from '../notifications-signals.js';
 import { canonicalizePath, repositoryWorkspacePaths } from '../git.js';
@@ -39,7 +39,7 @@ export abstract class CoordinationMemoryAgents extends CoordinationState {
     const label = required(params.label, 'label');
     const text = required(params.text, 'text');
     if (containsSecretLikeText(`${label}\n${text}`)) throw new Error('memory rejected: secret-like content must never enter durable memory');
-    const guarded = insertMemoryWithSimilarityGate(this.db, {
+    const guarded = insertPreparedMemoryWithSimilarityGate(this.db, {
       agentId: 'awareness',
       taskContext: label,
       observation: text,

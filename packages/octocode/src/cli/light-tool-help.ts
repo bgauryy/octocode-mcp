@@ -57,54 +57,14 @@ export function showLightToolHelp(_toolName: string): boolean {
 }
 
 export function printLightInstructions(
-  options: { full?: boolean; minimal?: boolean } = {}
+  _options: { full?: boolean; minimal?: boolean } = {}
 ): void {
-  if (options.minimal) {
-    console.log('Octocode CLI — Minimal Context');
-    console.log(
-      'Protocol: schema first → orient → search → read exact → prove → decide.'
-    );
-    console.log(
-      "Run: tools --json | tools <name> --scheme --json | tools <name> --queries '<json>' --compact"
-    );
-    console.log(
-      'Tool names unavailable because the Octocode runtime did not load.'
-    );
-    return;
-  }
-
+  // No alternate protocol: core owns context and may itself be unavailable.
   console.log('Octocode CLI — Agent Context');
-  console.log();
   console.log(
-    'This fallback output shows the CLI protocol. Full MCP metadata needs the packaged runtime.'
+    'Context unavailable because the packaged tool contracts did not load.'
   );
-  console.log();
-  console.log('Protocol:');
-  console.log('1. Authenticate for private GitHub repos and higher limits:');
-  console.log('   login');
-  console.log('   auth status --json  # auth-only token state');
-  console.log('2. Inspect a tool schema before calling (required):');
-  console.log('   tools <name>    # schema: fields, types, example');
-  console.log('   tools <n1> <n2> ...  # batch schema reads');
-  console.log("   tools <name> --queries '<json>'");
-  console.log('3. Read the agent protocol and tool descriptions:');
-  console.log('   context         # protocol + concise tool descriptions');
-  console.log('   context --full  # MCP prompt + full tool descriptions');
-  console.log('   context --json  # machine-readable context wrapper');
-  console.log('4. Use auth status for read-only token/auth state:');
-  console.log('   auth status --json');
-  console.log(
-    '5. Read the minified JSON output directly; --yaml renders the human view.'
-  );
-  console.log();
   showLightAvailableTools();
-  if (options.full) {
-    console.log(
-      dim(
-        'Full JSON schemas unavailable because the Octocode runtime did not load.'
-      )
-    );
-  }
 }
 
 export function printToolRuntimeUnavailable(): void {

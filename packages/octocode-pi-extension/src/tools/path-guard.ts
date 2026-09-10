@@ -32,7 +32,7 @@ function tempRoots(): string[] {
 /** Expand a leading `~` and resolve to an absolute path. */
 function expandHome(p: string): string {
   if (p === '~') return os.homedir();
-  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+  if (p.startsWith('~/') || (process.platform === 'win32' && p.startsWith('~\\'))) return path.join(os.homedir(), p.slice(2));
   return path.resolve(p);
 }
 
@@ -41,7 +41,8 @@ function expandHome(p: string): string {
  * non-existent tail. Lets us validate the REAL location of a file that does not
  * exist yet (a fresh write target) without a link escaping the allowed roots.
  */
-function realpathBounded(p: string): string {
+export function resolveCanonicalPath(p: string, depth = 0): string {
+  if (depth >= 40) throw new Error(`Too many symbolic links while resolving ${p}`);
   let cur = path.resolve(p);
   const tail: string[] = [];
   // Walk up to the deepest entry that EXISTS on disk. Use lstat (does NOT follow
@@ -54,31 +55,17 @@ function realpathBounded(p: string): string {
     let st: fs.Stats | undefined;
     try {
       st = fs.lstatSync(cur);
-    } catch {
-      st = undefined;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
     if (st) {
       if (st.isSymbolicLink()) {
         // Validate where a following write actually lands: resolve the link
         // chain, or (broken link) its literal target relative to the link's dir.
-        let target: string;
-        try {
-          target = fs.realpathSync.native(cur);
-        } catch {
-          try {
-            target = path.resolve(path.dirname(cur), fs.readlinkSync(cur));
-          } catch {
-            target = cur;
-          }
-        }
-        return tail.length > 0 ? path.join(target, ...tail) : target;
+        const target = path.resolve(path.dirname(cur), fs.readlinkSync(cur));
+        return resolveCanonicalPath(path.join(target, ...tail), depth + 1);
       }
-      let realBase: string;
-      try {
-        realBase = fs.realpathSync.native(cur); // canonicalize any symlinked ancestors
-      } catch {
-        realBase = cur; // best-effort if realpath fails (e.g. permissions)
-      }
+      const realBase = fs.realpathSync.native(cur);
       return tail.length > 0 ? path.join(realBase, ...tail) : realBase;
     }
     tail.unshift(path.basename(cur));
@@ -88,18 +75,27 @@ function realpathBounded(p: string): string {
   }
 }
 
+/** Windows drive colons belong to paths; its list separator is a semicolon. */
+export function splitAllowedPaths(value: string, platform: NodeJS.Platform = process.platform): string[] {
+  return value.split(platform === 'win32' ? /[;,]/ : /[:,]/).map(entry => entry.trim()).filter(Boolean);
+}
+
+/** Conservative Windows alias key for queues and duplicate preflight, never filesystem access. */
+export function canonicalPathKey(value: string, platform: NodeJS.Platform = process.platform): string {
+  // Case-sensitive Windows directories may serialize distinct names together.
+  // Conservatively rejecting such a batch is safer than partially committing aliases.
+  return platform === 'win32' ? path.win32.toNamespacedPath(value).toLowerCase() : value;
+}
+
 function isWithin(child: string, root: string): boolean {
-  return child === root || child.startsWith(root + path.sep);
+  const relative = path.relative(root, child);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 /** Allowed roots: cwd, home, OS temp dir, and every ALLOWED_PATHS entry. */
 function allowedRoots(cwd: string): string[] {
   const raw = [cwd, os.homedir(), ...tempRoots()];
-  const extra = (process.env['ALLOWED_PATHS'] ?? '')
-    .split(/[:,]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map(expandHome);
+  const extra = splitAllowedPaths(process.env['ALLOWED_PATHS'] ?? '').map(expandHome);
   const resolved: string[] = [];
   for (const root of [...raw, ...extra]) {
     try {
@@ -116,7 +112,7 @@ function allowedRoots(cwd: string): string[] {
  * "scriptFile read") is used in the error message. `cwd` defaults to process.cwd().
  */
 export function assertPathAllowed(targetPath: string, cwd: string = process.cwd(), action = 'access'): void {
-  const real = realpathBounded(targetPath);
+  const real = resolveCanonicalPath(targetPath);
   const roots = allowedRoots(cwd);
   if (roots.some((root) => isWithin(real, root))) return;
   throw new Error(

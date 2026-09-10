@@ -23,7 +23,7 @@
 - [ ] `workspaceSymbol` works from `workspaceRoot` without requiring `uri`.
 
 ## 4. Agent effectiveness
-- [ ] The output gives exact `uri` + line anchors usable by `localGetFileContent`.
+- [ ] The output gives exact `uri` + line anchors usable by `localFetch`.
 - [ ] Errors distinguish missing language server, invalid URI, and zero results.
 
 ## Example call

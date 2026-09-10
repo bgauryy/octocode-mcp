@@ -56,6 +56,12 @@ to inspect peer overlap; mutations continue to enforce the host's actor binding.
 `memory recall-verified` accepts either a search query or an exact `memory_id`; the
 exact form cannot be combined with `query`. Source digest, scope, and expiry checks
 still apply to an exact pointer.
+Reads include existing linked Git worktrees in the same physical repository;
+`strict_scope: true` restricts them to the opened workspace. Unrelated clones are
+excluded. File filters are conjunctive paths relative to each source workspace,
+including when the caller supplies an absolute path inside its own workspace.
+Every result returns its source `workspacePath`; returned `file` paths are
+relative to that source. These read scopes do not change write or restore bindings.
 
 Verified-memory reads return a page: `memories`, `partial`, `partialReasons`, and
 an executable `next.call` when another page is available. Consumers must read
@@ -64,13 +70,19 @@ filters and observation time when following the call. Bounded semantic ranking
 must expose its terminal limit rather than imply exhaustive evidence coverage.
 If a peer changes the result set between pages, `snapshot_changed` returns a
 restart call. Discard the old page chain before restarting; do not combine it
-with the new revision.
+with the new revision. Revisions also bind the caller workspace, Git membership,
+query and filters; execute each continuation with its original host context.
 
 Use verified memory for selected file reasoning: concise `text`, a `why` or
 `constraint`, source digest and validity, optional file/area, and a real `artifact`
 identifier for artifact scope. An optional `history_ref` links existing immutable
 evidence; storing a note does not capture file bytes. Exact duplicate stores reuse
-their record, while explicit supersession replaces obsolete knowledge. Discover
+their record, while explicit supersession replaces obsolete knowledge.
+`historyEvidence` distinguishes `recorded` capture metadata from `incomplete`
+or `unavailable` evidence. It does not assert present-day file freshness or byte
+availability. Follow `historyEvidence.next.call` to inspect the operation in its
+`source_workspace`, then use the returned read calls for selected captured bytes.
+Discover
 the current field schema before constructing an unfamiliar request.
 The complete stored evidence packet has an 8192-byte budget. Keep one reusable
 reason in a record and link detailed evidence instead of copying a file or dialogue.
@@ -125,6 +137,42 @@ task, or verification features. Exact close/submit, verification, and audit proc
 live in that recipe and the full guide. Native integrations retain their existing
 task/run IDs and observed receipts. Routine attendance and message handling do not
 require tracking records or an audit ritual.
+
+## Optional native file operations
+
+Awareness has zero mandatory npm runtime dependencies. `@octocodeai/octocode-extension-rust`
+is an optional dependency with a matching platform addon. It supplies workspace
+snapshots, restore mutations, and exact memory fingerprints through a lazy import;
+it is separate from the Octocode research engine. Library imports, ordinary CLI
+commands, memory writes without capture, and unchecked recall work without it.
+
+Package-manager installs with optional dependencies enabled make the addon available
+to the package CLI and its bundled skills. A copied standalone skill resolves the
+addon from its own directory and ancestor `node_modules` directories. For a project
+skill under `.agents/skills`, install `@octocodeai/octocode-extension-rust` as an
+optional dependency in that project, or use the package CLI. A global Awareness
+installation does not supply dependencies to a skill copied into an unrelated
+project. Skill installation copies runtime assets; it does not install npm packages.
+
+When the addon is absent, explicit history capture/restore fails with an unavailable
+native-filesystem error. Fingerprint capture rejects with `source_inaccessible`
+and inserts no memory. Checked recall remains available and reports evidence as
+`unknown` when native validation cannot run. No JavaScript filesystem fallback
+creates a fingerprint or applies a restore.
+
+The lower-level `insertMemory`, `insertMemoryWithSimilarityGate`, `getMemory`,
+`recallMemory`, and `runAwarenessToolOperation` APIs return promises; await their
+results before using or closing the database. Capture completes before a SQLite
+write transaction. Internal synchronous write/query phases reject requests for
+unprepared capture or filesystem checking.
+
+Memory evidence retains the `awareness-evidence-v1:` fingerprint format. One
+filesystem budget covers all returned rows: 64 references, 1 MiB per file,
+8 MiB in total, and 100 ms including canonicalization and native worker queue time.
+First-use native module initialization happens before the filesystem deadline;
+it adds to total request latency. A limit or unstable source never produces a
+validated fingerprint. See [local history](LOCAL_HISTORY.md) for its separate
+capture limits and restore contract.
 
 ## Host callbacks and message delivery
 

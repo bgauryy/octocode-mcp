@@ -1,3 +1,4 @@
+import { expectExecutableNext } from '../helpers/executableNext.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -10,9 +11,9 @@ import {
   structuralSearchDetailed,
 } from '@octocodeai/octocode-engine';
 import { executeDirectTool } from '../../src/tools/directToolCatalog.exec.js';
-import { findDirectToolDefinition } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
-import { AstSearchQuerySchema } from '../../src/tools/ast_search/scheme.js';
-import { LocalSearchQuerySchema } from '../../src/tools/local_search/scheme.js';
+import { findDirectToolDefinition } from '@octocodeai/octocode-core/schema';
+import { AstSearchQuerySchema } from '@octocodeai/octocode-core/schema';
+import { LocalSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 import { grammarFixtures as fixtures } from '../fixtures/grammarFixtures.js';
 const structuralExtensions = getSupportedStructuralExtensions();
@@ -62,6 +63,7 @@ async function run(tool: string, query: Record<string, unknown>): Promise<Row> {
     })
   ).toBe(true);
   const result = await executeDirectTool(tool, { queries: [query] });
+  expectExecutableNext(result.structuredContent);
   const row = (result.structuredContent as { results: Row[] }).results[0]!;
   expect(row.status, JSON.stringify(row)).not.toBe('error');
   return row;
@@ -113,7 +115,7 @@ describe('production grammar matrix through the native and public tool boundarie
           },
         ],
       });
-      const read = await run('localGetFileContent', { path, minify: 'none' });
+      const read = await run('localFetch', { path, minify: 'none' });
       expect(read.data.content).toContain('target(value);');
       await rm(path);
     }
@@ -186,12 +188,15 @@ describe('production grammar matrix through the native and public tool boundarie
           operation === 'text'
             ? { path, searchText: 'target', regex: 'literal' }
             : { operation: 'match', path, pattern: source!.trim() };
-        const row = await run(operation === 'text' ? 'localSearch' : 'astSearch', query);
+        const row = await run(
+          operation === 'text' ? 'localSearch' : 'astSearch',
+          query
+        );
         expect(row.status, JSON.stringify(row)).not.toBe('empty');
         expect(JSON.stringify(row.data)).toContain('target');
       }
       for (const minify of ['none', 'standard', 'symbols']) {
-        const row = await run('localGetFileContent', {
+        const row = await run('localFetch', {
           path,
           fullContent: true,
           minify,
@@ -237,20 +242,20 @@ describe('production grammar matrix through the native and public tool boundarie
       expect(row.data.stats?.filesMatched).toBe(1);
     });
 
-    it('completes exact reads by executing every character continuation', async () => {
+    it('completes exact reads by executing every byte continuation', async () => {
       let query: Record<string, unknown> | undefined = {
         path: join(root, `fixture.${extension}`),
-        fullContent: true,
+        chunkType: 'bytes',
         minify: 'none',
-        charLength: 20,
+        limit: 20,
       };
       let content = '';
       let pages = 0;
       while (query) {
         expect(++pages).toBeLessThan(30);
-        const row = await run('localGetFileContent', query);
+        const row = await run('localFetch', query);
         content += row.data.content;
-        query = row.data.next?.continueChars?.query;
+        query = row.data.next?.continue?.query;
       }
       expect(content).toBe(source);
     });
@@ -306,7 +311,9 @@ describe('production grammar matrix through the native and public tool boundarie
       });
       for (const file of row.data.files ?? []) astPaths.add(file.path);
     }
-    const expected = structuralExtensions.map(extension => `fixture.${extension}`);
+    const expected = structuralExtensions.map(
+      extension => `fixture.${extension}`
+    );
     expect([...lexicalPaths].sort()).toEqual(expected.sort());
     expect([...astPaths].sort()).toEqual(expected.sort());
   });

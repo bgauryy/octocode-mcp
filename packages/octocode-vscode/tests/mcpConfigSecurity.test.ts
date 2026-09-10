@@ -2,6 +2,7 @@ import * as fsPromises from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { updateMcpConfigToken } from '../src/mcpConfig';
 import { readJsonFile } from '../src/jsonUtils';
 
 const MCP_SERVER_NAME = 'octocode';
@@ -38,32 +39,6 @@ async function writeConfig(filePath: string, config: McpConfig): Promise<void> {
   await fsPromises.writeFile(
     filePath,
     JSON.stringify(config, null, 2),
-    'utf-8'
-  );
-}
-
-async function updateMcpConfigToken(
-  configPath: string,
-  token: string | undefined
-): Promise<void> {
-  const existingConfig = await readJsonFile<McpConfig>(configPath);
-  if (!existingConfig?.mcpServers?.[MCP_SERVER_NAME]) return;
-
-  const serverConfig = existingConfig.mcpServers[MCP_SERVER_NAME];
-  if (token) {
-    serverConfig.env = { ...serverConfig.env, GITHUB_TOKEN: token };
-  } else {
-    if (serverConfig.env) {
-      delete serverConfig.env.GITHUB_TOKEN;
-      if (Object.keys(serverConfig.env).length === 0) {
-        delete serverConfig.env;
-      }
-    }
-  }
-
-  await fsPromises.writeFile(
-    configPath,
-    JSON.stringify(existingConfig, null, 2),
     'utf-8'
   );
 }

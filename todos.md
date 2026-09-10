@@ -151,10 +151,10 @@ Rubrics: tools = schema clarity, routing distinctness, response/continuation qua
 | `localSearch` (lexical) | 9.2 | Excellent text/regex breadth plus strict-safe search fields. |
 | `astSearch` (`match`/`files`) | 8.9 | Structural and metadata discovery through explicit operation variants. |
 | `astSearch` (`topology`) | 9.5 | Bounded analyses with exact syntactic provenance, request-local reuse, parity tests, and large-repository held-outs. |
-| `localGetFileContent` | 9.4 | Exact, ranged, matched, and minified reads with strong mode relations. |
+| `localFetch` | 9.4 | Exact, ranged, matched, and minified reads with strong mode relations. |
 | `astSearch` (`tree`) | 8.8 | Cheapest orientation step; readable entry types and depth bounds keep first-contact queries clear. |
 | `lspSearch` | 8.8 | Unique symbol-identity proof and compact output; server/language availability and anchor requirements add fragility. |
-| `npmSearch` | 8.3 | Very lean package-to-source bridge; limited filters and registry/provider dependence cap depth. |
+| `artifactSearch` | 8.3 | Very lean package-to-source bridge; limited filters and registry/provider dependence cap depth. |
 
 Suite average: **8.9/10** after the graph, response, recording, and strict-safe alias changes.
 

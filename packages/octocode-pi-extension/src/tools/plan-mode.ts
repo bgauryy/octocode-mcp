@@ -71,7 +71,7 @@ export const TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = Object.freeze(
   npmsearch: 'read',
   localsearch: 'read',
   localanalyzegraph: 'read',
-  localgetfilecontent: 'read',
+  localfetch: 'read',
   lspgetsemantics: 'read',
 
   plan: 'planning-write',

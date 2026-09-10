@@ -1,6 +1,6 @@
 import type { ContextSegmentV1 } from '@octocodeai/octocode-awareness';
 
-export type PromptPlacement = 'frozen-system' | 'turn-context' | 'transcript';
+export type PromptPlacement = 'frozen-system' | 'versioned-system' | 'turn-context' | 'transcript';
 export interface PromptLifecycleRuleV1 {
   version: 1;
   placement: PromptPlacement;
@@ -13,9 +13,9 @@ export interface PromptLifecycleRuleV1 {
 
 export const PROMPT_LIFECYCLE_MATRIX: Readonly<Record<ContextSegmentV1['kind'], PromptLifecycleRuleV1>> = Object.freeze({
   'product-policy': { version: 1, placement: 'frozen-system', mutable: false, delivery: 'once', restoration: 'reload-owner', defaultTokenBudget: 20_000, reason: 'cache-stable harness authority' },
-  'project-instruction': { version: 1, placement: 'frozen-system', mutable: false, delivery: 'once', restoration: 'reload-owner', defaultTokenBudget: 20_000, reason: 'session-scoped repository instructions' },
-  'tool-contract': { version: 1, placement: 'frozen-system', mutable: false, delivery: 'once', restoration: 'reload-owner', defaultTokenBudget: 30_000, reason: 'session tool inventory contract' },
-  skill: { version: 1, placement: 'frozen-system', mutable: false, delivery: 'on-trigger', restoration: 'attributed-turn-context', defaultTokenBudget: 20_000, reason: 'inventory frozen; selected bodies reload from their current owner' },
+  'project-instruction': { version: 1, placement: 'versioned-system', mutable: true, delivery: 'on-change', restoration: 'reload-owner', defaultTokenBudget: 20_000, reason: 'applicable host repository instructions' },
+  'tool-contract': { version: 1, placement: 'versioned-system', mutable: true, delivery: 'on-change', restoration: 'reload-owner', defaultTokenBudget: 30_000, reason: 'effective capability revision at the turn boundary' },
+  skill: { version: 1, placement: 'versioned-system', mutable: true, delivery: 'on-trigger', restoration: 'attributed-turn-context', defaultTokenBudget: 20_000, reason: 'inventory resolves by revision; selected bodies reload from their owner' },
   plan: { version: 1, placement: 'turn-context', mutable: true, delivery: 'on-change', restoration: 'attributed-turn-context', defaultTokenBudget: 15_000, reason: 'durable domain state can evolve' },
   'memory-lead': { version: 1, placement: 'turn-context', mutable: true, delivery: 'on-trigger', restoration: 'attributed-turn-context', defaultTokenBudget: 4_000, reason: 'retrieval is attributed evidence' },
   'tool-result': { version: 1, placement: 'transcript', mutable: false, delivery: 'on-trigger', restoration: 'attributed-turn-context', defaultTokenBudget: 12_000, reason: 'selected results reload as attributed call data' },

@@ -1,4 +1,4 @@
-import { GITHUB_GET_HISTORY_ITEM_TOOL_NAME } from '../toolNames.js';
+import { GITHUB_GET_HISTORY_ITEM_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { publicCommitContinuationQuery } from './historyContinuations.js';
 
 /** Advance file and patch axes independently so finishing one file never skips another. */
@@ -14,6 +14,9 @@ export function withDiffContinuations(
     file => typeof file?.patchPagination?.nextCharOffset === 'number'
   );
   const next: Record<string, unknown> = {};
+  const providerBatchOutOfRange =
+    Array.isArray(data.partialReasons) &&
+    data.partialReasons.includes('providerBatchOutOfRange');
   const identity =
     query.operation === 'commit'
       ? publicCommitContinuationQuery(
@@ -35,6 +38,12 @@ export function withDiffContinuations(
     why,
     confidence: 'exact',
   });
+  if (providerBatchOutOfRange) {
+    next.restartFromFirstBatch = continuation(
+      { fileBatch: undefined, filePage: 1, charOffset: undefined },
+      'The requested provider batch is outside this commit. Restart at the first batch and only follow emitted nextFileBatch values.'
+    );
+  }
   if (typeof pagination?.nextPage === 'number') {
     next.nextPage = continuation(
       { page: pagination.nextPage },

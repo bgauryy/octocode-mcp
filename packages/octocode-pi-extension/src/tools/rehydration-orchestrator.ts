@@ -77,6 +77,9 @@ export interface ValidatedRehydrationProjection {
   content: string;
   segments: ContextSegmentV1[];
   receipt: RehydrationReceiptV1;
+  tokensByKind: Partial<Record<ContextSegmentV1['kind'], number>>;
+  /** Commit only after the complete turn projection passes its budgets. */
+  commit(): boolean;
 }
 
 interface PendingRehydration {
@@ -279,6 +282,7 @@ export function consumeValidatedRehydration(
   currentSources: CurrentRehydrationSource[],
   options: {
     allowProjection?: boolean;
+    deferConsumption?: boolean;
     totalTokenBudget?: number;
     now?: () => number;
     /** Digests derived from the host's retained post-compaction model context. */
@@ -288,7 +292,6 @@ export function consumeValidatedRehydration(
   const sessionKey = createSessionArtifactContext(ctx).identity.sessionKey;
   const pending = pendingBySession.get(sessionKey);
   if (!pending) return undefined;
-  pendingBySession.delete(sessionKey);
   const now = options.now ?? Date.now;
   const sessionSources = resolveSessionCheckpointSources(ctx, pending.ledger.segments);
   const currentById = new Map([...sessionSources, ...currentSources].map((source) => [source.segment.id, source]));
@@ -299,6 +302,7 @@ export function consumeValidatedRehydration(
   const overBudget: string[] = [];
   const segments: ContextSegmentV1[] = [];
   const blocks: string[] = [];
+  const tokensByKind: ValidatedRehydrationProjection['tokensByKind'] = {};
   let estimatedTokens = 0;
   const expired = Date.parse(pending.ledger.expiresAt) <= now();
   for (const checkpoint of pending.ledger.segments) {
@@ -315,8 +319,7 @@ export function consumeValidatedRehydration(
       continue;
     }
     const tokens = estimateContextTokens(current.content);
-    if ((checkpoint.tokenBudget !== undefined && tokens > checkpoint.tokenBudget)
-      || estimatedTokens + tokens > (options.totalTokenBudget ?? REHYDRATION_PROJECTION_TOKEN_BUDGET)) {
+    if (checkpoint.tokenBudget !== undefined && tokens > checkpoint.tokenBudget) {
       overBudget.push(checkpoint.id);
       continue;
     }
@@ -339,6 +342,7 @@ export function consumeValidatedRehydration(
       continue;
     }
     estimatedTokens += projectedTokens;
+    tokensByKind[checkpoint.kind] = (tokensByKind[checkpoint.kind] ?? 0) + projectedTokens;
     reprojected.push(checkpoint.id);
     segments.push(current.segment);
     blocks.push(block);
@@ -355,7 +359,13 @@ export function consumeValidatedRehydration(
     estimatedTokens,
     recordedAt: new Date(now()).toISOString(),
   };
-  return { content: blocks.join('\n\n'), segments, receipt };
+  const commit = (): boolean => {
+    if (pendingBySession.get(sessionKey) !== pending) return false;
+    pendingBySession.delete(sessionKey);
+    return true;
+  };
+  if (!options.deferConsumption) commit();
+  return { content: blocks.join('\n\n'), segments, receipt, tokensByKind, commit };
 }
 
 /** Persist a body-safe receipt in Pi's state channel; segment contents never

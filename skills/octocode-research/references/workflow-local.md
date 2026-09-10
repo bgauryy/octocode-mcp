@@ -3,17 +3,23 @@
 Load when a checkout, local artifact, or resolved dependency is the evidence source. Use the router in `references/algorithm.md`; this reference owns local tool selection and completeness.
 
 ## Choose the missing evidence
+For Markdown headings, code signatures, complete declaration bodies, and full-file requests, use [reading flows](reading-flows.md). Outline first only when orientation is unresolved; a known phrase or range skips that step.
+
 A known file or path can skip discovery and orientation: read the relevant lines directly. Otherwise choose one starting point:
 | Question | Tool and selection | Evidence |
 |---|---|---|
 | Names, strings, errors, configuration | `localSearch`, `searchText` | lexical candidates |
 | Paths or directory layout | `astSearch operation:"files"` or `"tree"` | files inside the stated scope |
 | Call/declaration/import shape | `astSearch operation:"match"`, exactly one `pattern` or `rule` | AST syntax, not resolved identity |
-| Exact behavior or quote | `localGetFileContent`, `minify:"none"`, bounded lines or match | source text |
+| Exact behavior or quote | `localFetch`, `minify:"none"`, bounded lines or match | source text |
 | Symbol identity and use | `lspSearch` | server-resolved definitions/references/callers |
 | Relationships between files | `astSearch operation:"topology"` | syntactic topology |
 
-Use an absolute `path` for `localSearch`; it has no `operation` field. Text uses `searchText` with `regex:"literal"`, `"rust"`, or `"pcre2"`. Structural AST uses `astSearch operation:"match"` with exactly one `pattern` or `rule`; do not mix lexical and structural fields. Use files/count views when bodies are unnecessary. `localGetFileContent` is exact by default and accepts path-only reads; choose a line range, `matchString`, or `fullContent` when needed. `matchRanges` are padded context windows, while `matchedLines` are the exact line anchors. `standard` and `symbols` are transformed views.
+Use an absolute `path` for `localSearch`; it has no `operation` field. Text uses `searchText` with `regex:"literal"`, `"rust"`, or `"pcre2"`. Structural AST uses `astSearch operation:"match"` with exactly one `pattern` or `rule`; do not mix lexical and structural fields. Use files/count views when bodies are unnecessary. `localFetch` is exact by default and accepts path-only reads; choose a line range, `matchString`, or `fullContent` when needed. `matchRanges` describe the selected source context windows; `matchedLines` contains source anchors intersecting this page, and `selectedMatchCount` counts matching source lines across the selected view. `standard` and `symbols` are transformed views.
+
+`localFetch` selects source first, applies the explicit `minify` view and redaction, then paginates. Use `chunkType:"lines"` (default), `offset:0`, and `limit:100` for line chunks; use `chunkType:"bytes"` for UTF-8 byte chunks (default 16384 bytes). A line page also has a 16384-byte budget; oversized lines switch to byte chunks. Copy `next.continue.tool` and its entire `query`, including selectors and units. Do not infer offsets from source lines, string length, or requested limits. Pages stop at the end of the selected range/matched view. `totalLines` and `sourceBytes` describe the original file; `pagination.totalLines/totalBytes` describe the transformed, redacted view. `returnedBytes` is the actual chunk size. These view offsets are never LSP positions.
+
+`matchString` uses source text; byte-context matching follows full-source redaction. Context defaults to five lines for line chunks or 256 UTF-8 bytes for byte chunks. Explicit `contextLines` or `contextBytes` overrides the context unit; never combine them. Copy continuations unchanged to preserve the selected context. Matches force `minify:"none"`; `minifyFallback` reports an ignored compact request or unavailable outline. `fullContent:true` requests an unpaged view within resource/security limits and cannot accompany chunk controls. A limit response provides a bounded recovery or an explicit terminal limit.
 
 ## AST and LSP
 - AST: inspect diagnostics before relaxing a zero-match pattern. Incomplete or partial execution cannot prove absence. A `terminalLimit` requires narrowing/simplifying, while a returned continuation can recover a scan or display bound.
@@ -37,3 +43,5 @@ Set `path` to the relevant package/repository. Inspect `entrypointsResolved` and
 Inspect the installed/resolved version when access permits; honor repository restrictions on vendor/generated files. Package metadata and upstream source are alternatives, but record version gaps. After an edit, run the matching change/refactor verification; do not force AST, LSP, and graph into every lookup.
 
 Next: for symbol/deletion proof use `references/code-research.md`; for upstream intent use `references/workflow-external.md`; for implementation use `references/workflow-change.md`.
+
+`ghGetFileContent` uses the same selection and pagination fields as `localFetch`: `chunkType`, `offset`, `limit`, and `next.continue`. Both default to exact content and paginate after selection, transformation, and redaction. Only resource identity differs: GitHub needs `owner`/`repo`/repo-relative `path` and optionally `branch`; local reads need an absolute `path`.

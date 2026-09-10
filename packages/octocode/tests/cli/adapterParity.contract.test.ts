@@ -58,7 +58,7 @@ describe('raw tools command adapter parity', () => {
     const { TOOL_DEFINITIONS } =
       await import('../../src/cli/tool-command/registry.js');
     const { DIRECT_TOOL_DISCOVERY_DEFINITIONS } =
-      await import('@octocodeai/octocode-tools-core/schema');
+      await import('@octocodeai/octocode-core/schema');
     expect(TOOL_DEFINITIONS.map(tool => tool.name)).toEqual(
       CANONICAL_ADAPTER_TOOL_NAMES
     );
@@ -76,7 +76,7 @@ describe('raw tools command adapter parity', () => {
       await import('../../src/cli/tool-command/registry.js');
     const localNames = [
       'localSearch',
-      'localGetFileContent',
+      'localFetch',
       'astSearch',
       'lspSearch',
       'ghCloneRepo',
@@ -89,14 +89,14 @@ describe('raw tools command adapter parity', () => {
   });
 
   it.each([
-    ['TOOLS_TO_RUN', 'npmSearch', 'add ghSearch to TOOLS_TO_RUN'],
+    ['TOOLS_TO_RUN', 'artifactSearch', 'add ghSearch to TOOLS_TO_RUN'],
     ['DISABLE_TOOLS', 'ghSearch', 'remove ghSearch from DISABLE_TOOLS'],
   ])('explains the effective %s gate', async (key, value, instruction) => {
     process.env[key] = value;
     const { getToolEnableInstruction } =
       await import('../../src/cli/tool-command/registry.js');
     expect(getToolEnableInstruction('ghSearch')).toBe(instruction);
-    expect(getToolEnableInstruction('npmSearch')).toBeUndefined();
+    expect(getToolEnableInstruction('artifactSearch')).toBeUndefined();
   });
 
   it.each(ADAPTER_PARITY_CASES)(

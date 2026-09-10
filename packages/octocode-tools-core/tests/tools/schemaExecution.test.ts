@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { searchMultipleGitHubPullRequests } from '../../src/tools/github_search_pull_requests/execution.js';
-import { executeFindFiles } from '../../src/tools/local_find_files/execution.js';
+import { executeAstSearch } from '../../src/tools/ast_search/execution.js';
 import { executeRipgrepSearch } from '../../src/tools/local_ripgrep/execution.js';
-import { executeViewStructure } from '../../src/tools/local_view_structure/execution.js';
 
 type ResultRow = {
   readonly status: unknown;
@@ -56,10 +55,11 @@ describe('tool execution schema validation', () => {
     expect(getError(rows[0])).toContain('unique requires output:"matchOnly"');
   });
 
-  it('returns a per-query error for inverted local.files depth', async () => {
-    const result = await executeFindFiles({
+  it('returns a per-query error for inverted AST files depth', async () => {
+    const result = await executeAstSearch({
       queries: [
         {
+          operation: 'files',
           path: '/repo',
           minDepth: 4,
           maxDepth: 2,

@@ -18,7 +18,7 @@ import {
   isIncomplete,
   withCompleteness,
 } from './structuralCompleteness.js';
-import type { RipgrepQuery } from './scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core/schema';
 
 const STRUCTURAL_MATCH_VALUE_MAX_CHARS = 300;
 

@@ -3,16 +3,16 @@ import { describe, expect, it } from 'vitest';
 import {
   buildDirectToolCommandPatterns,
   buildDirectToolExampleQuery,
-} from '../../src/tools/directToolCatalog/toolCommandPatterns.js';
+} from '@octocodeai/octocode-core/schema';
 import {
   DIRECT_TOOL_CATEGORIES,
   getDirectToolCategory,
-} from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
+} from '@octocodeai/octocode-core/schema';
 import {
   LSP_SEARCH_TOOL_NAME,
   LOCAL_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
-} from '../../src/tools/toolNames.js';
+} from '@octocodeai/octocode-core/schema';
 
 describe('direct-tool command patterns', () => {
   it('uses lexical patterns for localSearch inputs', () => {
@@ -104,7 +104,7 @@ describe('direct-tool command patterns', () => {
     expect(patterns).toContainEqual(
       expect.objectContaining({
         label: 'keyword discovery (paged candidates)',
-        query: { keywords: ['schema', 'validation'], page: 1 },
+        query: { type: 'npm', keywords: ['schema', 'validation'] },
       })
     );
   });

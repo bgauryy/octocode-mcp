@@ -56,9 +56,8 @@ Run `npx @octocodeai/octocode-awareness skill install --help` for user-level and
 host-specific destinations. The CLI copies its packaged skill directly; do not
 reconstruct package paths in an agent prompt. `maintenance init` is safe to repeat.
 
-Awareness is the package's only bundled skill. The separately owned
-`octocode-orchestrator` skill remains in the sibling
-[`octocode-agent` repository](https://github.com/bgauryy/octocode-agent/tree/main/skills/octocode-orchestrator).
+Awareness is the package's only bundled skill. Use `octocode-subagent` when
+execution choices, delegation, or independent workstreams need orchestration.
 Install other workflow skills with `octocode skill install <name>` when needed.
 
 Discovery is lazy — reach for an inventory only when the next action needs it:
@@ -109,4 +108,4 @@ yarn workspace @octocodeai/octocode-awareness test:quiet
 
 Build emits `out/octocode-awareness.js`, then mirrors this skill to package
 `out/skills/` and local `.agents/skills/`. For native host integration changes,
-also run the relevant checks in the sibling `octocode-agent` repository.
+also run the relevant checks in the host integration package.

@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeEach, afterEach, test } from 'vitest';
-import { assertPathAllowed } from '../src/tools/path-guard.js';
+import { assertPathAllowed, canonicalPathKey, splitAllowedPaths } from '../src/tools/path-guard.js';
 
 let tmpDir: string;
 
@@ -69,12 +69,12 @@ test('allows paths inside an ALLOWED_PATHS root', () => {
   }
 });
 
-test('ALLOWED_PATHS supports colon-separated entries', () => {
+test('ALLOWED_PATHS supports platform-separated entries', () => {
   const root1 = fs.mkdtempSync(path.join(os.tmpdir(), 'ap1-'));
   const root2 = fs.mkdtempSync(path.join(os.tmpdir(), 'ap2-'));
   const prev = process.env['ALLOWED_PATHS'];
   try {
-    process.env['ALLOWED_PATHS'] = `${root1}:${root2}`;
+    process.env['ALLOWED_PATHS'] = `${root1}${path.delimiter}${root2}`;
     assert.doesNotThrow(() => assertPathAllowed(path.join(root2, 'file.txt'), '/other/cwd'));
   } finally {
     if (prev === undefined) delete process.env['ALLOWED_PATHS'];
@@ -188,4 +188,17 @@ test('default action is "access" when not supplied', () => {
     else process.env['ALLOWED_PATHS'] = prev;
     fs.rmSync(isolatedCwd, { recursive: true, force: true });
   }
+});
+
+
+test('Windows allowed roots preserve drive colons, UNC roots and spaces', () => {
+  assert.deepEqual(splitAllowedPaths(String.raw` C:\work tree;D:\data,\\server\share;; `, 'win32'),
+    [String.raw`C:\work tree`, String.raw`D:\data`, String.raw`\\server\share`]);
+  assert.deepEqual(splitAllowedPaths('/one:/two,/three', 'linux'), ['/one', '/two', '/three']);
+});
+
+test('Windows queue and batch keys collapse case and namespace aliases', () => {
+  assert.equal(canonicalPathKey(String.raw`C:\work\New`, 'win32'), canonicalPathKey(String.raw`\\?\c:\WORK\new`, 'win32'));
+  assert.equal(canonicalPathKey(String.raw`\\server\share\New`, 'win32'), canonicalPathKey(String.raw`\\?\UNC\SERVER\share\new`, 'win32'));
+  assert.notEqual(canonicalPathKey('/work/New', 'linux'), canonicalPathKey('/work/new', 'linux'));
 });

@@ -1,13 +1,14 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { historyEntitySchemas, type HistoryReadInput, type HistoryTimelineInput } from './schema/definitions-history.js';
-import { HistoryError, historyHash, historyPath, historyStoragePaths, historyTransaction, historyVersions, type HistoryContext } from './history-store.js';
+import { historyEntitySchemas, type HistoryInspectInput, type HistoryReadInput, type HistoryTimelineInput } from './schema/definitions-history.js';
+import { HistoryError, historyHash, historyOperation, historyPath, historyStoragePaths, historyTransaction, historyVersions, type HistoryContext } from './history-store.js';
 import { historyGitBackend } from './history-git.js';
 
 const cursorSchema = z.object({ scope: z.string().length(64), before: z.number().int().positive() }).strict();
 function continuation(ctx: HistoryContext, command: string, args: Record<string, unknown>) {
-  const scoped = { ...args, workspace: ctx.workspace };
+  const scoped = { ...args, workspace: ctx.requestWorkspace ?? ctx.workspace,
+    ...(ctx.requestWorkspace ? { source_workspace: ctx.workspace } : {}) };
   const argv = ['history', command, '--db', ctx.dbPath];
   for (const [key, value] of Object.entries(scoped)) {
     if (value !== undefined) argv.push(`--${key.replaceAll('_', '-')}`, String(value));
@@ -150,4 +151,30 @@ export async function historyRead(ctx: HistoryContext, input: HistoryReadInput) 
   return { ok: true, status, oid, mode: row[`${input.side}_mode`], encoding: 'base64', content: Buffer.from(bytes.subarray(input.offset, end)).toString('base64'),
     total_bytes: bytes.byteLength, offset: input.offset, partial: hasMore,
     next: hasMore ? continuation(ctx, 'read', { ...input, file, offset: end }) : null };
+}
+
+export function historyInspect(ctx: HistoryContext, input: HistoryInspectInput) {
+  const operation = historyOperation(ctx, input.operation_id);
+  const scope = historyHash(JSON.stringify([ctx.dbPath, ctx.requestWorkspace ?? ctx.workspace, ctx.workspace, operation.operation_id]));
+  const revision = historyHash(JSON.stringify(operation));
+  let after = -1;
+  if (input.cursor) {
+    try {
+      const cursor = JSON.parse(Buffer.from(input.cursor, 'base64url').toString('utf8')) as { scope: string; revision: string; after: number };
+      if (cursor.scope !== scope || !Number.isSafeInteger(cursor.after) || cursor.after < 0) throw new Error();
+      if (cursor.revision !== revision) return { ok: true, operation, rows: [], partial: true, partialReasons: ['snapshot_changed'],
+        next: continuation(ctx, 'inspect', { operation_id: input.operation_id, limit: input.limit }) };
+      after = cursor.after;
+    } catch { throw new HistoryError('HISTORY_CURSOR_INVALID', 'Inspect cursor does not match this caller, source and operation.'); }
+  }
+  const versions = ctx.db.prepare('SELECT * FROM local_history_versions WHERE operation_id=? AND ordinal>? ORDER BY ordinal LIMIT ?')
+    .all(input.operation_id, after, input.limit + 1).map(row => historyEntitySchemas.local_history_version.parse(row));
+  const page = versions.slice(0, input.limit);
+  const rows = page.map(row => ({ ...row, next: Object.fromEntries((['before', 'after'] as const)
+    .filter(side => row[`${side}_status`] === 'captured' && row[`${side}_oid`])
+    .map(side => [side, continuation(ctx, 'read', { operation_id: input.operation_id, file: row.file_path, side })])) }));
+  const partial = versions.length > input.limit;
+  return { ok: true, operation, source_workspace: ctx.workspace, rows, partial,
+    next: partial ? continuation(ctx, 'inspect', { operation_id: input.operation_id, limit: input.limit,
+      cursor: Buffer.from(JSON.stringify({ scope, revision, after: page.at(-1)!.ordinal })).toString('base64url') }) : null };
 }

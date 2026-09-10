@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { retainRecent } from './execution-retention.js';
 
 /** Semantic execution history. Schemas own transport validation and inferred types. */
 export const EXECUTION_ENTRY_TYPE = 'octocode-execution-event';
@@ -315,19 +316,25 @@ export function reduceExecutionEvent(
       );
       return {
         ...next,
-        tools,
+        tools: retainRecent(
+          tools,
+          tool => tool.status === 'running' || tool.status === 'requested'
+        ),
         activeToolIds: state.activeToolIds.filter(
           id =>
             tools[id]?.status === 'running' || tools[id]?.status === 'requested'
         ),
         interactions,
-        messages: Object.fromEntries(
-          Object.entries(state.messages).map(([id, message]) => [
-            id,
-            message.status === 'streaming'
-              ? { ...message, status: 'interrupted' }
-              : message,
-          ])
+        messages: retainRecent(
+          Object.fromEntries(
+            Object.entries(state.messages).map(([id, message]) => [
+              id,
+              message.status === 'streaming'
+                ? { ...message, status: 'interrupted' }
+                : message,
+            ])
+          ),
+          message => message.status === 'streaming'
         ),
         compacting: false,
         activeTurnId: undefined,
@@ -353,34 +360,46 @@ export function reduceExecutionEvent(
     case 'user.message':
       return {
         ...next,
-        messages: {
-          ...state.messages,
-          [event.payload.messageId]: {
-            role: 'user',
-            status: 'completed',
-            outputRef: event.payload.outputRef,
+        messages: retainRecent(
+          {
+            ...state.messages,
+            [event.payload.messageId]: {
+              role: 'user',
+              status: 'completed',
+              outputRef: event.payload.outputRef,
+            },
           },
-        },
+          message => message.status === 'streaming'
+        ),
       };
     case 'assistant.started':
       return {
         ...next,
-        messages: {
-          ...state.messages,
-          [event.payload.messageId]: { role: 'assistant', status: 'streaming' },
-        },
+        messages: retainRecent(
+          {
+            ...state.messages,
+            [event.payload.messageId]: {
+              role: 'assistant',
+              status: 'streaming',
+            },
+          },
+          message => message.status === 'streaming'
+        ),
       };
     case 'assistant.completed':
       return {
         ...next,
-        messages: {
-          ...state.messages,
-          [event.payload.messageId]: {
-            role: 'assistant',
-            status: event.payload.status,
-            outputRef: event.payload.outputRef,
+        messages: retainRecent(
+          {
+            ...state.messages,
+            [event.payload.messageId]: {
+              role: 'assistant',
+              status: event.payload.status,
+              outputRef: event.payload.outputRef,
+            },
           },
-        },
+          message => message.status === 'streaming'
+        ),
       };
     case 'tool.requested':
     case 'tool.started': {
@@ -393,17 +412,20 @@ export function reduceExecutionEvent(
         activeToolIds: previous
           ? state.activeToolIds
           : [...state.activeToolIds, p.toolCallId],
-        tools: {
-          ...state.tools,
-          [p.toolCallId]: {
-            id: p.toolCallId,
-            tool: p.tool,
-            title: p.title,
-            status: event.type === 'tool.started' ? 'running' : 'requested',
-            turnId: event.turnId,
-            startedAt: event.timestamp,
+        tools: retainRecent(
+          {
+            ...state.tools,
+            [p.toolCallId]: {
+              id: p.toolCallId,
+              tool: p.tool,
+              title: p.title,
+              status: event.type === 'tool.started' ? 'running' : 'requested',
+              turnId: event.turnId,
+              startedAt: event.timestamp,
+            },
           },
-        },
+          tool => tool.status === 'running' || tool.status === 'requested'
+        ),
       };
     }
     case 'tool.completed':
@@ -419,21 +441,24 @@ export function reduceExecutionEvent(
       return {
         ...next,
         activeToolIds: state.activeToolIds.filter(id => id !== p.toolCallId),
-        tools: {
-          ...state.tools,
-          [p.toolCallId]: {
-            ...previous,
-            status:
-              event.type === 'tool.completed'
-                ? 'succeeded'
-                : event.type === 'tool.failed'
-                  ? 'failed'
-                  : 'cancelled',
-            summary: p.summary,
-            outputRef: p.outputRef,
-            durationMs: Math.max(0, event.timestamp - previous.startedAt),
+        tools: retainRecent(
+          {
+            ...state.tools,
+            [p.toolCallId]: {
+              ...previous,
+              status:
+                event.type === 'tool.completed'
+                  ? 'succeeded'
+                  : event.type === 'tool.failed'
+                    ? 'failed'
+                    : 'cancelled',
+              summary: p.summary,
+              outputRef: p.outputRef,
+              durationMs: Math.max(0, event.timestamp - previous.startedAt),
+            },
           },
-        },
+          tool => tool.status === 'running' || tool.status === 'requested'
+        ),
       };
     }
     case 'skill.activated':
@@ -514,36 +539,4 @@ export function isExecutionEvent(value: unknown): value is ExecutionEvent {
   return payloadSchemas[
     envelope.data.type as keyof ExecutionPayloads
   ].safeParse(envelope.data.payload).success;
-}
-
-export function serializeExecutionEvents(
-  events: readonly ExecutionEvent[]
-): string {
-  return (
-    events.map(event => JSON.stringify(event)).join('\n') +
-    (events.length ? '\n' : '')
-  );
-}
-
-export function replayExecutionEvents(jsonl: string): ExecutionState {
-  let state = createExecutionState();
-  for (const [index, line] of jsonl.split('\n').entries()) {
-    if (!line.trim()) continue;
-    try {
-      const value: unknown = JSON.parse(line);
-      if (!isExecutionEvent(value)) throw new Error('Invalid execution event');
-      state = reduceExecutionEvent(state, value);
-    } catch (error) {
-      throw new Error(`Invalid execution event at line ${index + 1}`, {
-        cause: error,
-      });
-    }
-  }
-  return state;
-}
-
-export function activeExecutionTools(state: ExecutionState): ExecutionTool[] {
-  return state.activeToolIds.flatMap(id =>
-    state.tools[id] ? [state.tools[id]] : []
-  );
 }

@@ -1,18 +1,41 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDirectToolCommandPatterns } from '../../src/tools/directToolCatalog/toolCommandPatterns.js';
-import { DirectToolInputError } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
+import { buildDirectToolCommandPatterns } from '@octocodeai/octocode-core/schema';
+import { DirectToolInputError } from '@octocodeai/octocode-core/schema';
 import {
   getDirectToolDisplayFields,
   getDirectToolVariantDisplayFields,
-} from '../../src/tools/directToolCatalog/toolSchemaIntrospection.js';
+} from '@octocodeai/octocode-core/schema';
 import {
   getDirectToolSchemaRelations,
   getDirectToolSchemaVariants,
-} from '../../src/tools/directToolCatalog/toolSchemaRelations.js';
-import { prepareDirectToolInput } from '../../src/tools/directToolCatalog/toolInputPreparation.js';
+} from '@octocodeai/octocode-core/schema';
+import { prepareDirectToolInput } from '@octocodeai/octocode-core/schema';
+import { getToolSchemaRelations } from '@octocodeai/octocode-core/schema';
 
 describe('prepareDirectToolInput', () => {
+  it('publishes topology analysis restrictions consistently with execution', () => {
+    const relations = getDirectToolSchemaRelations('astSearch');
+    expect(relations).toEqual(getToolSchemaRelations('astSearch'));
+    expect(relations.join(' ')).toContain(
+      'entrypoints and includeTests are valid only for reachability and deadCode'
+    );
+    for (const analysis of ['reachability', 'deadCode', 'cycles']) {
+      const prepare = () =>
+        prepareDirectToolInput(
+          'astSearch',
+          {
+            operation: 'topology',
+            analysis,
+            path: '/ABS/repo',
+            includeTests: false,
+          },
+          { rejectUnknownFields: true }
+        );
+      if (analysis === 'cycles') expect(prepare).toThrow(DirectToolInputError);
+      else expect(prepare).not.toThrow();
+    }
+  });
   const publicToolNames = [
     'ghSearch',
     'ghSearchHistory',
@@ -21,17 +44,21 @@ describe('prepareDirectToolInput', () => {
     'ghCloneRepo',
     'localSearch',
     'astSearch',
-    'localGetFileContent',
+    'localFetch',
     'lspSearch',
-    'npmSearch',
+    'artifactSearch',
   ];
 
   it.each([
-    ['npmSearch', {}, 'Set exactly one non-empty packageName or keywords.'],
+    [
+      'artifactSearch',
+      {},
+      'Set exactly one non-empty packageName or keywords.',
+    ],
     [
       'lspSearch',
       {},
-      'workspaceSymbol needs symbolName and uri or workspaceRoot. documentSymbols/diagnostic need uri. definition | references | hover | callers | callees | callHierarchy | implementation | typeDefinition | supertypes | subtypes -> requires uri and exactly one anchor: position or symbolName+lineHint.',
+      'workspaceSymbol needs symbolName and either uri or workspaceRoot. documentSymbols/diagnostic need uri. definition | references | hover | callers | callees | callHierarchy | implementation | typeDefinition | supertypes | subtypes -> requires uri and exactly one anchor: position or symbolName+lineHint.',
     ],
   ])(
     'reports the public relation for invalid %s union input',
@@ -102,7 +129,7 @@ describe('prepareDirectToolInput', () => {
 
   it.each([
     ['ghGetFileContent', 'queries.0.owner'],
-    ['localGetFileContent', 'queries.0.path'],
+    ['localFetch', 'queries.0.path'],
   ])('keeps the query index in flattened %s union errors', (toolName, path) => {
     try {
       prepareDirectToolInput(toolName, {}, { rejectUnknownFields: true });
@@ -204,7 +231,7 @@ describe('prepareDirectToolInput', () => {
     for (const toolName of [
       'localSearch',
       'astSearch',
-      'localGetFileContent',
+      'localFetch',
       'lspSearch',
     ]) {
       for (const pattern of buildDirectToolCommandPatterns(toolName)) {
@@ -306,8 +333,11 @@ describe('prepareDirectToolInput', () => {
     expect(variants.get('match')).toContain('rule');
     expect(variants.get('files')).toContain('pathRegex');
     expect(variants.get('files')).not.toContain('namePattern');
-    expect(variants.get('tree')).toContain('namePattern');
-    expect(variants.get('tree')).not.toContain('pathRegex');
+    expect(variants.get('tree:filesystem')).toContain('namePattern');
+    expect(variants.get('tree:filesystem')).not.toContain('pathRegex');
+    expect(variants.get('tree:syntax')).toContain('nodeLimit');
+    expect(variants.get('tree:syntax')).not.toContain('namePattern');
+    expect(variants.get('tree:syntax')).not.toContain('maxDepth');
   });
 
   it('keeps alternative requirements and branch-specific limits honest', () => {

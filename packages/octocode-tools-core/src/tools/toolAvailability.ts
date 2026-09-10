@@ -1,5 +1,8 @@
 import { getConfigSync } from '@octocodeai/config';
-import { STATIC_TOOL_NAMES, isLocalTool } from './toolNames.js';
+import {
+  STATIC_TOOL_NAMES,
+  isLocalTool,
+} from '@octocodeai/octocode-core/schema';
 
 type AvailabilityConfig = {
   local: { enabled: boolean; enableClone: boolean };

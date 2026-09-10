@@ -63,6 +63,9 @@ function query(extra: Record<string, unknown> = {}) {
   if (base.operation === 'documentSymbols' || base.operation === 'diagnostic') {
     return base;
   }
+  if (base.operation === 'workspaceSymbol') {
+    return { symbolName: 'target', ...base };
+  }
   return { symbolName: 'target', lineHint: 1, ...base };
 }
 
@@ -298,7 +301,9 @@ describe('snapshot-safe semantic pagination', () => {
     'returns no stale %s rows on mutation and executes restart recovery',
     async type => {
       const mutate = await fixture(type);
-      const first = await execute(query({ operation: type, pageSize: 1, depth: 1 }));
+      const first = await execute(
+        query({ operation: type, pageSize: 1, depth: 1 })
+      );
       await mutate();
       const changed = await execute(first.data.next.nextPage.query);
       expect(changed.status).toBe('empty');
@@ -423,7 +428,7 @@ describe('semantic execution integrity', () => {
           workspaceRoot: dir,
         },
       });
-      expect(row.data.next.verifyDefinition.why).toContain('cold server');
+      expect(row.data.next.verifyDefinition.why).toBeUndefined();
       expect(row.data.next.searchDefinitionCandidates).toMatchObject({
         tool: 'localSearch',
         confidence: 'low',
@@ -445,8 +450,7 @@ describe('semantic execution integrity', () => {
 
   it('does not add import verification to a resolved declaration', async () => {
     const row = await execute(query({ operation: 'definition' }));
-    expect(row.data.next.verifyDefinition).toBeUndefined();
-    expect(row.data.next.readSite).toBeDefined();
+    expect(row.data.next).toBeUndefined();
   });
 
   it('preserves an unresolved provider import binding even when a lexical target exists', async () => {
@@ -666,10 +670,7 @@ describe('semantic execution integrity', () => {
       tool: 'localSearch',
       query: { path: dir, searchText: 'target' },
     });
-    expect(row.data.next.readSite).toMatchObject({
-      tool: 'localGetFileContent',
-      query: { path: file },
-    });
+    expect(row.data.next.readSite).toBeUndefined();
 
     mocks.references.mockResolvedValue([]);
     const empty = await execute(
@@ -685,7 +686,9 @@ describe('semantic execution integrity', () => {
   it.each(['references', 'diagnostic', 'workspaceSymbol'])(
     'returns a typed missing-file error before server selection for %s',
     async type => {
-      const row = await execute(query({ operation: type, uri: join(dir, 'missing.ts') }));
+      const row = await execute(
+        query({ operation: type, uri: join(dir, 'missing.ts') })
+      );
       expect(row.status).toBe('error');
       expect(row.data.errorCode).toBe(LSP_ERROR_CODES.LSP_REQUEST_FAILED);
       expect(row.data.error).toContain('File not found');

@@ -1,4 +1,11 @@
-import { z } from 'zod';
+import { mcpGatewayItemSchema } from './mcp/gateway-contract.js';
+import { computeReload, createCatalogRefreshQueue } from './mcp/catalog-refresh.js';
+export { computeReload } from './mcp/catalog-refresh.js';
+import { summarizeSchema, formatMcpSchemaValidationErrors } from './mcp/presentation.js';
+export { formatMcpSchemaValidationErrors };
+import { isWorkerCapabilityClient, dispatchWorkerMcpAction, getCurrentWorkerCapabilities } from './worker-capabilities.js';
+import { readMcpCatalogPage } from './mcp/catalog-pages.js';
+import { workerMcpCatalogSnapshot } from './mcp/worker-catalog.js';
 import { DIRECT_TOOL_DESCRIPTIONS, MCP_SCHEMA_DISCOVERY_EXAMPLE } from './octocode-tools.js';
 import { truncateToWidth } from '../tui/width.js';
 import fs from "node:fs";
@@ -55,6 +62,7 @@ import { assertPathAllowed } from "./path-guard.js";
 import {
   buildQueryEnvelopeSchema,
   executeQueryBatch,
+  QueryBatchError,
   type QueryRecord,
 } from "./query-envelope.js";
 import { runSelectOverlay } from "./ui-overlays.js";
@@ -85,17 +93,13 @@ import {
   McpSchemaUnsupportedError,
   compileMcpSchemaValidator,
   type McpCompiledSchemaValidator,
-  type McpSchemaValidationError,
 } from "./mcp/schema-validator.js";
 import {
   createMcpOAuthFlow,
   revokeStoredMcpOAuthCredentials,
   type McpOAuthFlow,
 } from "./mcp/oauth.js";
-import {
-  isCompactMcpEnabled,
-  isMcpAiGuideEnabled,
-} from "./mcp/env.js";
+import { isCompactMcpEnabled, isMcpAiGuideEnabled } from "./mcp/env.js";
 import { collectMcpPages, type McpCursorPage } from "./mcp/pagination.js";
 import {
   resolveMcpCallContent,
@@ -131,6 +135,15 @@ const mcpSchemaMetrics = {
 };
 /** In-flight init discoveries keyed by cwd, so turn 1 can await the warm started at session_start. */
 const warmsInFlight = new Map<string, Promise<void>>();
+const queuedCatalogRefreshes = createCatalogRefreshQueue({
+  pending: key => warmsInFlight.get(key), refresh: ctx => warmMcpCatalog(ctx),
+  onError: error => warnMcpWarmFailure(String(error)), track: work => trackMcpAsyncWork(work),
+});
+
+/** Coalesce invalidations behind the current discovery instead of reusing it. */
+function queueMcpCatalogRefresh(ctx?: PiContext): void {
+  queuedCatalogRefreshes.schedule(cacheKey(ctx), ctx);
+}
 /** Warm and close promises that session shutdown must drain before releasing its filesystem scope. */
 const pendingMcpAsyncWork = new Set<Promise<unknown>>();
 
@@ -306,7 +319,7 @@ async function connectServer(
     await client.connect(
       transport,
       requestOptions(
-        timeoutMs === undefined ? config : { ...config, timeoutMs },
+        { ...config, timeoutMs: config.startupTimeoutMs ?? timeoutMs ?? config.timeoutMs },
         signal,
       ),
     );
@@ -336,7 +349,7 @@ function refreshChangedMcpServer(name: string, ctx?: PiContext): void {
       `MCP ${name}: catalog changed; refreshing descriptions and schemas.`,
       "info",
     );
-  void warmMcpCatalog(ctx);
+  queueMcpCatalogRefresh(ctx);
 }
 
 function requestSummary(value: unknown, max = 1_200): string {
@@ -492,6 +505,11 @@ function registerMcpClientHandlers(
       });
     },
   );
+  client.setNotificationHandler('notifications/tools/list_changed', () => {
+    invalidateServerCache(serverName);
+    markMcpPromptStale(ctx);
+    queueMcpCatalogRefresh(ctx);
+  });
 }
 
 async function stopConnection(name: string): Promise<boolean> {
@@ -524,6 +542,7 @@ export function stopAllMcpServers(): number {
   // bound. Detach them now so /new, /resume, and /fork can install work owned by
   // the replacement context instead of awaiting a stale Pi context.
   warmsInFlight.clear();
+  queuedCatalogRefreshes.clear();
   promptReadiness.clear();
   pendingConnections.clear();
   cachedCatalogs.clear();
@@ -543,29 +562,6 @@ export function stopAllMcpServers(): number {
 const configWatchers: import("node:fs").FSWatcher[] = [];
 let watchDebounce: ReturnType<typeof setTimeout> | null = null;
 
-/**
- * Compare running connections against freshly-loaded config. Returns the servers whose
- * config drifted (need reconnect) and those removed from config (need shutdown). Pure and
- * unit-testable — the watcher applies the actions.
- */
-export function computeReload(
-  running: Map<string, string>,
-  servers: Map<string, McpServerConfig>,
-): { changed: string[]; removed: string[] } {
-  const changed: string[] = [];
-  const removed: string[] = [];
-  for (const [name, sig] of running) {
-    const cfg = servers.get(name);
-    if (!cfg) {
-      removed.push(name);
-      continue;
-    }
-    if (configSignature(normalizeServerConfig(name, cfg)) !== sig)
-      changed.push(name);
-  }
-  return { changed, removed };
-}
-
 async function reconcileMcpConfig(
   ctx: PiContext | undefined,
   notify: NotifyFn,
@@ -581,14 +577,14 @@ async function reconcileMcpConfig(
     }
     invalidateCwdCache(ctx);
     markMcpPromptStale(ctx);
-    void warmMcpCatalog(ctx);
+    queueMcpCatalogRefresh(ctx);
     if (changed.length || removed.length) {
       const parts: string[] = [];
       if (changed.length) parts.push(`reloaded ${changed.join(", ")}`);
       if (removed.length) parts.push(`removed ${removed.join(", ")}`);
       notify(
         ctx,
-        `MCP config changed — ${parts.join("; ")}. Execution state is refreshing; start /new to expose the updated catalog to the model.`,
+        `MCP config changed — ${parts.join("; ")}. Execution and routing refresh automatically; the next turn receives the current catalog.`,
         "info",
       );
     }
@@ -606,6 +602,7 @@ export function startMcpConfigWatcher(
   ctx: PiContext | undefined,
   notify: NotifyFn,
 ): number {
+  if (isWorkerCapabilityClient()) return 0;
   stopMcpConfigWatchers();
   const cwd = ctx?.cwd ?? process.cwd();
   const dirs = new Set([
@@ -716,10 +713,7 @@ function snapshotFromListed(
   } catch {
     /* catalog stays available if the DB is unavailable */
   }
-  const servers: McpCatalogServerInput[] = entries.map((entry) => {
-    const imported = Boolean(
-      options.loaded?.configuredServers.get(entry.name)?.discovered,
-    );
+  const servers: McpCatalogServerInput[] = entries.filter(entry => !options.loaded || options.loaded.servers.has(entry.name)).map((entry) => {
     return {
       name: entry.name,
       ...(entry.instructions ? { instructions: entry.instructions } : {}),
@@ -730,6 +724,7 @@ function snapshotFromListed(
             typeof tool["name"] === "string" &&
             Object.hasOwn(tool, "inputSchema"),
         )
+        .filter(tool => isConfiguredMcpToolEnabled(options.loaded?.configuredServers.get(entry.name), String(tool['name'])))
         .filter((tool) =>
           db
             ? getMcpEnablement(
@@ -737,9 +732,9 @@ function snapshotFromListed(
                 scopeKey,
                 entry.name,
                 String(tool["name"]),
-                !imported,
+                true,
               )
-            : !imported,
+            : true,
         )
         .map((tool) => ({
           name: String(tool["name"]),
@@ -791,12 +786,17 @@ function cacheListedCatalog(
     promptGuide?: string;
   } = {},
 ): ListedMcpServer[] {
-  if (listed.length === 0) return cachedCatalogs.get(cacheKey(ctx)) ?? [];
   const key = cacheKey(ctx);
   const now = Date.now();
   const existing = new Map(
     (cachedCatalogs.get(key) ?? []).map((entry) => [entry.name, entry]),
   );
+  if (options.loaded) {
+    for (const [name, entry] of existing) {
+      const config = options.loaded.servers.get(name);
+      if (!config || entry.configSignature !== configSignature(normalizeServerConfig(name, config))) existing.delete(name);
+    }
+  }
   for (const entry of listed) {
     const config = options.loaded?.servers.get(entry.name);
     existing.set(entry.name, {
@@ -1023,13 +1023,14 @@ async function persistMcpArtifacts(
  * Warm MCP discovery once per workspace. By default the prompt receives the
  * generated/cache-efficient mcp.md guide. Set OCTOCODE_COMPACT_MCP=0 only when
  * debugging requires the full exact catalog in provider context.
- * A matching snapshot is prompt-ready immediately, then refreshes privately for
- * execution and the next session without mutating this session's prompt bytes.
+ * A matching snapshot is prompt-ready immediately; live discovery publishes
+ * updated contracts for execution and the next turn's prompt.
  */
 export function warmMcpCatalog(
   ctx?: PiContext,
   signal?: AbortSignal,
 ): Promise<void> {
+  if (isWorkerCapabilityClient()) return Promise.resolve();
   const key = cacheKey(ctx);
   const existing = warmsInFlight.get(key);
   if (existing) return existing;
@@ -1062,8 +1063,15 @@ export function warmMcpCatalog(
         failedServers: [],
         currentServer: undefined,
       });
-      let snapshotHit = false;
       const identity = snapshotFromListed(ctx, [], { loaded });
+      const validateCurrentConfig = async (): Promise<boolean> => {
+        const currentLoaded = await loadMcpConfig(ctx);
+        if (!isCurrentWarm()) return false;
+        if (snapshotFromListed(ctx, [], { loaded: currentLoaded }).configDigest === identity.configDigest) return true;
+        cacheListedCatalog(ctx, [], { loaded: currentLoaded });
+        if (currentLoaded.servers.size > 0) queueMcpCatalogRefresh(ctx);
+        return false;
+      };
       const persisted = await readMcpCatalogSnapshot({
         workspaceKey: identity.workspaceKey,
         configDigest: identity.configDigest,
@@ -1078,7 +1086,6 @@ export function warmMcpCatalog(
           : renderMcpCatalogExact(persisted)
         : undefined;
       if (persisted && persistedPrompt) {
-        snapshotHit = true;
         mcpSchemaMetrics.snapshotHits += 1;
         cachePromptSnapshot(ctx, persisted, persistedPrompt);
         cachedCatalogs.set(key, listedFromSnapshot(persisted));
@@ -1186,6 +1193,9 @@ export function warmMcpCatalog(
         // the catalog from being cached or block session start.
         if (discovery.status === "fulfilled") listed.push(discovery.value);
       }
+      // The filesystem or enablement may change while a server is answering.
+      // Never publish the old config's results into the current prompt/grants.
+      if (!await validateCurrentConfig()) return;
       if (listed.length > 0) {
         const refreshed = snapshotFromListed(ctx, listed, { loaded });
         let promptGuide = persistedPrompt;
@@ -1220,12 +1230,11 @@ export function warmMcpCatalog(
               );
             });
         }
-        // A snapshot hit freezes this session's prompt bytes; the live refresh is
-        // private execution state and the persisted replacement belongs to the next session.
-        if (warmGeneration(key) === generation) {
+        // Publish only into the session generation that owns this discovery.
+        if (await validateCurrentConfig()) {
           cacheListedCatalog(ctx, listed, {
             loaded,
-            updatePromptSnapshot: !snapshotHit,
+          updatePromptSnapshot: true,
             promptGuide,
           });
           const toolCount = listed.reduce(
@@ -1306,12 +1315,7 @@ export function warmMcpCatalog(
   return warm;
 }
 
-/**
- * Bounded wait for the already-running init warm so turn one has either the default
- * compact index or the explicit exact catalog. This function never spawns servers. If the
- * deadline wins, the late result may update a future session but cannot alter this
- * session's prompt suffix.
- */
+/** Bounded startup wait. Late discovery updates the next turn's projection. */
 export async function mcpCatalogReady(
   ctx?: PiContext,
   timeoutMs = MCP_PROMPT_READY_TIMEOUT_MS,
@@ -1333,19 +1337,8 @@ export async function mcpCatalogReady(
     if (timer) clearTimeout(timer);
   }
   const ready = completed && Boolean(cachedCatalogs.get(key)?.length);
-  if (!completed) {
-    // The in-flight warm did not settle in time (timeout) OR it settled with
-    // false (naturally failed). In both cases, evict it from warmsInFlight and
-    // promptReadiness so the next warmMcpCatalog call starts a fresh warm rather
-    // than re-returning the same stale promise that (a) won't cache results
-    // (generation was bumped by invalidateWarmResult) and (b) keeps mcpCatalogReady
-    // callers waiting on an already-failed/slow channel.
-    // Safety: if the warm already completed and cleaned itself up, both deletes
-    // are no-ops; the old warm's finally handles the warmGenerations tombstone.
-    invalidateWarmResult(key);
-    warmsInFlight.delete(key);
-    promptReadiness.delete(key);
-  }
+  // A slow initialization may publish a new revision for the next turn. Keep
+  // the in-flight connection; timeout does not cancel or duplicate discovery.
   return ready;
 }
 
@@ -1354,7 +1347,7 @@ export function getCachedMcpCounts(ctx?: PiContext): {
   servers: number;
   tools: number;
 } {
-  const cached = cachedCatalogs.get(cacheKey(ctx));
+  const cached = getEffectiveMcpSnapshot(ctx)?.servers;
   if (!cached?.length) return { servers: 0, tools: 0 };
   const tools = cached.reduce(
     (sum, entry) => sum + (Array.isArray(entry.tools) ? entry.tools.length : 0),
@@ -1364,14 +1357,56 @@ export function getCachedMcpCounts(ctx?: PiContext): {
 }
 
 export function getCachedMcpCatalogAddendum(ctx?: PiContext): string {
+  if (isWorkerCapabilityClient()) {
+    const snapshot = getEffectiveMcpSnapshot(ctx);
+    return snapshot ? renderMcpCatalogIndex(snapshot) : '';
+  }
   const key = cacheKey(ctx);
   return cachedCatalogGuides.get(key) ?? "";
 }
 
+/** Reconcile removals immediately; new/changed servers publish after discovery. */
+export async function refreshMcpCapabilities(ctx?: PiContext): Promise<void> {
+  if (isWorkerCapabilityClient()) return;
+  const loaded = await loadMcpConfig(ctx);
+  const running = new Map([...connections].map(([name, connection]) => [name, connection.configSig]));
+  const { changed, removed } = computeReload(running, loaded.servers);
+  for (const name of [...changed, ...removed]) {
+    await stopConnection(name);
+    invalidateServerCache(name);
+  }
+  const entries = cacheListedCatalog(ctx, [], { loaded });
+  if ([...loaded.servers.keys()].some(name => !entries.some(entry => entry.name === name))) {
+    if (warmsInFlight.has(cacheKey(ctx))) {
+      if (changed.length || removed.length) queueMcpCatalogRefresh(ctx);
+    }
+    else void warmMcpCatalog(ctx);
+  }
+  await mcpCatalogReady(ctx);
+}
 
-export function getMcpPromptArtifactStatus(
-  ctx?: PiContext,
-): McpPromptArtifactStatus {
+export function getEffectiveMcpSnapshot(ctx?: PiContext): McpCatalogSnapshotV1 | undefined {
+  if (isWorkerCapabilityClient()) {
+    const view = getCurrentWorkerCapabilities();
+    if (!view) return undefined;
+    return workerMcpCatalogSnapshot(view.snapshot, ctx?.cwd ?? process.cwd());
+  }
+  const snapshot = cachedSnapshots.get(cacheKey(ctx));
+  return snapshot ? structuredClone(snapshot) : undefined;
+}
+
+/** Configuration inspection includes disabled tools; model projection never does. */
+export function getMcpServerInspection(server: string, ctx?: PiContext): ListedMcpServer | undefined {
+  const entry = cachedCatalogs.get(cacheKey(ctx))?.find(item => item.name === server);
+  return entry ? structuredClone(entry) : undefined;
+}
+
+export function isConfiguredMcpToolEnabled(config: McpServerConfig | undefined, tool: string): boolean {
+  return !config?.disabledTools?.includes(tool) && (!config?.enabledTools || config.enabledTools.includes(tool));
+}
+
+
+export function getMcpPromptArtifactStatus(ctx?: PiContext): McpPromptArtifactStatus {
   const mode = isCompactMcpEnabled() ? "compact" : "exact";
   const key = cacheKey(ctx);
   const snapshot = cachedSnapshots.get(key);
@@ -1403,12 +1438,12 @@ export function getMcpPromptArtifactStatus(
 
 function markMcpPromptStale(ctx?: PiContext): void {
   const store = runtimeStoreFor(ctx);
-  if (!store || store.getState().context.status !== "frozen") return;
+  if (!store || store.getState().context.status !== "ready") return;
   store.getState().setContext({ status: "stale" });
   store
     .getState()
     .announce(
-      "MCP execution catalog is refreshing. This session keeps its frozen routing prompt; start /new to expose the updated MCP catalog to the model.",
+      "MCP capabilities are refreshing. Updated routing instructions take effect on the next turn.",
       "info",
     );
 }
@@ -1574,20 +1609,6 @@ function formatMcpServerStatus(config: McpLoadedConfig): string {
     .join("\n");
 }
 
-function summarizeSchema(tool: Record<string, unknown>): string {
-  const schema = tool["inputSchema"];
-  if (!isPlainRecord(schema)) return "";
-  const required = Array.isArray(schema["required"])
-    ? schema["required"].map(String).filter(Boolean)
-    : [];
-  const properties = isPlainRecord(schema["properties"])
-    ? Object.keys(schema["properties"])
-    : [];
-  const fields = required.length > 0 ? required : properties;
-  return fields.length > 0
-    ? ` schema: ${fields.slice(0, 8).join(", ")}${fields.length > 8 ? ", …" : ""}`
-    : " schema: object";
-}
 
 async function listServerTools(
   name: string,
@@ -1620,7 +1641,10 @@ async function listServerTools(
           >[])
         : [],
   );
-  const instructions = connection.client.getInstructions();
+  const instructions = [
+    connection.client.getInstructions() ? `Server initialize instructions: ${connection.client.getInstructions()}` : '',
+    config.instructions ? `User-configured instructions: ${config.instructions}` : '',
+  ].filter(Boolean).join('\n');
   const lines = [`${name}: ${tools.length} tool(s)`];
   if (instructions)
     lines.push(`instructions: ${capCatalogText(instructions, 300)}`);
@@ -1693,6 +1717,7 @@ async function validateOneMcpTool(
   const imported = Boolean(
     loaded.configuredServers.get(target.server)?.discovered,
   );
+  if (!isConfiguredMcpToolEnabled(loaded.configuredServers.get(target.server), target.tool)) throw new Error(`MCP tool is disabled by its source configuration: ${target.server}/${target.tool}`);
   const server = await ensureCurrentServerCatalog(
     target.server,
     loaded,
@@ -1721,7 +1746,7 @@ async function validateOneMcpTool(
       path.resolve(ctx?.cwd ?? process.cwd()),
       target.server,
       target.tool,
-      !imported,
+      true,
     );
     if (!enabled)
       throw new Error(`MCP tool is disabled: ${target.server}/${target.tool}`);
@@ -1745,19 +1770,6 @@ async function validateOneMcpTool(
   };
 }
 
-export function formatMcpSchemaValidationErrors(errors: McpSchemaValidationError[], _target: { server: string; tool: string }): string {
-  const seen = new Set<string>();
-  const lines = errors.flatMap((error) => {
-    const message = /schema is false|expected never/i.test(error.message)
-      ? 'field is not allowed for the selected operation'
-      : error.message;
-    const line = `- ${error.instancePath || "/"}: ${message}`;
-    if (seen.has(line)) return [];
-    seen.add(line);
-    return [line];
-  });
-  return lines.join("\n");
-}
 
 export async function handleMcpAction(
   params: Record<string, unknown>,
@@ -1765,6 +1777,7 @@ export async function handleMcpAction(
   ctx?: PiContext,
   options: { trustedBrowserAction?: boolean } = {},
 ): Promise<ToolCallResult> {
+  if (isWorkerCapabilityClient()) return dispatchWorkerMcpAction(params, signal);
   const action = params["action"] as McpAction | undefined;
   if (!action)
     return result(
@@ -1775,6 +1788,13 @@ export async function handleMcpAction(
   const loaded = await loadMcpConfig(ctx);
   const serverName =
     typeof params["server"] === "string" ? params["server"] : undefined;
+
+  if (action === 'list') {
+    await refreshMcpCapabilities(ctx);
+    const snapshot = getEffectiveMcpSnapshot(ctx) ?? snapshotFromListed(ctx, [], { loaded });
+    const page = readMcpCatalogPage(snapshot, { offset: params['offset'] as number | undefined, textOffset: params['textOffset'] as number | undefined, limit: params['limit'] as number | undefined, catalogRevision: params['catalogRevision'] as string | undefined });
+    return result(JSON.stringify(page), page, Boolean(page.diagnostic));
+  }
 
   if (action === "config")
     return result(formatConfig(loaded, ctx?.cwd ?? process.cwd()), {
@@ -1841,8 +1861,6 @@ export async function handleMcpAction(
           true,
         );
     }
-    if (scope === "project" && !options.trustedBrowserAction) {
-    }
     const cfg = isPlainRecord(params["config"]) ? params["config"] : undefined;
     if (!cfg)
       return result(
@@ -1850,8 +1868,8 @@ export async function handleMcpAction(
         undefined,
         true,
       );
-    if (scope === "project") {
-      // Project add writes the canonical project servers.json and may spawn arbitrary code —
+    if (scope === "project" && !options.trustedBrowserAction) {
+      // Project add writes the canonical project mcp.json and may spawn arbitrary code —
       // the same risk as global add. Require interactive consent; refuse non-interactively.
       const cmd2 = typeof cfg["command"] === "string" ? cfg["command"] : "?";
       const argText2 = Array.isArray(cfg["args"])
@@ -2246,7 +2264,7 @@ export async function handleMcpAction(
     // A mixed batch can succeed overall while individual reads fail or are absent.
     if (
       serverName === DEFAULT_OCTOCODE_MCP_SERVER_NAME &&
-      tool === "localGetFileContent" &&
+      tool === "localFetch" &&
       payload?.isError !== true
     ) {
       const cwd = ctx?.cwd ?? process.cwd();
@@ -2326,7 +2344,7 @@ function renderCall(args: unknown, theme?: PiTheme): RenderCallReturn {
       server === DEFAULT_OCTOCODE_MCP_SERVER_NAME
         ? p["tool"]
         : `${server}.${p["tool"]}`;
-    // When the inner arguments carry multiple sub-queries (e.g. localGetFileContent
+    // When the inner arguments carry multiple sub-queries (e.g. localFetch
     // reading a.ts AND b.ts) expand them fully so each path + reason is visible.
     // For a single inner sub-query, the outer buildQueryCallBlocks already appends
     // the MCPTool query’s reasoning as an indented line; calling buildOctocodeRenderCall
@@ -2473,22 +2491,7 @@ export function registerMcpTool(
   ) => void,
 ): void {
   // ── Per-query item schema: each queries[] entry carries one MCP action + fields. ──
-  const itemSchema = z.looseObject({
-    action: z.enum([
-      'describe','call','resources','read-resource','prompts','get-prompt',
-      'complete','enable','disable','status','restart','stop','config','add','remove',
-    ]).describe('MCP action. Enabled tool discovery is automatic during extension initialization; calls validate against cached exact schemas internally.'),
-    server: z.string().optional().describe('MCP server name. For add/remove this is the key written to mcp.json.'),
-    tool: z.string().optional().describe('MCP tool name for describe/call.'),
-    uri: z.string().optional().describe('Resource URI for read-resource.'),
-    name: z.string().optional().describe('Prompt name for get-prompt.'),
-    ref: z.record(z.string(), z.unknown()).optional().describe('Prompt or resource-template reference for complete.'),
-    argument: z.record(z.string(), z.unknown()).optional().describe('Partial argument for complete.'),
-    arguments: z.record(z.string(), z.unknown()).optional().describe('Selected tool input. Octocode tool queries nest under arguments.queries[].'),
-    responseView: z.enum(['full', 'table']).optional().describe('call output: full evidence (default) or a compact table for large batches.'),
-    config: z.record(z.string(), z.unknown()).optional().describe('Server config for add: stdio {command,args?,env?,cwd?} or HTTP {url,headers?}.'),
-    scope: z.enum(['project', 'global']).optional().describe('add/remove target: project ($OCTOCODE_HOME/extension/workspaces/<workspace>/mcp/servers.json) or global ($OCTOCODE_HOME/extension/mcp/servers.json).'),
-  });
+  const itemSchema = mcpGatewayItemSchema();
 
   // Universal ordered queries[] envelope: all queries are preflighted before the first side-effect.
   const parameters = buildQueryEnvelopeSchema(itemSchema, {
@@ -2505,7 +2508,7 @@ export function registerMcpTool(
   ): Promise<ToolCallResult> => {
     setManagedStatus(ctx, MCP_STATUS_NAME, "mcp · running");
     try {
-      return await executeQueryBatch({
+      const output = await executeQueryBatch({
         toolCallId,
         raw: params,
         signal,
@@ -2515,8 +2518,6 @@ export function registerMcpTool(
             : undefined,
         ctx,
         passthroughSingle: true,
-        // MCP payloads are model context, not execution receipts. Returning only
-        // summaries here hides successful server results in host-only details.
         allowParallel: true,
         preflight(query) {
           preflightMcpQuery(query);
@@ -2538,8 +2539,7 @@ export function registerMcpTool(
               `parallel MCP batches do not support the mutating ${action} action`,
             );
           }
-          // Read-like MCP actions may share a server; the MCP client correlates
-          // concurrent requests and executeQueryBatch preserves source-order rows.
+          // The MCP client correlates requests; receipts preserve source order.
         },
         async execute(
           query,
@@ -2551,10 +2551,7 @@ export function registerMcpTool(
         ) {
           return handleMcpAction(query, batchSignal, itemCtx);
         },
-        // Extract a human-readable stat line from the response text so result rows show
-        // data instead of bare YAML structural headers like "results:" or "base: /path".
-        // Octocode MCP tools emit well-known key:value pairs (totalOccurrences,
-        // filesMatched, returnedChars, summary, …) that we surface as compact stats.
+        // Prefer a useful stat line over structural YAML headers in result rows.
         summarize(result: ToolCallResult): string {
           const detailSummary =
             isPlainRecord(result.details) &&
@@ -2627,7 +2624,11 @@ export function registerMcpTool(
           return meaningful ?? trimmed[0] ?? "ok";
         },
       });
+      if (isWorkerCapabilityClient() && output.isError) throw new Error(output.content.filter(part => part.type === 'text').map(part => part.text).join('\n'));
+      return output;
     } catch (error) {
+      if (isWorkerCapabilityClient()) throw error;
+      if (error instanceof QueryBatchError && error.completedCount > 0) throw error;
       return result(`[MCP_ERROR] ${(error as Error).message}`, undefined, true);
     } finally {
       setManagedStatus(ctx, MCP_STATUS_NAME, undefined);

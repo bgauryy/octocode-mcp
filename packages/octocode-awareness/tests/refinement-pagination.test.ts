@@ -23,13 +23,13 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); db.close(); });
 
 describe('refinement pagination', () => {
-  it.each([1, 50, 200])('executes native tool continuations with scope and filters at limit %i', (limit) => {
+  it.each([1, 50, 200])('executes native tool continuations with scope and filters at limit %i', async (limit) => {
     let request: Record<string, unknown> = { workspace_path: scope.workspacePath, artifact: scope.artifact,
       repo: scope.repo, ref: scope.ref, quality: 'bad', states: ['ongoing'], limit };
     const seen: string[] = [];
     for (let page = 0; page < 60; page++) {
       expect(operationSchemas.refine_query.safeParse(request).success).toBe(true);
-      const result = runAwarenessToolOperation(db, 'refine_get', request, { cwd: '/wrong-workspace' }).payload as {
+      const result = (await runAwarenessToolOperation(db, 'refine_get', request, { cwd: '/wrong-workspace' })).payload as {
         partial: boolean; refinements: Array<{ refinement_id: string }>;
         next?: { list: { operation: string; request: Record<string, unknown> } };
       };

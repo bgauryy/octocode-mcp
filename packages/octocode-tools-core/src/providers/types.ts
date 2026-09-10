@@ -29,7 +29,6 @@ export interface ProviderConfig {
 
 export interface ProviderCapabilities {
   cloneRepo: boolean;
-  fetchDirectoryToDisk: boolean;
   requiresScopedCodeSearch: boolean;
   supportsMergedState: boolean;
   supportsMultiTopicSearch: boolean;

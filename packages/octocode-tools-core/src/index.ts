@@ -1,5 +1,5 @@
 export * from './security/bridge.js';
-export * from './config.js';
+
 export * from './errors/domainErrors.js';
 export * from './errors/errorFactories.js';
 export * from './errors/localToolErrors.js';
@@ -65,7 +65,7 @@ export * from './providers/github/githubStructure.js';
 export * from './providers/github/utils.js';
 export * from './providers/providerQueries.js';
 export * from './responses.js';
-export * from './scheme/fields.js';
+
 export * from './serverConfig.js';
 export * from './cacheMaintenance.js';
 export * from './session.js';
@@ -84,41 +84,38 @@ export {
 } from './tools/github_clone_repo/cachePaths.js';
 export * from './tools/github_clone_repo/cloneRepo.js';
 export * from './tools/github_clone_repo/execution.js';
-export * from './tools/github_clone_repo/scheme.js';
+export * from './tools/github_clone_repo/resultTypes.js';
 export * from './tools/github_clone_repo/types.js';
 export * from './tools/github_fetch_content/execution.js';
 export * from './tools/github_fetch_content/finalizer.js';
-export * from './tools/github_fetch_content/scheme.js';
+export * from './tools/github_fetch_content/resultTypes.js';
 export * from './tools/github_fetch_content/types.js';
 export * from './tools/github_search/execution.js';
-export * from './tools/github_search/scheme.js';
+
 export * from './tools/github_search_pull_requests/contentRequest.js';
 export * from './tools/github_search_pull_requests/contentResponse.js';
 export * from './tools/github_search_pull_requests/execution.js';
-export * from './tools/github_search_pull_requests/scheme.js';
-export * from './tools/github_search_pull_requests/splitSchemes.js';
+export * from './tools/github_search_pull_requests/resultTypes.js';
+
 export * from './tools/github_search_pull_requests/splitExecutions.js';
 export * from './tools/github_search_pull_requests/types.js';
-export * from './tools/local_fetch_content/contentExtractor.js';
+export * from './utils/file/contentExtractor.js';
 export * from './tools/local_fetch_content/execution.js';
 export * from './tools/local_fetch_content/fetchContent.js';
-export * from './tools/local_fetch_content/scheme.js';
+export * from './tools/local_fetch_content/resultTypes.js';
 export * from './tools/ast_search/execution.js';
-export * from './tools/ast_search/scheme.js';
+
 export * from './tools/local_search/execution.js';
-export * from './tools/local_search/scheme.js';
+export * from './tools/local_search/nativeQuery.js';
 export * from './tools/lsp/semantic_content/execution.js';
-export * from './tools/lsp/semantic_content/scheme.js';
+export * from './tools/lsp/semantic_content/resultTypes.js';
 export * from './tools/lsp/shared/callHierarchyTraversal.js';
 export * from './tools/lsp/shared/resolveSymbolAnchor.js';
 export * from './tools/lsp/shared/semanticTypes.js';
 export * from './tools/package_search/execution.js';
-export {
-  foldKeywords,
-  isPackageNotFoundError,
-} from './tools/package_search/queryHelpers.js';
-export { buildPackagePagination } from './tools/package_search/pagination.js';
-export * from './tools/package_search/scheme.js';
+export { isPackageNotFoundError } from './tools/package_search/queryHelpers.js';
+export { paginateArtifacts } from './tools/package_search/pagination.js';
+export * from './tools/package_search/resultTypes.js';
 export * from './tools/providerExecution.js';
 export * from './tools/providerMappers/codeSearch.js';
 export * from './tools/providerMappers/repoSearch.js';
@@ -131,20 +128,11 @@ export type {
   ToolDirectExecutionConfig,
   ToolDirectSecurity,
 } from './tools/toolCatalogFactory.js';
-export { baseSchemaDescriptions } from './toolContract/input/resources/global.js';
-export { PUBLIC_TOOL_DESCRIPTIONS } from './toolContract/descriptions.js';
-export * from './tools/toolMetadata/metadataPresence.js';
+export { baseSchemaDescriptions } from '@octocodeai/octocode-core/schema';
+export { PUBLIC_TOOL_DESCRIPTIONS } from '@octocodeai/octocode-core/schema';
 export * from './tools/toolMetadata/names.js';
-export * from './tools/toolMetadata/state.js';
-export * from './tools/toolMetadata/types.js';
-export * from './tools/directToolCatalog/toolCatalogDefinitions.js';
-export * from './tools/directToolCatalog/toolCatalogFormatters.js';
-export * from './tools/directToolCatalog/toolSchemaIntrospection.js';
-export * from './tools/directToolCatalog/toolCommandPatterns.js';
-export * from './tools/directToolCatalog/toolInputPreparation.js';
-export * from './tools/directToolCatalog/toolSchemaRelations.js';
 export { executeDirectTool } from './tools/directToolCatalog.exec.js';
-export * from './tools/toolNames.js';
+
 export * from './tools/utils.js';
 export * from './types/bulk.js';
 export * from './types/execution.js';
@@ -259,13 +247,6 @@ export type {
   GitHubAPIResponse,
 } from './github/githubAPI.js';
 
-export {
-  summarizeEntries,
-  paginateEntries,
-  buildEntryPaginationHints,
-  buildWalkWarnings,
-} from './tools/local_view_structure/structureResponse.js';
-
 export type { ExecResult } from './utils/core/types.js';
 
 export {
@@ -379,7 +360,7 @@ export {
 } from './shared/paths.js';
 export { getDirectorySizeBytes, formatBytes } from './shared/fs-utils.js';
 
-export { localCompleteMetadata as completeMetadata } from './toolContract/metadata.js';
-export type { LocalCompleteMetadata as CompleteMetadata } from './toolContract/types.js';
+export { localCompleteMetadata as completeMetadata } from '@octocodeai/octocode-core/schema';
+export type { LocalCompleteMetadata as CompleteMetadata } from '@octocodeai/octocode-core/schema';
 
 export { z } from 'zod';

@@ -2,13 +2,9 @@ import type { GitHubFileContentApiResult } from '../tools/github_fetch_content/t
 import { ContentSanitizer } from '@octocodeai/octocode-engine/contentSanitizer';
 import { contextUtils } from '../utils/contextUtils.js';
 import { countLines } from '../utils/core/lines.js';
-import { extractMatchingLines } from '../tools/local_fetch_content/contentExtractor.js';
-import type { MinifyMode } from '../scheme/fields.js';
+import { selectMatchingSource } from '../utils/file/contentExtractor.js';
+import type { MinifyMode } from '@octocodeai/octocode-core/schema';
 import { markdownHeadingOutlineToText } from '../utils/markdownOutline.js';
-
-function sourceSizeFields(sourceChars: number, sourceBytes: number) {
-  return { sourceChars, sourceBytes };
-}
 
 export async function processFileContentAPI(
   decodedContent: string,
@@ -19,301 +15,124 @@ export async function processFileContentAPI(
   fullContent: boolean,
   startLine?: number,
   endLine?: number,
-  contextLines: number = 5,
+  contextLines = 5,
   matchString?: string,
   matchStringIsRegex?: boolean,
   matchStringCaseSensitive?: boolean,
-  minify: MinifyMode = 'standard'
+  minify: MinifyMode = 'none',
+  contextBytes?: number
 ): Promise<GitHubFileContentApiResult> {
-  const sourceChars = decodedContent.length;
-  const sourceBytes = Buffer.byteLength(decodedContent, 'utf-8');
-  const securityLimit = (): GitHubFileContentApiResult => ({
+  const totalLines = countLines(decodedContent);
+  const base = {
     owner,
     repo,
     path: filePath,
     branch,
-    content: '',
-    totalLines: countLines(decodedContent),
-    ...sourceSizeFields(sourceChars, sourceBytes),
-    errorCode: 'contentSecurityLimit',
-    isPartial: true,
-    terminalLimit: true,
-    partialReasons: ['security-selected-view-size-limit'],
-    warnings: [
-      'The selected content view exceeds the secret scanner size limit. Select a smaller source-line range; character windows cannot safely split unscanned content.',
-    ],
-  });
-  const applyStandardMinify =
-    !matchString && (minify === 'standard' || minify === 'symbols');
-  const fallbackContentView = applyStandardMinify ? 'standard' : 'none';
-
-  let signaturesSkippedWarning: string | undefined;
-  if (minify === 'symbols') {
-    const sigs = contextUtils.extractSignatures(decodedContent, filePath);
-    if (sigs === null) {
-      const markdownOutline = markdownHeadingOutlineToText(
-        decodedContent,
-        filePath
-      );
-      if (markdownOutline !== null) {
-        const sanitizedOutline = ContentSanitizer.sanitizeContent(
-          markdownOutline,
-          filePath
-        );
-        if (sanitizedOutline.secretsDetected.includes('content-size-exceeded'))
-          return securityLimit();
-        const hints: string[] = [contextUtils.SIGNATURES_ONLY_HINT];
-        if (sanitizedOutline.hasSecrets) {
-          hints.push(
-            `Secrets detected and redacted: ${sanitizedOutline.secretsDetected.join(', ')}`
-          );
-        }
-        return {
-          owner,
-          repo,
-          path: filePath,
-          content: sanitizedOutline.content,
-          contentView: 'symbols',
-          branch,
-          totalLines: countLines(decodedContent),
-          ...sourceSizeFields(sourceChars, sourceBytes),
-          isPartial: false,
-          hints,
-        };
-      }
-      signaturesSkippedWarning = `No smaller outline is available for ${filePath}; using the standard content view. The outline may be unsupported, oversized, or unavailable for this source.`;
-    }
-    if (sigs !== null) {
-      const sanitized = ContentSanitizer.sanitizeContent(sigs, filePath);
-      if (sanitized.secretsDetected.includes('content-size-exceeded'))
-        return securityLimit();
-      const sigContent = contextUtils.applyContentViewMinification(
-        sanitized.content,
-        filePath
-      );
-      const hints: string[] = [contextUtils.SIGNATURES_ONLY_HINT];
-      if (matchString) {
-        hints.push(
-          `matchString was ignored — minify:"symbols" returns the full skeleton index. Use startLine/endLine from the gutter to read the matching body.`
-        );
-      }
-      if (sanitized.hasSecrets) {
-        hints.push(
-          `Secrets detected and redacted: ${sanitized.secretsDetected.join(', ')}`
-        );
-      }
+    totalLines,
+    sourceChars: decodedContent.length,
+    sourceBytes: Buffer.byteLength(decodedContent),
+  };
+  let content = decodedContent;
+  let contentView: MinifyMode = matchString !== undefined ? 'none' : minify;
+  let minifyFallback: GitHubFileContentApiResult['minifyFallback'];
+  let selection: Partial<GitHubFileContentApiResult> = {};
+  if (matchString !== undefined && !fullContent) {
+    const selected = selectMatchingSource(
+      decodedContent,
+      matchString,
+      contextLines,
+      matchStringIsRegex ?? false,
+      matchStringCaseSensitive ?? false,
+      contextBytes,
+      filePath
+    );
+    if (selected.securityLimited)
       return {
-        owner,
-        repo,
-        path: filePath,
-        content: sigContent,
-        contentView: 'symbols',
-        branch,
-        totalLines: countLines(decodedContent),
-        ...sourceSizeFields(sourceChars, sourceBytes),
-        isPartial: false,
-        hints,
+        ...base,
+        content: '',
+        errorCode: 'contentSecurityLimit',
+        isPartial: true,
+        terminalLimit: true,
+        partialReasons: ['security-selected-view-size-limit'],
+      };
+    content = selected.content;
+    selection = {
+      startLine: selected.matchRanges[0]?.start,
+      endLine: selected.matchRanges.at(-1)?.end,
+      matchRanges: selected.matchRanges,
+      matchedLines: selected.matchingLines,
+      sourceLines: selected.sourceLines,
+      ...(selected.warnings.length ? { warnings: selected.warnings } : {}),
+      selectedMatchCount: selected.matchCount,
+      ...(selected.matchCount === 0
+        ? { matchNotFound: true, searchedFor: matchString }
+        : {}),
+    };
+    if (minify !== 'none')
+      minifyFallback = {
+        requested: minify,
+        applied: 'none',
+        reason: 'match-evidence',
+      };
+  } else if (!fullContent && startLine !== undefined && endLine !== undefined) {
+    const records = decodedContent.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+    if (startLine > totalLines || endLine < startLine)
+      return {
+        ...base,
+        content: '',
+        errorCode: 'noMatches',
+        contentView: 'none',
+      };
+    const end = Math.min(endLine, totalLines);
+    content = records
+      .slice(startLine - 1, Math.max(startLine - 1, end))
+      .join('');
+    selection = { startLine, endLine: end };
+  }
+  if (contentView === 'symbols') {
+    const signatures = contextUtils.extractSignatures(content, filePath);
+    const outline =
+      signatures === null
+        ? markdownHeadingOutlineToText(content, filePath)
+        : null;
+    if (signatures !== null) {
+      content = contextUtils.applyContentViewMinification(signatures, filePath);
+    } else if (outline !== null) {
+      content = outline;
+    } else {
+      contentView = 'standard';
+      minifyFallback = {
+        requested: 'symbols',
+        applied: 'standard',
+        reason: 'outline-unavailable',
       };
     }
   }
-
-  const matchLocationsSet = new Set<string>();
-
-  const originalContent = decodedContent;
-  const originalLines = originalContent.split('\n');
-  const totalLines = countLines(originalContent);
-
-  let finalContent = decodedContent;
-  let actualStartLine: number | undefined;
-  let actualEndLine: number | undefined;
-  let isPartial = false;
-  let matchRanges: Array<{ start: number; end: number }> | undefined;
-  let matchedLines: number[] | undefined;
-
-  if (fullContent) {
-    finalContent = decodedContent;
-  } else if (matchString) {
-    const isCaseSensitive = matchStringCaseSensitive === true;
-    let extraction: ReturnType<typeof extractMatchingLines>;
-    try {
-      extraction = extractMatchingLines(
-        originalLines,
-        matchString,
-        contextLines,
-        matchStringIsRegex ?? false,
-        isCaseSensitive
-      );
-    } catch {
-      return {
-        owner,
-        repo,
-        path: filePath,
-        content: '',
-        branch,
-        totalLines,
-        ...sourceSizeFields(sourceChars, sourceBytes),
-        matchNotFound: true,
-        searchedFor: matchString,
-        hints: ['Fix the regex or set matchStringIsRegex:false for a literal.'],
-      } as GitHubFileContentApiResult;
-    }
-
-    if (extraction.matchCount === 0) {
-      const notFoundHints = matchStringIsRegex
-        ? [
-            `No lines matched "${matchString}" (case-${isCaseSensitive ? 'sensitive' : 'insensitive'}). Check the pattern or use fullContent:true.`,
-          ]
-        : [
-            `"${matchString}" not found in file${isCaseSensitive ? ' (case-sensitive)' : ''}. Try matchStringIsRegex=true for pattern matching, broaden the search, or use fullContent=true.`,
-          ];
-      return {
-        owner,
-        repo,
-        path: filePath,
-        content: '',
-        branch,
-        totalLines,
-        ...sourceSizeFields(sourceChars, sourceBytes),
-        matchNotFound: true,
-        searchedFor: matchString,
-        hints: notFoundHints,
-      } as GitHubFileContentApiResult;
-    }
-
-    finalContent = extraction.lines.join('\n');
-    const firstRange = extraction.matchRanges[0]!;
-    const lastRange =
-      extraction.matchRanges[extraction.matchRanges.length - 1]!;
-    startLine = firstRange.start;
-    endLine = lastRange.end;
-    actualStartLine = firstRange.start;
-    actualEndLine = lastRange.end;
-    // matchString is a complete selector: every match is returned with context.
-    isPartial = false;
-    // Always emit matchRanges — startLine/endLine include ±context lines, so
-    // for a single match they do NOT pinpoint the matched line; without this
-    // the only structured lineHint anchor for lspSearch is lost.
-    // (Mirrors the identical fix in local_fetch_content/fetchContent/extraction.ts.)
-    matchRanges = extraction.matchRanges;
-    matchedLines = extraction.matchingLines;
-
-    const shownLines = extraction.matchingLines.slice(0, 5).join(', ');
-    const extraCount =
-      extraction.matchingLines.length > 5
-        ? ` and ${extraction.matchingLines.length - 5} more`
-        : '';
-    matchLocationsSet.add(
-      extraction.matchCount > 1
-        ? `Found ${extraction.matchCount} occurrences of "${matchString}" on lines ${shownLines}${extraCount} — all shown as ${extraction.matchRanges.length} slice${extraction.matchRanges.length === 1 ? '' : 's'}, ±${contextLines} lines of context each.`
-        : `Found "${matchString}" on line ${extraction.matchingLines[0]}`
-    );
-  } else if (startLine !== undefined || endLine !== undefined) {
-    const effectiveStartLine = startLine || 1;
-
-    const effectiveEndLine = endLine || totalLines;
-
-    if (effectiveStartLine < 1 || effectiveStartLine > totalLines) {
-      finalContent = decodedContent;
-      matchLocationsSet.add(
-        `Requested startLine ${effectiveStartLine} is out of range for this ${totalLines}-line file — returning the full file instead of a range.`
-      );
-    } else if (effectiveEndLine < effectiveStartLine) {
-      finalContent = decodedContent;
-      matchLocationsSet.add(
-        `Requested range startLine=${effectiveStartLine}, endLine=${effectiveEndLine} is invalid (endLine before startLine) — returning the full file instead of a range.`
-      );
-    } else {
-      const adjustedStartLine = Math.max(1, effectiveStartLine);
-      const adjustedEndLine = Math.min(totalLines, effectiveEndLine);
-
-      const selectedLines = originalLines.slice(
-        adjustedStartLine - 1,
-        adjustedEndLine
-      );
-
-      actualStartLine = adjustedStartLine;
-      actualEndLine = adjustedEndLine;
-      // A range clamped to EOF has no forward page left to retrieve.
-      isPartial = adjustedEndLine < totalLines;
-
-      finalContent = selectedLines.join('\n');
-
-      if (effectiveEndLine > totalLines) {
-        matchLocationsSet.add(
-          `Requested endLine ${effectiveEndLine} adjusted to ${totalLines} (file end)`
-        );
-      }
-    }
+  if (contentView === 'standard')
+    content = contextUtils.applyContentViewMinification(content, filePath);
+  const sanitized = ContentSanitizer.sanitizeContent(content, filePath);
+  if (sanitized.secretsDetected.includes('content-size-exceeded')) {
+    return {
+      ...base,
+      content: '',
+      errorCode: 'contentSecurityLimit',
+      isPartial: true,
+      terminalLimit: true,
+      partialReasons: ['security-selected-view-size-limit'],
+    };
   }
-
-  const sanitizationResult = ContentSanitizer.sanitizeContent(
-    finalContent,
-    filePath
-  );
-  if (sanitizationResult.secretsDetected.includes('content-size-exceeded'))
-    return securityLimit();
-  finalContent = applyStandardMinify
-    ? contextUtils.applyContentViewMinification(
-        sanitizationResult.content,
-        filePath
-      )
-    : sanitizationResult.content;
-
-  if (sanitizationResult.hasSecrets) {
-    matchLocationsSet.add(
-      `Secrets detected and redacted: ${sanitizationResult.secretsDetected.join(', ')}`
-    );
-  }
-  if (sanitizationResult.warnings.length > 0) {
-    sanitizationResult.warnings.forEach((warning: string) =>
-      matchLocationsSet.add(warning)
-    );
-  }
-
-  if (
-    totalLines > 2000 &&
-    minify !== 'symbols' &&
-    !matchString &&
-    !startLine &&
-    !endLine &&
-    !fullContent
-  ) {
-    const tailLine = Math.max(1, totalLines - 200);
-    matchLocationsSet.add(
-      `Large file (${totalLines} lines) — minify:"symbols" for an export index, or startLine=${tailLine} for the tail.`
-    );
-  }
-
-  const matchLocations = Array.from(matchLocationsSet);
-
   return {
-    owner,
-    repo,
-    path: filePath,
-    content: finalContent,
-    // Always surface contentView so agents know when default minify:"standard"
-    // has altered the returned bytes — it's the only lossy mode that isn't
-    // opted into explicitly, so it's the one most likely to surprise a caller
-    // who expected verbatim content.
-    contentView: fallbackContentView,
-    branch,
-    totalLines,
-    ...sourceSizeFields(sourceChars, sourceBytes),
-    ...(isPartial && {
-      startLine: actualStartLine,
-      endLine: actualEndLine,
-      isPartial,
-    }),
-    ...(matchRanges && { matchRanges }),
-    ...(matchedLines && { matchedLines }),
-    ...(matchLocations.length > 0 && {
-      matchLocations,
-    }),
-    ...((matchLocations.length > 0 || signaturesSkippedWarning) && {
-      warnings: [
-        ...(signaturesSkippedWarning ? [signaturesSkippedWarning] : []),
-        ...matchLocations,
-      ],
-    }),
-  } as GitHubFileContentApiResult;
+    ...base,
+    ...selection,
+    content: sanitized.content,
+    contentView,
+    ...(minifyFallback ? { minifyFallback } : {}),
+    ...(sanitized.hasSecrets
+      ? {
+          warnings: [
+            `Secrets detected and redacted: ${sanitized.secretsDetected.join(', ')}`,
+          ],
+        }
+      : {}),
+  };
 }

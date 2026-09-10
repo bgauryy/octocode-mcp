@@ -4,7 +4,7 @@ import type {
   LocalItemPagination,
   ToolContinuation,
 } from '../../../scheme/pagination.js';
-import { GraphAnalysisQuerySchema } from '../../../toolContract/input/resources/tools/topologyOperation.js';
+import { GraphAnalysisQuerySchema } from '@octocodeai/octocode-core/schema';
 import type { GraphCoverage } from '../../../graph/types.js';
 
 export { GraphAnalysisQuerySchema };

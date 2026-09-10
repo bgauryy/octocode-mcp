@@ -15,6 +15,7 @@ import {
   readMcpCatalogSnapshot,
   renderMcpCatalogExact,
   renderMcpCatalogIndex,
+  renderMcpCatalogSchemaGuide,
   snapshotPathForWorkspace,
   stableSchemaDigest,
   writeMcpCatalogSnapshot,
@@ -76,7 +77,7 @@ test('catalog snapshot and fallback guide are deterministic, sorted, escaped, an
   assert.deepEqual(read?.inputSchema, { required: ['path'], type: 'object', properties: { path: { type: 'string' } } });
 });
 
-test('fallback guide exposes nested discriminated query schemas needed for a valid first call', () => {
+test('explicit schema guide exposes complete nested discriminated query schemas', () => {
   const home = tempRoot('octocode-mcp-nested-guide-');
   const snapshot = buildMcpCatalogSnapshot({
     cwd: path.join(home, 'workspace'),
@@ -126,7 +127,7 @@ test('fallback guide exposes nested discriminated query schemas needed for a val
     }],
   });
 
-  const rendered = renderMcpCatalogIndex(snapshot);
+  const rendered = renderMcpCatalogSchemaGuide(snapshot);
   assert.match(rendered, /operation="text"/);
   assert.match(rendered, /searchText/);
   assert.match(rendered, /regex.*smart.*fixed.*perl/);
@@ -173,7 +174,7 @@ function oversizedUnionSnapshot() {
 }
 
 test('renders every union branch, required field, and optional field inline with no truncation', () => {
-  const guide = renderMcpCatalogIndex(oversizedUnionSnapshot());
+  const guide = renderMcpCatalogSchemaGuide(oversizedUnionSnapshot());
   const description = guide.split('description: ')[1]!;
   for (const [operation, required] of [['text', 'searchText'], ['structural', 'pattern'], ['structural', 'rule'], ['files', 'names'], ['tree', 'maxDepth']]) {
     assert.ok(guide.includes(`operation="${operation}"`), operation);
@@ -193,7 +194,7 @@ test('renders the full schema inline even when optional field names are numerous
   for (const variant of schema.properties.queries.items.anyOf) {
     for (let i = 0; i < 200; i++) variant.properties[`additionalOption${i}`] = { type: 'string' };
   }
-  const guide = renderMcpCatalogIndex(snapshot);
+  const guide = renderMcpCatalogSchemaGuide(snapshot);
   assert.doesNotMatch(guide, /partial/i);
   assert.doesNotMatch(guide, /optional fields omitted/i);
   for (const operation of ['text', 'structural', 'files', 'tree']) assert.ok(guide.includes(`operation="${operation}"`));
@@ -201,7 +202,7 @@ test('renders the full schema inline even when optional field names are numerous
   assert.ok(guide.includes('additionalOption199'), 'last injected field renders with no truncation');
 });
 
-test('the real localSearch CLI schema renders completely in the model-visible catalog', () => {
+test('the real localSearch CLI schema renders completely in the explicit schema guide', () => {
   const home = tempRoot('octocode-live-catalog-');
   const tool = JSON.parse(execFileSync(process.execPath, [
     path.resolve(import.meta.dirname, '../../octocode/out/octocode.js'),
@@ -212,15 +213,20 @@ test('the real localSearch CLI schema renders completely in the model-visible ca
     cwd: home, sources: [], configSignatures: { octocode: 'live' },
     servers: [{ name: 'octocode', tools: [{ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }] }],
   });
-  const guide = renderMcpCatalogIndex(snapshot);
+  const guide = renderMcpCatalogSchemaGuide(snapshot);
   const description = guide.split('description: ')[1]!.split('\n')[0]!;
   const items = tool.inputSchema.properties.queries.items;
-  // The consolidated flat schema (single object, no anyOf variants) must render
-  // every field inline — required and optional alike — with no truncation.
-  assert.deepEqual(items.required, ['searchText', 'path']);
-  for (const field of Object.keys(items.properties)) {
-    assert.ok(description.includes(field), `catalog omits ${field}`);
+  // The exact CLI contract distinguishes matchOnly from the general result views.
+  // Every branch must retain all its required and optional fields in the guide.
+  assert.equal(items.anyOf.length, 2);
+  for (const variant of items.anyOf) {
+    assert.ok(variant.required.includes('searchText'));
+    assert.ok(variant.required.includes('path'));
+    for (const field of Object.keys(variant.properties)) {
+      assert.ok(description.includes(field), `catalog omits ${field}`);
+    }
   }
+  assert.ok(description.includes('matchOnly'));
   assert.ok(description.includes('maxDepth'));
   assert.doesNotMatch(description, /Input summary partial/);
   assert.doesNotMatch(description, /Exact schema: MCPTool/);
@@ -233,7 +239,7 @@ test('renders every branch of a large union inline with no truncation or recover
     type: 'object', required: ['operation', `requiredBranchField${index}`],
     properties: { operation: { const: `operation-${index}` }, [`requiredBranchField${index}`]: { type: 'string' } },
   }));
-  const description = renderMcpCatalogIndex(snapshot).split('description: ')[1]!.split('\n')[0]!;
+  const description = renderMcpCatalogSchemaGuide(snapshot).split('description: ')[1]!.split('\n')[0]!;
   assert.doesNotMatch(description, /Input summary omitted/);
   assert.doesNotMatch(description, /partial/i);
   assert.doesNotMatch(description, /Exact schema: MCPTool/);
@@ -384,7 +390,7 @@ test('oversized persisted snapshots are cache misses', async () => {
   }), undefined);
 });
 
-test('deterministic measurement fixture renders the full inline catalog without truncation', () => {
+test('deterministic routing catalog retains every tool and demand-loads exact schemas', () => {
   const home = tempRoot('octocode-mcp-measure-');
   const largeSchema = {
     type: 'object',
@@ -410,12 +416,13 @@ test('deterministic measurement fixture renders the full inline catalog without 
   });
   const measurement = measureMcpCatalog(snapshot);
 
-  // Truncation removed: the compact-summary index carries every field inline, so it is
-  // close to the eager raw-JSON catalog (small reduction), never larger, and never partial.
+  // Exact schemas are retained in the snapshot, leaving routing context compact.
   assert.ok(measurement.eagerChars >= measurement.indexChars, JSON.stringify(measurement));
   assert.ok(measurement.reductionRatio >= 0, JSON.stringify(measurement));
-  assert.ok(measurement.reductionRatio < 0.5, JSON.stringify(measurement));
+  assert.ok(measurement.reductionRatio > 0.9, JSON.stringify(measurement));
   const index = renderMcpCatalogIndex(snapshot);
-  assert.ok(index.includes('field0') && index.includes('field119'), 'every schema field renders inline');
+  assert.doesNotMatch(index, /field0|field119/);
+  assert.equal(index.match(/^tool: /gm)?.length, 12);
+  assert.deepEqual(findMcpCatalogTool(snapshot, 'octocode', 'tool-11')?.inputSchema, largeSchema);
   assert.doesNotMatch(index, /partial/i);
 });

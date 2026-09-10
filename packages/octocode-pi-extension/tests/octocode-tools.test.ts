@@ -59,8 +59,8 @@ test('research tools are NOT registered as native Pi tools — served via MCPToo
   // extension's tool palette. They are accessed through MCPTool instead.
   const nativeResearchTools = [
     'ghSearch', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem',
-    'ghCloneRepo', 'npmSearch', 'localSearch', 'astSearch',
-    'localGetFileContent', 'lspSearch',
+    'ghCloneRepo', 'artifactSearch', 'localSearch', 'astSearch',
+    'localFetch', 'lspSearch',
   ];
 
   // octocode-tools.ts no longer exports registerOctocodeTools.

@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { LocalFetchContentBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_fetch_content/scheme.js';
-import { AstSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/ast_search/scheme.js';
-import { FileContentBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/github_fetch_content/scheme.js';
+import { LocalFetchContentBulkQuerySchema } from '@octocodeai/octocode-core/schema';
+import { AstSearchBulkQuerySchema } from '@octocodeai/octocode-core/schema';
+import { FileContentBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 describe('bulk schema cross-field validation', () => {
-  it('localGetFileContent rejects a mutex-violating row in a mixed batch', () => {
+  it('localFetch rejects a mutex-violating row in a mixed batch', () => {
     const r = LocalFetchContentBulkQuerySchema.safeParse({
       queries: [
         { path: 'a.ts', fullContent: true, matchString: 'x' },

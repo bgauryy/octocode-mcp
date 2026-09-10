@@ -140,6 +140,9 @@ test('worker process prompt omits user-facing coder authority while keeping inte
   assert.match(worker, /plain messages/);
   assert.match(worker, /never imply approval/);
   assert.match(worker, /continuations/);
+  assert.match(worker, /names and source paths of skills required for unfinished work/);
+  assert.match(worker, /reload required guidance missing from retained context before continuing dependent actions/);
+  assert.match(worker, /Reuse guidance that remains available/);
   assert.match(worker, /<local_tools>/);
   assert.match(worker, /localSearch for text\/regex anchors and astSearch for files, trees, symbols, and structural matching/);
   assert.match(worker, /matchString.*minify:"symbols".*minify:"standard".*minify:"none"/s);

@@ -7,6 +7,7 @@ import type { WorktreeIsolation } from '../worktree.js';
 import type { WorkerAwarenessInspection } from '../awareness-worker-audit.js';
 import type { InternalWorktreeState } from '../worktree.js';
 import type { WorkerLedgerEvent, WorkerMessageActivity } from '../../types.js';
+import type { WorkerCapabilityGrant, WorkerCapabilitySelection } from '@octocodeai/agent-contracts/capabilities';
 
 export type AgentStatus = 'starting' | 'running' | 'idle' | 'exited' | 'failed' | 'killed';
 export type ResourceMode = 'lean' | 'octocode' | 'default';
@@ -49,6 +50,11 @@ export interface SpawnAgentParams {
   provider?: string;
   thinking?: string;
   tools?: string[];
+  /** Exact parent-approved identities; omitted fields use the focused role default. */
+  capabilities?: WorkerCapabilitySelection;
+  capabilitySnapshotRevision?: string;
+  /** Internal role selector for default resource grants. */
+  capabilityProfile?: string;
   systemPrompt?: string;
   resourceMode?: ResourceMode;
   noSession?: boolean;
@@ -173,6 +179,8 @@ export interface AgentRecord {
   awarenessDatabase?: string;
   /** Owning host lifecycle state; prevents duplicate leave receipts on kill + close. */
   awarenessPresence?: 'joined' | 'left';
+  /** Public grant metadata only; broker authentication is never stored here. */
+  capabilityGrant?: WorkerCapabilityGrant;
 }
 
 // ─── Display / UI types ───────────────────────────────────────────────────────

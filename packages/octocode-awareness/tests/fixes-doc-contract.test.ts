@@ -24,13 +24,13 @@ function freshDb(): DatabaseSync {
 }
 
 describe('reflect — judgment_note / duo / eval_failures', () => {
-  it('folds judgmentNote into the narrative observation', () => {
+  it('folds judgmentNote into the narrative observation', async () => {
     const db = freshDb();
     const r = reflect(db, {
       agentId: 'a', task: 'shipped feature', outcome: 'worked',
       judgmentNote: 'checked E2E output; timing untested',
     });
-    const { memories } = getMemory(db, { query: 'shipped feature', limit: 5 });
+    const { memories } = (await getMemory(db, { query: 'shipped feature', limit: 5 }));
     const mem = memories.find((m) => m.memory_id === r.learning_memory_id);
     expect(mem?.observation).toContain('judgment: checked E2E output; timing untested');
   });
@@ -104,10 +104,10 @@ describe('refinement update lifecycle', () => {
 });
 
 describe('getMemory explain', () => {
-  it('attaches score_components whose weighted sum equals the score', () => {
+  it('attaches score_components whose weighted sum equals the score', async () => {
     const db = freshDb();
-    insertMemory(db, { taskContext: 'auth router', observation: 'tenant order matters', importance: 8 });
-    const { memories } = getMemory(db, { query: 'auth router', limit: 1, explain: true });
+    (await insertMemory(db, { taskContext: 'auth router', observation: 'tenant order matters', importance: 8 }));
+    const { memories } = (await getMemory(db, { query: 'auth router', limit: 1, explain: true }));
     const c = memories[0]!.score_components!;
     expect(c.final).toBeCloseTo(memories[0]!.score!, 10);
     const recomputed =

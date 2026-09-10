@@ -9,13 +9,12 @@ import {
   formatDirectToolSchemaText,
   getDirectToolDescription,
   prepareDirectToolInputFromJsonText,
-} from '@octocodeai/octocode-tools-core/schema';
+} from '@octocodeai/octocode-core/schema';
 import type { formatCallToolResultForOutput } from '@octocodeai/octocode-tools-core/direct';
 import {
   TOOL_DEFINITIONS,
   findToolDefinition,
   getToolEnableInstruction,
-  getOptionalToolMetadata,
 } from './registry.js';
 import { getInputText, validateRawToolFootguns } from './input.js';
 import {
@@ -171,13 +170,12 @@ export async function executeToolCommand(args: ParsedArgs): Promise<boolean> {
   }
 
   if (args.options.format === 'tool') {
-    const metadata = await getOptionalToolMetadata();
     const inputSchema = JSON.parse(formatDirectToolSchemaText(tool.name));
     console.log(
       JSON.stringify(
         {
           name: tool.name,
-          description: getDirectToolDescription(tool.name, metadata),
+          description: getDirectToolDescription(tool.name),
           inputSchema,
         },
         null,

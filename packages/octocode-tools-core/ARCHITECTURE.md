@@ -1,7 +1,7 @@
 # Octocode tools-core architecture
 
 `@octocodeai/octocode-tools-core` is the **tool execution layer** of Octocode. It
-owns all the logic — schemas, provider calls, file/LSP operations, response
+owns runtime logic — provider calls, file/LSP operations, response
 shaping, pagination, hints, security, credentials, config, and session state.
 Consumers (the `octocode` CLI and `octocode-mcp` server) are thin: they pick a
 tool, hand it input, and render the `CallToolResult` it returns.
@@ -13,10 +13,10 @@ plus a TS orchestration layer. tools-core reaches the Rust core through the
 lazy `contextUtils` proxy (`src/utils/contextUtils.ts`) and the TS wrappers
 through the `./lsp/*` / `./security/*` subpath exports; its own
 `src/security/bridge.ts` is only a thin type adapter (MCP `CallToolResult` ↔
-engine `ToolResult`). Tool descriptions, executable schemas, and shared
-agent-facing instructions are owned by `src/toolContract/`, including
-`src/toolContract/instructions.ts`; the external core package supplies reusable
-output types.
+engine `ToolResult`). The sibling `@octocodeai/octocode-core` package owns
+tool names, descriptions, executable schemas, relations, and reusable output
+types. Import contracts from its `/schema` entrypoint and shared agent
+instructions from `/mcp`.
 
 ## Tool catalog
 
@@ -24,24 +24,27 @@ output types.
 category flags (`isLocal`/`isClone`), a display `schema` + bulk
 `inputSchema` (Zod), an `executionFn`, a `security` mode (`basic` | `remote`),
 and runtime needs (`requiresServerRuntime`, `requiresProviders`). `ALL_TOOLS`
-is the single source of truth.
+attaches runtime behavior to core's canonical catalog.
 
 - **GitHub** (`security: 'remote'`, needs providers): `ghSearch`,
   `ghGetFileContent`, `ghSearchHistory`, `ghGetHistoryItem`,
   and `ghCloneRepo`.
-- **Package**: `npmSearch`.
+- **Package**: `artifactSearch`.
 - **Local** (`security: 'basic'`): `localSearch`, `astSearch`, and
-  `localGetFileContent`.
+  `localFetch`.
 - **LSP**: `lspSearch` (needs server runtime).
 
-Each tool lives in `src/tools/<tool_name>/` with a common core — `scheme.ts`
-(Zod single + bulk schemas) and `execution.ts` (the bulk-loop `executionFn`) —
-plus `finalizer.ts` / `types.ts` and helper modules as needed. The public
+Each tool lives in `src/tools/<tool_name>/` with `execution.ts` (the bulk-loop
+`executionFn`), plus `finalizer.ts` / `types.ts` and helper modules as needed.
+Handlers import the canonical executable schemas from core. The public
 `astSearch` dispatcher is `src/tools/ast_search/execution.ts`: it validates the
 operation union and routes `match`, `files`, `tree`, `symbols`, and `topology`.
 Topology execution and graph-analysis policy belong to
 `src/tools/ast_search/topology/`; the dispatcher keeps any lower-level search,
-filesystem, or AST helpers private behind that public contract. Next-step hints
+filesystem, or AST helpers private behind that public contract. File discovery
+and filesystem tree handlers consume the AST operation inputs directly and
+emit `astSearch` continuations. Rust `queryFileSystem` owns traversal; tools-core
+owns sorting, response shaping, and scan-limit reporting. Next-step hints
 are generated centrally by `src/utils/pagination/hints.ts`, not per tool.
 
 ### Graph ownership
@@ -55,7 +58,7 @@ separate catalog tools.
 
 ## Execution flow
 
-`executeDirectTool(name, input)` in `src/tools/directToolCatalog.ts` is the entry
+`executeDirectTool(name, input)` in `src/tools/directToolCatalog.exec.ts` is the entry
 point used by all consumers:
 
 1. **Resolve** the tool from `ALL_TOOLS`.
@@ -73,9 +76,14 @@ point used by all consumers:
 7. **Sanitize** the result and always return a structured `CallToolResult` —
    errors become an error envelope (`buildToolErrorResult`), never a throw.
 
-`directToolCatalog.ts` also derives agent-facing fields, variants, relations,
-and examples from the Zod schemas. Public query envelopes are strict: unknown
-fields fail before execution with a correction hint.
+The sibling `octocode-core/src/toolContract/discovery/` modules own agent-facing
+fields, variants, relations, examples, and input preparation. Interfaces import
+these directly from `@octocodeai/octocode-core/schema`. Core also owns CLI and
+MCP context text; tools-core supplies runtime availability and execution.
+Public query envelopes are validated in full before runtime initialization.
+Input preparation rejects unknown fields by default with a correction hint;
+adapters must explicitly opt into field filtering. Valid batches isolate runtime
+query failures and retain one indexed result per query; they are not transactions.
 
 ## Providers
 
@@ -91,7 +99,8 @@ structure, history) lives in `src/github/`.
 - `src/cacheMaintenance.ts` — shared 24-hour maintenance gate, persisted marker,
   cross-process lock, owned-root sweep, and MCP deadline scheduler for
   `tmp/clone`, `tmp/tree`, and `tmp/response`.
-- `src/scheme/` — shared Zod input fields. Output schemas are not published.
+- Public input fields and refinements live in `@octocodeai/octocode-core/schema`.
+  Output schemas are not published.
 - `src/utils/pagination/` (incl. `hints.ts` — next-step hints: pagination
   cursors, token-budget warnings, structure hints) + `src/utils/response/` — the
   single lossless char-pagination flow and YAML/JSON result rendering shared by
@@ -107,11 +116,10 @@ structure, history) lives in `src/github/`.
 
 - `src/index.ts` — the full re-export barrel (everything above + selected
   `octocode-engine` and `octocode-core` re-exports).
-- `src/direct.ts` — the minimal `./direct` entry: `executeDirectTool` plus the
-  catalog/metadata helpers consumers need to drive tools.
-- `src/schema.ts` — the engine-free `./schema` entry for catalog metadata,
-  schema text, relations, and input preparation.
-- `src/zod.ts` — the `./zod` compatibility entry.
+- `src/direct.ts` — the minimal `./direct` entry: `executeDirectTool` and response rendering.
+- `src/schema.ts` — engine-free runtime availability and internal search workflow
+  translation. All public schemas, discovery/presentation helpers, and input
+  preparation come directly from `@octocodeai/octocode-core/schema`.
 - `./platform`, `./session`, `./config`, `./credentials`,
   `./paths`, `./fs-utils`, `./testing` — focused subpath entries (see
   `package.json#exports`).
@@ -137,9 +145,8 @@ the engine root, config/core/tools-core, and then the CLI and MCP interfaces.
 ## Rules
 
 - Keep logic here, not in consumers — the CLI/MCP only select and render.
-- Descriptions and schemas come from `src/toolContract/`; don't hardcode them in interfaces or runners.
+- Descriptions and schemas come from `@octocodeai/octocode-core/schema`; don't hardcode them in interfaces or runners.
 - Native work (minify, search, graph-fact scanning, structural, LSP, masking) goes through
   `octocode-engine`, never reimplemented in TS.
-- Add a new tool by adding its `src/tools/<name>/` folder and one `ToolConfig`
-  entry in `toolConfig.ts`; everything else (metadata, execution, security) is
-  driven off that entry.
+- Add a public contract in core, then its `src/tools/<name>/` runner and runtime
+  attachment in `toolConfig.ts`. Keep shared workflow rules in core's `/mcp` entry.

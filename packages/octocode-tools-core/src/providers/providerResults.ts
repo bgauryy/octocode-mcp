@@ -1,3 +1,5 @@
+import type { FetchPagination } from '@octocodeai/octocode-core/extra-types';
+import type { ToolContinuation } from '../scheme/pagination.js';
 import type { CollectionStates } from '../github/prContentFetcher/collectionPaging.js';
 import type { PaginationInfo } from '../types/toolResults.js';
 import type { PRProviderLimit } from '../github/githubAPI.js';
@@ -92,12 +94,24 @@ export interface FileContentResult {
   sourceChars?: number;
 
   sourceBytes?: number;
+  returnedChars?: number;
+  returnedBytes?: number;
+  returnedLines?: number;
+  selectedMatchCount?: number;
+  next?: Record<string, ToolContinuation>;
+  minifyFallback?: {
+    requested: 'none' | 'standard' | 'symbols';
+    applied: 'none' | 'standard' | 'symbols';
+    reason: 'match-evidence' | 'outline-unavailable';
+  };
 
   contentView?: 'none' | 'standard' | 'symbols';
 
-  errorCode?: 'contentSecurityLimit';
+  errorCode?: 'contentSecurityLimit' | 'fullContentLimit' | 'noMatches';
   terminalLimit?: boolean;
-  partialReasons?: Array<'security-selected-view-size-limit'>;
+  partialReasons?: Array<
+    'security-selected-view-size-limit' | 'full-content-size-limit'
+  >;
 
   ref: string;
 
@@ -107,7 +121,7 @@ export interface FileContentResult {
 
   lastCommitSha?: string;
 
-  pagination?: PaginationInfo;
+  pagination?: FetchPagination;
 
   isPartial?: boolean;
 
@@ -117,7 +131,7 @@ export interface FileContentResult {
 
   matchRanges?: Array<{ start: number; end: number }>;
 
-  /** Exact matched-line numbers (matchRanges are ±contextLines windows around them). */
+  /** Exact matched-line numbers; matchRanges span the selected source windows. */
   matchedLines?: number[];
 
   warnings?: string[];

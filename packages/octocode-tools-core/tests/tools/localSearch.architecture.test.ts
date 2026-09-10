@@ -4,7 +4,8 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 import * as publicApi from '../../src/index.js';
-import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
+import * as coreContracts from '@octocodeai/octocode-core/schema';
+import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-core/schema';
 
 const SOURCE_ROOT = path.resolve(import.meta.dirname, '../../src');
 const LEGACY_PUBLIC_NAMES = [
@@ -49,7 +50,8 @@ async function moduleImports(relativePath: string): Promise<string[]> {
 describe('localSearch architecture boundary', () => {
   it('publishes only the unified local discovery contract', () => {
     expect(publicApi).toHaveProperty('executeLocalSearch');
-    expect(publicApi).toHaveProperty('LocalSearchQuerySchema');
+    expect(coreContracts).toHaveProperty('LocalSearchQuerySchema');
+    expect(publicApi).not.toHaveProperty('LocalSearchQuerySchema');
 
     for (const legacyExport of LEGACY_EXPORTS) {
       expect(publicApi, legacyExport).not.toHaveProperty(legacyExport);
@@ -68,9 +70,7 @@ describe('localSearch architecture boundary', () => {
     const imports = await moduleImports('tools/local_search/execution.ts');
 
     expect(imports).toEqual(
-      expect.arrayContaining([
-        '../local_ripgrep/searchContentRipgrep.js',
-      ])
+      expect.arrayContaining(['../local_ripgrep/searchContentRipgrep.js'])
     );
     expect(imports).not.toEqual(
       expect.arrayContaining([

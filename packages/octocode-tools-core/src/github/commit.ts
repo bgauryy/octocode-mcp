@@ -109,6 +109,12 @@ export async function fetchCommit(
         : { deletions: commit.stats.deletions }),
       changedFiles: scopedFiles.length,
       changedFilesCountScope: 'providerBatch' as const,
+      ...(response.collectionState.page > 1 && scopedFiles.length === 0
+        ? {
+            isPartial: true,
+            partialReasons: ['providerBatchOutOfRange'],
+          }
+        : {}),
       ...(response.collectionState.hasMore
         ? { isPartial: true, partialReasons: ['providerBatch'] }
         : {}),

@@ -49,7 +49,7 @@ describe('lossless recipient inbox pagination', () => {
     } finally { store.close(); }
   });
 
-  it.each([false, true])('executes API continuations with markRead=%s across tied timestamps', (markRead) => {
+  it.each([false, true])('executes API continuations with markRead=%s across tied timestamps', async (markRead) => {
     const { store, ids } = fixture(231);
     const db = connectDb(store.dbPath);
     try {
@@ -57,7 +57,7 @@ describe('lossless recipient inbox pagination', () => {
       const seen: string[] = [];
       for (let page = 0; page < 10; page++) {
         expect(operationSchemas.agent_signal.safeParse(request).success).toBe(true);
-        const result = runAwarenessToolOperation(db, 'agent_signal', request, { cwd: root }).payload as AgentSignalResult;
+        const result = (await runAwarenessToolOperation(db, 'agent_signal', request, { cwd: root })).payload as AgentSignalResult;
         expect(result.action).toBe('list');
         if (result.action !== 'list') throw new Error('wrong result');
         seen.push(...result.signals.map(signal => signal.signal_id));
@@ -72,7 +72,7 @@ describe('lossless recipient inbox pagination', () => {
     } finally { db.close(); store.close(); }
   });
 
-  it('preserves targeted filters through the public operation continuation and rejects malformed cursors', () => {
+  it('preserves targeted filters through the public operation continuation and rejects malformed cursors', async () => {
     const { store, ids } = fixture(231);
     const db = connectDb(store.dbPath);
     try {
@@ -83,7 +83,7 @@ describe('lossless recipient inbox pagination', () => {
       const seen: string[] = [];
       for (let page = 0; page < 5; page++) {
         expect(operationSchemas.agent_signal.safeParse(request).success).toBe(true);
-        const result = runAwarenessToolOperation(db, 'agent_signal', request, { cwd: root }).payload as AgentSignalResult;
+        const result = (await runAwarenessToolOperation(db, 'agent_signal', request, { cwd: root })).payload as AgentSignalResult;
         if (result.action !== 'list') throw new Error('wrong result');
         seen.push(...result.signals.map(signal => signal.signal_id));
         if (!result.partial) break;

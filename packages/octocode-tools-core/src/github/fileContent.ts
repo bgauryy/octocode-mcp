@@ -1,3 +1,4 @@
+import { matchContext } from '../utils/file/matchContext.js';
 import type { GitHubAPIResponse } from './githubAPI.js';
 import type {
   FileContentExecutionQuery,
@@ -32,6 +33,7 @@ export async function fetchGitHubFileContentAPI(
   const branchForProcessing =
     rawResult.data.branch || rawResult.data.resolvedRef || params.branch || '';
 
+  const context = matchContext(params);
   const processedResult = await processFileContentAPI(
     rawResult.data.rawContent,
     params.owner,
@@ -41,11 +43,12 @@ export async function fetchGitHubFileContentAPI(
     params.fullContent || false,
     params.startLine,
     params.endLine,
-    params.contextLines ?? 5,
+    context.contextLines ?? 0,
     params.matchString,
     params.matchStringIsRegex,
     params.matchStringCaseSensitive,
-    params.minify ?? 'standard'
+    params.minify ?? 'none',
+    context.contextBytes
   );
 
   if ('error' in processedResult) {
@@ -66,19 +69,12 @@ export async function fetchGitHubFileContentAPI(
     };
   }
 
-  const charOffset = params.charOffset ?? 0;
-  const charLength = params.charLength;
-  // fullContent:true is an explicit "give me the WHOLE file in one shot" request
-  // and opts out of the default char-window pagination (the documented
-  // contract) — but only when no explicit window was asked for. Huge files
-  // still paginate BY DEFAULT; an explicit charOffset/charLength still windows.
-  const wantsWholeFile =
-    params.fullContent === true && charOffset === 0 && charLength === undefined;
-  const paginatedResult = wantsWholeFile
-    ? processedResult
-    : await applyContentPagination(processedResult, charOffset, charLength);
-
-  const isContinuationPage = (params.charOffset ?? 0) > 0;
+  const { noTimestamp: _noTimestamp, ...paginationQuery } = params;
+  const paginatedResult = await applyContentPagination(
+    processedResult,
+    paginationQuery
+  );
+  const isContinuationPage = (params.offset ?? 0) > 0;
   if (!params.noTimestamp && !isContinuationPage) {
     try {
       const octokit = await getOctokit(authInfo);

@@ -4,7 +4,7 @@
  * The domain shapes for the local coordination store (plans, tasks, locks, work
  * presence, handoffs, memory, agents, messages) live here so they are defined
  * ONCE and imported by every consumer (Awareness today; open to others).
- * Pure type declarations — no runtime, no dependencies.
+ * Status tuples also drive runtime validation and SQL CHECK constraints.
  *
  * These are shared cross-host contracts for the Awareness-owned coordination
  * database. Sharing the TypeScript shapes does not imply shared physical
@@ -15,10 +15,15 @@ export const PLAN_STATUSES = ['DRAFT', 'ACTIVE', 'PAUSED', 'COMPLETED', 'CANCELL
 export const TASK_STATUSES = ['OPEN', 'IN_PROGRESS', 'BLOCKED', 'VERIFY', 'DONE', 'FAILED', 'CANCELLED'] as const;
 export type PlanStatus = (typeof PLAN_STATUSES)[number];
 export type TaskStatus = (typeof TASK_STATUSES)[number];
-export type CheckStatus = 'SUCCESS' | 'FAILED';
-export type AgentStatus = 'ACTIVE' | 'IDLE' | 'LEFT';
-
-export type PlanMemberRole = 'LEAD' | 'CONTRIBUTOR';
+export const CHECK_STATUSES = ['SUCCESS', 'FAILED'] as const;
+export const AGENT_STATUSES = ['ACTIVE', 'IDLE', 'LEFT'] as const;
+export const PLAN_MEMBER_ROLES = ['LEAD', 'CONTRIBUTOR'] as const;
+export const PLAN_DOC_KINDS = ['PRIMARY', 'SUPPORTING'] as const;
+export const TASK_RUN_ORIGINS = ['TASK', 'WORK', 'HOOK'] as const;
+export const TASK_RUN_STATUSES = ['PENDING', 'ACTIVE', 'SUCCESS', 'FAILED'] as const;
+export type CheckStatus = (typeof CHECK_STATUSES)[number];
+export type AgentStatus = (typeof AGENT_STATUSES)[number];
+export type PlanMemberRole = (typeof PLAN_MEMBER_ROLES)[number];
 
 export interface PlanRecord {
   plan_id: string;
@@ -46,7 +51,7 @@ export interface PlanMemberRecord {
 export interface PlanDocRecord {
   relative_path: string;
   title: string;
-  kind: 'PRIMARY' | 'SUPPORTING';
+  kind: (typeof PLAN_DOC_KINDS)[number];
   ordinal: number;
 }
 
@@ -111,13 +116,13 @@ export interface PlanTaskRecord {
 export interface TaskRunRecord {
   run_id: string;
   task_id: string | null;
-  origin: 'TASK' | 'WORK' | 'HOOK';
+  origin: (typeof TASK_RUN_ORIGINS)[number];
   agent_id: string;
   session_id: string | null;
   rationale: string;
   test_plan: string;
   context_ref: string | null;
-  status: 'PENDING' | 'ACTIVE' | 'SUCCESS' | 'FAILED';
+  status: (typeof TASK_RUN_STATUSES)[number];
   workspace_path: string | null;
   artifact: string | null;
   created_at: string;

@@ -1,5 +1,5 @@
 import type { AuthInfo } from '@modelcontextprotocol/server';
-import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '../../toolNames.js';
+import { GITHUB_SEARCH_HISTORY_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import { createSuccessResult, createErrorResult } from '../../utils.js';
 import { fetchIssues } from '../../../github/issues/orchestrator.js';
 import { isGitHubAPIError } from '../../../github/githubAPI.js';

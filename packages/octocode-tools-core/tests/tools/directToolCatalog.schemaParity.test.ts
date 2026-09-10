@@ -13,8 +13,8 @@ import {
   DIRECT_TOOL_DISCOVERY_DEFINITIONS,
   DIRECT_TOOL_DEFINITIONS,
   findDirectToolDefinition,
-} from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
-import { DIRECT_TOOL_SPECIFICATIONS } from '../../src/tools/directToolCatalog/toolSpecifications.js';
+} from '@octocodeai/octocode-core/schema';
+import { DIRECT_TOOL_SPECIFICATIONS } from '@octocodeai/octocode-core/schema';
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 
 describe('direct-tool meta catalog parity with ALL_TOOLS (P3)', () => {
@@ -27,22 +27,11 @@ describe('direct-tool meta catalog parity with ALL_TOOLS (P3)', () => {
       new URL('../../src/tools/toolConfig.ts', import.meta.url),
       'utf8'
     );
-    const definitionsSource = readFileSync(
-      new URL(
-        '../../src/tools/directToolCatalog/toolCatalogDefinitions.ts',
-        import.meta.url
-      ),
-      'utf8'
-    );
-
     expect(toolConfigSource).toContain('DIRECT_TOOL_SPECIFICATIONS');
     expect(toolConfigSource).toContain(
-      "from './directToolCatalog/toolSpecifications.js'"
+      "from '@octocodeai/octocode-core/schema'"
     );
     expect(toolConfigSource).not.toContain("from './toolSchemaImports.js'");
-    expect(definitionsSource).toContain('DIRECT_TOOL_SPECIFICATIONS');
-    expect(definitionsSource).toContain("from './toolSpecifications.js'");
-    expect(definitionsSource).not.toContain("from '../toolSchemaImports.js'");
     for (const legacyToolModule of [
       'tools/github_search_code/',
       'tools/github_search_repos/',
@@ -106,9 +95,12 @@ describe('direct-tool meta catalog parity with ALL_TOOLS (P3)', () => {
 
   it.each([
     {
-      tool: 'npmSearch',
-      valid: [{ packageName: 'zod' }, { keywords: ['schema'] }],
-      invalid: [{}, { packageName: 'zod', keywords: ['schema'] }],
+      tool: 'artifactSearch',
+      valid: [
+        { type: 'npm', packageName: 'zod' },
+        { type: 'npm', keywords: ['schema'] },
+      ],
+      invalid: [{}, { type: 'npm', packageName: 'zod', keywords: ['schema'] }],
     },
     {
       tool: 'ghGetFileContent',
@@ -129,7 +121,7 @@ describe('direct-tool meta catalog parity with ALL_TOOLS (P3)', () => {
       ],
     },
     {
-      tool: 'localGetFileContent',
+      tool: 'localFetch',
       valid: [
         { path: '/tmp/p' },
         { path: '/tmp/p', startLine: 1, endLine: 2 },
@@ -199,7 +191,11 @@ describe('direct-tool meta catalog parity with ALL_TOOLS (P3)', () => {
           symbolName: 'run',
           lineHint: 1,
         },
-        { operation: 'workspaceSymbol', symbolName: 'run', workspaceRoot: '/tmp' },
+        {
+          operation: 'workspaceSymbol',
+          symbolName: 'run',
+          workspaceRoot: '/tmp',
+        },
       ],
       invalid: [
         { operation: 'definition' },
@@ -236,7 +232,7 @@ describe('default read-only tool availability', () => {
   it('publishes one schema per canonical capability', () => {
     expect(DIRECT_TOOL_DEFINITIONS).toHaveLength(10);
     expect(DIRECT_TOOL_DISCOVERY_DEFINITIONS).toHaveLength(10);
-    expect(DIRECT_TOOL_DISCOVERY_DEFINITIONS).not.toBe(DIRECT_TOOL_DEFINITIONS);
+    expect(DIRECT_TOOL_DISCOVERY_DEFINITIONS).toBe(DIRECT_TOOL_DEFINITIONS);
   });
 
   it.each([

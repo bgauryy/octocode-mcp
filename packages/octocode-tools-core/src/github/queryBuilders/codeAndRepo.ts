@@ -1,6 +1,6 @@
 import type { z } from 'zod';
-import type { GitHubCodeSearchQuerySchema } from '../../toolContract/input/resources/tools/githubCodeOperation.js';
-import type { GitHubReposSearchSingleQuerySchema } from '../../toolContract/input/resources/tools/githubRepositoriesOperation.js';
+import type { GitHubCodeSearchQuerySchema } from '@octocodeai/octocode-core/schema';
+import type { GitHubReposSearchSingleQuerySchema } from '@octocodeai/octocode-core/schema';
 
 type GitHubCodeSearchQuery = z.infer<typeof GitHubCodeSearchQuerySchema>;
 type GitHubReposSearchSingleQuery = z.infer<

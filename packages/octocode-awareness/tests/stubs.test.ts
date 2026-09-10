@@ -85,14 +85,14 @@ describe('notifyGet', () => {
     expect(result.notifications).toHaveLength(0);
   });
 
-  it('returns a query-grounded memory briefing without db envelope noise', () => {
+  it('returns a query-grounded memory briefing without db envelope noise', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'notify briefing',
       observation: 'Important gotcha should appear in briefing',
       importance: 8,
       label: 'GOTCHA',
-    });
+    }));
     const result = notifyGet(db, { format: 'hook', query: 'notify briefing' });
     expect(result.ok).toBe(true);
     expect(result.count).toBe(1);
@@ -185,17 +185,17 @@ describe('notifyGet', () => {
 });
 
 describe('digest dry_run', () => {
-  it('returns prediction fields without mutating anything', () => {
+  it('returns prediction fields without mutating anything', async () => {
     const db = freshDb();
     // Insert memory with expired valid_to
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'dry_run test',
       observation: 'this should be archived',
       importance: 7,
       label: 'GOTCHA',
       validFrom: new Date(Date.now() - 2000).toISOString(),
       validTo: new Date(Date.now() - 1000).toISOString(),
-    });
+    }));
     const before = (db.prepare("SELECT COUNT(*) AS c FROM awareness_memories WHERE state = 'ACTIVE'").get() as { c: number }).c;
     const result = digest(db, { dry_run: true });
     expect(result.dry_run).toBe(true);
@@ -232,14 +232,14 @@ describe('digest dry_run', () => {
 });
 
 describe('digest', () => {
-  it('rebuilds memories_fts from awareness_memories source of truth', () => {
+  it('rebuilds memories_fts from awareness_memories source of truth', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'digest fts source',
       observation: 'fresh digest term survives rebuild',
       importance: 7,
       label: 'GOTCHA',
-    });
+    }));
 
     db.exec('DELETE FROM memories_fts');
     expect(db.prepare('SELECT count(*) AS count FROM memories_fts').get()).toMatchObject({ count: 0 });
@@ -250,14 +250,14 @@ describe('digest', () => {
     expect(row?.['memory_id']).toBeTruthy();
   });
 
-  it('uses the same rebuild semantics as rebuildFts', () => {
+  it('uses the same rebuild semantics as rebuildFts', async () => {
     const db = freshDb();
-    const { memoryId } = insertMemory(db, {
+    const { memoryId } = (await insertMemory(db, {
       taskContext: 'digest stale row',
       observation: 'stale term cleanup',
       importance: 7,
       label: 'GOTCHA',
-    });
+    }));
     rebuildFts(db);
     db.prepare('DELETE FROM awareness_memories WHERE memory_id = ?').run(memoryId);
 
@@ -323,14 +323,14 @@ describe('getWorkspaceStatus', () => {
     expect(Array.isArray(result.locks)).toBe(true);
   });
 
-  it('reflects memory counts accurately', () => {
+  it('reflects memory counts accurately', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'workspace status test',
       observation: 'a test memory',
       importance: 7,
       label: 'GOTCHA',
-    });
+    }));
     const result = getWorkspaceStatus(db, {});
     expect(result.active_memories).toBe(1);
   });
@@ -354,15 +354,15 @@ describe('getWorkspaceStatus', () => {
 });
 
 describe('exportMemoryDoc', () => {
-  it('returns a non-empty markdown string', () => {
+  it('returns a non-empty markdown string', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'export doc test',
       observation: 'a memorable observation for the report',
       importance: 8,
       label: 'DECISION',
       tags: ['export', 'test'],
-    });
+    }));
     const doc = exportMemoryDoc(db, {});
     expect(typeof doc).toBe('string');
     expect(doc).toContain('# Memory Store Report');
@@ -371,24 +371,24 @@ describe('exportMemoryDoc', () => {
     expect(doc).toContain('export, test');
   });
 
-  it('includes stats header with counts and labels', () => {
+  it('includes stats header with counts and labels', async () => {
     const db = freshDb();
-    insertMemory(db, { taskContext: 'c1', observation: 'o1', importance: 7, label: 'GOTCHA' });
-    insertMemory(db, { taskContext: 'c2', observation: 'o2', importance: 6, label: 'DECISION' });
+    (await insertMemory(db, { taskContext: 'c1', observation: 'o1', importance: 7, label: 'GOTCHA' }));
+    (await insertMemory(db, { taskContext: 'c2', observation: 'o2', importance: 6, label: 'DECISION' }));
     const doc = exportMemoryDoc(db, {});
     expect(doc).toContain('**Total active memories:** 2');
     expect(doc).toContain('GOTCHA(1)');
     expect(doc).toContain('DECISION(1)');
   });
 
-  it('includes provenance references', () => {
+  it('includes provenance references', async () => {
     const db = freshDb();
-    insertMemory(db, {
+    (await insertMemory(db, {
       taskContext: 'reference export',
       observation: 'doc export should keep provenance visible',
       importance: 8,
       references: ['file:/tmp/provenance.ts', 'pr:owner/repo#456'],
-    });
+    }));
     const doc = exportMemoryDoc(db, {});
     expect(doc).toContain('**References:** file:/tmp/provenance.ts, pr:owner/repo#456');
   });

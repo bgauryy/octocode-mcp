@@ -6,7 +6,7 @@ import {
   type SemanticContentType,
 } from '../../shared/semanticTypes.js';
 import type { SymbolAnchor } from '../../shared/resolveSymbolAnchor.js';
-import { MAX_PAGE_NUMBER } from '../../../../config.js';
+import { MAX_PAGE_NUMBER } from '@octocodeai/octocode-core/schema';
 import { semanticSnapshotItems } from '../semanticSnapshot.js';
 
 export const DEFAULT_SYMBOLS_PER_PAGE = 40;

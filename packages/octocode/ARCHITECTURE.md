@@ -2,10 +2,9 @@
 
 `octocode` is the public **CLI and installer** package. It is a thin
 presentation layer: it parses input, routes to a handler, and renders output.
-At source/build time, all tool logic — schemas, execution, pagination,
-security — comes from `@octocodeai/octocode-tools-core` (which in turn calls the
-native `@octocodeai/octocode-engine` and owns tool schemas, descriptions, and
-agent-facing instructions). Reusable output types come from
+Tool execution, pagination, and security come from
+`@octocodeai/octocode-tools-core`, which calls the native engine. Public schemas,
+descriptions, shared instructions, and reusable output types come from
 `@octocodeai/octocode-core`. Nothing in this package shapes tool data; it only
 formats it for a terminal.
 
@@ -33,8 +32,9 @@ formats it for a terminal.
   - **Management commands** (`install`, `auth`/`login`/`logout`, `status`) —
     eagerly loaded; manage setup, credentials, and environment state.
 - `src/cli/tool-command/` — the raw `tools <name>` / `context` surface. Bridges
-  directly to `octocode-tools-core/direct` (`executeDirectTool`, schema text,
-  display fields) for power users and agents.
+  to `octocode-tools-core/direct` for execution and `octocode-core/schema` for
+  schemas, display fields, examples, and input preparation. `octocode-core/mcp`
+  owns CLI context and shared MCP guidance; the CLI supplies runtime availability.
 - `src/ui/` — interactive TUI: the menu loop (`menu.ts`), install flow
   (`install/`), config inspector (`config/`), and skills marketplace
   (`skills-menu/`). Reached via `octocode install` → `runInteractiveMode`.
@@ -67,7 +67,7 @@ formats it for a terminal.
 
 Publish runtime prerequisites before the CLI: engine platform packages, the
 engine root, config/core/tools-core, and then `octocode`. The CLI declares only
-the packages it imports directly; tools-core owns core and its other transitives.
+the packages it imports directly, including core contracts and tools-core execution.
 
 ## Rules
 

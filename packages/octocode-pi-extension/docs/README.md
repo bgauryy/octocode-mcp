@@ -13,6 +13,7 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 |---|---|
 | [ARCHITECTURE.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/ARCHITECTURE.md) | Pi composition root, adapter ownership, dependency rules, and convergence limits. |
 | [TOOLS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/TOOLS.md) | Tool inventory, routing rules, and native Awareness list/describe/call guidance. |
+| [CAPABILITIES.md](CAPABILITIES.md) | Native and foreign sources, reviewed linked imports, effective skill selection, model/hook adapters, versioned catalogs, and worker grants. |
 | [Awareness API](../../octocode-awareness/docs/API.md) | Imported command execution, schemas, prompt exports, host bindings, and continuations. |
 | [OVERRIDES.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/OVERRIDES.md) | Branded-launcher native-tool suppression, direct-extension backstop, and replacement routes. |
 | [WHY_OCTOCODE.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/WHY_OCTOCODE.md) | Product positioning, capability profiles, and comparison with vanilla Pi. |
@@ -40,7 +41,7 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 |---|---|
 | [UI.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/UI.md) | Current TUI design contract, widget inventory, responsive layout, core flows, and troubleshooting. |
 | [STATUS_PROGRESS_UX.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/STATUS_PROGRESS_UX.md) | Target adaptive UX for footer metadata, progress, plans, tasks, agents, messages, attention, and verification. |
-| [SETTINGS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/SETTINGS.md) | Complete `/settings` control-center reference: commands, MCP, discovery, tools, skills, persistence, security, refresh behavior, and limitations. |
+| [SETTINGS.md](SETTINGS.md) | `/config` OS browser control center: commands, MCP, source review, skills, models, hooks, persistence, security, and next-turn refresh. |
 | [RUNTIME_STATE.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/RUNTIME_STATE.md) | Session initialization, Zustand state ownership, MCP readiness, and disposal. |
 | [SESSION_ARTIFACTS.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/SESSION_ARTIFACTS.md) | Where session files live (plans, screenshots, logs, compaction snapshots), manifest, and cleanup. |
 | [CRON.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/CRON.md) | Session job safety model, default jobs, and cron-style maintenance commands. |
@@ -54,7 +55,7 @@ use `node $OCTOCODE_CLI tools <name> --scheme`.
 ---
 
 The repository root documentation covers harness-wide capability discovery
-(MCP catalog, `skill` tool, `.octocode/discovery.json`, and context composition):
+(MCP catalog, `skill` tool, discovery artifacts, and context composition):
 [`docs/OCTOCODE_TOOLS.md`](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_TOOLS.md).
 
 Do not add package command catalogs here. Package scripts are manifest-owned;

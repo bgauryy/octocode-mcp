@@ -30,7 +30,7 @@ The direct palette contains 15 extension-owned tools: 14 support tools and the g
 | Dynamic capabilities     | `callTool`, `skill`                      |
 | Planning and coordination | `plan`, `awareness`, `askUser`, `localServer` |
 
-Every direct tool exposes a `queries` batch. Each query requires a non-empty `reasoning` string of at most 240 characters. A call accepts at most 100 queries and validates the full batch before side effects. Sequential mode executes in source order and stops on the first runtime failure. Tools that explicitly expose `queryRunType:"parallel"` overlap only their documented independent operations, run at most four queries concurrently by default, and still return results in source order. Successful batches return a compact receipt index followed by every child content block—including images—in source order; the receipt never replaces model-visible results. One-query calls preserve the underlying result details and rendering contract.
+Every direct tool exposes a `queries` batch. Each query requires a non-empty `reasoning` string of at most 400 characters. A call accepts at most 100 queries. Preflight checks declared inputs across the batch before execution; live permissions, remote schemas, and mutable state are checked again when needed at execution. This is not a transaction or a promise that every operation will succeed. Sequential mode executes in source order and stops on the first runtime failure. Tools that expose `queryRunType:"parallel"` overlap independent operations, run at most four queries concurrently by default, and return results in source order. Receipts distinguish successful, failed, and not-run items. Partial failures preserve completed child content and returned error diagnostics through the shared output budget; cancellation does not label unstarted queued work as executed. Successful one-query calls preserve the underlying detail shape.
 
 ### Prompt and schema ownership
 
@@ -62,7 +62,12 @@ Colors convey meaning rather than decoration:
 - bright/title: tool identity, action, or current focal value;
 - muted/dim: metadata, previews, reasoning, and disclosure hints.
 
-Renderer limits are view-only. A separate provider boundary makes results above approximately 12,000 characters reference-first: it keeps at most 4,000 diagnostic characters (one-quarter head and three-quarters tail) and two images. The full text goes to a private ephemeral file, and the result includes a `localGetFileContent` chunk-read hint. Session shutdown removes ephemeral tool-output files. Excess images remain recoverable through a private image manifest.
+Renderer limits are view-only. A separate provider boundary makes results above approximately 12,000 characters reference-first: it keeps at most 4,000 diagnostic characters (one-quarter head and three-quarters tail) and two images. With a session manager, full text goes to a private session artifact so its `localFetch` chunk-read reference remains usable after shutdown. Without usable session storage, it falls back to a private ephemeral file removed at shutdown. Excess images remain recoverable through a private image manifest. Recover omitted results by reading the reference; do not automatically repeat a mutating tool.
+
+Registration converts internal error results and partial batch failures to Pi's
+thrown-error channel so the host records failure.
+That channel carries text only: completed images become artifact references, while
+completed text and row diagnostics follow the same output budget.
 
 Media renderers are path-backed: generated image bytes are stored once in the
 session artifact tree instead of being duplicated as base64 inside result details.
@@ -80,7 +85,7 @@ Session-scoped maintenance jobs are configured with environment settings; see [C
 
 ## Routing Guide
 
-`gh*`, `local*`, `astSearch`, `lspSearch`, and `npmSearch` below are inner tools of the built-in `octocode` MCP server. In Pi, discover/describe/call them through `MCPTool`; they are not direct Pi tools. Use the bundled `npx octocode tools` route only outside the native MCP facade.
+`gh*`, `local*`, `astSearch`, `lspSearch`, and `artifactSearch` below are inner tools of the built-in `octocode` MCP server. In Pi, discover/describe/call them through `MCPTool`; they are not direct Pi tools. Use the bundled `npx octocode tools` route only outside the native MCP facade.
 
 | Task                                                    | Tool                                                           |
 | ------------------------------------------------------- | -------------------------------------------------------------- |
@@ -99,10 +104,10 @@ Session-scoped maintenance jobs are configured with environment settings; see [C
 | Search local syntax                                     | `astSearch` with `operation:"match"`                          |
 | Browse local directory tree                             | `astSearch` with `operation:"tree"`                           |
 | Find files by name/size/time                            | `astSearch` with `operation:"files"`                          |
-| Read a local file or range                              | `localGetFileContent`                                          |
+| Read a local file or range                              | `localFetch`                                          |
 | Find dead-code candidates                               | `astSearch` with `operation:"topology", analysis:"deadCode"` |
 | Symbol identity, refs, callers, types                   | `lspSearch`                                                    |
-| Resolve npm package to source                           | `npmSearch`                                                    |
+| Resolve package identity or capability                           | `artifactSearch`                                                    |
 | See a local image / screenshot                          | `inspectMedia` with `type:"image"`                                |
 | Inspect video/audio metadata                            | `inspectMedia` with `type:"video"` / `"audio"`, `view:"metadata"` |
 | See a video frame/contact sheet or audio visualization  | `inspectMedia` with the matching `view`                           |
@@ -150,9 +155,11 @@ Execute shell commands in the current working directory. Octocode overrides Pi�
 
 One guarded mutation boundary with `type:"edit" | "write" | "delete"`:
 
-- `edit`: targeted exact/normalized/lineRange replacements with stale/lost-update checks, BOM/CRLF preservation, and Myers diff/patch details.
-- `write`: atomic create or full overwrite with parent-directory creation and post-write read-state recording.
-- `delete`: files and symbolic links only; directories are rejected, and metadata is rechecked under the mutation queue before unlinking.
+- `edit`: targeted exact/normalized/lineRange replacements with stale/lost-update checks, preservation of BOM and line endings outside replaced spans, and Myers diff/patch details. Position-only ranges require a recorded read; malformed Unicode and binary input fail before editing.
+- `write`: atomic create or full overwrite with parent-directory creation, canonical target/version checks, exclusive temporary creation, and post-write read-state recording. A competing creator cannot be silently overwritten.
+- `delete`: files and symbolic links only; directories are rejected, and native identity/content snapshots are rechecked before unlinking. A symbolic link is removed without deleting its target.
+
+The dedicated extension Rust package executes file I/O and edit-preparation diff in native workers. File reads and mutation content have a 64 MiB limit. Successful receipts include `committed:true` and a separate `durable` sync result; post-commit sync or bookkeeping failures become warnings. See [FILE_MUTATIONS.md](FILE_MUTATIONS.md) for build requirements, platform support and the native boundary.
 
 Every query requires one concise `reasoning`. Mixed batches reject duplicate paths and fully preflight every operation before the first mutation. All paths use the shared cwd/home/temp/`ALLOWED_PATHS` guard. Use `delete` only when removal is explicitly in scope. Details: [OVERRIDES.md](https://github.com/bgauryy/octocode/blob/main/packages/octocode-pi-extension/docs/OVERRIDES.md).
 
@@ -174,7 +181,7 @@ All accept absolute paths. Strip leading `@` if copied from a Pi file reference.
 | --------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `localSearch`         | `searchText`, `path`, plus lexical filters                           | Lexical text/regex search                                                            |
 | `astSearch`           | `operation`, `path`, plus operation-specific fields                  | `match`, `files`, `tree`, `symbols`, and `topology` share one strict schema          |
-| `localGetFileContent` | `path`, `startLine`/`endLine`, `matchString`, `minify`, `fullContent` | `symbols` first for large files; `none` for edits/citations                         |
+| `localFetch` | `path`, `startLine`/`endLine`, `matchString`, `minify`, `fullContent` | `symbols` first for large files; `none` for edits/citations                         |
 | `lspSearch`           | `operation`, `uri`, `symbolName`, `lineHint` or `position`            | Resolve symbol identity through a language server                                    |
 
 **`astSearch` operations:**
@@ -211,9 +218,11 @@ Symbol-level code intelligence. `lineHint` **must** come from a prior search res
 
 ## Package Tool
 
-### `npmSearch`
+### `artifactSearch`
 
-Resolve npm package names → GitHub repo. Exact package name returns rich single result with `repository`. Keyword query returns paginated candidates. Follow `repository` into GitHub tools.
+Find packages by capability, resolve dependencies to registry metadata, or locate upstream source. Require `type` (`npm`, `pypi`, `crates`, `maven`, `nuget`, `go`, `packagist`, `rubygems`) and exactly one of `packageName` or `keywords`. Python/pip/uv use `pypi`, which supports exact lookup only. Discovery defaults to 10 results; copy `next.nextPage` unchanged for continuation. Use separate bulk queries to compare ecosystems.
+
+Use local tools for installed behavior and GitHub tools when the repository is already known. Returned `artifacts[]` provides metadata and source links, not implementation evidence. See the [shared tool reference](../../../docs/OCTOCODE_TOOLS.md#artifactsearch) for npm registry configuration and provider limits.
 
 ---
 
@@ -235,7 +244,7 @@ Spawn profiles:
 
 | Profile      | Use                                                                                      |
 | ------------ | ---------------------------------------------------------------------------------------- |
-| `researcher` | Evidence gathering across web, GitHub, npm, local files, binaries, and LSP.              |
+| `researcher` | Evidence gathering across web, GitHub, package registries, local files, binaries, and LSP.              |
 | `planner`    | Dependency-ordered implementation plans, risks, verification strategy, and RFC handoffs. |
 | `architect`  | Root-cause and architecture analysis with local tools and targeted shell checks.         |
 | `implementer`| One bounded code change under exclusive ownership with an observed acceptance check.     |
@@ -327,7 +336,7 @@ All write operations are atomic (`O_EXCL` temp + rename) and use private permiss
 (`0o700` dirs, `0o600` files). A fallback path is used when the session artifact dir
 cannot be created (e.g., workspace does not yet exist).
 
-Large generic tool results and bash logs are intentionally not durable session artifacts. They use private files under `$OCTOCODE_HOME/extension/tmp/tool-results/`, include an exact path in the bounded result, support chunked reads through `localGetFileContent`, and are removed during `session_shutdown`. A later write prunes crash leftovers older than 24 hours.
+Large generic tool results and bash logs are intentionally not durable session artifacts. They use private files under `$OCTOCODE_HOME/extension/tmp/tool-results/`, include an exact path in the bounded result, support chunked reads through `localFetch`, and are removed during `session_shutdown`. A later write prunes crash leftovers older than 24 hours.
 
 ## Local file history
 
@@ -398,14 +407,15 @@ It lists and calls tools, validates exact schemas internally, reads resources, g
 and supports completion without registering each remote tool in Pi. `/mcp` opens the
 local, shared-theme connection and enablement manager.
 
-Set `queryRunType:"parallel"` to overlap status/read operations. Tool `call`
-entries may run in parallel only when they target distinct servers; same-server
-calls and mutating management actions fail preflight instead of racing. Parallel
-batches use the shared four-query concurrency cap. Omit the
+Set `queryRunType:"parallel"` only for independent operations. Tool `call`
+entries may share a server: the MCP client correlates requests. This does not
+make arbitrary remote tools read-only or their effects independent. Mutating
+management actions fail parallel preflight. Batches use the shared four-query
+concurrency cap. Omit the
 field for the default sequential, stop-on-first-error behavior.
 
 MCP payloads pass through the shared provider-result budget. Omitted full text is preserved
-in a private ephemeral file and referenced by path; up to two image blocks remain model
+in a private session artifact when session storage is available, with an ephemeral fallback, and referenced by path; up to two image blocks remain model
 content. Unsupported block types are preserved as JSON text. When an MCP server emits only
 the compact `structuredContent available` stub, the gateway surfaces the complete
 `structuredContent` payload instead.
@@ -580,7 +590,7 @@ code and add only config you trust.
 | `OCTOCODE_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN` | GitHub authentication (priority order)                                              |
 | `GITHUB_API_URL`                               | GitHub Enterprise API base URL                                                      |
 | `ENABLE_LOCAL`                                 | Set `false` to disable all local tools                                              |
-| `ENABLE_CLONE`                                 | Enables `ghCloneRepo` + `ghGetFileContent(type:"directory")`                        |
+| `ENABLE_CLONE`                                 | Enables `ghCloneRepo`                        |
 | `OCTOCODE_CDP_DEBUG`                           | Set `1` to write CDP events to `~/.octocode/chrome-debug/port-<N>/cdp-events.jsonl` |
 
 Loaded via `@octocodeai/config`. Run `npx @octocodeai/config --keys` to inspect active values.
@@ -674,8 +684,8 @@ brainstorm in `.octocode/plans/*/SKILLS-BRAINSTORM.md`.
 
 A `skill` query with `type:"call"` is the workflow sibling of `callTool`. A **dynamic skill** is an approved,
 reusable multi-step workflow the agent follows: a `SKILL.md` (Agent Skills frontmatter +
-ordered steps) plus optional helper files, written to `~/.pi/agent/skills/<name>/` so Pi
-discovers it. **Skills orchestrate; `callTool` executes** — any executable helper a skill
+ordered steps) plus optional helper files, written to `$OCTOCODE_HOME/skills/<name>/`
+(default `~/.octocode/skills`) for next-turn discovery. **Skills orchestrate; `callTool` executes** — any executable helper a skill
 ships should run through the callTool sandbox.
 
 ### Schema
@@ -702,6 +712,6 @@ ships should run through the callTool sandbox.
 - **Mandatory reason** — every created skill records why it should exist.
 - **Discovery** — spawned subagents see a new skill immediately (their skill dirs re-scan per
   spawn); the main process surfaces it after a reload or by reading the returned path through
-  `MCPTool` → `localGetFileContent`.
+  `MCPTool` → `localFetch`.
 
 Implementation: `src/tools/dynamic-skills.ts` (deterministic core), `src/tools/call-skill.ts` (private orchestration), and `src/tools/skill-tool.ts` (public facade).

@@ -132,7 +132,8 @@ export async function applyDialLevel(
 
   if (deps?.persist !== false) {
     try {
-        await atomicWritePrivateUtf8(dialFilePath(deps?.home), `${JSON.stringify({ level })}\n`);
+      const receipt = await atomicWritePrivateUtf8(dialFilePath(deps?.home), `${JSON.stringify({ level })}\n`);
+      warnings.push(...receipt.warnings);
     } catch (error) {
       warnings.push(`Could not persist dial level: ${error instanceof Error ? error.message : String(error)}`);
     }

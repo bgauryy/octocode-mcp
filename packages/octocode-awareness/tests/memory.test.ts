@@ -11,11 +11,11 @@ function freshDb(): DatabaseSync {
 }
 
 describe('memory archive lifecycle', () => {
-  it('archives active rows, restores only archived rows, and supports dry-run', () => {
+  it('archives active rows, restores only archived rows, and supports dry-run', async () => {
     const db = freshDb();
-    const { memoryId } = insertMemory(db, {
+    const { memoryId } = (await insertMemory(db, {
       taskContext: 'archive unit', observation: 'restore the archived row', importance: 6,
-    });
+    }));
 
     expect(archiveMemories(db, { memoryIds: [memoryId], dryRun: true }))
       .toEqual({ archived: 0, dry_run: true, would_archive: 1, memory_ids: [memoryId] });
@@ -34,17 +34,17 @@ describe('memory archive lifecycle', () => {
 });
 
 describe('insertMemory', () => {
-  it('returns a memoryId prefixed mem_', () => {
+  it('returns a memoryId prefixed mem_', async () => {
     const db = freshDb();
-    const { memoryId } = insertMemory(db, {
+    const { memoryId } = (await insertMemory(db, {
       taskContext: 'ctx', observation: 'obs', importance: 5,
-    });
+    }));
     expect(memoryId).toMatch(/^mem_/);
   });
 
-  it('stores and retrieves the record', () => {
+  it('stores and retrieves the record', async () => {
     const db = freshDb();
-    const { memoryId } = insertMemory(db, {
+    const { memoryId } = (await insertMemory(db, {
       agentId: 'agent-x',
       taskContext: 'routing auth',
       observation: 'JWT must be verified before handler',
@@ -52,7 +52,7 @@ describe('insertMemory', () => {
       label: 'SECURITY',
       tags: ['jwt', 'auth'],
       references: ['https://example.com'],
-    });
+    }));
     const row = db.prepare('SELECT * FROM awareness_memories WHERE memory_id = ?').get(memoryId) as Record<string, unknown>;
     expect(row['agent_id']).toBe('agent-x');
     expect(row['importance']).toBe(8);
@@ -61,86 +61,86 @@ describe('insertMemory', () => {
     expect(typeof row['novelty_score']).toBe('number');
   });
 
-  it('throws for out-of-range importance', () => {
+  it('throws for out-of-range importance', async () => {
     const db = freshDb();
-    expect(() => insertMemory(db, { taskContext: 't', observation: 'o', importance: 0 }))
+    await expect((async () => (await insertMemory(db, { taskContext: 't', observation: 'o', importance: 0 })))()).rejects
       .toThrow('importance');
-    expect(() => insertMemory(db, { taskContext: 't', observation: 'o', importance: 11 }))
+    await expect((async () => (await insertMemory(db, { taskContext: 't', observation: 'o', importance: 11 })))()).rejects
       .toThrow('importance');
   });
 
-  it('validates and canonicalizes temporal bounds', () => {
+  it('validates and canonicalizes temporal bounds', async () => {
     const db = freshDb();
-    expect(() => insertMemory(db, {
+    await expect((async () => (await insertMemory(db, {
       taskContext: 't', observation: 'o', importance: 5, validFrom: 'not-a-date',
-    })).toThrow(/valid_from.*ISO/i);
-    expect(() => insertMemory(db, {
+    })))()).rejects.toThrow(/valid_from.*ISO/i);
+    await expect((async () => (await insertMemory(db, {
       taskContext: 't', observation: 'o', importance: 5, validFrom: 'January 1, 2026',
-    })).toThrow(/valid_from.*ISO/i);
-    expect(() => insertMemory(db, {
+    })))()).rejects.toThrow(/valid_from.*ISO/i);
+    await expect((async () => (await insertMemory(db, {
       taskContext: 't', observation: 'o', importance: 5,
       validFrom: '2026-01-02T00:00:00Z', validTo: '2026-01-01T00:00:00Z',
-    })).toThrow(/valid_to.*after valid_from/i);
+    })))()).rejects.toThrow(/valid_to.*after valid_from/i);
 
-    const { memoryId } = insertMemory(db, {
+    const { memoryId } = (await insertMemory(db, {
       taskContext: 't', observation: 'o', importance: 5,
       validFrom: '2026-01-01T02:00:00+02:00', validTo: '2026-01-02T02:00:00+02:00',
-    });
+    }));
     expect(db.prepare('SELECT valid_from, valid_to FROM awareness_memories WHERE memory_id = ?').get(memoryId))
       .toEqual({ valid_from: '2026-01-01T00:00:00Z', valid_to: '2026-01-02T00:00:00Z' });
   });
 
-  it('supersedes a previous memory', () => {
+  it('supersedes a previous memory', async () => {
     const db = freshDb();
-    const { memoryId: oldId } = insertMemory(db, {
+    const { memoryId: oldId } = (await insertMemory(db, {
       taskContext: 'old ctx', observation: 'old obs', importance: 5,
-    });
-    const { superseded } = insertMemory(db, {
+    }));
+    const { superseded } = (await insertMemory(db, {
       taskContext: 'new ctx', observation: 'new obs', importance: 6,
       supersedes: [oldId],
-    });
+    }));
     expect(superseded).toContain(oldId);
     const oldRow = db.prepare('SELECT state, superseded_by FROM awareness_memories WHERE memory_id = ?').get(oldId) as Record<string, unknown>;
     expect(oldRow['state']).toBe('SUPERSEDED');
   });
 
-  it('inserts into FTS', () => {
+  it('inserts into FTS', async () => {
     const db = freshDb();
-    const { memoryId } = insertMemory(db, {
+    const { memoryId } = (await insertMemory(db, {
       taskContext: 'sqlite fts', observation: 'fts5 works', importance: 4,
-    });
+    }));
     const row = db.prepare('SELECT memory_id FROM memories_fts WHERE memories_fts MATCH ?').get('fts5') as Record<string, unknown> | undefined;
     expect(row?.['memory_id']).toBe(memoryId);
   });
 
-  it('stores novelty/similar ids for repeated memories without verbose payloads', () => {
+  it('stores novelty/similar ids for repeated memories without verbose payloads', async () => {
     const db = freshDb();
-    const first = insertMemory(db, {
+    const first = (await insertMemory(db, {
       taskContext: 'build cache regression',
       observation: 'Never edit generated dist files because build overwrites dist output',
       importance: 7,
       label: 'GOTCHA',
-    });
-    const second = insertMemory(db, {
+    }));
+    const second = (await insertMemory(db, {
       taskContext: 'build cache regression',
       observation: 'Never edit generated dist files because build overwrites dist output',
       importance: 7,
       label: 'GOTCHA',
-    });
+    }));
     expect(second.memory.novelty_score).toBeLessThan(0.75);
     expect(second.similarMemoryIds).toContain(first.memoryId);
   });
 
-  it('hard-errors unknown labels by default', () => {
+  it('hard-errors unknown labels by default', async () => {
     const db = freshDb();
-    expect(() => insertMemory(db, {
+    await expect((async () => (await insertMemory(db, {
       taskContext: 't', observation: 'o', importance: 3, label: 'BOGUS',
-    })).toThrow(/invalid label/);
+    })))()).rejects.toThrow(/invalid label/);
   });
 
-  it('handles undefined optional fields gracefully', () => {
+  it('handles undefined optional fields gracefully', async () => {
     const db = freshDb();
-    const { memory } = insertMemory(db, { taskContext: 't', observation: 'o', importance: 1 });
+    const { memory } = (await insertMemory(db, { taskContext: 't', observation: 'o', importance: 1 }));
     // workspace_path is either null or a string (auto-filled from git)
     expect(memory.workspace_path === null || typeof memory.workspace_path === 'string').toBe(true);
     // novelty_score is always returned (1.0 on first insert into empty store)

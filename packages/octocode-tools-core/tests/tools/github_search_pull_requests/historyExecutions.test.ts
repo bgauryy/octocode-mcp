@@ -1,3 +1,4 @@
+import { expectExecutableNext } from '../../helpers/executableNext.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
@@ -31,7 +32,7 @@ import {
 import {
   GitHubGetHistoryItemQueryLocalSchema,
   GitHubSearchHistoryQueryLocalSchema,
-} from '../../../src/tools/github_search_pull_requests/historySchemes.js';
+} from '@octocodeai/octocode-core/schema';
 
 function args(queries: Array<Record<string, unknown>>) {
   return { queries } as never;
@@ -40,6 +41,7 @@ function args(queries: Array<Record<string, unknown>>) {
 function resultRows(
   result: Awaited<ReturnType<typeof searchMultipleGitHubHistory>>
 ) {
+  expectExecutableNext(result.structuredContent);
   return (
     result.structuredContent as {
       results: Array<{
@@ -684,7 +686,6 @@ describe('GitHub history public adapters', () => {
     const row = resultRows(result)[0]!;
 
     expect(row.data.next).toMatchObject({
-      prDetail: expect.any(Object),
       readCommit: {
         tool: 'ghGetHistoryItem',
         query: {

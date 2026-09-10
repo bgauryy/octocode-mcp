@@ -68,5 +68,5 @@ export function cleanupEphemeralToolOutputs(): number {
 }
 
 export function chunkReadHint(file: string): string {
-  return `Read only needed chunks with localGetFileContent(path=${JSON.stringify(file)}, charOffset=<offset>, charLength<=50000).`;
+  return `Read only needed chunks with localFetch(path=${JSON.stringify(file)}, chunkType="bytes", offset=0, limit<=50000); follow next.continue unchanged.`;
 }

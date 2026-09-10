@@ -1,19 +1,7 @@
 import { createHash } from 'node:crypto';
-import { utcNow, type SqliteLike } from './schema.js';
-
-// This module owns normalized capability overrides. It retains its published
-// mcp-state path for package compatibility while sharing the same precedence
-// contract with skill enablement.
+import { utcNow, type SqliteLike, type ReadableSqlite } from './schema.js';
 
 export const MCP_GLOBAL_SCOPE = '*';
-
-interface ReadableSqlite extends SqliteLike {
-  prepare(sql: string): {
-    run(...params: unknown[]): unknown;
-    get(...params: unknown[]): unknown;
-    all(...params: unknown[]): unknown[];
-  };
-}
 
 export interface McpServerOverride {
   scopeKey: string;

@@ -13,31 +13,31 @@ function freshDb(): DatabaseSync {
   return db;
 }
 
-function run(
+async function run(
   db: DatabaseSync,
   operation: Parameters<typeof runAwarenessToolOperation>[1],
   request: Record<string, unknown>,
   cwd: string,
   agentId = 'agent-a',
 ) {
-  return runAwarenessToolOperation(db, operation, request, { cwd, agentId, sessionId: `sess-test-${agentId}` });
+  return (await runAwarenessToolOperation(db, operation, request, { cwd, agentId, sessionId: `sess-test-${agentId}` }));
 }
 
 describe('runAwarenessToolOperation memory recall semantic mode', () => {
-  it('recall semantic:true falls back to lexical with a warning when no embedder is configured', () => {
+  it('recall semantic:true falls back to lexical with a warning when no embedder is configured', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-tool-memory-semantic-off-'));
     const previousEmbedCmd = process.env['OCTOCODE_EMBED_CMD'];
     delete process.env['OCTOCODE_EMBED_CMD'];
     try {
       const db = freshDb();
-      run(db, 'record', {
+      (await run(db, 'record', {
         task_context: 'semantic fallback memory',
         observation: 'no embedder configured for this recall',
         label: 'GOTCHA',
         workspace_path: dir,
-      }, dir);
+      }, dir));
 
-      const recalled = run(db, 'recall', { query: 'semantic', semantic: true, workspace_path: dir }, dir);
+      const recalled = (await run(db, 'recall', { query: 'semantic', semantic: true, workspace_path: dir }, dir));
       const payload = recalled.payload as { mode?: string; warnings?: string[]; count: number };
       expect(payload.mode).not.toBe('semantic');
       expect(payload.warnings?.some((w) => w.includes('semantic ranking is unavailable'))).toBe(true);
@@ -49,7 +49,7 @@ describe('runAwarenessToolOperation memory recall semantic mode', () => {
     }
   });
 
-  it('recall semantic:true ranks by embedding cosine similarity when OCTOCODE_EMBED_CMD is configured', () => {
+  it('recall semantic:true ranks by embedding cosine similarity when OCTOCODE_EMBED_CMD is configured', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-tool-memory-semantic-on-'));
     const embedScript = join(dir, 'embed.mjs');
     writeFileSync(embedScript, `#!/usr/bin/env node
@@ -62,23 +62,23 @@ process.stdout.write(JSON.stringify({ embedding, model: 'test-embed' }));
     process.env['OCTOCODE_EMBED_CMD'] = `${process.execPath} ${embedScript}`;
     try {
       const db = freshDb();
-      const alpha = run(db, 'record', {
+      const alpha = (await run(db, 'record', {
         task_context: 'alpha vector memory',
         observation: 'alpha content for semantic ranking',
         label: 'DECISION',
         workspace_path: dir,
-      }, dir);
-      run(db, 'record', {
+      }, dir));
+      (await run(db, 'record', {
         task_context: 'beta vector memory',
         observation: 'beta content for semantic ranking',
         label: 'DECISION',
         workspace_path: dir,
-      }, dir);
+      }, dir));
       const alphaId = (alpha.payload as { memory_id: string }).memory_id;
 
-      const recalled = run(db, 'recall', {
+      const recalled = (await run(db, 'recall', {
         query: 'alpha', semantic: true, workspace_path: dir, limit: 2,
-      }, dir);
+      }, dir));
       const payload = recalled.payload as { mode?: string; embedding_model?: string; memories: Array<{ memory_id: string }> };
       expect(payload.mode).toBe('semantic');
       expect(payload.embedding_model).toBe('test-embed');
@@ -90,17 +90,17 @@ process.stdout.write(JSON.stringify({ embedding, model: 'test-embed' }));
     }
   });
 
-  it('recall without semantic never surfaces mode/embedding_model/warnings (unchanged default shape)', () => {
+  it('recall without semantic never surfaces mode/embedding_model/warnings (unchanged default shape)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-tool-memory-semantic-default-'));
     try {
       const db = freshDb();
-      run(db, 'record', {
+      (await run(db, 'record', {
         task_context: 'default shape memory',
         observation: 'plain lexical recall, no semantic flag',
         label: 'GOTCHA',
         workspace_path: dir,
-      }, dir);
-      const recalled = run(db, 'recall', { query: 'default', workspace_path: dir }, dir);
+      }, dir));
+      const recalled = (await run(db, 'recall', { query: 'default', workspace_path: dir }, dir));
       const payload = recalled.payload as Record<string, unknown>;
       expect(payload['mode']).toBeUndefined();
       expect(payload['embedding_model']).toBeUndefined();

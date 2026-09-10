@@ -20,13 +20,16 @@ await rm(outDir, { recursive: true, force: true });
 await build({
   ...baseOptions,
   // node:sqlite is a native built-in; must stay external.
-  external: [...baseOptions.external, 'node:sqlite', 'yaml', 'zod'],
+  external: [...baseOptions.external, 'node:sqlite', 'yaml', 'zod', 'smol-toml'],
   entryPoints: [
     'src/index.ts',
     'src/paths.ts',
     'src/db.ts',
     'src/schema.ts',
     'src/mcp-state.ts',
+    'src/capability-sources.ts',
+    'src/capability-state.ts',
+    'src/capabilities.ts',
     'src/sqlite.ts',
     'src/sqlite-version.ts',
     'src/embed.ts',

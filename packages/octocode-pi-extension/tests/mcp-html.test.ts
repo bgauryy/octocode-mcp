@@ -8,6 +8,9 @@ import type { PiCommand, PiContext } from '../src/types.js';
 import { getFooterDensity, setFooterDensity } from '../src/ui-extras.js';
 import { getPermissionLevel, setPermissionLevel } from '../src/tools/approval.js';
 import { projectMcpPath } from '../src/tools/mcp/config.js';
+import { __test__ as mcpTestHooks } from '../src/tools/mcp-tool.js';
+import { setMcpToolEnabled } from '@octocodeai/agent-contracts/mcp-state';
+import { openOctocodeDb } from '../src/tools/storage-policy.js';
 
 const originalHome = process.env['OCTOCODE_HOME'];
 const originalCompactMcp = process.env['OCTOCODE_COMPACT_MCP'];
@@ -15,6 +18,7 @@ const originalStorageMode = process.env['OCTOCODE_STORAGE_MODE'];
 const roots: string[] = [];
 const settingsCtx = {} as PiContext;
 afterEach(() => {
+  mcpTestHooks.clearCachedMcpCatalog();
   if (originalHome === undefined) delete process.env['OCTOCODE_HOME'];
   else process.env['OCTOCODE_HOME'] = originalHome;
   if (originalCompactMcp === undefined) delete process.env['OCTOCODE_COMPACT_MCP'];
@@ -99,13 +103,13 @@ test('hook review actions bind settings.html to the canonical exact-hash catalog
   } }));
   const ctx = { cwd: root, isProjectTrusted: () => true } as unknown as PiContext;
   const before = await renderMcpManagerPage(ctx);
-  const review = before.match(/data-action="review-hook" data-source="([^"]+)" data-hash="([a-f0-9]{64})"/);
+  const review = before.match(/data-action="review-hook" data-source="([^"]+)" data-hash="(sha256:[a-f0-9]{64})"/);
   const hookRevision = before.match(/id="hooks"[\s\S]*?<span>revision ([^<]+)<\/span>/)?.[1];
   assert.ok(review);
   assert.ok(hookRevision);
   await applyMcpManagerAction(parseMcpManagerAction({ action: 'review-hook', source: review[1], hash: review[2], expectedRevision: hookRevision }), ctx);
   const after = await renderMcpManagerPage(ctx);
-  assert.match(after, /badge on">trusted/);
+  assert.match(after, /badge on">active/);
   assert.equal(after.includes(`data-action="review-hook" data-source="${review[1]}" data-hash="${review[2]}"`), false);
   assert.throws(() => parseMcpManagerAction({ action: 'review-hook', source: review[1], hash: 'bad' }), /Invalid hook review hash/);
 });
@@ -187,7 +191,9 @@ test('settings.html shows live commands plus the complete skill/MCP surface and 
     assert.match(html, new RegExp(`href="#${section}"`));
   }
   assert.match(html, /Terminal theme/);
-  assert.match(html, /This page cannot edit them/);
+  assert.match(html, /Pi defaults and resolved Octocode definitions/);
+  assert.match(html, /Effective capability revision/);
+  assert.match(html, /Worker grants/);
   assert.match(html, /exact-definition trust/);
   assert.match(html, /Registered extensions/);
   assert.match(html, /Runtime controls/);
@@ -219,16 +225,34 @@ test('settings.html shows live commands plus the complete skill/MCP surface and 
   assert.match(html, /Effective scope: project/);
   assert.match(html, /cursor\.browser/);
   assert.match(html, /Discovered from cursor/);
-  assert.match(html, /Enable import/);
+  assert.match(html, /Review and link import/);
   assert.match(html, /discovered · read-only · disabled by default/);
   assert.doesNotMatch(html, /FOREIGN SECRET/);
   assert.doesNotMatch(html, /ARG SECRET|QUERY_SECRET|user:pass|fragment/);
   assert.match(html, /Everything lives here/);
-  assert.match(html, /run <code>\/configuration<\/code>/i);
+  assert.match(html, /run <code>\/config<\/code>/i);
   assert.match(html, new RegExp(configPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(html, /x-octocode-action-token/);
   assert.match(html, /test-action-token/);
   assert.doesNotMatch(html, /name="env"|name="headers"/);
+});
+
+test('configuration retains complete descriptions and schemas for disabled tools', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'octo-mcp-inspect-'));
+  roots.push(root);
+  process.env['OCTOCODE_HOME'] = path.join(root, 'home');
+  process.env['OCTOCODE_STORAGE_MODE'] = 'persistent';
+  const ctx = { cwd: root, isProjectTrusted: () => true } as PiContext;
+  const configPath = projectMcpPath(root);
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, JSON.stringify({ mcpServers: { docs: { command: 'docs-mcp' } } }));
+  mcpTestHooks.setCachedMcpCatalog(ctx, [{ name: 'docs', text: 'docs', cachedAt: Date.now(), instructions: 'Complete connected instructions.', tools: [{ name: 'readDoc', description: 'Long '.repeat(100) + 'DESCRIPTION_TAIL', inputSchema: { type: 'object', properties: { schema_tail: { type: 'string' } } } }] }]);
+  setMcpToolEnabled(openOctocodeDb(), root, 'docs', 'readDoc', false);
+  const html = await renderMcpManagerPage(ctx);
+  assert.match(html, /DESCRIPTION_TAIL/);
+  assert.match(html, /schema_tail/);
+  assert.match(html, /Complete connected instructions\./);
+  assert.match(html, /data-action="enable" data-server="docs" data-tool="readDoc"/);
 });
 
 test('settings.html identifies compact MCP as the enabled default', async () => {

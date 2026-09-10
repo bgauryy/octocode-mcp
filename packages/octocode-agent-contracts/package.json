@@ -50,6 +50,21 @@
       "import": "./out/mcp-state.js",
       "default": "./out/mcp-state.js"
     },
+    "./capability-sources": {
+      "types": "./out/capability-sources.d.ts",
+      "import": "./out/capability-sources.js",
+      "default": "./out/capability-sources.js"
+    },
+    "./capability-state": {
+      "types": "./out/capability-state.d.ts",
+      "import": "./out/capability-state.js",
+      "default": "./out/capability-state.js"
+    },
+    "./capabilities": {
+      "types": "./out/capabilities.d.ts",
+      "import": "./out/capabilities.js",
+      "default": "./out/capabilities.js"
+    },
     "./sqlite": {
       "types": "./out/sqlite.d.ts",
       "import": "./out/sqlite.js",
@@ -118,6 +133,7 @@
   },
   "dependencies": {
     "@octocodeai/config": "19.1.0",
+    "smol-toml": "^1.8.0",
     "yaml": "2.9.0",
     "zod": "^4.5.4"
   },

@@ -32,6 +32,7 @@ interface FetchWithRetriesOptions {
   rateLimitProvider?: string;
 
   packageRegistry?: string;
+  responseType?: 'json' | 'text';
 }
 
 function parseRetryAfterSeconds(headers: Headers): number | undefined {
@@ -128,6 +129,7 @@ export async function fetchWithRetries(
     signal,
     rateLimitProvider,
     packageRegistry,
+    responseType = 'json',
   } = options;
 
   let finalUrl = url;
@@ -178,7 +180,8 @@ export async function fetchWithRetries(
         return null;
       }
 
-      const json = await res.json();
+      const json =
+        responseType === 'text' ? await res.text() : await res.json();
       recordCircuitSuccess(finalUrl);
       return json;
     } catch (error: unknown) {
@@ -214,10 +217,15 @@ export async function fetchWithRetries(
 
   recordCircuitFailure(finalUrl);
 
-  throw new Error(
+  const exhausted = new Error(
     FETCH_ERRORS.FETCH_FAILED_AFTER_RETRIES.message(
       maxAttempts,
       lastError?.message || ''
-    )
-  );
+    ),
+    { cause: lastError }
+  ) as ExtendedError;
+  exhausted.status = (lastError as ExtendedError | undefined)?.status;
+  exhausted.headers = (lastError as ExtendedError | undefined)?.headers;
+  exhausted.retryable = (lastError as ExtendedError | undefined)?.retryable;
+  throw exhausted;
 }

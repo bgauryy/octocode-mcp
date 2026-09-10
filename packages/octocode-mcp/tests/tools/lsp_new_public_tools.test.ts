@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { LSP_SEARCH_TOOL_NAME } from '../../../octocode-tools-core/src/tools/toolNames.js';
+import { LSP_SEARCH_TOOL_NAME } from '@octocodeai/octocode-core/schema';
 import {
   BulkLspSearchSchema,
   LspSearchQuerySchema,
-} from '../../../octocode-tools-core/src/tools/lsp/semantic_content/scheme.js';
+} from '@octocodeai/octocode-core/schema';
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
 import { createMockMcpServer } from '../fixtures/mcp-fixtures.js';
 

@@ -14,7 +14,7 @@ Load when instructions govern MCP server behavior, tool selection, descriptions,
 
 ## Write the server instructions
 
-Give the routing table (intent → tool), the execution order for chained calls, and every convention shared by all tools stated once. State the boundaries the agent cannot infer: what the server refuses, what needs approval, what an empty result does and does not prove. Keep it high level — one line per tool at most.
+Give the routing table (intent → tool), conditional ordering when one call supplies the next required anchor, and every convention shared by all tools stated once. State the boundaries the agent cannot infer: what the server refuses, what needs approval, what an empty result does and does not prove. Keep it high level — one line per tool at most.
 
 ## Write the tool description
 
@@ -27,12 +27,12 @@ Order it **Use when → Do not use when → Inputs → Returns → Next.** Inclu
 - Name fields unambiguously (`user_id`, not `user`); constrain ranges, enums, string lengths, and incompatible combinations.
 - Describe each field with its usage rule, not its type: state when to set it, what happens when it is omitted, and which fields it conflicts with or requires.
 - Model mutually exclusive branches as a discriminated operation with a strict field set per branch, so an invalid mix is unrepresentable rather than merely discouraged.
-- Return action-relevant fields first; hide diagnostics, raw blobs, and opaque IDs unless the next call needs them.
-- Offer `concise` by default and a deliberate `detailed` mode only when both are useful.
+- Return action-relevant fields first. Keep completeness, security, and capability diagnostics visible; include opaque IDs and raw payloads only when the evidence or continuation needs them.
+- Keep default output bounded and useful. Add output views only for distinct evidence needs; do not add redundant verbosity knobs.
 - Name the continuation and say how to resume: pass the returned handle unchanged, never infer an offset or invent a cursor. Keep one pagination shape per field name; `references/context-budget.md` owns the budget policy.
 - Never claim completeness when a page, truncation, or permission boundary hides results — expose the partial-state field instead.
 
-Generate every field shared by more than one tool from a single definition so its name, type, and description string cannot drift.
+Generate equivalent shared fields from one definition; preserve documented unit or scope differences. For Octocode, `@octocodeai/octocode-core` owns tool names, schemas, descriptions, and shared MCP context. Runtime adapters consume these exports. Skills explain workflows and point to live discovery rather than maintaining a second schema.
 
 ## Sources
 - Anthropic, [Writing effective tools for AI agents](https://www.anthropic.com/engineering/writing-tools-for-agents) — namespacing, clear schemas, response formats, and token-efficient results.

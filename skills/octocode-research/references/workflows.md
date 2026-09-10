@@ -8,7 +8,7 @@ A surface tells you where evidence lives. A task tells you what evidence must es
 | Surface | When | Route |
 |---|---|---|
 | Local | checkout, artifact, or resolved dependency | `references/workflow-local.md` |
-| External | remote repository, npm package, upstream history | `references/workflow-external.md` |
+| External | remote repository, package registry, upstream history | `references/workflow-external.md` |
 | Combined | source/version comparison or remote semantic proof | `references/workflow-combination.md` |
 
 | Task | Needed outcome | Route |

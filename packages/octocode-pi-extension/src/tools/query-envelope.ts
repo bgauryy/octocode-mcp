@@ -1,6 +1,8 @@
 import { z, type ZodTypeAny } from "zod";
 import type { PiContext, ToolCallResult } from "../types.js";
 import { budgetToolResult } from "./tool-result-budget.js";
+import { QueryBatchError } from './query-batch-error.js';
+export { QueryBatchError } from './query-batch-error.js';
 
 // Strip JS MAX_SAFE_INTEGER bounds that Zod v4 adds for .int() fields by default.
 const ZINT_MAX = 9007199254740991;
@@ -58,6 +60,7 @@ export interface QueryBatchResultRow {
   status: "success" | "failed" | "not-run";
   summary: string;
   result?: unknown;
+  content?: ToolCallResult['content'];
 }
 
 export interface ExecuteQueryBatchOptions extends PreparedQueryBatchOptions {
@@ -83,44 +86,11 @@ export interface ExecuteQueryBatchOptions extends PreparedQueryBatchOptions {
   passthroughSingle?: boolean;
 }
 
-/**
- * Runtime error for an ordered, non-transactional batch. Earlier successful
- * effects are intentionally retained and their count is exposed to callers.
- */
-export class QueryBatchError extends Error {
-  readonly failedIndex: number;
-  readonly completedCount: number;
-  readonly originalError: unknown;
-  readonly rows: QueryBatchResultRow[];
-  readonly queryRunType: QueryRunType;
 
-  constructor(
-    failedIndex: number,
-    completedCount: number,
-    error: unknown,
-    rows: QueryBatchResultRow[] = [],
-    queryRunType: QueryRunType = "sequential",
-  ) {
-    const detail = error instanceof Error ? error.message : String(error);
-    const icon = (status: QueryBatchResultRow["status"]): string =>
-      status === "success" ? "✓" : status === "failed" ? "✗" : "○";
-    const rowText =
-      rows.length > 0
-        ? `\n${rows.map((row) => `${icon(row.status)} [${row.index}] ${row.status}: ${row.summary}`).join("\n")}`
-        : "";
-    const prefix =
-      queryRunType === "parallel"
-        ? `queries[${failedIndex}] failed during parallel execution after ${completedCount} queries succeeded`
-        : `queries[${failedIndex}] failed after ${completedCount} prior queries succeeded`;
-    super(`${prefix}: ${detail}${rowText}`);
-    this.name = "QueryBatchError";
-    this.failedIndex = failedIndex;
-    this.completedCount = completedCount;
-    this.originalError = error;
-    this.rows = rows;
-    this.queryRunType = queryRunType;
-  }
+class QueryResultError extends Error {
+  constructor(readonly result: ToolCallResult) { super(defaultSummary(result)); }
 }
+class QueryNotRunError extends Error {}
 
 /**
  * Build the standard query-envelope JSON Schema from a Zod item schema.
@@ -295,6 +265,7 @@ export async function executeQueryBatch(
       status: "success",
       summary: summarize(entry.result, queries[entry.index]!, entry.index),
       result: entry.result.details,
+      content: entry.result.content,
     }));
 
   const runOne = async (
@@ -302,7 +273,7 @@ export async function executeQueryBatch(
     index: number,
   ): Promise<QueryBatchItemResult> => {
     if (options.signal?.aborted) {
-      throw new Error("query batch aborted");
+      throw new QueryNotRunError("query batch aborted before execution");
     }
     options.onUpdate?.(
       progressResult(index, queries.length, query.reasoning, queryRunType),
@@ -320,7 +291,7 @@ export async function executeQueryBatch(
       result.isError &&
       !(options.passthroughSingle && queries.length === 1)
     ) {
-      throw new Error(defaultSummary(result));
+      throw new QueryResultError(result);
     }
     return { index, reasoning: query.reasoning, result };
   };
@@ -379,15 +350,17 @@ export async function executeQueryBatch(
             status: "success",
             summary: summarize(entry.value.result, queries[index]!, index),
             result: entry.value.result.details,
+            content: entry.value.result.content,
           }
         : {
             index,
             reasoning: queries[index]!.reasoning,
-            status: "failed",
+            status: entry.reason instanceof QueryNotRunError ? 'not-run' : 'failed',
             summary:
               entry.reason instanceof Error
                 ? entry.reason.message
                 : String(entry.reason),
+            ...(entry.reason instanceof QueryResultError ? { result: entry.reason.result.details, content: entry.reason.result.content } : {}),
           },
     );
     results.push(
@@ -395,7 +368,7 @@ export async function executeQueryBatch(
         entry.status === "fulfilled" ? [entry.value] : [],
       ),
     );
-    const failedIndex = rows.findIndex((row) => row.status === "failed");
+    const failedIndex = rows.findIndex((row) => row.status !== "success");
     if (failedIndex >= 0) {
       throw new QueryBatchError(
         failedIndex,
@@ -423,8 +396,9 @@ export async function executeQueryBatch(
             {
               index,
               reasoning: query.reasoning,
-              status: "failed",
+              status: error instanceof QueryNotRunError ? 'not-run' : 'failed',
               summary: detail,
+              ...(error instanceof QueryResultError ? { result: error.result.details, content: error.result.content } : {}),
             },
             ...queries
               .slice(index + 1)

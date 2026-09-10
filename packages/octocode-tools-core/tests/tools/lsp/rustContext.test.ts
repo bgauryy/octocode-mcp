@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import { LspSearchQuerySchema } from '../../../src/tools/lsp/semantic_content/scheme.js';
+import { LspSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 import {
   describeRustContext,
   semanticSnapshotItems,
 } from '../../../src/tools/lsp/semantic_content/semanticSnapshot.js';
 import type { LspSearchQuery } from '../../../src/tools/lsp/shared/semanticTypes.js';
 import { attachReadinessWarning } from '../../../src/tools/lsp/shared/readiness.js';
-import { LspSearchQuerySchema as PublicLspSearchQuerySchema } from '../../../src/toolContract/input/resources/tools/lspSearch.js';
+import { BaseLspSearchQuerySchema as PublicLspSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 const query = {
   uri: '/workspace/main.rs',

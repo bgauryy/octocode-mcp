@@ -14,7 +14,7 @@
  *
  * PACKAGE_SEARCH is used because requiresServerRuntime:true with no
  * requiresProviders, so only the serverRuntimeInitPromise path is exercised.
- * Its input schema requires `packageName` (not `keywords`).
+ * Its input schema requires an ecosystem and exact or discovery selector.
  */
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 
@@ -23,9 +23,10 @@ import {
   _overrideInitialize,
   _resetInitialize,
 } from '../../src/tools/directToolCatalog.exec.js';
-import { STATIC_TOOL_NAMES } from '../../src/tools/toolNames.js';
+import { STATIC_TOOL_NAMES } from '@octocodeai/octocode-core/schema';
 
 const PACKAGE_QUERY = {
+  type: 'npm',
   packageName: 'vitest',
   goal: 'verify retry',
   reasoning: 'bug-5 regression',

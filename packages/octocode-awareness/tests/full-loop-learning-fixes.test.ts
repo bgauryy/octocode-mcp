@@ -21,12 +21,12 @@ function freshDb(): DatabaseSync {
 }
 
 describe('READ -> DO -> LEARN closure fixes', () => {
-  it('does not call a missing file reference verified and smart recall really broadens filters', () => {
+  it('does not call a missing file reference verified and smart recall really broadens filters', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'awareness-learning-trust-'));
     try {
       const db = freshDb();
       const missing = join(dir, 'missing.ts');
-      const { memoryId } = insertMemory(db, {
+      const { memoryId } = (await insertMemory(db, {
         agentId: 'learning-agent',
         taskContext: 'cache source evidence',
         observation: 'Validate current source before applying recalled cache rules.',
@@ -34,7 +34,7 @@ describe('READ -> DO -> LEARN closure fixes', () => {
         label: 'GOTCHA',
         references: [`file:${missing}`],
         workspacePath: dir,
-      });
+      }));
 
       const packet = attendAwareness(db, {
         agentId: 'learning-agent', workspacePath: dir, query: 'cache source evidence', compact: true,
@@ -42,9 +42,9 @@ describe('READ -> DO -> LEARN closure fixes', () => {
       expect(packet.evidence[0]?.id).toBe(memoryId);
       expect(packet.evidence[0]?.trust).not.toBe('verified_lead');
 
-      const broadened = getMemory(db, {
+      const broadened = (await getMemory(db, {
         query: 'cache source evidence', workspacePath: dir, label: ['SECURITY'], smart: true,
-      });
+      }));
       expect(broadened.memories.map(memory => memory.memory_id)).toContain(memoryId);
       expect((broadened as typeof broadened & { smart_expanded?: boolean }).smart_expanded).toBe(true);
       expect((broadened as typeof broadened & { smart_dropped_filters?: string[] }).smart_dropped_filters)
@@ -130,12 +130,12 @@ describe('READ -> DO -> LEARN closure fixes', () => {
     }
   });
 
-  it('marks bounded explicit exports partial and escapes CSV formula injection', () => {
+  it('marks bounded explicit exports partial and escapes CSV formula injection', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'awareness-share-safe-'));
     try {
       const db = freshDb();
       for (let index = 0; index < 55; index += 1) {
-        insertMemory(db, {
+        (await insertMemory(db, {
           agentId: 'learning-agent',
           taskContext: `lesson ${index}`,
           observation: index === 0 ? '=HYPERLINK("https://example.invalid","click")' : `Distinct lesson ${index}`,
@@ -143,7 +143,7 @@ describe('READ -> DO -> LEARN closure fixes', () => {
           label: 'WORKFLOW',
           workspacePath: dir,
           preComputedSimilar: [],
-        });
+        }));
       }
       agentSignal(db, {
         action: 'publish',
@@ -173,7 +173,7 @@ describe('READ -> DO -> LEARN closure fixes', () => {
     }
   }, 30_000);
 
-  it('reports only age-qualified maintenance pressure and emits selector-bearing actions', () => {
+  it('reports only age-qualified maintenance pressure and emits selector-bearing actions', async () => {
     const db = freshDb();
     const workspace = '/repo';
     const old = '2020-01-01T00:00:00Z';
@@ -190,10 +190,10 @@ describe('READ -> DO -> LEARN closure fixes', () => {
       kind: 'fyi', subject: 'old signal', body: 'review me',
     });
     db.prepare("UPDATE signals SET created_at = ? WHERE subject = 'old signal'").run(old);
-    const memory = insertMemory(db, {
+    const memory = (await insertMemory(db, {
       agentId: 'owner', taskContext: 'stale ref', observation: 'review old path', importance: 5,
       references: ['file:/repo/missing.ts'], workspacePath: workspace,
-    });
+    }));
     db.prepare('UPDATE awareness_memories SET created_at = ?, updated_at = ? WHERE memory_id = ?')
       .run(old, old, memory.memoryId);
 

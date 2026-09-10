@@ -1,3 +1,4 @@
+import { DIRECT_TOOL_AUTO_FILLED_FIELDS } from '@octocodeai/octocode-core/schema';
 /**
  * Canonical pagination schemas for all direct tools.
  *
@@ -46,7 +47,7 @@ export const ItemPaginationSchema = z.object({
 export type ItemPagination = z.infer<typeof ItemPaginationSchema>;
 
 // ---------------------------------------------------------------------------
-// Char pagination — for file content windows, PR bodies, archive extraction
+// Char pagination — for history bodies, patches, and archive extraction
 // ---------------------------------------------------------------------------
 
 export const CharPaginationSchema = z.object({
@@ -95,26 +96,22 @@ export type LocalItemPagination = z.infer<typeof LocalItemPaginationSchema>;
  * query (goal and reasoning). These are NOT real query parameters, so
  * they must be stripped from a replayable continuation — otherwise an agent that
  * runs `next` resends stale meta from the originating call.
- * Mirrors DIRECT_TOOL_AUTO_FILLED_FIELDS in tools/directToolCatalog; kept local
- * to avoid a scheme→tools upward (circular) import.
+ * Uses the canonical direct-tool auto-filled fields.
  */
-const AUTO_FILLED_META_KEYS: readonly string[] = ['goal', 'reasoning'];
 
 function stripAutoFilledMeta(
   query: Record<string, unknown>
 ): Record<string, unknown> {
-  let next: Record<string, unknown> | undefined;
-  for (const key of AUTO_FILLED_META_KEYS) {
-    if (key in query) {
-      next ??= { ...query };
-      delete next[key];
-    }
-  }
-  return next ?? query;
+  return Object.fromEntries(
+    Object.entries(query).filter(
+      ([key, value]) =>
+        value !== undefined && !DIRECT_TOOL_AUTO_FILLED_FIELDS.has(key)
+    )
+  );
 }
 
 /**
- * Build a machine-ready next-page continuation for list-style local tools.
+ * Build a machine-ready next-page continuation for tool queries.
  * Callers pass the full original query with the advanced page field already set;
  * auto-filled per-call metadata is stripped so the continuation is cleanly replayable.
  */
@@ -128,44 +125,5 @@ export function buildNextPageContinuation(
     query: stripAutoFilledMeta(query),
     why,
     confidence: 'exact',
-  };
-}
-
-/**
- * Build `next.continueChars` for file-content tools when a char window has more.
- * Shared by ghGetFileContent finalizer and localGetFileContent.
- */
-export function buildContinueCharsContinuation<TTool extends string>(
-  tool: TTool,
-  query: Record<string, unknown>,
-  pagination:
-    | {
-        hasMore?: boolean;
-        nextCharOffset?: number;
-        charLength?: number;
-      }
-    | null
-    | undefined,
-  options?: { includeCharLength?: boolean }
-): { continueChars: ToolContinuation & { tool: TTool } } | undefined {
-  if (
-    !pagination ||
-    !pagination.hasMore ||
-    pagination.nextCharOffset === undefined
-  ) {
-    return undefined;
-  }
-  const includeCharLength = options?.includeCharLength !== false;
-  return {
-    continueChars: {
-      tool,
-      query: {
-        ...query,
-        charOffset: pagination.nextCharOffset,
-        ...(includeCharLength && pagination.charLength !== undefined
-          ? { charLength: query.charLength ?? pagination.charLength }
-          : {}),
-      },
-    },
   };
 }

@@ -10,8 +10,8 @@ vi.mock('../../../src/tools/local_ripgrep/structuralSearch.js', () => ({
 }));
 
 import { executeAstSearch } from '../../../src/tools/ast_search/execution.js';
-import type { AstSearchQuery } from '../../../src/tools/ast_search/scheme.js';
-import { LocalRipgrepQuerySchema } from '../../../src/tools/local_ripgrep/scheme.js';
+import type { AstSearchQuery } from '@octocodeai/octocode-core/schema';
+import { LocalRipgrepQuerySchema } from '@octocodeai/octocode-core/schema';
 
 const emptyQueries = (['pattern', 'rule'] as const).flatMap(field =>
   ['', '   ', '\n\t'].map(value => ({ field, value }))

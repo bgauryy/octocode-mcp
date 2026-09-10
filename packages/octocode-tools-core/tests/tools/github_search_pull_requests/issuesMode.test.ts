@@ -64,14 +64,14 @@ describe('ghSearchIssues type:"issues"', () => {
     const text = JSON.stringify(result.structuredContent ?? result);
     expect(text).toContain('Crash on startup');
     expect(text).toContain('"type":"issues"');
-    expect(text).toContain('"readIssue"');
-    expect(text).toContain('"operation":"issue"');
+    expect(text).not.toContain('"readIssue"');
+    expect(text).not.toContain('"operation":"issue"');
     expect(text).toContain('"number":42');
     expect(text).not.toContain('"issueNumber"');
-    expect(text).toContain('"searchRepositoryCode"');
+    expect(text).not.toContain('"searchRepositoryCode"');
     expect(text).not.toContain('"searchCode"');
-    expect(text).toContain('"tool":"ghSearch"');
-    expect(text).toContain('"operation":"code"');
+    expect(text).not.toContain('"tool":"ghSearch"');
+    expect(text).not.toContain('"operation":"code"');
     expect(text).not.toContain('github.code');
   });
 
@@ -119,7 +119,7 @@ describe('ghSearchIssues type:"issues"', () => {
     });
   });
 
-  it('omits next.readIssue in detail mode but still offers repository code search', async () => {
+  it('omits optional next-tool suggestions for successful issue details', async () => {
     fetchIssues.mockResolvedValue({
       data: {
         type: 'issues',
@@ -157,7 +157,7 @@ describe('ghSearchIssues type:"issues"', () => {
 
     const text = JSON.stringify(result.structuredContent ?? result);
     expect(text).not.toContain('"readIssue"');
-    expect(text).toContain('"searchRepositoryCode"');
+    expect(text).not.toContain('"searchRepositoryCode"');
     expect(text).not.toContain('"searchCode"');
   });
 
@@ -220,7 +220,7 @@ describe('ghSearchIssues type:"issues"', () => {
 
   it('the local query schema accepts type:"issues" and issueNumber', async () => {
     const { GitHubPullRequestSearchQueryLocalSchema } =
-      await import('../../../src/tools/github_search_pull_requests/scheme.js');
+      await import('@octocodeai/octocode-core/schema');
     const parsed = GitHubPullRequestSearchQueryLocalSchema.safeParse({
       type: 'issues',
       owner: 'o',

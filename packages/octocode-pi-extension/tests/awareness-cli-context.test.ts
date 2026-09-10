@@ -40,7 +40,7 @@ describe('canonical Awareness CLI in Pi', () => {
     expect(renderAwarenessCliContext(ctx)).toContain('pi-cli-test');
     expect(renderAwarenessCliContext(ctx)).toContain('$OCTOCODE_AWARENESS_DB');
     expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toContain(
-      'native awareness tool. It imports the Awareness API directly'
+      'native awareness tool. Host bindings:'
     );
     expect(renderAwarenessCliContext(ctx, { nativeTool: true })).toContain(
       'Host bindings:'

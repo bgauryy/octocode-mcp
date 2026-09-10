@@ -6,7 +6,7 @@ import {
   LOCAL_SEARCH_TOOL_NAME,
   AST_SEARCH_TOOL_NAME,
   STATIC_TOOL_NAMES,
-} from '../../src/tools/toolNames.js';
+} from '@octocodeai/octocode-core/schema';
 import { cleanup } from '../../src/serverConfig.js';
 import { setRuntimeSurface, _resetRuntimeSurface } from '@octocodeai/config';
 import { ADAPTER_PARITY_CASES } from '../fixtures/adapterParityFixture.js';
@@ -286,11 +286,11 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
   });
 
   it.each([
-    ['ENABLE_LOCAL', 'false', 'localToolsDisabled'],
-    ['ENABLE_CLONE', 'false', 'cloneDisabled'],
+    ['ENABLE_LOCAL', 'false'],
+    ['ENABLE_CLONE', 'false'],
   ] as const)(
-    'gates ghGetFileContent directory materialization inside tools-core when %s=%s',
-    async (flag, value, errorCode) => {
+    'rejects ghGetFileContent directory mode at input validation when %s=%s',
+    async (flag, value) => {
       process.env.ENABLE_LOCAL = 'true';
       process.env.ENABLE_CLONE = 'true';
       process.env[flag] = value;
@@ -310,7 +310,10 @@ describe('executeDirectTool - invalid input handling (finding 3)', () => {
         }
       );
 
-      expect(JSON.stringify(result.structuredContent)).toContain(errorCode);
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result.structuredContent)).toContain(
+        'Unrecognized key'
+      );
     }
   );
 });

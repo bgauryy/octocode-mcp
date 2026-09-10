@@ -1,6 +1,5 @@
-import { AGENT_APPLICATION_ID } from '@octocodeai/agent-contracts/schema';
+import { AGENT_APPLICATION_ID, readSchemaObjects, assertSchemaObjects } from '@octocodeai/agent-contracts/schema';
 import { AWARENESS_APPLICATION_ID } from './storage-scope.js';
-import { createHash } from 'node:crypto';
 import type { TableInfoRow } from './types/work-maintenance.js';
 import { DatabaseSync } from '@octocodeai/agent-contracts/sqlite';
 import { FTS_SCHEMA_DDL, SCHEMA_DDL, SCHEMA_INDEX_DDL } from './db-schema.js';
@@ -39,45 +38,6 @@ export function canonicalColumns(): Map<string, ColumnInfo[]> {
   }
 }
 
-export function normalizeSchemaSql(sql: string): string {
-  return sql
-    .replace(/--[^\n]*/g, ' ')
-    .replace(/["`\[\]]/g, '')
-    .replace(/\bIF\s+NOT\s+EXISTS\b/gi, '')
-    .replace(/\s+/g, ' ')
-    .replace(/\s*([(),])\s*/g, '$1')
-    .trim()
-    .toLowerCase();
-}
-
-export interface SchemaObject {
-  type: string;
-  name: string;
-  tableName: string;
-  sql: string;
-}
-
-export function readSchemaObjects(db: DatabaseSync): SchemaObject[] {
-  const rows = db.prepare(`
-    SELECT type, name, tbl_name, sql
-    FROM sqlite_schema
-    WHERE type IN ('table', 'view', 'index', 'trigger')
-      AND name NOT LIKE 'sqlite_%'
-      AND name NOT GLOB 'memories_fts_*'
-    ORDER BY type, name
-  `).all() as Array<{ type: string; name: string; tbl_name: string; sql: string | null }>;
-  return rows.map((row) => ({
-    type: row.type,
-    name: row.name,
-    tableName: row.tbl_name,
-    sql: normalizeSchemaSql(row.sql ?? ''),
-  }));
-}
-
-export function schemaObjectsFingerprint(objects: SchemaObject[]): string {
-  return createHash('sha256').update(JSON.stringify(objects)).digest('hex');
-}
-
 export function assertCanonicalRelationContract(
   db: DatabaseSync,
   relations?: SchemaIdentity['relations'],
@@ -98,18 +58,19 @@ export function assertCanonicalRelationContract(
 }
 
 export function assertCanonicalSchemaFingerprint(db: DatabaseSync): void {
+  assertSchemaFingerprint(db, false);
+}
+
+function assertSchemaFingerprint(db: DatabaseSync, previousHistorySchema: boolean): void {
   const objects = readSchemaObjects(db);
   const canonical = new DatabaseSync(':memory:');
   try {
     canonical.exec(SCHEMA_DDL);
     canonical.exec(SCHEMA_INDEX_DDL);
+    if (previousHistorySchema) canonical.exec('DROP TABLE local_history_durability');
     if (objects.some(({ name }) => name === 'memories_fts')) canonical.exec(FTS_SCHEMA_DDL);
     if (objects.some(({ name }) => name === 'worker_lifecycle_events')) canonical.exec(WORKER_LIFECYCLE_DDL);
-    const expectedFingerprint = schemaObjectsFingerprint(readSchemaObjects(canonical));
-    const actualFingerprint = schemaObjectsFingerprint(objects);
-    if (actualFingerprint !== expectedFingerprint) {
-      throw new Error(`canonical schema fingerprint mismatch (expected ${expectedFingerprint}, got ${actualFingerprint})`);
-    }
+    assertSchemaObjects(objects, readSchemaObjects(canonical));
   } finally {
     canonical.close();
   }
@@ -120,19 +81,11 @@ export interface SchemaIdentity {
   relations: Array<{ name: string; type: string }>;
 }
 
-export type SchemaState = 'fresh' | 'canonical';
+export type SchemaState = 'fresh' | 'canonical' | 'history-durability-upgrade';
 
 export function readSchemaIdentity(db: DatabaseSync): SchemaIdentity {
   const application = db.prepare('PRAGMA application_id').get() as { application_id: number };
-  const relations = db.prepare(`
-    SELECT name, type
-    FROM sqlite_schema
-    WHERE type IN ('table', 'view')
-      AND name NOT LIKE 'sqlite_%'
-      AND name NOT GLOB 'memories_fts_*'
-      AND name NOT GLOB 'memory_fts_*'
-    ORDER BY name
-  `).all() as Array<{ name: string; type: string }>;
+  const relations = readSchemaObjects(db).filter(({ type }) => type === 'table' || type === 'view').map(({ name, type }) => ({ name, type }));
   return {
     applicationId: application.application_id ?? 0,
     relations,
@@ -147,13 +100,21 @@ export function inspectSchemaState(db: DatabaseSync): SchemaState {
   const knownAwarenessHost = identity.relations.every(({ name, type }) => (
     type === 'table' && (expected.has(name) || name === 'memories_fts' || name === 'worker_lifecycle_events')
   ));
-  if (identity.applicationId === AWARENESS_APPLICATION_ID || identity.applicationId === 0) {
+  if (identity.applicationId === 0) {
     if (identity.relations.length === 0) return 'fresh';
+    throw new Error('refusing unrecognized application_id=0 Awareness store; select a current canonical store or a fresh database. The database has not been changed.');
+  }
+  if (identity.applicationId === AWARENESS_APPLICATION_ID) {
     if (!knownAwarenessHost) {
       const names = identity.relations.map(({ name }) => name).join(', ');
       throw new Error(`refusing unrecognized or unrelated Awareness SQLite store; database consolidation may be required; relations: ${names}`);
     }
     if (canonicalCount !== expected.size) {
+      if (canonicalCount === expected.size - 1 && !relationNames.has('local_history_durability')) {
+        // Match the complete predecessor fingerprint before any migration write.
+        assertSchemaFingerprint(db, true);
+        return 'history-durability-upgrade';
+      }
       throw new Error('Awareness requires the exact current canonical schema; this database is not supported and has not been changed. Select a fresh Awareness store.');
     }
     assertCanonicalRelationContract(db, identity.relations);

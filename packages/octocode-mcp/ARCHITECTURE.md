@@ -2,8 +2,8 @@
 
 `octocode-mcp` is a **thin MCP server**. It owns process lifecycle, tool
 registration, and output safety. It owns **no** business logic, schemas, or tool
-metadata — those live in `@octocodeai/octocode-tools-core` (`toolContract/` for
-schemas/descriptions and `octocode-engine` for native search/minify/LSP). The
+metadata. Execution lives in `@octocodeai/octocode-tools-core`; contracts live in
+`@octocodeai/octocode-core`; native search/minify/LSP live in `octocode-engine`. The
 MCP package wires those into the MCP SDK and runs them.
 
 ## Boundary
@@ -14,8 +14,8 @@ MCP package wires those into the MCP SDK and runs them.
 - **Public API**: `src/public.ts` is the declared package surface for programmatic
   consumers. It re-exports tools-core; workspace interfaces import tools-core
   directly. Internal `register*Tool` functions are intentionally absent.
-- Logic, descriptions, schemas, and the system prompt come from core. Do not
-  add data-shaping here — shape it in core.
+- Import descriptions and schemas from core, and runners from tools-core.
+  Keep data shaping in tools-core.
 
 ## Startup (`src/index.ts`)
 
@@ -24,19 +24,19 @@ MCP package wires those into the MCP SDK and runs them.
 1. `initialize()` — core bootstrap, including the persisted cache-maintenance due-check.
 2. `configureSecurity()` + register `getOctocodeDir()` as an allowed root.
 3. `initializeProviders()` — GitHub / GitLab / Bitbucket.
-4. `loadToolContent()` — pull descriptions/metadata from core.
 5. `initializeSession()`, then `createServer()` + `registerAllTools()`.
 
 After the transport connects, `startCacheGC()` schedules the next persisted maintenance deadline with an unreferenced timer. This is deadline-based scheduling from the shared 24-hour marker, not a fresh interval measured from each MCP start, so CLI and MCP processes observe the same gate. A cross-process lock prevents overlapping sweeps.
 
-The server is created with `instructions: completeMetadata.systemPrompt` (core).
+The server uses core's `buildMcpInstructions(enabledToolNames)` so instructions
+match the configured tool subset.
 Process handlers wire SIGINT/SIGTERM/STDIN-close/uncaught/unhandled to a single
 `gracefulShutdown` that stops the cache-maintenance scheduler, clears runtime caches, and closes the server
 within `SHUTDOWN_TIMEOUT_MS` (5s) before exiting.
 
 ## Tool Registration (`src/tools/`)
 
-- `toolConfig.ts` — maps core's `ALL_TOOLS` metadata and execution contracts
+- `toolConfig.ts` — maps tools-core's `ALL_TOOLS` runtime attachments
   through `createToolRegistration`, producing `ALL_TOOLS: McpToolConfig[]`.
 - `toolsManager.ts` — `registerTools()`: wraps the server with output
   sanitization, filters tools (local/clone gates + filter config), then
@@ -55,8 +55,8 @@ The public catalog is:
 
 - **GitHub**: `ghSearch`, `ghGetFileContent`, `ghSearchHistory`,
   `ghGetHistoryItem`, and `ghCloneRepo`.
-- **Package**: `npmSearch`.
-- **Local**: `localSearch`, `astSearch`, and `localGetFileContent`.
+- **Package**: `artifactSearch`.
+- **Local**: `localSearch`, `astSearch`, and `localFetch`.
 - **LSP**: `lspSearch`.
 
 ## Output Safety (`src/utils/secureServer.ts`)
@@ -73,12 +73,12 @@ server.
 There are two different dependency views:
 
 - **Source/build**: `@octocodeai/octocode-tools-core` resolves to the workspace
-  during local development. The MCP source imports its runners, schemas,
-  metadata, and shared utilities; `buildConfig.mjs` keeps runtime dependencies
+  during local development. The MCP source imports its runners and shared
+  utilities, and imports public contracts from core; `buildConfig.mjs` keeps runtime dependencies
   external in `dist/index.js` and `dist/public.js`.
 - **Published runtime**: npm users install the direct dependencies declared in
   `package.json`: MCP SDK v2's `@modelcontextprotocol/server`, tools-core, and
-  Zod. Client SDK v2 is test-only. Tools-core owns its core and native-engine
+  core, and Zod. Client SDK v2 is test-only. Tools-core owns its native-engine
   dependencies, including the matching platform addon.
 - **Types**: `dist/public.d.ts` is bundled into one consumer-facing declaration
   file while tools-core remains an explicit runtime dependency.

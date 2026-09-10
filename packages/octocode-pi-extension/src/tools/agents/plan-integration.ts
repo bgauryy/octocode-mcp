@@ -42,6 +42,7 @@ export type AgentProfile = (typeof AGENT_PROFILES)[number];
 export const AGENT_OPERATIONS = [
   'spawn',
   'inspect',
+  'configure',
   'wait',
   'message',
   'steer',

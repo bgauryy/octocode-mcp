@@ -155,7 +155,7 @@ describe("Pi production scenario probe", () => {
     expect(receipt.observations).toEqual([
       {
         kind: "persistence.durable-entry-count",
-        data: { count: 9, recoveredCustomEntry: true },
+        data: { count: 8, recoveredCustomEntry: true },
       },
     ]);
   }, 20_000);
@@ -279,7 +279,7 @@ describe("Pi production scenario probe", () => {
         expect(receipt.observations).toEqual([
           {
             kind: "persistence.durable-entry-count",
-            data: { count: 6, recoveredCustomEntry: true },
+            data: { count: 5, recoveredCustomEntry: true },
           },
         ]);
         expect(receipt.events[0]?.data).not.toHaveProperty("entryCount");

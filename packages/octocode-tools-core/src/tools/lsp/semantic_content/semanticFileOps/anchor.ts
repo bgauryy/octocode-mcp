@@ -48,7 +48,7 @@ export function throwLspUnavailable(
   throw new ToolError(
     LOCAL_TOOL_ERROR_CODES.LSP_SERVER_UNAVAILABLE,
     `No ${languageId} language server is available for ${uri}, so "${op}" cannot be answered semantically.${startupDetail} ${hint} ` +
-      `Meanwhile, use localSearch for text or astSearch operation:"match" for syntax, then localGetFileContent for surrounding code.`
+      `Meanwhile, use localSearch for text or astSearch operation:"match" for syntax, then localFetch for surrounding code.`
   );
 }
 

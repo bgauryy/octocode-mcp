@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { LspSearchQuerySchema as CanonicalLspSearchQuerySchema } from '../../../src/toolContract/input/resources/tools/lspSearch.js';
-import {
-  BulkLspSearchSchema,
-  LspSearchQuerySchema,
-} from '../../../src/tools/lsp/semantic_content/scheme.js';
+import { BaseLspSearchQuerySchema as CanonicalLspSearchQuerySchema } from '@octocodeai/octocode-core/schema';
+import { BulkLspSearchSchema, LspSearchQuerySchema } from '@octocodeai/octocode-core/schema';
 
 describe('lspSearch runtime schema ownership', () => {
   it('reuses the canonical strict query union for single and bulk inputs', () => {

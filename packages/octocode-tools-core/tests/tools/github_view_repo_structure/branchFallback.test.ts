@@ -62,7 +62,7 @@ describe('github.tree — explicit invalid branch falls back to default (regress
     expect(text).toContain('README.md');
   });
 
-  it('the emitted next.* hints carry the resolved branch, not the invalid requested one', async () => {
+  it('preserves the resolved branch without obsolete materialization suggestions', async () => {
     resolveDefaultBranch.mockResolvedValue('main');
     getRepoStructure
       .mockResolvedValueOnce(notFound())
@@ -79,26 +79,10 @@ describe('github.tree — explicit invalid branch falls back to default (regress
       ],
     } as never);
 
-    // Locate the `next` block that carries the follow-up hints.
-    const found: Array<{ query?: { branch?: string } }> = [];
-    const visit = (node: unknown): void => {
-      if (!node || typeof node !== 'object') return;
-      const obj = node as Record<string, unknown>;
-      if ('fetchFile' in obj || 'materialize' in obj) {
-        if (obj.fetchFile)
-          found.push(obj.fetchFile as { query?: { branch?: string } });
-        if (obj.materialize)
-          found.push(obj.materialize as { query?: { branch?: string } });
-      }
-      for (const v of Object.values(obj)) visit(v);
-    };
-    visit(result.structuredContent ?? result);
-
-    expect(found.length).toBeGreaterThan(0);
-    for (const hint of found) {
-      expect(hint.query?.branch).toBe('main');
-      expect(hint.query?.branch).not.toBe('no-such-branch-zzz');
-    }
+    const text = JSON.stringify(result.structuredContent);
+    expect(text).toContain('main');
+    expect(text).not.toContain('fetchFile');
+    expect(text).not.toContain('materialize');
   });
 
   it('a genuinely missing repo (both branches fail) still returns the original error, not a false fallback', async () => {

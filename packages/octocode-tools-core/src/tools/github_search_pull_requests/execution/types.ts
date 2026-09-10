@@ -1,5 +1,5 @@
 import type { z } from 'zod';
-import { GitHubPullRequestSearchQueryLocalSchema } from '../scheme.js';
+import { GitHubPullRequestSearchQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import type { WithOptionalMeta } from '../../../types/execution.js';
 
 export type GitHubPullRequestSearchQuery = z.infer<

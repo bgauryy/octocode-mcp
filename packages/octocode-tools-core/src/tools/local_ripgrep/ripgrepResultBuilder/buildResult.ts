@@ -3,8 +3,11 @@ import type { LocalSearchCodeToolResult } from '@octocodeai/octocode-core/extra-
 
 import type { SearchStats } from '../../../utils/core/types.js';
 import { RESOURCE_LIMITS } from '../../../utils/core/constants.js';
-import { MAX_MATCH_CONTENT_LENGTH, MAX_PAGE_NUMBER } from '../../../config.js';
-import type { RipgrepQuery } from '../scheme.js';
+import {
+  MAX_MATCH_CONTENT_LENGTH,
+  MAX_PAGE_NUMBER,
+} from '@octocodeai/octocode-core/schema';
+import type { RipgrepQuery } from '@octocodeai/octocode-core/schema';
 import { rankFiles } from '../rankingProfile/rankingResults.js';
 import {
   isLowSignalQueryPath,

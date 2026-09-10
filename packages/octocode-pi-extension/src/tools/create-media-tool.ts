@@ -28,12 +28,11 @@ import { appendImageLines, formatBytes, sniffImageMime } from './image-render.js
 import { buildQueryEnvelopeSchema, executeQueryBatch } from './query-envelope.js';
 import { createImageFromSvg, createImageFromHtml, persistRenderedPng, renderHtmlToPdf } from './create-image-tool.js';
 import { runMediaQuery, type MediaResult } from './media-tool.js';
+import { preflightMediaOperation, type MediaOperation } from './media-preflight.js';
 
 import { z } from 'zod';
 type RegisterFn = typeof registerUniqueTool;
 
-const MEDIA_OPERATIONS = ['image', 'pdf', 'gif', 'trim', 'audio', 'convert', 'concat'] as const;
-type MediaOperation = (typeof MEDIA_OPERATIONS)[number];
 const FFMPEG_OPERATIONS = new Set<MediaOperation>(['gif', 'trim', 'audio', 'convert', 'concat']);
 
 interface UnifiedResult {
@@ -95,7 +94,6 @@ function resolveDest(dest: unknown, cwd: string, overwrite: boolean): string {
   const abs = resolveFilePath(dest.trim(), cwd);
   assertPathAllowed(abs, cwd, 'media');
   if (fs.existsSync(abs) && !overwrite) throw new Error(`media: \`dest\` exists; set overwrite:true — ${dest}`);
-  fs.mkdirSync(path.dirname(abs), { recursive: true });
   return abs;
 }
 
@@ -113,17 +111,16 @@ export async function runMediaOperation(
     runMedia?: typeof runMediaQuery;
   } = {},
 ): Promise<UnifiedResult> {
+  preflightMediaOperation(query, cwd);
   const type = query['type'] as MediaOperation;
-  if (!MEDIA_OPERATIONS.includes(type)) throw new Error(`media: \`type\` must be one of ${MEDIA_OPERATIONS.join(', ')}`);
   const overwrite = query['overwrite'] === true;
 
   // --- image authoring (resvg / Chrome) ---
   if (type === 'image') {
     const svg = typeof query['svg'] === 'string' ? (query['svg'] as string) : undefined;
     const html = typeof query['html'] === 'string' ? (query['html'] as string) : undefined;
-    if (!svg && !html) throw new Error('media: type=image needs `svg` or `html`.');
-    if (svg && html) throw new Error('media: provide only one of `svg` or `html`.');
     const shared = {
+      overwrite,
       width: typeof query['width'] === 'number' ? (query['width'] as number) : undefined,
       background: typeof query['background'] === 'string' ? (query['background'] as string) : undefined,
       name: typeof query['name'] === 'string' ? (query['name'] as string) : undefined,
@@ -142,9 +139,6 @@ export async function runMediaOperation(
     const html = typeof query['html'] === 'string' ? (query['html'] as string) : undefined;
     const markdown = typeof query['markdown'] === 'string' ? (query['markdown'] as string) : undefined;
     const images = Array.isArray(query['images']) ? (query['images'] as unknown[]).filter((x): x is string => typeof x === 'string') : undefined;
-    const provided = [html, markdown, images && images.length ? 'images' : undefined].filter(Boolean);
-    if (provided.length === 0) throw new Error('media: type=pdf needs `html`, `markdown`, or `images`.');
-    if (provided.length > 1) throw new Error('media: provide only one PDF source (`html` OR `markdown` OR `images`).');
 
     let doc: string;
     if (html) doc = pdfDocumentFromHtml(html);
@@ -156,7 +150,8 @@ export async function runMediaOperation(
       scale: typeof query['pdfScale'] === 'number' ? (query['pdfScale'] as number) : undefined,
       signal,
     });
-    fs.writeFileSync(dest, pdf);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, pdf, { flag: overwrite ? 'w' : 'wx' });
     return { ok: true, type, savedPath: dest, bytes: pdf.length, message: `wrote ${path.basename(dest)} [application/pdf, ${formatBytes(pdf.length)}]` };
   }
 
@@ -247,6 +242,7 @@ export function registerMediaTool(
         onUpdate: typeof onUpdate === 'function' ? (onUpdate as (u: ToolCallResult) => void) : undefined,
         ctx,
         passthroughSingle: true,
+        preflight: query => preflightMediaOperation(query, cwd),
         async execute(query, _index, _callId, batchSignal) {
           if (batchSignal?.aborted) throw new Error('Operation aborted');
           const res = await runMediaOperation(query, cwd, batchSignal);

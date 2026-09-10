@@ -21,7 +21,7 @@ describe('model-visible tool result budget', () => {
     expect(budgetToolResult(result, { toolCallId: 'small', toolName: 'demo' })).toBe(result);
   });
 
-  it('makes large text reference-first and preserves the full body in an ephemeral artifact', () => {
+  it('keeps session-owned text references readable after shutdown cleanup', () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-result-budget-'));
     roots.push(workspace);
     const ctx = { cwd: workspace, sessionManager: { getSessionId: () => 'budget-session' } };
@@ -33,13 +33,13 @@ describe('model-visible tool result budget', () => {
     const visible = result.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('');
     expect(visible.length).toBeLessThanOrEqual(MODEL_VISIBLE_TOOL_RESULT_PREVIEW_CHARS + 1_000);
     expect(visible).toMatch(/heavy tool output referenced/i);
-    expect(visible).toMatch(/localGetFileContent/);
+    expect(visible).toMatch(/localFetch/);
     const spillPath = visible.match(/full text=([^;\]]+)/)?.[1];
     expect(spillPath).toBeTruthy();
     expect(fs.readFileSync(spillPath!, 'utf8')).toBe(original);
     expect(result.details).toEqual({ renderer: 'unchanged' });
     cleanupEphemeralToolOutputs();
-    expect(fs.existsSync(spillPath!)).toBe(false);
+    expect(fs.readFileSync(spillPath!, 'utf8')).toBe(original);
   });
 
   it('keeps the image cap lossless by spilling every omitted image and a manifest', () => {

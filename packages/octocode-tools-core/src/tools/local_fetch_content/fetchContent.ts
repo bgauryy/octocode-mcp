@@ -1,13 +1,12 @@
 import { contextUtils } from '../../utils/contextUtils.js';
 import { countLines } from '../../utils/core/lines.js';
-import { getOutputCharLimit } from '../../utils/pagination/charLimit.js';
 import { TOOL_NAMES } from '../toolMetadata/names.js';
 import {
   validateToolPath,
   createErrorResult,
 } from '../../utils/file/toolHelpers.js';
-import type { LocalGetFileContentToolResult } from '@octocodeai/octocode-core/extra-types';
-import type { FetchContentQuery } from './scheme.js';
+import type { LocalFetchToolResult } from '@octocodeai/octocode-core/extra-types';
+import type { FetchContentQuery } from '@octocodeai/octocode-core/schema';
 import { attachRawResponseChars } from '../../utils/response/charSavings.js';
 import { markdownHeadingOutlineToText } from '../../utils/markdownOutline.js';
 import {
@@ -31,23 +30,16 @@ import {
   type ContentView,
 } from './fetchContent/pagination.js';
 
-// Re-exported so existing external imports of these symbols from
-// `fetchContent.js` (e.g. `./fetchContent/validation.js`'s FileStats,
-// `./fetchContent/pagination.js`'s ContentView) keep resolving unchanged.
-export type { ContentView };
-
 export async function fetchContent(
   query: FetchContentQuery
-): Promise<LocalGetFileContentToolResult> {
-  const defaultOutputCharLength = getOutputCharLimit();
-
+): Promise<LocalFetchToolResult> {
   try {
     const pathValidation = validateToolPath(
       query,
       TOOL_NAMES.LOCAL_FETCH_CONTENT
     );
     if (!pathValidation.isValid) {
-      return pathValidation.errorResult as LocalGetFileContentToolResult;
+      return pathValidation.errorResult as LocalFetchToolResult;
     }
 
     const invalidExtractionResult = validateExtractionOptions(query);
@@ -61,7 +53,7 @@ export async function fetchContent(
     const { fileStats, errorResult: fileStatsError } =
       await getFileStatsOrError(query, absolutePath);
     if (fileStatsError || !fileStats) {
-      return fileStatsError as LocalGetFileContentToolResult;
+      return fileStatsError as LocalFetchToolResult;
     }
 
     const fileSizeBytes =
@@ -87,22 +79,16 @@ export async function fetchContent(
     const { content: rawContent, errorResult: readError } =
       await readFileContentOrError(query, absolutePath);
     if (readError || rawContent === undefined) {
-      return readError as LocalGetFileContentToolResult;
+      return readError as LocalFetchToolResult;
     }
 
     // Source sizes describe the real file. Redaction runs after extraction
-    // and before character pagination, whose offsets describe the safe view.
+    // and before pagination, whose offsets describe the safe view.
     const sourceChars = rawContent.length;
     const sourceBytes = Buffer.byteLength(rawContent, 'utf-8');
     const content = rawContent;
 
-    // Explicit compact views use the same mode as the large-file gate above.
-    // matchString BLOCKS minification entirely (by design): minify runs AFTER
-    // extraction, so a match inside a comment/blank region could be stripped
-    // from the very slice whose matchRanges anchor it — evidence contradicting
-    // its own anchors. Matched slices are always verbatim; an explicit minify
-    // request is answered with a warning, never applied. (symbols+matchString
-    // is already rejected by validateExtractionOptions above.)
+    // Keep matched evidence intact when compact output was requested.
     const matchStringBlocksMinify =
       query.matchString !== undefined && minifyModeForGate !== 'none';
     const minifyMode = matchStringBlocksMinify ? 'none' : minifyModeForGate;
@@ -137,8 +123,7 @@ export async function fetchContent(
               countLines(content),
               sourceChars,
               sourceBytes,
-              sanitized.warning,
-              defaultOutputCharLength
+              sanitized.warning
             ),
             sourceChars
           );
@@ -167,8 +152,7 @@ export async function fetchContent(
             totalLinesOrig,
             sourceChars,
             sourceBytes,
-            sanitized.warning,
-            defaultOutputCharLength
+            sanitized.warning
           ),
           sourceChars
         );
@@ -176,18 +160,12 @@ export async function fetchContent(
     }
 
     const totalLines = countLines(content);
-    const extraction = buildExtractionState(
-      query,
-      content,
-      defaultOutputCharLength
-    );
+    const extraction = buildExtractionState(query, content);
 
-    // Empty/early extraction results have no pagination. The normal and
-    // outline builders sanitize complete views before creating character
-    // windows, so a token cannot escape detection by spanning two pages.
+    // Sanitize early empty results through the same security boundary.
     const withSanitizedContent = (
-      r: LocalGetFileContentToolResult
-    ): LocalGetFileContentToolResult => {
+      r: LocalFetchToolResult
+    ): LocalFetchToolResult => {
       const text = (r as { content?: unknown }).content;
       if (typeof text !== 'string') return r;
       const sanitized = sanitizeReturnedText(text, queryPath);
@@ -199,6 +177,17 @@ export async function fetchContent(
       const existing = (r as { warnings?: string[] }).warnings ?? [];
       return {
         ...r,
+        ...(signaturesSkippedWarning || matchStringMinifyWarning
+          ? {
+              minifyFallback: {
+                requested: query.minify ?? 'none',
+                applied: r.contentView ?? fallbackContentView,
+                reason: matchStringBlocksMinify
+                  ? ('match-evidence' as const)
+                  : ('outline-unavailable' as const),
+              },
+            }
+          : {}),
         content: sanitized.text,
         returnedChars: sanitized.text.length,
         ...(appended.length > 0 && { warnings: [...existing, ...appended] }),
@@ -235,7 +224,6 @@ export async function fetchContent(
       extraction,
       fileStats,
       totalLines,
-      defaultOutputCharLength,
       shouldMinify,
       fallbackContentView
     );
@@ -243,6 +231,17 @@ export async function fetchContent(
       withSourceSize(
         {
           ...fullResult,
+          ...(signaturesSkippedWarning || matchStringMinifyWarning
+            ? {
+                minifyFallback: {
+                  requested: query.minify ?? 'none',
+                  applied: fullResult.contentView ?? fallbackContentView,
+                  reason: matchStringBlocksMinify
+                    ? 'match-evidence'
+                    : 'outline-unavailable',
+                },
+              }
+            : {}),
           ...((signaturesSkippedWarning || matchStringMinifyWarning) && {
             warnings: [
               ...((fullResult as { warnings?: string[] }).warnings ?? []),
@@ -259,6 +258,6 @@ export async function fetchContent(
   } catch (error) {
     return createErrorResult(error, query, {
       toolName: TOOL_NAMES.LOCAL_FETCH_CONTENT,
-    }) as LocalGetFileContentToolResult;
+    }) as LocalFetchToolResult;
   }
 }

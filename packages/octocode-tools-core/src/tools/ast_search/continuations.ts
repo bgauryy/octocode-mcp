@@ -18,11 +18,7 @@ export function normalizeAstContinuations<T>(value: T): T {
     ])
   );
   const tool = result.tool;
-  if (
-    !['local.text', 'local.files', 'local.tree', 'ast.topology'].includes(
-      String(tool)
-    )
-  )
+  if (!['local.text', 'ast.topology'].includes(String(tool)))
     return result as T;
   if (!result.query || typeof result.query !== 'object') return result as T;
   const query = { ...(result.query as Record<string, unknown>) };
@@ -51,21 +47,6 @@ export function normalizeAstContinuations<T>(value: T): T {
       'matchWindow',
     ])
       delete query[key];
-  } else if (tool === 'local.files' || tool === 'local.tree') {
-    query.operation = tool === 'local.files' ? 'files' : 'tree';
-    query.pageSize = query.itemsPerPage;
-    query.sort = query.sortBy;
-    delete query.itemsPerPage;
-    delete query.sortBy;
-    if (tool === 'local.files') {
-      query.pathRegex = query.regex;
-      delete query.regex;
-    } else {
-      query.treeKind = 'filesystem';
-      query.namePattern = query.pattern;
-      delete query.pattern;
-      delete query.recursive;
-    }
   } else return result as T;
   return { ...result, tool: 'astSearch', query } as T;
 }

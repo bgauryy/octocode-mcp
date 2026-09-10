@@ -47,7 +47,7 @@ export interface SystemPromptStats {
   mcpServers: number;
   mcpTools: number;
   skills: number;
-  status: 'pending' | 'frozen' | 'stale';
+  status: 'pending' | 'ready' | 'stale';
   mode: 'exact' | 'compact';
 }
 
@@ -81,7 +81,7 @@ export async function buildDiscoverySnapshot(
       sysChars: number; mcpChars: number; dynamicChars: number;
       totalChars: number; mcpServers: number; mcpTools: number; skills: number;
       contextAwarenessEstimates?: AssembledContextV1['estimates'];
-      directToolChars?: number; status?: 'pending' | 'frozen' | 'stale'; mode?: 'exact' | 'compact';
+      directToolChars?: number; status?: 'pending' | 'ready' | 'stale'; mode?: 'exact' | 'compact';
     };
   },
 ): Promise<DiscoverySnapshot> {

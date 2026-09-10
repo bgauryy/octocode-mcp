@@ -2,9 +2,8 @@
  * dynamic-catalog — a terse system-prompt projection of the agent's self-created
  * dynamic tools (callTool) and skills (skill type:"call").
  *
- * Both registries are read from disk while the initial system prompt is assembled.
- * That prompt is frozen for provider caching; in-session create/update results stay
- * visible in the transcript and the next session receives the refreshed projection.
+ * Both registries are read while each turn's system prompt is assembled.
+ * Stable ordering preserves prompt caching when definitions have not changed.
  *
  * Token discipline: emits `''` when both registries are empty (the common case),
  * truncates descriptions, and caps the number of entries so a large registry can never
@@ -15,6 +14,7 @@ import { listTools } from './dynamic-tools.js';
 import { listSkills } from './dynamic-skills.js';
 import { truncatePlainToWidth } from './render-helpers.js';
 import { escapePromptMetadata } from './prompt-safety.js';
+import { normalizeSkillKey } from '@octocodeai/agent-contracts/mcp-state';
 
 const MAX_ENTRIES_PER_KIND = 30;
 const MAX_DESCRIPTION_CHARS = 100;
@@ -47,8 +47,7 @@ function renderSection(label: string, entries: CatalogEntry[], listCall: string)
 
 /**
  * Build the `<dynamic_capabilities>` block, or `''` when there are no dynamic tools or
- * skills. Reads both registries without an in-memory cache; the caller owns the
- * session-level prompt freeze.
+ * skills. Reads both registries without an in-memory cache.
  */
 export function getDynamicCapabilitiesAddendum(installedSkillNames: Iterable<string> = [], available: { tools?: boolean; skills?: boolean } = {}): string {
   let toolEntries: CatalogEntry[] = [];
@@ -63,8 +62,13 @@ export function getDynamicCapabilitiesAddendum(installedSkillNames: Iterable<str
   } catch {
     // Same for skills.
   }
-  const installed = new Set([...installedSkillNames].map((name) => name.trim().toLowerCase()).filter(Boolean));
-  skillEntries = skillEntries.filter((entry) => !installed.has(entry.name.trim().toLowerCase()));
+  const installed = new Set([...installedSkillNames].map(normalizeSkillKey).filter(Boolean));
+  skillEntries = skillEntries.filter((entry) => {
+    const key = normalizeSkillKey(entry.name);
+    if (installed.has(key)) return false;
+    installed.add(key);
+    return true;
+  });
   if (toolEntries.length === 0 && skillEntries.length === 0) return '';
 
   return [

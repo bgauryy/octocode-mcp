@@ -18,6 +18,25 @@ function setup(sessionId = 'session-1') {
 }
 
 describe('production rehydration orchestration', () => {
+  it('validates a retained 15k plan without charging the separate recovery budget', () => {
+    const { ctx, artifact } = setup();
+    const content = 'p'.repeat(60_000);
+    const segment = { ...writeSegment('active-plan', 'plan', 'plan-domain', 'user', 'task', 'transcript', content), tokenBudget: 15_000 };
+    const plan = { scope: 'own-plan', branchSnapshotId: 'snapshot', generation: 1 };
+    writeRehydrationLedger(artifact, { capturedAt: new Date().toISOString(), segments: [segment], segmentContents: { 'active-plan': content }, plan, pendingInteractionIds: [], consumerCursors: {} });
+    rehydrateSession(ctx as never, 'compaction', {
+      getLivePlan: () => ({ ...plan, phase: 'executing', content }),
+      openContinuity: () => ({ listPendingInteractions: () => [], getConsumerCursor: () => 0, close: vi.fn() }),
+      setActivity: vi.fn(),
+    });
+    const projection = consumeValidatedRehydration(ctx as never, [{ segment, content }], { allowProjection: true, totalTokenBudget: 1, retainedContentDigests: new Set([contentDigest(content)]) });
+    expect(projection?.receipt.validated).toEqual(['active-plan']);
+    expect(projection?.receipt.skipped).toEqual(['active-plan']);
+    expect(projection?.receipt.overBudget).toEqual([]);
+    expect(projection?.receipt.estimatedTokens).toBe(0);
+    expect(projection?.content).toBe('');
+  });
+
   it('keeps resumed work stopped while durable user input is unresolved', () => {
     const { ctx } = setup();
     const setActivity = vi.fn();

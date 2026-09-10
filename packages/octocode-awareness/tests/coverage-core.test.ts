@@ -28,7 +28,7 @@ function freshDb(): DatabaseSync {
 }
 
 describe('core branch coverage helpers', () => {
-  it('exercises public barrel and DB utility branches', () => {
+  it('exercises public barrel and DB utility branches', async () => {
     expect(typeof awarenessApi.runAwarenessToolOperation).toBe('function');
     expect(() => getDb()).toThrow('Database not connected');
 
@@ -45,13 +45,13 @@ describe('core branch coverage helpers', () => {
       expect(referenceKind('plain text')).toBe('other');
       expect(ftsTermsForRow({ tags_json: JSON.stringify(['tag-a']), label: 'GOTCHA', references: ['file:/tmp/a.ts'] })).toBe('tag-a gotcha file:/tmp/a.ts');
 
-      const { memoryId } = insertMemory(first, {
+      const { memoryId } = (await insertMemory(first, {
         agentId: 'agent-a',
         taskContext: 'db utility memory',
         observation: 'replace refs then rebuild',
         importance: 5,
         label: 'OTHER',
-      });
+      }));
       replaceMemoryReferences(first, memoryId, ['https://octocode.ai', 'file:/tmp/a.ts', 'custom:value']);
       rebuildFts(first);
       const fts = first.prepare('SELECT memory_id FROM memories_fts WHERE memories_fts MATCH ?').get('custom') as { memory_id: string } | undefined;
@@ -176,29 +176,29 @@ describe('core branch coverage helpers', () => {
     expect(markVerified(db, { runId: 'task_missing', agentId: 'agent-a' })).toMatchObject({ ok: false });
   });
 
-  it('stores and searches embeddings, including filtered and zero-vector cases', () => {
+  it('stores and searches embeddings, including filtered and zero-vector cases', async () => {
     const db = freshDb();
-    const { memoryId: first } = insertMemory(db, {
+    const { memoryId: first } = (await insertMemory(db, {
       agentId: 'agent-a',
       taskContext: 'embedding one',
       observation: 'first vector',
       importance: 6,
       label: 'OTHER',
-    });
-    const { memoryId: second } = insertMemory(db, {
+    }));
+    const { memoryId: second } = (await insertMemory(db, {
       agentId: 'agent-a',
       taskContext: 'embedding two',
       observation: 'second vector',
       importance: 6,
       label: 'OTHER',
-    });
-    const { memoryId: corrupt } = insertMemory(db, {
+    }));
+    const { memoryId: corrupt } = (await insertMemory(db, {
       agentId: 'agent-a',
       taskContext: 'embedding corrupt',
       observation: 'bad blob',
       importance: 6,
       label: 'OTHER',
-    });
+    }));
     storeEmbedding(db, first, new Float32Array([1, 0, 0]), 'model-a');
     storeEmbedding(db, second, new Float32Array([0, 1, 0]), 'model-b');
     db.prepare('UPDATE awareness_memories SET embedding = ?, embedding_model = ? WHERE memory_id = ?')

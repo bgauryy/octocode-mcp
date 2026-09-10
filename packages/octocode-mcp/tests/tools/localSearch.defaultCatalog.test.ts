@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALL_TOOLS } from '../../src/tools/toolConfig.js';
-import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-tools-core';
+import { DIRECT_TOOL_DISCOVERY_DEFINITIONS } from '@octocodeai/octocode-core/schema';
 import { isToolEnabled } from '../../src/tools/toolFilters.js';
 
 const LEGACY_LOCAL_DISCOVERY_TOOLS = [
@@ -19,7 +19,7 @@ describe('MCP unified localSearch default catalog', () => {
       .sort();
 
     expect(localResearchNames).toEqual(
-      ['localSearch', 'localGetFileContent', 'astSearch', 'lspSearch'].sort()
+      ['localSearch', 'localFetch', 'astSearch', 'lspSearch'].sort()
     );
     for (const legacyName of LEGACY_LOCAL_DISCOVERY_TOOLS) {
       expect(ALL_TOOLS.some(tool => tool.name === legacyName)).toBe(false);

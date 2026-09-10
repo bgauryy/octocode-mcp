@@ -124,10 +124,8 @@ describe('Agent Skills specification', () => {
     expect(sources).toEqual(expect.arrayContaining([
       expect.objectContaining({ vendor: 'octocode', scope: 'user', root: path.join(octocodeHome, 'agent', 'skills'), defaultEnabled: true }),
       expect.objectContaining({ vendor: 'octocode', scope: 'workspace', root: path.join(workspaceAgentRoot(path.join(root, 'repo'), octocodeHome), 'skills'), defaultEnabled: true }),
-      expect.objectContaining({ vendor: 'agents', scope: 'user', root: path.join(home, '.agents', 'skills'), defaultEnabled: false }),
+      expect.objectContaining({ vendor: 'agents', scope: 'user', root: path.join(home, '.agents', 'skills'), defaultEnabled: true }),
       expect.objectContaining({ vendor: 'agent', scope: 'user', root: path.join(home, '.agent', 'skills'), defaultEnabled: false }),
-      expect.objectContaining({ vendor: 'pi', scope: 'user', root: path.join(home, '.pi', 'agent', 'skills'), defaultEnabled: false }),
-      expect.objectContaining({ vendor: 'pi', scope: 'workspace', root: path.join(workspace, '.pi', 'agent', 'skills'), defaultEnabled: false }),
       expect.objectContaining({ vendor: 'agent', scope: 'workspace', root: path.join(workspace, '.agent', 'skills'), defaultEnabled: false }),
       expect.objectContaining({ vendor: 'claude', scope: 'workspace', root: path.join(workspace, '.claude', 'skills'), defaultEnabled: false }),
       expect.objectContaining({ vendor: 'cursor', scope: 'workspace', root: path.join(workspace, '.cursor', 'skills'), defaultEnabled: false }),

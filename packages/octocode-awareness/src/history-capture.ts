@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { captureWorkspaceFiles } from './history-files.js';
 import type { HistoryTreeEntry } from './history-git.js';
 import type { HistoryCaptureInput, HistoryCheckpointInput } from './schema/definitions-history.js';
+import { historyStorageDurabilitySchema } from './schema/definitions-history.js';
 import { assertHistoryStorageReady, HistoryError, historyHash, historyOperation, historyPaths, historyReceipt, historyTransaction, historyVersions, type HistoryContext, type HistoryOperation } from './history-store.js';
 
 function assertRun(ctx: HistoryContext, input: HistoryCaptureInput | HistoryCheckpointInput): void {
@@ -36,7 +37,7 @@ export async function captureHistory(ctx: HistoryContext, input: HistoryCaptureI
     }
     if (row.after_commit_oid) {
       if (row.outcome !== input.outcome) throw new HistoryError('HISTORY_OPERATION_CONFLICT', 'A terminal outcome cannot be overwritten.');
-      return historyReceipt(ctx, id);
+      return historyReceipt(ctx, id, side);
     }
     if (row.status !== 'open' && row.status !== 'partial') {
       throw new HistoryError('HISTORY_CAPTURE_IN_PROGRESS', 'The before capture has not completed; inspect its operation before retrying.');
@@ -51,7 +52,7 @@ export async function captureHistory(ctx: HistoryContext, input: HistoryCaptureI
     if (existing) {
       if (existing.request_hash !== requestHash) throw new HistoryError('HISTORY_OPERATION_CONFLICT', 'operation_id was already used for a different request.');
       if (existing.status === 'capturing' || existing.status === 'failed') throw new HistoryError('HISTORY_CAPTURE_IN_PROGRESS', 'Capture is incomplete; inspect history and create a new operation.');
-      return historyReceipt(ctx, id);
+      return historyReceipt(ctx, id, side);
     }
     assertRun(ctx, input);
     const now = new Date().toISOString();
@@ -78,6 +79,8 @@ export async function captureHistory(ctx: HistoryContext, input: HistoryCaptureI
     const row = historyOperation(ctx, id);
     const commit = await store.writeCommit({ tree, parents: side === 'after' && row.before_commit_oid ? [row.before_commit_oid] : [], message: `Awareness ${id} ${side}\n`, timestampMs: Date.parse(row.created_at) });
     await store.publishRef(`refs/octocode/${historyHash(id)}/${side}`, commit);
+    // Publish recoverability to SQLite only after the private archive is flushed.
+    const storageDurability = historyStorageDurabilitySchema.parse(await store.flush());
     const partial = versions.some(version => version.status !== 'captured' && version.status !== 'missing');
     historyTransaction(ctx, () => {
       const update = ctx.db.prepare(`UPDATE local_history_versions SET ${side}_oid=?,${side}_mode=?,${side}_status=?,${side}_reason=? WHERE operation_id=? AND file_path=?`);
@@ -86,8 +89,10 @@ export async function captureHistory(ctx: HistoryContext, input: HistoryCaptureI
       const outcome = checkpoint || side === 'before' ? 'unknown' : (input as Extract<HistoryCaptureInput, { phase: 'after' }>).outcome;
       ctx.db.prepare(`UPDATE local_history_operations SET ${side}_commit_oid=?,status=?,outcome=?,updated_at=? WHERE operation_id=?`)
         .run(commit, status, outcome, new Date().toISOString(), id);
+      ctx.db.prepare('INSERT INTO local_history_durability(operation_id,side,durable,warnings_json) VALUES (?,?,?,?)')
+        .run(id, side, storageDurability.durable ? 1 : 0, JSON.stringify(storageDurability.warnings));
     });
-    return historyReceipt(ctx, id);
+    return historyReceipt(ctx, id, side);
   } catch (error) {
     ctx.db.prepare("UPDATE local_history_operations SET status='failed',updated_at=? WHERE operation_id=?").run(new Date().toISOString(), id);
     throw error;

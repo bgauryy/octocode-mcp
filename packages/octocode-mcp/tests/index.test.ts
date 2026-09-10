@@ -37,7 +37,9 @@ import {
   getActiveProvider,
 } from '../../octocode-tools-core/src/serverConfig.js';
 import { startCacheGC } from '../../octocode-tools-core/src/cacheMaintenance.js';
-import { registerTools } from '../src/tools/toolsManager.js';
+import { getEnabledTools, registerTools } from '../src/tools/toolsManager.js';
+import type { McpToolConfig } from '../src/tools/toolConfig.js';
+import { buildMcpInstructions } from '@octocodeai/octocode-core/mcp';
 import { TOOL_NAMES } from '../../octocode-tools-core/src/tools/toolMetadata/names.js';
 
 const mockMcpServer = {
@@ -52,6 +54,13 @@ const mockTransport = {
 const mockMcpServerConstructor = vi.mocked(McpServer);
 const mockStdioServerTransport = vi.mocked(StdioServerTransport);
 const mockRegisterTools = vi.mocked(registerTools);
+const mockGetEnabledTools = vi.mocked(getEnabledTools);
+const enabledTools = [
+  'ghSearch',
+  'ghGetFileContent',
+  'ghSearchHistory',
+  'ghGetHistoryItem',
+].map(name => ({ name })) as McpToolConfig[];
 const mockGetGitHubToken = vi.mocked(getGitHubToken);
 const mockInitialize = vi.mocked(initialize);
 const mockCleanup = vi.mocked(cleanup);
@@ -128,6 +137,7 @@ describe('Index Module', () => {
     mockRegisterTools.mockImplementation(async () => {
       return { successCount: 4, failedTools: [] };
     });
+    mockGetEnabledTools.mockResolvedValue(enabledTools);
 
     mockGetActiveProvider.mockReturnValue('github');
   });
@@ -151,6 +161,7 @@ describe('Index Module', () => {
   });
 
   const waitForAsyncOperations = async () => {
+    await vi.dynamicImportSettled();
     for (let i = 0; i < 25; i++) await Promise.resolve();
   };
 
@@ -169,8 +180,24 @@ describe('Index Module', () => {
           capabilities: expect.objectContaining({
             tools: { listChanged: false },
           }),
+          instructions: buildMcpInstructions(
+            enabledTools.map(tool => tool.name)
+          ),
         })
       );
+    });
+
+    it('uses the selected catalog for both instructions and registration', async () => {
+      const selected = [{ name: 'astSearch' }] as McpToolConfig[];
+      mockGetEnabledTools.mockResolvedValue(selected);
+      await import('../src/index.js');
+      await waitForAsyncOperations();
+      expect(mockMcpServerConstructor.mock.calls[0]?.[1]?.instructions).toBe(
+        buildMcpInstructions(['astSearch'])
+      );
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools: selected,
+      });
     });
 
     it('should use version from package.json', async () => {
@@ -195,7 +222,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
   });
 
@@ -206,7 +235,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should use GH_TOKEN when GITHUB_TOKEN is not present', async () => {
@@ -216,7 +247,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should use CLI token when no env tokens are present', async () => {
@@ -226,7 +259,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should exit when no token is available', async () => {
@@ -269,7 +304,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should continue registering tools even if some fail', async () => {
@@ -495,7 +532,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should register default tools when configuration is empty', async () => {
@@ -504,7 +543,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should disable tools with DISABLE_TOOLS', async () => {
@@ -513,7 +554,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should handle whitespace in tool configuration', async () => {
@@ -522,7 +565,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should handle invalid tool names gracefully', async () => {
@@ -531,7 +576,9 @@ describe('Index Module', () => {
       await import('../src/index.js');
       await waitForAsyncOperations();
 
-      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer);
+      expect(mockRegisterTools).toHaveBeenCalledWith(mockMcpServer, undefined, {
+        enabledTools,
+      });
     });
 
     it('should exit when all tools are disabled', async () => {

@@ -17,7 +17,7 @@ import {
   mapPullRequestProviderResultData,
 } from '../../src/tools/providerMappers/pullRequests.js';
 import { withSearchPageContinuation } from '../../src/tools/github_search_pull_requests/historySearchPagination.js';
-import { GitHubSearchHistoryQueryLocalSchema } from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubSearchHistoryQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 it('executes an incomplete-search continuation through the real cache and caches the recovered response', async () => {
   search.mockResolvedValueOnce({

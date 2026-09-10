@@ -35,9 +35,9 @@ For a broad, contested question with independent probes, parallel workers can re
 - Ask before enough workers to materially expand budget.
 
 ## Efficiency
-- Every result hands you the next call — follow `next.*`, matchRanges, and pagination cursors instead of re-deriving them.
+- Copy returned pagination/completeness `next.*` calls unchanged. Successful results omit optional next-tool hints; choose further evidence from observed paths, match ranges, identities, and the unresolved question.
 - Route by the strongest handle you already hold (`references/algorithm.md`); skip the hops that handle makes redundant.
-- Orient cheap before reading deep: tree / discovery / counts / symbols cost little and aim the expensive exact reads.
+- Use tree/discovery/counts/symbols when orientation can change the selected read; a known source anchor skips that work.
 - Batch independent probes into one call (up to 5). Spend an extra angle on a *claim*; spend an extra query on a *lookup*.
 - Use `references/workflow-combination.md` to weigh materialization cost, necessary project scope, and proof coverage.
 

@@ -10,13 +10,9 @@ import {
   getDirectToolVariantDisplayFields,
   getDirectToolSchemaRelations,
   getDirectToolSchemaVariants,
-  getToolAvailability,
-} from '@octocodeai/octocode-tools-core/schema';
-import {
-  TOOL_DEFINITIONS,
-  findToolDefinition,
-  getOptionalToolMetadata,
-} from './registry.js';
+} from '@octocodeai/octocode-core/schema';
+import { getToolAvailability } from '@octocodeai/octocode-tools-core/schema';
+import { TOOL_DEFINITIONS, findToolDefinition } from './registry.js';
 import {
   extractShortDescription,
   formatConciseToolDescription,
@@ -24,8 +20,8 @@ import {
   formatToolExampleCommand,
   getToolPreviewLines,
   getToolSchemaGuidance,
-} from './formatting.js';
-import { AGENT_TOOL_COMMANDS } from './agent-contract.js';
+} from '@octocodeai/octocode-core/schema';
+import { AGENT_TOOL_COMMANDS } from '@octocodeai/octocode-core/mcp';
 
 type ToolCatalogJsonOptions = {
   full?: boolean;
@@ -205,7 +201,6 @@ function compactRunCommand(toolName: string): string {
 export async function printToolCatalogJson(
   options: ToolCatalogJsonOptions = {}
 ): Promise<void> {
-  const metadata = await getOptionalToolMetadata();
   const toolNames = TOOL_DEFINITIONS.map(tool => tool.name);
 
   if (!options.full) {
@@ -223,7 +218,7 @@ export async function printToolCatalogJson(
       tools: toolNames.map(toolName => ({
         name: toolName,
         category: getDirectToolCategory(toolName),
-        description: formatConciseToolDescription(toolName, metadata, 32),
+        description: formatConciseToolDescription(toolName, 32),
         fields: formatRequiredFields(toolName),
         availability: getToolAvailability(toolName),
         ...(getToolPreviewLines(toolName).length > 0
@@ -256,7 +251,7 @@ export async function printToolCatalogJson(
       runJson: AGENT_TOOL_COMMANDS.runJson,
     },
     tools: toolNames.map(toolName => {
-      const fullDescription = getDirectToolDescription(toolName, metadata);
+      const fullDescription = getDirectToolDescription(toolName);
       const commandPatterns = buildDirectToolCommandPatterns(toolName);
       const relations = getDirectToolSchemaRelations(toolName);
 
@@ -325,8 +320,7 @@ async function buildToolSchemaJson(
   const tool = findToolDefinition(toolName);
   if (!tool) return undefined;
 
-  const metadata = await getOptionalToolMetadata();
-  const fullDescription = getDirectToolDescription(tool.name, metadata);
+  const fullDescription = getDirectToolDescription(tool.name);
   const fields = formatToolFieldsJson(tool.name);
   const guidance = getToolSchemaGuidance(tool.name);
   const relations = getDirectToolSchemaRelations(tool.name);
@@ -339,7 +333,7 @@ async function buildToolSchemaJson(
       version: 1,
       name: tool.name,
       category: getDirectToolCategory(tool.name),
-      description: formatConciseToolDescription(tool.name, metadata, 96),
+      description: formatConciseToolDescription(tool.name, 96),
       availability: getToolAvailability(tool.name),
       fields: compactSchema.fields.map(formatCompactField),
       ...(compactSchema.fieldGroups.length > 0

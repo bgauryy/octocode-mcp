@@ -5,6 +5,7 @@ import { isPersistentStorageEnabledForExtension as isPersistentStorageEnabled } 
 import {
   createAwarenessEventConsumer,
   createAwarenessEventObservability,
+  watchAwarenessEventHints,
   type AwarenessEventObservability,
   type AwarenessEventStore,
   type AwarenessPeerDelivery,
@@ -31,6 +32,7 @@ export function awarenessEventStatusText(stats: AwarenessEventObservability): st
 
 interface RegisterAwarenessEventConsumerOptions {
   openStore?: (workspace: string) => AwarenessEventStore;
+  watchEvents?: typeof watchAwarenessEventHints;
   resolveExpectedAgentId?(ctx: PiContext): string;
   onObservability?(stats: AwarenessEventObservability, ctx: PiContext): void;
   now?: () => number;
@@ -66,7 +68,7 @@ export function resolvePiEventConsumerId(ctx: PiContext): string | undefined {
   return `pi:file:${createHash('sha256').update(normalized).digest('hex').slice(0, 24)}`;
 }
 
-/** Register event-driven wake points only; there is deliberately no polling loop. */
+/** Lifecycle and coalesced database hints wake bounded drains without idle polling. */
 export function registerAwarenessEventConsumer(pi: PiInstance, options: RegisterAwarenessEventConsumerOptions = {}): void {
   // The extension owns one consumer for the host instance. Guard repeated
   // registration during reload/setup so each event has one drain and one
@@ -91,6 +93,14 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
   let running = false;
   let wakeAvailable = true;
   let pendingActionable = 0;
+  let eventWatcher: ReturnType<typeof watchAwarenessEventHints> | undefined;
+  let watchedDatabase: string | undefined;
+  let deliveryRetries = 0;
+  const stopWatching = (): void => {
+    eventWatcher?.close();
+    eventWatcher = undefined;
+    watchedDatabase = undefined;
+  };
   const recordActionable = (message: AwarenessPeerDelivery, expectedAgentId: string): void => {
     if (message.details.actionable && message.details.toAgentId === expectedAgentId) {
       pendingActionable = Math.min(pendingActionable + 1, 999);
@@ -102,8 +112,8 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
     binding: { ctx: PiContext };
   } | undefined;
   const drain = async (ctx: PiContext): Promise<void> => {
-    if (shutdown) return;
-    if (!options.openStore && !isPersistentStorageEnabled()) return;
+    if (shutdown || running) return;
+    if (!options.openStore && !isPersistentStorageEnabled()) { stopWatching(); return; }
     const workspace = path.resolve(ctx.cwd ?? process.cwd());
     const consumerId = resolvePiEventConsumerId(ctx);
     if (!consumerId) {
@@ -124,6 +134,7 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
     const key = `${workspace}\0${consumerId}\0${expectedAgentId}`;
     let scoped = activeConsumer;
     if (scoped?.key !== key) {
+      stopWatching();
       const consumerGeneration = ++generation;
       const assertActive = (): void => {
         if (shutdown || consumerGeneration !== generation) {
@@ -131,11 +142,32 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
         }
       };
       const binding = { ctx };
+      const awaitingReceipt = new Set<string>();
       const consumer = createAwarenessEventConsumer({
         workspace,
         consumerId,
         expectedAgentId,
-        openStore: options.openStore ?? ((targetWorkspace) => openPersistentAwareness({ workspace: targetWorkspace })),
+        openStore: (targetWorkspace) => {
+          const store = options.openStore ? options.openStore(targetWorkspace) : openPersistentAwareness({ workspace: targetWorkspace });
+          if (store.dbPath && store.dbPath !== ':memory:' && watchedDatabase !== store.dbPath) {
+            stopWatching();
+            watchedDatabase = store.dbPath;
+            eventWatcher = (options.watchEvents ?? watchAwarenessEventHints)({
+              database: store.dbPath,
+              onHint: () => {
+                if (shutdown || generation !== consumerGeneration) return;
+                deliveryRetries = 0;
+                scheduleDrain(binding.ctx);
+              },
+              onError: () => {
+                if (shutdown || generation !== consumerGeneration) return;
+                const stats = consumer.snapshot();
+                observe({ ...stats, errors: stats.errors + 1, drainErrors: stats.drainErrors + 1 }, binding.ctx);
+              },
+            });
+          }
+          return store;
+        },
         ...(options.now ? { now: options.now } : {}),
         ...(options.maxEventsPerDrain ? { maxEventsPerDrain: options.maxEventsPerDrain } : {}),
         deliver: async (message) => {
@@ -151,7 +183,11 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
             .some((entry) => isPersistedPeerDelivery(entry, message));
 
           // Idempotency guard: already in the ledger from a previous drain cycle.
-          if (persisted()) { options.onDelivery?.(message, currentCtx); return; }
+          if (persisted()) {
+            if (awaitingReceipt.delete(message.details.eventId)) recordActionable(message, expectedAgentId);
+            options.onDelivery?.(message, currentCtx);
+            return;
+          }
 
           /*
            * pi.sendMessage() wraps the async sendCustomMessage() in a fire-and-forget
@@ -166,13 +202,14 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
            * no-ops when the write is synchronous (test harness path) and necessary when
            * it is async (production sendCustomMessage implementation).
            */
+          awaitingReceipt.add(message.details.eventId);
           pi.sendMessage({ ...message, display: true }, { triggerTurn: false, deliverAs: 'steer' });
           await Promise.resolve(); // let sendCustomMessage start executing
           await Promise.resolve(); // let its first internal await settle
 
           assertActive();
           if (persisted()) {
-            recordActionable(message, expectedAgentId);
+            if (awaitingReceipt.delete(message.details.eventId)) recordActionable(message, expectedAgentId);
             options.onDelivery?.(message, currentCtx);
             try {
               if (currentCtx.hasUI && message.details.messageClass !== 'informational') {
@@ -200,8 +237,16 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
       activeConsumer = scoped;
     }
     scoped.binding.ctx = ctx;
-    await scoped.consumer.drain();
-    if (shutdown || running || activeConsumer !== scoped || pendingActionable === 0) return;
+    const stats = await scoped.consumer.drain();
+    if (shutdown || activeConsumer !== scoped) return;
+    if (stats.drainErrors > 0) {
+      const delay = [100, 500, 2000][deliveryRetries++];
+      if (delay !== undefined) scheduleRetry(ctx, delay);
+    } else if (stats.backlogDepth > 0) {
+      deliveryRetries = 0;
+      scheduleDrain(ctx);
+    }
+    if (shutdown || running || activeConsumer !== scoped || stats.backlogDepth > 0 || pendingActionable === 0) return;
     if (!wakeAvailable || !(options.canWake?.(ctx) ?? ctx.isProjectTrusted?.() === true)) {
       try { if (ctx.hasUI) ctx.ui?.notify?.('Awareness: actionable peer messages are in context; automatic wake is held until the next authorized input.', 'warning'); } catch { /* UI is advisory */ }
       return;
@@ -222,24 +267,42 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
   };
 
   let pendingDrain: ReturnType<typeof setImmediate> | undefined;
+  let retryDrain: ReturnType<typeof setTimeout> | undefined;
+  const scheduleDrain = (ctx: PiContext): void => {
+    if (shutdown || running || pendingDrain) return;
+    pendingDrain = setImmediate(() => {
+      pendingDrain = undefined;
+      void drain(ctx).catch(() => { /* observability callbacks must not crash the host */ });
+    });
+    pendingDrain.unref();
+  };
+  const scheduleRetry = (ctx: PiContext, delay: number): void => {
+    if (shutdown || running || retryDrain) return;
+    retryDrain = setTimeout(() => { retryDrain = undefined; scheduleDrain(ctx); }, delay);
+    retryDrain.unref();
+  };
   const cancelPendingDrain = (): void => {
     if (pendingDrain) clearImmediate(pendingDrain);
     pendingDrain = undefined;
+    if (retryDrain) clearTimeout(retryDrain);
+    retryDrain = undefined;
   };
   pi.on('session_start', async (_event, ctx) => {
     cancelPendingDrain();
+    stopWatching();
     generation += 1;
     activeConsumer = undefined;
     shutdown = false;
     running = false;
     pendingActionable = 0;
     wakeAvailable = true;
+    deliveryRetries = 0;
     await drain(ctx);
   });
   // Pi remains streaming until its agent_end hooks return. Drain on the next
   // event-loop turn so sendMessage persists immediately instead of queuing a
   // steer that cannot be observed while this hook is still executing.
-  pi.on('agent_start', async () => { running = true; pendingActionable = 0; });
+  pi.on('agent_start', async () => { running = true; pendingActionable = 0; cancelPendingDrain(); });
   pi.on('input', async (event) => {
     if (event.source === 'interactive' || event.source === 'rpc') wakeAvailable = true;
   });
@@ -247,13 +310,12 @@ export function registerAwarenessEventConsumer(pi: PiInstance, options: Register
     cancelPendingDrain();
     if (shutdown || event.willRetry) return;
     running = false;
-    pendingDrain = setImmediate(() => {
-      pendingDrain = undefined;
-      void drain(ctx).catch(() => { /* observability callbacks must not crash the host */ });
-    });
+    deliveryRetries = 0;
+    scheduleDrain(ctx);
   });
   pi.on('session_shutdown', async () => {
     cancelPendingDrain();
+    stopWatching();
     shutdown = true;
     generation += 1;
     activeConsumer = undefined;

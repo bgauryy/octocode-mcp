@@ -332,7 +332,7 @@ test('matchMode:normalized handles whitespace drift', async () => {
 });
 
 test('matchMode:lineRange replaces by line numbers', async () => {
-  writeFile('lr.txt', 'line1\nline2\nline3\n');
+  await recordFileReadState(writeFile('lr.txt', 'line1\nline2\nline3\n'));
   const result = await run({
     queries: [{ type: 'edit',
       reasoning: 'replace line 2',
@@ -345,7 +345,7 @@ test('matchMode:lineRange replaces by line numbers', async () => {
 });
 
 test('matchMode:lineRange treats an empty oldText as omitted', async () => {
-  writeFile('lr-empty-old.txt', 'line1\nline2\nline3\n');
+  await recordFileReadState(writeFile('lr-empty-old.txt', 'line1\nline2\nline3\n'));
   const result = await run({
     queries: [{ type: 'edit',
       reasoning: 'replace line 2 with a range selector',

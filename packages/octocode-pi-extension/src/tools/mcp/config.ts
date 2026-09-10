@@ -1,15 +1,17 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getDefaultEnvironment } from '@modelcontextprotocol/client/stdio';
 import { getMcpEnablement } from '@octocodeai/agent-contracts/mcp-state';
 import { readMcpConfigText } from '@octocodeai/agent-contracts/agent-skills';
+import { capabilitySourcePaths, type CapabilityPathOptions } from '@octocodeai/agent-contracts/capability-sources';
+import type { CapabilitySourceStatus } from '@octocodeai/agent-contracts/capability-state';
+import type { ReadableSqlite } from '@octocodeai/agent-contracts/schema';
 import { ensurePrivateDirectory, hardenPrivateFile, PRIVATE_FILE_MODE } from '@octocodeai/agent-contracts/permissions';
 import type { PiContext } from '../../types.js';
-import { getOctocodeHome } from '@octocodeai/config';
-import { extensionWorkspaceRoot, extensionCacheRoot, extensionHome } from '../../extension-paths.js';
-import { discoverMcpSystem } from './discovery.js';
+import { extensionCacheRoot, extensionStateDbPath } from '../../extension-paths.js';
+import { discoverMcpConfigSources, globalMcpPath, projectMcpPath, globalMcpConfigPaths, projectMcpConfigPaths } from './config-sources.js';
+export { reviewMcpSource, globalMcpPath, projectMcpPath, globalMcpConfigPaths, projectMcpConfigPaths } from './config-sources.js';
 
 import { openOctocodeDb } from '../storage-policy.js';
 
@@ -30,13 +32,23 @@ export interface McpServerConfig {
   auth?: 'none' | 'oauth';
   disabled?: boolean;
   description?: string;
+  instructions?: string;
   timeoutMs?: number;
+  startupTimeoutMs?: number;
+  enabledTools?: string[];
+  disabledTools?: string[];
+  sourceDisabled?: boolean;
   /** Present only for definitions imported read-only from another MCP host. */
   discovered?: {
     host: string;
     scope: 'project' | 'user';
     path: string;
     originalName: string;
+    sourceId?: string;
+    revision?: string;
+    reviewStatus?: CapabilitySourceStatus;
+    supported?: boolean;
+    diagnostics?: Array<{ code: string; field: string; message: string }>;
   };
 }
 
@@ -61,11 +73,8 @@ export interface McpLoadedConfig {
 
 export type McpScope = 'project' | 'global';
 
-export interface McpConfigPathOptions {
-  /** OS user home override, primarily for tests. */
-  homeDir?: string;
-  /** Octocode home override; defaults to getOctocodeHome(). */
-  octocodeHome?: string;
+export interface McpConfigPathOptions extends CapabilityPathOptions {
+  db?: ReadableSqlite;
 }
 
 export const DEFAULT_TIMEOUT_MS = 30_000;
@@ -78,7 +87,7 @@ const DEFAULT_OCTOCODE_MCP_NPX_CACHE = path.join(extensionCacheRoot(), 'mcp-npx'
  *   "structuredContent available …" stub for structured-content-aware clients;
  *   Pi's MCP surfaces only read text blocks, so full text must stay on or the
  *   model sees counts instead of data.
- * - ENABLE_LOCAL: turns on the local tool family (localSearch, localGetFileContent, etc.). Force
+ * - ENABLE_LOCAL: turns on the local tool family (localSearch, localFetch, etc.). Force
  *   it rather than trusting octocode-mcp's own internal default — if that
  *   upstream default ever flips, local tools must not silently disappear here.
  * - ENABLE_CLONE: enables ghCloneRepo so the agent can clone a repo once and
@@ -194,25 +203,6 @@ export function buildServerHeaders(config: McpServerConfig): Record<string, stri
   return { ...(config.headers ?? {}), ...referenced };
 }
 
-export function projectMcpPath(cwd: string, octocodeHome = getOctocodeHome()): string {
-  return path.join(extensionWorkspaceRoot(cwd, octocodeHome), 'mcp', 'servers.json');
-}
-
-export function globalMcpPath(_homeDir = os.homedir(), octocodeHome = getOctocodeHome()): string {
-  return path.join(extensionHome(octocodeHome), 'mcp', 'servers.json');
-}
-
-/** The single canonical global MCP server-definition file. */
-export function globalMcpConfigPaths(options: McpConfigPathOptions = {}): string[] {
-  const octocodeHome = options.octocodeHome ?? getOctocodeHome();
-  return [globalMcpPath(options.homeDir, octocodeHome)];
-}
-
-/** The single canonical project MCP server-definition file. */
-export function projectMcpConfigPaths(cwd: string, octocodeHome = getOctocodeHome()): string[] {
-  return [projectMcpPath(cwd, octocodeHome)];
-}
-
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -242,6 +232,8 @@ function parseServerConfig(name: string, value: unknown): McpServerConfig {
     throw new Error(`invalid server name ${JSON.stringify(name)}; use letters, numbers, _, -, or .`);
   }
   if (!isPlainRecord(value)) throw new Error(`server ${name} must be an object`);
+  const declaredTransport = value['transport'] ?? value['type'];
+  if (declaredTransport !== undefined && !['stdio', 'http', 'streamable-http'].includes(String(declaredTransport))) throw new Error(`server ${name} uses an unsupported transport`);
   const rawUrl = value['url'];
   const rawCommand = value['command'];
   const isHttp = typeof rawUrl === 'string' && rawUrl.trim().length > 0;
@@ -252,7 +244,14 @@ function parseServerConfig(name: string, value: unknown): McpServerConfig {
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') throw new Error(`server ${name}.url must use http or https`);
     if (rawCommand !== undefined) throw new Error(`server ${name} cannot define both command and url`);
   }
+  if ((isHttp && declaredTransport === 'stdio') || (!isHttp && (declaredTransport === 'http' || declaredTransport === 'streamable-http'))) throw new Error(`server ${name} transport conflicts with its command or URL`);
+  if (value['auth'] !== undefined && value['auth'] !== 'none' && value['auth'] !== 'oauth') throw new Error(`server ${name} uses an unsupported auth mode`);
   const timeoutMs = value['timeoutMs'];
+  const startupTimeoutMs = value['startupTimeoutMs'];
+  for (const [label, timeout] of [['timeoutMs', timeoutMs], ['startupTimeoutMs', startupTimeoutMs]] as const) {
+    if (timeout !== undefined && (typeof timeout !== 'number' || !Number.isSafeInteger(timeout) || timeout <= 0)) throw new Error(`${label} must be a positive integer`);
+  }
+  if (value['instructions'] !== undefined && (typeof value['instructions'] !== 'string' || value['instructions'].length > 100000)) throw new Error('instructions must be a string of at most 100000 characters');
   return {
     transport: isHttp ? 'http' : 'stdio',
     command: isHttp ? undefined : String(rawCommand),
@@ -263,10 +262,15 @@ function parseServerConfig(name: string, value: unknown): McpServerConfig {
     url: isHttp ? String(rawUrl) : undefined,
     headers: parseStringRecord(value['headers'], 'headers'),
     headerRefs: parseStringRecord(value['headerRefs'], 'headerRefs'),
+    bearerTokenEnvVar: typeof value['bearerTokenEnvVar'] === 'string' ? value['bearerTokenEnvVar'] : undefined,
     auth: value['auth'] === 'oauth' ? 'oauth' : 'none',
     disabled: value['disabled'] === true,
     description: value['description'] === undefined ? undefined : String(value['description']),
-    timeoutMs: timeoutMs === undefined ? undefined : Math.max(1_000, Math.min(120_000, Number(timeoutMs))),
+    instructions: value['instructions'] as string | undefined,
+    timeoutMs: timeoutMs as number | undefined,
+    startupTimeoutMs: startupTimeoutMs as number | undefined,
+    enabledTools: parseStringArray(value['enabledTools']),
+    disabledTools: parseStringArray(value['disabledTools']),
   };
 }
 
@@ -302,6 +306,7 @@ export function scopeTargetPath(scope: McpScope, ctx?: PiContext): string {
 function serverContainer(raw: Record<string, unknown>): Record<string, unknown> {
   if (isPlainRecord(raw['mcpServers'])) return raw['mcpServers'] as Record<string, unknown>;
   if (isPlainRecord(raw['servers'])) return raw['servers'] as Record<string, unknown>;
+  if (Object.keys(raw).length > 0) return raw;
   // New/empty file: standardize on the canonical `mcpServers` wrapper.
   const container: Record<string, unknown> = {};
   raw['mcpServers'] = container;
@@ -339,10 +344,15 @@ export function upsertServerInFile(filePath: string, name: string, serverJson: R
   if (parsed.envRefs && Object.keys(parsed.envRefs).length) entry['envRefs'] = parsed.envRefs;
   if (parsed.headers && Object.keys(parsed.headers).length) entry['headers'] = parsed.headers;
   if (parsed.headerRefs && Object.keys(parsed.headerRefs).length) entry['headerRefs'] = parsed.headerRefs;
+  if (parsed.bearerTokenEnvVar) entry['bearerTokenEnvVar'] = parsed.bearerTokenEnvVar;
   if (parsed.auth === 'oauth') entry['auth'] = 'oauth';
   if (parsed.cwd) entry['cwd'] = parsed.cwd;
   if (parsed.timeoutMs) entry['timeoutMs'] = parsed.timeoutMs;
+  if (parsed.startupTimeoutMs) entry['startupTimeoutMs'] = parsed.startupTimeoutMs;
+  if (parsed.enabledTools) entry['enabledTools'] = parsed.enabledTools;
+  if (parsed.disabledTools) entry['disabledTools'] = parsed.disabledTools;
   if (parsed.description) entry['description'] = parsed.description;
+  if (parsed.instructions !== undefined) entry['instructions'] = parsed.instructions;
   if (parsed.disabled) entry['disabled'] = true;
   container[name] = entry;
   writeMcpJsonAtomic(filePath, raw);
@@ -380,34 +390,16 @@ export async function loadMcpConfig(
   const sources: McpConfigSource[] = [builtInSource];
   const serverSources = new Map<string, McpConfigSource>([[DEFAULT_OCTOCODE_MCP_SERVER_NAME, builtInSource]]);
   const warnings: string[] = [];
+  let db = pathOptions.db;
+  try { if (!db && fs.existsSync(extensionStateDbPath())) db = openOctocodeDb(); }
+  catch (error) { warnings.push(`MCP review database unavailable: ${(error as Error).message}`); }
+  const scopeKey = path.resolve(cwd);
 
-  // Foreign host configurations are discoverable definitions, never implicit authority.
-  // They enter the effective catalog disabled and can only run after an explicit SQLite
-  // enablement override. Project definitions additionally require project trust.
-  const discovered = discoverMcpSystem(cwd, pathOptions);
-  const sourceByPath = new Map<string, McpConfigSource>();
-  for (const config of discovered.configs.filter((item) => !item.active)) {
-    const allowed = config.scope === 'user' || trusted;
-    const source: McpConfigSource = {
-      scope: config.scope === 'project' ? 'discovered-project' : 'discovered-user',
-      path: config.path,
-      trusted: allowed,
-      host: config.host,
-      readOnly: true,
-    };
-    sources.push(source);
-    sourceByPath.set(config.path, source);
-    if (config.error) warnings.push(`${config.path}: ${config.error}`);
-    if (!allowed) warnings.push(`${config.path}: discovered but disabled because the project is not trusted`);
-  }
-  for (const definition of discovered.definitions) {
-    const metadata = definition.config.discovered;
-    if (metadata.scope === 'project' && !trusted) continue;
-    const source = sourceByPath.get(metadata.path);
-    if (!source) continue;
-    servers.set(definition.name, definition.config);
-    serverSources.set(definition.name, source);
-  }
+  const imported = discoverMcpConfigSources(cwd, trusted, pathOptions, db);
+  for (const [name, config] of imported.servers) servers.set(name, config);
+  for (const [name, source] of imported.serverSources) serverSources.set(name, source);
+  sources.push(...imported.sources);
+  warnings.push(...imported.warnings);
 
   for (const candidate of globalMcpConfigPaths(pathOptions)) {
     try {
@@ -425,7 +417,7 @@ export async function loadMcpConfig(
     }
   }
 
-  for (const candidate of projectMcpConfigPaths(cwd, pathOptions.octocodeHome ?? getOctocodeHome())) {
+  for (const candidate of projectMcpConfigPaths(cwd, capabilitySourcePaths(cwd, pathOptions).native.globalRoot)) {
     if (!fs.existsSync(candidate)) continue;
     if (!trusted) {
       sources.push({ scope: 'project', path: candidate, trusted: false });
@@ -448,15 +440,11 @@ export async function loadMcpConfig(
   }
 
   const configuredServers = new Map(servers);
-  try {
-    const db = openOctocodeDb();
-    const scopeKey = path.resolve(cwd);
-    for (const [name, config] of servers) {
-      if (!getMcpEnablement(db, scopeKey, name, undefined, !config.disabled)) servers.delete(name);
-    }
-  } catch (error) {
-    warnings.push(`MCP enablement database unavailable: ${(error as Error).message}`);
-    for (const [name, config] of servers) if (config.disabled) servers.delete(name);
+  for (const [name, config] of servers) {
+    const imported = config.discovered;
+    if (imported && (imported.reviewStatus !== 'active' || !imported.supported)) { servers.delete(name); continue; }
+    const configDefault = imported ? !config.sourceDisabled : !config.disabled;
+    if (!(db ? getMcpEnablement(db, scopeKey, name, undefined, configDefault) : configDefault)) servers.delete(name);
   }
   return { configuredServers, servers, serverSources, sources, warnings };
 }
@@ -490,6 +478,10 @@ export function configSignature(config: McpServerConfig): string {
     envRefs: config.envRefs ?? {},
     cwd: config.cwd ?? null,
     timeoutMs: config.timeoutMs ?? null,
+    startupTimeoutMs: config.startupTimeoutMs ?? null,
+    enabledTools: config.enabledTools ?? null,
+    disabledTools: config.disabledTools ?? [],
+    instructions: config.instructions ?? null,
     transport: config.transport,
     url: config.url ?? null,
     headers: config.headers ?? {},

@@ -1,3 +1,4 @@
+pub(crate) mod byte_extractor;
 pub(crate) mod classify;
 pub(crate) mod fs_query;
 pub(crate) mod line_extractor;

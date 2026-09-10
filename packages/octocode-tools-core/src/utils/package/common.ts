@@ -10,7 +10,7 @@ export async function searchPackage(
 ): Promise<NpmSearchAPIResult | NpmSearchError> {
   const isExact = query.mode === 'exact';
   const limit = query.itemsPerPage ?? (isExact ? 1 : 10);
-  const from = Math.max(0, ((query.page ?? 1) - 1) * limit);
+  const from = Math.max(0, query.offset ?? ((query.page ?? 1) - 1) * limit);
   return searchNpmPackage(
     query.name,
     limit,

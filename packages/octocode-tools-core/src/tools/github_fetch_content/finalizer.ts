@@ -5,8 +5,8 @@ import type {
   GitHubFetchContentData,
   GitHubFetchContentErrorData,
   GitHubFetchContentOutputLocal,
-} from './scheme.js';
-import { readDirectoryEntry, readFileEntry } from './finalizer/entryParsers.js';
+} from './resultTypes.js';
+import { readFileEntry } from './finalizer/entryParsers.js';
 import type { PartialFileContentQuery } from './finalizer/types.js';
 
 function extractErrorMessage(value: unknown): string | undefined {
@@ -43,11 +43,7 @@ function attachQueryContext(
     owner: owner ?? '',
     repo: repo ?? '',
   };
-  if (query?.type === 'directory') {
-    data.directories = [readDirectoryEntry(result.data, query)];
-  } else {
-    data.files = [readFileEntry(result.data, query ?? {})];
-  }
+  data.files = [readFileEntry(result.data, query ?? {})];
   return data;
 }
 
@@ -72,7 +68,6 @@ export function buildGithubFetchContentFinalizer<
         'owner',
         'repo',
         'files',
-        'directories',
         'path',
         'content',
         'fileType',

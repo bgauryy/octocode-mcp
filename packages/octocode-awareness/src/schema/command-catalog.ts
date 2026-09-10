@@ -37,7 +37,7 @@ const READ_COMMANDS = new Set([
   'hooks check', 'schema commands', 'schema command', 'schema entities', 'schema list',
   'schema json-schema', 'schema example', 'schema validate', 'memory recall-verified',
   'memory evaluate', 'handoff list', 'guide', 'instructions export', 'history status',
-  'history timeline', 'history read', 'history restore-preview', 'history retention-preview',
+  'history timeline', 'history read', 'history inspect', 'history restore-preview', 'history retention-preview',
 ]);
 const COORDINATION_WRITE_COMMANDS = new Set([
   'plan create', 'plan join', 'plan doc', 'plan status', 'task create', 'task claim',

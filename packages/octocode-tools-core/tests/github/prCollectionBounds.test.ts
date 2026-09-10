@@ -47,7 +47,7 @@ vi.mock('../../src/providers/factory.js', () => ({
 }));
 import { clearAllCache } from '../../src/utils/http/cache/management.js';
 import { getMultipleGitHubHistoryItems } from '../../src/tools/github_search_pull_requests/historyExecutions.js';
-import { GitHubGetHistoryItemQueryLocalSchema } from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { GitHubGetHistoryItemQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 async function execute(content: Record<string, unknown>) {
   const result = await getMultipleGitHubHistoryItems({

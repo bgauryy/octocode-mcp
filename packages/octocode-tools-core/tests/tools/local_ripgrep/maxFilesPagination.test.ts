@@ -4,7 +4,7 @@ import {
   buildSearchResult,
   type LocalSearchEngine,
 } from '../../../src/tools/local_ripgrep/ripgrepResultBuilder/buildResult.js';
-import type { RipgrepQuery } from '../../../src/tools/local_ripgrep/scheme.js';
+import type { RipgrepQuery } from '@octocodeai/octocode-core/schema';
 import type { LocalSearchCodeFile } from '@octocodeai/octocode-core/types';
 
 // 5 matched files, each with a single match. maxFiles=2 must act as a per-page

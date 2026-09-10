@@ -16,6 +16,8 @@ export interface HistoryContext {
   db: DatabaseSync;
   workspace: string;
   dbPath: string;
+  /** Caller binding for authorized source reads; never used to authorize mutations. */
+  requestWorkspace?: string;
   store(): Promise<HistoryGitStore>;
 }
 export const historyHash = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -52,7 +54,7 @@ export function assertHistoryStorageReady(ctx: Pick<HistoryContext, 'workspace' 
   if (storage.relocation_required) throw new HistoryError('HISTORY_STORE_RELOCATION_REQUIRED',
     `Existing history remains at ${storage.legacy_root}. Stop history writers and explicitly relocate that complete store to ${storage.root}; never merge stores. Inspect history status and the local-history relocation guide before resuming.`);
 }
-export function createHistoryContext(db: DatabaseSync, workspace: string): HistoryContext {
+export function createHistoryContext(db: DatabaseSync, workspace: string, options: { readOnly?: boolean } = {}): HistoryContext {
   const canonical = realpathSync(workspace);
   const dbPath = getDatabasePath(db);
   let pending: Promise<HistoryGitStore> | undefined;
@@ -66,6 +68,7 @@ export function createHistoryContext(db: DatabaseSync, workspace: string): Histo
       workspaceId: historyHash(canonical),
       boundaryRoot: canonical,
       ignoreMarkerPath: resolve(storage.history_root, '..', '.gitignore'),
+      readOnly: options.readOnly,
     }));
   } };
 }
@@ -90,8 +93,13 @@ export function historyVersions(ctx: HistoryContext, id: string): HistoryVersion
   return ctx.db.prepare('SELECT * FROM local_history_versions WHERE operation_id = ? ORDER BY ordinal').all(id)
     .map(row => historyEntitySchemas.local_history_version.parse(row));
 }
-export function historyReceipt(ctx: HistoryContext, id: string) {
-  return { ok: true as const, operation: historyOperation(ctx, id), versions: historyVersions(ctx, id) };
+export function historyReceipt(ctx: HistoryContext, id: string, side?: 'before' | 'after') {
+  const operation = historyOperation(ctx, id);
+  const stored = ctx.db.prepare('SELECT * FROM local_history_durability WHERE operation_id = ? AND side = ?')
+    .get(id, side ?? (operation.after_commit_oid ? 'after' : 'before'));
+  const evidence = stored ? historyEntitySchemas.local_history_durability.parse(stored) : null;
+  return { ok: true as const, operation, versions: historyVersions(ctx, id),
+    storage_durability: evidence ? { durable: evidence.durable === 1, warnings: JSON.parse(evidence.warnings_json) as string[] } : null };
 }
 /** Only synchronous SQLite statements belong inside this short transaction. */
 export function historyTransaction<T>(ctx: HistoryContext, action: () => T): T {

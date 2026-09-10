@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { GitHubSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/github_search/scheme.js';
-import { LocalSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/local_search/scheme.js';
-import { AstSearchBulkQuerySchema } from '../../../octocode-tools-core/src/tools/ast_search/scheme.js';
-import { NpmSearchBulkQueryLocalSchema } from '../../../octocode-tools-core/src/tools/package_search/scheme.js';
+import { GitHubSearchBulkQuerySchema } from '@octocodeai/octocode-core/schema';
+import { LocalSearchBulkQuerySchema } from '@octocodeai/octocode-core/schema';
+import { AstSearchBulkQuerySchema } from '@octocodeai/octocode-core/schema';
+import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 const q0 = (
   schema: { parse: (value: unknown) => { queries: unknown[] } },
@@ -74,22 +74,25 @@ describe('Unified public pagination fields', () => {
     expect(query).toMatchObject({ limit: 100, page: 2, pageSize: 20 });
   });
 
-  it('npmSearch exposes page and pageSize only for keyword discovery', () => {
-    const keywordQuery = q0(NpmSearchBulkQueryLocalSchema, {
+  it('artifactSearch exposes cursor and pageSize only for keyword discovery', () => {
+    const keywordQuery = q0(ArtifactSearchBulkQueryLocalSchema, {
+      type: 'npm',
       keywords: ['hono'],
-      page: 2,
+      cursor: 'opaque',
       pageSize: 25,
     });
-    expect(keywordQuery).toMatchObject({ page: 2, pageSize: 25 });
+    expect(keywordQuery).toMatchObject({ cursor: 'opaque', pageSize: 25 });
     for (const field of ['itemsPerPage', 'searchLimit', 'limit']) {
       expect(field in keywordQuery).toBe(false);
     }
 
-    const exactQuery = q0(NpmSearchBulkQueryLocalSchema, {
+    const exactQuery = q0(ArtifactSearchBulkQueryLocalSchema, {
+      type: 'npm',
       packageName: 'hono',
     });
     for (const field of [
       'page',
+      'cursor',
       'pageSize',
       'itemsPerPage',
       'searchLimit',

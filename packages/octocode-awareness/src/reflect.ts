@@ -1,13 +1,13 @@
 /**
  * reflect.ts — Post-task reflection.
- * Calls insertMemory() and insertRefinement() directly — no stdout patching.
+ * Calls insertPreparedMemory() and insertRefinement() directly — no stdout patching.
  */
 
 import type { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { normalizeArtifact, normalizeReflectionOutcome, REFLECTION_IMPORTANCE } from './helpers.js';
 import { fillScope } from './git.js';
-import { insertMemory, insertMemoryWithSimilarityGate } from './memory-write.js';
+import { insertPreparedMemory, insertPreparedMemoryWithSimilarityGate } from './memory-write.js';
 import { insertRefinement } from './refinements.js';
 import { insertHarnessLog } from './audit.js';
 import type { ReflectParams, ReflectResult } from './types/locks-reflection.js';
@@ -116,7 +116,7 @@ export function reflect(db: DatabaseSync, params: ReflectParams): ReflectResult 
   // Route summaries through the same atomic duplicate gate as other agent
   // surfaces. Repeated routine reflections reuse the existing memory instead
   // of growing ACTIVE storage; a caller must explicitly justify recurrence.
-  const guardedSummary = insertMemoryWithSimilarityGate(db, {
+  const guardedSummary = insertPreparedMemoryWithSimilarityGate(db, {
     agentId,
     taskContext: task,
     observation,
@@ -146,7 +146,7 @@ export function reflect(db: DatabaseSync, params: ReflectParams): ReflectResult 
     if (!failure || typeof failure.id !== 'string' || !failure.id.trim()) continue;
     const lessonText = failure.suggested_lesson?.trim()
       || `Eval question ${failure.id} failed${failure.dimension ? ` on ${failure.dimension}` : ''}.`;
-    const { memoryId: evalMemId } = insertMemory(db, {
+    const { memoryId: evalMemId } = insertPreparedMemory(db, {
       agentId,
       taskContext: `[eval:${failure.id}]${failure.dimension ? ` ${failure.dimension} —` : ''} ${task}`,
       observation: lessonText,

@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   GitHubPullRequestSearchBulkQueryLocalSchema,
   GitHubPullRequestSearchQueryLocalSchema,
-} from '../../../src/tools/github_search_pull_requests/scheme.js';
-import { formatDirectToolSchemaText } from '../../../src/tools/directToolCatalog/toolCatalogFormatters.js';
+} from '@octocodeai/octocode-core/schema';
+import { formatDirectToolSchemaText } from '@octocodeai/octocode-core/schema';
 
 describe('internal pull-request history schema', () => {
   const baseQuery = { owner: 'octo', repo: 'repo', prNumber: 1 };

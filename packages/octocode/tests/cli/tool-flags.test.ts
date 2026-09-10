@@ -8,13 +8,17 @@ import {
 } from '../../src/cli/tool-command/flags-to-query.js';
 
 describe('getToolFlagTable', () => {
-  it('derives a flat field table for localSearch', () => {
+  it('derives localSearch fields and its matched-text selector', () => {
     const table = getToolFlagTable('localSearch');
     expect(table.fields.get('searchText')?.kind).toBe('string');
     expect(table.fields.get('maxFiles')?.kind).toBe('number');
     expect(table.fields.get('wholeWord')?.kind).toBe('boolean');
     expect(table.fields.get('include')?.kind).toBe('array');
-    expect(table.discriminators.size).toBe(0);
+    expect(table.fields.get('matchWindow')?.kind).toBe('number');
+    expect(table.discriminators.get('matchOnly')).toEqual({
+      field: 'resultView',
+      value: 'matchOnly',
+    });
   });
 
   it('collects variant discriminators and object children for astSearch', () => {
@@ -48,6 +52,29 @@ describe('getToolFlagTable', () => {
 });
 
 describe('buildQueryFromFlags', () => {
+  it('preserves matched-text selection and its numeric window', () => {
+    expect(
+      buildQueryFromFlags('localSearch', [
+        '--path',
+        '/repo',
+        '--search-text',
+        'needle',
+        '--result-view',
+        'matchOnly',
+        '--unique',
+        'list',
+        '--match-window',
+        '12',
+      ])
+    ).toEqual({
+      path: '/repo',
+      searchText: 'needle',
+      resultView: 'matchOnly',
+      unique: 'list',
+      matchWindow: 12,
+    });
+  });
+
   it('maps kebab-case flags, numbers, booleans and repeated arrays', () => {
     const query = buildQueryFromFlags('localSearch', [
       '--path',

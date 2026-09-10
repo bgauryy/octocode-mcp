@@ -5,6 +5,7 @@ import type { GetMemoryParams, GetMemoryResult } from './types/identity-memory.j
 import { anyReferenceCandidateIds, attachMemoryReferences, compileRecallRegex, exactReferenceCandidateIds, fileReferenceCandidates, fileReferenceMatchesToken, fileRegexCandidateIds, fileSuffixCandidateIds, fileSuffixTokens, intersectCandidateIds, lexicalSearch, regexCandidateIds } from './memory-search.js';
 import { bumpAccess } from './memory-write.js';
 import { checkMemoryEvidence, createMemoryEvidenceBudget } from './memory-evidence.js';
+import { loadNativeFiles } from './native-files.js';
 import { canonicalMemoryInstant, decayComponents, JUDGMENT_RELEVANCE_FLOOR, LexicalScopeOptions, SCORING_PREFETCH_FACTOR } from './memory-scoring.js';
 import { memoryRecallBounds } from './memory-limits.js';
 
@@ -13,7 +14,32 @@ import { memoryRecallBounds } from './memory-limits.js';
 /**
  * Recall memories using FTS5 + decay scoring.
  */
-export function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): GetMemoryResult {
+export async function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): Promise<GetMemoryResult> {
+  const { checkFingerprint: _checkFingerprint, ...queryParams } = params;
+  const result = queryMemory(db, queryParams);
+  if (params.checkFingerprint) await attachMemoryEvidence(result.memories, params);
+  return result;
+}
+
+/** Evidence checks run after SQL selection, under one budget for the returned set. */
+export async function attachMemoryEvidence(memories: GetMemoryResult['memories'], params: GetMemoryParams): Promise<void> {
+  // First-use native initialization is not filesystem work. Load once before
+  // the shared deadline; worker queue time and all rows still share that budget.
+  if (memories.some(memory => /^awareness-evidence-v1:[a-f0-9]{64}$/.test(memory.file_tree_fingerprint ?? ''))) {
+    try { await loadNativeFiles(); } catch {
+      // checkMemoryEvidence preserves the per-row reason and returns unknown
+      // for an inaccessible native capture; recall itself remains available.
+    }
+  }
+  const budget = createMemoryEvidenceBudget();
+  for (const memory of memories) {
+    memory.evidence = await checkMemoryEvidence(memory, params.cwd ?? params.workspacePath, true, budget);
+  }
+}
+
+/** SQL-only recall used by synchronous briefings and semantic candidate selection. */
+export function queryMemory(db: DatabaseSync, params: Omit<GetMemoryParams, 'checkFingerprint'> = {}): GetMemoryResult {
+  if ('checkFingerprint' in params && params.checkFingerprint) throw new Error('Use getMemory for filesystem evidence checks');
   const {
     query = '',
     limit: limitRaw = 3,
@@ -197,10 +223,9 @@ export function getMemory(db: DatabaseSync, params: GetMemoryParams = {}): GetMe
 
   const bounds = memoryRecallBounds(candidateLimited, memories.length > limit, limit * SCORING_PREFETCH_FACTOR, limit);
   memories = memories.slice(0, limit);
-  const evidenceBudget = createMemoryEvidenceBudget();
   for (const memory of memories) {
-    if (params.checkFingerprint || memory.file_tree_fingerprint?.startsWith('awareness-evidence-v1:')) {
-      memory.evidence = checkMemoryEvidence(memory, effectiveCwd, params.checkFingerprint === true, evidenceBudget);
+    if (memory.file_tree_fingerprint?.startsWith('awareness-evidence-v1:')) {
+      memory.evidence = { state: 'unknown', reason: 'unchecked', reference_count: memory.references.length };
     }
   }
   if (explain) {

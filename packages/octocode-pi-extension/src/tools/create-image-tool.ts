@@ -85,7 +85,7 @@ function isTransparentBg(bg?: string): boolean {
  * Turn rendered PNG bytes into a CreateImageResult: enforce the size cap and,
  * when requested, persist to a path-guarded location. Never throws.
  */
-function finalizePng(png: Buffer, cwd: string, opts: { name?: string; saveTo?: string }): CreateImageResult {
+function finalizePng(png: Buffer, cwd: string, opts: { name?: string; saveTo?: string; overwrite?: boolean }): CreateImageResult {
   if (png.length === 0) return { ok: false, message: 'createImage: rendered an empty image.' };
   if (png.length > MAX_PNG_BYTES) {
     return { ok: false, message: `createImage: rendered PNG is ${formatBytes(png.length)}, over the 4MB inline limit. Reduce width or complexity.` };
@@ -98,7 +98,7 @@ function finalizePng(png: Buffer, cwd: string, opts: { name?: string; saveTo?: s
       const abs = resolveFilePath(opts.saveTo, cwd);
       assertPathAllowed(abs, cwd, 'createImage');
       fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.writeFileSync(abs, png);
+      fs.writeFileSync(abs, png, { flag: opts.overwrite ? 'w' : 'wx' });
       savedPath = abs;
     } catch (err) {
       return { ok: false, message: `createImage: could not save to "${opts.saveTo}" — ${(err as Error).message}` };
@@ -124,7 +124,7 @@ function finalizePng(png: Buffer, cwd: string, opts: { name?: string; saveTo?: s
 export function createImageFromSvg(
   svg: string,
   cwd: string,
-  opts: { width?: number; background?: string; name?: string; saveTo?: string } = {},
+  opts: { width?: number; background?: string; name?: string; saveTo?: string; overwrite?: boolean } = {},
 ): CreateImageResult {
   if (typeof svg !== 'string' || !svg.includes('<svg')) {
     return { ok: false, message: 'createImage: `svg` must be an SVG document containing an <svg> element.' };
@@ -293,7 +293,7 @@ export async function renderHtmlToPdf(
 export async function createImageFromHtml(
   html: string,
   cwd: string,
-  opts: { width?: number; height?: number; background?: string; name?: string; saveTo?: string; signal?: AbortSignal } = {},
+  opts: { width?: number; height?: number; background?: string; name?: string; saveTo?: string; overwrite?: boolean; signal?: AbortSignal } = {},
   deps: { renderHtml?: typeof renderHtmlToPng } = {},
 ): Promise<CreateImageResult> {
   if (typeof html !== 'string' || html.trim().length === 0) {

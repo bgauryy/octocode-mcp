@@ -1,3 +1,4 @@
+import { expectExecutableNext } from '../../helpers/executableNext.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -96,11 +97,12 @@ describe('ghCloneRepo next-hints', () => {
     );
   });
 
-  it('emits a ready-to-run viewStructure hint and no longer emits the broken localSearch hint (regression)', async () => {
+  it('returns a usable checkout location without unsolicited next-tool hints', async () => {
     const result = await executeCloneRepo({
       queries: [{ owner: 'bgauryy', repo: 'octocode', branch: 'main' }],
     } as never);
 
+    expectExecutableNext(result.structuredContent);
     const data = (result.structuredContent ?? result) as {
       results: Array<{
         index: number;
@@ -124,7 +126,6 @@ describe('ghCloneRepo next-hints', () => {
       'repo',
       'totalSize',
       'location',
-      'next',
     ]);
     expect(row?.data.location).toMatchObject({
       kind: 'repo',
@@ -138,12 +139,7 @@ describe('ghCloneRepo next-hints', () => {
     expect(row?.data.resolvedBranch).toBeUndefined();
     expect(row?.data.cached).toBeUndefined();
 
-    const next = row?.data.next;
-    expect(next?.viewStructure).toBeDefined();
-    // Regression: this hint used to be next.localSearch with mode:"discovery"
-    // and no keywords, which local.text's core schema always rejects.
-    expect(next?.localSearch).toBeUndefined();
-    expect(JSON.stringify(next)).not.toContain('"mode":"discovery"');
+    expect(row?.data.next).toBeUndefined();
 
     const cachedResult = await executeCloneRepo({
       queries: [{ owner: 'bgauryy', repo: 'octocode', branch: 'main' }],
@@ -174,6 +170,7 @@ describe('ghCloneRepo next-hints', () => {
       ],
     } as never);
 
+    expectExecutableNext(result.structuredContent);
     const row = (
       result.structuredContent as {
         results: Array<{

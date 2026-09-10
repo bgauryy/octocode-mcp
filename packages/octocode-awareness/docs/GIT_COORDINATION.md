@@ -22,6 +22,15 @@ when bytes change the next decision. SQLite owns searchable reasoning and its
 lifecycle; private Git owns immutable versions. This reuses existing memory and
 history owners rather than creating a second Git-notes index or message bus.
 
+Verified recall and exact `memory_id` pointers include existing linked worktrees;
+`strict_scope` limits recall to the opened checkout. Each result carries its
+physical `workspacePath` and source-relative files. Its optional `historyEvidence`
+reports capture metadata as recorded, incomplete or unavailable, without claiming
+the current checkout still matches it. Follow `historyEvidence.next.call` through
+`history inspect` and its selected `history read` calls. Their `source_workspace`
+is a read-only source selector authorized against current Git membership; the
+host's write and restore workspace remains unchanged.
+
 Git identifies the linked worktrees that belong to one local repository.
 Awareness shares peer discovery, signals and memory across those worktrees when
 they use the same SQLite database. Each record keeps its original workspace;

@@ -1,7 +1,7 @@
 /**
  * memory.ts — Core memory store operations.
  *
- * insertMemory: pure DB insert, returns { memoryId, memory, superseded }.
+ * insertMemory: asynchronous evidence preparation followed by a synchronous DB insert.
  * getMemory:    FTS5 + decay-scored recall.
  * bumpAccess:   update access count and timestamp.
  */
@@ -30,11 +30,32 @@ export function bumpAccess(db: DatabaseSync, memoryIds: string[]): void {
 
 // ─── insertMemory ─────────────────────────────────────────────────────────────
 
+async function prepareInsertEvidence(db: DatabaseSync, params: InsertMemoryParams): Promise<InsertMemoryParams> {
+  if (db.isTransaction) throw new Error('Capture memory evidence before entering a write transaction');
+  const scope = fillScope({
+    workspace_path: params.workspacePath ?? null,
+    artifact: normalizeArtifact(params.artifact),
+    repo: params.repo ?? null,
+    ref: params.ref ?? null,
+  }, params.cwd ?? process.cwd());
+  return prepareMemoryEvidence(params, scope.workspace_path ?? undefined);
+}
+
 /**
  * Insert a new memory record.
  * Returns { memoryId, memory, superseded } — does NOT emit JSON.
  */
-export function insertMemory(db: DatabaseSync, params: InsertMemoryParams): InsertMemoryResult {
+export async function insertMemory(db: DatabaseSync, params: InsertMemoryParams): Promise<InsertMemoryResult> {
+  const prepared = params.captureFingerprint ? await prepareInsertEvidence(db, params) : params;
+  // This must be after the final await, adjacent to the synchronous SQL phase.
+  // Another operation may open a transaction during any promise continuation.
+  if (params.captureFingerprint && db.isTransaction) throw new Error('Memory write transaction changed during evidence capture');
+  return insertPreparedMemory(db, prepared);
+}
+
+/** Synchronous SQL phase: callers must complete evidence capture before opening a transaction. */
+export function insertPreparedMemory(db: DatabaseSync, params: InsertMemoryParams): InsertMemoryResult {
+  if (params.captureFingerprint) throw new Error('Memory evidence must be prepared before the SQL phase');
   const {
     agentId = 'agent',
     taskContext,
@@ -75,9 +96,8 @@ export function insertMemory(db: DatabaseSync, params: InsertMemoryParams): Inse
     { workspace_path: workspacePath ?? null, artifact: normalizeArtifact(artifact), repo: repoArg ?? null, ref: refArg ?? null },
     cwd ?? process.cwd()
   );
-  const preparedEvidence = prepareMemoryEvidence({ ...params, references }, scope.workspace_path ?? undefined);
-  const refList = normalizeReferences(preparedEvidence.references ?? []);
-  const fileTreeFingerprint = preparedEvidence.fileTreeFingerprint ?? null;
+  const refList = normalizeReferences(references);
+  const fileTreeFingerprint = params.fileTreeFingerprint ?? null;
   const supersedeIds = [...new Set(supersedes.filter(Boolean))];
 
   const halfLifeDefault = LABEL_HALF_LIFE_DAYS[normalizedLabel] ?? null;
@@ -213,7 +233,18 @@ export type GuardedMemoryInsertResult =
  * Atomically run the duplicate gate and insert. Tool adapters must use this
  * instead of precomputing similarity before insertMemory's write transaction.
  */
-export function insertMemoryWithSimilarityGate(
+export async function insertMemoryWithSimilarityGate(
+  db: DatabaseSync,
+  params: InsertMemoryParams,
+  allowSimilar = false,
+): Promise<GuardedMemoryInsertResult> {
+  const prepared = params.captureFingerprint ? await prepareInsertEvidence(db, params) : params;
+  if (params.captureFingerprint && db.isTransaction) throw new Error('Memory write transaction changed during evidence capture');
+  return insertPreparedMemoryWithSimilarityGate(db, prepared, allowSimilar);
+}
+
+/** Atomic duplicate gate and committed SQL phase, with no asynchronous work. */
+export function insertPreparedMemoryWithSimilarityGate(
   db: DatabaseSync,
   params: InsertMemoryParams,
   allowSimilar = false,
@@ -235,7 +266,7 @@ export function insertMemoryWithSimilarityGate(
       },
       params.cwd ?? process.cwd(),
     );
-  params = prepareMemoryEvidence(params, scope.workspace_path ?? undefined);
+  if (params.captureFingerprint) throw new Error('Memory evidence must be prepared before the SQL phase');
   const ownsTransaction = !db.isTransaction;
   if (ownsTransaction) db.exec('BEGIN IMMEDIATE');
   try {
@@ -259,7 +290,7 @@ export function insertMemoryWithSimilarityGate(
       return { skipped: true, similar: unsupersededSimilar };
     }
 
-    const result = insertMemory(db, { ...params, preComputedSimilar: similar });
+    const result = insertPreparedMemory(db, { ...params, preComputedSimilar: similar });
     if (ownsTransaction) db.exec('COMMIT');
     return { skipped: false, similar, result };
   } catch (error) {

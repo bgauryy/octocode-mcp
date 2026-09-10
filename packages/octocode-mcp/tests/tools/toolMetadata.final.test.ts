@@ -1,37 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const emptyCompleteMetadata = {
-  systemPrompt: '',
-  prompts: {},
-  toolNames: {
-    GITHUB_FETCH_CONTENT: 'ghGetFileContent',
-    GITHUB_SEARCH_CODE: 'github.code',
-    GITHUB_SEARCH_REPOSITORIES: 'github.repositories',
-    GITHUB_SEARCH_HISTORY: 'ghSearchHistory',
-    GITHUB_GET_HISTORY_ITEM: 'ghGetHistoryItem',
-    GITHUB_VIEW_REPO_STRUCTURE: 'github.tree',
-    PACKAGE_SEARCH: 'npmSearch',
-    LOCAL_FETCH_CONTENT: 'localGetFileContent',
-    AST_SEARCH: 'astSearch',
-    LSP_SEARCH: 'lspSearch',
-  },
-  baseSchema: {
-    mainResearchGoal: '',
-    researchGoal: '',
-    reasoning: '',
-    bulkQuery: () => '',
-  },
-  tools: {},
-  baseHints: { hasResults: [], empty: [] },
-  genericErrorHints: [],
-  bulkOperations: {},
-};
-
-vi.mock('@octocodeai/octocode-core', () => ({
-  octocodeConfig: {},
-  completeMetadata: emptyCompleteMetadata,
-}));
-
 describe('toolMetadata - TOOL_NAMES static fallback (lines 236-243)', () => {
   beforeEach(() => {
     vi.clearAllMocks();

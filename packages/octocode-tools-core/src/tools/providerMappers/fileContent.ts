@@ -2,10 +2,10 @@ import type { FileContentResult as ProviderFileContentResult } from '../../provi
 import type { z } from 'zod';
 import type { WithOptionalMeta } from '../../types/execution.js';
 
-import { FileContentQueryLocalSchema } from '../github_fetch_content/scheme.js';
+import { FileContentQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 
 type LocalFileContentQuery = z.infer<typeof FileContentQueryLocalSchema> & {
-  minify: import('../../scheme/fields.js').MinifyMode;
+  minify: import('@octocodeai/octocode-core/schema').MinifyMode;
 };
 
 export function mapFileContentToolQuery(query: LocalFileContentQuery) {
@@ -19,11 +19,13 @@ export function mapFileContentToolQuery(query: LocalFileContentQuery) {
     endLine: fullContent ? undefined : query.endLine,
     matchString:
       fullContent || !query.matchString ? undefined : String(query.matchString),
-    contextLines: (query as { contextLines?: number }).contextLines ?? 5,
+    contextLines: query.contextLines,
+    contextBytes: query.contextBytes,
     fullContent,
     forceRefresh: Boolean((query as { forceRefresh?: boolean }).forceRefresh),
-    charOffset: query.charOffset,
-    charLength: query.charLength,
+    chunkType: query.chunkType,
+    offset: query.offset,
+    limit: query.limit,
     minify: query.minify,
     matchStringIsRegex: query.matchStringIsRegex,
     matchStringCaseSensitive: query.matchStringCaseSensitive,
@@ -39,6 +41,12 @@ export function mapFileContentProviderResult(
   return {
     path: data.path,
     content: data.content,
+    returnedChars: data.returnedChars,
+    returnedBytes: data.returnedBytes,
+    returnedLines: data.returnedLines,
+    selectedMatchCount: data.selectedMatchCount,
+    minifyFallback: data.minifyFallback,
+    next: data.next,
     ...(typeof data.size === 'number' &&
       data.size > 0 && {
         fileSize: data.size,

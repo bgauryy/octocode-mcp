@@ -217,7 +217,7 @@ Conditional file and structure requests can retain a stale body and ETag for up 
 
 ### npm registries and authentication
 
-`npmSearch` loads npm configuration for each query: environment settings, project and user `.npmrc`, global configuration, and npm defaults. `NPM_CONFIG_REGISTRY` selects the default registry; `NPM_CONFIG_USERCONFIG` selects your npm configuration file. npm's lowercase equivalents are supported.
+`artifactSearch` with `type:"npm"` loads npm configuration for each query: environment settings, project and user `.npmrc`, global configuration, and npm defaults. `NPM_CONFIG_REGISTRY` selects the default registry; `NPM_CONFIG_USERCONFIG` selects your npm configuration file. npm's lowercase equivalents are supported.
 
 Exact `@scope/package` queries honor `@scope:registry`. The tool's optional `registry` field overrides routing for one query and its returned continuations. Keyword search uses one selected registry. Without overrides, the default is `https://registry.npmjs.org/`.
 
@@ -313,7 +313,7 @@ code ~/.octocode/.octocoderc
 
   // ── Local filesystem tools ────────────────────────────────────────────────
   "local": {
-    // false → turn off all local filesystem tools (localSearch, localGetFileContent, …)
+    // false → turn off all local filesystem tools (localSearch, localFetch, …)
     "enabled": true,
 
     // true → turn on ghCloneRepo (clone a GitHub repo to disk for deep local analysis)
@@ -335,7 +335,7 @@ code ~/.octocode/.octocoderc
   "tools": {
     // Strict allowlist — only these tools are registered. Overrides enabled/disabled.
     // null = use the default tool set
-    // Example: ["ghSearch", "localSearch", "npmSearch"]
+    // Example: ["ghSearch", "localSearch", "artifactSearch"]
     "enabled": null,
 
     // Remove specific tools from the default set.

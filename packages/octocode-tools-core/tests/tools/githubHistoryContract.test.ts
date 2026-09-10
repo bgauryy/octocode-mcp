@@ -1,14 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { PUBLIC_TOOL_DESCRIPTIONS } from '../../src/toolContract/descriptions.js';
-import { DIRECT_TOOL_SPECIFICATIONS } from '../../src/tools/directToolCatalog/toolSpecifications.js';
-import {
-  GitHubGetHistoryItemBulkQueryLocalSchema,
-  GitHubGetHistoryItemQueryLocalSchema,
-  GitHubSearchHistoryBulkQueryLocalSchema,
-  GitHubSearchHistoryQueryLocalSchema,
-} from '../../src/tools/github_search_pull_requests/historySchemes.js';
+import { PUBLIC_TOOL_DESCRIPTIONS } from '@octocodeai/octocode-core/schema';
+import { DIRECT_TOOL_SPECIFICATIONS } from '@octocodeai/octocode-core/schema';
+import { GitHubGetHistoryItemBulkQueryLocalSchema, GitHubGetHistoryItemQueryLocalSchema, GitHubSearchHistoryBulkQueryLocalSchema, GitHubSearchHistoryQueryLocalSchema } from '@octocodeai/octocode-core/schema';
 import {
   ALL_TOOLS,
   GITHUB_GET_HISTORY_ITEM,

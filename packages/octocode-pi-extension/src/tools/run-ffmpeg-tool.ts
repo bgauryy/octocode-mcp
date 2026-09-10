@@ -149,7 +149,7 @@ export function registerRunFfmpegTool(
     promptSnippet:
       'Run advanced ffmpeg operations outside the media presets.',
     promptGuidelines: [
-      'args is argv WITHOUT the binary name. -hide_banner and -nostdin are always prepended; paths are auto-resolved and path-guarded.',
+      'args is argv WITHOUT the binary name. Both binaries receive -hide_banner; ffmpeg also receives -nostdin. Paths are auto-resolved and path-guarded.',
       'Use a fresh destination by default. Include -y only for an authorized overwrite; without it an existing output fails because stdin is disabled.',
       'binary:"ffprobe" auto-captures stdout (no need for captureStdout:true). Use captureStdout:true only for ffmpeg commands that write binary/data to stdout (output arg "-").',
       'Use docs/FFMPEG.md#cookbook when a recipe is needed.',
@@ -167,6 +167,10 @@ export function registerRunFfmpegTool(
         onUpdate: typeof onUpdate === 'function' ? onUpdate as (update: ToolCallResult) => void : undefined,
         ctx,
         passthroughSingle: true,
+        preflight(query) {
+          const parsed = runFfmpegItemSchema.parse(query);
+          resolveArgvPaths(parsed.args, cwd);
+        },
         async execute(query, _index, itemCallId, batchSignal) {
           if (batchSignal?.aborted) throw new Error('Operation aborted');
 
@@ -192,10 +196,8 @@ export function registerRunFfmpegTool(
           // or rejected with a misleading 'exceeded 0MB' error.
           const captureStdout = query['captureStdout'] === true || binaryName === 'ffprobe';
 
-          // -nostdin prevents ffmpeg from blocking on stdin prompts (e.g. 'Overwrite? [y/N]'
-          // when -y is omitted). -hide_banner suppresses the version banner in stderr.
-          // Both are safe for every command; prepended before user args.
-          const finalArgs = ['-hide_banner', '-nostdin', ...resolvedArgs];
+          // ffprobe has no -nostdin option; runBinary closes stdin for both.
+          const finalArgs = ['-hide_banner', ...(binaryName === 'ffmpeg' ? ['-nostdin'] : []), ...resolvedArgs];
 
           const result = await runBinary(bin, finalArgs, {
             cwd,

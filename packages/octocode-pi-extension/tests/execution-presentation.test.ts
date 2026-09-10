@@ -37,7 +37,7 @@ describe('semantic execution presentation', () => {
         queries: [
           {
             server: 'octocode',
-            tool: 'localGetFileContent',
+            tool: 'localFetch',
             arguments: {
               queries: [{ path: 'src/auth.ts', startLine: 8, endLine: 40 }],
             },

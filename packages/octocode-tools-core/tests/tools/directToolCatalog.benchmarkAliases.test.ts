@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { DirectToolInputError } from '../../src/tools/directToolCatalog/toolCatalogDefinitions.js';
-import { prepareDirectToolInput } from '../../src/tools/directToolCatalog/toolInputPreparation.js';
+import { DirectToolInputError } from '@octocodeai/octocode-core/schema';
+import { prepareDirectToolInput } from '@octocodeai/octocode-core/schema';
 
 const removedAliases: ReadonlyArray<
   readonly [tool: string, canonical: string, query: Record<string, unknown>]
 > = [
-  ['npmSearch', 'packageName', { name: 'zod' }],
+  ['artifactSearch', 'packageName', { name: 'zod' }],
   ['lspSearch', 'type', { type: 'documentSymbols', uri: '/repo/a.ts' }],
-  ['localGetFileContent', 'path', { filePath: '/repo/a.ts' }],
+  ['localFetch', 'path', { filePath: '/repo/a.ts' }],
   ['localSearch', 'searchText', { path: '/repo', keywords: 'needle' }],
   [
     'localSearch',

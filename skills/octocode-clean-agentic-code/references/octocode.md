@@ -24,7 +24,7 @@ Add `--platform <target>` for a specific host: `codex`, `claude`, `cursor`, or `
 | Trace symbol uses | `lspSearch` with `operation:"references"`; use `callers` for callable relationships | exact-read anchor: `uri` plus `symbolName` and 1-based `lineHint`, or 0-based UTF-16 `position` |
 | Inspect candidate import edges | `astSearch` with `operation:"topology"`, `analysis:"dependents"` | `path`, `file`, and bounded depth; preserve graph configuration and inspect completeness |
 | Browse folder shape | `astSearch` with `operation:"tree"` | `path`, optional `maxDepth` |
-| Read exact content | `localGetFileContent` | `path` alone is valid; add a line range, `matchString`, or `fullContent` when needed; exact by default |
+| Read exact content | `localFetch` | `path` alone is valid; add a line range, `matchString`, or `fullContent` when needed; exact by default |
 
 Return the evidence to the cleanup playbook for TRIAGE and EXCISE.
 

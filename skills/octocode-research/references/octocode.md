@@ -3,7 +3,7 @@
 Load when tool selection, transport, availability, or recovery is unclear. The live catalog and schemas are authoritative; this file is an invocation guide, not a second schema.
 
 ## Discover and invoke
-Prefer exposed Octocode MCP tools with current public contracts. If unavailable, use the built checkout CLI; an installed skill can use `npx -y octocode`. These share tools-core runners. Do not substitute a legacy tool with different fields.
+Prefer exposed Octocode MCP tools with current public contracts. If unavailable, use the built checkout CLI; an installed skill can use `npx -y octocode`. These share core-owned contracts and tools-core runners. Do not substitute a legacy tool with different fields.
 
 ```bash
 node packages/octocode/out/octocode.js tools --json --compact
@@ -13,20 +13,22 @@ node packages/octocode/out/octocode.js tools localSearch --queries '{"path":"/AB
 
 Use `context --minimal` only for protocol orientation. Inspect an unfamiliar schema once, including relations and operation variants; reuse it until the tool/version changes. Use full schema JSON when compact fields do not resolve a condition. Explicit commands above work in Bash and zsh without splitting a command stored in a scalar.
 
+Pass arguments as an object. Direct MCP uses `{ "queries": [query] }`; CLI also accepts a single query or array. A host gateway may add its own outer envelope; follow its schema. Omit optional fields until the task needs them. On validation failure, correct the named field or selector using the live schema before retrying.
+
 ## 10 public tools
 | Need | Tool |
 |---|---|
 | Local text | `localSearch` with `searchText` |
 | Local AST, files, tree, symbols, topology | `astSearch` with the corresponding `operation` |
-| Exact local content | `localGetFileContent` |
+| Exact local content | `localFetch` |
 | File dependencies, dependents, paths, cycles, reachability, dead-code candidates | `astSearch` topology |
 | Symbol identity, references, call/type relationships, capabilities | `lspSearch` |
 | GitHub code / tree / repositories | `ghSearch` |
-| Exact remote file or directory materialization | `ghGetFileContent` |
+| Exact remote file | `ghGetFileContent` |
 | PR, issue, commit discovery | `ghSearchHistory` |
 | PR, issue, commit, comparison detail | `ghGetHistoryItem` |
 | Cached shallow checkout | `ghCloneRepo` |
-| Exact npm metadata or keyword discovery | `npmSearch` |
+| Package metadata or capability discovery | `artifactSearch` with ecosystem `type`; exact `packageName` or discovery `keywords` (PyPI exact only) |
 
 The default catalog contains 9 tools; the full discovery catalog includes opt-in `ghCloneRepo`. Local access, clone, storage, and tool filters determine availability. Check the live catalog before using a follow-up. Check auth only when needed. If the current interface is unavailable, state the fallback and its coverage; do not present an unsupported call as an empty result.
 
@@ -38,7 +40,7 @@ The default catalog contains 9 tools; the full discovery catalog includes opt-in
 - `responsePagination` windows `content[].text`; structured content can remain complete. Avoid fetching the same evidence again solely to recover an envelope text window.
 - Copy a continuation query unchanged before adapting a new search. For coverage claims, execute all relevant pages and check their union. For a lookup, stop at sufficient evidence and state material limits.
 - An incomplete response never proves absence. A terminal limit calls for a narrower scope/query or an explicit gap, not an invented cursor. Preserve redaction and never reconstruct secrets.
-- Local contracts: `localSearch` is lexical and has no `operation`; `astSearch` uses `match`, `files`, `tree`, `symbols`, or `topology` (with `analysis` for topology). `localGetFileContent` is exact by default and selectors are optional. LSP anchors are either 1-based `lineHint` with `symbolName` or 0-based UTF-16 `position`; document operations have no symbol anchor, and workspace symbols require a name plus `uri` or `workspaceRoot`.
+- Local contracts: `localSearch` is lexical and has no `operation`; `astSearch` uses `match`, `files`, `tree`, `symbols`, or `topology` (with `analysis` for topology). `localFetch` is exact by default and selectors are optional. LSP anchors are either 1-based `lineHint` with `symbolName` or 0-based UTF-16 `position`; document operations have no symbol anchor, and workspace symbols require a name plus `uri` or `workspaceRoot`.
 - Batch independent probes within the interface's current limit; sequence dependent probes. Respect provider rate-limit/retry guidance rather than repeatedly issuing the same failing request.
 
 Exit codes: `0` command completed · `2` input · `3` not-found · `4` auth · `5` tool · `7` rate-limit. Inspect row errors as well.

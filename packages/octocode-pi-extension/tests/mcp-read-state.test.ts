@@ -39,7 +39,7 @@ function fixture(payload: Record<string, unknown>) {
     import { StdioServerTransport } from ${JSON.stringify(stdioEntry)};
     const server = new Server({ name: 'read-state-fixture', version: '1.0.0' }, { capabilities: { tools: {} } });
     server.setRequestHandler('tools/list', async () => ({ tools: [{
-      name: 'localGetFileContent', description: 'Read-state regression fixture.',
+      name: 'localFetch', description: 'Read-state regression fixture.',
       inputSchema: { type: 'object', required: ['queries'], properties: {
         queries: { type: 'array', items: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } } }
       } }
@@ -55,7 +55,7 @@ function fixture(payload: Record<string, unknown>) {
   return {
     paths,
     call: () => handleMcpAction({
-      action: 'call', server: 'octocode', tool: 'localGetFileContent',
+      action: 'call', server: 'octocode', tool: 'localFetch',
       arguments: { queries: paths.map(file => ({ path: file })) },
     }, undefined, { cwd, isProjectTrusted: () => true } as unknown as PiContext),
   };
@@ -65,7 +65,7 @@ test('a failed MCP file read does not establish fresh read state', async () => {
   const probe = fixture({ isError: true, content: [{ type: 'text', text: 'Read failed.' }] });
   const result = await probe.call();
   assert.equal(result.isError, true);
-  await assert.rejects(() => checkReadState(probe.paths[0]!, true), /No prior localGetFileContent read state/);
+  await assert.rejects(() => checkReadState(probe.paths[0]!, true), /No prior localFetch read state/);
 });
 
 test('mixed MCP reads establish state only for successful content, using result indices', async () => {
@@ -78,9 +78,9 @@ test('mixed MCP reads establish state only for successful content, using result 
   });
   const result = await probe.call();
   assert.equal(result.isError, false);
-  await assert.rejects(() => checkReadState(probe.paths[0]!, true), /No prior localGetFileContent read state/);
+  await assert.rejects(() => checkReadState(probe.paths[0]!, true), /No prior localFetch read state/);
   assert.equal((await checkReadState(probe.paths[1]!, true)).state, 'fresh');
-  await assert.rejects(() => checkReadState(probe.paths[2]!, true), /No prior localGetFileContent read state/);
+  await assert.rejects(() => checkReadState(probe.paths[2]!, true), /No prior localFetch read state/);
 });
 
 test('empty or metadata-only MCP query results do not establish read state', async () => {
@@ -93,6 +93,6 @@ test('empty or metadata-only MCP query results do not establish read state', asy
   });
   await probe.call();
   for (const file of probe.paths) {
-    await assert.rejects(() => checkReadState(file, true), /No prior localGetFileContent read state/);
+    await assert.rejects(() => checkReadState(file, true), /No prior localFetch read state/);
   }
 });

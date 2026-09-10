@@ -1,7 +1,7 @@
 import { RequestError } from 'octokit';
 import type { GetContentParameters, GitHubAPIResponse } from '../githubAPI.js';
 import type { z } from 'zod';
-import type { FileContentQuerySchema } from '../../toolContract/input/resources/tools/ghGetFileContent.js';
+import type { FileContentQuerySchema } from '@octocodeai/octocode-core/schema';
 
 type FileContentQuery = z.infer<typeof FileContentQuerySchema>;
 import {
@@ -11,7 +11,6 @@ import {
 } from '../client.js';
 import { AuthInfo } from '@modelcontextprotocol/server';
 import { handleGitHubAPIError } from '../errors.js';
-import { TOOL_NAMES } from '../../tools/toolMetadata/names.js';
 import { FILE_OPERATION_ERRORS } from '../../errors/domainErrors.js';
 import { countSerializedChars } from '../../utils/response/charSavings.js';
 import { extractEtag } from '../responseHeaders.js';
@@ -295,7 +294,7 @@ export async function fetchRawGitHubFileContent(
     if (Array.isArray(data)) {
       return {
         error: FILE_OPERATION_ERRORS.PATH_IS_DIRECTORY.message(
-          TOOL_NAMES.GITHUB_VIEW_REPO_STRUCTURE
+          'ghSearch operation:"tree"'
         ),
         type: 'unknown' as const,
         status: 400,
