@@ -5,7 +5,7 @@ description: "Use when a live browser is needed for JavaScript pages, authentica
 
 # Chrome DevTools
 
-tools: Chrome MCP tools or `octocode-chrome-devtools /cli`
+tools: Chrome MCP tools or `npx -y @octocodeai/octocode-chrome-devtools /cli` (`octocode-chrome-devtools /cli` when installed)
 
 This skill contains guidance only. The `@octocodeai/octocode-chrome-devtools` package owns execution. Use MCP when connected; otherwise use its CLI from the workspace cwd. Requires Chrome and Node 24.15+. Default package execution starts MCP; `/cli` runs commands.
 
@@ -45,4 +45,4 @@ Discover inputs with MCP tool schemas or CLI command help. For research, load `s
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format.
+See [output.md](output.md) for the response and saved-artifact format. Save substantial results under `<workspace>/.octocode/octocode-chrome-devtools/`; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).

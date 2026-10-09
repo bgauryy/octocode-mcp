@@ -52,6 +52,7 @@ describe('prompt', () => {
     expect(writer).toContain('`sendMessage` `lead-0001` only for a blocker');
     expect(writer).toContain('a Markdown doc in `/repo/.octocode/tmp/agents/implementer-1a2b`');
     expect(writer).toContain('substantial or reusable results');
+    expect(writer).toContain("A loaded skill's output path");
     expect(writer).not.toContain('over about 30 lines');
     expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: true, identity: { id: 'i-1', scratch: `${process.cwd()}/.octocode/tmp/agents/i-1` } })).toContain('a Markdown doc in `.octocode/tmp/agents/i-1`');
     const reader = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: false, identity: { id: 'researcher-1a2b', scratch: '/repo/.octocode/tmp/agents/researcher-1a2b' } });

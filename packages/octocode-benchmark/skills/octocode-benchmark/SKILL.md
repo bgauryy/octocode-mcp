@@ -1,133 +1,104 @@
 ---
 name: octocode-benchmark
-description: "Use when planning, running, grading, or reporting the by-hand Octocode research benchmark — pairwise matchups (Octocode anchor vs one baseline: gh+RTK, gh+Headroom, or plain gh) over markdown questions, with a fresh isolated runner agent per (question, arm, pass), one blind judge per question grading two answers X/Y in randomized order, and an orchestrator that summarizes accuracy/quality/workflow/characters. Results measured in total characters through the model (model-in delivered + model-out commands/args + final answer)."
+description: "Use when rating an Octocode MCP version against other GitHub research tools (plain gh, gh lean with --json/--jq, gh+RTK, gh+Headroom, or another Octocode version) on the shared question set; good for running fresh isolated agents per question, blind judging, a characters-and-correctness matrix, and publishing the results dashboard."
 ---
 
 # Octocode benchmark
 
-Plain-markdown, run-by-hand CLI research comparison. Octocode is the **anchor**; each baseline
-is a **separate pairwise matchup** (`octocode` vs `rtk` | `headroom` | `gh`). Per question,
-per pass: two isolated runners answer, one blind judge grades them **X / Y** (randomized per
-question). Run ≥3 passes; the rollup shows every matchup together. No harness, no JSON.
+Rates **how an Octocode MCP version researches GitHub** against other tool setups. Every arm
+answers the same questions with a fresh headless agent; a blind judge grades correctness; the
+transcript says how many characters went through the model. The output is a matrix and a
+dashboard: who is leaner, by how much, at what correctness.
 
-Paths below are relative to the package root `packages/octocode-benchmark/`. Shared tooling
-lives in `compare/bin/`; questions in `compare/github-questions/`; reports in `results/`.
+Paths are relative to `packages/octocode-benchmark/`.
 
-## Flow (4 phases)
-
-0. **Preflight** — verify + pin every arm; a failure invalidates the run.
-1. **Answer** — 2 isolated runners (anchor + baseline) per question/pass, leanest-legal path, each appends a `## Q<n>` section to `answers/<arm>-p<pass>.md`.
-2. **Judge** — after both sections exist, one blind judge reasons to a verdict, then scores.
-3. **Summarize** — validate logs, aggregate paired stats, update the rollup.
-
-## How it is MEASURED (characters, never self-reported)
-
-The metric is **`total_chars = model-in + model-out`** in Unicode code points, from an
-instrumented log — the *tool transcript only* (excludes system prompt, tool schemas, model
-reasoning; the fixed per-arm primer is excluded by rule; any later help/schema/failed call
-**is** counted).
-
-- **model-out** = the command string + args the model wrote, plus the final answer.
-- **model-in** = the tool output pulled back into context (for Headroom, the *compressed* output).
-
-Mechanism: every research command runs through its arm's thin wrapper, which shells the real
-CLI unchanged, prints output verbatim, and appends one JSONL row per call:
-
-| Arm | Wrapper | Runs | Log env |
-|---|---|---|---|
-| octocode (local build) | `compare/bin/octoc` | `node packages/octocode/out/octocode.js <tool> '<json>'` | `OCTO_LOG` |
-| octocode (published pin) | `compare/bin/octoc-npm` | `npx -y $OCTO_SPEC tools …` (default `octocode@18.2.2`) | `OCTO_LOG` |
-| gh+RTK | `compare/bin/rtkm` | `rtk gh …` | `RTK_LOG` |
-| gh+Headroom | `compare/bin/ghc` | `gh …` → Headroom compress | `GHC_LOG` (+ `HR_PY`) |
-| plain gh | `compare/bin/ghm` | `gh …` (read-only) | — |
-
-The final answer is logged as pure model-out via `compare/bin/record_answer.py`. Per-question
-total = `compare/bin/sumlog.py --strict <log>`; the whole campaign is checked byte-faithfully
-by `compare/bin/validate_campaign.py`. **Never trust a hand-counted number** — recompute from
-the JSONL. Only `elapsed_ms` (octocode/rtk/gh) is captured for time; it is not a fair latency
-metric (npx bootstrap per call on the published pin, no Headroom timing) — do not headline it.
-
-## How it is SCORED (blind judge, correctness-first)
-
-One blind judge per question grades the two answers as **X / Y** (order randomized per
-question, tool identity redacted). It **reasons to ground truth first**, then scores each
-answer: **correctness 0–10, research depth 1–5, workflow 1–5** (rubric in `references/JUDGING.md`).
-
-Decision per pairing: if one arm is net strictly more correct (paired sign test) it **wins** —
-a confidently-wrong answer never wins on footprint. If correctness is statistically tied,
-**characters decide** by the **geometric-mean of per-question ratios** (baseline ÷ octocode) +
-median + leaner win-rate + bootstrap CI — never a pooled sum alone. Aggregate paired, per
-question, over **≥3 passes**. Method + worked example: `references/aggregation-and-stats.md`.
-
-## Quickstart (copy-paste, one matchup, one pass)
+## The flow
 
 ```bash
-cd packages/octocode-benchmark
-export HR_PY="$HOME/.local/share/uv/tools/headroom-ai/bin/python"   # Headroom arm only
+CAMP=campaigns/<what>-$(date +%H%M%S)-$(date +%F)          # gitignored
 
-# Phase 0 — preflight (non-zero exit = fix before running)
-bash skills/octocode-benchmark/scripts/check-prereqs.sh            # add a spec, e.g. octocode@18.2.2, to also check the published pin
+# 0. Preflight: tools, auth, each MCP arm's tool count and schema size; then the overfitting
+#    check (no question term in anything an agent sees; product hits listed for review).
+compare/bin/preflight.sh mcp,gh-lean
+python3 compare/bin/leak_check.py
 
-# set up a campaign dir
-CAMP="campaigns/run-$(date -u +%H%M%S)-$(date -u +%Y-%m-%d)"; mkdir -p "$CAMP/answers" "$CAMP/judge"
+# 1. Run: one isolated agent per (arm, pass, question). Re-running retries only invalid runs.
+compare/bin/run_campaign.sh $CAMP mcp,gh-lean 1 1-30 4      # arms · passes · questions · parallel jobs
 
-# Phase 1 — answer (spawn ONE isolated agent per arm; never mix arms in an agent).
-# Each research call sets its per-question log, e.g. octocode Q4:
-OCTO_LOG="$CAMP/octocode-p1-Q4.jsonl" ./compare/bin/octoc ghGetFileContent \
-  '{"owner":"axios","repo":"axios","path":"lib/adapters/http.js","matchString":"follow-redirects"}'
-# baseline (gh+RTK) Q4:
-RTK_LOG="$CAMP/rtk-p1-Q4.jsonl" ./compare/bin/rtkm search code --repo axios/axios follow-redirects --limit 20
-# log the final answer, then append a "## Q4" section (Answer + Research steps) to answers/<arm>-p1.md
-python3 compare/bin/record_answer.py --log "$CAMP/octocode-p1-Q4.jsonl" --question Q4 --file answer.txt
+# 2. Judge: blind X/Y per question, a different model family than the runners.
+for q in $(seq 1 30); do echo Q$q; done | xargs -P 4 -I{} compare/bin/judge_pair.sh $CAMP mcp gh-lean 1 {}
 
-# Phase 2 — judge: build the blind packet, then one reasoning-first verdict per question
-python3 compare/bin/build_blind_packet.py --help          # X/Y randomized, tool identity redacted
+# 3. Summarize the campaign into committed results, then rebuild the matrix.
+python3 compare/bin/campaign_summary.py $CAMP --octocode-label "Octocode v20 (local 20.1.1)"
+python3 compare/bin/matrix_summary.py                       # → results/MATRIX.md, results/matrix_summary.json
 
-# Phase 3 — validate + aggregate + report
-python3 compare/bin/sumlog.py --strict "$CAMP/octocode-p1-Q4.jsonl"
-python3 compare/bin/validate_campaign.py "$CAMP" --question-count 30
-python3 compare/bin/per_question_summary.py --out results/PER_QUESTION_SUMMARY.md --json results/per_question_summary.json
+# 4. Show it: static page in the repo, and the shareable dashboard (references/dashboard.md).
+python3 skills/octocode-benchmark/dashboard/build_datasets.py --static results/index.html
 ```
 
-Runner/judge briefing packets, spawn scaling (batch Q1-15/Q16-30 within one arm), and output
-layout: `references/run-with-agents.md` → `run-preflight.md` + `run-phases.md`.
+Then write `results/<campaign>.md` as [output.md](output.md) describes.
 
-## Hard gates (skip one and the run is worthless)
+## Arms
 
-- **Isolation** — a fresh agent per (question, arm, pass) + a separate judge; no shared transcript, no answer key. Batch questions within an arm, never mix arms.
-- **Fairness** — leanest-legal path on every arm; no whole-tree/whole-file dump where a targeted read/search answers (inflates chars, invalidates the ratio). `sumlog.py` emits advisory `FAIRNESS:` lines for `recursive=1` dumps / oversized reads — review them.
-- **Blind + reasoned** — grade X/Y in randomized order; the judge reasons before scoring, correctness-first; a confidently-wrong answer never wins.
-- **Measured, not self-reported** — `total_chars = model-in + model-out` from the instrumented log; recompute, never hand-count.
-- **Honest stats** — geometric-mean char ratio (never a pooled sum) + bootstrap CI; ≥3 passes; the public set is orientation, not a shipping gate.
+| Arm | The agent gets | Brief |
+|---|---|---|
+| `mcp` | the Octocode MCP server only, clasify off | `compare/arms/mcp.md` |
+| `mcp-clasify` | the same, clasify offered (needs a provider key) | `compare/arms/mcp.md` |
+| `gh-lean` | read-only `gh` + `--json/--jq/--limit` + `grep/sed -n/head/jq` filters | `compare/arms/gh-lean.md` |
+| `gh` | read-only `gh`, no filters | `compare/arms/gh.md` |
+| `rtk` | `rtk gh …` | `compare/arms/rtk.md` |
+| `headroom` | `ghc …` (gh → Headroom; needs `HR_PY`) | `compare/arms/headroom.md` |
 
-## Routes — load only what the step needs
+**Rate an MCP version:** `OCTO_MCP_CMD="npx -y octocode-mcp@20.1.1" run_campaign.sh …` runs a
+published version; unset, it runs the local build (`packages/octocode-mcp/dist`) against a
+snapshot of the MCP bundle and native addon taken when the campaign starts. Give each version its own
+`--octocode-label` and the matrix shows them side by side. **Add an arm:** write
+`compare/arms/<arm>.md` and its tool flags in `run_arm.sh`.
 
-| When | Load |
-|---|---|
-| understand the design | `references/BENCHMARK.md` |
-| run a matchup | `references/INSTRUCTIONS.md` then `references/run-with-agents.md` |
-| brief a runner | `references/RUNNER.md` + `references/RUNNER_TOOL_CONTEXT.md` (+ the arm's `primer-*.md`) |
-| judge a question | `references/JUDGING.md` + `references/example-verdict.md` |
-| score + aggregate | `references/SCORING.md` then `references/aggregation-and-stats.md` |
-| write the report | `references/REPORT_TEMPLATE.md` |
-| author a matchup README | `references/matchup-readme.md` |
+All runners share `compare/arms/runner.md` and the agent model `RUNNER_MODEL` (default
+`claude-sonnet-5-5`). Compare arms on the same model, run in the same campaign.
 
-## Scripts + tooling
+## Rules that keep it honest
 
-- `scripts/check-prereqs.sh` — Phase 0 gate (all arms + questions + primers).
-- `scripts/measure.sh` — fallback char wrapper for an arm without a dedicated `bin/` wrapper.
-- `compare/bin/`: `octoc` · `octoc-npm` · `rtkm` · `ghc` · `ghm` (arm wrappers) ·
-  `instrument_command.py` / `hr_compress.py` (char capture) · `record_answer.py` ·
-  `sumlog.py` (per-question total, `--strict`) · `build_blind_packet.py` (X/Y packet) ·
-  `validate_campaign.py` (byte-faithful campaign check) · `per_question_summary.py`
-  (per-question + overall chars & correctness across all 4 arms) · `test_instrumentation.py`.
+- **Isolation.** One fresh `claude -p` per run: no settings, CLAUDE.md, skills, memory, or
+  other tools. Never let a runner see another arm, a verdict, or an answer key.
+- **Measured, never reported.** Characters come from the runner's own transcript
+  (`transcript_to_log.py`): tool calls written + tool results read + the final answer.
+  Failed and refused calls count. `sumlog.py --strict <log>` re-hashes every artifact.
+- **Invalid runs are rerun, not scored.** `status.json` is false when the runner crashed,
+  hit its turn cap, or its MCP server never connected.
+- **Correctness first, as whole points.** The judge moves about a point between runs, so
+  report correctness rounded to whole points and treat arms within one point as tied. Only
+  then do characters decide.
+- **Ratios are per question.** Headline the geometric mean of per-question ratios with a 95%
+  bootstrap CI and the leaner count; never a pooled total alone.
+- **Same campaign beats cross-campaign.** Arms from different campaigns ran with different
+  agents or days: show them, label them, but draw conclusions from same-campaign pairs.
+- **No tuning to the questions.** `leak_check.py` must find no question term in the briefs or
+  the MCP's instructions and tool list. A product change made because a benchmark question
+  failed turns that question into development data: note it, and confirm on new questions.
+- **Time is measured, not estimated.** Each run's wall clock splits into model time and tool +
+  harness time (`result.json`). Compare time only between arms of the same campaign.
+- **Concurrency ≤4.** More parallel runners exhaust GitHub code search and every arm pays.
 
-## Stop when
+Details and the reasoning behind each rule: `references/method.md`. The judge's rubric:
+`references/JUDGING.md` with `references/example-verdict.md` (both are sent to the judge).
 
-The matchup's questions are answered, judged, and aggregated across ≥3 passes with CIs — or a
-preflight/fairness violation blocks the run; fix before continuing.
+## Outputs
 
-## Add a question
+- `results/runs/<campaign>.json` — every run and judgment of a campaign (committed).
+- `results/MATRIX.md`, `results/matrix_summary.json` — every arm against the anchor and each other.
+- `results/index.html` — the dashboard as one static file.
+- The shareable dashboard artifact — `references/dashboard.md`.
+- `results/<campaign>.md` — your write-up; add a row to `results/README.md`.
 
-Copy an existing `Q<n>.md`, bump the number, edit title / `id` / `## Question` only. GitHub →
-`compare/github-questions/`; corpus-local → that matchup's `questions/`; add its README row.
+## Related skills
+
+- `octocode-eval-benchmark`: designing an evaluation from scratch, judge calibration, held-out
+  sets. This skill is the ready-made GitHub research benchmark built on those rules.
+- `octocode-research`: reading transcripts and verifying a surprising answer by hand.
+
+## Questions
+
+`compare/github-questions/Q<n>.md`: a title, an `id`, and a self-contained `## Question`
+naming repos and refs. No hints, scope or answers. Add its row to that folder's README.

@@ -1,7 +1,6 @@
 {
   "name": "@octocodeai/octocode-chrome-devtools",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "description": "Chrome DevTools MCP server and CLI for browser plans, arbitrary CDP, and complete evidence.",
   "type": "module",
@@ -19,6 +18,9 @@
   },
   "engines": {
     "node": "^24.15.0"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -47,7 +49,8 @@
     "test:mcp": "node tests/protocol-suite.mjs --transport mcp",
     "test:cli": "node tests/protocol-suite.mjs --transport typed-cli",
     "test:webmcp": "node tests/webmcp-tools.check.mjs",
-    "verify": "yarn build && yarn lint && yarn typecheck && yarn test && yarn test:protocol && yarn test:mcp && yarn test:cli && yarn test:package",
+    "test:cdp-all": "node tests/cdp-all-suite.mjs",
+    "verify": "yarn build && yarn lint && yarn typecheck && yarn test && yarn test:protocol && yarn test:mcp && yarn test:cli && yarn test:cdp-all && yarn test:package",
     "prepack": "node tools/build.mjs",
     "test:package": "node tools/release-smoke.mjs",
     "format": "prettier --write \"src/**/*.{ts,mts}\" \"tools/**/*.mjs\" \"tests/**/*.mjs\""

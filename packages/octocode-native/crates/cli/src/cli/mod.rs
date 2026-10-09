@@ -6,6 +6,7 @@ mod lsp_provision;
 mod mcp_clients;
 mod mcp_install;
 mod mcp_manage;
+mod schema;
 mod serve;
 mod system;
 use clap::{CommandFactory, FromArgMatches, Parser};
@@ -116,7 +117,12 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
-    let argv: Vec<std::ffi::OsString> = argv.into_iter().map(Into::into).collect();
+    let mut argv: Vec<std::ffi::OsString> = argv.into_iter().map(Into::into).collect();
+    // A bare `octocode` on a pipe is an agent asking what it can do: the
+    // catalog. A terminal still gets the help text.
+    if argv.len() == 1 && machine_output(false) {
+        argv.push("schema".into());
+    }
     match Args::command()
         .try_get_matches_from(&argv)
         .and_then(|matches| Args::from_arg_matches(&matches))
@@ -124,7 +130,7 @@ where
         Ok(args) => Ok(args),
         Err(error) => {
             let error = if is_help(&error) {
-                hide_unavailable_tools(Args::command())
+                with_tool_help(hide_unavailable_tools(Args::command()))
                     .try_get_matches_from(&argv)
                     .err()
                     .unwrap_or(error)
@@ -172,6 +178,17 @@ fn hide_unavailable_tools(mut command: clap::Command) -> clap::Command {
     for tool in ToolId::ALL {
         if !runtime.is_available(tool.as_str()) {
             command = command.mut_subcommand(tool.as_str(), |sub| sub.hide(true));
+        }
+    }
+    command
+}
+
+/// `<tool> --help` ends with what the query needs: required fields and one
+/// runnable example, from the embedded CLI presentation.
+fn with_tool_help(mut command: clap::Command) -> clap::Command {
+    for tool in ToolId::ALL {
+        if let Some(help) = schema::tool_help(tool.as_str()) {
+            command = command.mut_subcommand(tool.as_str(), |sub| sub.after_help(help));
         }
     }
     command
@@ -375,6 +392,19 @@ fn tool_list_config_paths() -> String {
         .join("/")
 }
 
+/// The machine catalog: runtime availability joined with field lists from
+/// the embedded enforcement contract (the runtime catalog has none).
+fn machine_catalog(runtime: &ToolRuntime) -> Result<Value, String> {
+    let catalog = runtime.catalog().map_err(|error| error.message)?;
+    let contract = octocode_native::contracts::parsed_contract()
+        .map_err(|_| "Embedded contract is invalid".to_owned())?;
+    Ok(compact_tool_catalog(
+        &catalog,
+        contract,
+        &runtime.config().dotenv,
+    ))
+}
+
 fn compact_tool_catalog(
     catalog: &Value,
     contract: &Value,
@@ -511,31 +541,31 @@ async fn dispatch(command: Command, runtime: &ToolRuntime) -> u8 {
     let json_out = command.json_output();
     match command {
         Command::Tool(tool) => run_tool(tool).await,
-        Command::Catalog => {
-            let catalog = match runtime.catalog() {
-                Ok(catalog) => catalog,
+        Command::Catalog => match machine_catalog(runtime) {
+            Ok(catalog) => write_json(&catalog, true),
+            Err(message) => {
+                emit_error(&message, true);
+                5
+            }
+        },
+        Command::Schema { tool, view, select } => {
+            // A terminal gets indented JSON and text errors; a pipe gets one line.
+            let json_out = machine_output(false);
+            let value = machine_catalog(runtime)
+                .map_err(|message| schema::SchemaError { message, exit: 5 })
+                .and_then(|machine| match tool.as_deref() {
+                    None => schema::catalog(&machine),
+                    Some(name) => {
+                        schema::tool_view(&machine, name, view.as_deref(), select.as_deref())
+                    }
+                });
+            match value {
+                Ok(value) => write_json(&value, json_out),
                 Err(error) => {
-                    emit_error(&error.message, true);
-                    return 5;
+                    emit_error(&error.message, json_out);
+                    error.exit
                 }
-            };
-            // Availability comes from the runtime catalog; field lists come
-            // from the embedded enforcement contract (the catalog has none).
-            let Ok(contract) = octocode_native::contracts::parsed_contract() else {
-                emit_error("Embedded contract is invalid", true);
-                return 5;
-            };
-            write_json(
-                &compact_tool_catalog(&catalog, contract, &runtime.config().dotenv),
-                true,
-            )
-        }
-        Command::Schema { .. } => {
-            emit_error(
-                "`octocode schema` is served by the octocode npm launcher, which joins the tool contracts with this binary's catalog.",
-                json_out,
-            );
-            5
+            }
         }
         Command::Config {
             command, manage, ..

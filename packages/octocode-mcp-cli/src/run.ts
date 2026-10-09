@@ -69,12 +69,15 @@ export function isCliView(value: unknown): value is CliView {
   return Boolean(value) && typeof value === 'object' && CLI_VIEW in (value as object);
 }
 
+// JSON.rawJSON values carry exact numbers (beyond float precision) as frozen records.
+const isRawJson = (JSON as unknown as { isRawJSON?: (value: unknown) => boolean }).isRawJSON ?? (() => false);
+
 function isScalar(value: unknown): boolean {
-  return value === null || value === undefined || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+  return isRawJson(value) || value === null || value === undefined || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && !isRawJson(value);
 }
 
 /** Full text of MCP content blocks. Plain text stays text. Every other block is its JSON. */
@@ -91,6 +94,7 @@ export function contentText(content: readonly unknown[]): string {
 function scalarText(value: unknown): string {
   if (value === null) return 'null';
   if (value === undefined) return '';
+  if (isRawJson(value)) return (value as { rawJSON: string }).rawJSON;
   return String(value);
 }
 

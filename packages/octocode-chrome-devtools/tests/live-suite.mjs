@@ -9,7 +9,9 @@ import {
   readFileSync,
   existsSync,
   writeFileSync,
+  mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
 } from 'fs';
 import { dirname, join } from 'path';
@@ -21,7 +23,7 @@ const FIXTURES = join(ROOT, 'tests', 'fixtures');
 const args = process.argv.slice(2);
 if (args.includes('-h') || args.includes('--help')) {
   console.log(
-    'Usage: live-suite.mjs [--keep] [--only <substring>]\n\nRuns snapshot, action, wait, upload, drag, iframe, screenshot and perf checks against local fixtures in an isolated headless Chrome.'
+    'Usage: live-suite.mjs [--keep] [--only <substring>]\n\nRuns snapshot, action, wait, upload, drag, iframe, screenshot, perf and cross-cwd cleanup checks against local fixtures in an isolated headless Chrome.'
   );
   process.exit(0);
 }
@@ -77,6 +79,27 @@ const server = createServer((req, res) => {
     res.setHeader('content-type', 'text/html');
     res.end(
       `<title>Cross-origin frame</title><h1>Cross-origin frame</h1><iframe title="Payment" src="http://localhost:${server.address().port}/cross-frame.html" width="400" height="120"></iframe>`
+    );
+    return;
+  }
+  if (url.pathname === '/stealth-flow') {
+    res.setHeader('content-type', 'text/html');
+    res.end(
+      `<title>Stealth flow</title><iframe src="http://localhost:${server.address().port}/stealth-frame"></iframe><script>window.__worker=new Worker('/stealth-worker.js');</script>`
+    );
+    return;
+  }
+  if (url.pathname === '/stealth-frame') {
+    res.setHeader('content-type', 'text/html');
+    res.end(
+      `<title>Stealth frame</title><script>window.__seen={ua:navigator.userAgent,platform:navigator.platform,header:${JSON.stringify(String(req.headers['user-agent']))}};</script>`
+    );
+    return;
+  }
+  if (url.pathname === '/stealth-worker.js') {
+    res.setHeader('content-type', 'text/javascript');
+    res.end(
+      'onmessage=()=>postMessage({ua:navigator.userAgent,platform:navigator.platform})'
     );
     return;
   }
@@ -664,7 +687,69 @@ export async function run(cdp) {
       ['--new-tab', 'about:blank', '--stealth']
     );
     if (result.code !== 0) throw new Error(result.out);
-    expect(result.out, /stealth self-test: 15\/15 passed/);
+    expect(result.out, /stealth self-test: (\d+)\/\1 passed/);
+  });
+  await test('emulation: overrides reach cross-origin frames and workers, and end with the run', () => {
+    const script = join(WORK, '.octocode', 'stealth-reach.mjs');
+    writeFileSync(
+      script,
+      `export async function run(cdp) {
+  const frames = [];
+  cdp.on('Target.attachedToTarget', ({ sessionId, targetInfo }) => {
+    if (targetInfo.type === 'iframe') frames.push(sessionId);
+  });
+  await cdp.send('Target.setAutoAttach', cdp.stealthAutoAttach ?? { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+  await cdp.send('Page.reload', {});
+  await new Promise(r => setTimeout(r, 2000));
+  const page = (await cdp.send('Runtime.evaluate', { awaitPromise: true, returnByValue: true, expression:
+    \`new Promise(r => { __worker.onmessage = e => r({ ua: navigator.userAgent, platform: navigator.platform, own: Object.getOwnPropertyNames(navigator), webdriver: navigator.webdriver, worker: e.data }); __worker.postMessage(0); })\` })).result.value;
+  let frame = null;
+  for (const sessionId of frames) {
+    const value = (await cdp.send('Runtime.evaluate', { expression: 'window.__seen', returnByValue: true }, sessionId).catch(() => null))?.result?.value;
+    if (value) frame = value;
+  }
+  console.log('[REACH] ' + JSON.stringify({ page, frame }));
+}`
+    );
+    const run = extra =>
+      JSON.parse(
+        success(
+          node('dist/engine/cdp-sandbox.mjs', [
+            script,
+            '--port',
+            CDP_PORT,
+            ...extra,
+          ])
+        )
+          .out.split('\n')
+          .find(line => line.startsWith('[REACH] '))
+          .slice(8)
+      );
+    const stealthy = run([
+      '--new-tab',
+      `${BASE}/stealth-flow`,
+      '--keep-tab',
+      '--stealth',
+    ]);
+    const { page, frame } = stealthy;
+    if (/Headless/.test(page.ua)) throw new Error(`page UA ${page.ua}`);
+    if (page.webdriver !== false || page.own.length)
+      throw new Error(`navigator tells ${JSON.stringify(page)}`);
+    for (const [where, seen] of [
+      ['worker', page.worker],
+      ['frame', frame],
+    ])
+      if (!seen || seen.ua !== page.ua || seen.platform !== page.platform)
+        throw new Error(`${where} differs: ${JSON.stringify(stealthy)}`);
+    if (frame.header !== page.ua)
+      throw new Error(`frame request header ${frame.header}`);
+    // Nothing outlives the run: the kept tab is native and self-consistent again.
+    const native = run(['--target-url', `${BASE}/stealth-flow`, '--close-tab']);
+    if (
+      native.page.worker.ua !== native.page.ua ||
+      native.frame?.ua !== native.page.ua
+    )
+      throw new Error(`native run inconsistent: ${JSON.stringify(native)}`);
   });
   await test('runner: interruption is recorded and exits nonzero', async () => {
     const script = join(WORK, '.octocode', 'interrupt.mjs');
@@ -1250,6 +1335,47 @@ export async function run(cdp) {
     if (lcp < 2500) throw new Error(`expected lcp >= 2500, got ${lcp}`);
     if (cls < 0.05) throw new Error(`expected cls >= 0.05, got ${cls}`);
     expect(out, /\[FINDING\] PERF_SLOW_LCP|SLOW_LCP/);
+  });
+
+  await test('cleanup: another cwd stops the isolated Chrome it did not open', () => {
+    const port = String(Number(CDP_PORT) + 400);
+    const [owner, other] = ['owner', 'other'].map(name => {
+      const dir = join(WORK, `cleanup-${name}`);
+      mkdirSync(dir, { recursive: true });
+      return realpathSync(dir);
+    });
+    const launcher = (cwd, launchArgs) => {
+      const res = spawnSync(
+        process.execPath,
+        [join(ROOT, 'dist/engine/cli.mjs'), ...launchArgs, '--port', port],
+        { cwd, encoding: 'utf8', timeout: 60000 }
+      );
+      if (res.status !== 0) throw new Error(`${res.stdout}${res.stderr}`);
+      return JSON.parse(res.stdout.trim().split('\n').at(-1));
+    };
+    const opened = launcher(owner, [
+      'open',
+      '--headless',
+      '--url',
+      'about:blank',
+    ]);
+    const session = JSON.parse(readFileSync(opened.sessionFile, 'utf8'));
+    try {
+      const cleaned = launcher(other, ['cleanup']);
+      if (cleaned.status !== 'CLEANED_UP' || cleaned.workspace !== owner)
+        throw new Error(JSON.stringify(cleaned));
+      let gone = false;
+      try {
+        process.kill(session.pid, 0);
+      } catch {
+        gone = true;
+      }
+      if (!gone) throw new Error(`Chrome pid ${session.pid} still running`);
+      if (existsSync(session.profileDir) || existsSync(opened.sessionFile))
+        throw new Error('profile or session file left behind');
+    } finally {
+      launcher(owner, ['cleanup']);
+    }
   });
 } finally {
   serverProc.kill();

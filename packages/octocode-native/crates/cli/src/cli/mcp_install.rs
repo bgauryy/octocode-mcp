@@ -255,6 +255,10 @@ fn install(client: &ClientSpec, config_path: &Path, args: &InstallArgs) -> Resul
             client.id,
             config_path.display()
         );
+        println!(
+            "Next: restart {} so it loads the server; check GitHub access with `octocode auth status`.",
+            client.id
+        );
     }
     Ok(0)
 }

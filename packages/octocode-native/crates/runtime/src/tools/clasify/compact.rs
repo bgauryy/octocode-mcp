@@ -1,4 +1,4 @@
-//! Default clasify output: the verbose receipt (`debug:true`) reduced to the
+//! Default clasify output: the full receipt (`extras: ["details"]`) reduced to the
 //! decision data. A resource states its file path (and a GitHub file's ref)
 //! and line total once, pages become `lines` + answers keyed by question,
 //! answers become the bare
@@ -126,7 +126,7 @@ fn verbose_row(row: &Value) -> Value {
     Value::Object(out)
 }
 
-/// Publish one `debug:true` query result in place: verbose `best` rows with
+/// Publish one `extras: ["details"]` query result in place: verbose `best` rows with
 /// `line`/`endLine`, and next.clasify in the public input shape.
 pub(super) fn publish_verbose(output: &mut Value, matrix: &Matrix<'_>) {
     if let Some(best) = output.get_mut("best").and_then(Value::as_object_mut) {

@@ -1126,3 +1126,25 @@ fn date_windows_render_as_one_search_range() {
     );
     assert_eq!(window_range(None, None), None);
 }
+
+/// A row drops what its query already says: the filtered `state`, and a
+/// merged row's `createdAt` unless the rows are sorted by creation.
+#[test]
+fn rows_drop_the_filtered_state_and_a_merged_rows_created_at() {
+    let merged = || {
+        map_pr(json!({
+            "number":1,"title":"t","state":"closed","merged_at":"2026-09-20T10:00:00Z",
+            "user":{"login":"dev"},"created_at":"2026-09-19T10:00:00Z"
+        }))
+    };
+    let mut row = merged();
+    super::rows::drop_implied(&mut row, Some("merged"), false);
+    assert!(row.get("state").is_none(), "{row}");
+    assert!(row.get("createdAt").is_none(), "{row}");
+    assert_eq!(row["mergedAt"], "2026-09-20T10:00:00Z");
+    // `closed` also lists merged PRs: their state stays.
+    let mut row = merged();
+    super::rows::drop_implied(&mut row, Some("closed"), true);
+    assert_eq!(row["state"], "merged");
+    assert_eq!(row["createdAt"], "2026-09-19T10:00:00Z");
+}

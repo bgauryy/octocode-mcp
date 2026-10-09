@@ -81,12 +81,12 @@ async fn typed_date_filters_reach_the_search_query() {
     assert_eq!(pushed.len(), "pushed:>=2026-01-01".len(), "{q}");
 }
 
-/// The default search excludes archived repositories: page 1 leads to them
-/// (`includeArchived`, archived:true, page 1) and the replay includes them
-/// (no archive qualifier); that search flags archived rows and offers no
-/// such lead.
+/// The default search excludes archived repositories (`archived:false`) and,
+/// knowing no skipped count, offers no `includeArchived` lead (the tool
+/// description states the default once); an explicit `archived:true` search
+/// drops the qualifier and flags archived rows.
 #[tokio::test]
-async fn default_archived_exclusion_is_disclosed_with_a_lead() {
+async fn default_archived_search_exclusion_offers_no_lead() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/repositories"))
@@ -110,12 +110,9 @@ async fn default_archived_exclusion_is_disclosed_with_a_lead() {
         "{}",
         first.data
     );
-    let lead = &first.data["next"]["includeArchived"];
-    assert_eq!(lead["tool"], "ghSearchRepo", "{}", first.data);
-    assert_eq!(
-        lead["query"]["queries"][0],
-        json!({"keywords":["x"],"archived":true}),
-        "{}",
+    assert!(
+        first.data["next"].get("includeArchived").is_none(),
+        "only an owner listing that skipped archived repositories leads to them: {}",
         first.data
     );
     // Repo-discovery words are not code keywords: no code-search lead.
@@ -202,10 +199,11 @@ async fn owner_listing_counts_skipped_archived_repositories() {
     );
 }
 
-/// Rows carry the facts that decide a repository choice: creation date
-/// beside the last push; forks and the metadata-update date stay verbose.
+/// Rows carry the facts that decide a repository choice: the last push by
+/// default, the creation date as a `details` extra; forks and the
+/// metadata-update date are `stats` extras.
 #[tokio::test]
-async fn rows_carry_creation_date_and_keep_counts_verbose() {
+async fn rows_carry_creation_date_as_a_detail_and_counts_as_stats() {
     let server = MockServer::start().await;
     mount_json(
         &server,
@@ -226,13 +224,18 @@ async fn rows_carry_creation_date_and_keep_counts_verbose() {
     for absent in ["homepage", "openIssuesCount"] {
         assert!(row.get(absent).is_none(), "{absent}: {row}");
     }
-    let verbose = crate::tools::id::ToolId::GhSearchRepo.verbose_paths();
-    assert!(!verbose.contains(&"results[].data.repositories[].createdAt"));
+    let kind_of = |field: &str| {
+        let path = format!("results[].data.repositories[].{field}");
+        crate::tools::id::ToolId::GhSearchRepo
+            .extra_paths()
+            .iter()
+            .find(|(_, paths)| paths.contains(&path.as_str()))
+            .map(|(kind, _)| *kind)
+    };
+    assert_eq!(kind_of("createdAt"), Some("details"));
+    assert_eq!(kind_of("pushedAt"), None, "the last push is default output");
     for field in ["forks", "updatedAt"] {
-        assert!(
-            verbose.contains(&format!("results[].data.repositories[].{field}").as_str()),
-            "{field}"
-        );
+        assert_eq!(kind_of(field), Some("stats"), "{field}");
     }
 }
 

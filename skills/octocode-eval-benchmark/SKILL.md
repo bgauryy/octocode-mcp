@@ -70,4 +70,4 @@ Load the page that answers the current question.
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format.
+See [output.md](output.md) for the response and saved-artifact format. Save every run under `<workspace>/.octocode/octocode-eval-benchmark/<YYYY-MM-DD>-<slug>/`; [output.md](output.md) says how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).

@@ -130,7 +130,8 @@ export async function captureResult(
   result.isPartial = true;
   result.next = { capture: read(file, 'json', 2000) };
   const flow = artifacts.find(row => row.path.endsWith('/browser-result.json'));
-  if (flow && command === 'run') {
+  // Every plan result (run, step, cdp, protocol Domain.member) carries its flow page.
+  if (flow) {
     const page = await flowPage(
       flow.path,
       read,
@@ -212,10 +213,10 @@ export async function captureResult(
       localFetch: { tool: 'localFetch', query: { path: file, length: 60 } },
     };
   }
-  if (stderr.bytes && stderr.bytes <= 2000)
+  // A failure's stderr is its reason; a success's stderr is diagnostics kept in logs.
+  if (!result.ok && stderr.bytes && stderr.bytes <= 2000)
     result.error = readFileSync(stderr.file, 'utf8');
   if (Buffer.byteLength(JSON.stringify(result)) > 16000) {
-    delete result.error;
     delete result.data;
     delete result.hints;
     delete result.search;

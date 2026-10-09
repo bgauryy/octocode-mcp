@@ -33,26 +33,25 @@ export async function applyMandatoryStealth(
 
   await applyStealthPatches(cdp);
   cdp.stealthApplied = true;
-  console.log('[INJECT] Stealth patches applied (opt-in)');
 
-  // Kept-tab follow-up steps: reloading would erase form/SPA state. The current
-  // document was loaded under the previous run's patches, so skip reload+verify.
-  if (process.env.CDP_STEALTH_NO_RELOAD === '1' && !opts.navigateUrl) {
+  // Overrides reach every later request at once. A pending navigation (new tab) needs no
+  // reload; an attached page reloads so its document loads under them, unless the caller
+  // keeps page state, in which case only the current document's load headers stay native.
+  const href = await cdp
+    .send('Runtime.evaluate', {
+      expression: 'location.href',
+      returnByValue: true,
+    })
+    .then(r => String(r?.result?.value ?? ''))
+    .catch(() => '');
+  if (opts.navigateUrl || (href && isAboutOrDataUrl(href))) {
+    // The runner navigates next, or the document was never fetched.
+  } else if (process.env.CDP_STEALTH_NO_RELOAD === '1') {
     console.log(
-      '[FINDING] STEALTH_RELOAD_SKIPPED patches apply on next navigation; page state kept'
+      '[FINDING] STEALTH_RELOAD_SKIPPED overrides apply to later requests; the current document kept its load headers'
     );
-    return { skippedReload: true };
-  }
-
-  // Patches register on new document; reload so verify runs on injected JS world.
-  try {
-    await cdp.send('Page.reload', { ignoreCache: false });
-    await new Promise(r => setTimeout(r, 600));
-  } catch {
-    await cdp.send('Page.navigate', {
-      url: cdp.targetInfo?.url || 'about:blank',
-    });
-    await new Promise(r => setTimeout(r, 600));
+  } else {
+    await reloadAndWait(cdp);
   }
 
   if (process.env.CDP_SKIP_STEALTH_VERIFY === '1') {
@@ -75,17 +74,19 @@ export async function applyMandatoryStealth(
   return result;
 }
 
-/** Apply stealth (if needed), navigate, brief settle. */
-export async function ensureStealthNavigate(cdp, url, { waitMs = 2500 } = {}) {
-  await applyMandatoryStealth(cdp, { navigateUrl: url });
-  const current = cdp.targetInfo?.url ?? '';
-  if (!current.includes(url.replace(/^https?:\/\//, '').split('/')[0])) {
-    await cdp.send('Page.navigate', { url });
-    await new Promise(r => setTimeout(r, waitMs));
-    cdp.targetInfo = { ...cdp.targetInfo, url };
-  } else if (!current.startsWith(url.split('?')[0]) && url.startsWith('http')) {
-    await cdp.send('Page.navigate', { url });
-    await new Promise(r => setTimeout(r, waitMs));
-    cdp.targetInfo = { ...cdp.targetInfo, url };
+async function reloadAndWait(cdp, timeoutMs = 15000) {
+  let done;
+  const loaded = new Promise<void>(r => (done = r));
+  const onLoad = (_params, meta) => {
+    if (!meta?.sessionId) done();
+  };
+  cdp.on('Page.loadEventFired', onLoad);
+  const timer = setTimeout(() => done(), timeoutMs);
+  try {
+    await cdp.send('Page.reload', { ignoreCache: false });
+    await loaded;
+  } finally {
+    clearTimeout(timer);
+    cdp.off('Page.loadEventFired', onLoad);
   }
 }

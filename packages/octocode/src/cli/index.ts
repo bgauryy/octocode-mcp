@@ -9,9 +9,8 @@ import { EXIT } from './exit-codes.js';
 /**
  * The npm CLI is a launcher, not a second implementation. The native Rust
  * binary owns command parsing, command help, validation, and execution.
- * Node retains presentation and management responsibilities:
- *  - `schema`: joins core-owned presentation with the native machine catalog
- *    after a fail-closed fingerprint check,
+ * `schema` and `<tool> --help` included: the binary embeds the discovery
+ * content. Node retains only management responsibilities:
  *  - `skill`: bundled-skill materialization (the native `skill` command
  *    shells back to this CLI; delegating it would recurse), and
  *  - the TTY client picker for a bare `install` (selection only — every
@@ -38,14 +37,14 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
   }
 
   // A bare `octocode` is the overview for whoever runs it: the command
-  // reference on a terminal, the tool catalog with agent instructions (the
-  // `schema` listing) on a pipe.
-  if (args.command === null && !hasHelpFlag(args) && !hasVersionFlag(args)) {
-    if (process.stdout.isTTY !== true) {
-      const { schemaCommand } = await import('./commands/schema.js');
-      await schemaCommand.handler({ ...args, command: 'schema', args: [] });
-      return true;
-    }
+  // reference on a terminal; on a pipe the binary prints the tool catalog
+  // with agent instructions.
+  if (
+    args.command === null &&
+    !hasHelpFlag(args) &&
+    !hasVersionFlag(args) &&
+    process.stdout.isTTY === true
+  ) {
     rawArgv.push('--help');
   }
 
@@ -58,16 +57,7 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     }
   }
 
-  // The binary owns command help, `schema --help` included.
-  const nodeOwned =
-    !shouldDelegateToNative(args.command) &&
-    !(args.command === 'schema' && hasHelpFlag(args));
-  if (nodeOwned) {
-    if (args.command === 'schema') {
-      const { schemaCommand } = await import('./commands/schema.js');
-      await schemaCommand.handler(args);
-      return true;
-    }
+  if (!shouldDelegateToNative(args.command)) {
     const { skillCommand } = await import('./commands/skill.js');
     await skillCommand.handler(args);
     return true;
@@ -83,22 +73,6 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     );
     process.exitCode = EXIT.TOOL;
     return false;
-  }
-
-  // Tool help adds the catalog's required fields and example to the binary's.
-  const helpTarget =
-    args.command === 'help'
-      ? args.args[0]
-      : hasHelpFlag(args)
-        ? args.command
-        : null;
-  if (helpTarget) {
-    const { runToolHelp } = await import('./commands/tool-help.js');
-    const code = await runToolHelp(bin, helpTarget);
-    if (code !== undefined) {
-      process.exitCode = code;
-      return true;
-    }
   }
 
   if (

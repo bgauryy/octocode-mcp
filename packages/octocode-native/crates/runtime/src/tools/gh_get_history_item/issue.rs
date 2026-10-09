@@ -408,15 +408,19 @@ fn mark_bounded_closing(out: &mut Value, listed: usize, total: u64, first_window
         .unwrap_or_default();
     reasons.push(json!("closingReferenceLimit"));
     out["partialReasons"] = Value::Array(reasons);
-    out["warnings"] = json!([if first_window {
-        format!(
-            "closedBy lists {listed} of {total} linked pull requests; readPullRequest is a candidate, not the complete fix set."
-        )
-    } else {
-        format!(
-            "The first window's closedBy lists {listed} of {total} linked pull requests; the rest are not listed."
-        )
-    }]);
+    // Appended: a bot-comment warning on the same page stays.
+    super::patch::push_warning(
+        out,
+        if first_window {
+            format!(
+                "closedBy lists {listed} of {total} linked pull requests; the first is a candidate, not the complete fix set."
+            )
+        } else {
+            format!(
+                "The first window's closedBy lists {listed} of {total} linked pull requests; the rest are not listed."
+            )
+        },
+    );
 }
 
 /// Closing references one issue read lists. Past it the set is bounded and

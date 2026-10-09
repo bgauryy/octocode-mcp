@@ -1,9 +1,21 @@
 # Results
 
-Start with [SUMMARY.md](SUMMARY.md). It uses the latest complete campaign for
-each matchup and does not combine invalid or incomplete runs.
+Start with [MATRIX.md](MATRIX.md): every arm against the newest Octocode MCP version and against
+each other. [index.html](index.html) is the same as a dashboard. Rebuild both with
+`compare/bin/matrix_summary.py`, then
+`skills/octocode-benchmark/dashboard/build_datasets.py --static results/index.html`.
+Each campaign's runs and judgments live in [runs/](runs/), one JSON per campaign.
 
-## Latest campaigns — full 30 Q × 3 passes per matchup (local build v18.1.1, gpt-5.5 judge)
+## Current harness (fresh `claude -p` agent per question, transcript-measured)
+
+| Campaign | Arms | Report |
+|---|---|---|
+| lean-vs-mcp-114934 (Oct 9) | Octocode v20 MCP vs gh lean, Sonnet 5.5, 30 × 1 | Correctness tied, gh-lean 0.71× characters, time tied ([data](runs/lean-vs-mcp-114934-2026-10-09.json)) |
+| mcp-clasify-ab-111154 (Oct 9) | Octocode v20 MCP, clasify on vs off, Sonnet 5.5, 30 × 1 | [mcp-clasify-ab-111154-2026-10-09.md](mcp-clasify-ab-111154-2026-10-09.md) |
+
+## August 2026 CLI campaigns (previous harness)
+
+### Full 30 Q × 3 passes per matchup (local build v18.1.1, gpt-5.5 judge)
 
 Three full pairwise matchups over the complete 30-question v2 set, 3 passes each, local build
 `out/octocode.js` v18.1.1; blind neutral **gpt-5.5** judge, X/Y randomized per question,
@@ -73,5 +85,6 @@ footprint. Failed probes inside a complete run remain counted.
 
 | Comparison | Report | Outcome |
 |---|---|---|
+| Local Octocode **MCP**, Sonnet 5.5 runners: clasify on vs off | [mcp-clasify-ab-111154](mcp-clasify-ab-111154-2026-10-09.md) | 30×1, `claude -p` per question behind a logging stdio proxy, GPT-5.5 blind judge. `clasify` was offered in 30/30 sessions and called 0 times, so the arms tied (chars 1.04×, CI 0.93–1.16; cost $2.58 vs $2.62; correctness 9.0 vs 9.2, p≈0.15). Mean ~10.8k chars/Q, about 2× leaner than the Aug CLI-v18 campaign (cross-campaign, orientation only). |
 | Live 3-arm run (`octocode@18.2.2` vs `gh`+RTK and `gh`+Headroom) | [live-3arm-130222](live-3arm-130222-2026-08-09.md) | 30×1 fresh live run with three isolated runner agents and two blind judges. All 90 logs strict-valid. Octocode was leaner than RTK on 19/30 (geo 1.58×) and leaner than Headroom on 20/30 (geo 1.56×). Single pass only — not a headline replacement. |
 | Octocode (local build, prompt+desc fixes) vs `gh` + RTK | [localfix-020431](octocode-vs-gh-rtk-localfix-020431-2026-08-06.md) | 25×1, arm B = local out/octocode.js. Octocode more correct this pass (mean 9.72/9.24; paired B 5 win/17 tie/3 loss, p≈0.73 n.s.), ~3.2× leaner (geo-mean 3.24×), leaner 20/25. Targeted fixes improved Q21 (verbatim node value) & Q25 (diff-over-comment). Local-build probe, not a published-CLI headline; Q25 contested. |

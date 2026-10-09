@@ -122,7 +122,7 @@ async fn local_fetch_pages_and_unions_through_the_runtime() {
 }
 
 /// P6: a byte page states its view's total (`pagination.totalBytes`), as a
-/// line page's total rides `totalLines`: `sourceBytes` is debug-only, so
+/// line page's total rides `totalLines`: `sourceBytes` is a stats extra, so
 /// without it the page would name no total at all.
 #[tokio::test]
 async fn local_fetch_byte_pages_state_their_total() {
@@ -133,7 +133,7 @@ async fn local_fetch_byte_pages_state_their_total() {
     let page = call(
         &runtime,
         "localFetch",
-        query_path(&path, json!({"unit":"bytes","length":5,"debug":false})),
+        query_path(&path, json!({"unit":"bytes","length":5,"extras":[]})),
     )
     .await
     .expect("byte page");
@@ -1327,48 +1327,64 @@ async fn topology_path_echo_matches_caller_form_on_paged_cycles() {
     runtime.close().await;
 }
 
-/// A regex read past the match limit names the lead that pages every
-/// match, and that lead reaches the agent where the warning says, on both
-/// surfaces, also on the first page of a read that continues. Leads ride
-/// `hints` (pages ride `next`), so the warning must name `hints.textSearch`.
+/// A regex read past the match limit says how to reach the unselected
+/// matches without restating a call, on both surfaces, also on the first
+/// page of a read that continues. The search lead that pages every match is
+/// opt-in (`extras: ["hints"]`) and then rides `hints` (pages ride `next`).
 #[tokio::test]
-async fn regex_match_limit_warning_names_the_lead_it_delivers() {
+async fn regex_match_limit_warning_and_its_opt_in_search_lead() {
     let workspace = Workspace::new();
     let body: String = (1..=100_005).map(|n| format!("hit {n}\n")).collect();
     let path = workspace.write("hits.txt", body);
     let runtime = workspace.runtime(&[]);
-    let query =
-        json!({"queries":[{"path":path.to_string_lossy(),"matchString":"hit","regex":"rust"}]});
-    for mcp in [false, true] {
-        let envelope = if mcp {
-            runtime
-                .execute_mcp("limit-mcp".into(), "localFetch".into(), query.clone())
-                .await
-                .expect("mcp call")["structuredContent"]
-                .clone()
-        } else {
-            runtime
-                .execute("limit-cli".into(), "localFetch".into(), query.clone())
-                .await
-                .expect("cli call")
-                .structured_content
-        };
-        let data = &envelope["results"][0]["data"];
-        let warning = data["warnings"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(serde_json::Value::as_str)
-            .find(|w| w.contains("match limit"))
-            .unwrap_or_else(|| panic!("mcp={mcp}: no match-limit warning: {data}"));
-        assert!(
-            data["next"]["continue"].is_object(),
-            "mcp={mcp}: the read pages"
-        );
-        assert!(warning.contains("hints.textSearch"), "mcp={mcp}: {warning}");
-        assert_eq!(
-            data["hints"]["textSearch"]["tool"], "localSearch",
-            "mcp={mcp}: {data}"
-        );
+    for hinted in [false, true] {
+        let mut row = json!({"path":path.to_string_lossy(),"matchString":"hit","regex":"rust"});
+        if hinted {
+            row["extras"] = json!(["hints"]);
+        }
+        let query = json!({"queries":[row]});
+        for mcp in [false, true] {
+            let envelope = if mcp {
+                runtime
+                    .execute_mcp("limit-mcp".into(), "localFetch".into(), query.clone())
+                    .await
+                    .expect("mcp call")["structuredContent"]
+                    .clone()
+            } else {
+                runtime
+                    .execute("limit-cli".into(), "localFetch".into(), query.clone())
+                    .await
+                    .expect("cli call")
+                    .structured_content
+            };
+            let data = &envelope["results"][0]["data"];
+            let warning = data["warnings"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_str)
+                .find(|w| w.contains("match limit"))
+                .unwrap_or_else(|| panic!("mcp={mcp}: no match-limit warning: {data}"));
+            assert!(
+                data["next"]["continue"].is_object(),
+                "mcp={mcp}: the read pages"
+            );
+            assert!(
+                warning.ends_with("narrow the regex to select them."),
+                "mcp={mcp}: {warning}"
+            );
+            if hinted {
+                assert_eq!(
+                    data["hints"]["textSearch"]["tool"], "localSearch",
+                    "mcp={mcp}: {data}"
+                );
+            } else {
+                assert!(
+                    data.get("hints")
+                        .is_none_or(|hints| hints.get("textSearch").is_none()),
+                    "mcp={mcp}: the search lead is opt-in: {data}"
+                );
+            }
+        }
     }
 }

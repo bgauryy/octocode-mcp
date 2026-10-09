@@ -1262,15 +1262,12 @@ pub(super) fn leading_binary_warning(
 ) -> String {
     let total: u64 = groups.iter().map(|group| u64::from(group.count)).sum();
     let by_extension = binary_counts(groups);
-    // Self-contained: the listing lead may be cut by the lead cap.
-    let (noun, them) = if total == 1 {
-        ("binary file", "it")
+    let noun = if total == 1 {
+        "binary file"
     } else {
-        ("binary files", "them")
+        "binary files"
     };
-    format!(
-        "binarySkipped: {total} {noun} not searched ({by_extension}); structureSearch operation:\"files\" with these extensions lists {them}."
-    )
+    format!("binarySkipped: {total} {noun} not searched ({by_extension}).")
 }
 
 /// Most chars of exact names a binary listing's `nameRegex` spells out.
@@ -1437,7 +1434,7 @@ pub(super) fn binary_file_list(paths: &[String], total: u32, root: &std::path::P
     if paths.len() > MAX_NAMED_BINARY_FILES {
         let total = (total as usize).max(paths.len());
         return format!(
-            "{total} files ({}; structureSearch operation:\"files\" with these extensions lists them) were",
+            "{total} files ({}) were",
             binary_counts(&binary_groups(paths))
         );
     }

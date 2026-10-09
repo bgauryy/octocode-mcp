@@ -346,10 +346,10 @@ pub(super) fn walk(query: &Value, resources: Vec<Value>, best: Option<Value>) ->
         next["carry"] = best;
     }
     copy_brief(&mut next, query);
-    // A debug walk stays one, as every other tool's continuation keeps
-    // `debug`: the receipt shape does not change mid-walk.
-    if query.get("debug").and_then(Value::as_bool) == Some(true) {
-        next["debug"] = json!(true);
+    // A walk keeps its `extras`, as every other tool's continuation does:
+    // the receipt shape does not change mid-walk.
+    if let Some(extras) = query.get("extras") {
+        next["extras"] = extras.clone();
     }
     next
 }

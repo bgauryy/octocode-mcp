@@ -122,7 +122,7 @@ Large inputs are bounded:
 
 ### Validation
 
-`scripts/graph-bench/bench.py` measures quality against the source text, not
+A benchmark (since removed from the repo) measured quality against the source text, not
 against the graph's own output. On 20 repositories covering 12 grammars (47 to
 50k files):
 
@@ -131,7 +131,7 @@ against the graph's own output. On 20 repositories covering 12 grammars (47 to
   edges verify against the source line they cite.
 - Cycle witness hops verify at 80–100%.
 
-`scripts/graph-bench/seeded.py` recalls 5/5 planted defects with zero
+Its seeded-defect run recalled 5/5 planted defects with zero
 negative-control leaks. The controls are a lazy Python import cycle and a Rust
 `mod tests` dev-dependency.
 

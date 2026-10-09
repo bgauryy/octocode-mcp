@@ -129,7 +129,7 @@ fn respond(
         .with_status(404)
         .with_hint("Check the package name and ecosystem, or discover it with keywords."));
     }
-    if !query.debug() {
+    if !query.wants(crate::contracts::tool_types::ExtraKind::Details) {
         artifacts.iter_mut().for_each(drop_repository_homepage);
     }
     let exact = query.package_name().is_some();
@@ -240,8 +240,7 @@ mod row_tests {
         assert_eq!(distinct.homepage.as_deref(), Some("https://zod.dev"));
         // The registry URL is verbose: the verbose stage drops it by default.
         assert!(
-            crate::tools::id::ToolId::ArtifactSearch
-                .verbose_paths()
+            crate::response::extras::all_paths(crate::tools::id::ToolId::ArtifactSearch)
                 .contains(&"results[].data.artifacts[].registryUrl")
         );
     }

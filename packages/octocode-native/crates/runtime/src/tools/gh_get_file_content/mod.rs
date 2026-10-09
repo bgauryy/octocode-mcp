@@ -217,10 +217,15 @@ where
         }
         None => query,
     };
-    // The first page states when the file last changed: one commits request
-    // after the body arrived, so a failed or throttled read never spends it,
-    // and later pages repeat nothing.
-    let (last_modified, last_modified_by) = if query.offset.unwrap_or(0) == 0 {
+    // A receipts read's first page states when the file last changed: one
+    // commits request after the body arrived, so a failed or throttled read
+    // never spends it, and later pages repeat nothing. A default read sends
+    // no extra request.
+    let (last_modified, last_modified_by) = if query
+        .extras
+        .contains(&crate::contracts::tool_types::ExtraKind::Receipts)
+        && query.offset.unwrap_or(0) == 0
+    {
         file_timestamp(provider, query, &acquired.resolved_ref, request_context).await
     } else {
         (None, None)
@@ -249,7 +254,7 @@ where
         cancel,
         regex,
     );
-    if query.minify == Some(MinifyMode::Symbols) {
+    if query.minify == MinifyMode::Symbols {
         content
             .warnings
             .retain(|warning| !warning.starts_with("No smaller outline is available for "));
@@ -306,6 +311,10 @@ where
     {
         calls.insert("ignoreCase".into(), lead);
     }
+    // The contract's default view is no news; another view is echoed.
+    if content.content_view == Some(default_minify()) {
+        content.content_view = None;
+    }
     Ok(GhGetFileContentResult {
         owner: query.owner.to_string(),
         repo: query.repo.to_string(),
@@ -346,20 +355,9 @@ fn no_match(
     content.pagination = None;
     content.source_line_ranges.clear();
     content.hints = vec![crate::tools::local_fetch::no_match_hint(
-        local.is_regex(),
-        local
-            .match_strings()
-            .iter()
-            .any(|pattern| local.case_sensitive_for(pattern)),
+        local,
         crate::tools::id::ToolId::GhSearchCode.as_str(),
     )];
-    if let Some(requested) = query.minify.filter(|mode| *mode != MinifyMode::None) {
-        content.minify_fallback = Some(crate::tools::local_fetch::MinifyFallback {
-            requested,
-            applied: MinifyMode::None,
-            reason: "match-evidence".into(),
-        });
-    }
 }
 
 /// Lines from which a missed literal is located semantically (clasify)
@@ -487,10 +485,17 @@ fn complete_small_file(
     let (Some(total), Some(source_bytes)) = (content.total_lines, content.source_bytes) else {
         return content;
     };
-    let returned: usize = content
-        .source_line_ranges
+    // A transformed view (the default compact one) maps no source ranges;
+    // its window is the requested ranges, clamped to the file.
+    let spans = if content.source_line_ranges.is_empty() {
+        local.line_ranges()
+    } else {
+        content.source_line_ranges.clone()
+    };
+    let returned: usize = spans
         .iter()
-        .map(|range| range.end + 1 - range.start)
+        .filter(|range| range.start <= total)
+        .map(|range| range.end.min(total) + 1 - range.start)
         .sum();
     // The whole file holds the rest of every declaration a window cut, so a
     // `readBlock` lead never blocks completion; any other continuation does.
@@ -502,8 +507,10 @@ fn complete_small_file(
             }
             .is_empty()
     });
+    // An outline is not a window; any source view (the default compact one
+    // included) completes in its own view.
     let windowed = local.full_content != Some(true)
-        && local.minify_mode() == MinifyMode::None
+        && local.minify_mode() != MinifyMode::Symbols
         && local.context_bytes.is_none()
         && (local.match_string.is_some() || local.has_ranges());
     if !windowed
@@ -518,6 +525,10 @@ fn complete_small_file(
         return content;
     }
     let mut whole = local.clone();
+    // A matchString window is verbatim source, and so is its completion.
+    if local.match_string.is_some() {
+        whole.minify = Some(MinifyMode::None);
+    }
     whole.match_string = None;
     whole.regex = None;
     whole.case_mode = None;
@@ -536,7 +547,8 @@ fn complete_small_file(
         cancel,
         regex,
     );
-    if completed.error.is_some() || completed.source_line_ranges.len() != 1 {
+    // A verbatim completion is one source range; a compact one maps none.
+    if completed.error.is_some() || completed.source_line_ranges.len() > 1 {
         return content;
     }
     completed.matched_lines = content.matched_lines;
@@ -662,17 +674,17 @@ fn rewrite_continuations(
         query.insert("repo".into(), Value::String(source.repo.to_string()));
         query.insert("ref".into(), Value::String(resolved_ref.to_owned()));
         // A continuation reads a window, never the whole file, and keeps
-        // the caller's view; the default view (`minify: none`) is omitted.
+        // the caller's view; the default view is omitted.
         query.remove("fullContent");
-        match source.minify.unwrap_or(MinifyMode::None) {
-            MinifyMode::None => {
+        match source.minify {
+            mode if mode == default_minify() => {
                 query.remove("minify");
             }
             mode => {
-                let name = if mode == MinifyMode::Standard {
-                    "standard"
-                } else {
-                    "symbols"
+                let name = match mode {
+                    MinifyMode::None => "none",
+                    MinifyMode::Standard => "standard",
+                    MinifyMode::Symbols => "symbols",
                 };
                 query.insert("minify".into(), Value::String(name.to_owned()));
             }
@@ -698,6 +710,18 @@ fn rewrite_continuations(
 /// The GitHub file query is the localFetch extraction query plus repository
 /// coordinates; project it onto the generated localFetch wire type so both
 /// tools share one extraction request. Paged reads get the default page size.
+/// The view a read gets when it names no `minify` (contract default).
+fn default_minify() -> MinifyMode {
+    crate::contracts::query_schema_value(
+        crate::tools::id::ToolId::GhGetFileContent,
+        None,
+        "minify",
+        "default",
+    )
+    .and_then(|value| serde_json::from_value(value.clone()).ok())
+    .unwrap_or(MinifyMode::None)
+}
+
 fn local_fetch_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, ProviderError> {
     let mut value = serde_json::to_value(query).map_err(decode_error)?;
     if let Value::Object(object) = &mut value {
@@ -877,7 +901,7 @@ mod tests {
         let provider = mock_provider(&server, RetryPolicy::default());
         let query: GhGetFileContentQuery = serde_json::from_value(serde_json::json!({
             "owner": "a", "repo": "b", "path": "src/lib.rs", "ref": "main",
-            "unit": "lines", "length": 2, "mainGoal": "test", "reasoning": "test"
+            "unit": "lines", "length": 2, "minify": "none", "mainGoal": "test", "reasoning": "test"
         }))
         .expect("ghGetFileContent query");
         let result = execute_default_regex(
@@ -957,11 +981,12 @@ mod tests {
         .expect("result")
     }
 
-    /// Freshness: the first page of a read (offset 0) states when the file
-    /// last changed and by whom, without debug, for one commits request
-    /// sent after the body arrived; a later page and a failed read send none.
+    /// Freshness is a receipt: a `receipts` read's first page (offset 0)
+    /// states when the file last changed and by whom, for one commits
+    /// request sent after the body arrived; a default read, a later page and
+    /// a failed read send none.
     #[tokio::test]
-    async fn the_first_page_states_the_last_change_for_one_extra_request() {
+    async fn a_receipts_first_page_states_the_last_change_for_one_extra_request() {
         let server = MockServer::start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let body: String = (1..=40).map(|i| format!("line {i}\n")).collect();
@@ -989,7 +1014,14 @@ mod tests {
             .mount(&server)
             .await;
         let provider = mock_provider(&server, RetryPolicy::default());
-        let base = serde_json::json!({"owner":"a","repo":"b","path":"a.txt","ref":sha});
+        let plain = read(
+            &provider,
+            serde_json::json!({"owner":"a","repo":"b","path":"a.txt","ref":sha}),
+        )
+        .await;
+        assert_eq!(plain.files[0].last_modified, None);
+        assert_eq!(plain.files[0].last_modified_by, None);
+        let base = serde_json::json!({"owner":"a","repo":"b","path":"a.txt","ref":sha,"extras":["receipts"]});
         let stamped = read(&provider, base.clone()).await;
         assert_eq!(
             stamped.files[0].last_modified.as_deref(),
@@ -1057,9 +1089,23 @@ mod tests {
         );
         assert_eq!(file.matched_lines, vec![12]);
 
+        // A ranges window completes in its own (default, standard) view:
+        // the same content a whole-file read in that view returns.
+        let mut full = base("small.py");
+        full["fullContent"] = true.into();
+        let full = read(&provider, full).await;
         let mut ranged = base("small.py");
         ranged["ranges"] = serde_json::json!(["1-15"]);
         let whole = read(&provider, ranged).await;
+        assert_eq!(
+            whole.files[0].content.content, full.files[0].content.content,
+            "a standard ranges window covering half a small file returns it whole"
+        );
+
+        let mut verbatim = base("small.py");
+        verbatim["ranges"] = serde_json::json!(["1-15"]);
+        verbatim["minify"] = "none".into();
+        let whole = read(&provider, verbatim).await;
         assert_eq!(
             whole.files[0].content.content.as_deref(),
             Some(small.as_str())
@@ -1067,6 +1113,7 @@ mod tests {
 
         let mut narrow = base("small.py");
         narrow["ranges"] = serde_json::json!(["1-5"]);
+        narrow["minify"] = "none".into();
         let window = read(&provider, narrow).await;
         assert_eq!(
             window.files[0].content.content.as_deref(),
@@ -1075,6 +1122,7 @@ mod tests {
 
         let mut big = base("large.py");
         big["ranges"] = serde_json::json!(["1-200"]);
+        big["minify"] = "none".into();
         let window = read(&provider, big).await;
         assert_eq!(
             window.files[0].content.source_line_ranges,
@@ -1083,8 +1131,9 @@ mod tests {
     }
 
     /// Continuations and leads carry only fields that change the read: a
-    /// default view (`fullContent` off, `minify: none`) is omitted, a chosen
-    /// minify mode is kept, and a whole-file read pages without `fullContent`.
+    /// default view (`fullContent` off, `minify: standard`, sent or not) is
+    /// omitted, a chosen `minify: none` is kept, and a whole-file read pages
+    /// without `fullContent`.
     #[tokio::test]
     async fn continuations_omit_default_view_fields() {
         let server = MockServer::start().await;
@@ -1104,9 +1153,16 @@ mod tests {
         paged["length"] = 100.into();
         let mut standard = paged.clone();
         standard["minify"] = "standard".into();
+        let mut verbatim = paged.clone();
+        verbatim["minify"] = "none".into();
         let mut whole = base;
         whole["fullContent"] = true.into();
-        for (query, minify) in [(paged, None), (standard, Some("standard")), (whole, None)] {
+        for (query, minify) in [
+            (paged, None),
+            (standard, None),
+            (verbatim, Some("none")),
+            (whole, None),
+        ] {
             let result = read(&provider, query).await;
             let next = result.files[0].next.clone().expect("continuation");
             let page = &next["continue"]["query"]["queries"][0];

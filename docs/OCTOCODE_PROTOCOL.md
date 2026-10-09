@@ -71,14 +71,14 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - One call carries 1–5 independent queries of the same tool. Rows run concurrently, keep input order, and fail alone. Rules: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#make-a-call).
 
 ### 3.5 Minimal responses by default
-- A result carries the answer and what is needed to continue: `next` pages, open pagination, warnings, partial-coverage signals, and optional `hints`.
-- Fields the core output contract classes `verbose` (scan stats, receipts, echoes, diagnostics) appear only with `debug: true`. A contract guard restores any field the output contract requires, so minimizing never breaks a response.
+- A result carries the answer and what is needed to continue: `next` pages, open pagination, warnings, and partial-coverage signals. A successful row's leads are opt-in; empty and failed rows keep theirs.
+- Fields the core output contract classes `extra` appear only when the query's `extras` names their kind: `hints` (leads), `details`, `stats`, `receipts`, `echo`, `diagnostics`. The MCP instructions name `extras` once; it is not in each published schema. A contract guard restores any field the output contract requires, so minimizing never breaks a response.
 - Details: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#minimal-by-default).
 
 ### 3.6 Minification
-- `minify:"none"` gives exact source (the default for file reads), `"standard"` compacts comments, blank runs, and minified bundles, and `"symbols"` gives an outline of signatures and headings. Strategies follow the format: code, JSON, Markdown, web.
+- `minify:"none"` gives exact source (the `localFetch` default), `"standard"` (the `ghGetFileContent` default) drops comments and indentation and compacts blank runs and minified bundles, and `"symbols"` gives an outline of signatures and headings. Strategies follow the format: code, JSON, Markdown, web.
 - A minified single-line file is clipped to windows around matches, with `truncated` and the original size reported.
-- Positions in a transformed view are not source lines. Cite `none` reads or search hits.
+- A transformed view keeps source line numbers in its gutter. Cite source or diff lines by number; quote only verbatim text (`none` reads, `matchString` reads, search hits).
 
 ### 3.7 Smart pagination everywhere
 - Every list and every large body pages: item pages, content windows inside a file or patch, and whole-response pages. A huge file costs one bounded first page.
@@ -88,7 +88,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 ### 3.8 Pages, leads, and failure hints
 - Follow-up calls use two channels. Both hold executable queries that run unchanged, and the runtime removes follow-ups the current surface cannot run.
   - **`next.*` = pages:** more of the same result, or coverage it still lacks. The response is incomplete without them.
-  - **`hints.*` = optional guidance:** `hints.text` holds prose tips; every other entry is a lead, such as read the top match or read the fix PR.
+  - **`hints.*` = optional guidance:** `hints.text` holds prose tips; every other entry is a lead, such as read the top match or read the fix PR. A successful row shows leads only with `extras:["hints"]`, except a few default leads (`includeIgnored`, `countFiles`, `apply`, …).
 - An empty result carries repair tips in `hints.text`. It is not an absence claim until scope, spelling, ref, and index limits are checked.
 - Errors are typed (`invalidInput`, `notFound`, `authentication`, `rateLimited`, …) and carry `retryable: true` only when a retry can help. Each class has its own CLI exit code; see the [CLI guide](../packages/octocode/docs/OCTOCODE_CLI.md#exit-codes).
 - GitHub tools follow a renamed repository to its canonical name and add a warning that names it.

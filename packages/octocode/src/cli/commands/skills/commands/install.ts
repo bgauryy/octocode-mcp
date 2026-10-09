@@ -3,6 +3,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  SKILL_PLATFORMS,
   installBundledSkills,
   parseSkillPlatforms,
   type InstallBundledSkillsResult,
@@ -37,6 +38,48 @@ export interface InstallOptions {
   dryRun: boolean;
   json: boolean;
 }
+
+/** Edit distance, for naming the closest bundled skill to a mistyped one. */
+function distance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    let previous = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const current = row[j]!;
+      row[j] = Math.min(
+        row[j]! + 1,
+        row[j - 1]! + 1,
+        previous + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      previous = current;
+    }
+  }
+  return row[b.length]!;
+}
+
+/** The bundled skill a mistyped name most likely meant, if any is close. */
+function closestSkill(
+  name: string,
+  known: readonly string[]
+): string | undefined {
+  const wanted = name.toLowerCase().replace(/^octocode-/, '');
+  let best: { name: string; score: number } | undefined;
+  for (const candidate of known) {
+    const bare = candidate.replace(/^octocode-/, '');
+    const score =
+      bare.includes(wanted) || wanted.includes(bare)
+        ? 0
+        : distance(wanted, bare);
+    if (!best || score < best.score) best = { name: candidate, score };
+  }
+  return best && best.score <= Math.max(2, Math.floor(wanted.length / 3))
+    ? best.name
+    : undefined;
+}
+
+/** Shown when skills land only in Octocode home, where no agent reads them. */
+const UNLINKED_HINT = `Installed to Octocode home only; no agent reads it there. Link it with --platform <${SKILL_PLATFORMS.map(entry => entry.platform).join('|')}> --global (or --project-dir <dir>).`;
 
 const fail = (message: string, json: boolean): void =>
   reportFailure(message, json, {
@@ -87,8 +130,16 @@ function resolveSkills(
     else missing.push(name);
   }
   if (missing.length > 0) {
+    const known = listSkills().map(skill => skill.folder);
+    const suggestions = missing
+      .map(name => closestSkill(name, known))
+      .filter((name): name is string => name !== undefined);
+    const hint =
+      suggestions.length > 0
+        ? ` Did you mean ${[...new Set(suggestions)].map(name => `"${name}"`).join(', ')}?`
+        : '';
     fail(
-      `Skill(s) not found: ${missing.map(name => `"${name}"`).join(', ')}.`,
+      `Skill(s) not found: ${missing.map(name => `"${name}"`).join(', ')}.${hint} List them: octocode skill list.`,
       opts.json
     );
     return null;
@@ -147,7 +198,8 @@ function statusIcon(status: string): string {
 
 function renderHuman(
   result: InstallBundledSkillsResult,
-  skills: SkillInfo[]
+  skills: SkillInfo[],
+  unlinked: boolean
 ): void {
   console.log();
   console.log(
@@ -196,6 +248,10 @@ function renderHuman(
     console.log();
     return;
   }
+  if (unlinked) {
+    console.log(`  ${c('yellow', '⚠')} ${UNLINKED_HINT}`);
+    console.log();
+  }
   if (!result.dryRun) {
     console.log(`  ${dim('Verify:')} ${c('cyan', 'octocode skill check')}`);
     const envStatus = getSkillsEnvStatus(skills.map(skill => skill.folder));
@@ -212,7 +268,7 @@ function renderHuman(
     }
     if (partial.length > 0) {
       console.log(
-        `  ${dim(`ℹ ${partial.join(', ')} work now; optional env settings unlock more.`)}`
+        `  ${dim(`ℹ ${partial.join(', ')} ${partial.length === 1 ? 'works' : 'work'} now; optional env settings unlock more.`)}`
       );
     }
     if (needsConfig.length > 0 || partial.length > 0) {
@@ -247,7 +303,16 @@ export function runInstall(skillNames: string[], opts: InstallOptions): void {
     dryRun: opts.dryRun,
   });
 
-  if (opts.json) console.log(JSON.stringify(result, null, 2));
-  else renderHuman(result, skills);
+  // A canonical-only install (no --platform, no --path) reaches no agent.
+  const unlinked = targets.length === 0 && !opts.customPath;
+  if (opts.json)
+    console.log(
+      JSON.stringify(
+        unlinked ? { ...result, warnings: [UNLINKED_HINT] } : result,
+        null,
+        2
+      )
+    );
+  else renderHuman(result, skills, unlinked);
   if (!result.ok) process.exitCode = EXIT.GENERAL;
 }

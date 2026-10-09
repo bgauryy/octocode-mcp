@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Isolated local fixtures exercise generic CDP plans across representative domains.
-// The installed schema inventory proves dispatch reachability, not every method's semantics.
+// The installed schema inventory is only plan-validated offline here; tests/cdp-all-suite.mjs
+// sends every advertised command to Chrome. testedMethods counts methods that reached Chrome.
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
@@ -23,7 +24,7 @@ const args = process.argv.slice(2),
   scripts = join(import.meta.dirname, '../dist/engine');
 if (args.includes('--help')) {
   console.log(
-    'Usage: protocol-suite.mjs [--only <name>] [--report <JSON file>] [--transport legacy|mcp|typed-cli] [--keep]\nLocal Chrome fixtures: schema dispatch, DOM/CSS/AX, browser and worker sessions, interception, debugger/profiler, heap, trace streams, PDF, sockets, storage, emulation and failure evidence. Advertised methods are inventoried separately from methods executed.'
+    'Usage: protocol-suite.mjs [--only <name>] [--report <JSON file>] [--transport legacy|mcp|typed-cli] [--keep]\nLocal Chrome fixtures: offline schema plan validation, DOM/CSS/AX, browser and worker sessions, interception, debugger/profiler, heap, trace streams, PDF, sockets, storage, emulation and failure evidence. Advertised methods are inventoried separately from methods executed.'
   );
   process.exit(0);
 }
@@ -194,8 +195,8 @@ const results = [],
   advertised = new Set();
 let protocol,
   browser,
-  dispatchCommands = 0,
-  dispatchEvents = 0;
+  planValidatedCommands = 0,
+  planValidatedEvents = 0;
 const transport = args.includes('--transport') ? get('--transport') : 'legacy';
 if (!['legacy', 'mcp', 'typed-cli'].includes(transport))
   throw Error('Unknown transport ' + transport);
@@ -400,13 +401,13 @@ try {
     for (const command of domain.commands ?? [])
       advertised.add(domain.domain + '.' + command.name);
   await check(
-    'schema: every advertised command/event passes generic dispatch',
+    'schema: every advertised command/event passes offline plan validation',
     [],
     async () => {
       for (const domain of protocol.domains) {
         for (const command of domain.commands ?? []) {
           validatePlan({ steps: [cdp(domain.domain + '.' + command.name)] });
-          dispatchCommands++;
+          planValidatedCommands++;
         }
         for (const entry of domain.events ?? []) {
           validatePlan({
@@ -418,11 +419,11 @@ try {
               },
             ],
           });
-          dispatchEvents++;
+          planValidatedEvents++;
         }
       }
-      assert(dispatchCommands > 500);
-      assert(dispatchEvents > 100);
+      assert(planValidatedCommands > 500);
+      assert(planValidatedEvents > 100);
     }
   );
   await check(
@@ -1884,7 +1885,10 @@ const inventory = {
     : {}),
   browser,
   protocolVersion: protocol?.version,
-  dispatch: { commands: dispatchCommands, events: dispatchEvents },
+  planValidated: {
+    commands: planValidatedCommands,
+    events: planValidatedEvents,
+  },
   testedMethods: [...tested].sort(),
   domains: (protocol?.domains ?? []).map(domain => ({
     domain: domain.domain,
@@ -1925,8 +1929,8 @@ console.log(
     browser,
     domains: protocol?.domains.length,
     advertisedCommands: advertised.size,
-    dispatchCommands,
-    dispatchEvents,
+    planValidatedCommands,
+    planValidatedEvents,
     testedMethods: tested.size,
     passed: results.length - failed.length - unavailable.length,
     failed: failed.length,

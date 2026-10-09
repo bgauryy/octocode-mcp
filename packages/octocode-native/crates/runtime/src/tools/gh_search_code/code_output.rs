@@ -385,7 +385,7 @@ pub(super) async fn disclose_index_ref<C: crate::providers::github::ConditionalC
         String::new()
     };
     let warning = format!(
-        "Results come from the default-branch index{index}, not {reference}{lines}. Files only at {reference} are missing: hints.viewRepo lists it."
+        "Results come from the default-branch index{index}, not {reference}{lines}. Files only at {reference} are missing: list them with ghStructure at {reference}."
     );
     match value.get_mut("warnings").and_then(Value::as_array_mut) {
         Some(warnings) => warnings.push(json!(warning)),
@@ -525,7 +525,10 @@ pub(super) fn shape_files(
                     line_count,
                     declaration,
                 } => {
-                    if !query.debug {
+                    if !query
+                        .extras
+                        .contains(&crate::contracts::tool_types::ExtraKind::Details)
+                    {
                         row.shift_remove("matches");
                     }
                     row.insert("lines".into(), json!(lines));
@@ -580,6 +583,30 @@ pub(super) fn shape_files(
     PageReads {
         top,
         hits: hit_reads,
+    }
+}
+
+/// Fields an owner-wide page names once, on the row, when every file row
+/// carries the same value: the repository and the commit its lines were
+/// read at.
+const HOISTED_FIELDS: [&str; 3] = ["owner", "repo", "commitSha"];
+
+/// Move each of [`HOISTED_FIELDS`] that every file row shares to the row
+/// itself (a repo-scoped page names owner/repo there already).
+pub(super) fn hoist_shared(value: &mut Value, items: &mut [Value]) {
+    for field in HOISTED_FIELDS {
+        let mut rows = items.iter().map(|row| row.get(field));
+        let Some(Some(first)) = rows.next() else {
+            continue;
+        };
+        if value.get(field).is_some() || !rows.all(|other| other == Some(first)) {
+            continue;
+        }
+        let first = first.clone();
+        for row in items.iter_mut().filter_map(Value::as_object_mut) {
+            row.shift_remove(field);
+        }
+        value[field] = first;
     }
 }
 
@@ -936,6 +963,30 @@ pub(super) fn files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An owner-wide page whose rows share a repository and commit names
+    /// them once on the row; a field the rows disagree on stays per row.
+    #[test]
+    fn owner_wide_rows_hoist_shared_repository_and_commit() {
+        let mut value = json!({});
+        let mut items = vec![
+            json!({"owner":"o","repo":"r","commitSha":"c1","path":"a.rs"}),
+            json!({"owner":"o","repo":"r","commitSha":"c1","path":"b.rs"}),
+        ];
+        hoist_shared(&mut value, &mut items);
+        assert_eq!(value, json!({"owner":"o","repo":"r","commitSha":"c1"}));
+        assert_eq!(items, vec![json!({"path":"a.rs"}), json!({"path":"b.rs"})]);
+        let mut value = json!({});
+        let mut items = vec![
+            json!({"owner":"o","repo":"r","commitSha":"c1","path":"a.rs"}),
+            json!({"owner":"o","repo":"s","commitSha":"c2","path":"b.rs"}),
+            json!({"owner":"o","repo":"s","path":"c.rs"}),
+        ];
+        hoist_shared(&mut value, &mut items);
+        assert_eq!(value, json!({"owner":"o"}));
+        assert_eq!(items[0], json!({"repo":"r","commitSha":"c1","path":"a.rs"}));
+        assert_eq!(items[2], json!({"repo":"s","path":"c.rs"}));
+    }
 
     #[test]
     fn top_hit_reads_its_matched_token() {

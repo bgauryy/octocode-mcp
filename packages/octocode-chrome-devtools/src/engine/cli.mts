@@ -223,15 +223,12 @@ async function main(argv) {
               : !name
                 ? chromeInputExamples
                 : undefined,
-          ...(!name ||
-          !['open', 'cleanup', ...Object.keys(helpers)].includes(name)
-            ? { connection }
-            : {}),
+          // Raw connection flags and plan inputs live in each command's --help;
+          // typed callers follow inputExamples and the tool input schema.
           ...(name === 'open'
             ? { options: [...launchValues, '--headless', '--dry-run'] }
             : {}),
           ...(name === 'cleanup' ? { options: ['--port', '--dry-run'] } : {}),
-          ...(planInputs[name] ? { inputs: planInputs[name] } : {}),
           ...(helpers[name]
             ? {
                 help: {

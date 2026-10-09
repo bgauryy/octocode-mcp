@@ -605,7 +605,7 @@ impl LocalFetchResult {
     }
 
     /// Explanation counters: the contract classes them verbose, so the
-    /// response keeps them only under `debug: true`.
+    /// response keeps them only with `extras: ["stats"]`.
     fn serialize_counters<M: serde::ser::SerializeMap>(&self, map: &mut M) -> Result<(), M::Error> {
         opt(map, "modified", &self.modified)?;
         opt(map, "sourceChars", &self.source_chars)?;
@@ -624,7 +624,8 @@ impl Serialize for LocalFetchResult {
             map.serialize_entry("path", &self.path)?;
         }
         opt(&mut map, "content", &self.content)?;
-        // `none` is the default view; only a transformed view is news.
+        // `none` is the default view; only a transformed view is news (a
+        // tool with another default clears its own before this).
         opt(
             &mut map,
             "contentView",

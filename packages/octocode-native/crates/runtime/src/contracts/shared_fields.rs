@@ -228,7 +228,7 @@ mod tests {
             (
                 "ghStructure",
                 false,
-                json!({"defaultBranch":"main","branches":{"main":sha,"dev":sha},"tags":{"v1":sha}}),
+                json!({"defaultBranch":"main","commitSha":sha,"branches":{"main":sha,"dev":sha},"tags":["v1"]}),
             ),
             (
                 "ghStructure",

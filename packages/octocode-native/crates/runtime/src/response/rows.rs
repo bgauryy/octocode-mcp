@@ -42,7 +42,7 @@ pub(crate) fn attach_diagnostics(
 #[cfg(test)]
 pub(crate) const MAX_GUIDANCE_CHARS: usize = 120;
 
-/// Row containers whose prose `hints` are agent guidance. `meta` is debug
+/// Row containers whose prose `hints` are agent guidance. `meta` is a `diagnostics` extra
 /// diagnostics: it keeps its own hints and never takes the row's one tip.
 const METADATA_CONTAINERS: &[&str] = &[
     "data",
@@ -337,7 +337,7 @@ pub fn result_row(
         }
     }
     // `meta` is verbose: the verbose stage drops it unless the row asked
-    // for `debug: true`.
+    // for `extras: ["diagnostics"]`.
     let meta = row_meta(tool, query, &data, status);
     let mut row = json!({"index":index,"meta":meta,"data":data});
     if let Some(status) = status {
@@ -346,7 +346,7 @@ pub fn result_row(
     row
 }
 
-/// The debug view of a row: its evidence kind and confidence, and the
+/// The diagnostics view of a row: its evidence kind and confidence, and the
 /// diagnostics of a partial or failed row.
 fn row_meta(tool: ToolId, query: &Value, data: &Value, status: Option<&str>) -> Value {
     let partial = super::pages::is_partial(data);
@@ -387,11 +387,11 @@ fn row_meta(tool: ToolId, query: &Value, data: &Value, status: Option<&str>) -> 
 /// shared rules below remove only structure that asserts nothing: finished
 /// single-page pagination, snapshots that every continuation already
 /// carries, false/zero defaults, info-level notes, and echoes of the request.
-/// `debug: true` keeps everything. Error rows stay whole: every field there
+/// `extras: ["echo"]` keeps everything. Error rows stay whole: every field there
 /// explains the failure. Clasify rows never reach this pass; they have their
 /// own resource-major projection.
 pub fn minimize_row(row: &mut Value, tool: ToolId, query: &Value) {
-    if query.get("debug").and_then(Value::as_bool) == Some(true) {
+    if super::extras::wants(query, crate::contracts::tool_types::ExtraKind::Echo) {
         return;
     }
     if row["status"] == "error" {
@@ -724,23 +724,44 @@ pub fn envelope_in(
             relativize_continuation_paths(&mut row["data"], workspace, 0);
         }
     }
-    let heads = checked_out_heads(tool, &roots);
+    // The checked-out commit is provenance: read only for rows that ask
+    // for receipts.
+    let receipts = rows
+        .iter()
+        .enumerate()
+        .map(|(position, row)| {
+            let index = row["index"]
+                .as_u64()
+                .and_then(|index| usize::try_from(index).ok())
+                .unwrap_or(position);
+            queries.get(index).copied().flatten().is_some_and(|query| {
+                super::extras::wants(query, crate::contracts::tool_types::ExtraKind::Receipts)
+            })
+        })
+        .collect::<Vec<_>>();
+    let heads = checked_out_heads(tool, &roots, &receipts);
     let mut value = compact(rows, workspace);
     attach_heads(&mut value, &heads);
     value
 }
 
-/// HEAD of each row's root for the tools that read the working tree
-/// directly; empty for every other tool. A root is read once per response.
-fn checked_out_heads(tool: ToolId, roots: &[Option<PathBuf>]) -> Vec<Option<String>> {
-    if !tool.output().reads_worktree() {
+/// HEAD of each receipts row's root for the tools that read the working
+/// tree directly; empty for every other tool. A root is read once per
+/// response.
+fn checked_out_heads(
+    tool: ToolId,
+    roots: &[Option<PathBuf>],
+    receipts: &[bool],
+) -> Vec<Option<String>> {
+    if !tool.output().reads_worktree() || !receipts.contains(&true) {
         return Vec::new();
     }
     let mut seen = std::collections::HashMap::<&Path, Option<String>>::new();
     roots
         .iter()
-        .map(|root| {
-            let root = root.as_deref()?;
+        .zip(receipts)
+        .map(|(root, wanted)| {
+            let root = root.as_deref().filter(|_| *wanted)?;
             seen.entry(root)
                 .or_insert_with(|| crate::runtime::git_head::head_sha(root))
                 .clone()
@@ -1152,8 +1173,8 @@ mod tests {
 
     fn minimized(tool: ToolId, query: Value, data: Value) -> Value {
         let mut row = json!({"index":0,"data":data,"cache":1});
-        // The engine order: the verbose stage, then the minimizer.
-        super::super::verbose::prune_row(&mut row, tool, &query);
+        // The engine order: the extras stage, then the minimizer.
+        super::super::extras::prune_row(&mut row, tool, &query);
         minimize_row(&mut row, tool, &query);
         row
     }
@@ -1186,27 +1207,43 @@ mod tests {
         assert_eq!(data["files"][0]["path"], "a.rs");
     }
 
-    /// A committer is removed only when it repeats the author whole; a
-    /// different date or email (rebase, cherry-pick) and the parent list (a
-    /// merge has two) are commit evidence.
+    /// A committer is removed only when it repeats the author whole (the
+    /// email is a detail); a different date (rebase, cherry-pick) is commit
+    /// evidence. The parent list and emails are `extras: ["details"]`.
     #[test]
-    fn commit_rows_keep_a_differing_committer_and_the_parents() {
+    fn commit_rows_keep_a_differing_committer_and_detail_the_parents() {
         let author = json!({"name":"Ada","email":"ada@x.dev","date":"2024-01-01T00:00:00Z"});
-        let commit = |committer: Value| {
+        let commit = |committer: Value, extras: Value| {
             minimized(
                 ToolId::GhGetHistoryItem,
-                json!({"operation":"commit","owner":"o","repo":"r","ref":"abc"}),
+                json!({"operation":"commit","owner":"o","repo":"r","ref":"abc","extras":extras}),
                 json!({"type":"commit","sha":"abc","message":"m","author":author,
                     "committer":committer,"parents":["p1","p2"]}),
             )
         };
-        let same = commit(author.clone());
+        let mut other_email = author.clone();
+        other_email["email"] = json!("ada@y.dev");
+        let same = commit(other_email, json!([]));
         assert!(same["data"].get("committer").is_none(), "{same}");
-        assert_eq!(same["data"]["parents"], json!(["p1", "p2"]), "{same}");
+        assert!(same["data"].get("parents").is_none(), "{same}");
+        assert!(same["data"]["author"].get("email").is_none(), "{same}");
+        let detailed = commit(author.clone(), json!(["details"]));
+        assert_eq!(
+            detailed["data"]["parents"],
+            json!(["p1", "p2"]),
+            "{detailed}"
+        );
+        assert_eq!(
+            detailed["data"]["author"]["email"], "ada@x.dev",
+            "{detailed}"
+        );
         let mut rebased = author.clone();
         rebased["date"] = json!("2024-02-01T00:00:00Z");
-        let kept = commit(rebased.clone());
-        assert_eq!(kept["data"]["committer"], rebased, "{kept}");
+        let kept = commit(rebased, json!([]));
+        assert_eq!(
+            kept["data"]["committer"]["date"], "2024-02-01T00:00:00Z",
+            "{kept}"
+        );
     }
 
     #[test]
@@ -1280,7 +1317,7 @@ mod tests {
         ] {
             let row = minimized(
                 ToolId::LocalSearch,
-                json!({ "debug": false }),
+                json!({}),
                 json!({
                     "files": files,
                     "stats": {"capped": true, "capReason": "maxCollectedFiles", "matchCount": 10002,
@@ -1315,7 +1352,7 @@ mod tests {
         ] {
             let row = minimized(
                 ToolId::LocalSearch,
-                json!({ "debug": false }),
+                json!({}),
                 json!({
                     "files": files,
                     "stats": {"matchCount": 1, "fileCount": 1, "filesScanned": 2,
@@ -1362,20 +1399,20 @@ mod tests {
             json!({"content":"x","modified":"t","sourceBytes":1,"totalLines":9}),
         );
         assert_eq!(fetch["data"], json!({"content":"x","totalLines":9}));
-        // A GitHub read row is the same read: its byte accounting is debug-only too.
+        // A GitHub read row is the same read: its byte accounting is a stats extra too.
         let file = json!({"path":"a","content":"x","sourceBytes":1,"returnedBytes":1,"selectedMatchCount":1,"totalLines":9});
         let gh = minimized(ToolId::GhGetFileContent, json!({}), file.clone());
         assert_eq!(gh["data"], json!({"path":"a","content":"x","totalLines":9}));
-        let debug = minimized(
+        let stats = minimized(
             ToolId::GhGetFileContent,
-            json!({"debug":true}),
+            json!({"extras":["stats"]}),
             file.clone(),
         );
-        assert_eq!(debug["data"], file);
+        assert_eq!(stats["data"], file);
     }
 
     #[test]
-    fn echoes_go_only_when_they_equal_the_request_and_debug_keeps_all() {
+    fn echoes_go_only_when_they_equal_the_request_and_echo_extras_keep_all() {
         let data = json!({"owner":"o","repo":"other","path":"a.rs"});
         let row = minimized(
             ToolId::GhGetFileContent,
@@ -1387,12 +1424,12 @@ mod tests {
             row["data"]["repo"], "other",
             "a different repo is information"
         );
-        let debug = minimized(
+        let echo = minimized(
             ToolId::GhGetFileContent,
-            json!({"owner":"o","debug":true}),
+            json!({"owner":"o","extras":["echo"]}),
             data.clone(),
         );
-        assert_eq!(debug["data"], data);
+        assert_eq!(echo["data"], data);
         let mut error = json!({"index":0,"status":"error","data":{"error":"x","snapshot":"s"}});
         minimize_row(&mut error, ToolId::LocalSearch, &json!({}));
         assert_eq!(error["data"]["snapshot"], "s", "error rows stay whole");
@@ -1571,9 +1608,10 @@ mod tests {
         assert_resolvable(&ws, &value, "src");
     }
 
-    /// Local reads report the checked-out commit once per response: shared
-    /// when every row reads the same repository, per row otherwise, and not
-    /// at all outside a repository or for other tools.
+    /// With `extras: ["receipts"]`, local reads report the checked-out
+    /// commit once per response: shared when every row reads the same
+    /// repository, per row otherwise, and not at all outside a repository,
+    /// for other tools, or for rows that did not ask.
     #[test]
     fn local_rows_report_the_checked_out_head_once() {
         let ws = workspace();
@@ -1584,8 +1622,20 @@ mod tests {
         std::fs::write(git.join("refs/heads/main"), format!("{sha}\n")).expect("ref");
         let root = ws.root.to_string_lossy().into_owned();
         let row = |index: u64| json!({"index":index,"data":{"files":[{"path":format!("{root}/src/a.rs")}]}});
-        let src = json!({"path": format!("{root}/src")});
-        let tests = json!({"path": format!("{root}/tests")});
+        let src = json!({"path": format!("{root}/src"), "extras": ["receipts"]});
+        let tests = json!({"path": format!("{root}/tests"), "extras": ["receipts"]});
+        let unasked = json!({"path": format!("{root}/src")});
+        let default = envelope_in(
+            vec![row(0)],
+            ToolId::LocalSearch,
+            &[Some(&unasked)],
+            &ws.paths,
+        );
+        assert!(default.get("shared").is_none(), "{default}");
+        assert!(
+            default["results"][0]["data"].get("commitSha").is_none(),
+            "{default}"
+        );
         for tool in [
             ToolId::LocalSearch,
             ToolId::LocalFetch,
@@ -1603,7 +1653,7 @@ mod tests {
                 "{value}"
             );
         }
-        let outside = json!({"path": ws.outside.to_string_lossy()});
+        let outside = json!({"path": ws.outside.to_string_lossy(), "extras": ["receipts"]});
         let mixed = envelope_in(
             vec![row(0), row(1)],
             ToolId::LocalSearch,
@@ -1907,7 +1957,7 @@ mod tests {
         let output = envelope(vec![result_row(
             ToolId::from_name("localFetch").expect("known tool"),
             0,
-            &json!({"debug":true}),
+            &json!({"extras":["diagnostics"]}),
             data,
             None,
         )]);
@@ -1972,7 +2022,7 @@ mod tests {
             result_row(
                 ToolId::from_name("localSearch").expect("known tool"),
                 0,
-                &json!({"debug":true}),
+                &json!({"extras":["diagnostics"]}),
                 data,
                 None,
             )
@@ -2056,7 +2106,7 @@ mod tests {
         let missing = result_row(
             ToolId::from_name("astSearch").expect("known tool"),
             0,
-            &json!({"operation":"symbols","debug":true}),
+            &json!({"operation":"symbols","extras":["diagnostics"]}),
             json!({"hasMore":true,"nextPage":2}),
             None,
         );
@@ -2067,7 +2117,7 @@ mod tests {
         let terminal = result_row(
             ToolId::from_name("localFetch").expect("known tool"),
             0,
-            &json!({"debug":true}),
+            &json!({"extras":["diagnostics"]}),
             json!({"isPartial":true,"terminalLimit":true}),
             None,
         );
@@ -2085,7 +2135,7 @@ mod tests {
         let row = result_row(
             ToolId::AstSearch,
             0,
-            &json!({"debug":true}),
+            &json!({"extras":["diagnostics"]}),
             json!({"files":[],"next":{"expandCaptures":page}}),
             None,
         );
@@ -2142,7 +2192,7 @@ mod tests {
         let row = result_row(
             ToolId::from_name("ghGetFileContent").expect("known tool"),
             0,
-            &json!({"debug":false}),
+            &json!({}),
             json!({"path":"a","content":"x","isPartial":null}),
             None,
         );
@@ -2162,25 +2212,27 @@ mod tests {
     }
 
     #[test]
-    fn result_metadata_requires_debug() {
+    fn result_metadata_requires_diagnostics_extras() {
         let mut normal = result_row(
             ToolId::from_name("localSearch").expect("known tool"),
             0,
-            &json!({"debug":false}),
+            &json!({}),
             json!({"files":[]}),
             None,
         );
-        super::super::verbose::prune_row(&mut normal, ToolId::LocalSearch, &json!({"debug":false}));
+        super::super::extras::prune_row(&mut normal, ToolId::LocalSearch, &json!({}));
         assert!(normal.get("meta").is_none());
 
-        let debug = result_row(
+        let query = json!({"extras":["diagnostics"]});
+        let mut diagnostics = result_row(
             ToolId::from_name("localSearch").expect("known tool"),
             0,
-            &json!({"debug":true}),
+            &query,
             json!({"files":[]}),
             None,
         );
-        assert_eq!(debug["meta"]["evidence"]["kind"], "lexical");
+        super::super::extras::prune_row(&mut diagnostics, ToolId::LocalSearch, &query);
+        assert_eq!(diagnostics["meta"]["evidence"]["kind"], "lexical");
     }
 
     /// Debug diagnostics (`meta`) never take the row's one recovery hint: an

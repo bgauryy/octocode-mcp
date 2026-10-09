@@ -2,7 +2,7 @@
 
 This package owns one distribution for three artifacts on six platforms:
 
-- `octocode` native CLI;
+- the native CLI (binary file `octocode`; npm bin `octocode-native`, so the `octocode` command stays the launcher's);
 - `octocode-regex-worker`;
 - `NativeRuntime` addon exposed by `.` and `./runtime`.
 
@@ -63,23 +63,17 @@ Windows with cargo-xwin, mirroring napi's `--cross-compile`):
 
 ```sh
 yarn workspace @octocodeai/octocode-native build:all
-yarn workspace @octocodeai/octocode-native platforms:check
 ```
 
-`build:target <platform>` produces and stages all three artifacts using the committed lockfile. The internal runtime adapter library is named `octocode_runtime_napi`; staging preserves the published `octocode-native.<platform>.node` filename. Darwin staging replaces linker-generated ad-hoc addon signatures with fresh ad-hoc signatures. When the target matches the host, staging loads the addon in a subprocess immediately. `platforms:check` verifies all 18 files and also loads the host-platform addon.
+`build:target <platform>` produces and stages all three artifacts using the committed lockfile. The internal runtime adapter library is named `octocode_runtime_napi`; staging preserves the published `octocode-native.<platform>.node` filename. Darwin staging replaces linker-generated ad-hoc addon signatures with fresh ad-hoc signatures. When the target matches the host, staging loads the addon and runs the CLI in a subprocess immediately.
 
-Cross-target presence is not runtime proof. CI builds no native artifacts; runtime proof comes from `platforms:check` on a machine of that platform (it loads the host addon), and the 18-file `platforms:check` gate runs after `build:all` (part of `dev.mjs build:publish`).
+Cross-target presence is not runtime proof. CI builds no native artifacts; runtime proof is `npm/<platform>/octocode --version` (it must print the package version) run on a machine of that platform.
 
 ## Version contract
 
 The coordinator, all six platform packages, and all five internal Rust crates use one version. Rust crates inherit `workspace.package.version`; Cargo metadata supplies the membership and resolved versions for validation.
 
-```sh
-yarn workspace @octocodeai/octocode-native version:sync
-yarn workspace @octocodeai/octocode-native version:check
-```
-
-Run version synchronization before building release artifacts. It updates the shared Cargo version and npm manifests, then resolves the updated workspace against the existing lockfile offline instead of broadly regenerating it. Review any dependency changes; offline mode prevents fetching but can still select cached versions. Review those changes and rebuild. Prepublish runs the read-only version check; it never synchronizes versions or regenerates a lockfile. Do not hand-publish mixed root/platform versions: exact optional dependencies intentionally turn a mismatch into a loader failure rather than silently selecting another ABI.
+Bump the version before building release artifacts: `version` in `package.json` and every `npm/*/package.json`, the exact `optionalDependencies` pins, and `workspace.package.version` in `Cargo.toml`; then `cargo metadata --offline` updates `Cargo.lock` without regenerating it. A binary built before the bump reports the old version, so build after it. Do not hand-publish mixed root/platform versions: exact optional dependencies intentionally turn a mismatch into a loader failure rather than silently selecting another ABI.
 
 ## Preflight
 
@@ -88,17 +82,16 @@ From the repository root:
 ```sh
 node skills-dev/octocode-dev/scripts/prepublish.mjs
 yarn workspace @octocodeai/octocode-native verify
-yarn workspace @octocodeai/octocode-native pack:check
-yarn workspace @octocodeai/octocode-native platforms:check
+npm pack --dry-run --workspace @octocodeai/octocode-native
 ```
 
 Required evidence:
 
-- Rust crate-boundary checks, formatting, clippy, type checks, and tests pass (including GitHub protocol, CLI, and runtime adapter tests);
+- Rust formatting, clippy, type checks, and tests pass (including GitHub protocol, CLI, and runtime adapter tests);
 - Node runtime tests pass;
 - all 18 artifacts exist;
 - the host addon loads;
-- `platforms:check` passes on each platform's matching runner;
+- each staged `npm/<platform>/octocode --version` prints the package version on its matching runner;
 - dry-run tarballs contain only intended release files.
 
 The generated-contract provenance test also requires a clean, current Core source receipt. Do not regenerate a provenance receipt merely to hide a dirty source tree.
@@ -122,7 +115,7 @@ done
 npm publish packages/octocode-native --access public --tag next
 ```
 
-Platform packages have no `prepublishOnly` hook: run `platforms:check` before publishing.
+Platform packages have no `prepublishOnly` hook; check the staged binaries yourself before publishing.
 
 ## Registry acceptance
 

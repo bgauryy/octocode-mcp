@@ -10,17 +10,20 @@ benchmarks/<name>/                   # reusable definition
 ├── instructions/                    # worker, judge; optimizer if needed
 └── evaluator/                       # rubric, references or executable graders
 
-.octocode/benchmarks/<name>/results/<run-id>/
-├── run.json                         # effective settings and identities
-├── summary.md                       # result, evidence and limitations
-└── trials/<trial-id>/                # only when trials actually run
-    ├── input.json                   # actual exported worker input
-    ├── output.json                  # answer/artifact reference and status
-    ├── grade.json                   # grading evidence and status
-    └── trace.jsonl                  # actions/tool results when available
+<workspace>/.octocode/octocode-eval-benchmark/<YYYY-MM-DD>-<slug>/
+├── README.md                        # entry point: result, evidence and limitations
+├── dev/<run-id>/                    # development and validation splits
+│   ├── run.json                     # effective settings and identities
+│   ├── results.jsonl                # one graded row per trial; the source of README metrics
+│   └── trials/<trial-id>/           # only when trials actually run
+│       ├── input.json               # actual exported worker input
+│       ├── output.json              # answer/artifact reference and status
+│       ├── grade.json               # grading evidence and status
+│       └── trace.jsonl              # actions/tool results when available
+└── held-out/<run-id>/               # sealed test split, same layout
 ```
 
-The layout is a default, not a required format. Link equivalent native runner logs from the summary instead of copying them. Omit unused folders; a deterministic check may need only its run record, results, and summary. Store large artifacts once and reference them by hash.
+The layout is a default, not a required format. Link equivalent native runner logs from `README.md` instead of copying them; [output](../output.md) defines its header and sections. Omit unused folders; a deterministic check may need only `run.json`, `results.jsonl`, and the run folder's `README.md`. Store large artifacts once and reference them by hash.
 
 ## Run identity and lifecycle
 

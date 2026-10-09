@@ -36,15 +36,8 @@ export const devOverrideOptions: Parameters<typeof devOverridesAllowed>[1] = {
 /**
  * `skill` remains in Node because the native command intentionally invokes this
  * launcher for shared skill materialization. Delegating it would recurse.
- * `schema` is Node-owned by design: it composes core-delivered presentation
- * (descriptions, examples, instructions) with the binary's machine catalog
- * (availability, enforcement fingerprint) — the binary itself embeds no
- * presentation. The binary still owns `schema --help`.
  */
-export const NODE_OWNED_COMMANDS: ReadonlySet<string> = new Set([
-  'skill',
-  'schema',
-]);
+export const NODE_OWNED_COMMANDS: ReadonlySet<string> = new Set(['skill']);
 
 /**
  * Resolve the compiled native `octocode` binary, or null when unavailable.

@@ -37,6 +37,13 @@ test('help and schema discover generic operations without creating browser state
     const schema = JSON.parse(result.stdout);
     assert(schema.plan.operations.listen);
     assert(schema.plan.operations.readStream);
+    // Served through typed MCP/CLI: no raw flag names beside typed examples.
+    for (const name of ['run', 'step', 'cdp', 'snapshot']) {
+      const focused = JSON.parse(call(['schema', name]).stdout);
+      assert.equal(focused.connection, undefined);
+      assert.equal(focused.inputs, undefined);
+      assert(focused.inputExamples[name]);
+    }
     const launch = JSON.parse(call(['schema', 'open']).stdout);
     assert(launch.options.includes('--url'));
     assert.equal(launch.connection, undefined);

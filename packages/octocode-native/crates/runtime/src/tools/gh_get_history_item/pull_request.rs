@@ -21,6 +21,7 @@ use super::window::{
     WindowSpec, WindowState, load_window, reconcile_file_totals,
 };
 use super::{HistoryItemRequest, fetch, validation};
+use crate::contracts::tool_types::ExtraKind;
 use crate::providers::github::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext};
 use crate::tools::id::ToolId;
 use crate::tools::result::remove_nulls;
@@ -684,7 +685,7 @@ async fn shape_pr(
     let patch_mode = wants.patch_mode.as_str();
     let (comments, comments_state, bot_warnings) =
         merge_comments(inline, discussion, wants.include_bots);
-    let slim = (query.later_page() || wants.files) && !query.debug();
+    let slim = (query.later_page() || wants.files) && !query.wants(ExtraKind::Details);
     let mut row = pr_metadata(&raw, query);
     if slim {
         slim_row(&mut row, query, patch_mode != "none");
@@ -909,9 +910,12 @@ fn finish_pr(
             next.shift_insert(0, "readCommentCode".to_owned(), read);
         }
     }
-    if !query.debug() {
+    if !query.wants(ExtraKind::Details) {
         trim_content_pagination(&mut out);
-    } else if let Some(reason) = graphql_fallback {
+    }
+    if query.wants(ExtraKind::Diagnostics)
+        && let Some(reason) = graphql_fallback
+    {
         out["graphqlFallback"] = json!(reason);
     }
     out
@@ -969,7 +973,7 @@ fn attach_context_reads(
     push_warning(
         out,
         format!(
-            "contextLines {} reaches past the diff hunks of {} file(s) (contextClipped); next.expandContext reads those lines at sourceSha.",
+            "contextLines {} reaches past the diff hunks of {} file(s) (contextClipped).",
             match_context(query),
             clipped.len()
         ),
@@ -1117,8 +1121,8 @@ fn pr_metadata(raw: &Value, query: &HistoryItemRequest) -> Value {
     {
         row["bodyPreview"] = json!(preview);
     }
-    if query.debug() {
-        // Diagnostics keep the provider's timestamps whole.
+    if query.wants(ExtraKind::Details) {
+        // Details keep the provider's timestamps whole.
         if let Some(updated) = raw.get("updated_at").filter(|v| v.is_string()) {
             row["updatedAt"] = updated.clone();
         }
@@ -1135,12 +1139,15 @@ mod tests {
     use super::super::util::merge;
     use super::*;
 
-    fn summary(raw: Value, debug: bool) -> Value {
-        let query = HistoryItemRequest::from_row(json!({
+    fn summary(raw: Value, details: bool) -> Value {
+        let mut row = json!({
             "operation":"pullRequest","mainGoal":"g","reasoning":"r","owner":"o","repo":"r",
-            "number":1,"debug":debug
-        }))
-        .expect("query");
+            "number":1
+        });
+        if details {
+            row["extras"] = json!(["details"]);
+        }
+        let query = HistoryItemRequest::from_row(row).expect("query");
         pr_metadata(&raw, &query)
     }
 
@@ -1174,8 +1181,8 @@ mod tests {
         assert!(closed.get("updatedAt").is_none(), "{closed}");
         let open = summary(merge(base.clone(), json!({"state":"open"})), false);
         assert_eq!(open["updatedAt"], "2026-01-05T00:00:00Z", "{open}");
-        // debug keeps the provider's timestamps whole.
-        let debug = summary(
+        // details keep the provider's timestamps whole.
+        let details = summary(
             merge(
                 base,
                 json!({"state":"closed","merged_at":"2026-01-04T00:00:00Z",
@@ -1183,8 +1190,8 @@ mod tests {
             ),
             true,
         );
-        assert_eq!(debug["closedAt"], "2026-01-04T00:00:01Z", "{debug}");
-        assert_eq!(debug["updatedAt"], "2026-01-05T00:00:00Z", "{debug}");
+        assert_eq!(details["closedAt"], "2026-01-04T00:00:01Z", "{details}");
+        assert_eq!(details["updatedAt"], "2026-01-05T00:00:00Z", "{details}");
     }
 
     /// HI4: every PR view names the change's three commits: the head

@@ -4,8 +4,8 @@
 //!
 //! A row whose `next` holds pages that leave more to read opens its
 //! `warnings` with one entry that names each page and what it has left,
-//! e.g. `N more changed files: follow next.nextFilePage`, or
-//! `more: follow next.continue` when the count is unknown. The counts come
+//! e.g. `N more changed files (next.nextFilePage)`, or
+//! `more (next.continue)` when the count is unknown. The counts come
 //! from the row's own pagination facts (a page size the continuation leaves
 //! at its default is the contract default); nothing is removed or moved out
 //! of the row. Only a page a tool warning already names, or one whose
@@ -37,53 +37,6 @@ pub(super) fn disclose_remaining_pages(structured: &mut Value, tool: ToolId) {
             disclose_pages(data, |name| crate::tools::id::is_remaining(tool, name));
         }
     }
-}
-
-/// Envelope `warnings`, first: a batch whose rows have pages left says so
-/// before any row, e.g. `incomplete — 2 of 3 rows partial (index 1, 2);
-/// follow next.continue on each`. Single-row responses already open
-/// their row with the remaining-pages warning.
-pub(super) fn disclose_incomplete_rows(structured: &mut Value) {
-    let Some(rows) = structured.get("results").and_then(Value::as_array) else {
-        return;
-    };
-    if rows.len() < 2 {
-        return;
-    }
-    let mut partial = Vec::new();
-    let mut pages = Vec::new();
-    for row in rows {
-        let mut names = Vec::new();
-        if let Some(data) = row.get("data").filter(|data| !is_complete(data)) {
-            page_names(data, &mut names);
-        }
-        if names.is_empty() {
-            continue;
-        }
-        partial.push(row.get("index").map_or_else(String::new, Value::to_string));
-        for name in names {
-            if !pages.contains(&name) {
-                pages.push(name);
-            }
-        }
-    }
-    if partial.is_empty() {
-        return;
-    }
-    let follow = pages
-        .iter()
-        .map(|name| format!("next.{name}"))
-        .collect::<Vec<_>>()
-        .join("/");
-    add_envelope_warning(
-        structured,
-        format!(
-            "incomplete — {} of {} rows partial (index {}); follow {follow} on each",
-            partial.len(),
-            rows.len(),
-            partial.join(", ")
-        ),
-    );
 }
 
 /// A response page that cut a row keeps its `warnings` on the first part
@@ -122,46 +75,6 @@ pub(crate) fn retarget_moved_pages(data: &mut Map<String, Value>, moved: &[Strin
     }
 }
 
-/// Page names under every `next` map in a row's data (a read's file list
-/// keeps them per file). Continuation calls are never entered.
-fn page_names(value: &Value, names: &mut Vec<String>) {
-    let Some(object) = value.as_object() else {
-        if let Some(items) = value.as_array() {
-            items.iter().for_each(|item| page_names(item, names));
-        }
-        return;
-    };
-    if object.get("query").is_some() && object.get("tool").is_some_and(Value::is_string) {
-        return;
-    }
-    if let Some(Value::Object(pages)) = object.get(PAGES_KEY) {
-        names.extend(pages.keys().cloned());
-    }
-    for (key, child) in object {
-        if key != PAGES_KEY && key != super::channels::HINTS_KEY {
-            page_names(child, names);
-        }
-    }
-}
-
-/// Appends `warning` to the envelope's `warnings`, which leads the envelope.
-fn add_envelope_warning(structured: &mut Value, warning: String) {
-    let Some(envelope) = structured.as_object_mut() else {
-        return;
-    };
-    let mut warnings = match envelope.shift_remove(WARNINGS) {
-        Some(Value::Array(warnings)) => warnings,
-        _ => Vec::new(),
-    };
-    if !warnings
-        .iter()
-        .any(|known| known.as_str() == Some(warning.as_str()))
-    {
-        warnings.push(Value::String(warning));
-    }
-    envelope.shift_insert(0, WARNINGS.to_owned(), Value::Array(warnings));
-}
-
 /// A split row's last part carries the row's pages (each resumes after the
 /// evidence shown), so it names them too, from the facts the part holds.
 pub(crate) fn disclose_carried_pages(data: &mut Map<String, Value>) {
@@ -194,12 +107,13 @@ fn disclose_pages(data: &mut Map<String, Value>, remains: impl Fn(&str) -> bool)
         .iter()
         .filter(|(name, _)| remains(name) && !named(name))
         .filter_map(|(name, call)| {
+            // A count-less remainder says only what `next.<name>` already
+            // says (the instructions: next.* is the unread rest).
             let left = match remaining(data, name, call) {
-                Left::Done => return None,
-                Left::Unknown => "more".to_owned(),
+                Left::Done | Left::Unknown => return None,
                 Left::Counted(left) => left,
             };
-            Some(format!("{left}: follow next.{name}"))
+            Some(format!("{left} (next.{name})"))
         })
         .collect::<Vec<_>>();
     if parts.is_empty() {
@@ -875,7 +789,7 @@ mod tests {
         assert_eq!(
             data["warnings"],
             json!([
-                "12 unfinished patches: follow next.continuePatch; 7 more changed files: follow next.nextFilePage"
+                "12 unfinished patches (next.continuePatch); 7 more changed files (next.nextFilePage)"
             ]),
             "{data}"
         );
@@ -900,10 +814,7 @@ mod tests {
             "next": {"continuePatch": page("ghGetHistoryItem")}
         }))["warnings"]
             .clone();
-        assert_eq!(
-            warnings,
-            json!(["1 unfinished patch: follow next.continuePatch"])
-        );
+        assert_eq!(warnings, json!(["1 unfinished patch (next.continuePatch)"]));
     }
 
     #[test]
@@ -916,7 +827,7 @@ mod tests {
         }));
         assert_eq!(
             listing["warnings"],
-            json!(["Regex trap.", "1 more page: follow next.nextPage"]),
+            json!(["Regex trap.", "1 more page (next.nextPage)"]),
             "{listing}"
         );
         let files = disclosed(json!({
@@ -925,10 +836,7 @@ mod tests {
                 "totalItems": 20, "hasMore": true},
             "next": {"nextPage": page("localSearch")}
         }));
-        assert_eq!(
-            files["warnings"],
-            json!(["17 more files: follow next.nextPage"])
-        );
+        assert_eq!(files["warnings"], json!(["17 more files (next.nextPage)"]));
         let deduplicated = disclosed(json!({
             "commits": [{"sha": "a"}],
             "pagination": {"totalItems": 99, "totalPages": 20, "hasMore": true},
@@ -937,7 +845,7 @@ mod tests {
         }));
         assert_eq!(
             deduplicated["warnings"],
-            json!(["94 more commits: follow next.nextPage"])
+            json!(["94 more commits (next.nextPage)"])
         );
         assert!(deduplicated["pagination"].get("currentPage").is_none());
         let search = disclosed(json!({
@@ -947,7 +855,7 @@ mod tests {
         }));
         assert_eq!(
             search["warnings"],
-            json!(["15 more pull requests: follow next.nextPage"])
+            json!(["15 more pull requests (next.nextPage)"])
         );
         let read = disclosed(json!({
             "content": "1\tx",
@@ -955,10 +863,7 @@ mod tests {
                 "totalLines": 386, "hasMore": true, "nextOffset": 381},
             "next": {"continue": page("localFetch")}
         }));
-        assert_eq!(
-            read["warnings"],
-            json!(["5 more lines: follow next.continue"])
-        );
+        assert_eq!(read["warnings"], json!(["5 more lines (next.continue)"]));
         let whole = disclosed(json!({
             "path": "a.py",
             "totalLines": 3137,
@@ -969,7 +874,7 @@ mod tests {
         }));
         assert_eq!(
             whole["warnings"],
-            json!(["2666 more lines: follow next.continue"])
+            json!(["2666 more lines (next.continue)"])
         );
         // LF3: a symbols view pages outline lines, not source lines.
         let outline = disclosed(json!({
@@ -982,7 +887,7 @@ mod tests {
         }));
         assert_eq!(
             outline["warnings"],
-            json!(["12 more outline lines: follow next.continue"])
+            json!(["12 more outline lines (next.continue)"])
         );
         let bytes = disclosed(json!({
             "content": "x",
@@ -990,10 +895,7 @@ mod tests {
                 "totalBytes": 250, "hasMore": true, "nextOffset": 100},
             "next": {"continue": page("localFetch")}
         }));
-        assert_eq!(
-            bytes["warnings"],
-            json!(["150 more bytes: follow next.continue"])
-        );
+        assert_eq!(bytes["warnings"], json!(["150 more bytes (next.continue)"]));
         let issue = disclosed(json!({
             "issues": [{"number": 3, "contentPagination": {"body": {"offset": 0,
                 "length": 12000, "totalChars": 14366, "hasMore": true,
@@ -1002,7 +904,7 @@ mod tests {
         }));
         assert_eq!(
             issue["warnings"],
-            json!(["2366 more body chars: follow next.continueBody"])
+            json!(["2366 more body chars (next.continueBody)"])
         );
         // QA2: one offset continues every cut comment of the page; the
         // count is all of their remaining chars.
@@ -1014,7 +916,7 @@ mod tests {
         }));
         assert_eq!(
             comments["warnings"],
-            json!(["101000 more comment body chars: follow next.continueCommentBody"])
+            json!(["101000 more comment body chars (next.continueCommentBody)"])
         );
     }
 
@@ -1035,27 +937,25 @@ mod tests {
         assert_eq!(disclosed(bare.clone()), bare);
     }
 
-    /// A page whose count is unknown still gets its line, without a number;
-    /// a restart page starts over and gets none.
+    /// A page whose count is unknown gets no line: `next.<name>` already
+    /// says more is left (the instructions say next.* is the unread rest).
+    /// A restart page starts over and gets none either.
     #[test]
-    fn every_remaining_page_gets_a_line_even_without_a_count() {
-        let commits = disclosed(json!({
+    fn a_page_without_a_count_adds_no_line() {
+        let commits = json!({
             "commits": [{"sha": "a"}],
             "pagination": {"hasMore": true},
             "next": {"nextPage": page("ghSearchHistory"),
                 "continueMaterialize": page("ghStructure")}
-        }));
-        assert_eq!(
-            commits["warnings"],
-            json!(["more: follow next.nextPage; more: follow next.continueMaterialize"])
-        );
-        let bytes = disclosed(json!({
+        });
+        assert_eq!(disclosed(commits.clone()), commits);
+        let bytes = json!({
             "content": "x",
             "pagination": {"unit": "bytes", "offset": 0, "length": 100,
                 "hasMore": true, "nextOffset": 100},
             "next": {"continue": page("localFetch")}
-        }));
-        assert_eq!(bytes["warnings"], json!(["more: follow next.continue"]));
+        });
+        assert_eq!(disclosed(bytes.clone()), bytes);
         let restart = json!({"next": {"restart": page("localSearch")}});
         assert_eq!(disclosed(restart.clone()), restart);
     }
@@ -1072,7 +972,7 @@ mod tests {
         }));
         assert_eq!(
             repos["warnings"],
-            json!(["18 more repositories: follow next.nextPage"])
+            json!(["18 more repositories (next.nextPage)"])
         );
         // A directory outline groups its symbols by file: the continued
         // operation names what a page holds.
@@ -1084,7 +984,7 @@ mod tests {
         }));
         assert_eq!(
             symbols["warnings"],
-            json!(["6694 more symbols: follow next.nextPage"])
+            json!(["6694 more symbols (next.nextPage)"])
         );
     }
 
@@ -1108,9 +1008,7 @@ mod tests {
         }));
         assert_eq!(
             data["warnings"],
-            json!([
-                "74 more files: follow next.nextPage; 26 more matches: follow next.nextMatchPage"
-            ])
+            json!(["74 more files (next.nextPage); 26 more matches (next.nextMatchPage)"])
         );
     }
 
@@ -1119,14 +1017,14 @@ mod tests {
     #[test]
     fn retargeted_lines_name_the_response_page_once() {
         let mut data = json!({
-            "warnings": ["more: follow next.nextPage; more: follow next.nextFilePage; 3 unfinished patches: follow next.continuePatch"]
+            "warnings": ["more (next.nextPage); more (next.nextFilePage); 3 unfinished patches (next.continuePatch)"]
         });
         let moved = ["nextPage", "nextFilePage", "continuePatch"].map(String::from);
         super::retarget_moved_pages(data.as_object_mut().expect("object"), &moved);
         assert_eq!(
             data["warnings"],
             json!([
-                "more: follow responsePagination.next; 3 unfinished patches: follow responsePagination.next"
+                "more (responsePagination.next); 3 unfinished patches (responsePagination.next)"
             ])
         );
     }
@@ -1159,7 +1057,7 @@ mod tests {
         }));
         assert_eq!(
             repos["warnings"],
-            json!(["997 more repositories: follow next.nextPage"])
+            json!(["997 more repositories (next.nextPage)"])
         );
         let read = disclosed(json!({
             "path": "a.rs",
@@ -1170,10 +1068,7 @@ mod tests {
             "partialReasons": ["full-content-size-limit"],
             "next": {"continue": page("ghGetFileContent")}
         }));
-        assert_eq!(
-            read["warnings"],
-            json!(["1780 more lines: follow next.continue"])
-        );
+        assert_eq!(read["warnings"], json!(["1780 more lines (next.continue)"]));
         let patches = disclosed(json!({
             "pullRequests": [{"number": 1, "contentPagination": {
                 "patches": {"hasMore": true, "unfinishedFiles": 3}}}],
@@ -1183,7 +1078,7 @@ mod tests {
         }));
         assert_eq!(
             patches["warnings"],
-            json!(["3 unfinished patches: follow next.continuePatch"])
+            json!(["3 unfinished patches (next.continuePatch)"])
         );
     }
 

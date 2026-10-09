@@ -1,7 +1,7 @@
 {
   "name": "@octocodeai/octocode-benchmark",
   "description": "Benchmark suites for Octocode tools and engine behavior.",
-  "version": "20.1.0",
+  "version": "20.2.0",
   "bugs": "https://github.com/bgauryy/octocode/issues",
   "engines": {
     "node": "^24.15.0"
@@ -14,9 +14,9 @@
   },
   "scripts": {
     "build": "echo 'Source-only benchmark package; no build artifacts required'",
-    "lint": "python3 -c \"import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]\" compare/bin/*.py skills/octocode-benchmark/scripts/*.py && bash -n compare/bin/octoc && bash -n compare/bin/octoc-npm && bash -n compare/bin/ghc && bash -n compare/bin/ghm && bash -n compare/bin/rtkm && bash -n skills/octocode-benchmark/scripts/check-prereqs.sh && bash -n skills/octocode-benchmark/scripts/measure.sh",
+    "lint": "python3 -c \"import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]\" compare/bin/*.py skills/octocode-benchmark/dashboard/*.py && bash -n compare/bin/run_arm.sh && bash -n compare/bin/run_campaign.sh && bash -n compare/bin/judge_pair.sh && bash -n compare/bin/preflight.sh && bash -n compare/bin/ghc && bash -n compare/bin/guard/gh",
     "typecheck": "echo 'No TypeScript sources; see lint'",
-    "test": "python3 compare/bin/test_instrumentation.py",
+    "test": "python3 compare/bin/test_harness.py",
     "verify": "yarn lint && yarn typecheck && yarn test"
   },
   "type": "module"

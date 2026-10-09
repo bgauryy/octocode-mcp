@@ -5,6 +5,7 @@
 //! the 25-cell ceiling is enforced without racing or dropping candidates.
 //! Provider requests then run concurrently and share the process-wide
 //! [`gate`](crate::providers::classification::gate) for their endpoint.
+use crate::contracts::tool_types::ExtraKind;
 use crate::policy::path::PathPolicy;
 use crate::providers::classification::gate::{self, GateLease};
 use crate::runtime::{
@@ -293,7 +294,7 @@ fn usage_summary(records: &[Value]) -> Value {
 /// questions resolved by [`clasify::preflight`] (or the preflight rejection).
 type Matrix = (Value, Result<Vec<Value>, ClassificationError>);
 
-/// One matrix's output: compact by default; `debug:true` keeps every page's
+/// One matrix's output: compact by default; `extras: ["details"]` keeps every page's
 /// full answers and adds provider usage receipts (per page and per matrix).
 fn execute_query(
     matrix: &Matrix,
@@ -324,14 +325,17 @@ fn execute_query(
         locate_ids: &locate_ids,
         default_max_chars: MAX_RESOURCE_CHARS as u64,
     };
-    if query.get("debug").and_then(Value::as_bool) == Some(true) {
+    // details: full page answers and runner-up windows; stats: usage.
+    if crate::response::extras::wants(query, ExtraKind::Details) {
         crate::tools::clasify::compact::publish_verbose(&mut result.data, &matrix);
+    } else {
+        crate::tools::clasify::compact::compact_query_result(&mut result.data, &matrix);
+    }
+    if crate::response::extras::wants(query, ExtraKind::Stats) {
         let mut summary = usage_summary(&usage);
         summary["ms"] = json!(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
         result.data["usage"] = summary;
-        return Ok((result, usage));
     }
-    crate::tools::clasify::compact::compact_query_result(&mut result.data, &matrix);
     Ok((result, usage))
 }
 
@@ -392,7 +396,7 @@ fn execute_query_verbose(
         };
         judge.assess(&captured)
     };
-    let debug = query.get("debug").and_then(Value::as_bool) == Some(true);
+    let debug = crate::response::extras::wants(query, ExtraKind::Details);
     let Rendered {
         resources: rendered,
         continuations,

@@ -995,6 +995,16 @@ fn render_match_page(
         out["complete"] = json!(true);
     }
     attach_match_continuations(q, scope, &mut out, page_groups, truncated, more, snapshot);
+    // `complete` tells a reader the row's pages are drill-downs; a row with
+    // no page needs no such note.
+    let has_page = out["next"].as_object().is_some_and(|next| {
+        next.keys().any(|name| {
+            crate::tools::id::channel(ToolId::AstSearch, name) == crate::tools::id::Channel::Page
+        })
+    });
+    if !has_page && let Some(fields) = out.as_object_mut() {
+        fields.shift_remove("complete");
+    }
     // An empty match leads to the syntax tree of a parsed file, where the
     // pattern's node shape can be compared with the source.
     if empty

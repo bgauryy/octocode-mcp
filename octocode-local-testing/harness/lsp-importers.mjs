@@ -42,14 +42,14 @@ try {
     },
     timeoutMs: 60_000,
   });
-  // LP8: coverage.importerScan / verifiedImporterFiles are verbose (stats) fields, listed only under debug.
+  // LP8: coverage.importerScan / verifiedImporterFiles are verbose (stats) fields, listed only under extras:["stats"].
   const entry = await client.call('lspSearch', {
     path: source,
     symbolName: name,
     lineHint: 1,
     operation: 'references',
     includeDeclaration: false,
-    debug: true,
+    extras: ['stats'],
   });
   const data = rowData(entry);
   check(
@@ -67,7 +67,7 @@ try {
     JSON.stringify(data?.payload)
   );
   check(
-    'recovery records a complete scan with a verified importer (debug)',
+    'recovery records a complete scan with a verified importer (extras stats)',
     data?.payload?.coverage?.importerScan === 'complete' && data?.payload?.coverage?.verifiedImporterFiles >= 1,
     JSON.stringify(data?.payload?.coverage)
   );

@@ -35,6 +35,8 @@ const search = defineCommand({
   run: input => input,
 });
 
+// Node 24 JSON.rawJSON; TypeScript's lib does not declare it yet.
+const raw = (JSON as unknown as { rawJSON: (text: string) => unknown }).rawJSON;
 const spec = defineCli({
   name: 'issues',
   instructions,
@@ -101,6 +103,14 @@ const spec = defineCli({
       run: () => cliView('ignored', {
         structuredContent: { ok: true, items: [{ id: 'a' }, { id: 'b' }], msg: '\u001b[31mred\u001b[0m' },
         isError: false,
+      }),
+    }),
+    defineCommand({
+      name: 'exact',
+      description: 'Exact numbers',
+      schema: z.object({}),
+      run: () => cliView('ignored', {
+        structuredContent: { pid: raw('84617'), big: [raw('12345678901234567890')], rows: [{ n: raw('1') }, { n: raw('2') }] },
       }),
     }),
     defineCommand({
@@ -261,6 +271,9 @@ describe('runCli', () => {
     const faded = io();
     expect(await runCli(spec, ['view', '--no-color'], faded)).toBe(0);
     expect(faded.out()).toBe('ok: true\nitems:\n  id\n  a\n  b\nmsg: red\n');
+    const exact = io();
+    expect(await runCli(spec, ['exact', '--no-color'], exact)).toBe(0);
+    expect(exact.out()).toBe('pid: 84617\nbig: 12345678901234567890\nrows:\n  n\n  1\n  2\n');
     const task = io();
     expect(await runCli(spec, ['task'], task)).toBe(0);
     expect(task.out()).toBe('{"ok":true}\n');

@@ -5,6 +5,7 @@
 
 pub(crate) mod channels;
 pub(crate) mod continuations;
+pub(crate) mod extras;
 #[cfg(test)]
 mod hint_budget;
 pub mod pager;
@@ -14,4 +15,3 @@ pub(crate) mod render;
 mod row_pages;
 pub mod rows;
 pub(crate) mod stage;
-pub(crate) mod verbose;

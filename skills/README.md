@@ -2,6 +2,10 @@
 
 These Agent Skills guide research, design, writing, measurement, and tool use. Each folder has `SKILL.md` for agent activation and workflow, `output.md` for result formats, and a short `README.md` for people. The shared authoring standard is in [octocode-skills](octocode-skills/SKILL.md).
 
+Saved skill output lives under the project's `.octocode/` folder: reports and authored artifacts (research reports, RFCs, briefs, reviews, eval runs) in `<workspace>/.octocode/<skill-name>/`, and runtime captures and scratch files in `<workspace>/.octocode/tmp/`. A path the user names takes precedence; edits to the project's own code, docs, prompts, or skills stay at their source paths.
+
+Every skill ships the same zero-dependency renderer, `scripts/render-report.mjs`. It serves both readers. For people, it turns a saved report, a report folder, or the whole `<workspace>/.octocode/` folder into one local HTML page with navigation, search, a contents rail, a sources list, editor links for code references, Mermaid diagrams, and light/dark and print styles. For agents, `--manifest` prints one JSON catalog of every saved report (path, skill, title, date, `status`, `confidence`, `question`, `next`, lead, headings, links, and code references), so a later session finds earlier work without opening each file. Each skill's `output.md` says when to save, which header and sections to write, and which path goes to whom. The canonical copy is in `octocode-skills/scripts/`; after editing it, run `node octocode-skills/scripts/report-viewer-sync.mjs`. The skill reviewer fails on drifted copies.
+
 | Skill | Use when |
 |---|---|
 | [Research](octocode-research/) | A code, repository, or change-impact claim needs evidence. |

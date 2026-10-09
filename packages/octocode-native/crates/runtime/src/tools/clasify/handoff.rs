@@ -64,7 +64,8 @@ pub(crate) fn attach(structured: &mut Value, tool: &str, queries: &[Option<&Valu
             continue;
         };
         if !search {
-            if let Some((name, lead)) = large_read_lead(tool, query, data)
+            if let Some((name, lead)) =
+                large_read_lead(tool, query, data).or_else(|| wide_match_lead(tool, query, data))
                 && data.get("next").is_none_or(|next| next.get(name).is_none())
                 && let Some(next) = data
                     .entry("next")
@@ -165,6 +166,77 @@ fn large_read_lead(
     let mut matrix = json!({
         "mainGoal": goal,
         "resources": [resource],
+        "questions": [{"id": "target", "type": "locate", "ask": goal}],
+    });
+    if let Some(reasoning) = query.get("reasoning").filter(|value| value.is_string()) {
+        matrix["reasoning"] = reasoning.clone();
+    }
+    Some((
+        ToolId::Clasify.as_str(),
+        crate::tools::result::Continuation::new(ToolId::Clasify, matrix)
+            .confidence("medium")
+            .build(),
+    ))
+}
+
+/// Source lines a matchString read must return before a locate over its
+/// hits beats reading them all.
+const WIDE_MATCH_LINES: usize = 60;
+/// The lead for a wide `matchString` read (a long list, or common literals,
+/// returning at least [`WIDE_MATCH_LINES`] source lines or leaving match
+/// pages): clasify LOCATE over the file, asking the caller's described goal
+/// (`mainGoal`, else `reasoning`). Locate needs contiguous source, so the
+/// resource is the file, not the hit windows; the host receives only the
+/// located lines. A literal or generic goal gets nothing: a locate of a
+/// literal costs more than reading its hits (clasify eval 2026-10-07), and
+/// without a goal there is no target.
+fn wide_match_lead(
+    tool: &str,
+    query: &Value,
+    data: &Map<String, Value>,
+) -> Option<(&'static str, Value)> {
+    query.get("matchString")?;
+    let goal: String = ["mainGoal", "reasoning"]
+        .iter()
+        .find_map(|key| query.get(*key).and_then(Value::as_str))?
+        .chars()
+        .take(MAIN_GOAL_MAX_LENGTH)
+        .collect();
+    if goal.trim().is_empty()
+        || generic_read_goal(&goal)
+        || crate::tools::clasify::locate::identifier_target(&goal).is_some()
+    {
+        return None;
+    }
+    // Source lines, before the response stage numbers them: every line but
+    // the `... [lines A-B not requested] ...` gap markers.
+    let returned = data
+        .get("content")
+        .and_then(Value::as_str)
+        .map_or(0, |content| {
+            content
+                .lines()
+                .filter(|line| !line.starts_with("... ["))
+                .count()
+        });
+    let more_hits = data
+        .get("next")
+        .and_then(Value::as_object)
+        .is_some_and(|next| next.keys().any(|name| name.starts_with("nextMatchPage")));
+    if returned < WIDE_MATCH_LINES && !more_hits {
+        return None;
+    }
+    let read: Map<String, Value> = ["path", "owner", "repo", "ref"]
+        .iter()
+        .filter_map(|key| {
+            query
+                .get(*key)
+                .map(|value| ((*key).to_owned(), value.clone()))
+        })
+        .collect();
+    let mut matrix = json!({
+        "mainGoal": goal,
+        "resources": [{"id": "file", "tool": tool, "query": Value::Object(read)}],
         "questions": [{"id": "target", "type": "locate", "ask": goal}],
     });
     if let Some(reasoning) = query.get("reasoning").filter(|value| value.is_string()) {
@@ -422,6 +494,42 @@ mod tests {
         large_read_lead(tool, query, data.as_object().expect("data"))
             .filter(|(name, _)| *name == ToolId::Clasify.as_str())
             .map(|(_, offer)| offer)
+    }
+
+    /// A wide matchString read with a described goal offers a locate over the
+    /// file (locate needs contiguous source); a narrow read, a literal or missing goal, or a
+    /// read without matchString gets none. The offer passes clasify's input.
+    #[test]
+    fn a_wide_match_read_with_a_described_goal_offers_locate_over_its_hits() {
+        let content: String = (1..=80).map(|line| format!("node kind {line}\n")).collect();
+        let wide = json!({"totalLines":4000,"content":content});
+        let query = json!({"path":"src/emit.ts","matchString":["Kind","node"],"contextLines":1,
+            "mainGoal":"Where does the emitter pick the encoder for a node kind?"});
+        let (name, offer) =
+            wide_match_lead("localFetch", &query, wide.as_object().unwrap()).expect("offer");
+        assert_eq!(name, "clasify");
+        let row = &offer["query"]["queries"][0];
+        assert_eq!(
+            row["resources"],
+            json!([{"id":"file","tool":"localFetch","query":{"path":"src/emit.ts"}}])
+        );
+        assert_eq!(row["questions"][0]["type"], "locate");
+        crate::contracts::prepare_many_and_validate("clasify", offer["query"].clone())
+            .expect("the offer validates");
+        // More match pages count as wide even when this page is short.
+        let short_paged = json!({"content":"node\n","next":{"nextMatchPage":{}}});
+        assert!(wide_match_lead("localFetch", &query, short_paged.as_object().unwrap()).is_some());
+        let narrow = json!({"content":"node\n... [lines 2-9 not requested] ...\nnode\n"});
+        assert!(wide_match_lead("localFetch", &query, narrow.as_object().unwrap()).is_none());
+        let mut literal = query.clone();
+        literal["mainGoal"] = json!("encodeNode");
+        assert!(wide_match_lead("localFetch", &literal, wide.as_object().unwrap()).is_none());
+        let mut no_goal = query.clone();
+        no_goal.as_object_mut().unwrap().remove("mainGoal");
+        assert!(wide_match_lead("localFetch", &no_goal, wide.as_object().unwrap()).is_none());
+        let mut ranged = query.clone();
+        ranged.as_object_mut().unwrap().remove("matchString");
+        assert!(wide_match_lead("localFetch", &ranged, wide.as_object().unwrap()).is_none());
     }
 
     #[test]

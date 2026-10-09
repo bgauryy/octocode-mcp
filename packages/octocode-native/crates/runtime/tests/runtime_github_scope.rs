@@ -40,13 +40,18 @@ async fn mount_pull_request(server: &MockServer) {
         .await;
 }
 
-fn reviews_query(debug: bool) -> Value {
+fn reviews_query(diagnostics: bool) -> Value {
+    let extras = if diagnostics {
+        json!(["diagnostics"])
+    } else {
+        json!([])
+    };
     json!({"operation": "pullRequest", "owner": "a", "repo": "b", "number": 7,
-        "sections":["body","reviews"], "debug": debug})
+        "sections":["body","reviews"], "extras": extras})
 }
 
 /// A GraphQL document GitHub rejects falls back to REST with the cause in
-/// debug output; the served GraphQL path returns the same reviews with
+/// `diagnostics` output; the served GraphQL path returns the same reviews with
 /// stable identities and skips the REST collections it replaces.
 #[tokio::test]
 async fn pull_request_graphql_fallback_is_observable_and_equivalent() {
@@ -86,7 +91,7 @@ async fn pull_request_graphql_fallback_is_observable_and_equivalent() {
     assert_eq!(rest_reviews[1]["id"], "12", "{data}");
     let quiet = call(&runtime, "ghGetHistoryItem", reviews_query(false))
         .await
-        .expect("REST fallback without debug");
+        .expect("REST fallback without diagnostics");
     assert!(
         row_data(&quiet).get("graphqlFallback").is_none(),
         "{}",
@@ -167,7 +172,7 @@ async fn issue_closing_references_past_the_read_limit_are_disclosed() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation": "issue", "owner": "a", "repo": "b", "number": 42, "debug": false}),
+        json!({"operation": "issue", "owner": "a", "repo": "b", "number": 42, "extras": []}),
     )
     .await
     .expect("issue read");
@@ -250,9 +255,9 @@ async fn archived_pull_request_listing_enforces_the_filter() {
 }
 
 /// A non-empty code-search page GitHub marks incomplete keeps its partial
-/// coverage in default (non-debug) output.
+/// coverage in default (no extras) output.
 #[tokio::test]
-async fn incomplete_code_search_page_is_partial_without_debug() {
+async fn incomplete_code_search_page_is_partial_without_extras() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/code"))
@@ -270,7 +275,7 @@ async fn incomplete_code_search_page_is_partial_without_debug() {
     let outcome = call(
         &runtime,
         "ghSearchCode",
-        json!({"owner": "a", "keywords": ["app"], "match": "path", "debug": false}),
+        json!({"owner": "a", "keywords": ["app"], "match": "path", "extras": []}),
     )
     .await
     .expect("code search");

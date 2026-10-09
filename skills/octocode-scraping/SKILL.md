@@ -67,4 +67,4 @@ Load the page that answers the current question.
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format.
+See [output.md](output.md) for the response and saved-artifact format. Save substantial results under `<workspace>/.octocode/octocode-scraping/`; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).

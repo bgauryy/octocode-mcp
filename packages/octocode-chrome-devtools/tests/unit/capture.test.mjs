@@ -458,3 +458,84 @@ test('target inventories expose executable typed continuations through CLI and M
       rows.slice(0, 7)
     );
   }));
+test('cdp and protocol plans return the reply value and Chrome error inline', () =>
+  fixture(async work => {
+    const reply = join(work, 'cdp-1.json'),
+      flow = join(work, 'browser-result.json');
+    writeFileSync(
+      reply,
+      JSON.stringify({ result: { type: 'number', value: 2 } })
+    );
+    writeFileSync(
+      flow,
+      JSON.stringify({
+        ok: false,
+        requestedSteps: 2,
+        completedSteps: 1,
+        failure: {
+          step: 2,
+          error: "CDP error [-32601]: 'Runtime.nope' wasn't found",
+        },
+        steps: [
+          { index: 1, op: 'cdp', status: 'complete', artifact: reply },
+          {
+            index: 2,
+            op: 'cdp',
+            status: 'failed',
+            error: "CDP error [-32601]: 'Runtime.nope' wasn't found",
+          },
+        ],
+        eventCoverage: [],
+      })
+    );
+    for (const command of ['cdp', 'protocol']) {
+      const result = await shape(
+        mkdtempSync(join(work, command + '-')),
+        '[ARTIFACT] cdp-1.json ' +
+          reply +
+          '\n[ARTIFACT] browser-result.json ' +
+          flow,
+        '[CDP_SANDBOX] diagnostic',
+        command
+      );
+      assert.match(result.flow.failure.error, /-32601/);
+      assert.equal(JSON.stringify(result.flow.steps[0].data.result.value), '2');
+      assert(!result.error);
+    }
+  }));
+test('stderr is the error only for failures; success diagnostics stay in logs', async () => {
+  const work = mkdtempSync(join(tmpdir(), 'octo-capture-'));
+  try {
+    const artifact = join(work, 'snapshot.json');
+    writeFileSync(artifact, '{}');
+    for (const exitCode of [0, 2]) {
+      const directory = join(work, 'capture-' + exitCode);
+      mkdirSync(directory);
+      const outputs = {};
+      for (const [name, value] of Object.entries({
+        stdout: '[ARTIFACT] snapshot ' + artifact,
+        stderr: '[CDP_SANDBOX] diagnostic',
+      })) {
+        const file = join(directory, name + '.txt');
+        writeFileSync(file, value);
+        outputs[name] = { file, bytes: Buffer.byteLength(value) };
+      }
+      const result = await captureResult(
+        { exitCode },
+        outputs,
+        directory,
+        'snapshot',
+        undefined,
+        work
+      );
+      assert.equal(result.ok, exitCode === 0);
+      assert.equal(result.logs.stderr, outputs.stderr.file);
+      assert.equal(
+        result.error,
+        exitCode === 0 ? undefined : '[CDP_SANDBOX] diagnostic'
+      );
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+});

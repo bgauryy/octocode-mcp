@@ -271,8 +271,8 @@ impl From<LspFailure> for Exit {
 }
 
 impl LspSearchQuery {
-    fn debug(&self) -> bool {
-        each_shape!(self, debug => *debug)
+    fn wants(&self, kind: crate::contracts::tool_types::ExtraKind) -> bool {
+        each_shape!(self, extras => extras.contains(&kind))
     }
 
     fn set_path(&mut self, path: String) {
@@ -895,7 +895,7 @@ fn annotate(
         resolved_symbol,
         &target.config,
         &session.client,
-        query.debug(),
+        query.wants(crate::contracts::tool_types::ExtraKind::Receipts),
     );
 }
 

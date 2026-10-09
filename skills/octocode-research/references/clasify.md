@@ -21,7 +21,11 @@ Load when the SKILL.md `SEMANTIC?` gate admits a call, or for an explicit typed 
 
 ## Handoffs
 
-A `hints.clasify` lead comes only from a paged `localFetch`/`ghGetFileContent` without `matchString`, ranges, or a view, or a descriptive `localSearch`/`ghSearchCode` page; it asks `mainGoal`, else the search phrase. Name the artifact kind in `mainGoal` so scores separate. Regexes, paths, and narrow pages get no lead.
+Goal-first: when you can describe the target but not name it, put the description in `mainGoal`. A wide read or search then offers `hints.clasify` on a successful row, without `extras`, whenever clasify is available. Run it unchanged, then run its `hints.read`.
+- `localSearch`/`ghSearchCode`: 8+ files for a plain multi-word phrase → Scout over the same search (asks `mainGoal`, else the phrase).
+- `localFetch`/`ghGetFileContent` without `matchString`, ranges, or a view: a paged read of a file of 2,000+ lines with a goal that asks where → Locate over the file.
+- `localFetch`/`ghGetFileContent` with `matchString`: 60+ lines returned or more match pages, plus a described `mainGoal` (or `reasoning`) → Locate over the file (Locate needs contiguous source).
+- No goal, a literal goal (one identifier), regexes, paths, and narrow pages get no lead. A literal Locate costs more than reading its hits. Name the artifact kind in `mainGoal` so scores separate.
 
 ## Questions
 
@@ -33,11 +37,11 @@ A `hints.clasify` lead comes only from a paged `localFetch`/`ghGetFileContent` w
  "questions":[{"id":"retry","type":"locate","ask":"The condition that permits retrying a failed request."},
               {"id":"limit","type":"locate","ask":"The maximum retry count."}]}]}
 ```
-Large requests: save under `.octocode/` and run `npx octocode clasify --input <file>`.
+Large requests: save under `<workspace>/.octocode/tmp/` and run `npx octocode clasify --input <file>`.
 
 ## Results
 
-- Compact by default: each resource lists `path`, `totalLines`, and `pages[]` of `{line, endLine, answers}`; answers are bare (`exists`, P(yes), a label or level) unless a choice/score is uncertain, which keeps `probabilities`. No `coverage` = complete. `debug:true` adds the per-page receipt, runner-up windows, and provider `usage`.
+- Compact by default: each resource lists `path`, `totalLines`, and `pages[]` of `{line, endLine, answers}`; answers are bare (`exists`, P(yes), a label or level) unless a choice/score is uncertain, which keeps `probabilities`. No `coverage` = complete. `extras:["details"]` adds the per-page receipt and runner-up windows; `extras:["stats"]` adds provider `usage`. Page `hints.read` always shows.
 - `best[id]` lists answering windows as `{line, endLine, exists, probability}` (`path`/`resourceId` when several resources): `exists` = this window answers, `probability` = which window. Rows rank by `exists`, then `probability`; never multiply them. `hints.read` is the exact, commit-pinned read of the top row: run it unchanged and read other rows by `line`–`endLine`.
 - While a continuation remains and no window answers, `best` is absent and the ranking travels in `carry`: follow the `next.clasify` page unchanged instead of reading the closest passage.
 - On an open walk (`coverage: partial` with `next.clasify`), `best` ranks only the pages judged so far. If its read lacks the answer, follow `next.clasify` before you search elsewhere.

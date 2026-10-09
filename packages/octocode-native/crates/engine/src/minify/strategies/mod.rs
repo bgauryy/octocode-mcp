@@ -184,6 +184,16 @@ mod tests {
         assert_eq!(out, "{ invalid json");
     }
 
+    /// A range read slices mid-object: the first line keeps its
+    /// indentation; only blank lines around the slice go.
+    #[test]
+    fn json_readable_partial_slice_keeps_first_line_indent() {
+        let src = "\n    \"fix\": \"a\",\n    \"lint\": \"b\"\n  },\n\n";
+        let (out, failed) = minify_json_readable_inner(src);
+        assert!(failed);
+        assert_eq!(out, "    \"fix\": \"a\",\n    \"lint\": \"b\"\n  },");
+    }
+
     #[test]
     fn json_readable_accepts_jsonc_after_noise_strip() {
         let src = "{\n  // comment\n  \"key\": \"value\",\n}\n";

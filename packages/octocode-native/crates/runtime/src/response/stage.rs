@@ -54,8 +54,6 @@ pub(crate) fn finish(
     } = input;
     // A row with pages left says so first, with each remaining count.
     super::pages::disclose_remaining_pages(&mut structured, tool);
-    // A batch with partial rows says so before its first row.
-    super::pages::disclose_incomplete_rows(&mut structured);
     // Hosts show agents this JSON: source reads carry their line numbers in
     // `content` itself, and both text encodings render from it. Numbering
     // precedes validation so an unpaged response is exactly what was checked.
@@ -197,12 +195,22 @@ mod tests {
     }
 
     /// The engine's continuation stage, then this stage.
-    fn stage(tool: &str, mut structured: Value, mcp: bool) -> ToolOutcome {
+    fn stage(tool: &str, structured: Value, mcp: bool) -> ToolOutcome {
+        stage_from(tool, structured, mcp, None)
+    }
+
+    /// [`stage`] with the source query of row 0.
+    fn stage_from(
+        tool: &str,
+        mut structured: Value,
+        mcp: bool,
+        source: Option<&Value>,
+    ) -> ToolOutcome {
         let id = ToolId::from_name(tool).expect("known tool");
         super::super::continuations::finalize(
             &mut structured,
             id,
-            &super::super::continuations::Sources::Rows(&[]),
+            &super::super::continuations::Sources::Rows(&[source]),
             &super::super::continuations::Scope::everything(),
         )
         .expect("valid continuations");
@@ -228,7 +236,7 @@ mod tests {
     fn fetch_row(index: usize) -> Value {
         json!({"index":index,"data":{"path":"a.txt","content":"one\n","totalLines":1,
             "next":{"continue":{"tool":"localFetch","confidence":"exact",
-                "query":{"queries":[{"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","debug":false,"offset":1}]}}}}})
+                "query":{"queries":[{"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","offset":1}]}}}}})
     }
 
     /// M9: a rendered response past the 8 MiB ceiling pages (rows, else
@@ -265,21 +273,33 @@ mod tests {
         assert!(text <= 9 * 1024 * 1024, "page text is bounded: {text}");
     }
 
-    /// A page that continues keeps every other lead its row carries: the
-    /// regex match-limit warning names next.textSearch beside next.continue.
+    /// A page that continues keeps every other lead its row carries when
+    /// the row asked for `hints`; by default a successful row's optional
+    /// search lead goes and its page stays.
     #[test]
     fn a_continuing_row_keeps_its_search_lead() {
         let mut row = fetch_row(0);
         row["data"]["next"]["textSearch"] = json!({"tool":"localSearch",
             "query":{"queries":[{"path":"/tmp/a.txt","matchString":"hit"}]}});
+        let hinted = json!({"path":"/tmp/a.txt","extras":["hints"]});
         for mcp in [false, true] {
-            let outcome = stage("localFetch", json!({"results":[row.clone()]}), mcp);
+            let outcome = stage_from(
+                "localFetch",
+                json!({"results":[row.clone()]}),
+                mcp,
+                Some(&hinted),
+            );
             let data = &outcome.structured_content["results"][0]["data"];
             let leads = [&data["next"]["textSearch"], &data["hints"]["textSearch"]];
             assert!(
                 leads.iter().any(|lead| lead["tool"] == "localSearch"),
                 "mcp={mcp}: {data}"
             );
+            assert_eq!(data["next"]["continue"]["tool"], "localFetch", "{data}");
+            let outcome = stage("localFetch", json!({"results":[row.clone()]}), mcp);
+            let data = &outcome.structured_content["results"][0]["data"];
+            assert!(data.get("hints").is_none(), "mcp={mcp}: {data}");
+            assert_eq!(data["next"]["continue"]["tool"], "localFetch", "{data}");
         }
     }
 
@@ -323,7 +343,11 @@ mod tests {
         );
         let next = &cli.structured_content["results"][0]["data"]["next"]["continue"]["query"]["queries"]
             [0];
-        assert!(next.get("debug").is_none(), "{next}");
+        assert_eq!(
+            next,
+            &json!({"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","offset":1}),
+            "no default is injected into a continuation"
+        );
         assert!(cli.content.is_empty() && !mcp.content.is_empty());
         assert!(!cli.all_failed);
     }
@@ -437,8 +461,8 @@ mod tests {
         let receipt = json!({"queries":[{"id":"q","resources":[{"id":"r","coverage":"complete",
             "pages":[{"answers":{"a":{"yesno":0.5}}}]}],
             "next":{"clasify":{"queries":[{"id":"q","mainGoal": "test", "reasoning":"r",
-                "resources":[{"id":"r","tool":"localFetch",
-                    "query":{"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","debug":false}}],
+                "resources":[{"id":"r","tool":"localSearch",
+                    "query":{"path":"/tmp","matchString":"x","mainGoal": "test", "reasoning":"r","caseMode":"smart"}}],
                 "questions":[{"id":"a","type":"yesno","ask":"Does it?"}]}]}}}]});
         let mut structured = receipt.clone();
         super::super::continuations::finalize(
@@ -465,12 +489,12 @@ mod tests {
         )
         .expect("stage runs")
         .expect("valid envelope");
-        // Only the default `debug:false` goes; the replay is unchanged.
+        // Only the default `caseMode:"smart"` goes; the replay is unchanged.
         let mut expected = receipt["queries"].clone();
         expected[0]["next"]["clasify"]["queries"][0]["resources"][0]["query"]
             .as_object_mut()
             .unwrap()
-            .remove("debug");
+            .remove("caseMode");
         assert_eq!(outcome.structured_content["queries"], expected);
         assert!(
             outcome.content.is_empty(),

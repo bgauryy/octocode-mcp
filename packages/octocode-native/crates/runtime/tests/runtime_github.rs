@@ -8,7 +8,7 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use support::{Workspace, call, row_data, row_status};
+use support::{ALL_EXTRAS, Workspace, call, row_data, row_status};
 use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
@@ -50,8 +50,8 @@ async fn malformed_remote_regex_keeps_original_error_and_required_file_path() {
         .mount(&server).await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
-    for debug in [false, true] {
-        let out = call(&runtime, "ghGetFileContent", json!({"owner":"a","repo":"b","path":"README.md","ref":sha,"matchString":"(","regex":"rust","debug":debug})).await.expect("error row");
+    for extras in [json!([]), json!(["diagnostics"])] {
+        let out = call(&runtime, "ghGetFileContent", json!({"owner":"a","repo":"b","path":"README.md","ref":sha,"matchString":"(","regex":"rust","extras":extras})).await.expect("error row");
         assert_eq!(row_status(&out), "error", "{}", out.structured_content);
         let data = row_data(&out);
         assert_ne!(data["errorCode"], "outputContractViolation", "{data}");
@@ -391,7 +391,7 @@ async fn three_github_bulk_queries_are_concurrent_and_preserve_order() {
             "ref": sha,
             "forceRefresh": true,
             "mainGoal": "test", "reasoning": format!("Read {name} through the GitHub bulk path."),
-            "debug": true
+            "extras": ALL_EXTRAS
         })
     });
     let outcome = runtime
@@ -1836,8 +1836,8 @@ async fn github_recovery_hints_are_never_cut_mid_sentence() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     for query in [
-        json!({"owner":"a","repo":"b","path":"README.md","ref":"locked","debug":false}),
-        json!({"owner":"a","repo":"b","path":"img.png","ref":sha,"debug":false}),
+        json!({"owner":"a","repo":"b","path":"README.md","ref":"locked","extras":[]}),
+        json!({"owner":"a","repo":"b","path":"img.png","ref":sha,"extras":[]}),
     ] {
         let outcome = call(&runtime, "ghGetFileContent", query)
             .await
@@ -1872,7 +1872,7 @@ async fn gh_file_read_on_a_missing_repository_reports_repository_access() {
     let outcome = call(
         &runtime,
         "ghGetFileContent",
-        json!({"owner":"ghost","repo":"nope","path":"README.md","debug":false}),
+        json!({"owner":"ghost","repo":"nope","path":"README.md","extras":[]}),
     )
     .await
     .expect("error row");
@@ -1887,10 +1887,10 @@ async fn gh_file_read_on_a_missing_repository_reports_repository_access() {
 }
 
 /// A failed read's provider status, retry flag, request id and
-/// documentation link are support diagnostics (debug field class): a
-/// default row drops them; `debug: true` keeps them.
+/// documentation link are support diagnostics (`diagnostics` extra): a
+/// default row drops them; `extras: ["diagnostics"]` keeps them.
 #[tokio::test]
-async fn gh_file_error_keeps_provider_diagnostics_for_debug_only() {
+async fn gh_file_error_keeps_provider_diagnostics_for_the_diagnostics_extra() {
     let server = MockServer::builder().start().await;
     let sha = "0123456789abcdef0123456789abcdef01234567";
     Mock::given(method("GET"))
@@ -1908,10 +1908,15 @@ async fn gh_file_error_keeps_provider_diagnostics_for_debug_only() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     for debug in [false, true] {
+        let extras = if debug {
+            json!(["diagnostics"])
+        } else {
+            json!([])
+        };
         let outcome = call(
             &runtime,
             "ghGetFileContent",
-            json!({"owner":"a","repo":"b","path":"src/missing.rs","ref":sha,"debug":debug}),
+            json!({"owner":"a","repo":"b","path":"src/missing.rs","ref":sha,"extras":extras}),
         )
         .await
         .expect("error row");
@@ -1948,7 +1953,7 @@ async fn gh_pull_request_read_of_an_issue_number_offers_read_issue() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,"debug":false}),
+        json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,"extras":[]}),
     )
     .await
     .expect("error row");
@@ -2009,7 +2014,7 @@ async fn compare_pages_carry_one_collection_each_and_pin_both_refs() {
     let first = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","pageSize":100,"debug":false}),
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","pageSize":100,"extras":["hints"]}),
     )
     .await
     .expect("compare");
@@ -2073,7 +2078,7 @@ async fn capped_compare_with_a_path_leads_to_the_path_history() {
     let out = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","path":"lib/late.rs","debug":false}),
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","path":"lib/late.rs","extras":[]}),
     )
     .await
     .expect("compare");
@@ -2119,7 +2124,7 @@ async fn commit_patch_view_carries_the_headline_not_the_whole_message() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"sections":["patches"],"debug":false}),
+        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"sections":["patches"],"extras":["hints"]}),
     )
     .await
     .expect("commit patches");
@@ -2167,7 +2172,7 @@ async fn issue_comment_pages_fit_the_response_with_one_cursor() {
         &runtime,
         "ghGetHistoryItem",
         json!({"queries":[{"operation":"issue","owner":"a","repo":"b","number":7,
-               "sections":["comments"],"pageSize":30,"debug":false}],"responseLength":12000}),
+               "sections":["comments"],"pageSize":30,"extras":[]}],"responseLength":12000}),
     )
     .await
     .expect("issue comments");
@@ -2236,7 +2241,7 @@ async fn issue_comment_body_hops_list_only_unfinished_bodies() {
         ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
     ]);
     let first = json!({"queries":[{"operation":"issue","owner":"a","repo":"b","number":7,
-        "sections":["body","comments"],"length":6000,"debug":false}]});
+        "sections":["body","comments"],"length":6000,"extras":[]}]});
     let mut queue = std::collections::VecDeque::from([first]);
     let mut followed = std::collections::HashSet::<String>::new();
     let mut read = std::collections::BTreeMap::<u64, String>::new();
@@ -2348,7 +2353,7 @@ async fn compare_patch_windows_do_not_resend_the_commit_list() {
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
-               "pageSize":100,"sections":["patches"],"offset":5,"debug":false}),
+               "pageSize":100,"sections":["patches"],"offset":5,"extras":[]}),
     )
     .await
     .expect("compare hop");
@@ -2382,7 +2387,7 @@ async fn path_scoped_commit_labels_whole_commit_totals() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"path":"src/","debug":false}),
+        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"path":"src/","extras":[]}),
     )
     .await
     .expect("commit");
@@ -2417,7 +2422,7 @@ async fn gh_full_content_first_page_stays_under_the_host_output_cap() {
     let outcome = call(
         &runtime,
         "ghGetFileContent",
-        json!({"owner":"a","repo":"b","path":"src/big.rs","ref":sha,"fullContent":true,"debug":false}),
+        json!({"owner":"a","repo":"b","path":"src/big.rs","ref":sha,"fullContent":true,"extras":[]}),
     )
     .await
     .expect("full content");
@@ -2550,7 +2555,7 @@ async fn issue_body_windows_keep_closing_reference_coverage() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
     let mut query = json!({"operation": "issue", "owner": "a", "repo": "b", "number": 42,
-        "length": 5, "debug": false});
+        "length": 5, "extras": []});
     let mut bodies = Vec::new();
     for window in 0..3 {
         let outcome = call(&runtime, "ghGetHistoryItem", query.clone())
@@ -2588,9 +2593,7 @@ async fn issue_body_windows_keep_closing_reference_coverage() {
                 "window {window}: {data}"
             );
             assert!(
-                data["warnings"]
-                    .to_string()
-                    .contains("follow next.continueBody"),
+                data["warnings"].to_string().contains("(next.continueBody)"),
                 "window {window}: {data}"
             );
         }
@@ -2675,7 +2678,7 @@ async fn pinned_ref_code_search_warns_and_leads_to_the_ref_listing() {
     let warnings = data["warnings"].to_string();
     assert!(
         warnings.contains("default-branch index at fedcba9, not dev")
-            && warnings.contains("hints.viewRepo"),
+            && warnings.contains("list them with ghStructure at dev."),
         "{data}"
     );
     let lead = &data["hints"]["viewRepo"];
@@ -2709,8 +2712,11 @@ async fn commit_patch_view_numbers_both_sides_and_reads_each_side() {
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "sha": sha, "parents": [{"sha": parent}],
             "commit": {"message": "Fix f", "author": {"name": "A", "date": "2024-01-01T00:00:00Z"}},
+            // Two changed files: a single-hit row keeps one lead only.
             "files": [{"filename": "src/a.rs", "status": "modified", "additions": 2, "deletions": 1,
-                       "patch": "@@ -40,3 +60,4 @@ fn f\n a\n-b\n+c\n+d\n e"}]
+                       "patch": "@@ -40,3 +60,4 @@ fn f\n a\n-b\n+c\n+d\n e"},
+                      {"filename": "src/b.rs", "status": "modified", "additions": 1, "deletions": 0,
+                       "patch": "@@ -1,1 +1,2 @@\n x\n+y"}]
         })))
         .mount(&server)
         .await;
@@ -2719,7 +2725,7 @@ async fn commit_patch_view_numbers_both_sides_and_reads_each_side() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"sections":["patches"],"debug":false}),
+        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"sections":["patches"],"extras":["hints"]}),
     )
     .await
     .expect("commit patches");
@@ -2730,12 +2736,13 @@ async fn commit_patch_view_numbers_both_sides_and_reads_each_side() {
     );
     assert_eq!(
         data["hints"]["readAtCommit"]["query"],
-        json!({"queries":[{"owner":"a","repo":"b","path":"src/a.rs","ref":sha}]}),
+        json!({"queries":[{"owner":"a","repo":"b","path":"src/a.rs","ref":sha,"extras":["hints"]}]}),
         "{data}"
     );
+    // A lead inherits the row's extras.
     assert_eq!(
         data["hints"]["readParent"]["query"],
-        json!({"queries":[{"owner":"a","repo":"b","path":"src/a.rs","ref":parent,"ranges":["30-52"]}]}),
+        json!({"queries":[{"owner":"a","repo":"b","path":"src/a.rs","ref":parent,"ranges":["30-52"],"extras":["hints"]}]}),
         "{data}"
     );
     runtime.close().await;
@@ -2759,7 +2766,7 @@ async fn bad_commit_sha_is_not_found() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"commit","owner":"a","repo":"b","ref":"deadbeef","debug":false}),
+        json!({"operation":"commit","owner":"a","repo":"b","ref":"deadbeef","extras":[]}),
     )
     .await
     .expect("commit row");
@@ -2787,7 +2794,7 @@ async fn compare_include_scopes_files_and_capped_scope_leads_to_path_history() {
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
-               "include":["src/f001.rs","src/f2*.rs"],"debug":false}),
+               "include":["src/f001.rs","src/f2*.rs"],"extras":[]}),
     )
     .await
     .expect("compare include");
@@ -2806,7 +2813,7 @@ async fn compare_include_scopes_files_and_capped_scope_leads_to_path_history() {
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
-               "include":["lib/**"],"debug":false}),
+               "include":["lib/**"],"extras":[]}),
     )
     .await
     .expect("compare include beyond cap");
@@ -2847,7 +2854,7 @@ async fn compare_patch_view_reads_head_and_merge_base() {
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"compare","owner":"a","repo":"b","base":BASE_SHA,"head":HEAD_SHA,
-               "sections":["patches"],"debug":false}),
+               "sections":["patches"],"extras":["hints"]}),
     )
     .await
     .expect("compare patches");
@@ -2940,7 +2947,7 @@ async fn issue_comment_walk_discloses_bots_and_counts_the_rest() {
         ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
         ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
     ]);
-    let mut query = json!({"operation":"issue","owner":"a","repo":"b","number":7,"sections":["comments"],"debug":false});
+    let mut query = json!({"operation":"issue","owner":"a","repo":"b","number":7,"sections":["comments"],"extras":[]});
     let mut ids = Vec::new();
     let (mut bots, mut calls, mut bot_lead) = (0, 0, false);
     loop {
@@ -2987,8 +2994,10 @@ async fn issue_comment_walk_discloses_bots_and_counts_the_rest() {
     let unique = ids.iter().collect::<std::collections::BTreeSet<_>>();
     assert_eq!((ids.len(), unique.len(), bots), (103, 103, 2));
     assert!(bot_lead, "no includeBots lead");
-    // ~73 KB of comments at a 20k page: budget-filled pages.
-    assert!(calls <= 5, "{calls} calls");
+    // ~73 KB of comments at a 20k page: budget-filled pages. The resume
+    // grid follows the contract's default pageSize (10 since 2026-10-09),
+    // so page cuts land one call later than at 30.
+    assert!(calls <= 6, "{calls} calls");
     runtime.close().await;
 }
 
@@ -3313,7 +3322,7 @@ async fn history_a_every_pr_view_carries_source_target_and_merge_commits() {
         json!({"sections":["patches"],"matchString":"parsed"}),
     ] {
         let mut query =
-            json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,"debug":false});
+            json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,"extras":[]});
         for (key, value) in extra.as_object().expect("fields") {
             query[key] = value.clone();
         }
@@ -3363,7 +3372,7 @@ async fn history_a_unpatched_file_gets_head_and_parent_reads() {
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,
-            "sections":["patches"],"debug":false}),
+            "sections":["patches"],"extras":["hints"]}),
     )
     .await
     .expect("patch read");
@@ -3426,7 +3435,7 @@ async fn history_a_graphql_pr_reads_target_sha_and_totals() {
             &runtime,
             "ghGetHistoryItem",
             json!({"operation":"pullRequest","owner":"a","repo":"b","number":7,
-                "sections":sections,"debug":false}),
+                "sections":sections,"extras":[]}),
         )
         .await
         .expect("GraphQL read");
@@ -3524,7 +3533,7 @@ async fn history_a_commit_include_matching_nothing_warns_with_nearest_dirs() {
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
-    let read = |include: &str| json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"include":[include],"debug":false});
+    let read = |include: &str| json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"include":[include],"extras":[]});
     let outcome = call(&runtime, "ghGetHistoryItem", read("packages/react/**"))
         .await
         .expect("commit");
@@ -3576,7 +3585,7 @@ async fn history_a_compare_commits_are_headlines_with_login_authors() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":head,"debug":false}),
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":head,"extras":["hints"]}),
     )
     .await
     .expect("compare");

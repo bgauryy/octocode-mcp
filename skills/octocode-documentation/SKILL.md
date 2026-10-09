@@ -76,7 +76,7 @@ Load the page that answers the current question.
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format.
+See [output.md](output.md) for the response and saved-artifact format. Shipped docs stay at their project path; save reviews and drafts with no named destination under `<workspace>/.octocode/octocode-documentation/`. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).
 
 ## Verify
 

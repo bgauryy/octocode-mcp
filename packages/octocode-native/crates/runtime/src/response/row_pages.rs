@@ -1667,20 +1667,18 @@ mod lazy_page_tests {
         );
     }
 
-    /// A split row's last part carries its pages, so it names them as well.
+    /// A split row's last part carries its pages; a count-less page adds no
+    /// warning line, and the part's hints go.
     #[test]
-    fn a_last_part_names_the_pages_it_carries() {
+    fn a_last_part_carries_its_pages_without_a_countless_line() {
         let mut row = json!({"index":0,"data":{
             "files":[],
             "next":{"nextPage":{"tool":"astSearch","query":{"queries":[{"page":2}]}}},
             "hints":{"read":{"tool":"localFetch","query":{"path":"a"}}}
         }});
         keep_row_next(&mut row, PartShare::Last);
-        assert_eq!(
-            row["data"]["warnings"],
-            json!(["more: follow next.nextPage"]),
-            "{row}"
-        );
+        assert!(row["data"].get("warnings").is_none(), "{row}");
+        assert!(row["data"]["next"].get("nextPage").is_some(), "{row}");
         assert!(row["data"].get("hints").is_none(), "{row}");
     }
 
@@ -1690,7 +1688,7 @@ mod lazy_page_tests {
     #[test]
     fn a_first_part_warning_names_only_continuations_it_carries() {
         let mut row = json!({"index":0,"data":{
-            "warnings":["Regex trap.","4 more pages: follow next.nextPage"],
+            "warnings":["Regex trap.","4 more pages (next.nextPage)"],
             "files":[],
             "next":{"nextPage":{"tool":"astSearch","query":{"page":2}}},
             "hints":{"read":{"tool":"localFetch","query":{"path":"a"}}}
@@ -1699,14 +1697,11 @@ mod lazy_page_tests {
         assert!(row["data"].get("next").is_none(), "{row}");
         assert_eq!(
             row["data"]["warnings"],
-            json!([
-                "Regex trap.",
-                "4 more pages: follow responsePagination.next"
-            ]),
+            json!(["Regex trap.", "4 more pages (responsePagination.next)"]),
             "{row}"
         );
         let mut whole = json!({"index":0,"data":{
-            "warnings":["4 more pages: follow next.nextPage"],
+            "warnings":["4 more pages (next.nextPage)"],
             "next":{"nextPage":{"tool":"astSearch","query":{"page":2}}}
         }});
         let before = whole.clone();

@@ -119,16 +119,7 @@ pub(super) fn promote_pr_continuations(out: &mut Value, q: &HistoryItemRequest) 
                 }
             }
         }
-        let lead = menu_read(nq);
-        let patch_read = q
-            .content_value()
-            .is_some_and(|content| content.get("patches").is_some());
-        let lead = if axis == "files" && patch_read {
-            patch_walk_file_page(lead, q)
-        } else {
-            lead
-        };
-        next.insert(name.into(), lead);
+        next.insert(name.into(), menu_read(nq));
     }
     if partial {
         out["isPartial"] = json!(true);
@@ -282,14 +273,13 @@ mod tests {
         assert_eq!(next["length"], 10);
     }
 
-    /// HI9b: every patch-walk hop asks for twice the configured page
-    /// (`output.pagination.defaultCharLength`, capped at the contract
-    /// maximum), whatever page the hop itself ran with, so no hop needs an
-    /// `offset` marker to avoid doubling again; a caller's explicit `length`
-    /// keeps the call's page.
+    /// HI9b: a patch-walk hop (`continuePatch`, the next file page) runs
+    /// at the same automatic page as the first call: it carries no
+    /// `responseLength`/`responseScope` knob (automatic paging already
+    /// splits an oversized row by whole rows), and needs no offset marker.
     #[test]
-    fn history_b_continue_patch_hops_double_the_first_page_only() {
-        let lead_with = |fields: Value, page: Option<usize>, configured: Option<usize>| {
+    fn history_b_patch_walk_hops_carry_no_response_page_knobs() {
+        let lead = |fields: Value, page: Option<usize>| {
             let mut row = json!({
                 "operation":"pullRequest","mainGoal":"test","reasoning":"test",
                 "owner":"a","repo":"b","number":1,"sections":["patches"]
@@ -299,40 +289,22 @@ mod tests {
             }
             let mut query = HistoryItemRequest::from_row(row).expect("query");
             query.auto_page_chars = page;
-            query.configured_page_chars = configured;
             let mut out = json!({"pullRequests":[{"contentPagination":{
                 "patches":{"hasMore":true,"nextOffset":900}
             }}]});
             promote_pr_continuations(&mut out, &query);
             out["next"]["continuePatch"]["query"].clone()
         };
-        let lead = |fields: Value, page: Option<usize>| lead_with(fields, page, Some(20_000));
-        assert_eq!(lead(json!({}), Some(20_000))["responseLength"], 40_000);
-        // A hop pages its response by whole rows: an overflow splits the row
-        // into structured parts instead of text windows that hide the rows.
-        assert_eq!(lead(json!({}), Some(20_000))["responseScope"], "rows");
-        // A hop ran at the doubled page; its next hop asks for the same page.
-        assert_eq!(lead(json!({}), Some(40_000))["responseLength"], 40_000);
-        assert_eq!(
-            lead(json!({"offset":5}), Some(40_000))["responseLength"],
-            40_000
-        );
-        assert_eq!(
-            lead_with(json!({}), Some(40_000), Some(40_000))["responseLength"],
-            50_000,
-            "capped at the contract maximum"
-        );
-        assert_eq!(
-            lead(json!({"length":900}), Some(20_000))["responseLength"],
-            20_000
-        );
-        assert!(
-            lead_with(json!({}), None, None)
-                .get("responseLength")
-                .is_none()
-        );
-        let hop = lead_with(json!({}), Some(5_000), Some(5_000));
-        assert_eq!(hop["responseLength"], 10_000);
+        for hop in [
+            lead(json!({}), Some(20_000)),
+            lead(json!({"offset":5}), Some(40_000)),
+            lead(json!({}), None),
+        ] {
+            assert!(hop.get("responseLength").is_none(), "{hop}");
+            assert!(hop.get("responseScope").is_none(), "{hop}");
+            assert_eq!(hop["queries"][0]["offset"], 900, "{hop}");
+        }
+        let hop = lead(json!({}), Some(5_000));
         assert!(hop["queries"][0].get("length").is_none(), "{hop}");
         crate::contracts::validate("ghGetHistoryItem", hop).expect("a valid hop");
 
@@ -342,7 +314,6 @@ mod tests {
         }))
         .expect("commit query");
         commit.auto_page_chars = Some(20_000);
-        commit.configured_page_chars = Some(20_000);
         let mut out =
             json!({"filePagination":{"currentPage":1,"hasMore":false,"nextPatchOffset":10}});
         let cursors = DiffCursors::of_file_page(&out["filePagination"], true);
@@ -354,18 +325,10 @@ mod tests {
             false,
             cursors,
         );
-        assert_eq!(
-            out["next"]["continuePatch"]["query"]["responseLength"], 40_000,
-            "{out}"
-        );
-        assert_eq!(
-            out["next"]["continuePatch"]["query"]["responseScope"], "rows",
-            "{out}"
-        );
+        let hop = &out["next"]["continuePatch"]["query"];
+        assert!(hop.get("responseLength").is_none(), "{out}");
+        assert!(hop.get("responseScope").is_none(), "{out}");
 
-        // The next file page of a patch walk asks for the walk's page and
-        // needs no offset marker; an inventory's next file page asks for
-        // neither.
         let file_page = |sections: Value, offset: Option<u64>| {
             let mut row = json!({
                 "operation":"pullRequest","mainGoal":"test","reasoning":"test",
@@ -376,7 +339,6 @@ mod tests {
             }
             let mut query = HistoryItemRequest::from_row(row).expect("query");
             query.auto_page_chars = Some(40_000);
-            query.configured_page_chars = Some(20_000);
             let mut out = json!({"pullRequests":[{"contentPagination":{
                 "files":{"hasMore":true,"nextPage":2}
             }}]});
@@ -384,8 +346,8 @@ mod tests {
             out["next"]["nextFilePage"]["query"].clone()
         };
         let walk = file_page(json!(["patches"]), Some(31_000));
-        assert_eq!(walk["responseLength"], 40_000, "{walk}");
-        assert_eq!(walk["responseScope"], "rows", "{walk}");
+        assert!(walk.get("responseLength").is_none(), "{walk}");
+        assert!(walk.get("responseScope").is_none(), "{walk}");
         assert!(walk["queries"][0].get("offset").is_none(), "{walk}");
         assert_eq!(walk["queries"][0]["filePage"], 2, "{walk}");
         crate::contracts::validate("ghGetHistoryItem", walk).expect("a valid hop");

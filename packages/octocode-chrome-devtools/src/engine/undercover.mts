@@ -1,270 +1,268 @@
-export async function applyStealthPatches(cdp, opts: Record<string, any> = {}) {
-  const browser = await cdp.send('Browser.getVersion');
-  const version = browser.product?.split('/')[1];
-  if (!version || !/^\d+(?:\.\d+)+$/.test(version))
-    throw new Error('Browser version unavailable for emulation');
-  const major = version.split('.')[0];
-  const ua =
-    opts.userAgent ??
-    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
+/**
+ * Opt-in emulation that removes headless tells with CDP overrides only.
+ *
+ * Every value stays consistent with the host browser: the User-Agent string, the
+ * UA Client Hints, navigator.platform, WebGL, fonts and workers all describe the
+ * same machine. No page JavaScript is injected, so there are no patched getters,
+ * own navigator properties or non-native function sources for a page to detect,
+ * and nothing outlives the CDP session that applied it.
+ */
 
-  await cdp.send('Network.setUserAgentOverride', {
-    userAgent: ua,
-    platform: 'Win32',
-    userAgentMetadata: {
-      brands: [
-        { brand: 'Chromium', version: major },
-        { brand: 'Google Chrome', version: major },
-        { brand: 'Not-A.Brand', version: '99' },
-      ],
-      fullVersion: version,
-      platform: 'Windows',
-      platformVersion: '10.0.0',
-      architecture: 'x86',
-      model: '',
-      mobile: false,
-    },
-  });
+// Pauses new child targets until their overrides are set, so their first request
+// already carries them.
+export const STEALTH_AUTO_ATTACH = {
+  autoAttach: true,
+  waitForDebuggerOnStart: true,
+  flatten: true,
+};
 
-  await cdp.send('Emulation.setDeviceMetricsOverride', {
-    width: 1920,
-    height: 1080,
-    deviceScaleFactor: 1,
-    mobile: false,
-    screenWidth: 1920,
-    screenHeight: 1080,
-    positionX: 0,
-    positionY: 0,
-  });
+const CHILD_TYPES = new Set([
+  'iframe',
+  'worker',
+  'shared_worker',
+  'service_worker',
+]);
 
-  await cdp.send('Emulation.setTimezoneOverride', {
-    timezoneId: opts.timezone ?? 'America/New_York',
-  });
-  await cdp.send('Emulation.setLocaleOverride', {
-    locale: opts.locale ?? 'en-US',
-  });
+// Headless Chrome reports an 800x600 screen inside a larger window; report a common
+// desktop screen that still contains the window.
+const DESKTOP_SCREEN = { width: 1920, height: 1080 };
 
-  await cdp.send('Emulation.setGeolocationOverride', {
-    latitude: opts.lat ?? 40.7128,
-    longitude: opts.lon ?? -74.006,
-    accuracy: 100,
-  });
+const HOST_PROBE = `(async () => {
+  if (!location.href.startsWith('chrome://') || !navigator.userAgentData) return null;
+  const metadata = await navigator.userAgentData.getHighEntropyValues([
+    'architecture', 'bitness', 'formFactors', 'fullVersionList', 'model',
+    'platformVersion', 'wow64',
+  ]);
+  return { userAgent: navigator.userAgent, platform: navigator.platform, metadata };
+})()`;
 
-  await cdp.send('Network.setExtraHTTPHeaders', {
-    headers: {
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'sec-ch-ua': `"Chromium";v="${major}", "Google Chrome";v="${major}", "Not-A.Brand";v="99"`,
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-    },
+/**
+ * Reads the browser's own identity from a fresh target. navigator.userAgentData
+ * needs a secure context; chrome://version is one and carries no overrides.
+ */
+export async function readHostIdentity(cdp) {
+  const { targetId } = await cdp.send('Target.createTarget', {
+    url: 'chrome://version/',
+    background: true,
   });
-
-  await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
-    source: `(function(){
-    const _patchedFns = new WeakSet();
-    const _nativeToString = Function.prototype.toString;
-    Function.prototype.toString = new Proxy(_nativeToString, {
-      apply(t, obj, a) { return _patchedFns.has(obj) ? 'function () { [native code] }' : Reflect.apply(t, obj, a); },
+  try {
+    const { sessionId } = await cdp.send('Target.attachToTarget', {
+      targetId,
+      flatten: true,
     });
-    function def(obj, prop, fn) {
-      _patchedFns.add(fn);
-      try { Object.defineProperty(obj, prop, { get: fn, configurable: true, enumerable: true }); } catch (_) {}
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      const { result, exceptionDetails } = await cdp.send(
+        'Runtime.evaluate',
+        { expression: HOST_PROBE, awaitPromise: true, returnByValue: true },
+        sessionId
+      );
+      if (exceptionDetails)
+        throw new Error(
+          `Browser identity unavailable: ${exceptionDetails.exception?.description ?? exceptionDetails.text}`
+        );
+      if (result?.value) return hostIdentity(result.value);
+      if (Date.now() > deadline)
+        throw new Error(
+          'Browser identity unavailable: chrome://version did not load within 5000ms'
+        );
+      await new Promise(r => setTimeout(r, 100));
     }
-
-    // Keep webdriver inherited; an own property on navigator is a detector signal.
-    def(Navigator.prototype, 'webdriver', () => undefined);
-    def(navigator, 'vendor',              () => 'Google Inc.');
-    def(navigator, 'platform',            () => 'Win32');
-    def(navigator, 'maxTouchPoints',      () => 0);
-    def(navigator, 'hardwareConcurrency', () => 8);
-    def(navigator, 'deviceMemory',        () => 8);
-    def(navigator, 'cookieEnabled',       () => true);
-    def(navigator, 'languages',           () => ['en-US', 'en']);
-
-    if (!window.chrome) window.chrome = {};
-    if (!window.chrome.runtime) window.chrome.runtime = { id: undefined, connect: () => {}, sendMessage: () => {}, onMessage: { addListener: () => {}, removeListener: () => {} } };
-    if (!window.chrome.app) window.chrome.app = { isInstalled: false };
-    if (!window.chrome.csi) window.chrome.csi = () => {};
-    if (!window.chrome.loadTimes) window.chrome.loadTimes = () => ({});
-
-    if (navigator.plugins.length === 0) def(navigator, 'plugins', () => Object.assign(
-      [{ name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format', length: 1 },
-       { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '', length: 1 },
-       { name: 'Native Client',     filename: 'internal-nacl-plugin',  description: '', length: 2 }],
-      { namedItem: () => null, refresh: () => {}, item: () => null }
-    ));
-    if (navigator.mimeTypes.length === 0) def(navigator, 'mimeTypes', () => Object.assign(
-      [{ type: 'application/pdf', suffixes: 'pdf', description: '', enabledPlugin: null }],
-      { namedItem: () => null, item: () => null }
-    ));
-
-    const _origQuery = navigator.permissions.query.bind(navigator.permissions);
-    navigator.permissions.query = function(p) {
-      if (['notifications','camera','microphone'].includes(p.name)) return Promise.resolve({ state: 'prompt', onchange: null });
-      return _origQuery(p);
-    };
-    _patchedFns.add(navigator.permissions.query);
-
-    try {
-      if (window.Notification && Notification.permission === 'denied') {
-        Object.defineProperty(Notification, 'permission', { get: () => 'default', configurable: true });
-      }
-    } catch (_) {}
-
-    if (navigator.connection) {
-      def(navigator.connection, 'rtt',          () => 50);
-      def(navigator.connection, 'downlink',     () => 10);
-      def(navigator.connection, 'effectiveType',() => '4g');
-      def(navigator.connection, 'saveData',     () => false);
-    }
-
-    document.hasFocus = function() { return true; };
-    _patchedFns.add(document.hasFocus);
-
-    def(window, 'outerWidth',  () => 1920); def(window, 'outerHeight', () => 1080);
-    def(window, 'screenX',     () => 20);   def(window, 'screenY',     () => 40);
-    def(screen, 'width',       () => 1920); def(screen, 'height',      () => 1080);
-    def(screen, 'availWidth',  () => 1920); def(screen, 'availHeight', () => 1040);
-    def(screen, 'colorDepth',  () => 24);   def(screen, 'pixelDepth',  () => 24);
-
-    const patchWebGL = ctx => {
-      const o = ctx.prototype.getParameter;
-      ctx.prototype.getParameter = function(p) {
-        if (p === 37445) return 'Intel Inc.';
-        if (p === 37446) return 'Intel Iris OpenGL Engine';
-        return o.call(this, p);
-      };
-      _patchedFns.add(ctx.prototype.getParameter);
-    };
-    patchWebGL(WebGLRenderingContext);
-    if (typeof WebGL2RenderingContext !== 'undefined') patchWebGL(WebGL2RenderingContext);
-
-    const _origToDU = HTMLCanvasElement.prototype.toDataURL;
-    HTMLCanvasElement.prototype.toDataURL = function(...a) {
-      const c = this.getContext('2d');
-      if (c && this.width > 0 && this.height > 0) { const i = c.getImageData(0,0,1,1); i.data[0]^=1; c.putImageData(i,0,0); }
-      return _origToDU.apply(this, a);
-    };
-    _patchedFns.add(HTMLCanvasElement.prototype.toDataURL);
-
-    try {
-      const _origCanPlayType = HTMLMediaElement.prototype.canPlayType;
-      HTMLMediaElement.prototype.canPlayType = function(type) {
-        const t = String(type || '');
-        const mime = t.split(';')[0].trim();
-        const codecs = (t.match(/codecs="([^"]+)"/)?.[1] || '').split(',').map(c => c.trim()).filter(Boolean);
-        if (mime === 'video/mp4' && codecs.includes('avc1.42E01E')) return 'probably';
-        if (mime === 'audio/x-m4a' && codecs.length === 0) return 'maybe';
-        if (mime === 'audio/aac' && codecs.length === 0) return 'probably';
-        return _origCanPlayType.apply(this, arguments);
-      };
-      _patchedFns.add(HTMLMediaElement.prototype.canPlayType);
-    } catch (_) {}
-
-    if (window.AudioBuffer) {
-      const _origGCD = AudioBuffer.prototype.getChannelData;
-      AudioBuffer.prototype.getChannelData = function(ch) {
-        const d = _origGCD.call(this, ch);
-        if (d.length > 0) d[0] += 1e-7 * Math.random();
-        return d;
-      };
-      _patchedFns.add(AudioBuffer.prototype.getChannelData);
-    }
-
-    if (navigator.mediaDevices?.enumerateDevices) {
-      const _origEnum = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-      navigator.mediaDevices.enumerateDevices = function() {
-        return _origEnum().then(r => r.length > 0 ? r : [
-          { deviceId: 'default', kind: 'audioinput',  label: '', groupId: 'default' },
-          { deviceId: 'default', kind: 'audiooutput', label: '', groupId: 'default' },
-          { deviceId: 'default', kind: 'videoinput',  label: '', groupId: 'default' },
-        ]);
-      };
-      _patchedFns.add(navigator.mediaDevices.enumerateDevices);
-    }
-
-    const _ifd = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow');
-    if (_ifd?.get) {
-      const _og = _ifd.get;
-      Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
-        get: function() {
-          const w = _og.call(this);
-          if (w) { try { Object.defineProperty(w.Navigator.prototype, 'webdriver', { get: () => undefined, configurable: true }); } catch(_){} }
-          return w;
-        },
-        configurable: true,
-      });
-    }
-  })();`,
-  });
-
-  console.log('[INJECT] Stealth patches applied');
+  } finally {
+    await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
+  }
 }
 
-export async function verifyStealth(cdp) {
+/** The override that presents a host browser without headless markers. */
+export function hostIdentity({ userAgent, platform, metadata }) {
+  const { brands, fullVersionList, ...rest } = metadata;
+  const headed = (list = []) =>
+    list.map(({ brand, version }) => ({
+      brand: brand.replace(/^HeadlessChrome$/, 'Google Chrome'),
+      version,
+    }));
+  return {
+    userAgent: userAgent.replace(/HeadlessChrome\//, 'Chrome/'),
+    platform,
+    userAgentMetadata: {
+      ...rest,
+      brands: headed(brands),
+      fullVersionList: headed(fullVersionList),
+    },
+  };
+}
+
+async function overrideUserAgent(cdp, identity, sessionId?) {
+  await cdp.send(
+    'Network.setUserAgentOverride',
+    {
+      userAgent: identity.userAgent,
+      platform: identity.platform,
+      userAgentMetadata: identity.userAgentMetadata,
+    },
+    sessionId
+  );
+}
+
+function propagateToChildTargets(cdp, identity) {
+  const failures = [];
+  const onAttached = async ({ sessionId, targetInfo, waitingForDebugger }) => {
+    try {
+      if (!CHILD_TYPES.has(targetInfo?.type)) return;
+      // Dedicated workers inherit their parent's override and have no Network domain.
+      await overrideUserAgent(cdp, identity, sessionId).catch(error => {
+        if (targetInfo.type !== 'worker') throw error;
+      });
+      if (targetInfo.type === 'iframe')
+        await cdp.send('Target.setAutoAttach', STEALTH_AUTO_ATTACH, sessionId);
+    } catch (error) {
+      failures.push({ targetId: targetInfo?.targetId, error: error.message });
+      console.log(
+        `[FINDING] STEALTH_CHILD_UNPATCHED type=${targetInfo?.type} target=${targetInfo?.targetId} ${error.message}`
+      );
+    } finally {
+      if (waitingForDebugger)
+        await cdp
+          .send('Runtime.runIfWaitingForDebugger', {}, sessionId)
+          .catch(() => {});
+    }
+  };
+  cdp.on('Target.attachedToTarget', onAttached);
+  return failures;
+}
+
+export async function applyStealthPatches(cdp) {
+  if (cdp.stealthIdentity) return cdp.stealthIdentity;
+  const identity = await readHostIdentity(cdp);
+  await overrideUserAgent(cdp, identity);
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   const { result } = await cdp.send('Runtime.evaluate', {
-    expression: `JSON.stringify({
-      webdriver:           navigator.webdriver,
-      vendor:              navigator.vendor,
-      platform:            navigator.platform,
-      pluginCount:         navigator.plugins.length,
-      hardwareConcurrency: navigator.hardwareConcurrency,
-      deviceMemory:        navigator.deviceMemory,
-      lang0:               navigator.languages?.[0],
-      outerWidth:          window.outerWidth,
-      screenWidth:         screen.width,
-      hasFocus:            document.hasFocus(),
-      chromeRuntime:       typeof window.chrome?.runtime,
-      webglVendor: (() => {
-        try {
-          const c = document.createElement('canvas');
-          const g = c.getContext('webgl');
-          const e = g?.getExtension('WEBGL_debug_renderer_info');
-          return e ? g.getParameter(e.UNMASKED_VENDOR_WEBGL) : undefined;
-        } catch(_) { return undefined; }
-      })(),
-      toStringSpoof: Function.prototype.toString.call(navigator.__defineGetter__),
-      codecMp4: (() => { try { return document.createElement('video').canPlayType('video/mp4; codecs="avc1.42E01E"'); } catch(_) { return ''; } })(),
-      notificationPermission: (() => { try { return Notification.permission; } catch(_) { return null; } })(),
-    })`,
+    expression:
+      '({ width: outerWidth, height: outerHeight, screenWidth: screen.width, screenHeight: screen.height })',
     returnByValue: true,
   });
+  const win = result?.value ?? {};
+  if (win.screenWidth < win.width || win.screenHeight < win.height) {
+    // A screen smaller than its window only happens headless. width/height 0 keep the
+    // native viewport; only the reported screen changes.
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 0,
+      height: 0,
+      deviceScaleFactor: 0,
+      mobile: false,
+      screenWidth: Math.max(DESKTOP_SCREEN.width, win.width),
+      screenHeight: Math.max(DESKTOP_SCREEN.height, win.height),
+    });
+  }
+  cdp.stealthChildFailures = propagateToChildTargets(cdp, identity);
+  await cdp.send('Target.setAutoAttach', STEALTH_AUTO_ATTACH);
+  cdp.stealthAutoAttach = STEALTH_AUTO_ATTACH;
+  cdp.stealthIdentity = identity;
+  console.log('[INJECT] Stealth overrides applied');
+  return identity;
+}
 
-  const v = JSON.parse(result.value ?? '{}');
-  const checks = [
+const PAGE_PROBE = `(async () => {
+  const nav = navigator;
+  const webglRenderer = (() => {
+    try {
+      const gl = document.createElement('canvas').getContext('webgl');
+      const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+      return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : null;
+    } catch { return null; }
+  })();
+  const worker = await new Promise(resolve => {
+    try {
+      const url = URL.createObjectURL(new Blob(
+        ['postMessage({ userAgent: navigator.userAgent, platform: navigator.platform })'],
+        { type: 'text/javascript' }
+      ));
+      const w = new Worker(url);
+      const done = value => { w.terminate(); URL.revokeObjectURL(url); resolve(value); };
+      w.onmessage = event => done(event.data);
+      w.onerror = () => done(null);
+      setTimeout(() => done(null), 2000);
+    } catch { resolve(null); }
+  });
+  return {
+    webdriver: nav.webdriver,
+    userAgent: nav.userAgent,
+    platform: nav.platform,
+    uaDataPlatform: nav.userAgentData ? nav.userAgentData.platform : null,
+    uaDataBrands: nav.userAgentData ? nav.userAgentData.brands.map(b => b.brand) : null,
+    pluginCount: nav.plugins.length,
+    languageCount: nav.languages.length,
+    screen: [screen.width, screen.height],
+    outer: [outerWidth, outerHeight],
+    hasFocus: document.hasFocus(),
+    chrome: typeof window.chrome,
+    webglRenderer,
+    // Opaque origins (about:blank, data:) deny permissions in every Chrome.
+    notificationPermission: typeof Notification === 'undefined' || origin === 'null' ? null : Notification.permission,
+    worker,
+  };
+})()`;
+
+export async function verifyStealth(cdp) {
+  const identity = cdp.stealthIdentity;
+  // An isolated world keeps the probe invisible to page scripts and unaffected by them.
+  const { frameTree } = await cdp.send('Page.getFrameTree');
+  const { executionContextId } = await cdp.send('Page.createIsolatedWorld', {
+    frameId: frameTree.frame.id,
+    worldName: 'octocode-stealth-check',
+  });
+  const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', {
+    expression: PAGE_PROBE,
+    contextId: executionContextId,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  if (exceptionDetails || !result?.value)
+    throw new Error(
+      `Stealth self-test could not read the page: ${exceptionDetails?.exception?.description ?? 'no result'}`
+    );
+  const v = result.value;
+  const checks: [string, boolean, string][] = [
     [
       'navigator.webdriver',
-      v.webdriver === undefined,
-      `expected undefined, got ${v.webdriver}`,
+      v.webdriver === false,
+      `expected false, got ${v.webdriver}`,
     ],
     [
-      'navigator.vendor',
-      v.vendor === 'Google Inc.',
-      `expected "Google Inc.", got "${v.vendor}"`,
+      'userAgent has no headless marker',
+      !/Headless/i.test(v.userAgent),
+      `got ${v.userAgent}`,
     ],
     [
-      'navigator.platform',
-      v.platform === 'Win32',
-      `expected "Win32", got "${v.platform}"`,
+      'userAgent matches override',
+      !identity || v.userAgent === identity.userAgent,
+      `expected ${identity?.userAgent}, got ${v.userAgent}`,
     ],
     [
-      'navigator.plugins >= 3',
-      v.pluginCount >= 3,
-      `expected >=3, got ${v.pluginCount}`,
+      'navigator.platform matches host',
+      !identity || v.platform === identity.platform,
+      `expected ${identity?.platform}, got ${v.platform}`,
     ],
     [
-      'hardwareConcurrency',
-      v.hardwareConcurrency === 8,
-      `expected 8, got ${v.hardwareConcurrency}`,
+      'userAgentData matches override (secure contexts)',
+      v.uaDataPlatform === null ||
+        ((!identity ||
+          v.uaDataPlatform === identity.userAgentMetadata.platform) &&
+          v.uaDataBrands.length > 0 &&
+          !v.uaDataBrands.some(b => /Headless/i.test(b))),
+      `got platform=${v.uaDataPlatform} brands=${v.uaDataBrands}`,
     ],
-    ['deviceMemory', v.deviceMemory === 8, `expected 8, got ${v.deviceMemory}`],
-    ['languages[0]', v.lang0 === 'en-US', `expected "en-US", got "${v.lang0}"`],
-    ['outerWidth', v.outerWidth === 1920, `expected 1920, got ${v.outerWidth}`],
     [
-      'screen.width',
-      v.screenWidth === 1920,
-      `expected 1920, got ${v.screenWidth}`,
+      'worker matches page',
+      v.worker === null ||
+        (v.worker.userAgent === v.userAgent &&
+          v.worker.platform === v.platform),
+      `worker ${JSON.stringify(v.worker)}`,
+    ],
+    [
+      'screen covers window',
+      v.screen[0] >= v.outer[0] && v.screen[1] >= v.outer[1],
+      `screen ${v.screen.join('x')} < window ${v.outer.join('x')}`,
     ],
     [
       'document.hasFocus()',
@@ -272,45 +270,43 @@ export async function verifyStealth(cdp) {
       `expected true, got ${v.hasFocus}`,
     ],
     [
-      'window.chrome.runtime',
-      v.chromeRuntime === 'object',
-      `expected object, got ${v.chromeRuntime}`,
+      'navigator.plugins',
+      v.pluginCount > 0,
+      `expected PDF plugins, got ${v.pluginCount}`,
     ],
     [
-      'WebGL vendor',
-      v.webglVendor === undefined || v.webglVendor === 'Intel Inc.',
-      `no WebGL context is fine (real users can have it disabled); a wrong vendor string is not — got "${v.webglVendor}"`,
+      'navigator.languages',
+      v.languageCount > 0,
+      `expected languages, got ${v.languageCount}`,
     ],
-    [
-      'toString native spoof',
-      (v.toStringSpoof ?? '').includes('[native code]'),
-      `toString not spoofed`,
-    ],
-    [
-      'codec mp4/h264',
-      v.codecMp4 === 'probably',
-      `expected "probably", got "${v.codecMp4}"`,
-    ],
+    ['window.chrome', v.chrome === 'object', `got ${v.chrome}`],
     [
       'Notification.permission',
       v.notificationPermission !== 'denied',
-      `expected non-"denied", got "${v.notificationPermission}"`,
+      `expected non-"denied", got ${v.notificationPermission}`,
     ],
   ];
 
   let passed = 0,
     failed = 0;
+  const failures = [];
   for (const [name, ok, msg] of checks) {
     if (ok) {
-      console.log(`[INJECT] PASS: ${name}`);
       passed++;
     } else {
       console.log(`[FINDING] STEALTH_FAIL: ${name} - ${msg}`);
+      failures.push(name);
       failed++;
     }
   }
+  // A software renderer is a real tell, but faking a GPU would contradict every other
+  // WebGL value; report it without failing the run.
+  if (/SwiftShader|llvmpipe/i.test(v.webglRenderer ?? ''))
+    console.log(
+      `[FINDING] STEALTH_WARN: software WebGL renderer is visible (${v.webglRenderer}); run headful or with a GPU when a site checks it`
+    );
   console.log(
-    `[INJECT] Stealth self-test: ${passed}/${checks.length} passed${failed > 0 ? ` - ${failed} FAILED` : ' - patches verified'}`
+    `[INJECT] Stealth self-test: ${passed}/${checks.length} passed${failed > 0 ? ` - ${failed} FAILED` : ' - overrides verified'}`
   );
-  return { passed, failed, total: checks.length };
+  return { passed, failed, total: checks.length, failures };
 }

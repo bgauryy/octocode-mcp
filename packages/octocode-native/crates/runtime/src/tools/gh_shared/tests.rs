@@ -470,30 +470,32 @@ mod provider_backed {
             )
             .await
             .expect("search");
+        // Every row is in a/b: the page names the repository once.
         let row = &out.data["files"][0];
-        assert_eq!(row["owner"], "a", "{}", out.data);
+        assert_eq!(out.data["owner"], "a", "{}", out.data);
+        assert_eq!(out.data["repo"], "b", "{}", out.data);
+        assert!(row.get("owner").is_none(), "{}", out.data);
         assert!(row["matches"][0]["value"].is_string(), "{}", out.data);
-        // Offsets are verbose (core field class): the default response
-        // drops them, debug keeps them.
+        // Offsets are a diagnostics extra (core field class): the default
+        // response drops them, `extras:["diagnostics"]` keeps them.
         assert!(
-            crate::tools::id::ToolId::GhSearchCode
-                .verbose_paths()
+            crate::response::extras::all_paths(crate::tools::id::ToolId::GhSearchCode)
                 .contains(&"results[].data.files[].matches[].matchIndices"),
             "{}",
             out.data
         );
         assert!(out.data.get("commitSha").is_none(), "{}", out.data);
-        // debug keeps the offsets.
-        let debug = run(
+        // The diagnostics extra keeps the offsets.
+        let diagnostics = run(
                 &server,
-                json!({"operation":"code","mainGoal":"test","reasoning":"test","owner":"a","keywords":["wrap_app"],"debug":true}),
+                json!({"operation":"code","mainGoal":"test","reasoning":"test","owner":"a","keywords":["wrap_app"],"extras":["diagnostics"]}),
             )
             .await
             .expect("search");
         assert!(
-            debug.data["files"][0]["matches"][0]["matchIndices"].is_array(),
+            diagnostics.data["files"][0]["matches"][0]["matchIndices"].is_array(),
             "{}",
-            debug.data
+            diagnostics.data
         );
     }
 
@@ -574,7 +576,10 @@ mod provider_backed {
             warning.contains("default-branch index at fedcba9") && warning.contains("not dev"),
             "{data}"
         );
-        assert!(warning.contains("hints.viewRepo"), "{data}");
+        assert!(
+            warning.ends_with("list them with ghStructure at dev."),
+            "{data}"
+        );
         let lead = &data["next"]["viewRepo"];
         assert_eq!(lead["tool"], "ghStructure", "{data}");
         for (key, value) in [
@@ -759,7 +764,7 @@ mod provider_backed {
     }
 
     /// A non-empty page GitHub marks incomplete says so in its data,
-    /// without debug, separately from whether another page exists.
+    /// without extras, separately from whether another page exists.
     #[tokio::test]
     async fn a_non_empty_incomplete_page_reports_partial_coverage() {
         let server = MockServer::start().await;
@@ -1231,12 +1236,11 @@ mod provider_backed {
         );
         assert_eq!(row["description"], long.as_str(), "{row}");
         assert!(row.get("topicCount").is_none(), "{row}");
-        // Forks and the metadata-update date are verbose: the verbose stage
-        // drops them by default and debug keeps them.
+        // Forks and the metadata-update date are stats extras: the extras stage
+        // drops them by default and `extras:["stats"]` keeps them.
         for verbose in ["forks", "updatedAt"] {
             assert!(
-                crate::tools::id::ToolId::GhSearchRepo
-                    .verbose_paths()
+                crate::response::extras::all_paths(crate::tools::id::ToolId::GhSearchRepo)
                     .contains(&format!("results[].data.repositories[].{verbose}").as_str()),
                 "{verbose}"
             );
@@ -1254,9 +1258,9 @@ mod provider_backed {
             2
         );
 
-        let mut debug = query;
-        debug["debug"] = json!(true);
-        let out = run(&server, debug).await.expect("debug search");
+        let mut extras = query;
+        extras["extras"] = json!(["details", "stats"]);
+        let out = run(&server, extras).await.expect("extras search");
         let row = &out.data["repositories"][0];
         assert_eq!(row["forks"], 4012, "{row}");
         assert_eq!(row["createdAt"], "2012-02-25");
@@ -1388,10 +1392,8 @@ mod provider_backed {
             [
                 "/api/v3/repos/a/b/commits/main".to_owned(),
                 format!("/api/v3/repos/a/b/git/trees/{TREE_SHA}"),
-                // The page's last-commit dates.
-                "/api/graphql".to_owned(),
             ],
-            "no speculative tree request"
+            "no speculative tree request, and no dating request unless extras details asks"
         );
     }
 

@@ -6,7 +6,7 @@ pub fn minify_json_readable_inner(content: &str) -> (String, bool) {
     }
     let cleaned = strip_json_noise(content);
     if serde_json::from_str::<serde_json::Value>(&cleaned).is_err() {
-        return (content.trim().to_owned(), true);
+        return (trim_blank_lines(content).to_owned(), true);
     }
     let cleaned = cleaned
         .lines()
@@ -28,7 +28,17 @@ pub fn minify_json_readable_inner(content: &str) -> (String, bool) {
             result.push('\n');
         }
     }
-    (result.trim().to_owned(), false)
+    (trim_blank_lines(&result).to_owned(), false)
+}
+
+/// `text` without leading blank lines and trailing whitespace: the first
+/// line keeps its indentation (a partial slice of a document, such as a
+/// range read, starts mid-object).
+fn trim_blank_lines(text: &str) -> &str {
+    let body = text.trim_end();
+    let first = body.len() - body.trim_start().len();
+    let line_start = body[..first].rfind('\n').map_or(0, |at| at + 1);
+    &body[line_start..]
 }
 
 fn strip_json_noise(s: &str) -> String {

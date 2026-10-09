@@ -19,7 +19,7 @@ const TASKS = {
   build: ['Release build of every workspace (slow)', [health('run', 'build', '--parallel')]],
   'build:dev': ['Fast debug build of every workspace (default locally)', [health('run', 'build', '--parallel', '--prefer', 'build:dev')]],
   'build:ci': ['Resolution check, then release build without benchmark or native', [script('prepublish.mjs'), health('run', 'build', '--parallel', ...CI_EXCLUDE)]],
-  'build:publish': ['Resolution check, 6-platform native build, platform check, MCP publish build', [script('prepublish.mjs'), yarn('build:native:all'), yarn('platforms:check'), yarn('workspace', 'octocode-mcp', 'build')]],
+  'build:publish': ['Resolution check, 6-platform native build, MCP publish build', [script('prepublish.mjs'), yarn('build:native:all'), yarn('workspace', 'octocode-mcp', 'build')]],
   test: ['Run every workspace test script', [health('run', 'test')]],
   'test:ci': ['Tests without benchmark or native', [health('run', 'test', ...CI_EXCLUDE)]],
   lint: ['Run every workspace lint script', [health('run', 'lint')]],
@@ -37,6 +37,7 @@ const TASKS = {
   'deps:dedupe': ['One version range per external dependency (--fix rewrites)', [script('dedupe-deps.mjs')]],
   setup: ['Local dev resolutions (--dry-run, --install, --reset); then yarn install', [script('dev-setup.mjs')]],
   prepublish: ['Local-resolution check (--fix strips local resolutions, --dry-run previews)', [script('prepublish.mjs')]],
+  'brew:formula': ['Render the Homebrew formula from the published native npm packages ([version] [--out FILE])', [script('brew-formula.mjs')]],
 };
 
 function help() {

@@ -516,7 +516,7 @@ fn no_match(q: &LocalFetchQuery, source: &Source) -> LocalFetchResult {
     let hint = if redacted {
         REDACTED_MATCH_HINT.into()
     } else {
-        no_match_hint(q.is_regex(), case_sensitive, ToolId::LocalSearch.as_str())
+        no_match_hint(q, ToolId::LocalSearch.as_str())
     };
     // A case-sensitive miss reruns as the same read, case-insensitive.
     let ignore_case = (case_sensitive && !redacted).then(|| {
@@ -586,15 +586,13 @@ fn select_view(
 ) -> View {
     let requested = q.minify_mode();
     let selected = std::mem::take(&mut ext.text);
-    if q.match_string.is_some() && requested != MinifyMode::None {
+    // matchString reads are verbatim source; the tool description says so,
+    // so the row carries no fallback notice.
+    if q.match_string.is_some() {
         return View {
             text: selected,
             mode: MinifyMode::None,
-            fallback: Some(MinifyFallback {
-                requested,
-                applied: MinifyMode::None,
-                reason: "match-evidence".into(),
-            }),
+            fallback: None,
         };
     }
     // Every transformed view keeps the citation gutter (`N\t`): the standard
@@ -860,7 +858,7 @@ fn read_scope_warnings(
 ) {
     if head && pg.pagination.has_more {
         warnings.push(format!(
-            "Large file ({total_lines} lines) read without an anchor: returned its first {} lines. Target the answer with matchString or ranges; next.continue pages on, fullContent:true reads it whole.",
+            "Large file ({total_lines} lines) read without an anchor: returned its first {} lines.",
             pg.view_lines.1
         ));
     }
@@ -1428,7 +1426,16 @@ const REDACTED_MATCH_HINT: &str = "No visible line matches; this file has secret
 /// Next step for a matchString that selected no line, tuned to how it matched.
 /// `finder` names the search tool that locates the file containing the text.
 /// Kept under the 120-char guidance cap.
-pub(crate) fn no_match_hint(regex: bool, case_sensitive: bool, finder: &str) -> String {
+pub(crate) fn no_match_hint(q: &LocalFetchQuery, finder: &str) -> String {
+    let regex = q.is_regex();
+    let patterns = q.match_strings();
+    // A literal `a|b` reads as alternation to most agents; it is not one.
+    if !regex && patterns.iter().any(|pattern| pattern.contains('|')) {
+        return format!(
+            "No line contains this text; `|` is literal: pass a matchString list, regex:\"rust\", or use {finder}."
+        );
+    }
+    let case_sensitive = patterns.iter().any(|pattern| q.case_sensitive_for(pattern));
     match (regex, case_sensitive) {
         (false, false) => {
             format!("No line contains this text; try a shorter token, regex:\"rust\", or {finder}.")
@@ -1583,8 +1590,11 @@ mod line_page_scan_tests {
             .iter()
             .find(|warning| warning.contains("without an anchor"))
             .expect("head warning");
-        assert!(warning.contains("matchString"), "{warning}");
-        assert!(!warning.contains("clasify"), "{warning}");
+        // The per-call fact only: descriptions teach matchString/ranges.
+        assert_eq!(
+            warning,
+            "Large file (2000 lines) read without an anchor: returned its first 50 lines."
+        );
     }
 
     #[test]

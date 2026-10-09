@@ -79,9 +79,6 @@ pub struct HistoryItemRequest {
     /// (`responseLength`) or the configured automatic page, shared by the
     /// rows of one call.
     pub auto_page_chars: Option<usize>,
-    /// The configured automatic page (`output.pagination.defaultCharLength`):
-    /// every patch-walk hop asks for twice it ([`patch_hop::hop_response_length`]).
-    pub configured_page_chars: Option<usize>,
     /// Commit/compare `include` scope (paths or globs); pull requests
     /// filter their changed files by `include` ([`filter::InventoryFilter`]).
     pub(super) file_scope: Vec<String>,
@@ -99,7 +96,6 @@ impl HistoryItemRequest {
             content,
             include_diff,
             auto_page_chars: None,
-            configured_page_chars: None,
             file_scope,
             head_sources: None,
         })
@@ -433,10 +429,11 @@ impl GhGetHistoryItemQuery {
                 || after_first(self.review_page())
                 || self.char_offset().is_some())
     }
-    /// `debug: true` keeps diagnostic fields a default response omits.
-    pub(crate) fn debug(&self) -> bool {
+    /// Whether a pull-request read's `extras` names `kind` (other reads
+    /// gate nothing on it).
+    pub(crate) fn wants(&self, kind: crate::contracts::tool_types::ExtraKind) -> bool {
         match self {
-            Self::PullRequest { debug, .. } => *debug,
+            Self::PullRequest { extras, .. } => extras.contains(&kind),
             _ => false,
         }
     }

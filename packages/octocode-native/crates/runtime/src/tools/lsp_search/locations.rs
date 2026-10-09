@@ -208,7 +208,6 @@ fn reference_totals(payload: &mut Value, locations: &[Value]) {
         payload["recoveredAliasReferences"] = json!(recovered);
     }
     payload["totalFiles"] = json!(total_files);
-    payload["coverage"] = json!({ "scope": "languageServer", "exhaustive": false });
 }
 
 /// Widen a location's `content` to `context_lines` around its range, from

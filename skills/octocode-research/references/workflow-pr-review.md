@@ -23,18 +23,32 @@ Quick (≤ 5 files, all LOW) or Full (default). Order: Security → Correctness 
 3. Run the smallest applicable test/typecheck/lint; if not run, say so.
 4. Optional parallel lanes (Flow, Security/Errors, Architecture/Quality) return findings, checked non-findings, and limits; merge by root cause.
 
-Severity is impact (HIGH/MED/LOW); confidence is proof (confirmed/likely/uncertain). Delete disproven items; keep the top 5-7.
+Severity is impact (`Critical`, `High`, `Medium`, `Low`); confidence is proof (`high` = confirmed, `medium` = likely, `low` = uncertain). Delete disproven items; keep the top 5-7.
 
 ## Report
 
 ```markdown
-| Recommendation | APPROVE / REQUEST_CHANGES / COMMENT |
-| Risk | High/Medium/Low: <reason> |
-| Verification | <check: passed/failed/not run> |
+---
+status: Approve | Request changes | Comment
+confidence: high | medium | low
+question: Review of PR #<number>: <title>
+next: <the deciding fix or check>
+---
 
-[SEC-1] <title> — Severity: HIGH · Confidence: confirmed · Location: src/auth.ts:42
-Evidence: <exact proof> · Impact: <consequence> · Fix: <minimal repair>
+# PR #<number> review: <one-line verdict>
+
+<Lead: the recommendation, the main risk, and what was verified.>
+
+## Findings
+
+| ID | Location | Finding and evidence | Impact | Severity | Confidence | Fix |
+|---|---|---|---|---|---|---|
+| SEC-1 | src/auth.ts:42 | <exact proof> | <consequence> | High | high | <minimal repair> |
+
+## Checks
+
+<check: passed / failed / not run>
 ```
-Label `[DOMAIN-N]`, never `#N` (GitHub auto-links); full blob URLs remotely, `file:line` locally. Save only when asked: `.octocode/reviewPR/<session>/PR_<number>.md` or `.octocode/reviewLocal/<session>/REVIEW_<branch>_<timestamp>.md`.
+Label `[DOMAIN-N]`, never `#N` (GitHub auto-links); full blob URLs remotely, `file:line` locally. Save under the rule in [output](../output.md) (Saved report) at `<workspace>/.octocode/octocode-research/<YYYY-MM-DD>-pr-<number>.md`, or `<YYYY-MM-DD>-review-<branch>.md` for a local review, and render it.
 
 Next: an authorized fix → `workflow-change.md`; otherwise deliver the report.

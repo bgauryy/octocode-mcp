@@ -5,26 +5,29 @@ Load when launching with flags, a proxy, or tuning stealth. Why: Apply launch se
 ```bash
 node "$CDP" open --headless --port 9222 --url "<url>"          # isolated profile; native viewport defaults to 1280x720
 node "$CDP" open --port 9222 --url "<url>"                     # visible isolated profile, for user auth
-node "$CDP" open --profile Default --port 9222                 # real profile: approval first, Chrome quit
+node "$CDP" open --profile Default --port 9222 --chromePath "<Chromium>"   # real profile: approval first, browser quit
 node "$CDP" open --headless --proxyServer "socks5://127.0.0.1:1080"
 node "$CDP" open --headless --port 9222 --enableFeatures WebMCP --url "<url>"   # Chrome 150+
 ```
 
 - Proxy config example: `dist/engine/octocode-chrome-devtools.vpn.example.json`. Other flags: `--windowSize WxH`, `--userAgent`, `--chromePath` (only for non-standard installs), `--proxyBypassList`, `--proxyPacUrl`, `--config <proxy.json>`.
 - Mobile: the window size sets only outer dimensions; also use CDP Emulation.
+- Real profile (`--profile <dir>`): opens the data dir of the browser that `--chromePath` (or auto-detect) selects: Chrome, Canary, Chrome for Testing, Chromium or Brave. It fails, with no isolated fallback, when that browser is running, when the profile dir does not exist (it never creates one), with `--headless`, and on Google Chrome 136+, which [ignores remote debugging on its default data dir](https://developer.chrome.com/blog/remote-debugging-port). For Google Chrome, sign in inside an isolated session or move cookies with `cookies --from-port` / `--from-storage-state` (`intents.md#auth`).
 - State lives under `<cwd>/.octocode/tmp/chrome-devtools/`: timestamped runs, `browser-state/` (profiles, session files), `session-meta/port-<N>/`.
 
 ## Stealth
 
-Native browser settings are the default. `--stealth` opts into `undercover.mjs` and 15 patch self-checks. These checks verify emulation, not that a website accepts it. Emulation changes platform, viewport, locale, timezone and location; it can bias performance and locale tests. It never grants camera, microphone or notification permissions.
+Native browser settings are the default. `--stealth` opts into `undercover.mjs`: CDP overrides only, with no script injected into pages. It presents the host browser as itself without headless markers: the user agent and UA Client Hints lose `HeadlessChrome` (in navigator, workers and request headers), the reported screen grows to contain the window when headless reports a smaller one, and focus emulation keeps `document.hasFocus()` true. Platform, GPU, locale, timezone and viewport stay the host's, so every surface agrees. The overrides follow child targets (cross-origin iframes, dedicated and shared workers) and end with the run; a kept tab is native again on its next run without `--stealth`. A custom `--userAgent` is kept; it should name the host OS, or UA Client Hints disagree with it.
+
+Twelve self-checks then run in an isolated world: `webdriver`, headless markers, the UA, UA-CH and platform against the override, worker consistency, screen size, focus, plugins, languages and notification permission. A software WebGL renderer (SwiftShader, llvmpipe) is reported as `STEALTH_WARN`, not faked. The checks verify the emulation, not that a website accepts it.
 
 | Case | Behavior |
 |---|---|
-| `--stealth --new-tab <url>` | Opens `about:blank`, patches, verifies, then navigates |
-| `--stealth` on an attached tab | Reloads after patching; `--no-reload` keeps page state and skips verify (patches from the previous run still hold) |
-| `--no-stealth` | Disables opt-in emulation |
+| `--stealth --new-tab <url>` | Opens `about:blank`, applies, verifies, then navigates |
+| `--stealth` on an attached tab | Reloads so the document loads under the overrides, then verifies; `--no-reload` keeps page state, verifies, and reports `STEALTH_RELOAD_SKIPPED` (the current document kept its native load headers) |
+| `--no-stealth` | Disables opt-in emulation; combining it with `--stealth` is an error |
 | Unsandboxed runner only | `CDP_STEALTH_ALLOW_FAIL=1` logs failures; `CDP_SKIP_STEALTH_VERIFY=1` skips verify |
 
-Smoke tests: `stealth-check` (bot.sannysoft.com) and `affiliates-stealth-check`. `octocode-scraping --provider cdp` uses the same patches unless `--no-cdp-stealth`.
+Not covered: popups opened with `window.open` or `target=_blank` start with the native UA (attach to them with `--stealth`), service workers, and engine-level probes (CreepJS still scores headless Chrome partly headless). Smoke tests: `stealth-check` (bot.sannysoft.com) and `affiliates-stealth-check`. `octocode-scraping --provider cdp` uses the same overrides unless `--no-cdp-stealth`.
 
 Next: launch problems → `recovery.md`; auth → `intents.md#auth`.

@@ -139,6 +139,8 @@ fn pull_requests(query: &HistorySearch, items: &[Value], paging: &Paging, terms:
     // row's number alone cannot be read.
     let scoped = query.owner().zip(query.repo()).is_some();
     let concise = query.concise() == Some(true);
+    let state = query.state();
+    let by_created = query.sort().as_deref() == Some("created");
     let rows = items
         .iter()
         .map(|item| {
@@ -151,6 +153,7 @@ fn pull_requests(query: &HistorySearch, items: &[Value], paging: &Paging, terms:
                 (true, None) => rows::concise_row(item),
                 (false, _) => {
                     let mut row = rows::map_pr(item.clone());
+                    rows::drop_implied(&mut row, state.as_deref(), by_created);
                     if let Some((owner, repo)) = repository {
                         row["repository"] = json!(format!("{owner}/{repo}"));
                     }
@@ -186,13 +189,16 @@ fn pull_requests(query: &HistorySearch, items: &[Value], paging: &Paging, terms:
 fn issues(query: &HistorySearch, items: &[Value], paging: &Paging, terms: String) -> Value {
     let by_update = query.sort().as_deref() == Some("updated");
     let concise = query.concise() == Some(true);
+    let state = query.state();
     let issues = items
         .iter()
         .map(|item| {
             if concise {
                 rows::concise_row(item)
             } else {
-                rows::map_issue(item.clone(), by_update)
+                let mut row = rows::map_issue(item.clone(), by_update);
+                rows::drop_implied(&mut row, state.as_deref(), true);
+                row
             }
         })
         .collect::<Vec<_>>();

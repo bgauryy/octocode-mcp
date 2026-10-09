@@ -1,7 +1,7 @@
 {
   "name": "@octocodeai/octocode-native-win32-x64-msvc",
   "description": "Octocode CLI and runtime addon — win32-x64-msvc",
-  "version": "20.1.0",
+  "version": "20.2.0",
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "cpu": [
     "x64"

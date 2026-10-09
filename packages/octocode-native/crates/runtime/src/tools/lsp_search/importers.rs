@@ -288,9 +288,7 @@ impl Importers {
         let files = self.per_file().count();
         let more = self.window.as_ref().is_some_and(Window::more);
         if let Some(payload) = row.get_mut("payload").and_then(Value::as_object_mut) {
-            let coverage = payload
-                .entry("coverage")
-                .or_insert_with(|| json!({"scope":"languageServer","exhaustive":false}));
+            let coverage = payload.entry("coverage").or_insert_with(|| json!({}));
             coverage["importerScan"] = json!(if self.failed {
                 SCAN_FAILED
             } else if more {
@@ -320,7 +318,7 @@ impl Importers {
                 range.start + 1,
                 range.end,
             );
-            flag_partial(row, query, CAPPED_REASON, &warning, scope);
+            flag_partial(row, query, CAPPED_REASON, Some(&warning), scope);
         }
         if !last_location_page {
             return;

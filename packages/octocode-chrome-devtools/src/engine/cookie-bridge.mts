@@ -5,24 +5,32 @@ import { connectCDP } from './cdp-connection.mjs';
  * Never prints cookie values. Requires --i-understand-secrets.
  *
  * Sources (pick one):
- *   --from-port <n>              pull via Network.getAllCookies / getCookies
+ *   --from-port <n>              pull via Storage.getCookies
  *   --from-profile <name>        briefly launch real profile on --source-port
  *   --from-storage-state <path>  Playwright-style cookies JSON
  *
  * Target:
- *   --to-port <n>                inject via Network.setCookies
+ *   --to-port <n>                inject via Storage.setCookies, then read back
  *
  * Optional:
- *   --urls "https://a.com,https://b.com"   filter / setCookies URL hints
+ *   --urls "https://a.com,https://b.com"   keep cookies that domain-match these hosts
  *   --export-storage-state <path>          write jar (0600) without logging values
  *   --source-port 9333                     profile launch port (default 9333)
+ *   --chromePath <path>                    browser that owns --from-profile (Chromium, Chrome for Testing)
  *   --dry-run                              count/names only; no inject
  */
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'path';
+import {
+  cookieKey,
+  cookieMeta,
+  filterCookies,
+  readStorageStateCookies,
+  toSetCookie,
+  toStorageStateCookie,
+} from './cookie-jar.mjs';
 import { fileURLToPath } from 'url';
-import { platform } from 'os';
 import { validateFlags } from './cli-flags.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -37,9 +45,11 @@ if (hasFlag('--help') || hasFlag('-h') || argv.length === 0) {
   console.error(`Usage: node cookie-bridge.mjs --i-understand-secrets --to-port 9222 \\
   (--from-port 9333 | --from-profile Default | --from-storage-state state.json) \\
   [--urls "https://example.com"] [--export-storage-state out.json] [--dry-run]
+  [--source-port 9333] [--chromePath <browser for --from-profile>]
 
 Gate: --i-understand-secrets is required. Values are never printed.
-Prefer --from-port (existing CDP) or --from-storage-state over --from-profile when Chrome is already open.`);
+Prefer --from-port (existing CDP) or --from-storage-state. --from-profile needs the browser fully quit
+and fails on Google Chrome 136+, which refuses remote debugging on its real profile.`);
   process.exit(argv.length === 0 ? 1 : 0);
 }
 
@@ -52,6 +62,7 @@ validateFlags(
     '--from-storage-state',
     '--export-storage-state',
     '--source-port',
+    '--chromePath',
     '--urls',
   ],
   ['--help', '-h', '--i-understand-secrets', '--dry-run']
@@ -63,6 +74,7 @@ const FROM_PROFILE = getArg('--from-profile', '');
 const FROM_STATE = getArg('--from-storage-state', '');
 const EXPORT_STATE = getArg('--export-storage-state', '');
 const SOURCE_PORT = getArg('--source-port', '9333');
+const CHROME_PATH = getArg('--chromePath', '');
 const URLS = (getArg('--urls', '') || '')
   .split(',')
   .map(s => s.trim())
@@ -86,6 +98,8 @@ if (sources.length !== 1)
   fail(
     'Pick exactly one of --from-port, --from-profile, --from-storage-state.'
   );
+if (FROM_PROFILE && TO_PORT === SOURCE_PORT)
+  fail('--source-port must differ from --to-port.');
 if (EXPORT_STATE) {
   const exportPath = resolve(EXPORT_STATE);
   const exportRelative = relative(WORKSPACE_OUTPUT_BASE, exportPath);
@@ -102,161 +116,68 @@ if (!Number.isFinite(nodeMajor) || nodeMajor < 24 || !WS) {
   );
 }
 
-function cookieMeta(c) {
-  return {
-    name: c.name,
-    domain: c.domain || '',
-    path: c.path || '/',
-    secure: Boolean(c.secure),
-    httpOnly: Boolean(c.httpOnly),
-    sameSite: c.sameSite || 'Lax',
-    session: c.session ?? (c.expires === -1 || c.expires === undefined),
-  };
-}
-
-function toSetCookie(c) {
-  const out: Record<string, any> = {
-    name: c.name,
-    value: c.value,
-    domain: c.domain,
-    path: c.path || '/',
-    secure: Boolean(c.secure),
-    httpOnly: Boolean(c.httpOnly),
-  };
-  if (c.expires != null && c.expires !== -1) out.expires = c.expires;
-  if (c.sameSite) out.sameSite = c.sameSite;
-  if (c.url) out.url = c.url;
-  else if (URLS[0] && !c.domain) out.url = URLS[0];
-  return out;
-}
-
-function toStorageStateCookie(c) {
-  return {
-    name: c.name,
-    value: c.value,
-    domain: c.domain || '',
-    path: c.path || '/',
-    expires: c.expires ?? -1,
-    httpOnly: Boolean(c.httpOnly),
-    secure: Boolean(c.secure),
-    sameSite:
-      c.sameSite === 'None' || c.sameSite === 'Strict' || c.sameSite === 'Lax'
-        ? c.sameSite
-        : 'Lax',
-  };
-}
-
-function filterCookies(cookies) {
-  if (!URLS.length) return cookies;
-  return cookies.filter(c => {
-    const domain = String(c.domain || '').replace(/^\./, '');
-    return URLS.some(u => {
-      try {
-        const host = new URL(u).hostname;
-        return host === domain || host.endsWith(`.${domain}`);
-      } catch {
-        return false;
-      }
-    });
-  });
-}
-
-async function cdpHttp(port, path, method = 'GET') {
+async function cdpHttp(port, path) {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
-    method,
     signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) throw new Error(`CDP HTTP ${res.status} ${path}`);
   return res.json();
 }
 
-async function connectPort(port) {
+/** Browser-level session: Storage cookies cover every context and partition. */
+async function connectBrowser(port) {
   const version = await cdpHttp(port, '/json/version');
   if (!version.webSocketDebuggerUrl)
     throw new Error(`No browser WS on port ${port}`);
-  return createBrowserSession(version.webSocketDebuggerUrl);
+  return connectCDP(version.webSocketDebuggerUrl);
 }
-
-/** Network cookies need a page/target session, not the root browser WS. */
-async function attachPageSession(port) {
-  const browser = await connectPort(port);
-  let targets;
-  try {
-    const listed = await browser.send('Target.getTargets');
-    targets = listed.targetInfos || [];
-  } catch {
-    targets = await cdpHttp(port, '/json');
-  }
-  let page = (targets || []).find(
-    t =>
-      (t.type === 'page' || t.type === 'tab') &&
-      !String(t.url || '').startsWith('devtools://')
-  );
-  if (!page) {
-    await browser.send('Target.createTarget', { url: 'about:blank' });
-    const listed = await browser.send('Target.getTargets');
-    targets = listed.targetInfos || [];
-    page = (targets || []).find(t => t.type === 'page' || t.type === 'tab');
-  }
-  if (!page) {
-    browser.close();
-    throw new Error(`No page target on port ${port}`);
-  }
-  const targetId = page.targetId || page.id;
-  const attached = await browser.send('Target.attachToTarget', {
-    targetId,
-    flatten: true,
-  });
-  const sessionId = attached.sessionId;
-  return {
-    sessionId,
-    async send(method, params = {}) {
-      return browser.send(method, params, sessionId);
-    },
-    close() {
-      browser.close();
-    },
-  };
-}
-
-const createBrowserSession = (url: string) => connectCDP(url);
 
 async function readCookiesFromPort(port) {
-  const page = await attachPageSession(port);
+  const browser = await connectBrowser(port);
   try {
-    await page.send('Network.enable');
-    let cookies = [];
-    if (URLS.length) {
-      const res = await page.send('Network.getCookies', { urls: URLS });
-      cookies = res.cookies || [];
-    } else {
-      const res = await page.send('Network.getAllCookies');
-      cookies = res.cookies || [];
-    }
-    return cookies;
+    return (await browser.send('Storage.getCookies', {})).cookies || [];
   } finally {
-    page.close();
+    browser.close();
   }
 }
 
+/**
+ * Sets every cookie, falling back to one call per cookie when the batch is rejected,
+ * then reads the jar back so a cookie Chrome dropped is reported instead of assumed.
+ */
 async function writeCookiesToPort(port, cookies) {
-  const page = await attachPageSession(port);
+  const browser = await connectBrowser(port);
   try {
-    await page.send('Network.enable');
-    const payload = cookies.map(toSetCookie);
-    await page.send('Network.setCookies', { cookies: payload });
-    return payload.length;
+    const payload = cookies.map(c => toSetCookie(c, URLS));
+    const rejected = [];
+    try {
+      await browser.send('Storage.setCookies', { cookies: payload });
+    } catch {
+      for (const cookie of payload) {
+        try {
+          await browser.send('Storage.setCookies', { cookies: [cookie] });
+        } catch (error) {
+          rejected.push({
+            name: cookie.name,
+            key: cookieKey(cookie),
+            reason: error.message,
+          });
+        }
+      }
+    }
+    const stored = new Set(
+      ((await browser.send('Storage.getCookies', {})).cookies || []).map(
+        cookieKey
+      )
+    );
+    const missing = payload
+      .filter(c => !rejected.some(r => r.key === cookieKey(c)))
+      .filter(c => !stored.has(cookieKey(c)))
+      .map(c => c.name);
+    return { attempted: payload.length, rejected, missing };
   } finally {
-    page.close();
+    browser.close();
   }
-}
-
-function readStorageState(path) {
-  const raw = JSON.parse(readFileSync(path, 'utf8'));
-  const list = Array.isArray(raw) ? raw : raw.cookies || [];
-  if (!Array.isArray(list))
-    fail('storage state must be {cookies:[...]} or an array');
-  return list;
 }
 
 function writeStorageState(path, cookies) {
@@ -268,8 +189,9 @@ function writeStorageState(path, cookies) {
   );
 }
 
+/** Launches the real profile; refuses a reused or isolated browser on the source port. */
 function launchProfileSource(profile, port) {
-  return new Promise((resolveLaunch, rejectLaunch) => {
+  return new Promise<void>((resolveLaunch, rejectLaunch) => {
     const openBrowser = join(__dir, 'open-browser.mjs');
     const args = [
       openBrowser,
@@ -279,53 +201,78 @@ function launchProfileSource(profile, port) {
       String(port),
       '--url',
       'about:blank',
+      ...(CHROME_PATH ? ['--chromePath', CHROME_PATH] : []),
     ];
     console.error(
-      `[COOKIE_BRIDGE] Launching profile=${profile} on port=${port} (Chrome must not hold this profile lock)`
+      `[COOKIE_BRIDGE] Launching profile=${profile} on port=${port} (the browser must not hold this profile)`
     );
     const child = spawn(process.execPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    let out = '';
+    let stdout = '';
+    let stderr = '';
     child.stdout.on('data', d => {
-      out += d;
+      stdout += d;
     });
     child.stderr.on('data', d => {
-      out += d;
+      stderr += d;
     });
     child.on('exit', code => {
-      if (code !== 0) {
+      const status = stdout
+        .split('\n')
+        .filter(line => line.startsWith('{'))
+        .map(line => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .pop();
+      if (code !== 0 || status?.status !== 'BROWSER_READY') {
         rejectLaunch(
-          new Error(`open-browser failed (exit ${code}): ${out.slice(-500)}`)
+          new Error(
+            `open-browser failed (exit ${code}): ${status?.message ?? (stdout + stderr).slice(-500)}`
+          )
         );
-        return;
-      }
-      resolveLaunch(out);
+      } else if (status.reused) {
+        rejectLaunch(
+          new Error(
+            `--source-port ${port} already has a browser; it is not the requested profile. Pick a free --source-port or use --from-port ${port}.`
+          )
+        );
+      } else if (status.isolated) {
+        rejectLaunch(
+          new Error(
+            'open-browser started an isolated profile, not the real one'
+          )
+        );
+      } else resolveLaunch();
     });
   });
 }
 
-async function cleanupSourcePort(port) {
-  const openBrowser = join(__dir, 'open-browser.mjs');
-  await new Promise<void>(resolveCleanup => {
-    const child = spawn(
-      process.execPath,
-      [openBrowser, '--port', String(port), '--cleanup'],
-      {
-        stdio: 'ignore',
-      }
-    );
-    child.on('exit', () => resolveCleanup());
-  });
+/** Closes the real-profile browser this run launched so its CDP port stops serving. */
+async function closeSourceBrowser(port) {
+  try {
+    const browser = await connectBrowser(port);
+    await browser.send('Browser.close').catch(() => {});
+    browser.close();
+  } catch {}
+  for (let i = 0; i < 50; i++) {
+    try {
+      await cdpHttp(port, '/json/version');
+    } catch {
+      return true;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  return false;
 }
 
 async function main() {
   console.log('[ACTION] cookie-bridge start (values redacted)');
-  if (platform() === 'darwin' && FROM_PROFILE) {
-    console.log(
-      '[FINDING] macOS: quit Chrome fully before --from-profile, or use --from-port / --from-storage-state'
-    );
-  }
 
   let launchedSource = false;
   let cookies = [];
@@ -333,8 +280,10 @@ async function main() {
   try {
     if (FROM_STATE) {
       if (!existsSync(FROM_STATE))
-        fail(`storage state not found: ${FROM_STATE}`);
-      cookies = readStorageState(FROM_STATE);
+        throw new Error(`storage state not found: ${FROM_STATE}`);
+      cookies = readStorageStateCookies(
+        JSON.parse(readFileSync(FROM_STATE, 'utf8'))
+      );
       console.log(`[METRIC] loaded storage-state path=${FROM_STATE}`);
     } else if (FROM_PORT) {
       cookies = await readCookiesFromPort(FROM_PORT);
@@ -348,10 +297,10 @@ async function main() {
       );
     }
 
-    cookies = filterCookies(cookies);
+    cookies = filterCookies(cookies, URLS);
     const metas = cookies.map(cookieMeta);
     console.log(
-      `[METRIC] cookies=${metas.length} domains=${new Set(metas.map(m => m.domain)).size}`
+      `[METRIC] cookies=${metas.length} domains=${new Set(metas.map(m => m.domain)).size} partitioned=${metas.filter(m => m.partitioned).length}`
     );
     console.log(`[FINDING] cookie-names=${metas.map(m => m.name).join(',')}`);
 
@@ -368,16 +317,33 @@ async function main() {
     }
 
     if (TO_PORT) {
-      const n = await writeCookiesToPort(TO_PORT, cookies);
-      console.log(`[AUTH_COMPLETE] injected=${n} to-port=${TO_PORT}`);
+      const { attempted, rejected, missing } = await writeCookiesToPort(
+        TO_PORT,
+        cookies
+      );
+      const stored = attempted - rejected.length - missing.length;
+      for (const r of rejected)
+        console.log(`[FINDING] COOKIE_REJECTED name=${r.name} ${r.reason}`);
+      if (missing.length)
+        console.log(
+          `[FINDING] COOKIE_NOT_STORED names=${missing.join(',')} (expired or refused by the target browser)`
+        );
+      console.log(
+        `[AUTH_COMPLETE] injected=${stored}/${attempted} to-port=${TO_PORT}`
+      );
       console.log(
         '[REASON] navigate/target app on to-port; do not print cookie values'
       );
+      if (stored < attempted) process.exitCode = 1;
     }
   } finally {
     if (launchedSource) {
-      await cleanupSourcePort(SOURCE_PORT);
-      console.log(`[ACTION] cleaned source-port=${SOURCE_PORT}`);
+      const closed = await closeSourceBrowser(SOURCE_PORT);
+      console.log(
+        closed
+          ? `[ACTION] closed source browser on port=${SOURCE_PORT}`
+          : `[FINDING] SOURCE_STILL_RUNNING port=${SOURCE_PORT}: quit that browser; its CDP port exposes the real profile`
+      );
     }
   }
 }

@@ -1,5 +1,6 @@
 //! Response-shaping helpers: build the tool output Value from prepared rewrite data.
 use super::{ExecutableReceipt, PreparedFile, PreparedMatch, RewriteError, RewriteRequest};
+use crate::contracts::tool_types::ExtraKind;
 use crate::tools::id::ToolId;
 use serde_json::{Map, Value, json};
 use std::path::Path;
@@ -51,8 +52,13 @@ pub(super) fn success_value(
             if apply {
                 return applied_file(file);
             }
-            let mut value = public_file(file, query.debug());
-            page_patch(&mut value, file, &shown_ids, query.debug());
+            let mut value = public_file(file, query.wants(ExtraKind::Details));
+            page_patch(
+                &mut value,
+                file,
+                &shown_ids,
+                query.wants(ExtraKind::Details),
+            );
             value
         })
         .collect::<Vec<_>>();
@@ -60,14 +66,14 @@ pub(super) fn success_value(
         "mode":if apply {"apply"} else {"preview"},
         "snapshot":snapshot,"matchCount":matches.len(),
         "affectedFiles":files.len(),
-        "matches":shown.iter().map(|matched| public_match(matched, query.debug())).collect::<Vec<_>>(),
+        "matches":shown.iter().map(|matched| public_match(matched, query.wants(ExtraKind::Details))).collect::<Vec<_>>(),
         "files":page_files,
         "isPartial":has_more,
         "pagination":crate::response::pages::PageFacts::counted(page, page_size, matches.len()).to_value()
     });
     if apply {
         // The preview already showed the match rows and patch; the receipt
-        // states only what was committed (debug adds diagnostics).
+        // states only what was committed (`extras` details adds diagnostics).
         if let Some(map) = value.as_object_mut() {
             map.remove("matches");
         }
@@ -88,7 +94,7 @@ pub(super) fn success_value(
         }
         value["transaction"] = transaction;
     }
-    if query.debug() {
+    if query.wants(ExtraKind::Echo) {
         value["operation"] = json!("rewrite");
     } else if value["next"].get("apply").is_some()
         && let Some(rows) = value["files"].as_array_mut()
@@ -222,7 +228,7 @@ fn page_patch(
     value: &mut Value,
     file: &PreparedFile,
     shown: &std::collections::BTreeSet<&str>,
-    debug: bool,
+    details: bool,
 ) {
     let on_page = file
         .matches
@@ -244,7 +250,7 @@ fn page_patch(
         return;
     };
     let patch = super::create_unified_patch(&file.shown, before, after);
-    if debug {
+    if details {
         value["patchBytes"] = json!(patch.len());
     }
     value["patch"] = json!(patch);
@@ -256,10 +262,10 @@ fn page_patch(
 pub(super) const MATCH_ID_PREFIX: usize = 16;
 
 /// A preview match row locates its hunk: id prefix, path and 1-based line.
-/// The patch already shows the text and its replacement; `debug` keeps the
+/// The patch already shows the text and its replacement; `extras` details keeps the
 /// full row (64-hex id, ranges, text, replacement, captures).
-fn public_match(matched: &PreparedMatch, debug: bool) -> Value {
-    if debug {
+fn public_match(matched: &PreparedMatch, details: bool) -> Value {
+    if details {
         return matched.public.clone();
     }
     json!({
@@ -279,14 +285,14 @@ fn applied_file(file: &PreparedFile) -> Value {
 /// A file row: `beforeHash` guards apply (a complete preview states it once,
 /// in `next.apply.expectedHashes`) and `matchCount` sizes the edit.
 /// `afterHash` (recomputed by the journal) and `patchBytes` are diagnostics
-/// kept under `debug`. `path` is absolute here; the response stage names it
+/// kept with `extras` details. `path` is absolute here; the response stage names it
 /// relative to the workspace root.
-pub(super) fn public_file(file: &PreparedFile, debug: bool) -> Value {
+pub(super) fn public_file(file: &PreparedFile, details: bool) -> Value {
     let mut value = json!({
         "path":file.absolute,"beforeHash":file.before_hash,
         "matchCount":file.matches.len(),"patch":file.patch
     });
-    if debug {
+    if details {
         value["afterHash"] = json!(file.after_hash);
         value["patchBytes"] = json!(file.patch.len());
     }
@@ -309,13 +315,13 @@ pub(super) fn executable_value(executable: &ExecutableReceipt) -> Value {
 
 /// The executable and isolation receipts are diagnostics: the snapshot digest
 /// already binds the executable, and nothing a caller does next depends on
-/// them, so they ride only on `debug`.
+/// them, so they ride only with `extras` receipts.
 pub(super) fn attach_receipts(
     value: &mut Value,
     query: &RewriteRequest,
     executable: &ExecutableReceipt,
 ) {
-    if query.debug() {
+    if query.wants(ExtraKind::Receipts) {
         value["executable"] = executable_value(executable);
         value["isolation"] = isolation_receipt();
     }

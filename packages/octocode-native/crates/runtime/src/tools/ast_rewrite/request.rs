@@ -64,8 +64,8 @@ impl AstRewriteQuery {
     pub(crate) fn apply(&self) -> bool {
         either_kind!(self, apply => apply.as_ref().is_some_and(|apply| apply.0))
     }
-    pub(crate) fn debug(&self) -> bool {
-        either_kind!(self, debug => *debug)
+    pub(crate) fn wants(&self, kind: crate::contracts::tool_types::ExtraKind) -> bool {
+        either_kind!(self, extras => extras.contains(&kind))
     }
     /// Expected pre-image hashes, in path order.
     pub(crate) fn expected_hashes(&self) -> Option<BTreeMap<String, String>> {

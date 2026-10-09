@@ -332,7 +332,7 @@ dynamic dispatch, or FFI.
 
 ### Performance
 
-Release build, measured with `packages/octocode-native/scripts/graph-bench`:
+Release build, measured with the graph benchmark (since removed from the repo):
 
 | Repo | Files | Ingest | Snapshot | `issues` (wall) |
 |---|---|---|---|---|

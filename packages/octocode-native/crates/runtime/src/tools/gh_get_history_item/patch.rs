@@ -144,8 +144,9 @@ pub(super) fn number_patch(patch: &str) -> String {
 }
 
 /// Diff lines kept around each `matchString` hit when `contextLines` is
-/// omitted; `next.readFullPatches` re-reads the whole patches.
-pub(super) const MATCH_CONTEXT_LINES: usize = 10;
+/// omitted (contract `limits.defaultReadContextLines`);
+/// `next.readFullPatches` re-reads the whole patches.
+pub(super) const MATCH_CONTEXT_LINES: usize = crate::tools::id::DEFAULT_READ_CONTEXT_LINES;
 
 /// Context lines GitHub puts around each change of a diff.
 pub(super) const DIFF_CONTEXT_LINES: usize = 3;
@@ -887,6 +888,14 @@ pub(super) fn shape_files(
 ) -> (Value, Option<usize>) {
     let mut page = shape_patch_page(files, include_patch, query);
     for row in &mut page.rows {
+        // Without patches, only `omitted` (no line counts either) qualifies
+        // the row's stat; the other reasons concern patch text not asked for.
+        if !include_patch
+            && let Some(fields) = row.as_object_mut()
+            && fields.get("patchUnavailable").and_then(Value::as_str) != Some("omitted")
+        {
+            fields.shift_remove("patchUnavailable");
+        }
         compact_file_header(row);
     }
     (Value::Array(page.rows), page.cursor)
@@ -909,7 +918,7 @@ pub(super) fn attach_patch_cursor(files_pagination: &mut Value, cursor: Option<u
 /// An explicit `length` is honoured up to that one-row budget: a larger
 /// window would only be re-sliced into response `rowPart`s, more calls for
 /// the same patch text. A row that still outgrows its page is lossless:
-/// walk hops page by rows (`responseScope:"rows"`), and the walk's
+/// automatic paging splits it by whole rows, and the walk's
 /// `next.continuePatch`/`nextFilePage` rides the row's last part
 /// (`id::resumes_after_shown`), so following it never skips a part.
 /// A bigger window comes with a bigger response page (`responseLength`).
@@ -940,9 +949,7 @@ pub(super) fn clamp_warning(query: &HistoryItemRequest) -> Option<String> {
     let length = query.char_length()?;
     let window = patch_window(Some(length), query.auto_page_chars);
     (window < length).then(|| {
-        format!(
-            "length {length} exceeds one response page; patch windows hold {window} chars. Follow next.continuePatch for the rest."
-        )
+        format!("length {length} exceeds one response page; patch windows hold {window} chars.")
     })
 }
 
@@ -1744,7 +1751,7 @@ mod tests {
         assert_eq!(found.clipped, ["43-63"]);
         assert!(head_text_needed(&patch, "needle", 10));
         assert!(!head_text_needed(&patch, "needle", 3));
-        let query = patch_request(json!({"matchString":"needle"}));
+        let query = patch_request(json!({"matchString":"needle","contextLines":10}));
         let page = shape_patch_page(vec![file("src/a.rs", &patch)], true, &query);
         assert_eq!(page.rows[0]["contextClipped"], true, "{:?}", page.rows);
         assert_eq!(
@@ -1762,10 +1769,15 @@ mod tests {
         assert!(page.rows[0].get("contextClipped").is_none());
     }
 
-    /// `matchString` keeps 10 context lines around each hit by default
-    /// and pages every hit file of the PR at once, not 30 per call.
+    /// `matchString` keeps the contract's default context lines
+    /// (`limits.defaultReadContextLines`) around each hit and pages every hit
+    /// file of the PR at once, not 30 per call.
     #[test]
-    fn match_string_defaults_to_ten_context_lines_and_one_page_of_hit_files() {
+    fn match_string_defaults_to_the_contract_context_and_one_page_of_hit_files() {
+        assert_eq!(
+            match_context(&patch_request(json!({"matchString":"miri"}))),
+            crate::tools::id::DEFAULT_READ_CONTEXT_LINES
+        );
         let patch = "@@ -1,3 +1,3 @@\n a\n-old miri\n+new miri\n b\n";
         let query = patch_request(json!({"matchString":"miri"}));
         let view = history_patch_view(patch, "a.rs", &query);

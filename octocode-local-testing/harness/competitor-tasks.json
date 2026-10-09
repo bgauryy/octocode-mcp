@@ -658,11 +658,11 @@
       "question": "Where is merge_near_windows defined in octocode-native?",
       "truth": {
         "live": {
-          "file": "packages/octocode-native/crates/runtime/src/runtime/clasify_batch.rs",
+          "file": "packages/octocode-native/crates/runtime/src/tools/clasify/run/hydrate.rs",
           "regex": "fn merge_near_windows\\("
         }
       },
-      "truthSource": "computed at run time from the file bytes (this repo moves); 2026-10-02: clasify_batch.rs:554",
+      "truthSource": "computed at run time from the file bytes (this repo moves); 2026-10-02: clasify_batch.rs:554; 2026-10-09: tools/clasify/run/hydrate.rs",
       "octocode": [
         {
           "tool": "localSearch",

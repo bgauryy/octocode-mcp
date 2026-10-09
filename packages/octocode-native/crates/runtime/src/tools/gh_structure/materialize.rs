@@ -54,7 +54,7 @@ pub(super) async fn materialize_page<C: crate::providers::github::ConditionalCac
     let unwritten = unwritten_folders(page.entries, scope);
     if let Some(first) = unwritten.first() {
         warnings.push(format!(
-            "{} listed folder(s) at maxDepth {} were not written; run next.expandDepth.",
+            "{} listed folder(s) at maxDepth {} were not written.",
             unwritten.len(),
             scope.depth
         ));

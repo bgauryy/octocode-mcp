@@ -53,7 +53,7 @@ Use `clasify` when a semantic judgment changes the next read: a described target
 - Prefer exposed Octocode MCP tools; else `npx -y octocode`. Read `schema <name> --view query` before an unfamiliar call or after a validation error.
 - GitHub access can use `GH_TOKEN` or `GITHUB_TOKEN`; classification uses `OCTOCODE_CLASSIFICATION_API`, and beta topology uses `OCTOCODE_BETA=1` when needed. These and optional local-tool settings such as `OCTOCODE_ENABLE_LOCAL`, `OCTOCODE_STORAGE_MODE`, and `OCTOCODE_LSP_PREWARM` can be set in `<HOME>/.octocode/.env`; inspect live config before changing them. Never print credential values.
 - Batch ≤5 independent rows; keep dependent probes sequential. Add `mainGoal`/`reasoning` only in multi-call research on an unknown; omit them on simple lookups.
-- Run each `next.*` page unchanged, or narrow it and name what stays unread; `hints.*` leads are optional.
+- Run each `next.*` page unchanged, or narrow it and name what stays unread; `hints.*` leads are optional (a successful row shows most only with `extras:["hints"]`).
 - Read the smallest useful span (`references/reading-flows.md`); expand when nearby context can resolve the claim.
 - Repo-wide topology: run `npx octocode graph ingest <path>`, then `npx octocode graph query <op>`. Refresh an index when its source revision changes.
 
@@ -82,7 +82,7 @@ Load the page that answers the current question.
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format.
+See [output.md](output.md) for the response and saved-artifact format. Save substantial results under `<workspace>/.octocode/octocode-research/`; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).
 
 ## Maintainer check
 

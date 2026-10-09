@@ -33,7 +33,7 @@ try {
         questions: [
           { id: 'stop', type: 'locate', ask: 'When must a retry stop?' },
         ],
-        debug: true,
+        extras: ['details', 'stats'],
       },
     ],
   });

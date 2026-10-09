@@ -347,13 +347,11 @@ try {
       queries: [
         {
           reasoning: 'Read the first bulk fixture through native MCP.',
-          debug: false,
           path: path.join(fixture, 'math.ts'),
           ranges: ['1-1'],
         },
         {
           reasoning: 'Read the second bulk fixture through native MCP.',
-          debug: false,
           path: path.join(fixture, 'entry.ts'),
           ranges: ['1-1'],
         },
@@ -374,10 +372,10 @@ try {
       await writeFile(file, source);
       for (const unit of ['lines', 'bytes']) {
         for (const matched of [false, true]) {
-          // Byte accounting (sourceBytes/returnedBytes) is debug-only
-          // metadata; continuations carry debug forward.
+          // Byte accounting (sourceBytes/returnedBytes) is opt-in `stats`;
+          // continuations carry extras forward.
           let page = await call('localFetch', {
-            path: file, unit, length: unit === 'lines' ? 1 : 3, debug: true,
+            path: file, unit, length: unit === 'lines' ? 1 : 3, extras: ['stats'],
             ...(matched ? { matchString: 'needle', contextLines: 0, minify: 'standard' } : {}),
           });
           let content = '';
@@ -394,7 +392,8 @@ try {
               ? page.content.replace(/^(\d+)\t/gm, (_, line) => { numbers.push(Number(line)); return ''; })
               : page.content;
             assert.equal(page.returnedBytes, Buffer.byteLength(text));
-            if (matched) assert.equal(page.minifyFallback.reason, 'match-evidence');
+            // matchString reads are verbatim; no fallback notice says so per row.
+            assert.equal(page.minifyFallback, undefined);
             content += text;
             if (!page.next?.continue) break;
             assert.equal(page.next.continue.tool, 'localFetch');
@@ -412,7 +411,6 @@ try {
       const invalid = await invoke('localFetch', {
         queries: [{
           reasoning: 'Verify an unknown localFetch window field is rejected.',
-          debug: false,
           path: file,
           window: 3,
         }],
@@ -522,7 +520,6 @@ try {
         const args = {
           queries: [{
             reasoning: 'Exercise localFetch response pagination through built stdio acceptance.',
-            debug: false,
             path: path.join(fixture, 'math.ts'),
             minify: 'none',
           }],
@@ -593,7 +590,6 @@ try {
         const page1 = () => invoke('localFetch', {
           queries: [{
             reasoning: 'Exercise localFetch response pagination through built stdio acceptance.',
-            debug: false,
             path: file,
             minify: 'none',
           }],
@@ -890,7 +886,7 @@ try {
         const localFound = await call('localSearch', { path: directory, matchString: 'module.exports', regex: 'literal' });
         assert.ok(localFound.files?.length > 0);
         for (const unit of ['lines', 'bytes']) {
-          const selector = { matchString: 'module.exports', contextLines: 2, minify: 'standard', unit, length: unit === 'lines' ? 1 : 7, debug: true };
+          const selector = { matchString: 'module.exports', contextLines: 2, minify: 'standard', unit, length: unit === 'lines' ? 1 : 7, extras: ['stats', 'details'] };
           const contents = [];
           const anchors = [];
           for (const remote of [false, true]) {

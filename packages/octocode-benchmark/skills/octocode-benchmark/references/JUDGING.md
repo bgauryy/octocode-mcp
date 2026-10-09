@@ -1,7 +1,7 @@
 # Grading a benchmark question (the judge)
 
 **You are the independent judge for one question.** You start **only after both runners
-have written their answers** — you read the two answers (from `answers/<arm>-p<pass>.md`), relabeled
+have written their answers** — you read the two answers, relabeled
 **X** and **Y** in randomized order, with tool names hidden — plus your own research tools. The question has
 no answer key: you establish ground truth yourself. Never try to recover which tool produced
 X or Y; grade each on its own merits.
@@ -20,7 +20,7 @@ judging across questions is the whole point.
 
 ## Grade, then emit the verdict
 
-Do the work in this order and write `judge/Q<n>.md` in the same order — reasoning first, the
+Do the work in this order and write the verdict in the same order — reasoning first, the
 score as its summary.
 
 1. **Ground truth (before reading any answer).** Decompose the question into the concrete
@@ -57,21 +57,15 @@ them is incomplete — redo it.
 LLM judges have known biases — control them or the scores are noise (Zheng et al., *Judging
 LLM-as-a-Judge*, arXiv 2306.05685):
 
-- **Position bias** — assign X/Y in **randomized order per question** via
-  `compare/bin/build_blind_packet.py` (it records the mapping out of band).
+- **Position bias** — X/Y order is randomized per question (`compare/bin/judge_pair.sh`
+  records the mapping out of band); never try to infer it.
 - **Verbosity bias** — never reward length; score evidence, not size.
 - **Self-enhancement bias** — use a **strong, neutral judge model**, ideally a different
   family from every arm; record it.
 
-For any **decisive or contested** result (a pairing win, or a ranking you are unsure of),
-**confirm it**: re-judge with the answers in swapped order and/or with a second independent
-judge that saw no runner transcript. Count the win only if it survives. If two judges
-disagree on *correctness*, an adjudicator breaks the tie or the question is marked
-**unresolved** — excluded from the tally, never guessed.
-
 ## Rubric anchors (keep scoring consistent)
 
-- **Correctness (0–10):** 10 = every material part correct with sound evidence; 7 = core
+- **Correctness (0–10, whole numbers):** 10 = every material part correct with sound evidence; 7 = core
   correct, a minor part missing/soft; 4 = a material part wrong or unsupported; 1 =
   confidently wrong on the central fact; 0 = no real answer. **A confidently-wrong answer
   cannot win regardless of footprint** — this rule lives here; every other doc points back.

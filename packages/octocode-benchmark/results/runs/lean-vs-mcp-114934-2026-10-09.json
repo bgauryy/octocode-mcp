@@ -1,0 +1,1720 @@
+{
+ "campaign": "lean-vs-mcp-114934-2026-10-09",
+ "octocode_label": "Octocode v20",
+ "runner_model": "claude-sonnet-5-5",
+ "judge_model": "gpt-5.5",
+ "runs": [
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 2759,
+   "model_in": 1207,
+   "model_out": 1552,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 46463,
+   "output_tokens": 787,
+   "cost_usd": 0.07051779999999999,
+   "turns": 4,
+   "secs": 13.918,
+   "model_secs": 9.285,
+   "tool_secs": 4.633,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 5263,
+   "model_in": 2162,
+   "model_out": 3101,
+   "calls": 9,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 97655,
+   "output_tokens": 1752,
+   "cost_usd": 0.0891288,
+   "turns": 10,
+   "secs": 22.03,
+   "model_secs": 18.82,
+   "tool_secs": 3.21,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 7859,
+   "model_in": 4156,
+   "model_out": 3703,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 64739,
+   "output_tokens": 1817,
+   "cost_usd": 0.08466279999999998,
+   "turns": 6,
+   "secs": 20.349,
+   "model_secs": 18.595,
+   "tool_secs": 1.754,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 5671,
+   "model_in": 1856,
+   "model_out": 3815,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62998,
+   "output_tokens": 1964,
+   "cost_usd": 0.08270279999999999,
+   "turns": 7,
+   "secs": 20.245,
+   "model_secs": 18.513,
+   "tool_secs": 1.732,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 8572,
+   "model_in": 5813,
+   "model_out": 2759,
+   "calls": 8,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 100737,
+   "output_tokens": 1538,
+   "cost_usd": 0.09329000000000001,
+   "turns": 9,
+   "secs": 23.686,
+   "model_secs": 15.641,
+   "tool_secs": 8.045,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 3167,
+   "model_in": 1257,
+   "model_out": 1910,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 46622,
+   "output_tokens": 968,
+   "cost_usd": 0.0672828,
+   "turns": 4,
+   "secs": 10.864,
+   "model_secs": 9.48,
+   "tool_secs": 1.384,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 5467,
+   "model_in": 3478,
+   "model_out": 1989,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 31715,
+   "output_tokens": 862,
+   "cost_usd": 0.0644386,
+   "turns": 2,
+   "secs": 11.387,
+   "model_secs": 8.885,
+   "tool_secs": 2.502,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 3527,
+   "model_in": 1166,
+   "model_out": 2361,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 79017,
+   "output_tokens": 1379,
+   "cost_usd": 0.0793268,
+   "turns": 7,
+   "secs": 19.755,
+   "model_secs": 15.088,
+   "tool_secs": 4.667,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 9242,
+   "model_in": 5680,
+   "model_out": 3562,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 65912,
+   "output_tokens": 1774,
+   "cost_usd": 0.08625719999999999,
+   "turns": 6,
+   "secs": 19.571,
+   "model_secs": 15.628,
+   "tool_secs": 3.943,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 2923,
+   "model_in": 490,
+   "model_out": 2433,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62046,
+   "output_tokens": 1222,
+   "cost_usd": 0.0715622,
+   "turns": 4,
+   "secs": 16.595,
+   "model_secs": 13.551,
+   "tool_secs": 3.044,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 7236,
+   "model_in": 3585,
+   "model_out": 3651,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63646,
+   "output_tokens": 1781,
+   "cost_usd": 0.0831836,
+   "turns": 5,
+   "secs": 19.27,
+   "model_secs": 15.389,
+   "tool_secs": 3.881,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 1607,
+   "model_in": 215,
+   "model_out": 1392,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 46159,
+   "output_tokens": 710,
+   "cost_usd": 0.068281,
+   "turns": 5,
+   "secs": 11.919,
+   "model_secs": 8.458,
+   "tool_secs": 3.461,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 7634,
+   "model_in": 4363,
+   "model_out": 3271,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 47587,
+   "output_tokens": 1528,
+   "cost_usd": 0.0767276,
+   "turns": 4,
+   "secs": 16.293,
+   "model_secs": 12.976,
+   "tool_secs": 3.317,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 17939,
+   "model_in": 10961,
+   "model_out": 6978,
+   "calls": 10,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 137186,
+   "output_tokens": 3643,
+   "cost_usd": 0.1347662,
+   "turns": 11,
+   "secs": 37.693,
+   "model_secs": 32.036,
+   "tool_secs": 5.657,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 4615,
+   "model_in": 1487,
+   "model_out": 3128,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63674,
+   "output_tokens": 1569,
+   "cost_usd": 0.0778886,
+   "turns": 5,
+   "secs": 20.18,
+   "model_secs": 16.585,
+   "tool_secs": 3.595,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 9429,
+   "model_in": 5526,
+   "model_out": 3903,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 67112,
+   "output_tokens": 1968,
+   "cost_usd": 0.0911808,
+   "turns": 5,
+   "secs": 20.055,
+   "model_secs": 17.088,
+   "tool_secs": 2.967,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 6465,
+   "model_in": 2478,
+   "model_out": 3987,
+   "calls": 7,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 65597,
+   "output_tokens": 2032,
+   "cost_usd": 0.08615219999999998,
+   "turns": 8,
+   "secs": 22.274,
+   "model_secs": 20.224,
+   "tool_secs": 2.05,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 13919,
+   "model_in": 10561,
+   "model_out": 3358,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 54857,
+   "output_tokens": 1627,
+   "cost_usd": 0.0904576,
+   "turns": 4,
+   "secs": 17.863,
+   "model_secs": 16.353,
+   "tool_secs": 1.51,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 3823,
+   "model_in": 1680,
+   "model_out": 2143,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63157,
+   "output_tokens": 1115,
+   "cost_usd": 0.0724852,
+   "turns": 5,
+   "secs": 13.08,
+   "model_secs": 11.683,
+   "tool_secs": 1.397,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 4416,
+   "model_in": 2093,
+   "model_out": 2323,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 46580,
+   "output_tokens": 1137,
+   "cost_usd": 0.0687554,
+   "turns": 3,
+   "secs": 11.484,
+   "model_secs": 10.231,
+   "tool_secs": 1.253,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 11801,
+   "model_in": 7781,
+   "model_out": 4020,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 68232,
+   "output_tokens": 1945,
+   "cost_usd": 0.0931318,
+   "turns": 7,
+   "secs": 19.831,
+   "model_secs": 17.579,
+   "tool_secs": 2.252,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 25567,
+   "model_in": 19968,
+   "model_out": 5599,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 111866,
+   "output_tokens": 2714,
+   "cost_usd": 0.1288028,
+   "turns": 7,
+   "secs": 29.307,
+   "model_secs": 26.439,
+   "tool_secs": 2.868,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 6775,
+   "model_in": 4369,
+   "model_out": 2406,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 50016,
+   "output_tokens": 1151,
+   "cost_usd": 0.08070139999999999,
+   "turns": 5,
+   "secs": 15.396,
+   "model_secs": 11.1,
+   "tool_secs": 4.296,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 8243,
+   "model_in": 4552,
+   "model_out": 3691,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 64720,
+   "output_tokens": 1687,
+   "cost_usd": 0.0829714,
+   "turns": 5,
+   "secs": 20.009,
+   "model_secs": 18.309,
+   "tool_secs": 1.7,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 6775,
+   "model_in": 2834,
+   "model_out": 3941,
+   "calls": 8,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 81585,
+   "output_tokens": 2074,
+   "cost_usd": 0.09012679999999999,
+   "turns": 9,
+   "secs": 22.947,
+   "model_secs": 19.497,
+   "tool_secs": 3.45,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 23548,
+   "model_in": 18760,
+   "model_out": 4788,
+   "calls": 5,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 113273,
+   "output_tokens": 2207,
+   "cost_usd": 0.1209096,
+   "turns": 6,
+   "secs": 29.236,
+   "model_secs": 22.98,
+   "tool_secs": 6.256,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 2117,
+   "model_in": 271,
+   "model_out": 1846,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 46181,
+   "output_tokens": 939,
+   "cost_usd": 0.064845,
+   "turns": 6,
+   "secs": 12.91,
+   "model_secs": 10.436,
+   "tool_secs": 2.474,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 4298,
+   "model_in": 1984,
+   "model_out": 2314,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 31504,
+   "output_tokens": 1092,
+   "cost_usd": 0.06575399999999999,
+   "turns": 5,
+   "secs": 11.223,
+   "model_secs": 9.082,
+   "tool_secs": 2.141,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 2502,
+   "model_in": 720,
+   "model_out": 1782,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 30902,
+   "output_tokens": 878,
+   "cost_usd": 0.0614226,
+   "turns": 4,
+   "secs": 8.726,
+   "model_secs": 7.911,
+   "tool_secs": 0.815,
+   "ok": true
+  },
+  {
+   "arm": "gh-lean",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 4180,
+   "model_in": 2637,
+   "model_out": 1543,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 46722,
+   "output_tokens": 810,
+   "cost_usd": 0.0660192,
+   "turns": 4,
+   "secs": 10.312,
+   "model_secs": 8.85,
+   "tool_secs": 1.462,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 4265,
+   "model_in": 2863,
+   "model_out": 1402,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 60193,
+   "output_tokens": 702,
+   "cost_usd": 0.0682604,
+   "turns": 3,
+   "secs": 10.902,
+   "model_secs": 9.316,
+   "tool_secs": 1.586,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 7558,
+   "model_in": 5094,
+   "model_out": 2464,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63246,
+   "output_tokens": 1290,
+   "cost_usd": 0.0805118,
+   "turns": 5,
+   "secs": 13.542,
+   "model_secs": 13.485,
+   "tool_secs": 0.057,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 7992,
+   "model_in": 5017,
+   "model_out": 2975,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62321,
+   "output_tokens": 1428,
+   "cost_usd": 0.0812432,
+   "turns": 4,
+   "secs": 26.613,
+   "model_secs": 13.738,
+   "tool_secs": 12.875,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 5526,
+   "model_in": 2984,
+   "model_out": 2542,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 40870,
+   "output_tokens": 1410,
+   "cost_usd": 0.07292,
+   "turns": 4,
+   "secs": 10.234,
+   "model_secs": 10.192,
+   "tool_secs": 0.042,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 16890,
+   "model_in": 14173,
+   "model_out": 2717,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 68091,
+   "output_tokens": 1278,
+   "cost_usd": 0.0972866,
+   "turns": 3,
+   "secs": 18.535,
+   "model_secs": 13.798,
+   "tool_secs": 4.737,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 2906,
+   "model_in": 1734,
+   "model_out": 1172,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 39923,
+   "output_tokens": 576,
+   "cost_usd": 0.018209200000000002,
+   "turns": 2,
+   "secs": 7.347,
+   "model_secs": 7.282,
+   "tool_secs": 0.065,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 9294,
+   "model_in": 6815,
+   "model_out": 2479,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 41729,
+   "output_tokens": 994,
+   "cost_usd": 0.072291,
+   "turns": 2,
+   "secs": 10.396,
+   "model_secs": 9.545,
+   "tool_secs": 0.851,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 3867,
+   "model_in": 1938,
+   "model_out": 1929,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 60715,
+   "output_tokens": 1100,
+   "cost_usd": 0.07223080000000001,
+   "turns": 4,
+   "secs": 14.891,
+   "model_secs": 12.272,
+   "tool_secs": 2.619,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 11807,
+   "model_in": 8717,
+   "model_out": 3090,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63597,
+   "output_tokens": 1424,
+   "cost_usd": 0.08609059999999999,
+   "turns": 3,
+   "secs": 15.786,
+   "model_secs": 12.339,
+   "tool_secs": 3.447,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 3425,
+   "model_in": 907,
+   "model_out": 2518,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 39513,
+   "output_tokens": 1200,
+   "cost_usd": 0.0652362,
+   "turns": 2,
+   "secs": 10.671,
+   "model_secs": 10.214,
+   "tool_secs": 0.457,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 14530,
+   "model_in": 10302,
+   "model_out": 4228,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 89224,
+   "output_tokens": 1990,
+   "cost_usd": 0.1020172,
+   "turns": 4,
+   "secs": 17.627,
+   "model_secs": 17.558,
+   "tool_secs": 0.069,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 8469,
+   "model_in": 6548,
+   "model_out": 1921,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 86196,
+   "output_tokens": 1018,
+   "cost_usd": 0.084825,
+   "turns": 5,
+   "secs": 18.099,
+   "model_secs": 11.942,
+   "tool_secs": 6.157,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 10959,
+   "model_in": 7037,
+   "model_out": 3922,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 85379,
+   "output_tokens": 1790,
+   "cost_usd": 0.0919066,
+   "turns": 4,
+   "secs": 21.326,
+   "model_secs": 17.352,
+   "tool_secs": 3.974,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 60769,
+   "model_in": 53640,
+   "model_out": 7129,
+   "calls": 9,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 175540,
+   "output_tokens": 4245,
+   "cost_usd": 0.224446,
+   "turns": 10,
+   "secs": 43.862,
+   "model_secs": 35.404,
+   "tool_secs": 8.458,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 16278,
+   "model_in": 13504,
+   "model_out": 2774,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 70268,
+   "output_tokens": 1329,
+   "cost_usd": 0.0969248,
+   "turns": 3,
+   "secs": 16.375,
+   "model_secs": 15.332,
+   "tool_secs": 1.043,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 10220,
+   "model_in": 6556,
+   "model_out": 3664,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 65992,
+   "output_tokens": 1816,
+   "cost_usd": 0.0911508,
+   "turns": 3,
+   "secs": 18.484,
+   "model_secs": 17.433,
+   "tool_secs": 1.051,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 3594,
+   "model_in": 1128,
+   "model_out": 2466,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 39527,
+   "output_tokens": 959,
+   "cost_usd": 0.062886,
+   "turns": 2,
+   "secs": 14.004,
+   "model_secs": 10.238,
+   "tool_secs": 3.766,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 9100,
+   "model_in": 5910,
+   "model_out": 3190,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62866,
+   "output_tokens": 1395,
+   "cost_usd": 0.0810146,
+   "turns": 3,
+   "secs": 14.568,
+   "model_secs": 13.26,
+   "tool_secs": 1.308,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 6037,
+   "model_in": 3329,
+   "model_out": 2708,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 82398,
+   "output_tokens": 1407,
+   "cost_usd": 0.0824454,
+   "turns": 5,
+   "secs": 17.797,
+   "model_secs": 15.842,
+   "tool_secs": 1.955,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 8332,
+   "model_in": 4992,
+   "model_out": 3340,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62293,
+   "output_tokens": 1703,
+   "cost_usd": 0.0826006,
+   "turns": 3,
+   "secs": 16.66,
+   "model_secs": 14.89,
+   "tool_secs": 1.77,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 32967,
+   "model_in": 28408,
+   "model_out": 4559,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 79449,
+   "output_tokens": 1979,
+   "cost_usd": 0.1260736,
+   "turns": 3,
+   "secs": 20.722,
+   "model_secs": 16.365,
+   "tool_secs": 4.357,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 11419,
+   "model_in": 7367,
+   "model_out": 4052,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63582,
+   "output_tokens": 1706,
+   "cost_usd": 0.0868632,
+   "turns": 3,
+   "secs": 18.431,
+   "model_secs": 16.931,
+   "tool_secs": 1.5,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 8004,
+   "model_in": 5368,
+   "model_out": 2636,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62755,
+   "output_tokens": 1398,
+   "cost_usd": 0.0819154,
+   "turns": 5,
+   "secs": 18.886,
+   "model_secs": 13.309,
+   "tool_secs": 5.577,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 6657,
+   "model_in": 3468,
+   "model_out": 3189,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 60862,
+   "output_tokens": 1343,
+   "cost_usd": 0.0756896,
+   "turns": 3,
+   "secs": 18.047,
+   "model_secs": 12.472,
+   "tool_secs": 5.575,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 11535,
+   "model_in": 7760,
+   "model_out": 3775,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 86799,
+   "output_tokens": 1852,
+   "cost_usd": 0.09594559999999999,
+   "turns": 5,
+   "secs": 23.397,
+   "model_secs": 17.818,
+   "tool_secs": 5.579,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 24474,
+   "model_in": 20249,
+   "model_out": 4225,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 68409,
+   "output_tokens": 1753,
+   "cost_usd": 0.1087958,
+   "turns": 3,
+   "secs": 18.141,
+   "model_secs": 16.772,
+   "tool_secs": 1.369,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 4948,
+   "model_in": 2776,
+   "model_out": 2172,
+   "calls": 5,
+   "failed": 2,
+   "clasify_calls": 0,
+   "input_tokens": 80837,
+   "output_tokens": 1462,
+   "cost_usd": 0.0819118,
+   "turns": 6,
+   "secs": 16.242,
+   "model_secs": 14.334,
+   "tool_secs": 1.908,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 5975,
+   "model_in": 3657,
+   "model_out": 2318,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 40916,
+   "output_tokens": 968,
+   "cost_usd": 0.0686384,
+   "turns": 2,
+   "secs": 10.52,
+   "model_secs": 9.65,
+   "tool_secs": 0.87,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 3880,
+   "model_in": 2135,
+   "model_out": 1745,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 60706,
+   "output_tokens": 831,
+   "cost_usd": 0.0997528,
+   "turns": 3,
+   "secs": 12.284,
+   "model_secs": 8.702,
+   "tool_secs": 3.582,
+   "ok": true
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 5663,
+   "model_in": 3772,
+   "model_out": 1891,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 61150,
+   "output_tokens": 970,
+   "cost_usd": 0.0727772,
+   "turns": 3,
+   "secs": 12.764,
+   "model_secs": 9.549,
+   "tool_secs": 3.215,
+   "ok": true
+  }
+ ],
+ "judgments": [
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q1",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X matches all required facts and the current canary SHA; Y's code facts are correct but its frozen SHA is stale/mismatched."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q10",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are fully correct; X wins the tie on lower instrumented character count (5,263 vs 7,558)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q11",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X includes the decisive Go build dispatch and exact stdout/stdin wiring that Y omits."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q12",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both answers are materially correct; X wins the tie by the smaller character/call footprint."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q13",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers get all required facts right; X wins the correctness tie by a large character gap."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q14",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 4,
+     "depth": 2,
+     "workflow": 2
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X correctly says vite is a required peer dependency and absent from regular dependencies; Y misclassifies devDependencies.vite as dependencies.vite."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q15",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Correctness is tied on the required facts; Y wins on the much lower character count (5,467 vs 9,294)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q16",
+   "scores": {
+    "mcp": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y directly cites both dependency fields; X gets the chain right but leaves ESLint\u2019s dependencies field inferred."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q17",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are correct, but Y ties each claim to tighter primary evidence and uses the leaner two-call workflow."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q18",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X directly verified exact dependency-section membership; Y's final facts are correct but its evidence inferred several section headers from match lines."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q19",
+   "scores": {
+    "mcp": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "same correctness on JS paths/error surfacing and same missing native dispatch symbols, but Y uses far fewer characters"
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q2",
+   "scores": {
+    "mcp": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y ties the NO answer directly to the entry/export source file, while X relies mainly on code-search absence and a positive-control hit."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q20",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Equal correctness; X is slightly more complete on the path and uses 3,325 fewer characters with the same call count."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q21",
+   "scores": {
+    "gh-lean": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y has fewer material errors in the conditional edge graph; X incorrectly remaps before_model END to exitNode and blurs mutually exclusive tools edges."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q22",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y quotes an exact proving lib/ diff hunk; X\u2019s hunk is partially elided, and Y also uses far fewer characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q23",
+   "scores": {
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X wins because it supplies the rw_verify_area permission/position checks that Y explicitly leaves unknown."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q24",
+   "scores": {
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y matches all call-site facts and correctly distinguishes trailing config removal as not a JS call-site break, while X overbroadly marks any removal as breaking."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q25",
+   "scores": {
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X cites the final patch hunks accurately; Y\u2019s second hunk header is wrong despite a leaner run."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q26",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are correct; X wins the tie-break with fewer characters (3823 vs 6037)."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q27",
+   "scores": {
+    "gh-lean": {
+     "correctness": 6,
+     "depth": 3,
+     "workflow": 3
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y expanded the query-core wildcard and enumerated the required core classes/utilities; X left that material surface unknown."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q28",
+   "scores": {
+    "gh-lean": {
+     "correctness": 6,
+     "depth": 3,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp",
+   "reason": "Y identifies the SessionDB-backed conversation store/retrieval path that X omits; X's smaller character count is not a correctness tiebreak."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q29",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y covers the current 2026-07-28 OAuth flow including PKCE/resource/issuer token acquisition; X admits that part is unverified/incomplete."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q3",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "X is fully correct on the route owner and commit behavior; Y adds an unsupported overbroad claim that connect/head/options/trace are generated automatically."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q30",
+   "scores": {
+    "mcp": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    },
+    "gh-lean": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y answers the required message-pipe establishment mechanism with verified documentation, while X explicitly leaves that material part unknown."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q4",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "X includes the material maxRedirects===0 native branch and the redirect-following httpsFollow/httpFollow branch; Y omits the exact native-branch condition."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q5",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "X has the complete Vapor async adopted-range removal and no false test-expectation claim; Y misstates one core async hydration test."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q6",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "X gives the same correct dependency and layer functions at the current default router ref, while Y uses an older router ref and weaker evidence."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q7",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Y is fully correct on the current ref, while X has a minor wrong import-path claim (`zustand/vanilla`) and uses more characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q8",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "gh-lean",
+   "reason": "Both answers are correct on the class, files, base class, and public dispatchEvent method; X wins the indistinguishable-correctness tie by using fewer characters."
+  },
+  {
+   "pair": "mcp~gh-lean",
+   "pass": 1,
+   "q": "Q9",
+   "scores": {
+    "gh-lean": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are correct, but Y verifies the full route call and hooks.js runner definition; depth beats X's partial route grep despite X's lower character count."
+  }
+ ]
+}

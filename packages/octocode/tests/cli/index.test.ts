@@ -5,10 +5,6 @@ const mocks = vi.hoisted(() => ({
   configView: vi.fn(async () => 0),
   resolve: vi.fn((): string | null => '/native/octocode'),
   skillHandler: vi.fn(),
-  schemaHandler: vi.fn(),
-  toolHelp: vi.fn(async (_bin: string, name: string) =>
-    name === 'clasify' ? 0 : undefined
-  ),
 }));
 
 vi.mock('../../src/cli/native-delegate.js', async importOriginal => ({
@@ -23,12 +19,6 @@ vi.mock('../../src/cli/commands/config-view.js', () => ({
 }));
 vi.mock('../../src/cli/commands/skill.js', () => ({
   skillCommand: { name: 'skill', options: [], handler: mocks.skillHandler },
-}));
-vi.mock('../../src/cli/commands/tool-help.js', () => ({
-  runToolHelp: mocks.toolHelp,
-}));
-vi.mock('../../src/cli/commands/schema.js', () => ({
-  schemaCommand: { name: 'schema', handler: mocks.schemaHandler },
 }));
 
 /** Run `body` with `process.stdout.isTTY` set to `tty`. */
@@ -88,59 +78,29 @@ describe('runCLI native boundary', () => {
     expect(mocks.skillHandler).not.toHaveBeenCalled();
   });
 
-  it('keeps clasify execution and help native while schema discovery stays Node-owned', async () => {
+  it('delegates tool execution, schema, and every help to the binary', async () => {
     const { runCLI } = await import('../../src/cli/index.js');
-    const invocation = ['clasify', '{"resources":[],"questions":[]}'];
-    await runCLI(invocation);
-    expect(mocks.delegate).toHaveBeenLastCalledWith(
-      '/native/octocode',
-      invocation
-    );
-
-    await runCLI(['schema', 'clasify', '--view', 'query']);
-    expect(mocks.schemaHandler).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        command: 'schema',
-        args: ['clasify'],
-        options: expect.objectContaining({ view: 'query' }),
-      })
-    );
-    expect(mocks.delegate).toHaveBeenCalledTimes(1);
-
-    // The binary owns `schema --help` and `help schema`.
-    await runCLI(['schema', '--help']);
-    expect(mocks.delegate).toHaveBeenLastCalledWith('/native/octocode', [
-      'schema',
-      '--help',
-    ]);
-    await runCLI(['help', 'schema']);
-    expect(mocks.delegate).toHaveBeenLastCalledWith('/native/octocode', [
-      'help',
-      'schema',
-    ]);
-    expect(mocks.schemaHandler).toHaveBeenCalledTimes(1);
-
-    // Tool help is the binary's help plus the catalog's input section.
-    await runCLI(['clasify', '--help']);
-    await runCLI(['help', 'clasify']);
-    expect(mocks.toolHelp.mock.calls).toEqual([
-      ['/native/octocode', 'schema'],
-      ['/native/octocode', 'schema'],
-      ['/native/octocode', 'clasify'],
-      ['/native/octocode', 'clasify'],
-    ]);
-    expect(mocks.delegate).toHaveBeenCalledTimes(3);
+    for (const argv of [
+      ['clasify', '{"resources":[],"questions":[]}'],
+      ['schema', 'clasify', '--view', 'query'],
+      ['schema', '--help'],
+      ['help', 'schema'],
+      ['clasify', '--help'],
+      ['help', 'clasify'],
+    ]) {
+      await runCLI(argv);
+      expect(mocks.delegate).toHaveBeenLastCalledWith('/native/octocode', argv);
+    }
+    expect(mocks.delegate).toHaveBeenCalledTimes(6);
+    expect(mocks.skillHandler).not.toHaveBeenCalled();
   });
 
-  it('renders the schema catalog for a bare invocation on a pipe', async () => {
+  it('lets the binary answer a bare invocation on a pipe', async () => {
     const { runCLI } = await import('../../src/cli/index.js');
     await withStdoutTty(false, async () => {
       await runCLI([]);
     });
-    expect(mocks.schemaHandler).toHaveBeenCalledWith(
-      expect.objectContaining({ command: 'schema', args: [] })
-    );
-    expect(mocks.delegate).not.toHaveBeenCalled();
+    expect(mocks.delegate).toHaveBeenCalledWith('/native/octocode', []);
   });
 
   it('prints native root help for a bare invocation on a terminal', async () => {
@@ -149,7 +109,6 @@ describe('runCLI native boundary', () => {
       await runCLI([]);
     });
     expect(mocks.delegate).toHaveBeenCalledWith('/native/octocode', ['--help']);
-    expect(mocks.schemaHandler).not.toHaveBeenCalled();
   });
 
   it('delegates top-level help, version, and unknown commands to native parsing', async () => {
@@ -176,7 +135,6 @@ describe('runCLI native boundary', () => {
       await runCLI(argv);
       expect(mocks.delegate).toHaveBeenCalledWith('/native/octocode', argv);
       expect(mocks.delegate).toHaveBeenCalledTimes(1);
-      expect(mocks.schemaHandler).not.toHaveBeenCalled();
     }
   );
 

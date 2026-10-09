@@ -12,30 +12,38 @@
 //! request's search scope (the repository), not the member crate.
 
 use super::LspSearchQuery;
-use super::failure::flag_partial;
+use super::failure::{FILE_LEVEL_REASONS, TEXT_CHECK, flag_partial, flagged_with};
 use super::inferred_project::is_incoming;
 use super::scope::Scope;
-use crate::tools::id::{Channel, ToolId, channel};
+use crate::tools::id::{Channel, ToolId, channel, continuation_channels};
 use serde_json::{Value, json};
 use std::path::Path;
 
 pub(super) const DYNAMIC_REASON: &str = "dynamicDispatch";
 pub(super) const CFG_REASON: &str = "cfgGatedFiles";
 pub(super) const CFG_NEGATED_REASON: &str = "cfgNegatedFeatures";
-const PYTHON_WARNING: &str = "The Python language server resolves a use only through a receiver whose type it infers; uses through untyped or dynamic receivers (managers, mixins, getattr, duck typing) are missing. Confirm with hints.textSearch.";
+const PYTHON_WARNING: &str = "The Python language server resolves a use only through a receiver whose type it infers; uses through untyped or dynamic receivers (managers, mixins, getattr, duck typing) are missing. Confirm with a localSearch of the name.";
 /// Bound of the Rust gate scan; a larger workspace counts what it reached.
 const MAX_SCANNED_FILES: usize = 20_000;
 const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
 const GATE_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// Where an `lspSearch` continuation named `name` lands in the response
-/// (`next.<name>` for a page, `hints.<name>` for a lead), so tool text
-/// names the place an agent finds it.
-pub(super) fn lead_ref(name: &str) -> String {
+/// Where an `lspSearch` continuation named `name` lands in a default
+/// response (`next.<name>` for a page, `hints.<name>` for a default lead),
+/// so tool text names only a place an agent finds it; `None` for an opt-in
+/// lead (`extras: ["hints"]`).
+pub(super) fn lead_ref(name: &str) -> Option<String> {
     match channel(ToolId::LspSearch, name) {
-        Channel::Page => format!("next.{name}"),
-        Channel::Lead => format!("hints.{name}"),
+        Channel::Page => Some(format!("next.{name}")),
+        Channel::Lead => continuation_channels::DEFAULT_LEADS
+            .contains(&crate::tools::id::kind(name))
+            .then(|| format!("hints.{name}")),
     }
+}
+
+/// [`lead_ref`] of the lexical `textSearch` check, else the search itself.
+fn text_check() -> String {
+    lead_ref("textSearch").unwrap_or_else(|| TEXT_CHECK.to_owned())
 }
 
 pub(super) fn annotate(
@@ -47,12 +55,12 @@ pub(super) fn annotate(
     if !is_incoming(&query.operation())
         || !row.is_object()
         || row.get("status").and_then(Value::as_str) == Some("error")
-        || row.pointer("/payload/coverage/reason").is_some()
+        || flagged_with(row, &FILE_LEVEL_REASONS)
     {
         return;
     }
     match language_id {
-        Some("python") => flag_partial(row, query, DYNAMIC_REASON, PYTHON_WARNING, scope),
+        Some("python") => flag_partial(row, query, DYNAMIC_REASON, Some(PYTHON_WARNING), scope),
         Some("rust") => annotate_rust(row, query, scope),
         _ => {}
     }
@@ -71,9 +79,9 @@ fn annotate_rust(row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
                 "{} Rust files that mention `{name}` carry cfg(not(feature …)) gates; an all-features build compiles that code out. {}Compare with the default-features run, or confirm with {}.",
                 negated.matches,
                 negated.incomplete_warning(),
-                lead_ref("textSearch")
+                text_check()
             );
-            flag_partial(row, query, CFG_NEGATED_REASON, &warning, scope);
+            flag_partial(row, query, CFG_NEGATED_REASON, Some(&warning), scope);
         }
         return;
     }
@@ -81,22 +89,17 @@ fn annotate_rust(row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
     if gated.matches == 0 && !gated.incomplete() {
         return;
     }
-    let follow = if gated.matches > 0 {
-        format!(
-            "{} or {}",
-            lead_ref("expandFeatures"),
-            lead_ref("textSearch")
-        )
+    // Gated files found: the rerun page and the partial reason say it all.
+    // Only an incomplete scan that found none needs the prose.
+    if gated.matches > 0 {
+        flag_partial(row, query, CFG_REASON, None, scope);
     } else {
-        lead_ref("textSearch")
-    };
-    let warning = format!(
-        "{} Rust files that mention `{name}` carry cfg(feature …) gates. {}Uses under features rust-analyzer left off may be missing: {follow}.",
-        gated.matches,
-        gated.incomplete_warning(),
-    );
-    flag_partial(row, query, CFG_REASON, &warning, scope);
-    if gated.matches == 0 {
+        let warning = format!(
+            "{}Uses under features rust-analyzer left off may be missing: {}.",
+            gated.incomplete_warning(),
+            text_check()
+        );
+        flag_partial(row, query, CFG_REASON, Some(&warning), scope);
         return;
     }
     let mut rerun = query.to_row();
@@ -258,11 +261,12 @@ mod tests {
         );
         let scope = Scope::new("/w".into(), vec!["*.py".into()]);
         annotate(&mut row, &q, Some("python"), &scope);
-        assert_eq!(
-            row["payload"]["coverage"]["reason"], DYNAMIC_REASON,
-            "{row}"
-        );
+        // The reason is stated once, in partialReasons.
+        assert_eq!(row["partialReasons"], json!([DYNAMIC_REASON]), "{row}");
+        assert!(row["payload"]["coverage"].get("reason").is_none(), "{row}");
         assert_eq!(row["isPartial"], true, "{row}");
+        let warning = row["warnings"][0].as_str().expect("warning");
+        assert!(!warning.contains("hints.textSearch"), "{warning}");
         assert_eq!(row["next"]["textSearch"]["tool"], "localSearch", "{row}");
         // Outgoing questions are not affected.
         let mut definition = json!({"payload":{"kind":"definition","matches":[]}});
@@ -291,13 +295,15 @@ mod tests {
         let row_query = json!({"path":format!("{root}/lib.rs"),"operation":"references","symbolName":"spawn_blocking","lineHint":1});
         let mut row = json!({"payload":{"kind":"references","matches":[{"path":"lib.rs"}]}});
         annotate(&mut row, &query(row_query.clone()), Some("rust"), &scope);
-        assert_eq!(row["payload"]["coverage"]["reason"], CFG_REASON, "{row}");
+        // Gated files found: the rerun page and one reason, no prose.
+        assert_eq!(row["partialReasons"], json!([CFG_REASON]), "{row}");
         assert!(
-            row["warnings"][0]
-                .as_str()
-                .is_some_and(|w| w.starts_with("1 Rust files")),
+            row["payload"]
+                .get("coverage")
+                .is_none_or(|c| c.get("reason").is_none()),
             "{row}"
         );
+        assert!(row.get("warnings").is_none(), "{row}");
         let rerun = &row["next"]["expandFeatures"]["query"]["queries"][0];
         assert_eq!(rerun["rustContext"]["features"], "all", "{row}");
         assert_eq!(rerun["symbolName"], "spawn_blocking", "{row}");
@@ -309,27 +315,21 @@ mod tests {
         assert!(all.get("isPartial").is_none(), "{all}");
     }
 
+    /// Tool text names only what a default response carries: pages, and
+    /// default leads; an opt-in lead (`textSearch`) is named by its search.
     #[test]
-    fn warning_names_the_channel_the_lead_lands_in() {
-        assert_eq!(lead_ref("expandFeatures"), "next.expandFeatures");
-        assert_eq!(lead_ref("textSearch"), "hints.textSearch");
-        assert_eq!(lead_ref("nextPage"), "next.nextPage");
-        let dir = tempfile::tempdir().expect("dir");
-        std::fs::write(
-            dir.path().join("gated.rs"),
-            "#[cfg(feature = \"x\")]\nfn t() { spawn_blocking(); }\n",
-        )
-        .expect("gated");
-        let root = dir.path().to_string_lossy().into_owned();
-        let scope = Scope::new(root.clone(), vec!["*.rs".into()]);
-        let mut row = json!({"payload":{"kind":"references","matches":[]}});
-        let q = query(
-            json!({"path":format!("{root}/gated.rs"),"operation":"references","symbolName":"spawn_blocking","lineHint":2}),
+    fn warning_names_only_places_a_default_response_carries() {
+        assert_eq!(
+            lead_ref("expandFeatures").as_deref(),
+            Some("next.expandFeatures")
         );
-        annotate(&mut row, &q, Some("rust"), &scope);
-        let warning = row["warnings"][0].as_str().expect("warning");
-        assert!(warning.contains("next.expandFeatures"), "{warning}");
-        assert!(!warning.contains("hints.expandFeatures"), "{warning}");
+        assert_eq!(lead_ref("nextPage").as_deref(), Some("next.nextPage"));
+        assert_eq!(
+            lead_ref("binarySkipped").as_deref(),
+            Some("hints.binarySkipped")
+        );
+        assert_eq!(lead_ref("textSearch"), None);
+        assert_eq!(text_check(), TEXT_CHECK);
     }
 
     #[test]

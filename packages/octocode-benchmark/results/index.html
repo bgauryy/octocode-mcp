@@ -1,257 +1,603 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Octocode Research Benchmark — leaner GitHub research at equal correctness</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Octocode Benchmark</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
 <style>
-  :root{
-    --bg:#080d18;--bg2:#0b1120;--panel:#0f1729;--panel2:#111a30;--ink:#e8eef8;--mut:#93a1b8;
-    --line:#1e293b;--teal:#2dd4bf;--tealdim:#0f766e;--amber:#f59e0b;--violet:#a78bfa;--slate:#94a3b8;
-  }
-  *{box-sizing:border-box}
-  html{scroll-behavior:smooth}
-  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#0e2036 0%,var(--bg) 55%);color:var(--ink);
-       font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-  a{color:var(--teal);text-decoration:none}a:hover{text-decoration:underline}
-  .wrapc{max-width:1160px;margin:0 auto;padding:0 22px}
-  /* header */
-  header{padding:46px 0 8px}
-  .eyebrow{color:var(--teal);font-weight:700;letter-spacing:.14em;text-transform:uppercase;font-size:11.5px}
-  h1{margin:8px 0 10px;font-size:30px;line-height:1.15;letter-spacing:-.01em}
-  h1 .hl{color:var(--teal)}
-  .lede{color:var(--mut);max-width:760px;font-size:15px}
-  .meta{margin-top:12px;display:flex;flex-wrap:wrap;gap:8px}
-  .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:11.5px;color:var(--mut)}
-  .chip b{color:var(--ink)}
-  /* verdict */
-  .verdict{margin:26px 0 6px;background:linear-gradient(180deg,#0d2033,#0f1729);border:1px solid #17324e;border-radius:18px;padding:22px 22px 8px}
-  .verdict .big{font-size:23px;line-height:1.35;font-weight:600;margin:2px 0 4px}
-  .verdict .big b{color:var(--teal)}
-  .tie{display:inline-block;background:#063d34;color:#5eead4;border:1px solid #0f766e;border-radius:999px;padding:1px 10px;font-size:12px;font-weight:700;vertical-align:middle}
-  .vsub{color:var(--mut);font-size:13px;max-width:820px;margin-bottom:14px}
-  .cmp{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin:8px 0 16px}
-  .vs{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:16px}
-  .vs .head{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);margin-bottom:8px}
-  .vs .mult{font-size:34px;font-weight:800;color:var(--teal);letter-spacing:-.02em;line-height:1}
-  .vs .mult small{font-size:14px;font-weight:600;color:var(--mut)}
-  .vs .sub{font-size:12px;color:var(--mut);margin-top:8px}
-  .vs .corr{margin-top:8px;font-size:12px;color:var(--ink)}
-  .bar{height:6px;border-radius:4px;background:#1b2740;margin-top:10px;overflow:hidden}
-  .bar > i{display:block;height:100%;border-radius:4px}
-  /* KPI strip */
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:16px 0}
-  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
-  .kpi .k{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
-  .kpi .v{font-size:22px;font-weight:800;margin-top:3px}
-  .kpi .d{font-size:11.5px;color:var(--mut);margin-top:3px}
-  /* panels */
-  section.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin:16px 0}
-  section.panel h2{margin:0 0 3px;font-size:17px}
-  .desc{color:var(--mut);font-size:12.5px;margin-bottom:12px;max-width:860px}
-  .wrap{position:relative;height:340px}
-  code{background:#0a1222;border:1px solid var(--line);padding:1px 5px;border-radius:5px;font-size:12px}
-  .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:middle}
-  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
-  button{background:#16233c;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;font-size:12px}
-  button.active{background:var(--tealdim);border-color:var(--tealdim);color:#eafffb}
-  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
-  .card{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:14px}
-  .card h3{margin:0 0 4px;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--teal)}
-  .card .cdesc{color:var(--mut);font-size:11px;margin:0 0 9px}
-  .rowr{display:flex;justify-content:space-between;padding:2px 0;font-size:13px}
-  .rowr b{font-variant-numeric:tabular-nums}
-  .note{border-left:3px solid #475569;background:#0a1222;padding:11px 13px;border-radius:8px;color:#c7d2e0;font-size:12.5px;margin-top:12px}
-  .mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
-  .mcol h4{margin:0 0 4px;font-size:13px;color:#7dd3fc}
-  .mcol p{margin:0;color:#c7d2e0;font-size:12.5px}
-  .qlinks{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
-  .qlinks a{padding:4px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--teal);font-size:12px;font-variant-numeric:tabular-nums}
-  .qlinks a:hover{border-color:var(--teal);text-decoration:none}
-  footer{color:var(--mut);font-size:12px;padding:8px 0 40px}
+:root{--font-anthropic-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+--font-anthropic-serif:Georgia,"Times New Roman",serif;--cds-font-size-caption:12px;--cds-font-size-body:14px;
+--cds-font-size-heading:16px;--cds-font-size-title:22px;--cds-font-weight-medium:600;--cds-gap-xs:4px;--cds-gap-sm:8px;
+--cds-gap-md:16px;--cds-gap-lg:24px;--cds-pad-xs:4px;--cds-pad-sm:8px;--cds-pad-md:12px;--cds-pad-lg:16px;--cds-radius:10px;
+--cds-dur-slow:.3s;--color-bg:#fbfbf9;--color-panel:#fff;--color-fg:#1d1d1b;--color-fg-muted:#6b6a65;
+--color-border-line:#e4e2dc;--color-ok:#2f7d4f;--color-warn:#b7791f;--color-bad:#c0392b;--cds-chart-grid:#ecebe6;
+--cds-chart-reference:#8a8984;--cds-surface-popover:#fff;--cds-border:#dddbd5;--cds-shadow-popover:0 4px 16px rgba(0,0,0,.12);
+--cds-text-secondary:#6b6a65;--c0:#2a78d6;--c1:#eb6834;--c2:#1baf7a;--c3:#eda100;--c4:#e87ba4;--c5:#008300;--c6:#4a3aa7;--c7:#e34948;
+--div-pos:#2a78d6;--div-neg:#e34948}
+@media (prefers-color-scheme: dark){:root{--color-bg:#1b1b19;--color-panel:#242422;--color-fg:#ecebe6;--color-fg-muted:#a3a19a;
+--color-border-line:#3a3936;--cds-chart-grid:#33322f;--cds-surface-popover:#2b2b29;--cds-border:#44433f;--cds-text-secondary:#a3a19a;
+--c0:#3987e5;--c1:#d95926;--c2:#199e70;--c3:#c98500;--c4:#d55181;--c5:#008300;--c6:#9085e9;--c7:#e66767;
+--div-pos:#3987e5;--div-neg:#e66767;color-scheme:dark}}
+body{margin:0;background:var(--color-bg);color:var(--color-fg);font:14px/1.5 var(--font-anthropic-sans)}
+#dash-root{padding:24px 16px}.dash-skeleton{background:var(--cds-chart-grid);border-radius:var(--cds-radius)}
+</style></head><body><div id="dash-root"><style>
+#dash-root .ob{max-width:76rem;margin-inline:auto;display:flex;flex-direction:column;gap:var(--cds-gap-lg);font-family:var(--font-anthropic-sans)}
+.ob .ob-head{display:flex;flex-direction:column;gap:var(--cds-gap-sm)}
+.ob .ob-eyebrow{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);letter-spacing:.06em;text-transform:uppercase}
+.ob .ob-title{font-family:var(--font-anthropic-serif);font-weight:400;font-size:calc(var(--cds-font-size-title) * 1.5);line-height:1.1;margin:0;text-wrap:balance}
+.ob .ob-lede{margin:0;color:var(--color-fg-muted);font-size:var(--cds-font-size-body);max-width:72ch;line-height:1.55}
+.ob .ob-lede b{color:var(--color-fg);font-weight:600;font-variant-numeric:tabular-nums}
+.ob .ob-tabs{display:flex;gap:var(--cds-gap-xs);flex-wrap:wrap;border-bottom:1px solid var(--color-border-line)}
+.ob .ob-tab{appearance:none;background:none;border:0;border-bottom:2px solid transparent;margin-bottom:-1px;padding:var(--cds-pad-sm) var(--cds-pad-md);font:inherit;font-size:var(--cds-font-size-body);color:var(--color-fg-muted);cursor:pointer}
+.ob .ob-tab:hover{color:var(--color-fg)}
+.ob .ob-tab[aria-selected="true"]{color:var(--color-fg);border-bottom-color:var(--color-fg);font-weight:var(--cds-font-weight-medium)}
+.ob .ob-tab:focus-visible{outline:2px solid var(--color-fg);outline-offset:2px;border-radius:var(--cds-radius)}
+.ob .ob-page{display:flex;flex-direction:column;gap:var(--cds-gap-md)}
+.ob .ob-page[hidden],.ob [hidden]{display:none}
+.ob{--ob-div-pos:var(--div-pos,#2a78d6);--ob-div-neg:var(--div-neg,#e34948)}
+.ob .ob-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11.5rem),1fr));gap:var(--cds-gap-md)}
+.ob .ob-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));gap:var(--cds-gap-md)}
+.ob .ob-card{background:var(--color-panel);border:1px solid var(--color-border-line);border-radius:var(--cds-radius);padding:var(--cds-pad-lg);min-width:0;display:flex;flex-direction:column;gap:var(--cds-gap-sm)}
+.ob .ob-card h2,.ob .ob-card h3{margin:0;font-size:var(--cds-font-size-heading);font-weight:var(--cds-font-weight-medium);text-wrap:balance}
+.ob .ob-note{margin:0;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption);line-height:1.5;max-width:75ch}
+.ob .ob-kpi{gap:var(--cds-gap-xs)}
+.ob .ob-kpi-label{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);display:flex;align-items:center;gap:var(--cds-gap-xs)}
+.ob .ob-big{font-family:var(--font-anthropic-serif);font-weight:400;font-size:calc(var(--cds-font-size-title) * 1.35);line-height:1.1;font-variant-numeric:tabular-nums}
+.ob .ob-kpi-sub{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);font-variant-numeric:tabular-nums}
+.ob .ob-kpi-lead{border-color:var(--color-fg)}
+.ob .ob-sw{display:inline-block;width:.6rem;height:.6rem;border-radius:.15rem;flex:none}
+.ob .ob-chart{position:relative;min-height:12rem;width:100%}
+.ob .ob-chart svg{display:block;overflow:visible}
+.ob .ob-chart-tall{min-height:40rem}
+.ob .ob-legend{display:flex;flex-wrap:wrap;gap:var(--cds-gap-sm) var(--cds-gap-md);font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.ob .ob-legend span{display:inline-flex;align-items:center;gap:var(--cds-gap-xs)}
+.ob .ob-tip{position:absolute;pointer-events:none;background:var(--cds-surface-popover);border:1px solid var(--cds-border);border-radius:var(--cds-radius);box-shadow:var(--cds-shadow-popover);padding:var(--cds-pad-xs) var(--cds-pad-sm);font-size:var(--cds-font-size-caption);line-height:1.5;z-index:2;min-width:11rem;max-width:20rem}
+.ob .ob-tip .ob-tip-h{color:var(--cds-text-secondary);margin-bottom:2px}
+.ob .ob-tip .ob-tip-r{display:flex;align-items:center;gap:var(--cds-gap-xs);font-variant-numeric:tabular-nums}
+.ob .ob-tip .ob-tip-r b{margin-left:auto;padding-left:var(--cds-gap-sm);font-weight:600}
+.ob .ob-mx{display:grid;gap:4px}
+.ob .ob-mx-wrap{overflow-x:auto}
+.ob .ob-mx-h{font-size:var(--cds-font-size-caption);color:var(--color-fg-muted);display:flex;align-items:center;gap:var(--cds-gap-xs);padding:var(--cds-pad-xs)}
+.ob .ob-mx-hc{justify-content:center;text-align:center}
+.ob .ob-mx-c{border-radius:var(--cds-radius);padding:var(--cds-pad-sm) var(--cds-pad-xs);text-align:center;font-variant-numeric:tabular-nums;font-weight:600;min-height:3.2rem;display:flex;flex-direction:column;justify-content:center}
+.ob .ob-mx-c small{font-weight:400;font-size:var(--cds-font-size-caption);color:var(--color-fg-muted)}
+.ob .ob-mx-self{color:var(--color-fg-muted);font-weight:400;border:1px dashed var(--color-border-line)}
+.ob .ob-table-wrap{overflow-x:auto;max-width:100%}
+.ob table.ob-t{border-collapse:collapse;width:100%;font-size:var(--cds-font-size-caption);font-variant-numeric:tabular-nums}
+.ob table.ob-t th{text-align:left;color:var(--color-fg-muted);font-weight:var(--cds-font-weight-medium);padding:var(--cds-pad-xs) var(--cds-pad-sm);border-bottom:1px solid var(--color-border-line);white-space:nowrap}
+.ob table.ob-t td{padding:var(--cds-pad-xs) var(--cds-pad-sm);border-bottom:1px solid var(--color-border-line);vertical-align:top}
+.ob table.ob-t td.n,.ob table.ob-t th.n{text-align:right;white-space:nowrap}
+.ob table.ob-t tr:last-child td{border-bottom:0}
+.ob table.ob-t code,.ob .ob-code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.95em}
+.ob .ob-tool{display:inline-flex;align-items:center;gap:var(--cds-gap-xs);white-space:nowrap}
+.ob .ob-pill{display:inline-block;font-size:var(--cds-font-size-caption);padding:0 var(--cds-pad-xs);border:1px solid var(--color-border-line);border-radius:999px;color:var(--color-fg-muted);white-space:nowrap}
+.ob .ob-changes{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:var(--cds-gap-md)}
+.ob .ob-changes ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:var(--cds-gap-sm)}
+.ob .ob-changes li{display:flex;flex-direction:column;gap:2px;font-size:var(--cds-font-size-caption);line-height:1.5;color:var(--color-fg-muted)}
+.ob .ob-changes li .ob-ct{color:var(--color-fg);font-weight:600;font-size:var(--cds-font-size-body)}
+.ob .ob-method{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));gap:var(--cds-gap-md)}
+.ob .ob-method p{margin:0;font-size:var(--cds-font-size-body);line-height:1.6;color:var(--color-fg-muted);max-width:65ch}
+.ob .ob-method p b{color:var(--color-fg)}
+.ob .ob-callout{border:1px solid var(--color-border-line);border-left:3px solid var(--color-warn);background:var(--color-panel);border-radius:var(--cds-radius);padding:var(--cds-pad-md) var(--cds-pad-lg);font-size:var(--cds-font-size-caption);line-height:1.55;color:var(--color-fg-muted)}
+.ob .ob-callout b{color:var(--color-fg)}
+.ob .ob-fail{display:flex;align-items:center;justify-content:center;gap:var(--cds-gap-xs);min-height:inherit;height:100%;color:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.ob .ob-fail::before{content:"";width:.375rem;height:.375rem;border-radius:50%;background:var(--color-bad)}
+.ob [data-dash-source-state=empty]{color:transparent}
+.ob [data-dash-source-state=refreshing]{opacity:.5;transition:opacity var(--cds-dur-slow)}
+.ob .ob-axis text{fill:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.ob .ob-axis line,.ob .ob-axis path{stroke:var(--cds-chart-grid)}
+.ob .ob-axis .domain{display:none}
+.ob .ob-lbl{fill:var(--color-fg);font-size:var(--cds-font-size-caption)}
+.ob .ob-lbl-m{fill:var(--color-fg-muted);font-size:var(--cds-font-size-caption)}
+.ob .ob-val{fill:var(--color-fg);font-size:var(--cds-font-size-caption);font-weight:600;font-variant-numeric:tabular-nums}
 </style>
-</head>
-<body>
-<div class="wrapc">
-<header>
-  <div class="eyebrow">Octocode Research Benchmark</div>
-  <h1>Same answers, <span class="hl">a fraction of the context</span>.</h1>
-  <div class="lede">A blind, head-to-head test of GitHub <b>research</b> tools on 30 real questions. Every tool
-    reaches near-identical correctness — so the real question is <b>how many characters each one pushes through
-    the model</b> to get there. Fewer characters = a cleaner context window and sharper model attention.</div>
-  <div class="meta" id="meta"></div>
-</header>
 
-<!-- VERDICT -->
-<div class="verdict">
-  <div class="big" id="blLine"></div>
-  <div class="vsub" id="blSub"></div>
-  <div class="cmp" id="cmp"></div>
+<div class="ob">
+  <header class="ob-head" id="top">
+    <div class="ob-eyebrow">Octocode research benchmark</div>
+    <h1 class="ob-title" id="title">Octocode benchmark</h1>
+    <p class="ob-lede" id="takeaway" data-source="groups"></p>
+    <nav class="ob-tabs" role="tablist" aria-label="Sections">
+      <button class="ob-tab" role="tab" id="tab-benchmark" data-page="benchmark" aria-selected="true">Benchmark</button>
+      <button class="ob-tab" role="tab" id="tab-whats-new" data-page="whats-new" aria-selected="false">What's new</button>
+      <button class="ob-tab" role="tab" id="tab-method" data-page="method" aria-selected="false">How it's measured</button>
+    </nav>
+  </header>
+
+  <section class="ob-page" id="benchmark" role="tabpanel" aria-labelledby="tab-benchmark">
+    <div class="ob-kpis dash-skeleton" id="kpis" data-source="groups"></div>
+
+    <div class="ob-grid">
+      <div class="ob-card" id="card-median">
+        <h2>Characters for a typical question</h2>
+        <p class="ob-note">Median characters each tool pushed through the model per question: tool output read back plus the commands and answer written. Shorter is leaner.</p>
+        <div class="ob-chart dash-skeleton" id="chart-median" data-source="groups"></div>
+      </div>
+      <div class="ob-card" id="card-forest">
+        <h2 id="forest-title">How much leaner the anchor is</h2>
+        <p class="ob-note">Per-question geometric mean of the other tool's characters divided by the anchor's, with a 95% bootstrap interval. Right of the 1× line means the anchor used fewer.</p>
+        <div class="ob-chart dash-skeleton" id="chart-forest" data-source="groups"></div>
+      </div>
+    </div>
+
+    <div class="ob-card" id="card-questions">
+      <h2>Every question, every tool</h2>
+      <p class="ob-note">One row per question on a log scale. The large dot is the anchor; the grey bar spans the cheapest to the most expensive tool. Hover a row for exact counts.</p>
+      <div class="ob-legend" id="legend" data-source="groups"></div>
+      <div class="ob-chart ob-chart-tall dash-skeleton" id="chart-questions" data-source="per_question"></div>
+    </div>
+
+    <div class="ob-card" id="card-matrix">
+        <h2>Comparison matrix</h2>
+        <p class="ob-note">Each cell: how many times fewer characters the <b>row</b> tool used than the <b>column</b> tool on a typical question, and on how many questions the row tool was leaner.</p>
+        <div class="ob-mx-wrap"><div class="ob-mx dash-skeleton" id="matrix" data-source="matrix"></div></div>
+      </div>
+    <div class="ob-grid">
+      <div class="ob-card" id="card-time">
+        <h2>Time to answer</h2>
+        <p class="ob-note">Mean seconds per question from the agent's start to its answer: model time, then tool calls and harness overhead. Only tools run with the current harness are timed; older campaigns didn't record comparable times. Labels show the median.</p>
+        <div class="ob-chart dash-skeleton" id="chart-time" data-source="groups"></div>
+      </div>
+      <div class="ob-card" id="card-correct">
+        <h2>Correctness is a tie</h2>
+        <p class="ob-note">Blind-judge correctness, rounded to whole points out of 10. The judge moves by about a point between runs, so tools within one point are equally correct. Hover for the exact mean.</p>
+        <div class="ob-chart dash-skeleton" id="chart-correct" data-source="groups"></div>
+      </div>
+    </div>
+
+    <div class="ob-card" id="card-h2h">
+      <h2>Head to head, same run</h2>
+      <p class="ob-note">Pairs answered in the same campaign by the same agent model and judged together, the fairest comparison here. "More correct" counts questions where one answer scored higher. Ratios are B ÷ A per question (geometric mean): above 1× means A used fewer characters or less time.</p>
+      <div class="ob-table-wrap">
+        <table class="ob-t" id="table-h2h" data-source="head_to_head" data-row-key="pair">
+          <thead><tr>
+            <th data-field="campaign">Campaign</th><th data-field="a">A</th><th data-field="b">B</th><th class="n" data-field="judged">Judged</th>
+            <th class="n" data-field="a_more_correct">A more correct</th><th class="n" data-field="same">Same</th><th class="n" data-field="b_more_correct">B more correct</th>
+            <th class="n" data-field="a_wins">A wins</th><th class="n" data-field="b_wins">B wins</th>
+            <th class="n" data-field="chars_b_over_a">Chars B÷A</th><th class="n" data-field="a_leaner_on">A leaner on</th>
+            <th class="n" data-field="secs_b_over_a">Time B÷A</th><th class="n" data-field="a_faster_on">A faster on</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="ob-card" id="card-groups">
+      <h2>The tools</h2>
+      <p class="ob-note">How each tool was run and what it cost across the question set.</p>
+      <div class="ob-table-wrap">
+        <table class="ob-t" id="table-groups" data-source="groups" data-row-key="id">
+          <thead><tr>
+            <th data-field="label">Tool</th><th data-field="how">How it ran</th><th data-field="measured">Measured</th>
+            <th class="n" data-field="runs_per_question">Runs / Q</th><th class="n" data-field="median_chars">Median chars / Q</th>
+            <th class="n" data-field="mean_chars">Mean chars / Q</th><th class="n" data-field="total_chars">Total chars</th><th class="n" data-field="secs_median">Median s / Q</th><th class="n" data-field="correctness">Correctness /10</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="ob-card" id="card-live">
+      <h2>Live runs</h2>
+      <p class="ob-note">Every arm of the campaigns run with the current harness: one fresh agent per question, measured from its own transcript.</p>
+      <div class="ob-table-wrap">
+        <table class="ob-t" id="table-live" data-source="live_runs" data-row-key="run">
+          <thead><tr>
+            <th data-field="campaign">Campaign</th><th data-field="arm">Arm</th><th class="n" data-field="runs">Runs</th><th class="n" data-field="calls">Tool calls</th>
+            <th class="n" data-field="failed">Failed</th><th class="n" data-field="clasify_calls">clasify calls</th><th class="n" data-field="median_chars">Median chars / Q</th>
+            <th class="n" data-field="median_secs">Median s / Q</th><th class="n" data-field="input_tokens">Input tokens</th><th class="n" data-field="cost_usd">Cost (USD)</th><th class="n" data-field="correctness">Correctness /10</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="ob-callout" id="caveat"><b>Compare within a campaign first.</b> The "Measured" column says when and how each tool ran. Tools from the same campaign share agent model, harness and time of day; tools from different campaigns used different agents, so read those margins as orientation.</div>
+  </section>
+
+  <section class="ob-page" id="whats-new" role="tabpanel" aria-labelledby="tab-whats-new" hidden>
+    <div class="ob-card" id="card-tools">
+      <h2>Tools, then and now</h2>
+      <p class="ob-note">How the previous release's tools map onto the current tool list.</p>
+      <div class="ob-table-wrap">
+        <table class="ob-t" id="table-tools" data-source="tool_map" data-row-key="v18,v20">
+          <thead><tr><th data-field="v18">Before</th><th data-field="v20">Now</th><th data-field="family">Area</th><th data-field="change">What changed</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="ob-changes dash-skeleton" id="changes" data-source="changes"></div>
+  </section>
+
+  <section class="ob-page" id="method" role="tabpanel" aria-labelledby="tab-method" hidden>
+    <div class="ob-method">
+      <div class="ob-card" id="m-questions"><h2>The questions</h2><p>One shared set of real GitHub research questions, from a single-file lookup to multi-hop traces across repositories, kernels and PR reviews. Each names its repositories and refs and nothing else: no hints, no answer key. Every tool answers the same set.</p></div>
+      <div class="ob-card" id="m-chars"><h2>What is counted</h2><p><b>Characters through the model.</b> Tool output read back into context, plus the tool calls and the final answer the agent wrote, taken from the agent's own transcript. Failed and refused calls count. System prompts and tool schemas don't.</p></div>
+      <div class="ob-card" id="m-agents"><h2>The agents</h2><p>A fresh headless agent answers each question with one tool setup and nothing else: no project files, settings or memory. Octocode arms get only the MCP server; gh arms get only a read-only gh through Bash.</p></div>
+      <div class="ob-card" id="m-judge"><h2>The judge</h2><p>A blind judge from a different model family sees two answers as X and Y in random order with tool names removed, rebuilds the ground truth from GitHub, then scores correctness out of ten. Correctness comes first; fewer characters only break a tie.</p></div>
+      <div class="ob-card" id="m-ratio"><h2>Averaging ratios</h2><p>For each question, the other tool's characters are divided by the anchor's. The headline is the geometric mean of those ratios across questions, with a bootstrap interval, so a few huge questions can't dominate.</p></div>
+      <div class="ob-card" id="m-repro"><h2>Reproduce it</h2><p>Everything lives in <span class="ob-code">packages/octocode-benchmark</span>: <span class="ob-code">compare/bin/run_campaign.sh</span> runs arms, <span class="ob-code">judge_pair.sh</span> judges them, <span class="ob-code">matrix_summary.py</span> builds the matrix. <a href="https://github.com/bgauryy/octocode/tree/main/packages/octocode-benchmark">See the package on GitHub</a>.</p></div>
+    </div>
+  </section>
 </div>
 
-<!-- KPI strip -->
-<div class="kpis" id="kpis"></div>
 
-<!-- distributions -->
-<section class="panel">
-  <h2>Characters per question</h2>
-  <div class="desc">Each line is one tool. Y = characters that tool pushed through the model to answer that question
-    (<b>model-in</b> tool output + <b>model-out</b> commands &amp; final answer). Lower = leaner. Log scale by default —
-    a few questions are far larger than the rest.</div>
-  <div class="toolbar"><span style="color:var(--mut);font-size:12px">Scale</span>
-    <button id="scaleLog" class="active">log</button><button id="scaleLin">linear</button></div>
-  <div class="wrap"><canvas id="charsChart"></canvas></div>
-</section>
-
-<section class="panel">
-  <h2>Correctness per question</h2>
-  <div class="desc">Blind judge score (0–10) for each tool's answer, per question. The lines cluster near the top and
-    overlap — that's the near-parity correctness that makes <i>characters</i> the deciding metric.</div>
-  <div class="wrap"><canvas id="corrChart"></canvas></div>
-</section>
-
-<!-- quick stats -->
-<section class="panel">
-  <h2>Quick stats (per tool)</h2>
-  <div class="desc">Central-tendency summaries across the 30 questions. <b>Median</b> = the robust “typical question”;
-    <b>mean</b> is pulled up by a few large questions.</div>
-  <div class="cards" id="cards"></div>
-</section>
-
-<!-- pooled total (demoted) -->
-<section class="panel">
-  <h2>Total context budget (all 30 questions)</h2>
-  <div class="desc">Sum of every character each tool delivered across the whole set. Useful as a raw budget,
-    <b>but not the headline</b>: it's dominated by a few huge questions, so the multiples look bigger than the
-    typical-question figure above.</div>
-  <div class="wrap" style="height:210px"><canvas id="poolChart"></canvas></div>
-  <div class="note" id="poolNote"></div>
-</section>
-
-<!-- method -->
-<section class="panel">
-  <h2>How this is measured</h2>
-  <div class="mgrid">
-    <div class="mcol"><h4>1 · The 30 questions</h4><p>One shared set (<code>compare/github-questions/Q1…Q30.md</code>) — title, <code>id</code>, and a <code>## Question</code> only; no hints, no answer key. Real GitHub research from single-hit lookups → deep multi-hop reads. Same questions, same frozen refs for every tool — <b>only the CLI differs</b>.</p></div>
-    <div class="mcol"><h4>2 · The arms</h4><p><b>Octocode</b> is the anchor (<code>npx octocode tools …</code>). Baselines: <b>gh</b> (plain), <b>gh+RTK</b> (<code>rtk gh …</code>), <b>gh+Headroom</b> (<code>gh</code> → Headroom compressor). Each is a separate pairwise matchup.</p></div>
-    <div class="mcol"><h4>3 · The flow</h4><p><b>0 Preflight</b> verify + pin tools. <b>1 Answer</b> a fresh isolated agent per (question, arm, pass), leanest legal path. <b>2 Judge</b> grade blind. <b>3 Summarize</b> validate + aggregate. <b>≥3 passes</b>.</p></div>
-    <div class="mcol"><h4>4 · Characters</h4><p>Wrappers log each call: <code>total = model-in + model-out</code> (Unicode code points, both directions; primer excluded, failed calls counted). Never self-reported — recomputed &amp; re-hashed by <code>sumlog.py --strict</code>. Chars ≈ tokens (not a direct token/latency/cost measure).</p></div>
-    <div class="mcol"><h4>5 · The judge</h4><p>Blind X/Y (randomized, seed=42), tool identity hidden. Establishes ground truth, then scores <b>correctness 0–10, depth 1–5, workflow 1–5</b>. Different model family (gpt-5.5) from runners. <b>Correctness-first</b>: leaner never beats more-correct.</p></div>
-    <div class="mcol"><h4>6 · Aggregation</h4><p>Question is the unit. Headline = <b>per-question ratio geometric mean</b>; <b>median</b> = robust central; <b>pooled total</b> shown only with top-contributor share + leave-one-out. ≥3 passes + 95% bootstrap CI. Public suite = <b>orientation, not a shipping gate</b>.</p></div>
-  </div>
-  <div class="desc" style="margin:12px 0 0" id="methodFoot"></div>
-</section>
-
-<section class="panel">
-  <h2>Questions</h2>
-  <div class="desc">The 30 shared GitHub research questions — <a href="https://github.com/bgauryy/octocode/tree/main/packages/octocode-benchmark/compare/github-questions" target="_blank" rel="noopener">browse all on GitHub</a>. Click a number to open it.</div>
-  <div class="qlinks" id="qlinks"></div>
-</section>
-
-<footer>
-  Generated from <code>results/per_question_summary.json</code> by <code>compare/bin/make_report_html.py</code> — every figure recomputed from per-call JSONL logs.
-  See <code>results/PER_QUESTION_SUMMARY.md</code>, <code>results/SUMMARY.md</code>, <code>results/VALIDATION-2026-08-08.md</code>.
-</footer>
 </div>
-
 <script>
-const DATA = {"dataset": "local-build octocode v18.1.1, 30 questions x 3 passes; octocode anchor shared across baselines", "campaigns": {"gh": "full-gh-143806-2026-08-07", "rtk": "full-rtk-162848-2026-08-07", "headroom": "full-134213-2026-08-07"}, "octocode_chars_crosscheck_mismatches": [[21, 65467.7, 52256.0]], "rows": [{"q": 1, "chars": {"octocode": 14697.333333333334, "gh": 19772.666666666668, "rtk": 27925.0, "headroom": 28201.666666666668}, "elapsed_ms": {"octocode": 3749.8636666666666, "gh": 1292.807, "rtk": 1949.7093333333332, "headroom": null}, "correct": {"octocode": 9.777777777777779, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 9.333333333333334, "gh": 10.0, "rtk": 10.0, "headroom": 9.666666666666666}, "ratio_vs_octocode": {"gh": 1.3453234146783997, "rtk": 1.900004535970244, "headroom": 1.9188288124829902}}, {"q": 2, "chars": {"octocode": 19159.333333333332, "gh": 730.6666666666666, "rtk": 26361.0, "headroom": 1321.6666666666667}, "elapsed_ms": {"octocode": 14601.768666666665, "gh": 1040.6706666666666, "rtk": 946.5886666666667, "headroom": null}, "correct": {"octocode": 10.0, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 9.666666666666666, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 0.03813633042207453, "rtk": 1.3758829465186682, "headroom": 0.06898291520233829}}, {"q": 3, "chars": {"octocode": 9586.333333333334, "gh": 7920.666666666667, "rtk": 27777.333333333332, "headroom": 75103.33333333333}, "elapsed_ms": {"octocode": 6091.342000000001, "gh": 1514.1270000000002, "rtk": 1793.1113333333335, "headroom": null}, "correct": {"octocode": 10.0, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 10.0, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 0.8262456969992003, "rtk": 2.8975972738968667, "headroom": 7.834417052053269}}, {"q": 4, "chars": {"octocode": 26201.333333333332, "gh": 131764.33333333334, "rtk": 136621.0, "headroom": 257472.33333333334}, "elapsed_ms": {"octocode": 17082.70433333333, "gh": 4467.863333333334, "rtk": 2331.53, "headroom": null}, "correct": {"octocode": 9.222222222222221, "octocode_vs_gh": 9.333333333333334, "octocode_vs_rtk": 9.0, "octocode_vs_headroom": 9.333333333333334, "gh": 8.0, "rtk": 10.0, "headroom": 7.0}, "ratio_vs_octocode": {"gh": 5.028917103455296, "rtk": 5.214276627143657, "headroom": 9.826688209251438}}, {"q": 5, "chars": {"octocode": 48933.0, "gh": 151486.33333333334, "rtk": 70432.0, "headroom": 135064.33333333334}, "elapsed_ms": {"octocode": 2066.3276666666666, "gh": 3417.821, "rtk": 4116.725333333334, "headroom": null}, "correct": {"octocode": 9.555555555555555, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 9.666666666666666, "octocode_vs_headroom": 9.0, "gh": 9.333333333333334, "rtk": 9.0, "headroom": 8.666666666666666}, "ratio_vs_octocode": {"gh": 3.0957908432618755, "rtk": 1.4393558539227107, "headroom": 2.7601891021056004}}, {"q": 6, "chars": {"octocode": 14592.666666666666, "gh": 42904.666666666664, "rtk": 53565.0, "headroom": 41147.333333333336}, "elapsed_ms": {"octocode": 29636.452, "gh": 3148.1236666666664, "rtk": 3048.3789999999995, "headroom": null}, "correct": {"octocode": 8.666666666666666, "octocode_vs_gh": 8.666666666666666, "octocode_vs_rtk": 8.666666666666666, "octocode_vs_headroom": 8.666666666666666, "gh": 10.0, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 2.9401525880579285, "rtk": 3.6706793366531136, "headroom": 2.819726803417242}}, {"q": 7, "chars": {"octocode": 8761.0, "gh": 9072.333333333334, "rtk": 10854.666666666666, "headroom": 15959.666666666666}, "elapsed_ms": {"octocode": 4477.351333333333, "gh": 1360.6656666666668, "rtk": 792.4763333333334, "headroom": null}, "correct": {"octocode": 9.88888888888889, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 9.666666666666666, "gh": 10.0, "rtk": 10.0, "headroom": 8.333333333333334}, "ratio_vs_octocode": {"gh": 1.0355362782026405, "rtk": 1.238975763801697, "headroom": 1.821671803066621}}, {"q": 8, "chars": {"octocode": 14574.333333333334, "gh": 23946.666666666668, "rtk": 63101.0, "headroom": 59135.333333333336}, "elapsed_ms": {"octocode": 22876.673, "gh": 2152.3703333333337, "rtk": 2305.5466666666666, "headroom": null}, "correct": {"octocode": 10.0, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 10.0, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 1.643071152482675, "rtk": 4.329597694577225, "headroom": 4.057498341833817}}, {"q": 9, "chars": {"octocode": 16399.0, "gh": 55361.666666666664, "rtk": 66358.33333333333, "headroom": 73324.66666666667}, "elapsed_ms": {"octocode": 15171.285666666668, "gh": 2326.7286666666664, "rtk": 1646.165, "headroom": null}, "correct": {"octocode": 9.666666666666666, "octocode_vs_gh": 9.333333333333334, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 9.666666666666666, "gh": 9.0, "rtk": 9.666666666666666, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 3.3759172307254506, "rtk": 4.046486574384617, "headroom": 4.471288899729658}}, {"q": 10, "chars": {"octocode": 12245.666666666666, "gh": 13200.333333333334, "rtk": 10552.0, "headroom": 9377.0}, "elapsed_ms": {"octocode": 6187.983333333334, "gh": 1370.8056666666664, "rtk": 1486.1226666666669, "headroom": null}, "correct": {"octocode": 9.88888888888889, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 9.666666666666666, "octocode_vs_headroom": 10.0, "gh": 9.0, "rtk": 6.333333333333333, "headroom": 6.0}, "ratio_vs_octocode": {"gh": 1.077959550317119, "rtk": 0.8616925715218989, "headroom": 0.7657402618613387}}, {"q": 11, "chars": {"octocode": 25508.333333333332, "gh": 93020.66666666667, "rtk": 376969.6666666667, "headroom": 522136.0}, "elapsed_ms": {"octocode": 15920.491999999998, "gh": 3113.583666666666, "rtk": 4044.6150000000002, "headroom": null}, "correct": {"octocode": 9.88888888888889, "octocode_vs_gh": 9.666666666666666, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 10.0, "rtk": 9.666666666666666, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 3.646677556354133, "rtk": 14.778294674942831, "headroom": 20.46923227703365}}, {"q": 12, "chars": {"octocode": 17036.333333333332, "gh": 82359.66666666667, "rtk": 98514.33333333333, "headroom": 82695.0}, "elapsed_ms": {"octocode": 16380.971666666666, "gh": 2619.0303333333336, "rtk": 2354.5383333333334, "headroom": null}, "correct": {"octocode": 9.555555555555555, "octocode_vs_gh": 9.333333333333334, "octocode_vs_rtk": 9.333333333333334, "octocode_vs_headroom": 10.0, "gh": 9.333333333333334, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 4.834354027666361, "rtk": 5.782601890078069, "headroom": 4.8540374493729095}}, {"q": 13, "chars": {"octocode": 19546.666666666668, "gh": 10644.0, "rtk": 10721.0, "headroom": 483844.6666666667}, "elapsed_ms": {"octocode": 5148.487666666667, "gh": 5457.645666666666, "rtk": 4276.682666666667, "headroom": null}, "correct": {"octocode": 10.0, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 7.333333333333333, "rtk": 9.666666666666666, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 0.5445429740791269, "rtk": 0.5484822646657571, "headroom": 24.75330832196453}}, {"q": 14, "chars": {"octocode": 7596.333333333333, "gh": 10390.333333333334, "rtk": 8311.666666666666, "headroom": 6092.666666666667}, "elapsed_ms": {"octocode": 1174.7793333333334, "gh": 1010.2583333333332, "rtk": 443.7223333333333, "headroom": null}, "correct": {"octocode": 9.88888888888889, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 9.666666666666666, "octocode_vs_headroom": 10.0, "gh": 10.0, "rtk": 8.0, "headroom": 1.6666666666666667}, "ratio_vs_octocode": {"gh": 1.367809030672693, "rtk": 1.0941682390627057, "headroom": 0.8020536223616658}}, {"q": 15, "chars": {"octocode": 7378.333333333333, "gh": 4893.333333333333, "rtk": 4835.666666666667, "headroom": 4769.333333333333}, "elapsed_ms": {"octocode": 1830.1540000000002, "gh": 415.2513333333333, "rtk": 389.8413333333333, "headroom": null}, "correct": {"octocode": 9.88888888888889, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 9.666666666666666, "octocode_vs_headroom": 10.0, "gh": 10.0, "rtk": 9.666666666666666, "headroom": 8.666666666666666}, "ratio_vs_octocode": {"gh": 0.6632030720578269, "rtk": 0.6553873955274453, "headroom": 0.6463971086514569}}, {"q": 16, "chars": {"octocode": 10731.333333333334, "gh": 23578.0, "rtk": 1057962.3333333333, "headroom": 959744.6666666666}, "elapsed_ms": {"octocode": 8080.917666666665, "gh": 3394.1589999999997, "rtk": 4559.252333333333, "headroom": null}, "correct": {"octocode": 9.777777777777779, "octocode_vs_gh": 9.333333333333334, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 9.666666666666666, "rtk": 10.0, "headroom": 4.666666666666667}, "ratio_vs_octocode": {"gh": 2.1971174753059577, "rtk": 98.58628937069018, "headroom": 89.43386966515499}}, {"q": 17, "chars": {"octocode": 15108.666666666666, "gh": 232759.66666666666, "rtk": 179720.0, "headroom": 6844626.666666667}, "elapsed_ms": {"octocode": 20503.588333333337, "gh": 3125.7206666666666, "rtk": 2715.482, "headroom": null}, "correct": {"octocode": 8.222222222222221, "octocode_vs_gh": 8.333333333333334, "octocode_vs_rtk": 8.0, "octocode_vs_headroom": 8.333333333333334, "gh": 7.0, "rtk": 8.333333333333334, "headroom": 8.0}, "ratio_vs_octocode": {"gh": 15.405705334686493, "rtk": 11.895159511097384, "headroom": 453.0265189957199}}, {"q": 18, "chars": {"octocode": 12772.333333333334, "gh": 12177.666666666666, "rtk": 8243.666666666666, "headroom": 7614.0}, "elapsed_ms": {"octocode": 4710.040333333333, "gh": 1028.328, "rtk": 427.1033333333333, "headroom": null}, "correct": {"octocode": 9.555555555555555, "octocode_vs_gh": 9.333333333333334, "octocode_vs_rtk": 9.666666666666666, "octocode_vs_headroom": 9.666666666666666, "gh": 10.0, "rtk": 10.0, "headroom": 4.666666666666667}, "ratio_vs_octocode": {"gh": 0.953441031395986, "rtk": 0.6454315316961139, "headroom": 0.5961322650520656}}, {"q": 19, "chars": {"octocode": 16525.333333333332, "gh": 179626.66666666666, "rtk": 166805.66666666666, "headroom": 186059.0}, "elapsed_ms": {"octocode": 6849.104333333333, "gh": 3240.921, "rtk": 2164.7063333333335, "headroom": null}, "correct": {"octocode": 9.333333333333334, "octocode_vs_gh": 9.666666666666666, "octocode_vs_rtk": 9.333333333333334, "octocode_vs_headroom": 9.0, "gh": 10.0, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 10.869775697918348, "rtk": 10.093936582217202, "headroom": 11.259016459577216}}, {"q": 20, "chars": {"octocode": 15816.333333333334, "gh": 48996.333333333336, "rtk": 114466.66666666667, "headroom": 80465.33333333333}, "elapsed_ms": {"octocode": 4756.5233333333335, "gh": 1824.7473333333335, "rtk": 1739.463, "headroom": null}, "correct": {"octocode": 10.0, "octocode_vs_gh": 10.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 10.0, "rtk": 10.0, "headroom": 9.0}, "ratio_vs_octocode": {"gh": 3.09783135577146, "rtk": 7.237244199034753, "headroom": 5.087483403232945}}, {"q": 21, "chars": {"octocode": 65467.666666666664, "gh": 297100.0, "rtk": 430306.6666666667, "headroom": 310655.0}, "elapsed_ms": {"octocode": 37542.35533333333, "gh": 5124.544666666667, "rtk": 4853.828, "headroom": null}, "correct": {"octocode": 6.25, "octocode_vs_gh": 5.5, "octocode_vs_rtk": 6.666666666666667, "octocode_vs_headroom": 6.333333333333333, "gh": 10.0, "rtk": 9.333333333333334, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 4.538118053186561, "rtk": 6.572812024256249, "headroom": 4.745166825353992}}, {"q": 22, "chars": {"octocode": 53622.333333333336, "gh": 12610.666666666666, "rtk": 425890.0, "headroom": 13236.666666666666}, "elapsed_ms": {"octocode": 4176.052000000001, "gh": 2052.2239999999997, "rtk": 1514.9046666666666, "headroom": null}, "correct": {"octocode": 8.222222222222221, "octocode_vs_gh": 8.333333333333334, "octocode_vs_rtk": 8.333333333333334, "octocode_vs_headroom": 8.0, "gh": 10.0, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 0.23517564198996685, "rtk": 7.942399622048027, "headroom": 0.24684988220082427}}, {"q": 23, "chars": {"octocode": 17085.0, "gh": 212408.33333333334, "rtk": 182346.33333333334, "headroom": 170490.33333333334}, "elapsed_ms": {"octocode": 14422.221666666665, "gh": 2474.5203333333334, "rtk": 1741.6223333333335, "headroom": null}, "correct": {"octocode": 7.777777777777778, "octocode_vs_gh": 7.333333333333333, "octocode_vs_rtk": 8.0, "octocode_vs_headroom": 8.0, "gh": 7.333333333333333, "rtk": 8.0, "headroom": 8.333333333333334}, "ratio_vs_octocode": {"gh": 12.432445615061946, "rtk": 10.672890449712224, "headroom": 9.97894839527851}}, {"q": 24, "chars": {"octocode": 16067.0, "gh": 70767.33333333333, "rtk": 114118.66666666667, "headroom": 72038.0}, "elapsed_ms": {"octocode": 6127.804666666667, "gh": 2628.5759999999996, "rtk": 3310.8953333333334, "headroom": null}, "correct": {"octocode": 9.777777777777779, "octocode_vs_gh": 9.333333333333334, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 7.333333333333333, "rtk": 8.333333333333334, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 4.40451442916122, "rtk": 7.102674218377213, "headroom": 4.4835999253127525}}, {"q": 25, "chars": {"octocode": 15775.0, "gh": 17807.333333333332, "rtk": 26187.333333333332, "headroom": 21315.333333333332}, "elapsed_ms": {"octocode": 2707.233, "gh": 1873.2493333333332, "rtk": 1548.7723333333333, "headroom": null}, "correct": {"octocode": 8.666666666666666, "octocode_vs_gh": 8.666666666666666, "octocode_vs_rtk": 8.333333333333334, "octocode_vs_headroom": 9.0, "gh": 8.333333333333334, "rtk": 9.666666666666666, "headroom": 9.666666666666666}, "ratio_vs_octocode": {"gh": 1.1288325409403064, "rtk": 1.660052826201796, "headroom": 1.3512097200211304}}, {"q": 26, "chars": {"octocode": 16594.333333333332, "gh": 66256.0, "rtk": 50292.333333333336, "headroom": 24088.666666666668}, "elapsed_ms": {"octocode": 7465.799, "gh": 4183.928666666667, "rtk": 1256.8266666666666, "headroom": null}, "correct": {"octocode": 8.333333333333334, "octocode_vs_gh": 8.666666666666666, "octocode_vs_rtk": 8.333333333333334, "octocode_vs_headroom": 8.0, "gh": 9.0, "rtk": 10.0, "headroom": 10.0}, "ratio_vs_octocode": {"gh": 3.9926882670791235, "rtk": 3.030693208524999, "headroom": 1.4516200309342548}}, {"q": 27, "chars": {"octocode": 7929.666666666667, "gh": 8780.333333333334, "rtk": 14515.333333333334, "headroom": 12124.0}, "elapsed_ms": {"octocode": 3889.6946666666663, "gh": 1627.0893333333333, "rtk": 1397.7206666666668, "headroom": null}, "correct": {"octocode": 9.222222222222221, "octocode_vs_gh": 9.333333333333334, "octocode_vs_rtk": 9.0, "octocode_vs_headroom": 9.333333333333334, "gh": 9.666666666666666, "rtk": 10.0, "headroom": 9.0}, "ratio_vs_octocode": {"gh": 1.107276472319139, "rtk": 1.8305098995333977, "headroom": 1.5289419479591406}}, {"q": 28, "chars": {"octocode": 62423.333333333336, "gh": 1472373.6666666667, "rtk": 6964357.666666667, "headroom": 835869.6666666666}, "elapsed_ms": {"octocode": 14624.794333333333, "gh": 5713.409666666666, "rtk": 7996.086666666667, "headroom": null}, "correct": {"octocode": 7.222222222222222, "octocode_vs_gh": 5.666666666666667, "octocode_vs_rtk": 7.666666666666667, "octocode_vs_headroom": 8.333333333333334, "gh": 9.333333333333334, "rtk": 7.0, "headroom": 7.666666666666667}, "ratio_vs_octocode": {"gh": 23.586911945319592, "rtk": 111.56657766860683, "headroom": 13.390340150584716}}, {"q": 29, "chars": {"octocode": 41495.0, "gh": 100556.66666666667, "rtk": 211918.0, "headroom": 108554.0}, "elapsed_ms": {"octocode": 11497.426666666666, "gh": 3682.812, "rtk": 1843.7243333333336, "headroom": null}, "correct": {"octocode": 9.555555555555555, "octocode_vs_gh": 9.0, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 9.666666666666666, "gh": 9.333333333333334, "rtk": 9.333333333333334, "headroom": 9.666666666666666}, "ratio_vs_octocode": {"gh": 2.4233441780134153, "rtk": 5.1070731413423305, "headroom": 2.6160742258103387}}, {"q": 30, "chars": {"octocode": 33689.333333333336, "gh": 32215.0, "rtk": 117538.66666666667, "headroom": 35424.333333333336}, "elapsed_ms": {"octocode": 11068.639000000001, "gh": 2059.671333333333, "rtk": 4173.111333333333, "headroom": null}, "correct": {"octocode": 9.88888888888889, "octocode_vs_gh": 9.666666666666666, "octocode_vs_rtk": 10.0, "octocode_vs_headroom": 10.0, "gh": 9.666666666666666, "rtk": 10.0, "headroom": 9.0}, "ratio_vs_octocode": {"gh": 0.9562373847310721, "rtk": 3.4888985633434912, "headroom": 1.051499980211343}}], "overall": {"per_instance_char_ratio": {"gh": {"n": 90, "geo_mean": 2.0139661492854004, "median": 2.240487514863258, "octocode_leaner": 68}, "rtk": {"n": 90, "geo_mean": 3.2172557557986647, "median": 3.0642766435479145, "octocode_leaner": 68}, "headroom": {"n": 90, "geo_mean": 2.7327431332016943, "median": 3.1642106572156936, "octocode_leaner": 65}}, "chars_mean": {"octocode": 22110.62222222222, "gh": 114849.4, "rtk": 368585.63333333336, "headroom": 382598.35555555555}, "chars_total_over_questions": {"octocode": 663319, "gh": 3445482, "rtk": 11057569, "headroom": 11477951}, "pooled_char_ratio": {"gh": {"ratio": 5.194308818888458, "top_q": 28, "top_share": 0.427334598371626, "loo_ratio": 3.283614007098297}, "rtk": {"ratio": 16.670070594525708, "top_q": 28, "top_share": 0.6298271949889408, "loo_ratio": 6.811854088842982}, "headroom": {"ratio": 17.303825813234063, "top_q": 17, "top_share": 0.5963282876397332, "loo_ratio": 7.14787491707934}}, "correct_mean": {"octocode": 9.267657992565056, "gh": 9.269662921348315, "rtk": 9.4, "headroom": 8.655555555555555}, "correct_median": {"octocode": 10.0, "gh": 10.0, "rtk": 10.0, "headroom": 10.0}, "correct_instances": {"octocode": 269, "gh": 89, "rtk": 90, "headroom": 90}, "correct_note": "Correctness = blind judge score 0-10 over every judged instance (30 questions x 3 passes per matchup; octocode judged in all 3 matchups). gh is from its campaign's de-blinded aggregate which is missing 1 instance (pass1-Q21), so gh/octocode counts are 89/269 not 90/270.", "chars_median_per_question": {"octocode": 16233.0, "gh": 37559.83333333333, "rtk": 68395.16666666666, "headroom": 72681.33333333334}, "char_ratio_geo_mean_vs_octocode": {"gh": 2.0352103966225363, "rtk": 3.896614779803413, "headroom": 3.497224769782083}, "char_ratio_median_vs_octocode": {"gh": 2.4233441780134153, "rtk": 4.046486574384617, "headroom": 4.057498341833817}, "octocode_leaner_count": {"gh": 23, "rtk": 26, "headroom": 24}, "elapsed_ms_mean_per_question": {"octocode": 10693.961022222222, "gh": 2624.721788888889, "rtk": 2438.9751111111113, "headroom": null}, "timing_note": "elapsed_ms is wall-clock summed per question (mean over passes). Captured for octocode/rtk/gh only (Headroom ghc path logs none). NOT a fair latency metric: octocode runs via `npx` which re-bootstraps per call, inflating its time; gh/rtk are native binaries. Network/GitHub variance also dominates. Chars are the headline."}}, COLORS = {"octocode": "#2dd4bf", "gh": "#94a3b8", "rtk": "#f59e0b", "headroom": "#a78bfa"}, LABELS = {"octocode": "Octocode", "gh": "gh", "rtk": "gh + RTK", "headroom": "gh + Headroom"}, ARMS = ["octocode", "gh", "rtk", "headroom"];
-const om = DATA.overall, geo = om.per_instance_char_ratio, pooled = om.pooled_char_ratio;
-const BASE = ARMS.filter(a=>a!=="octocode");
-const Q = DATA.rows.map(r=>"Q"+r.q);
-const tickC="#93a1b8", gridC="#1b2740";
-const dot=a=>'<span class="dot" style="background:'+COLORS[a]+'"></span>';
-const fmt=n=>n==null?"n/a":Number(n).toLocaleString(undefined,{maximumFractionDigits:n<100?2:0});
-
-// meta chips
-document.getElementById("meta").innerHTML = [
-  ["Questions","<b>30</b> × 3 passes"],["Build","local <b>v18.1.1</b>"],
-  ["Judge","blind <b>gpt-5.5</b>"],["Metric","characters (model-in + model-out)"],
-].map(([k,v])=>`<span class="chip">${k}: ${v}</span>`).join("");
-
-// verdict
-const lo=Math.min(...BASE.map(a=>geo[a].geo_mean)), hi=Math.max(...BASE.map(a=>geo[a].geo_mean));
-const cmin=Math.min(...ARMS.map(a=>om.correct_mean[a])), cmax=Math.max(...ARMS.map(a=>om.correct_mean[a]));
-document.getElementById("blLine").innerHTML =
-  `At <span class="tie">≈ tie</span> correctness (${cmin.toFixed(1)}–${cmax.toFixed(1)}/10), Octocode answers with `+
-  `<b>${lo.toFixed(1)}×–${hi.toFixed(1)}× fewer characters</b> than gh, gh+RTK and gh+Headroom on a typical question.`;
-document.getElementById("blSub").innerHTML =
-  `“Leaner” = per-question geometric mean of baseline ÷ Octocode characters (the standard, outlier-robust way to `+
-  `average ratios). Correctness is a blind-judge tie, so this efficiency is the real difference. `+
-  `Characters ≈ tokens (not a direct token/latency/cost measure); the public suite is orientation, not a shipping gate.`;
-
-// per-vendor comparison cards
-document.getElementById("cmp").innerHTML = BASE.map(a=>{
-  const g=geo[a].geo_mean, pct=Math.min(100,(g/hi)*100);
-  return `<div class="vs">
-    <div class="head">${dot(a)}Octocode vs <b style="color:var(--ink)">${LABELS[a]}</b></div>
-    <div class="mult">${g.toFixed(2)}× <small>fewer chars / question</small></div>
-    <div class="bar"><i style="width:${pct}%;background:${COLORS[a]}"></i></div>
-    <div class="corr">correctness ${om.correct_mean.octocode.toFixed(1)} vs ${om.correct_mean[a].toFixed(1)} /10 · median leaner ${geo[a].median.toFixed(2)}×</div>
-    <div class="sub">Octocode leaner on <b>${geo[a].octocode_leaner}/90</b> runs</div>
-  </div>`;
-}).join("");
-
-// KPI strip
-document.getElementById("kpis").innerHTML = [
-  ["Correctness","≈ tie", `all tools ${cmin.toFixed(1)}–${cmax.toFixed(1)} / 10 (blind judge)`],
-  ["Typical leanness", `${lo.toFixed(1)}×–${hi.toFixed(1)}×`, "fewer characters per question (geo-mean)"],
-  ["Median chars / Q — Octocode", fmt(om.chars_median_per_question.octocode), `vs ${fmt(om.chars_median_per_question.gh)}–${fmt(om.chars_median_per_question.headroom)} baselines`],
-  ["Octocode leaner", `${geo.rtk.octocode_leaner}–${geo.gh.octocode_leaner}/90`, "of judged runs across baselines"],
-].map(([k,v,d])=>`<div class="kpi"><div class="k">${k}</div><div class="v" style="color:var(--teal)">${v}</div><div class="d">${d}</div></div>`).join("");
-
-// charts
-function ds(metric){return ARMS.map(a=>({label:LABELS[a],data:DATA.rows.map(r=>r[metric][a]),
-  borderColor:COLORS[a],backgroundColor:COLORS[a],borderWidth:a==="octocode"?3:1.7,
-  pointRadius:2.2,pointHoverRadius:5,tension:.25,spanGaps:true}));}
-function baseOpts(yTitle,yType){return{responsive:true,maintainAspectRatio:false,
-  interaction:{mode:"index",intersect:false},
-  plugins:{legend:{labels:{color:"#e8eef8",usePointStyle:true,pointStyle:"line"}},
-    tooltip:{callbacks:{label:c=>c.dataset.label+": "+(c.parsed.y==null?"n/a":Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:1}))}}},
-  scales:{x:{ticks:{color:tickC,maxRotation:0,autoSkip:true},grid:{color:gridC}},
-          y:{type:yType||"linear",title:{display:!!yTitle,text:yTitle,color:tickC},ticks:{color:tickC},grid:{color:gridC}}}};}
-
-const charsChart=new Chart(document.getElementById("charsChart"),
-  {type:"line",data:{labels:Q,datasets:ds("chars")},options:baseOpts("characters (log)","logarithmic")});
-document.getElementById("scaleLog").onclick=()=>{charsChart.options.scales.y.type="logarithmic";charsChart.options.scales.y.title.text="characters (log)";charsChart.update();setA("scaleLog");};
-document.getElementById("scaleLin").onclick=()=>{charsChart.options.scales.y.type="linear";charsChart.options.scales.y.title.text="characters";charsChart.update();setA("scaleLin");};
-function setA(id){["scaleLog","scaleLin"].forEach(i=>document.getElementById(i).classList.toggle("active",i===id));}
-
-new Chart(document.getElementById("corrChart"),{type:"line",data:{labels:Q,datasets:ds("correct")},
-  options:Object.assign(baseOpts("correctness /10","linear"),{scales:{x:{ticks:{color:tickC,maxRotation:0,autoSkip:true},grid:{color:gridC}},
-    y:{min:0,max:10,ticks:{color:tickC,stepSize:2},grid:{color:gridC},title:{display:true,text:"correctness /10",color:tickC}}}})});
-
-// quick stat cards
-document.getElementById("cards").innerHTML = `
-  <div class="card"><h3>Median chars / question</h3><div class="cdesc">The middle question when all 30 are sorted by size — the <b>typical</b> cost, unaffected by a few giant outliers. <b>Fewer = leaner</b>.</div>${ARMS.map(a=>`<div class="rowr"><span>${dot(a)}${LABELS[a]}</span><b>${fmt(om.chars_median_per_question[a])}</b></div>`).join("")}</div>
-  <div class="card"><h3>Mean chars / question</h3><div class="cdesc">Plain <b>average</b> across all 30 questions; higher than the median because a few very large questions pull it up.</div>${ARMS.map(a=>`<div class="rowr"><span>${dot(a)}${LABELS[a]}</span><b>${fmt(om.chars_mean[a])}</b></div>`).join("")}</div>
-  <div class="card"><h3>Correctness /10</h3><div class="cdesc">Blind independent judge, 0–10 (mean · median over judged runs). All tools ≈ tie — which is why characters decide.</div>${ARMS.map(a=>`<div class="rowr"><span>${dot(a)}${LABELS[a]}</span><b>${om.correct_mean[a].toFixed(2)} · ${om.correct_median[a].toFixed(1)}</b></div>`).join("")}</div>
-  <div class="card"><h3>Leaner vs Octocode</h3><div class="cdesc">How many times <b>fewer characters Octocode used</b> on a typical question (per-question geo-mean; <b>&gt;1× = Octocode leaner</b>). <b>/90</b> = runs (30 Q × 3 passes) where Octocode was leaner.</div>${BASE.map(a=>`<div class="rowr"><span>${dot(a)}${LABELS[a]}</span><b>${geo[a].geo_mean.toFixed(2)}× · ${geo[a].octocode_leaner}/90</b></div>`).join("")}</div>
-`;
-
-// pooled total (demoted)
-const tot=om.chars_total_over_questions;
-new Chart(document.getElementById("poolChart"),{type:"bar",
-  data:{labels:ARMS.map(a=>LABELS[a]),datasets:[{data:ARMS.map(a=>tot[a]),backgroundColor:ARMS.map(a=>COLORS[a])}]},
-  options:{indexAxis:"y",responsive:true,maintainAspectRatio:false,
-    plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>Number(c.parsed.x).toLocaleString(undefined,{maximumFractionDigits:0})+" chars"}}},
-    scales:{x:{title:{display:true,text:"total characters — all 30 questions",color:tickC},ticks:{color:tickC},grid:{color:gridC}},y:{ticks:{color:tickC},grid:{color:gridC}}}}});
-document.getElementById("poolNote").innerHTML =
-  "Why these look bigger than ~2×: totals are dominated by a few huge questions — "+
-  BASE.map(a=>`${LABELS[a]} <b>${pooled[a].ratio.toFixed(1)}×</b> (Q${pooled[a].top_q}=${(pooled[a].top_share*100).toFixed(0)}%, drop it → ${pooled[a].loo_ratio.toFixed(1)}×)`).join(" · ")+
-  ". The typical-question figure (~2–3×) is the fair headline.";
-
-// method footnote
-document.getElementById("methodFoot").innerHTML =
-  "Dataset: local-build v18.1.1, 30×3; the Octocode anchor logs are byte-identical across the baseline campaigns. "+
-  "Every figure recomputed from per-call JSONL by <code>compare/bin/per_question_summary.py</code> → "+
-  "<code>per_question_summary.json</code> (single source of truth), cross-checked vs <code>results/SUMMARY.md</code>. "+
-  (om.correct_note ? "Correctness note: "+om.correct_note : "");
-
-// question links
-const QBASE="https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/compare/github-questions/";
-document.getElementById("qlinks").innerHTML = DATA.rows.map(r=>`<a href="${QBASE}Q${r.q}.md" target="_blank" rel="noopener">Q${r.q}</a>`).join("");
+/* Palette: the dataviz skill's validated reference categorical palette (light/dark steps).
+   Minimal stand-in for the dashboard runtime: every dataset is inlined, so status is always ok. */
+window.dash = (() => {
+  const DATA = {"groups": [{"id": "octocode_v20_lean_vs_mcp", "order": 0, "label": "Octocode v20 · lean-vs-mcp", "anchor": true, "how": "local MCP · claude-sonnet-5-5", "measured": "Oct 2026", "octocode": true, "live": true, "same_campaign": true, "runs_per_question": 1, "questions": 30, "median_chars": 8168, "mean_chars": 11245, "total_chars": 337340, "correctness": 9, "correctness_exact": 8.8, "leaner_x": 1.0, "ci_low": 1.0, "ci_high": 1.0, "leaner_on": 0, "secs_median": 16.5, "model_secs_mean": 13.9, "tool_secs_mean": 3.0, "faster_x": 1.0, "faster_ci_low": 1.0, "faster_ci_high": 1.0, "faster_on": 0}, {"id": "octocode_v20_mcp_clasify_ab", "order": 1, "label": "Octocode v20 · mcp-clasify-ab", "anchor": false, "how": "local MCP · claude-sonnet-5-5", "measured": "Oct 2026", "octocode": true, "live": true, "same_campaign": false, "runs_per_question": 2, "questions": 30, "median_chars": 8299, "mean_chars": 10844, "total_chars": 325333, "correctness": 9, "correctness_exact": 9.12, "leaner_x": 1.03, "ci_low": 0.92, "ci_high": 1.17, "leaner_on": 16, "secs_median": 19.4, "model_secs_mean": 14.9, "tool_secs_mean": 8.0, "faster_x": 1.27, "faster_ci_low": 1.1, "faster_ci_high": 1.48, "faster_on": 23}, {"id": "gh_lean_lean_vs_mcp", "order": 2, "label": "gh lean · lean-vs-mcp", "anchor": false, "how": "gh-lean · claude-sonnet-5-5", "measured": "Oct 2026", "octocode": false, "live": true, "same_campaign": true, "runs_per_question": 1, "questions": 30, "median_chars": 6068, "mean_chars": 7578, "total_chars": 227339, "correctness": 9, "correctness_exact": 9.17, "leaner_x": 0.71, "ci_low": 0.58, "ci_high": 0.85, "leaner_on": 6, "secs_median": 19.4, "model_secs_mean": 15.2, "tool_secs_mean": 3.1, "faster_x": 1.08, "faster_ci_low": 0.97, "faster_ci_high": 1.21, "faster_on": 18}, {"id": "octocode_v18", "order": 3, "label": "Octocode v18 (CLI)", "anchor": false, "how": "Octocode v18 CLI · pi agents", "measured": "Aug 2026", "octocode": true, "live": false, "same_campaign": false, "runs_per_question": 3, "questions": 30, "median_chars": 16233, "mean_chars": 22111, "total_chars": 663319, "correctness": 9, "correctness_exact": 9.26, "leaner_x": 2.13, "ci_low": 1.78, "ci_high": 2.53, "leaner_on": 28, "secs_median": null, "model_secs_mean": null, "tool_secs_mean": null, "faster_x": null, "faster_ci_low": null, "faster_ci_high": null, "faster_on": null}, {"id": "gh", "order": 4, "label": "gh", "anchor": false, "how": "plain gh CLI · pi agents", "measured": "Aug 2026", "octocode": false, "live": false, "same_campaign": false, "runs_per_question": 3, "questions": 30, "median_chars": 37560, "mean_chars": 114849, "total_chars": 3445482, "correctness": 9, "correctness_exact": 9.28, "leaner_x": 4.33, "ci_low": 2.62, "ci_high": 6.92, "leaner_on": 25, "secs_median": null, "model_secs_mean": null, "tool_secs_mean": null, "faster_x": null, "faster_ci_low": null, "faster_ci_high": null, "faster_on": null}, {"id": "rtk", "order": 5, "label": "gh + RTK", "anchor": false, "how": "rtk gh · pi agents", "measured": "Aug 2026", "octocode": false, "live": false, "same_campaign": false, "runs_per_question": 3, "questions": 30, "median_chars": 68395, "mean_chars": 368586, "total_chars": 11057569, "correctness": 9, "correctness_exact": 9.4, "leaner_x": 8.29, "ci_low": 4.96, "ci_high": 13.88, "leaner_on": 28, "secs_median": null, "model_secs_mean": null, "tool_secs_mean": null, "faster_x": null, "faster_ci_low": null, "faster_ci_high": null, "faster_on": null}, {"id": "headroom", "order": 6, "label": "gh + Headroom", "anchor": false, "how": "gh → Headroom · pi agents", "measured": "Aug 2026", "octocode": false, "live": false, "same_campaign": false, "runs_per_question": 3, "questions": 30, "median_chars": 72681, "mean_chars": 382598, "total_chars": 11477951, "correctness": 9, "correctness_exact": 8.66, "leaner_x": 7.44, "ci_low": 4.12, "ci_high": 13.54, "leaner_on": 27, "secs_median": null, "model_secs_mean": null, "tool_secs_mean": null, "faster_x": null, "faster_ci_low": null, "faster_ci_high": null, "faster_on": null}], "per_question": [{"key": "Q1:octocode_v20_lean_vs_mcp", "q": "Q1", "n": 1, "title": "Next.js route-regex result", "group": "octocode_v20_lean_vs_mcp", "chars": 4265, "secs": 10.9, "correctness": 9}, {"key": "Q1:octocode_v20_mcp_clasify_ab", "q": "Q1", "n": 1, "title": "Next.js route-regex result", "group": "octocode_v20_mcp_clasify_ab", "chars": 5506, "secs": 9.1, "correctness": 10}, {"key": "Q1:gh_lean_lean_vs_mcp", "q": "Q1", "n": 1, "title": "Next.js route-regex result", "group": "gh_lean_lean_vs_mcp", "chars": 2759, "secs": 13.9, "correctness": 10}, {"key": "Q1:octocode_v18", "q": "Q1", "n": 1, "title": "Next.js route-regex result", "group": "octocode_v18", "chars": 14697, "secs": null, "correctness": 10}, {"key": "Q1:gh", "q": "Q1", "n": 1, "title": "Next.js route-regex result", "group": "gh", "chars": 19773, "secs": null, "correctness": 10}, {"key": "Q1:rtk", "q": "Q1", "n": 1, "title": "Next.js route-regex result", "group": "rtk", "chars": 27925, "secs": null, "correctness": 10}, {"key": "Q1:headroom", "q": "Q1", "n": 1, "title": "Next.js route-regex result", "group": "headroom", "chars": 28202, "secs": null, "correctness": 10}, {"key": "Q2:octocode_v20_lean_vs_mcp", "q": "Q2", "n": 2, "title": "Repository discovery and bounded absence", "group": "octocode_v20_lean_vs_mcp", "chars": 8469, "secs": 18.1, "correctness": 8}, {"key": "Q2:octocode_v20_mcp_clasify_ab", "q": "Q2", "n": 2, "title": "Repository discovery and bounded absence", "group": "octocode_v20_mcp_clasify_ab", "chars": 6838, "secs": 18.9, "correctness": 9}, {"key": "Q2:gh_lean_lean_vs_mcp", "q": "Q2", "n": 2, "title": "Repository discovery and bounded absence", "group": "gh_lean_lean_vs_mcp", "chars": 1607, "secs": 11.9, "correctness": 9}, {"key": "Q2:octocode_v18", "q": "Q2", "n": 2, "title": "Repository discovery and bounded absence", "group": "octocode_v18", "chars": 19159, "secs": null, "correctness": 10}, {"key": "Q2:gh", "q": "Q2", "n": 2, "title": "Repository discovery and bounded absence", "group": "gh", "chars": 731, "secs": null, "correctness": 10}, {"key": "Q2:rtk", "q": "Q2", "n": 2, "title": "Repository discovery and bounded absence", "group": "rtk", "chars": 26361, "secs": null, "correctness": 10}, {"key": "Q2:headroom", "q": "Q2", "n": 2, "title": "Repository discovery and bounded absence", "group": "headroom", "chars": 1322, "secs": null, "correctness": 10}, {"key": "Q3:octocode_v20_lean_vs_mcp", "q": "Q3", "n": 3, "title": "Flask route history", "group": "octocode_v20_lean_vs_mcp", "chars": 8004, "secs": 18.9, "correctness": 10}, {"key": "Q3:octocode_v20_mcp_clasify_ab", "q": "Q3", "n": 3, "title": "Flask route history", "group": "octocode_v20_mcp_clasify_ab", "chars": 8272, "secs": 19.8, "correctness": 9}, {"key": "Q3:gh_lean_lean_vs_mcp", "q": "Q3", "n": 3, "title": "Flask route history", "group": "gh_lean_lean_vs_mcp", "chars": 6775, "secs": 15.4, "correctness": 9}, {"key": "Q3:octocode_v18", "q": "Q3", "n": 3, "title": "Flask route history", "group": "octocode_v18", "chars": 9586, "secs": null, "correctness": 10}, {"key": "Q3:gh", "q": "Q3", "n": 3, "title": "Flask route history", "group": "gh", "chars": 7921, "secs": null, "correctness": 10}, {"key": "Q3:rtk", "q": "Q3", "n": 3, "title": "Flask route history", "group": "rtk", "chars": 27777, "secs": null, "correctness": 10}, {"key": "Q3:headroom", "q": "Q3", "n": 3, "title": "Flask route history", "group": "headroom", "chars": 75103, "secs": null, "correctness": 10}, {"key": "Q4:octocode_v20_lean_vs_mcp", "q": "Q4", "n": 4, "title": "Axios redirect implementation across repositories", "group": "octocode_v20_lean_vs_mcp", "chars": 11535, "secs": 23.4, "correctness": 10}, {"key": "Q4:octocode_v20_mcp_clasify_ab", "q": "Q4", "n": 4, "title": "Axios redirect implementation across repositories", "group": "octocode_v20_mcp_clasify_ab", "chars": 10174, "secs": 23.1, "correctness": 8}, {"key": "Q4:gh_lean_lean_vs_mcp", "q": "Q4", "n": 4, "title": "Axios redirect implementation across repositories", "group": "gh_lean_lean_vs_mcp", "chars": 6775, "secs": 22.9, "correctness": 8}, {"key": "Q4:octocode_v18", "q": "Q4", "n": 4, "title": "Axios redirect implementation across repositories", "group": "octocode_v18", "chars": 26201, "secs": null, "correctness": 9}, {"key": "Q4:gh", "q": "Q4", "n": 4, "title": "Axios redirect implementation across repositories", "group": "gh", "chars": 131764, "secs": null, "correctness": 8}, {"key": "Q4:rtk", "q": "Q4", "n": 4, "title": "Axios redirect implementation across repositories", "group": "rtk", "chars": 136621, "secs": null, "correctness": 10}, {"key": "Q4:headroom", "q": "Q4", "n": 4, "title": "Axios redirect implementation across repositories", "group": "headroom", "chars": 257472, "secs": null, "correctness": 7}, {"key": "Q5:octocode_v20_lean_vs_mcp", "q": "Q5", "n": 5, "title": "Vue hydration diff review", "group": "octocode_v20_lean_vs_mcp", "chars": 24474, "secs": 18.1, "correctness": 10}, {"key": "Q5:octocode_v20_mcp_clasify_ab", "q": "Q5", "n": 5, "title": "Vue hydration diff review", "group": "octocode_v20_mcp_clasify_ab", "chars": 31658, "secs": 19.7, "correctness": 10}, {"key": "Q5:gh_lean_lean_vs_mcp", "q": "Q5", "n": 5, "title": "Vue hydration diff review", "group": "gh_lean_lean_vs_mcp", "chars": 23548, "secs": 29.2, "correctness": 8}, {"key": "Q5:octocode_v18", "q": "Q5", "n": 5, "title": "Vue hydration diff review", "group": "octocode_v18", "chars": 48933, "secs": null, "correctness": 10}, {"key": "Q5:gh", "q": "Q5", "n": 5, "title": "Vue hydration diff review", "group": "gh", "chars": 151486, "secs": null, "correctness": 9}, {"key": "Q5:rtk", "q": "Q5", "n": 5, "title": "Vue hydration diff review", "group": "rtk", "chars": 70432, "secs": null, "correctness": 9}, {"key": "Q5:headroom", "q": "Q5", "n": 5, "title": "Vue hydration diff review", "group": "headroom", "chars": 135064, "secs": null, "correctness": 9}, {"key": "Q6:octocode_v20_lean_vs_mcp", "q": "Q6", "n": 6, "title": "Express router cross-repository trace", "group": "octocode_v20_lean_vs_mcp", "chars": 4948, "secs": 16.2, "correctness": 9}, {"key": "Q6:octocode_v20_mcp_clasify_ab", "q": "Q6", "n": 6, "title": "Express router cross-repository trace", "group": "octocode_v20_mcp_clasify_ab", "chars": 6141, "secs": 20.7, "correctness": 10}, {"key": "Q6:gh_lean_lean_vs_mcp", "q": "Q6", "n": 6, "title": "Express router cross-repository trace", "group": "gh_lean_lean_vs_mcp", "chars": 2117, "secs": 12.9, "correctness": 10}, {"key": "Q6:octocode_v18", "q": "Q6", "n": 6, "title": "Express router cross-repository trace", "group": "octocode_v18", "chars": 14593, "secs": null, "correctness": 9}, {"key": "Q6:gh", "q": "Q6", "n": 6, "title": "Express router cross-repository trace", "group": "gh", "chars": 42905, "secs": null, "correctness": 10}, {"key": "Q6:rtk", "q": "Q6", "n": 6, "title": "Express router cross-repository trace", "group": "rtk", "chars": 53565, "secs": null, "correctness": 10}, {"key": "Q6:headroom", "q": "Q6", "n": 6, "title": "Express router cross-repository trace", "group": "headroom", "chars": 41147, "secs": null, "correctness": 10}, {"key": "Q7:octocode_v20_lean_vs_mcp", "q": "Q7", "n": 7, "title": "Zustand's Next.js integration contract", "group": "octocode_v20_lean_vs_mcp", "chars": 5975, "secs": 10.5, "correctness": 9}, {"key": "Q7:octocode_v20_mcp_clasify_ab", "q": "Q7", "n": 7, "title": "Zustand's Next.js integration contract", "group": "octocode_v20_mcp_clasify_ab", "chars": 5939, "secs": 10.9, "correctness": 10}, {"key": "Q7:gh_lean_lean_vs_mcp", "q": "Q7", "n": 7, "title": "Zustand's Next.js integration contract", "group": "gh_lean_lean_vs_mcp", "chars": 4298, "secs": 11.2, "correctness": 10}, {"key": "Q7:octocode_v18", "q": "Q7", "n": 7, "title": "Zustand's Next.js integration contract", "group": "octocode_v18", "chars": 8761, "secs": null, "correctness": 10}, {"key": "Q7:gh", "q": "Q7", "n": 7, "title": "Zustand's Next.js integration contract", "group": "gh", "chars": 9072, "secs": null, "correctness": 10}, {"key": "Q7:rtk", "q": "Q7", "n": 7, "title": "Zustand's Next.js integration contract", "group": "rtk", "chars": 10855, "secs": null, "correctness": 10}, {"key": "Q7:headroom", "q": "Q7", "n": 7, "title": "Zustand's Next.js integration contract", "group": "headroom", "chars": 15960, "secs": null, "correctness": 8}, {"key": "Q8:octocode_v20_lean_vs_mcp", "q": "Q8", "n": 8, "title": "VS Code keybinding dispatch", "group": "octocode_v20_lean_vs_mcp", "chars": 3880, "secs": 12.3, "correctness": 10}, {"key": "Q8:octocode_v20_mcp_clasify_ab", "q": "Q8", "n": 8, "title": "VS Code keybinding dispatch", "group": "octocode_v20_mcp_clasify_ab", "chars": 4332, "secs": 34.9, "correctness": 10}, {"key": "Q8:gh_lean_lean_vs_mcp", "q": "Q8", "n": 8, "title": "VS Code keybinding dispatch", "group": "gh_lean_lean_vs_mcp", "chars": 2502, "secs": 8.7, "correctness": 10}, {"key": "Q8:octocode_v18", "q": "Q8", "n": 8, "title": "VS Code keybinding dispatch", "group": "octocode_v18", "chars": 14574, "secs": null, "correctness": 10}, {"key": "Q8:gh", "q": "Q8", "n": 8, "title": "VS Code keybinding dispatch", "group": "gh", "chars": 23947, "secs": null, "correctness": 10}, {"key": "Q8:rtk", "q": "Q8", "n": 8, "title": "VS Code keybinding dispatch", "group": "rtk", "chars": 63101, "secs": null, "correctness": 10}, {"key": "Q8:headroom", "q": "Q8", "n": 8, "title": "VS Code keybinding dispatch", "group": "headroom", "chars": 59135, "secs": null, "correctness": 10}, {"key": "Q9:octocode_v20_lean_vs_mcp", "q": "Q9", "n": 9, "title": "Fastify lifecycle contract", "group": "octocode_v20_lean_vs_mcp", "chars": 5663, "secs": 12.8, "correctness": 10}, {"key": "Q9:octocode_v20_mcp_clasify_ab", "q": "Q9", "n": 9, "title": "Fastify lifecycle contract", "group": "octocode_v20_mcp_clasify_ab", "chars": 8327, "secs": 36.1, "correctness": 10}, {"key": "Q9:gh_lean_lean_vs_mcp", "q": "Q9", "n": 9, "title": "Fastify lifecycle contract", "group": "gh_lean_lean_vs_mcp", "chars": 4180, "secs": 10.3, "correctness": 10}, {"key": "Q9:octocode_v18", "q": "Q9", "n": 9, "title": "Fastify lifecycle contract", "group": "octocode_v18", "chars": 16399, "secs": null, "correctness": 10}, {"key": "Q9:gh", "q": "Q9", "n": 9, "title": "Fastify lifecycle contract", "group": "gh", "chars": 55362, "secs": null, "correctness": 9}, {"key": "Q9:rtk", "q": "Q9", "n": 9, "title": "Fastify lifecycle contract", "group": "rtk", "chars": 66358, "secs": null, "correctness": 10}, {"key": "Q9:headroom", "q": "Q9", "n": 9, "title": "Fastify lifecycle contract", "group": "headroom", "chars": 73325, "secs": null, "correctness": 10}, {"key": "Q10:octocode_v20_lean_vs_mcp", "q": "Q10", "n": 10, "title": "Axios repository and Node entry chain", "group": "octocode_v20_lean_vs_mcp", "chars": 7558, "secs": 13.5, "correctness": 10}, {"key": "Q10:octocode_v20_mcp_clasify_ab", "q": "Q10", "n": 10, "title": "Axios repository and Node entry chain", "group": "octocode_v20_mcp_clasify_ab", "chars": 7722, "secs": 27.8, "correctness": 10}, {"key": "Q10:gh_lean_lean_vs_mcp", "q": "Q10", "n": 10, "title": "Axios repository and Node entry chain", "group": "gh_lean_lean_vs_mcp", "chars": 5263, "secs": 22.0, "correctness": 10}, {"key": "Q10:octocode_v18", "q": "Q10", "n": 10, "title": "Axios repository and Node entry chain", "group": "octocode_v18", "chars": 12246, "secs": null, "correctness": 10}, {"key": "Q10:gh", "q": "Q10", "n": 10, "title": "Axios repository and Node entry chain", "group": "gh", "chars": 13200, "secs": null, "correctness": 9}, {"key": "Q10:rtk", "q": "Q10", "n": 10, "title": "Axios repository and Node entry chain", "group": "rtk", "chars": 10552, "secs": null, "correctness": 6}, {"key": "Q10:headroom", "q": "Q10", "n": 10, "title": "Axios repository and Node entry chain", "group": "headroom", "chars": 9377, "secs": null, "correctness": 6}, {"key": "Q11:octocode_v20_lean_vs_mcp", "q": "Q11", "n": 11, "title": "Esbuild JavaScript-to-Go service boundary", "group": "octocode_v20_lean_vs_mcp", "chars": 7992, "secs": 26.6, "correctness": 9}, {"key": "Q11:octocode_v20_mcp_clasify_ab", "q": "Q11", "n": 11, "title": "Esbuild JavaScript-to-Go service boundary", "group": "octocode_v20_mcp_clasify_ab", "chars": 7186, "secs": 24.2, "correctness": 9}, {"key": "Q11:gh_lean_lean_vs_mcp", "q": "Q11", "n": 11, "title": "Esbuild JavaScript-to-Go service boundary", "group": "gh_lean_lean_vs_mcp", "chars": 7859, "secs": 20.3, "correctness": 10}, {"key": "Q11:octocode_v18", "q": "Q11", "n": 11, "title": "Esbuild JavaScript-to-Go service boundary", "group": "octocode_v18", "chars": 25508, "secs": null, "correctness": 10}, {"key": "Q11:gh", "q": "Q11", "n": 11, "title": "Esbuild JavaScript-to-Go service boundary", "group": "gh", "chars": 93021, "secs": null, "correctness": 10}, {"key": "Q11:rtk", "q": "Q11", "n": 11, "title": "Esbuild JavaScript-to-Go service boundary", "group": "rtk", "chars": 376970, "secs": null, "correctness": 10}, {"key": "Q11:headroom", "q": "Q11", "n": 11, "title": "Esbuild JavaScript-to-Go service boundary", "group": "headroom", "chars": 522136, "secs": null, "correctness": 10}, {"key": "Q12:octocode_v20_lean_vs_mcp", "q": "Q12", "n": 12, "title": "Stream and EventEmitter wiring", "group": "octocode_v20_lean_vs_mcp", "chars": 5526, "secs": 10.2, "correctness": 10}, {"key": "Q12:octocode_v20_mcp_clasify_ab", "q": "Q12", "n": 12, "title": "Stream and EventEmitter wiring", "group": "octocode_v20_mcp_clasify_ab", "chars": 5582, "secs": 11.6, "correctness": 10}, {"key": "Q12:gh_lean_lean_vs_mcp", "q": "Q12", "n": 12, "title": "Stream and EventEmitter wiring", "group": "gh_lean_lean_vs_mcp", "chars": 5671, "secs": 20.2, "correctness": 10}, {"key": "Q12:octocode_v18", "q": "Q12", "n": 12, "title": "Stream and EventEmitter wiring", "group": "octocode_v18", "chars": 17036, "secs": null, "correctness": 10}, {"key": "Q12:gh", "q": "Q12", "n": 12, "title": "Stream and EventEmitter wiring", "group": "gh", "chars": 82360, "secs": null, "correctness": 9}, {"key": "Q12:rtk", "q": "Q12", "n": 12, "title": "Stream and EventEmitter wiring", "group": "rtk", "chars": 98514, "secs": null, "correctness": 10}, {"key": "Q12:headroom", "q": "Q12", "n": 12, "title": "Stream and EventEmitter wiring", "group": "headroom", "chars": 82695, "secs": null, "correctness": 10}, {"key": "Q13:octocode_v20_lean_vs_mcp", "q": "Q13", "n": 13, "title": "Redis security issue and fix PR", "group": "octocode_v20_lean_vs_mcp", "chars": 16890, "secs": 18.5, "correctness": 10}, {"key": "Q13:octocode_v20_mcp_clasify_ab", "q": "Q13", "n": 13, "title": "Redis security issue and fix PR", "group": "octocode_v20_mcp_clasify_ab", "chars": 13572, "secs": 19.1, "correctness": 10}, {"key": "Q13:gh_lean_lean_vs_mcp", "q": "Q13", "n": 13, "title": "Redis security issue and fix PR", "group": "gh_lean_lean_vs_mcp", "chars": 8572, "secs": 23.7, "correctness": 10}, {"key": "Q13:octocode_v18", "q": "Q13", "n": 13, "title": "Redis security issue and fix PR", "group": "octocode_v18", "chars": 19547, "secs": null, "correctness": 10}, {"key": "Q13:gh", "q": "Q13", "n": 13, "title": "Redis security issue and fix PR", "group": "gh", "chars": 10644, "secs": null, "correctness": 7}, {"key": "Q13:rtk", "q": "Q13", "n": 13, "title": "Redis security issue and fix PR", "group": "rtk", "chars": 10721, "secs": null, "correctness": 10}, {"key": "Q13:headroom", "q": "Q13", "n": 13, "title": "Redis security issue and fix PR", "group": "headroom", "chars": 483845, "secs": null, "correctness": 10}, {"key": "Q14:octocode_v20_lean_vs_mcp", "q": "Q14", "n": 14, "title": "Vitest’s dependency on Vite", "group": "octocode_v20_lean_vs_mcp", "chars": 2906, "secs": 7.3, "correctness": 4}, {"key": "Q14:octocode_v20_mcp_clasify_ab", "q": "Q14", "n": 14, "title": "Vitest’s dependency on Vite", "group": "octocode_v20_mcp_clasify_ab", "chars": 3137, "secs": 9.2, "correctness": 8}, {"key": "Q14:gh_lean_lean_vs_mcp", "q": "Q14", "n": 14, "title": "Vitest’s dependency on Vite", "group": "gh_lean_lean_vs_mcp", "chars": 3167, "secs": 10.9, "correctness": 10}, {"key": "Q14:octocode_v18", "q": "Q14", "n": 14, "title": "Vitest’s dependency on Vite", "group": "octocode_v18", "chars": 7596, "secs": null, "correctness": 10}, {"key": "Q14:gh", "q": "Q14", "n": 14, "title": "Vitest’s dependency on Vite", "group": "gh", "chars": 10390, "secs": null, "correctness": 10}, {"key": "Q14:rtk", "q": "Q14", "n": 14, "title": "Vitest’s dependency on Vite", "group": "rtk", "chars": 8312, "secs": null, "correctness": 8}, {"key": "Q14:headroom", "q": "Q14", "n": 14, "title": "Vitest’s dependency on Vite", "group": "headroom", "chars": 6093, "secs": null, "correctness": 2}, {"key": "Q15:octocode_v20_lean_vs_mcp", "q": "Q15", "n": 15, "title": "Hono JSX array component PR", "group": "octocode_v20_lean_vs_mcp", "chars": 9294, "secs": 10.4, "correctness": 9}, {"key": "Q15:octocode_v20_mcp_clasify_ab", "q": "Q15", "n": 15, "title": "Hono JSX array component PR", "group": "octocode_v20_mcp_clasify_ab", "chars": 6256, "secs": 11.1, "correctness": 8}, {"key": "Q15:gh_lean_lean_vs_mcp", "q": "Q15", "n": 15, "title": "Hono JSX array component PR", "group": "gh_lean_lean_vs_mcp", "chars": 5467, "secs": 11.4, "correctness": 9}, {"key": "Q15:octocode_v18", "q": "Q15", "n": 15, "title": "Hono JSX array component PR", "group": "octocode_v18", "chars": 7378, "secs": null, "correctness": 10}, {"key": "Q15:gh", "q": "Q15", "n": 15, "title": "Hono JSX array component PR", "group": "gh", "chars": 4893, "secs": null, "correctness": 10}, {"key": "Q15:rtk", "q": "Q15", "n": 15, "title": "Hono JSX array component PR", "group": "rtk", "chars": 4836, "secs": null, "correctness": 10}, {"key": "Q15:headroom", "q": "Q15", "n": 15, "title": "Hono JSX array component PR", "group": "headroom", "chars": 4769, "secs": null, "correctness": 9}, {"key": "Q16:octocode_v20_lean_vs_mcp", "q": "Q16", "n": 16, "title": "ESLint parser dependency chain", "group": "octocode_v20_lean_vs_mcp", "chars": 3867, "secs": 14.9, "correctness": 8}, {"key": "Q16:octocode_v20_mcp_clasify_ab", "q": "Q16", "n": 16, "title": "ESLint parser dependency chain", "group": "octocode_v20_mcp_clasify_ab", "chars": 3668, "secs": 13.0, "correctness": 8}, {"key": "Q16:gh_lean_lean_vs_mcp", "q": "Q16", "n": 16, "title": "ESLint parser dependency chain", "group": "gh_lean_lean_vs_mcp", "chars": 3527, "secs": 19.8, "correctness": 10}, {"key": "Q16:octocode_v18", "q": "Q16", "n": 16, "title": "ESLint parser dependency chain", "group": "octocode_v18", "chars": 10731, "secs": null, "correctness": 10}, {"key": "Q16:gh", "q": "Q16", "n": 16, "title": "ESLint parser dependency chain", "group": "gh", "chars": 23578, "secs": null, "correctness": 10}, {"key": "Q16:rtk", "q": "Q16", "n": 16, "title": "ESLint parser dependency chain", "group": "rtk", "chars": 1057962, "secs": null, "correctness": 10}, {"key": "Q16:headroom", "q": "Q16", "n": 16, "title": "ESLint parser dependency chain", "group": "headroom", "chars": 959745, "secs": null, "correctness": 5}, {"key": "Q17:octocode_v20_lean_vs_mcp", "q": "Q17", "n": 17, "title": "Next.js fetch request memoization", "group": "octocode_v20_lean_vs_mcp", "chars": 11807, "secs": 15.8, "correctness": 10}, {"key": "Q17:octocode_v20_mcp_clasify_ab", "q": "Q17", "n": 17, "title": "Next.js fetch request memoization", "group": "octocode_v20_mcp_clasify_ab", "chars": 11908, "secs": 27.5, "correctness": 10}, {"key": "Q17:gh_lean_lean_vs_mcp", "q": "Q17", "n": 17, "title": "Next.js fetch request memoization", "group": "gh_lean_lean_vs_mcp", "chars": 9242, "secs": 19.6, "correctness": 10}, {"key": "Q17:octocode_v18", "q": "Q17", "n": 17, "title": "Next.js fetch request memoization", "group": "octocode_v18", "chars": 15109, "secs": null, "correctness": 8}, {"key": "Q17:gh", "q": "Q17", "n": 17, "title": "Next.js fetch request memoization", "group": "gh", "chars": 232760, "secs": null, "correctness": 7}, {"key": "Q17:rtk", "q": "Q17", "n": 17, "title": "Next.js fetch request memoization", "group": "rtk", "chars": 179720, "secs": null, "correctness": 8}, {"key": "Q17:headroom", "q": "Q17", "n": 17, "title": "Next.js fetch request memoization", "group": "headroom", "chars": 6844627, "secs": null, "correctness": 8}, {"key": "Q18:octocode_v20_lean_vs_mcp", "q": "Q18", "n": 18, "title": "Vite dependency-section membership", "group": "octocode_v20_lean_vs_mcp", "chars": 3425, "secs": 10.7, "correctness": 9}, {"key": "Q18:octocode_v20_mcp_clasify_ab", "q": "Q18", "n": 18, "title": "Vite dependency-section membership", "group": "octocode_v20_mcp_clasify_ab", "chars": 3704, "secs": 14.0, "correctness": 10}, {"key": "Q18:gh_lean_lean_vs_mcp", "q": "Q18", "n": 18, "title": "Vite dependency-section membership", "group": "gh_lean_lean_vs_mcp", "chars": 2923, "secs": 16.6, "correctness": 10}, {"key": "Q18:octocode_v18", "q": "Q18", "n": 18, "title": "Vite dependency-section membership", "group": "octocode_v18", "chars": 12772, "secs": null, "correctness": 10}, {"key": "Q18:gh", "q": "Q18", "n": 18, "title": "Vite dependency-section membership", "group": "gh", "chars": 12178, "secs": null, "correctness": 10}, {"key": "Q18:rtk", "q": "Q18", "n": 18, "title": "Vite dependency-section membership", "group": "rtk", "chars": 8244, "secs": null, "correctness": 10}, {"key": "Q18:headroom", "q": "Q18", "n": 18, "title": "Vite dependency-section membership", "group": "headroom", "chars": 7614, "secs": null, "correctness": 5}, {"key": "Q19:octocode_v20_lean_vs_mcp", "q": "Q19", "n": 19, "title": "Node child-process async and sync paths", "group": "octocode_v20_lean_vs_mcp", "chars": 14530, "secs": 17.6, "correctness": 8}, {"key": "Q19:octocode_v20_mcp_clasify_ab", "q": "Q19", "n": 19, "title": "Node child-process async and sync paths", "group": "octocode_v20_mcp_clasify_ab", "chars": 15222, "secs": 24.4, "correctness": 9}, {"key": "Q19:gh_lean_lean_vs_mcp", "q": "Q19", "n": 19, "title": "Node child-process async and sync paths", "group": "gh_lean_lean_vs_mcp", "chars": 7236, "secs": 19.3, "correctness": 8}, {"key": "Q19:octocode_v18", "q": "Q19", "n": 19, "title": "Node child-process async and sync paths", "group": "octocode_v18", "chars": 16525, "secs": null, "correctness": 9}, {"key": "Q19:gh", "q": "Q19", "n": 19, "title": "Node child-process async and sync paths", "group": "gh", "chars": 179627, "secs": null, "correctness": 10}, {"key": "Q19:rtk", "q": "Q19", "n": 19, "title": "Node child-process async and sync paths", "group": "rtk", "chars": 166806, "secs": null, "correctness": 10}, {"key": "Q19:headroom", "q": "Q19", "n": 19, "title": "Node child-process async and sync paths", "group": "headroom", "chars": 186059, "secs": null, "correctness": 10}, {"key": "Q20:octocode_v20_lean_vs_mcp", "q": "Q20", "n": 20, "title": "Actions toolkit exec output path", "group": "octocode_v20_lean_vs_mcp", "chars": 10959, "secs": 21.3, "correctness": 10}, {"key": "Q20:octocode_v20_mcp_clasify_ab", "q": "Q20", "n": 20, "title": "Actions toolkit exec output path", "group": "octocode_v20_mcp_clasify_ab", "chars": 9698, "secs": 17.4, "correctness": 10}, {"key": "Q20:gh_lean_lean_vs_mcp", "q": "Q20", "n": 20, "title": "Actions toolkit exec output path", "group": "gh_lean_lean_vs_mcp", "chars": 7634, "secs": 16.3, "correctness": 10}, {"key": "Q20:octocode_v18", "q": "Q20", "n": 20, "title": "Actions toolkit exec output path", "group": "octocode_v18", "chars": 15816, "secs": null, "correctness": 10}, {"key": "Q20:gh", "q": "Q20", "n": 20, "title": "Actions toolkit exec output path", "group": "gh", "chars": 48996, "secs": null, "correctness": 10}, {"key": "Q20:rtk", "q": "Q20", "n": 20, "title": "Actions toolkit exec output path", "group": "rtk", "chars": 114467, "secs": null, "correctness": 10}, {"key": "Q20:headroom", "q": "Q20", "n": 20, "title": "Actions toolkit exec output path", "group": "headroom", "chars": 80465, "secs": null, "correctness": 9}, {"key": "Q21:octocode_v20_lean_vs_mcp", "q": "Q21", "n": 21, "title": "LangChain createAgent flow and graph", "group": "octocode_v20_lean_vs_mcp", "chars": 60769, "secs": 43.9, "correctness": 8}, {"key": "Q21:octocode_v20_mcp_clasify_ab", "q": "Q21", "n": 21, "title": "LangChain createAgent flow and graph", "group": "octocode_v20_mcp_clasify_ab", "chars": 34976, "secs": 49.3, "correctness": 8}, {"key": "Q21:gh_lean_lean_vs_mcp", "q": "Q21", "n": 21, "title": "LangChain createAgent flow and graph", "group": "gh_lean_lean_vs_mcp", "chars": 17939, "secs": 37.7, "correctness": 7}, {"key": "Q21:octocode_v18", "q": "Q21", "n": 21, "title": "LangChain createAgent flow and graph", "group": "octocode_v18", "chars": 65468, "secs": null, "correctness": 6}, {"key": "Q21:gh", "q": "Q21", "n": 21, "title": "LangChain createAgent flow and graph", "group": "gh", "chars": 297100, "secs": null, "correctness": 10}, {"key": "Q21:rtk", "q": "Q21", "n": 21, "title": "LangChain createAgent flow and graph", "group": "rtk", "chars": 430307, "secs": null, "correctness": 9}, {"key": "Q21:headroom", "q": "Q21", "n": 21, "title": "LangChain createAgent flow and graph", "group": "headroom", "chars": 310655, "secs": null, "correctness": 10}, {"key": "Q22:octocode_v20_lean_vs_mcp", "q": "Q22", "n": 22, "title": "Axios release-range compare", "group": "octocode_v20_lean_vs_mcp", "chars": 16278, "secs": 16.4, "correctness": 9}, {"key": "Q22:octocode_v20_mcp_clasify_ab", "q": "Q22", "n": 22, "title": "Axios release-range compare", "group": "octocode_v20_mcp_clasify_ab", "chars": 15504, "secs": 18.1, "correctness": 10}, {"key": "Q22:gh_lean_lean_vs_mcp", "q": "Q22", "n": 22, "title": "Axios release-range compare", "group": "gh_lean_lean_vs_mcp", "chars": 4615, "secs": 20.2, "correctness": 10}, {"key": "Q22:octocode_v18", "q": "Q22", "n": 22, "title": "Axios release-range compare", "group": "octocode_v18", "chars": 53622, "secs": null, "correctness": 8}, {"key": "Q22:gh", "q": "Q22", "n": 22, "title": "Axios release-range compare", "group": "gh", "chars": 12611, "secs": null, "correctness": 10}, {"key": "Q22:rtk", "q": "Q22", "n": 22, "title": "Axios release-range compare", "group": "rtk", "chars": 425890, "secs": null, "correctness": 10}, {"key": "Q22:headroom", "q": "Q22", "n": 22, "title": "Axios release-range compare", "group": "headroom", "chars": 13237, "secs": null, "correctness": 10}, {"key": "Q23:octocode_v20_lean_vs_mcp", "q": "Q23", "n": 23, "title": "Linux write() syscall to VFS dispatch flow", "group": "octocode_v20_lean_vs_mcp", "chars": 10220, "secs": 18.5, "correctness": 7}, {"key": "Q23:octocode_v20_mcp_clasify_ab", "q": "Q23", "n": 23, "title": "Linux write() syscall to VFS dispatch flow", "group": "octocode_v20_mcp_clasify_ab", "chars": 9454, "secs": 18.5, "correctness": 9}, {"key": "Q23:gh_lean_lean_vs_mcp", "q": "Q23", "n": 23, "title": "Linux write() syscall to VFS dispatch flow", "group": "gh_lean_lean_vs_mcp", "chars": 9429, "secs": 20.1, "correctness": 9}, {"key": "Q23:octocode_v18", "q": "Q23", "n": 23, "title": "Linux write() syscall to VFS dispatch flow", "group": "octocode_v18", "chars": 17085, "secs": null, "correctness": 8}, {"key": "Q23:gh", "q": "Q23", "n": 23, "title": "Linux write() syscall to VFS dispatch flow", "group": "gh", "chars": 212408, "secs": null, "correctness": 7}, {"key": "Q23:rtk", "q": "Q23", "n": 23, "title": "Linux write() syscall to VFS dispatch flow", "group": "rtk", "chars": 182346, "secs": null, "correctness": 8}, {"key": "Q23:headroom", "q": "Q23", "n": 23, "title": "Linux write() syscall to VFS dispatch flow", "group": "headroom", "chars": 170490, "secs": null, "correctness": 8}, {"key": "Q24:octocode_v20_lean_vs_mcp", "q": "Q24", "n": 24, "title": "Axios buildFullPath blast radius", "group": "octocode_v20_lean_vs_mcp", "chars": 3594, "secs": 14.0, "correctness": 10}, {"key": "Q24:octocode_v20_mcp_clasify_ab", "q": "Q24", "n": 24, "title": "Axios buildFullPath blast radius", "group": "octocode_v20_mcp_clasify_ab", "chars": 13002, "secs": 50.0, "correctness": 8}, {"key": "Q24:gh_lean_lean_vs_mcp", "q": "Q24", "n": 24, "title": "Axios buildFullPath blast radius", "group": "gh_lean_lean_vs_mcp", "chars": 6465, "secs": 22.3, "correctness": 9}, {"key": "Q24:octocode_v18", "q": "Q24", "n": 24, "title": "Axios buildFullPath blast radius", "group": "octocode_v18", "chars": 16067, "secs": null, "correctness": 10}, {"key": "Q24:gh", "q": "Q24", "n": 24, "title": "Axios buildFullPath blast radius", "group": "gh", "chars": 70767, "secs": null, "correctness": 7}, {"key": "Q24:rtk", "q": "Q24", "n": 24, "title": "Axios buildFullPath blast radius", "group": "rtk", "chars": 114119, "secs": null, "correctness": 8}, {"key": "Q24:headroom", "q": "Q24", "n": 24, "title": "Axios buildFullPath blast radius", "group": "headroom", "chars": 72038, "secs": null, "correctness": 10}, {"key": "Q25:octocode_v20_lean_vs_mcp", "q": "Q25", "n": 25, "title": "Axios PR selected-patch and review thread", "group": "octocode_v20_lean_vs_mcp", "chars": 9100, "secs": 14.6, "correctness": 8}, {"key": "Q25:octocode_v20_mcp_clasify_ab", "q": "Q25", "n": 25, "title": "Axios PR selected-patch and review thread", "group": "octocode_v20_mcp_clasify_ab", "chars": 9609, "secs": 14.8, "correctness": 8}, {"key": "Q25:gh_lean_lean_vs_mcp", "q": "Q25", "n": 25, "title": "Axios PR selected-patch and review thread", "group": "gh_lean_lean_vs_mcp", "chars": 13919, "secs": 17.9, "correctness": 9}, {"key": "Q25:octocode_v18", "q": "Q25", "n": 25, "title": "Axios PR selected-patch and review thread", "group": "octocode_v18", "chars": 15775, "secs": null, "correctness": 9}, {"key": "Q25:gh", "q": "Q25", "n": 25, "title": "Axios PR selected-patch and review thread", "group": "gh", "chars": 17807, "secs": null, "correctness": 8}, {"key": "Q25:rtk", "q": "Q25", "n": 25, "title": "Axios PR selected-patch and review thread", "group": "rtk", "chars": 26187, "secs": null, "correctness": 10}, {"key": "Q25:headroom", "q": "Q25", "n": 25, "title": "Axios PR selected-patch and review thread", "group": "headroom", "chars": 21315, "secs": null, "correctness": 10}, {"key": "Q26:octocode_v20_lean_vs_mcp", "q": "Q26", "n": 26, "title": "Zustand documentation surface", "group": "octocode_v20_lean_vs_mcp", "chars": 6037, "secs": 17.8, "correctness": 10}, {"key": "Q26:octocode_v20_mcp_clasify_ab", "q": "Q26", "n": 26, "title": "Zustand documentation surface", "group": "octocode_v20_mcp_clasify_ab", "chars": 4534, "secs": 15.7, "correctness": 10}, {"key": "Q26:gh_lean_lean_vs_mcp", "q": "Q26", "n": 26, "title": "Zustand documentation surface", "group": "gh_lean_lean_vs_mcp", "chars": 3823, "secs": 13.1, "correctness": 10}, {"key": "Q26:octocode_v18", "q": "Q26", "n": 26, "title": "Zustand documentation surface", "group": "octocode_v18", "chars": 16594, "secs": null, "correctness": 8}, {"key": "Q26:gh", "q": "Q26", "n": 26, "title": "Zustand documentation surface", "group": "gh", "chars": 66256, "secs": null, "correctness": 9}, {"key": "Q26:rtk", "q": "Q26", "n": 26, "title": "Zustand documentation surface", "group": "rtk", "chars": 50292, "secs": null, "correctness": 10}, {"key": "Q26:headroom", "q": "Q26", "n": 26, "title": "Zustand documentation surface", "group": "headroom", "chars": 24089, "secs": null, "correctness": 10}, {"key": "Q27:octocode_v20_lean_vs_mcp", "q": "Q27", "n": 27, "title": "React Query public API surface", "group": "octocode_v20_lean_vs_mcp", "chars": 8332, "secs": 16.7, "correctness": 9}, {"key": "Q27:octocode_v20_mcp_clasify_ab", "q": "Q27", "n": 27, "title": "React Query public API surface", "group": "octocode_v20_mcp_clasify_ab", "chars": 5180, "secs": 10.2, "correctness": 8}, {"key": "Q27:gh_lean_lean_vs_mcp", "q": "Q27", "n": 27, "title": "React Query public API surface", "group": "gh_lean_lean_vs_mcp", "chars": 4416, "secs": 11.5, "correctness": 6}, {"key": "Q27:octocode_v18", "q": "Q27", "n": 27, "title": "React Query public API surface", "group": "octocode_v18", "chars": 7930, "secs": null, "correctness": 9}, {"key": "Q27:gh", "q": "Q27", "n": 27, "title": "React Query public API surface", "group": "gh", "chars": 8780, "secs": null, "correctness": 10}, {"key": "Q27:rtk", "q": "Q27", "n": 27, "title": "React Query public API surface", "group": "rtk", "chars": 14515, "secs": null, "correctness": 10}, {"key": "Q27:headroom", "q": "Q27", "n": 27, "title": "React Query public API surface", "group": "headroom", "chars": 12124, "secs": null, "correctness": 9}, {"key": "Q28:octocode_v20_lean_vs_mcp", "q": "Q28", "n": 28, "title": "Hermes agent memory management", "group": "octocode_v20_lean_vs_mcp", "chars": 32967, "secs": 20.7, "correctness": 7}, {"key": "Q28:octocode_v20_mcp_clasify_ab", "q": "Q28", "n": 28, "title": "Hermes agent memory management", "group": "octocode_v20_mcp_clasify_ab", "chars": 30322, "secs": 52.8, "correctness": 8}, {"key": "Q28:gh_lean_lean_vs_mcp", "q": "Q28", "n": 28, "title": "Hermes agent memory management", "group": "gh_lean_lean_vs_mcp", "chars": 11801, "secs": 19.8, "correctness": 6}, {"key": "Q28:octocode_v18", "q": "Q28", "n": 28, "title": "Hermes agent memory management", "group": "octocode_v18", "chars": 62423, "secs": null, "correctness": 7}, {"key": "Q28:gh", "q": "Q28", "n": 28, "title": "Hermes agent memory management", "group": "gh", "chars": 1472374, "secs": null, "correctness": 9}, {"key": "Q28:rtk", "q": "Q28", "n": 28, "title": "Hermes agent memory management", "group": "rtk", "chars": 6964358, "secs": null, "correctness": 7}, {"key": "Q28:headroom", "q": "Q28", "n": 28, "title": "Hermes agent memory management", "group": "headroom", "chars": 835870, "secs": null, "correctness": 8}, {"key": "Q29:octocode_v20_lean_vs_mcp", "q": "Q29", "n": 29, "title": "MCP HTTP transport authorization flow", "group": "octocode_v20_lean_vs_mcp", "chars": 11419, "secs": 18.4, "correctness": 7}, {"key": "Q29:octocode_v20_mcp_clasify_ab", "q": "Q29", "n": 29, "title": "MCP HTTP transport authorization flow", "group": "octocode_v20_mcp_clasify_ab", "chars": 16727, "secs": 30.6, "correctness": 8}, {"key": "Q29:gh_lean_lean_vs_mcp", "q": "Q29", "n": 29, "title": "MCP HTTP transport authorization flow", "group": "gh_lean_lean_vs_mcp", "chars": 25567, "secs": 29.3, "correctness": 9}, {"key": "Q29:octocode_v18", "q": "Q29", "n": 29, "title": "MCP HTTP transport authorization flow", "group": "octocode_v18", "chars": 41495, "secs": null, "correctness": 10}, {"key": "Q29:gh", "q": "Q29", "n": 29, "title": "MCP HTTP transport authorization flow", "group": "gh", "chars": 100557, "secs": null, "correctness": 9}, {"key": "Q29:rtk", "q": "Q29", "n": 29, "title": "MCP HTTP transport authorization flow", "group": "rtk", "chars": 211918, "secs": null, "correctness": 9}, {"key": "Q29:headroom", "q": "Q29", "n": 29, "title": "MCP HTTP transport authorization flow", "group": "headroom", "chars": 108554, "secs": null, "correctness": 10}, {"key": "Q30:octocode_v20_lean_vs_mcp", "q": "Q30", "n": 30, "title": "Chromium inter-process communication", "group": "octocode_v20_lean_vs_mcp", "chars": 6657, "secs": 18.0, "correctness": 7}, {"key": "Q30:octocode_v20_mcp_clasify_ab", "q": "Q30", "n": 30, "title": "Chromium inter-process communication", "group": "octocode_v20_mcp_clasify_ab", "chars": 11180, "secs": 34.8, "correctness": 8}, {"key": "Q30:gh_lean_lean_vs_mcp", "q": "Q30", "n": 30, "title": "Chromium inter-process communication", "group": "gh_lean_lean_vs_mcp", "chars": 8243, "secs": 20.0, "correctness": 9}, {"key": "Q30:octocode_v18", "q": "Q30", "n": 30, "title": "Chromium inter-process communication", "group": "octocode_v18", "chars": 33689, "secs": null, "correctness": 10}, {"key": "Q30:gh", "q": "Q30", "n": 30, "title": "Chromium inter-process communication", "group": "gh", "chars": 32215, "secs": null, "correctness": 10}, {"key": "Q30:rtk", "q": "Q30", "n": 30, "title": "Chromium inter-process communication", "group": "rtk", "chars": 117539, "secs": null, "correctness": 10}, {"key": "Q30:headroom", "q": "Q30", "n": 30, "title": "Chromium inter-process communication", "group": "headroom", "chars": 35424, "secs": null, "correctness": 9}], "matrix": [{"pair": "octocode_v20_lean_vs_mcp~octocode_v20_mcp_clasify_ab", "row": "octocode_v20_lean_vs_mcp", "col": "octocode_v20_mcp_clasify_ab", "leaner_x": 1.03, "leaner_on": 16}, {"pair": "octocode_v20_lean_vs_mcp~gh_lean_lean_vs_mcp", "row": "octocode_v20_lean_vs_mcp", "col": "gh_lean_lean_vs_mcp", "leaner_x": 0.71, "leaner_on": 6}, {"pair": "octocode_v20_lean_vs_mcp~octocode_v18", "row": "octocode_v20_lean_vs_mcp", "col": "octocode_v18", "leaner_x": 2.13, "leaner_on": 28}, {"pair": "octocode_v20_lean_vs_mcp~gh", "row": "octocode_v20_lean_vs_mcp", "col": "gh", "leaner_x": 4.33, "leaner_on": 25}, {"pair": "octocode_v20_lean_vs_mcp~rtk", "row": "octocode_v20_lean_vs_mcp", "col": "rtk", "leaner_x": 8.29, "leaner_on": 28}, {"pair": "octocode_v20_lean_vs_mcp~headroom", "row": "octocode_v20_lean_vs_mcp", "col": "headroom", "leaner_x": 7.44, "leaner_on": 27}, {"pair": "octocode_v20_mcp_clasify_ab~octocode_v20_lean_vs_mcp", "row": "octocode_v20_mcp_clasify_ab", "col": "octocode_v20_lean_vs_mcp", "leaner_x": 0.97, "leaner_on": 14}, {"pair": "octocode_v20_mcp_clasify_ab~gh_lean_lean_vs_mcp", "row": "octocode_v20_mcp_clasify_ab", "col": "gh_lean_lean_vs_mcp", "leaner_x": 0.68, "leaner_on": 5}, {"pair": "octocode_v20_mcp_clasify_ab~octocode_v18", "row": "octocode_v20_mcp_clasify_ab", "col": "octocode_v18", "leaner_x": 2.06, "leaner_on": 30}, {"pair": "octocode_v20_mcp_clasify_ab~gh", "row": "octocode_v20_mcp_clasify_ab", "col": "gh", "leaner_x": 4.19, "leaner_on": 25}, {"pair": "octocode_v20_mcp_clasify_ab~rtk", "row": "octocode_v20_mcp_clasify_ab", "col": "rtk", "leaner_x": 8.03, "leaner_on": 28}, {"pair": "octocode_v20_mcp_clasify_ab~headroom", "row": "octocode_v20_mcp_clasify_ab", "col": "headroom", "leaner_x": 7.21, "leaner_on": 27}, {"pair": "gh_lean_lean_vs_mcp~octocode_v20_lean_vs_mcp", "row": "gh_lean_lean_vs_mcp", "col": "octocode_v20_lean_vs_mcp", "leaner_x": 1.42, "leaner_on": 24}, {"pair": "gh_lean_lean_vs_mcp~octocode_v20_mcp_clasify_ab", "row": "gh_lean_lean_vs_mcp", "col": "octocode_v20_mcp_clasify_ab", "leaner_x": 1.46, "leaner_on": 25}, {"pair": "gh_lean_lean_vs_mcp~octocode_v18", "row": "gh_lean_lean_vs_mcp", "col": "octocode_v18", "leaner_x": 3.01, "leaner_on": 30}, {"pair": "gh_lean_lean_vs_mcp~gh", "row": "gh_lean_lean_vs_mcp", "col": "gh", "leaner_x": 6.13, "leaner_on": 28}, {"pair": "gh_lean_lean_vs_mcp~rtk", "row": "gh_lean_lean_vs_mcp", "col": "rtk", "leaner_x": 11.74, "leaner_on": 29}, {"pair": "gh_lean_lean_vs_mcp~headroom", "row": "gh_lean_lean_vs_mcp", "col": "headroom", "leaner_x": 10.54, "leaner_on": 28}, {"pair": "octocode_v18~octocode_v20_lean_vs_mcp", "row": "octocode_v18", "col": "octocode_v20_lean_vs_mcp", "leaner_x": 0.47, "leaner_on": 2}, {"pair": "octocode_v18~octocode_v20_mcp_clasify_ab", "row": "octocode_v18", "col": "octocode_v20_mcp_clasify_ab", "leaner_x": 0.49, "leaner_on": 0}, {"pair": "octocode_v18~gh_lean_lean_vs_mcp", "row": "octocode_v18", "col": "gh_lean_lean_vs_mcp", "leaner_x": 0.33, "leaner_on": 0}, {"pair": "octocode_v18~gh", "row": "octocode_v18", "col": "gh", "leaner_x": 2.04, "leaner_on": 23}, {"pair": "octocode_v18~rtk", "row": "octocode_v18", "col": "rtk", "leaner_x": 3.9, "leaner_on": 26}, {"pair": "octocode_v18~headroom", "row": "octocode_v18", "col": "headroom", "leaner_x": 3.5, "leaner_on": 24}, {"pair": "gh~octocode_v20_lean_vs_mcp", "row": "gh", "col": "octocode_v20_lean_vs_mcp", "leaner_x": 0.23, "leaner_on": 5}, {"pair": "gh~octocode_v20_mcp_clasify_ab", "row": "gh", "col": "octocode_v20_mcp_clasify_ab", "leaner_x": 0.24, "leaner_on": 5}, {"pair": "gh~gh_lean_lean_vs_mcp", "row": "gh", "col": "gh_lean_lean_vs_mcp", "leaner_x": 0.16, "leaner_on": 2}, {"pair": "gh~octocode_v18", "row": "gh", "col": "octocode_v18", "leaner_x": 0.49, "leaner_on": 7}, {"pair": "gh~rtk", "row": "gh", "col": "rtk", "leaner_x": 1.91, "leaner_on": 21}, {"pair": "gh~headroom", "row": "gh", "col": "headroom", "leaner_x": 1.72, "leaner_on": 21}, {"pair": "rtk~octocode_v20_lean_vs_mcp", "row": "rtk", "col": "octocode_v20_lean_vs_mcp", "leaner_x": 0.12, "leaner_on": 2}, {"pair": "rtk~octocode_v20_mcp_clasify_ab", "row": "rtk", "col": "octocode_v20_mcp_clasify_ab", "leaner_x": 0.12, "leaner_on": 2}, {"pair": "rtk~gh_lean_lean_vs_mcp", "row": "rtk", "col": "gh_lean_lean_vs_mcp", "leaner_x": 0.09, "leaner_on": 1}, {"pair": "rtk~octocode_v18", "row": "rtk", "col": "octocode_v18", "leaner_x": 0.26, "leaner_on": 4}, {"pair": "rtk~gh", "row": "rtk", "col": "gh", "leaner_x": 0.52, "leaner_on": 9}, {"pair": "rtk~headroom", "row": "rtk", "col": "headroom", "leaner_x": 0.9, "leaner_on": 10}, {"pair": "headroom~octocode_v20_lean_vs_mcp", "row": "headroom", "col": "octocode_v20_lean_vs_mcp", "leaner_x": 0.13, "leaner_on": 3}, {"pair": "headroom~octocode_v20_mcp_clasify_ab", "row": "headroom", "col": "octocode_v20_mcp_clasify_ab", "leaner_x": 0.14, "leaner_on": 3}, {"pair": "headroom~gh_lean_lean_vs_mcp", "row": "headroom", "col": "gh_lean_lean_vs_mcp", "leaner_x": 0.09, "leaner_on": 2}, {"pair": "headroom~octocode_v18", "row": "headroom", "col": "octocode_v18", "leaner_x": 0.29, "leaner_on": 6}, {"pair": "headroom~gh", "row": "headroom", "col": "gh", "leaner_x": 0.58, "leaner_on": 9}, {"pair": "headroom~rtk", "row": "headroom", "col": "rtk", "leaner_x": 1.11, "leaner_on": 20}], "head_to_head": [{"pair": "mcp-clasify-ab-111154-2026-10-09:mcp-clasify~mcp-noclasify", "campaign": "mcp-clasify-ab-111154-2026-10-09", "a": "mcp-clasify", "b": "mcp-noclasify", "judged": 30, "a_more_correct": 3, "same": 18, "b_more_correct": 9, "a_wins": 9, "b_wins": 21, "chars_b_over_a": 1.04, "a_leaner_on": 14, "secs_b_over_a": 1.04, "a_faster_on": 12, "questions": 30}, {"pair": "lean-vs-mcp-114934-2026-10-09:mcp~gh-lean", "campaign": "lean-vs-mcp-114934-2026-10-09", "a": "mcp", "b": "gh-lean", "judged": 30, "a_more_correct": 7, "same": 10, "b_more_correct": 13, "a_wins": 10, "b_wins": 20, "chars_b_over_a": 0.71, "a_leaner_on": 6, "secs_b_over_a": 1.08, "a_faster_on": 18, "questions": 30}], "live_runs": [{"run": "lean-vs-mcp-114934-2026-10-09:gh-lean", "campaign": "lean-vs-mcp-114934-2026-10-09", "arm": "gh-lean", "runs": 30, "calls": 142, "failed": 3, "clasify_calls": 0, "median_chars": 6068, "input_tokens": 1958460, "output_tokens": 46670, "cost_usd": 2.49, "median_secs": 19.4, "correctness": 9}, {"run": "lean-vs-mcp-114934-2026-10-09:mcp", "campaign": "lean-vs-mcp-114934-2026-10-09", "arm": "mcp", "runs": 30, "calls": 80, "failed": 3, "clasify_calls": 0, "median_chars": 8168, "input_tokens": 2025346, "output_tokens": 43316, "cost_usd": 2.61, "median_secs": 16.5, "correctness": 9}, {"run": "mcp-clasify-ab-111154-2026-10-09:mcp-clasify", "campaign": "mcp-clasify-ab-111154-2026-10-09", "arm": "mcp-clasify", "runs": 30, "calls": 87, "failed": 9, "clasify_calls": 0, "median_chars": 8214, "input_tokens": 2258856, "output_tokens": 44264, "cost_usd": 2.58, "median_secs": 19.1, "correctness": 9}, {"run": "mcp-clasify-ab-111154-2026-10-09:mcp-noclasify", "campaign": "mcp-clasify-ab-111154-2026-10-09", "arm": "mcp-noclasify", "runs": 30, "calls": 86, "failed": 10, "clasify_calls": 0, "median_chars": 8154, "input_tokens": 2233893, "output_tokens": 45226, "cost_usd": 2.62, "median_secs": 18.3, "correctness": 9}], "tool_map": [{"v18": "ghSearchRepos", "v20": "ghSearchRepo", "family": "GitHub", "change": "Renamed. Find candidate repositories by keyword, topic, owner, stars or date."}, {"v18": "ghSearchCode", "v20": "ghSearchCode", "family": "GitHub", "change": "Same job. Repo-scoped hits carry line numbers; ref reads hit lines at a tag, SHA or PR head."}, {"v18": "ghViewRepoStructure", "v20": "ghStructure", "family": "GitHub", "change": "Tree at any ref, plus refs (branches and tags with SHAs) and languages; materialize copies files for local tools."}, {"v18": "ghGetFileContent", "v20": "ghGetFileContent", "family": "GitHub", "change": "Same job. Region reads by matchString, line ranges or a symbols outline."}, {"v18": "ghSearchPullRequests · ghSearchIssues · ghSearchCommits", "v20": "ghSearchHistory", "family": "GitHub", "change": "Three searches merged into one, with operation = pullRequest, issue or commit."}, {"v18": "—", "v20": "ghGetHistoryItem", "family": "GitHub", "change": "New. Read one PR, issue, commit or compare range, picking sections such as files, patches or reviews."}, {"v18": "npmSearch", "v20": "artifactSearch", "family": "Packages", "change": "Package versions, dependencies and release source repository."}, {"v18": "localSearchCode", "v20": "localSearch", "family": "Local", "change": "Renamed. Text and regex search with ranked files."}, {"v18": "localViewStructure", "v20": "structureSearch", "family": "Local", "change": "Renamed. Tree view and find-by-name."}, {"v18": "localGetFileContent", "v20": "localFetch", "family": "Local", "change": "Renamed. Read a known file or region, with an rg -n style line gutter."}, {"v18": "lspGetSemantics", "v20": "lspSearch", "family": "Local", "change": "Renamed. Callers, references, types and diagnostics from a language server."}, {"v18": "—", "v20": "astSearch", "family": "Local", "change": "New. Declarations, symbol outlines and structural matches."}, {"v18": "—", "v20": "clasify", "family": "Semantic", "change": "New. Classifies large reads and wide search results with a provider model; listed only when its provider answers at startup."}, {"v18": "ghCloneRepo", "v20": "ghCloneRepo", "family": "CLI only", "change": "Kept in the CLI; not listed by the MCP server."}, {"v18": "localFindDeadCode", "v20": "—", "family": "Retired", "change": "No longer in the MCP tool list."}], "changes": [{"area": "Architecture", "title": "One native engine", "detail": "The CLI and the MCP server are thin interfaces over one Rust runtime, shipped as prebuilt binaries per platform."}, {"area": "Output", "title": "Minimal responses by default", "detail": "Rows carry the answer, open pagination, next.* continuations, warnings and errors. debug:true adds scan stats, receipts and snapshots."}, {"area": "Output", "title": "Leaner symbol outlines", "detail": "Members nest in their container and leaf symbols are one entry string. A/B: −35% tokens on 8 real outlines, 100% held-out replay accuracy (Sonnet and Haiku, 30 runs)."}, {"area": "Output", "title": "Leaner text output", "detail": "Single-row YAML drops the results/index/data wrapper; path-only rows render as compact strings; localFetch numbers lines like rg -n."}, {"area": "Output", "title": "Hints never clipped", "detail": "Every hint fits 120 characters. A complete single-hit answer carries one lead instead of up to two."}, {"area": "Speed", "title": "Cached GitHub searches", "detail": "Repository, issue, pull-request and commit searches are cached for 60 seconds like code search; a repeat sends no request."}, {"area": "Speed", "title": "Instant astSearch continuations", "detail": "Page 2 reuses page 1's scan while files are unchanged: 269 → 9 ms on a large tree."}, {"area": "Speed", "title": "Warm lspSearch", "detail": "A private per-workspace language server stays up between CLI calls: TypeScript hover ~3 s → ~0.1 s."}, {"area": "Research", "title": "PR review that fits", "detail": "Changed files come as compact rows grouped by directory; fileFilter narrows files and patches; matchString returns only matching hunks."}, {"area": "Research", "title": "Importer pages for references", "detail": "TypeScript and JavaScript references and callers reach importers past the 24-file cap, one verified window at a time."}, {"area": "Research", "title": "Declaring file ranks first", "detail": "Identifier searches rank the file that declares the symbol first."}, {"area": "MCP", "title": "Small, stable instructions", "detail": "Server instructions stay within 2,000 characters; the grammar inventory moved to the CLI."}, {"area": "CLI", "title": "schema replaces scheme", "detail": "octocode schema <tool> --view query prints the input contract. Output follows the terminal: text on a TTY, JSON on a pipe."}, {"area": "CLI", "title": "One exit class per error code", "detail": "Scripts that read exit codes get one documented class per error code."}, {"area": "Config", "title": "One name per setting", "detail": "Duplicate env aliases removed. GitHub token comes from GH_TOKEN, then GITHUB_TOKEN; lsp-servers.json replaces nine *_SERVER_PATH variables."}]}, fns = [];
+  const colors = ['var(--c0)','var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)','var(--c7)'];
+  let t; addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => fns.forEach((f) => f()), 120); });
+  return { colors, data: (id) => ({ status: DATA[id] ? 'ok' : 'missing', data: DATA[id] || [] }),
+    onData: (fn) => { fns.push(fn); fn(); }, setLink: (id) => { history.replaceState(null, '', '#' + id); },
+    params: () => ({}), setParams() {}, resetParams() {}, refresh() {} };
+})();
 </script>
-</body>
-</html>
+<script>
+(function () {
+  const fInt = d3.format(',');
+  const f2 = d3.format('.2f');
+  const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 });
+  const tickFmt = (v) => (v >= 10000 ? compact.format(v) : fInt(v));
+  const enc = (s) => String(s).replace(/[%&=,]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
+  const PAGES = ['benchmark', 'whats-new', 'method'];
+  let ORDER = [], LABEL = {}, ANCHOR = null;
+  const col = (g) => dash.colors[Math.max(0, ORDER.indexOf(g)) % dash.colors.length];
+
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const sw = (g) => { const s = el('i', 'ob-sw'); s.style.background = col(g); return s; };
+  const mark = (node, source, field, where) => { node.dataset.source = source; node.dataset.field = field; node.dataset.where = where; return node; };
+  const val = (text, source, field, where, tag = 'b') => mark(el(tag, null, text), source, field, where);
+
+  function stateOk(id, boxes) {
+    const d = dash.data(id);
+    if (d.status === 'ok') { boxes.forEach((b) => b.classList.remove('dash-skeleton')); return d.data; }
+    if (['error', 'connect', 'declined', 'missing'].includes(d.status)) {
+      boxes.forEach((b) => { b.classList.remove('dash-skeleton'); b.replaceChildren(el('div', 'ob-fail', 'Failed to load')); });
+    } else boxes.forEach((b) => { b.replaceChildren(); b.classList.add('dash-skeleton'); });
+    return null;
+  }
+
+  function makeTip(box) {
+    let tip = box.querySelector('.ob-tip');
+    if (!tip) { tip = el('div', 'ob-tip'); tip.hidden = true; box.append(tip); }
+    return {
+      show(head, lines, x, y) {
+        tip.replaceChildren(el('div', 'ob-tip-h', head));
+        lines.forEach(([g, name, v]) => { const r = el('div', 'ob-tip-r'); if (g) r.append(sw(g)); r.append(el('span', null, name), el('b', null, v)); tip.append(r); });
+        tip.hidden = false;
+        const bw = box.clientWidth, tw = tip.offsetWidth, th = tip.offsetHeight;
+        let left = x + 14; if (left + tw > bw) left = Math.max(0, x - tw - 14);
+        tip.style.left = left + 'px'; tip.style.top = Math.max(0, Math.min(y - th / 2, box.clientHeight - th)) + 'px';
+      },
+      hide() { tip.hidden = true; },
+    };
+  }
+
+  function measure(svg, texts, cls) {
+    const g = svg.append('g').attr('class', cls); let w = 0;
+    texts.forEach((t) => { w = Math.max(w, g.append('text').text(t).node().getComputedTextLength()); });
+    g.remove(); return w;
+  }
+
+  function axis(sel) { sel.attr('font-size', null).attr('font-family', null); return sel; }
+
+  function hbars(box, items, opts) {
+    box.querySelector('svg')?.remove();
+    const W = Math.max(box.clientWidth, 260), rowH = 34, top = 4, bottom = 26, H = top + items.length * rowH + bottom;
+    const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    const labW = measure(svg, items.map((d) => d.label), 'ob-lbl') + 12;
+    const valW = measure(svg, items.map((d) => opts.fmt(d.value)), 'ob-val') + 10;
+    const x = d3.scaleLinear([0, opts.max], [labW, W - valW]);
+    const y = d3.scaleBand(items.map((d) => d.key), [top, top + items.length * rowH]).padding(0.32);
+    axis(svg.append('g').attr('class', 'ob-axis').attr('transform', `translate(0,${H - bottom + 6})`)
+      .call(d3.axisBottom(x).ticks(opts.ticks || Math.max(2, Math.floor((W - labW - valW) / 90))).tickFormat(opts.tick).tickSize(-(H - bottom - top + 6))))
+      .selectAll('text').attr('dy', '1em');
+    svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-lbl').attr('x', 0)
+      .attr('y', (d) => y(d.key) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label);
+    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', x(0)).attr('y', (d) => y(d.key)).attr('height', y.bandwidth())
+      .attr('rx', 4).attr('width', (d) => Math.max(2, x(d.value) - x(0))).attr('fill', (d) => col(d.key));
+    svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-val').attr('x', (d) => x(d.value) + 6)
+      .attr('y', (d) => y(d.key) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => opts.fmt(d.value));
+    const tip = makeTip(box);
+    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', 0).attr('width', W)
+      .attr('y', (d) => y(d.key) - y.step() * y.paddingInner() / 2).attr('height', y.step()).attr('fill', 'transparent')
+      .on('mousemove', (ev, d) => { const [mx, my] = d3.pointer(ev, box); tip.show(d.label, opts.tip(d), mx, my); })
+      .on('mouseleave', () => tip.hide());
+  }
+
+  function forest(box, rows) {
+    box.querySelector('svg')?.remove();
+    const items = rows.filter((r) => !r.anchor);
+    const W = Math.max(box.clientWidth, 260), rowH = 38, top = 22, bottom = 26, H = top + items.length * rowH + bottom;
+    const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    const labW = measure(svg, items.map((d) => d.label), 'ob-lbl') + 12;
+    const valW = measure(svg, items.map((d) => f2(d.leaner_x) + '×'), 'ob-val') + 12;
+    const lo = Math.min(0.8, d3.min(items, (d) => d.ci_low) * 0.9), hi = Math.max(1.5, d3.max(items, (d) => d.ci_high) * 1.1);
+    const x = d3.scaleLog([lo, hi], [labW, W - valW]);
+    const y = d3.scaleBand(items.map((d) => d.id), [top, top + items.length * rowH]).padding(0.3);
+    const ticks = [0.25, 0.5, 1, 2, 4, 8, 16, 32].filter((t) => t >= lo && t <= hi);
+    axis(svg.append('g').attr('class', 'ob-axis').attr('transform', `translate(0,${H - bottom + 6})`)
+      .call(d3.axisBottom(x).tickValues(ticks).tickFormat((t) => t + '×').tickSize(-(H - bottom - top + 6))))
+      .selectAll('text').attr('dy', '1em');
+    svg.append('line').attr('x1', x(1)).attr('x2', x(1)).attr('y1', top - 14).attr('y2', H - bottom + 6)
+      .attr('stroke', 'var(--cds-chart-reference)').attr('stroke-width', 1.5).attr('stroke-dasharray', '4 3');
+    svg.append('text').attr('class', 'ob-lbl-m').attr('x', x(1) + 6).attr('y', top - 8).text('same as anchor');
+    svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-lbl').attr('x', 0)
+      .attr('y', (d) => y(d.id) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label);
+    const g = svg.append('g').selectAll('g').data(items).join('g').attr('transform', (d) => `translate(0,${y(d.id) + y.bandwidth() / 2})`);
+    g.append('line').attr('x1', (d) => x(d.ci_low)).attr('x2', (d) => x(d.ci_high)).attr('stroke', (d) => col(d.id))
+      .attr('stroke-width', 3).attr('stroke-linecap', 'round').attr('opacity', 0.45);
+    g.append('circle').attr('cx', (d) => x(d.leaner_x)).attr('r', 6.5).attr('fill', (d) => col(d.id));
+    g.append('text').attr('class', 'ob-val').attr('x', (d) => x(d.ci_high) + 8).attr('dy', '0.35em').text((d) => f2(d.leaner_x) + '×');
+    const tip = makeTip(box);
+    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', 0).attr('width', W)
+      .attr('y', (d) => y(d.id) - y.step() * y.paddingInner() / 2).attr('height', y.step()).attr('fill', 'transparent')
+      .on('mousemove', (ev, d) => {
+        const [mx, my] = d3.pointer(ev, box);
+        tip.show(LABEL[ANCHOR] + ' vs ' + d.label, [[d.id, 'Anchor leaner by', f2(d.leaner_x) + '×'],
+          [null, '95% interval', f2(d.ci_low) + '–' + f2(d.ci_high) + '×'], [null, 'Anchor leaner on', d.leaner_on + ' of ' + d.questions]], mx, my);
+      })
+      .on('mouseleave', () => tip.hide());
+  }
+
+  function timeBars(box, rows) {
+    box.querySelector('svg')?.remove();
+    const items = rows.filter((r) => r.secs_median != null);
+    if (!items.length) { box.replaceChildren(el('div', 'ob-fail', 'No timed runs yet')); return; }
+    const W = Math.max(box.clientWidth, 260), rowH = 34, top = 4, bottom = 26, H = top + items.length * rowH + bottom;
+    const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    const fmtS = (v) => d3.format('.1f')(v) + ' s';
+    const labW = measure(svg, items.map((d) => d.label), 'ob-lbl') + 12;
+    const valW = measure(svg, items.map((d) => fmtS(d.secs_median)), 'ob-val') + 10;
+    const x = d3.scaleLinear([0, d3.max(items, (d) => d.model_secs_mean + d.tool_secs_mean) * 1.02], [labW, W - valW]);
+    const y = d3.scaleBand(items.map((d) => d.id), [top, top + items.length * rowH]).padding(0.32);
+    axis(svg.append('g').attr('class', 'ob-axis').attr('transform', `translate(0,${H - bottom + 6})`)
+      .call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((W - labW - valW) / 70))).tickFormat((v) => v + ' s').tickSize(-(H - bottom - top + 6)))).selectAll('text').attr('dy', '1em');
+    svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-lbl').attr('x', 0)
+      .attr('y', (d) => y(d.id) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label);
+    // Model time in the tool's color, tool + overhead time as the same hue at half strength, with a 2px gap.
+    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', x(0)).attr('y', (d) => y(d.id)).attr('height', y.bandwidth())
+      .attr('rx', 4).attr('width', (d) => Math.max(2, x(d.model_secs_mean) - x(0) - 1)).attr('fill', (d) => col(d.id));
+    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', (d) => x(d.model_secs_mean) + 1).attr('y', (d) => y(d.id))
+      .attr('height', y.bandwidth()).attr('rx', 4).attr('width', (d) => Math.max(2, x(d.model_secs_mean + d.tool_secs_mean) - x(d.model_secs_mean) - 1))
+      .attr('fill', (d) => col(d.id)).attr('opacity', 0.45);
+    svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-val')
+      .attr('x', (d) => x(d.model_secs_mean + d.tool_secs_mean) + 6).attr('y', (d) => y(d.id) + y.bandwidth() / 2).attr('dy', '0.35em')
+      .text((d) => fmtS(d.secs_median));
+    const tip = makeTip(box);
+    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', 0).attr('width', W)
+      .attr('y', (d) => y(d.id) - y.step() * y.paddingInner() / 2).attr('height', y.step()).attr('fill', 'transparent')
+      .on('mousemove', (ev, d) => {
+        const [mx, my] = d3.pointer(ev, box);
+        const lines = [[d.id, 'Median per question', fmtS(d.secs_median)], [null, 'Mean: model', fmtS(d.model_secs_mean)],
+          [null, 'Mean: tools + overhead', fmtS(d.tool_secs_mean)]];
+        if (d.faster_x != null) lines.push([null, LABEL[ANCHOR] + ' faster by', f2(d.faster_x) + '× (' + f2(d.faster_ci_low) + '–' + f2(d.faster_ci_high) + ')']);
+        tip.show(d.label, lines, mx, my);
+      })
+      .on('mouseleave', () => tip.hide());
+  }
+
+  function strip(box, pq) {
+    box.querySelector('svg')?.remove();
+    const byQ = d3.group(pq, (r) => r.q);
+    const qs = [...byQ.keys()].sort((a, b) => byQ.get(a)[0].n - byQ.get(b)[0].n);
+    const W = Math.max(box.clientWidth, 280), wide = W >= 640, rowH = 24, top = 28, bottom = 8, H = top + qs.length * rowH + bottom;
+    const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
+    const maxLab = wide ? Math.min(260, W * 0.3) : 0;
+    const qW = measure(svg, qs, 'ob-lbl') + 8, labW = qW + maxLab + 4;
+    const x = d3.scaleLog([d3.min(pq, (r) => r.chars) * 0.8, d3.max(pq, (r) => r.chars) * 1.25], [labW, W - 8]);
+    const y = d3.scaleBand(qs, [top, top + qs.length * rowH]).padding(0.2);
+    axis(svg.append('g').attr('class', 'ob-axis').attr('transform', `translate(0,${top - 6})`)
+      .call(d3.axisTop(x).ticks(Math.max(3, Math.floor((W - labW) / 80)), tickFmt).tickSize(-(qs.length * rowH + 6))));
+    const hl = svg.append('rect').attr('x', 0).attr('width', W).attr('height', y.step()).attr('fill', 'var(--cds-chart-grid)').attr('opacity', 0);
+    svg.append('g').selectAll('text').data(qs).join('text').attr('class', 'ob-lbl').attr('x', 0)
+      .attr('y', (q) => y(q) + y.bandwidth() / 2).attr('dy', '0.35em').text((q) => q);
+    if (wide) {
+      svg.append('g').selectAll('text').data(qs).join('text').attr('class', 'ob-lbl-m').attr('x', qW)
+        .attr('y', (q) => y(q) + y.bandwidth() / 2).attr('dy', '0.35em').text((q) => byQ.get(q)[0].title)
+        .each(function () { let t = this.textContent; while (this.getComputedTextLength() > maxLab && t.length > 4) { t = t.slice(0, -2); this.textContent = t + '…'; } });
+    }
+    const rowG = svg.append('g').selectAll('g').data(qs).join('g').attr('transform', (q) => `translate(0,${y(q) + y.bandwidth() / 2})`);
+    rowG.append('line').attr('x1', (q) => x(d3.min(byQ.get(q), (r) => r.chars))).attr('x2', (q) => x(d3.max(byQ.get(q), (r) => r.chars)))
+      .attr('stroke', 'var(--cds-chart-grid)').attr('stroke-width', 6).attr('stroke-linecap', 'round');
+    [...ORDER].reverse().forEach((g) => {
+      const anchor = g === ANCHOR;
+      rowG.append('circle').attr('cx', (q) => x((byQ.get(q).find((r) => r.group === g) || {}).chars || 1)).attr('r', anchor ? 6.5 : 4.5)
+        .attr('fill', col(g)).attr('opacity', anchor ? 1 : 0.85).attr('stroke', anchor ? 'var(--color-panel)' : null).attr('stroke-width', anchor ? 1.5 : null)
+        .attr('display', (q) => (byQ.get(q).some((r) => r.group === g) ? null : 'none'));
+    });
+    const tip = makeTip(box);
+    svg.append('g').selectAll('rect').data(qs).join('rect').attr('x', 0).attr('width', W)
+      .attr('y', (q) => y(q) - y.step() * y.paddingInner() / 2).attr('height', y.step()).attr('fill', 'transparent')
+      .on('mousemove', (ev, q) => {
+        const [mx, my] = d3.pointer(ev, box);
+        hl.attr('y', y(q) - y.step() * y.paddingInner() / 2).attr('opacity', 0.5);
+        const rows = byQ.get(q), base = (rows.find((r) => r.group === ANCHOR) || {}).chars;
+        tip.show(q + ' · ' + rows[0].title, ORDER.filter((g) => rows.some((r) => r.group === g)).map((g) => {
+          const c = rows.find((r) => r.group === g).chars;
+          return [g, LABEL[g], fInt(c) + (g === ANCHOR || !base ? '' : '  (' + f2(c / base) + '×)')];
+        }), mx, my);
+      })
+      .on('mouseleave', () => { tip.hide(); hl.attr('opacity', 0); });
+  }
+
+  function kpis(box, rows) {
+    const a = rows.find((r) => r.anchor);
+    const lead = el('div', 'ob-card ob-kpi ob-kpi-lead'); lead.id = 'kpi-' + a.id;
+    const l1 = el('div', 'ob-kpi-label'); l1.append(sw(a.id), document.createTextNode(a.label + ' · median per question'));
+    const sub = el('div', 'ob-kpi-sub'); sub.append(document.createTextNode('characters · correctness '), val(String(a.correctness), 'groups', 'correctness', 'id=' + enc(a.id), 'span'), document.createTextNode('/10'));
+    const big = val(fInt(a.median_chars), 'groups', 'median_chars', 'id=' + enc(a.id), 'div'); big.className = 'ob-big';
+    lead.append(l1, big, sub);
+    box.replaceChildren(lead, ...rows.filter((r) => !r.anchor).map((r) => {
+      const c = el('div', 'ob-card ob-kpi'); c.id = 'kpi-' + r.id;
+      const lab = el('div', 'ob-kpi-label'); lab.append(sw(r.id), document.createTextNode('vs ' + r.label));
+      const big = el('div', 'ob-big'); big.append(val(f2(r.leaner_x), 'groups', 'leaner_x', 'id=' + enc(r.id), 'span'), document.createTextNode('×'));
+      const s = el('div', 'ob-kpi-sub');
+      s.append(document.createTextNode((r.leaner_x >= 1 ? 'fewer chars' : 'chars (anchor uses more)') + ' · 95% CI '), val(f2(r.ci_low), 'groups', 'ci_low', 'id=' + enc(r.id), 'span'),
+        document.createTextNode('–'), val(f2(r.ci_high), 'groups', 'ci_high', 'id=' + enc(r.id), 'span'), document.createTextNode('×'));
+      c.append(lab, big, s);
+      if (r.faster_x != null) {
+        const t = el('div', 'ob-kpi-sub');
+        t.append(document.createTextNode('time: anchor '), val(f2(r.faster_x), 'groups', 'faster_x', 'id=' + enc(r.id), 'span'),
+          document.createTextNode(r.faster_x >= 1 ? '× faster' : '× (slower)'));
+        c.append(t);
+      }
+      return c;
+    }));
+  }
+
+  function takeaway(p, rows) {
+    const a = rows.find((r) => r.anchor);
+    const rank = (r) => (r.same_campaign && !r.octocode ? 0 : r.octocode && !r.live ? 1 : r.id === 'gh' ? 2 : 3);
+    const others = rows.filter((r) => !r.anchor && rank(r) < 3).sort((x, y) => rank(x) - rank(y));
+    const parts = [document.createTextNode(a.label + ' needed a median of '), val(fInt(a.median_chars), 'groups', 'median_chars', 'id=' + enc(a.id)),
+      document.createTextNode(' characters per question.')];
+    if (others.length) {
+      parts.splice(parts.length - 1, 1, document.createTextNode(' characters per question.'));
+      others.slice(0, 3).forEach((r) => {
+        const v = val(f2(r.leaner_x), 'groups', 'leaner_x', 'id=' + enc(r.id));
+        if (r.leaner_x >= 1) parts.push(document.createTextNode(' ' + r.label + ' needed '), v, document.createTextNode('× as many.'));
+        else parts.push(document.createTextNode(' ' + r.label + ' needed only '), v, document.createTextNode('× as many.'));
+      });
+    }
+    const scored = rows.filter((r) => r.correctness != null);
+    if (scored.length) {
+      const lo = d3.least(scored, (r) => r.correctness), hi = d3.greatest(scored, (r) => r.correctness);
+      parts.push(document.createTextNode(' Correctness is a tie: every tool scored '),
+        val(String(lo.correctness), 'groups', 'correctness', 'id=' + enc(lo.id)));
+      if (hi.correctness !== lo.correctness) parts.push(document.createTextNode('–'), val(String(hi.correctness), 'groups', 'correctness', 'id=' + enc(hi.id)));
+      parts.push(document.createTextNode(' out of 10.'));
+    }
+    p.replaceChildren(...parts);
+  }
+
+  function matrix(box, rows) {
+    box.replaceChildren();
+    box.style.gridTemplateColumns = `minmax(7rem,auto) repeat(${ORDER.length},minmax(4.6rem,1fr))`;
+    box.style.minWidth = (8 + ORDER.length * 5.2) + 'rem';
+    box.append(el('div', 'ob-mx-h', 'row ÷ column'));
+    ORDER.forEach((c) => { const h = el('div', 'ob-mx-h ob-mx-hc'); h.append(sw(c), document.createTextNode(LABEL[c])); box.append(h); });
+    ORDER.forEach((r) => {
+      const h = el('div', 'ob-mx-h'); h.append(sw(r), document.createTextNode(LABEL[r])); box.append(h);
+      ORDER.forEach((c) => {
+        const cell = el('div', 'ob-mx-c');
+        const d = rows.find((m) => m.row === r && m.col === c);
+        if (r === c || !d) { cell.classList.add('ob-mx-self'); cell.textContent = '—'; box.append(cell); return; }
+        const strength = Math.min(70, 10 + 22 * Math.abs(Math.log2(d.leaner_x)));
+        // Diverging blue (row leaner) ↔ red (row heavier) around a neutral 1×; not a series or status color.
+        cell.style.background = `color-mix(in srgb, var(${d.leaner_x >= 1 ? '--ob-div-pos' : '--ob-div-neg'}) ${strength}%, transparent)`;
+        const top = el('div'); top.append(val(f2(d.leaner_x), 'matrix', 'leaner_x', 'pair=' + enc(d.pair), 'span'), document.createTextNode('×'));
+        const s = el('small'); s.append(document.createTextNode('leaner on '), val(String(d.leaner_on), 'matrix', 'leaner_on', 'pair=' + enc(d.pair), 'span'));
+        cell.title = `${LABEL[r]} vs ${LABEL[c]}`; cell.append(top, s); box.append(cell);
+      });
+    });
+  }
+
+  function table(tbl, rows, key, fmt) {
+    const cols = [...tbl.querySelectorAll('th')].map((th) => [th.dataset.field, th.classList.contains('n')]);
+    const keys = key.split(',');
+    tbl.tBodies[0].replaceChildren(...rows.map((r) => {
+      const tr = el('tr'); tr.dataset.key = keys.map((k) => enc(r[k])).join(',');
+      cols.forEach(([f, num]) => {
+        const td = el('td', num ? 'n' : null); const v = r[f];
+        if (fmt[f]) td.append(fmt[f](v, r)); else td.textContent = v == null ? '—' : String(v);
+        tr.append(td);
+      });
+      return tr;
+    }));
+  }
+  const text = (fn) => (v) => document.createTextNode(v == null ? '—' : fn(v));
+  const code = (v) => { if (v === '—') return document.createTextNode('—'); const c = el('code', null, v); return c; };
+  const pill = (v) => el('span', 'ob-pill', v);
+  const toolCell = (v, r) => { const w = el('span', 'ob-tool'); w.append(sw(r.id), document.createTextNode(v)); return w; };
+
+  function changes(box, rows) {
+    box.replaceChildren(...[...new Set(rows.map((r) => r.area))].map((area) => {
+      const card = el('div', 'ob-card'); card.id = 'changes-' + area.toLowerCase().replace(/\W+/g, '-');
+      const ul = el('ul');
+      rows.filter((r) => r.area === area).forEach((r) => {
+        const li = el('li'); li.append(el('span', 'ob-ct', r.title), mark(el('span', null, r.detail), 'changes', 'detail', 'title=' + enc(r.title)));
+        ul.append(li);
+      });
+      card.append(el('h3', null, area), ul); return card;
+    }));
+  }
+
+  function draw() {
+    const page = PAGES.find((p) => !document.getElementById(p).hidden);
+    const boxes = page === 'benchmark' ? [...document.querySelectorAll('#kpis,#chart-median,#chart-forest,#chart-time,#chart-correct')] : [];
+    const groups = stateOk('groups', boxes);
+    if (groups) {
+      const rows = [...groups].sort((a, b) => a.order - b.order);
+      ORDER = rows.map((r) => r.id); LABEL = Object.fromEntries(rows.map((r) => [r.id, r.label]));
+      ANCHOR = (rows.find((r) => r.anchor) || rows[0]).id;
+      document.getElementById('title').textContent = LABEL[ANCHOR].split(' · ')[0] + ' benchmark';
+      document.getElementById('forest-title').textContent = 'How much leaner ' + LABEL[ANCHOR] + ' is';
+      takeaway(document.getElementById('takeaway'), rows);
+      if (page === 'benchmark') {
+        kpis(document.getElementById('kpis'), rows);
+        hbars(document.getElementById('chart-median'), rows.map((r) => ({ key: r.id, label: r.label, value: r.median_chars, r })), {
+          max: d3.max(rows, (r) => r.median_chars) * 1.02, fmt: fInt, tick: tickFmt,
+          tip: (d) => [[d.key, 'Median per question', fInt(d.r.median_chars)], [null, 'Mean per question', fInt(d.r.mean_chars)], [null, 'Total, all questions', fInt(d.r.total_chars)]],
+        });
+        forest(document.getElementById('chart-forest'), rows);
+        timeBars(document.getElementById('chart-time'), rows);
+        const scored = rows.filter((r) => r.correctness != null);
+        hbars(document.getElementById('chart-correct'), scored.map((r) => ({ key: r.id, label: r.label, value: r.correctness, r })), {
+          max: 10, ticks: 5, fmt: (v) => String(v), tick: d3.format('d'),
+          tip: (d) => [[d.key, 'Correctness, whole points', d.r.correctness + ' / 10'], [null, 'Exact mean (noisy)', f2(d.r.correctness_exact)]],
+        });
+        const legend = document.getElementById('legend');
+        legend.replaceChildren(...rows.map((r) => { const s = el('span'); s.append(sw(r.id), document.createTextNode(r.label)); return s; }));
+        table(document.getElementById('table-groups'), rows, 'id', {
+          label: toolCell, median_chars: text(fInt), mean_chars: text(fInt), total_chars: text(fInt), runs_per_question: text(String),
+          secs_median: text((v) => d3.format('.1f')(v)), correctness: text(String),
+        });
+      }
+    }
+    if (page === 'benchmark') {
+      const pq = stateOk('per_question', [document.getElementById('chart-questions')]);
+      if (pq && groups) strip(document.getElementById('chart-questions'), pq);
+      const mx = stateOk('matrix', [document.getElementById('matrix')]);
+      if (mx && groups) matrix(document.getElementById('matrix'), mx);
+      const h2h = dash.data('head_to_head');
+      if (h2h.status === 'ok') table(document.getElementById('table-h2h'), h2h.data, 'pair', {
+        chars_b_over_a: text((v) => f2(v) + '×'), secs_b_over_a: text((v) => f2(v) + '×'),
+        a_leaner_on: text((v) => String(v)), a_faster_on: text((v) => String(v)),
+      });
+      const live = dash.data('live_runs');
+      if (live.status === 'ok') table(document.getElementById('table-live'), live.data, 'run', {
+        calls: text(String), failed: text(String), clasify_calls: text(String), median_chars: text(fInt), median_secs: text((v) => d3.format('.1f')(v)),
+        input_tokens: text(fInt), cost_usd: text(d3.format('.2f')), correctness: text(String),
+      });
+    }
+    if (page === 'whats-new') {
+      const tm = dash.data('tool_map');
+      if (tm.status === 'ok') table(document.getElementById('table-tools'), tm.data, 'v18,v20', { v18: code, v20: code, family: pill });
+      const ch = stateOk('changes', [document.getElementById('changes')]);
+      if (ch) changes(document.getElementById('changes'), ch);
+    }
+  }
+
+  const tabs = [...document.querySelectorAll('.ob-tab')];
+  function show(id, link) {
+    PAGES.forEach((p) => { document.getElementById(p).hidden = p !== id; });
+    tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.page === id)));
+    if (link) dash.setLink(id);
+    draw();
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => show(t.dataset.page, true));
+    t.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]; n.focus(); show(n.dataset.page, true);
+    });
+  });
+
+  dash.onData(draw);
+  const target = document.getElementById(location.hash.slice(1));
+  if (target) { const pg = PAGES.includes(target.id) ? target : target.closest('.ob-page'); if (pg) show(pg.id, false); target.scrollIntoView(); }
+})();
+</script>
+</body></html>

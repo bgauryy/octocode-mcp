@@ -1,6 +1,6 @@
 # Tool connections
 
-Which tool leads to which. Every `next.*` page and `hints.*` lead is a ready `{tool, query}` call: its `query` is already the whole `{queries:[…]}` input, so pass it unchanged. This page lists each one, the fields it sets, when it appears, and what filters it out. The flow rules are in [OCTOCODE_WORKFLOWS.md](../../../docs/OCTOCODE_WORKFLOWS.md); the envelope is in [TOOL_DATA_CONTRACT.md](../../../docs/TOOL_DATA_CONTRACT.md).
+Which tool leads to which. Every `next.*` page and `hints.*` lead is a ready `{tool, query}` call: its `query` is already the whole `{queries:[…]}` input, so pass it unchanged. This page lists each one, the fields it sets, when it appears, and what filters it out. A successful row shows its row-level leads only with `extras:["hints"]`, except the contract's `defaultLeads`; empty and failed rows, item-level leads, and `clasify`'s located reads always show them (`response/continuations.rs`, `response/channels.rs`). The flow rules are in [OCTOCODE_WORKFLOWS.md](../../../docs/OCTOCODE_WORKFLOWS.md); the envelope is in [TOOL_DATA_CONTRACT.md](../../../docs/TOOL_DATA_CONTRACT.md).
 
 ## Map
 

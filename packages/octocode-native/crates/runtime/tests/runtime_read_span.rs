@@ -103,22 +103,15 @@ async fn a_batch_of_reads_shares_the_window_and_every_row_returns_content() {
     let rows = envelope["results"].as_array().expect("rows");
     assert_eq!(rows.len(), 4);
     assert_eq!(rows[0]["data"]["content"], "1\tone\n2\ttwo\n");
-    // The incomplete banner leads the envelope and names the partial rows.
-    assert_eq!(
-        envelope.as_object().unwrap().keys().next().unwrap(),
-        "warnings"
-    );
-    let banner = envelope["warnings"][0].as_str().unwrap();
+    // No envelope banner restates the partial rows: each row's own
+    // `next.continue` discloses its unread rest.
     assert!(
-        banner.starts_with("incomplete — 3 of 4 rows partial (index 1, 2, 3)"),
-        "{banner}"
+        envelope.get("warnings").is_none(),
+        "{}",
+        envelope["warnings"]
     );
-    assert!(banner.contains("next.continue"), "{banner}");
     let text = mcp["content"][0]["text"].as_str().unwrap();
-    assert!(
-        text.starts_with("warnings:\n- incomplete — 3 of 4"),
-        "{text:.200}"
-    );
+    assert!(!text.contains("incomplete — "), "{text:.200}");
     for (row, path) in rows[1..].iter().zip(&files) {
         let next = &row["data"]["next"]["continue"]["query"]["queries"][0];
         assert!(
@@ -230,7 +223,8 @@ async fn a_match_window_that_cuts_its_declaration_offers_the_rest_as_a_lead() {
         .execute(
             "lead".into(),
             "localFetch".into(),
-            json!({"queries":[{"path": path, "matchString": "needle here", "contextLines": 2}]}),
+            json!({"queries":[{"path": path, "matchString": "needle here", "contextLines": 2,
+                "extras": ["hints"]}]}),
         )
         .await
         .expect("read");

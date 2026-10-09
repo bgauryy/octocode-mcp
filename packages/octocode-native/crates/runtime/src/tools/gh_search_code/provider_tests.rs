@@ -215,9 +215,11 @@ async fn owner_wide_rows_list_numbered_lines_at_the_indexed_commit() {
             out.data
         );
         assert!(row.get("matches").is_none(), "{}", out.data);
-        assert!(row["owner"].is_string(), "{}", out.data);
+        assert!(row["repo"].is_string(), "{}", out.data);
+        assert!(row.get("owner").is_none(), "{}", out.data);
     }
-    // One commit for every row is stated once.
+    // What every row shares (owner, one commit) is stated once.
+    assert_eq!(out.data["owner"], "o", "{}", out.data);
     assert_eq!(out.data["commitSha"], SHA, "{}", out.data);
     let read = &out.data["next"]["read"]["query"]["queries"][0];
     assert_eq!(read["ref"], SHA, "{}", out.data);

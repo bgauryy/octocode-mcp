@@ -9,7 +9,7 @@ use crate::support::Workspace;
 use octocode_native::runtime::{ToolOutcome, ToolRuntime};
 use serde_json::{Value, json};
 
-/// Run one non-debug row through the full runtime (validation, response
+/// Run one row (default view unless it names `extras`) through the full runtime (validation, response
 /// stages, path shaping), as an agent sees it.
 async fn run(runtime: &ToolRuntime, tool: &str, mut row: Value) -> ToolOutcome {
     row["mainGoal"] = json!("D1 cutover shapes.");
@@ -395,8 +395,9 @@ async fn ast_tools_count_matches_as_match_count() {
     let search = run(
         &runtime,
         "astSearch",
-        // A complete page drops its stats; debug keeps them.
-        json!({"operation":"match","path":"src","language":"typescript","pattern":"old($A)","debug":true}),
+        // A complete page drops its stats; the echo extra (no minimizing)
+        // keeps them.
+        json!({"operation":"match","path":"src","language":"typescript","pattern":"old($A)","extras":["echo"]}),
     )
     .await;
     assert_eq!(
@@ -422,6 +423,8 @@ async fn ast_tools_count_matches_as_match_count() {
 
 // ---------- S-d: D2/X3/LP1/LP3, one 1-based column base ----------
 
+/// Hit columns are a detail (`extras: ["details"]`); every one shown is
+/// 1-based.
 #[tokio::test]
 async fn every_column_is_one_based() {
     let workspace = Workspace::new();
@@ -431,7 +434,7 @@ async fn every_column_is_one_based() {
     let spans = run(
         &runtime,
         "localSearch",
-        json!({"path":"x.rs","matchString":"a()","resultView":"matchOnly"}),
+        json!({"path":"x.rs","matchString":"a()","resultView":"matchOnly","extras":["details"]}),
     )
     .await;
     let rows = &data(&spans)["files"][0]["matches"];
@@ -440,7 +443,7 @@ async fn every_column_is_one_based() {
     let matched = run(
         &runtime,
         "astSearch",
-        json!({"operation":"match","path":"x.rs","pattern":"a()","captureText":true}),
+        json!({"operation":"match","path":"x.rs","pattern":"a()","captureText":true,"extras":["details"]}),
     )
     .await;
     let row = &data(&matched)["files"][0]["matches"][0];
@@ -462,7 +465,7 @@ async fn every_column_is_one_based() {
     let rewrite = run(
         &runtime,
         "astRewrite",
-        json!({"path":"x.rs","pattern":"a()","rewrite":"z()","debug":true}),
+        json!({"path":"x.rs","pattern":"a()","rewrite":"z()","extras":["details"]}),
     )
     .await;
     let range = &data(&rewrite)["matches"][0]["range"];
@@ -547,7 +550,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
         "{}",
         outline.structured_content
     );
-    // AS2: match rows are objects with 1-based columns.
+    // AS2: match rows are objects; the 1-based column is a detail.
     let matched = run(
         &runtime,
         "astSearch",
@@ -556,7 +559,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
     .await;
     assert_eq!(
         data(&matched)["files"][0]["matches"][0],
-        json!({"line":2,"column":5,"value":"let a = 1;"}),
+        json!({"line":2,"value":"let a = 1;"}),
         "{}",
         matched.structured_content
     );

@@ -79,7 +79,7 @@ pub trait ToolOutput: Sync {
     }
 
     /// The tool's own default projection of a successful row's data (never
-    /// under `debug: true`): drop what only restates the caller's query.
+    /// without `extras: ["echo"]`): drop what only restates the caller's query.
     fn compact(&self, _data: &mut serde_json::Map<String, Value>, _query: &Value) {}
 
     /// The candidates clasify judges one at a time on this tool's list page:

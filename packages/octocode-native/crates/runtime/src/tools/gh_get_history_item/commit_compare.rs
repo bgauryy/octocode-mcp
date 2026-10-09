@@ -62,14 +62,15 @@ pub(super) async fn commit(
     let mut out = json!({
         "owner":query.owner(),"repo":query.repo(),"ref":reference,"sha":sha,
         "message":(!patches).then_some(message),"messageHeadline":headline,
-        "author":identity(raw,"author"),"committer":identity(raw,"committer"),
+        "author":identity(raw,"author"),"committer":committer(raw),
         "parents":raw.get("parents").and_then(Value::as_array).into_iter().flatten().filter_map(|v|str_at(v,"/sha").map(str::to_owned)).collect::<Vec<_>>(),
         // Top-level counts always describe the whole commit; a path scope's
         // own count is `filePagination.totalItems`.
         "additions":raw.pointer("/stats/additions"),"deletions":raw.pointer("/stats/deletions"),
         "changedFilesCount":listed,
-        // A scan stopped at the batch cap never saw the remaining files.
-        "changedFilesCountScope":if state.capped {"partial"} else if state.exhausted {"complete"} else {"loaded"}
+        // A scan stopped at the batch cap never saw the remaining files; a
+        // complete count states no scope.
+        "changedFilesCountScope":if state.capped {Some("partial")} else if state.exhausted {None} else {Some("loaded")}
     });
     // A caller-supplied SHA is not restated as the ref it already names.
     if reference.eq_ignore_ascii_case(&sha)
@@ -487,6 +488,19 @@ fn literal_prefix(pattern: &str) -> Option<String> {
         prefix.to_owned()
     })
 }
+
+/// The committer, unless GitHub's web-flow committed for the author (a
+/// merge or edit in the web UI): that identity says nothing of the change.
+/// One equal to the author is dropped by the shared row minimizer.
+fn committer(raw: &Value) -> Value {
+    if str_at(raw, "/committer/login") == Some(WEB_FLOW_LOGIN) {
+        return Value::Null;
+    }
+    identity(raw, "committer")
+}
+
+/// The login GitHub commits under for changes made in its web UI.
+const WEB_FLOW_LOGIN: &str = "web-flow";
 
 fn identity(raw: &Value, kind: &str) -> Value {
     let p = format!("/commit/{kind}");

@@ -1149,7 +1149,7 @@ pub(super) fn mark_partial_expansion(
                     |top, entry| if entry.1 > top.1 { entry } else { top },
                 );
             format!(
-                "Hierarchy expansion failed for {total} {items} ({} distinct errors; most frequent, {count}×: {message}). next.retry reruns the walk; debug:true lists every error.",
+                "Hierarchy expansion failed for {total} {items} ({} distinct errors; most frequent, {count}×: {message}). next.retry reruns the walk; extras:[\"diagnostics\"] lists every error.",
                 distinct.len()
             )
         }

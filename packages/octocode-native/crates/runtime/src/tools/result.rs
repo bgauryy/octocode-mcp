@@ -182,7 +182,7 @@ impl std::error::Error for ToolError {}
 
 /// Fields that steer how a call reports, never what it reads; a
 /// continuation inherits them from its source row.
-pub const INTENT_FIELDS: [&str; 3] = ["mainGoal", "reasoning", "debug"];
+pub const INTENT_FIELDS: [&str; 3] = ["mainGoal", "reasoning", "extras"];
 
 #[derive(Debug, Default, Serialize)]
 pub struct ToolDiagnostics {

@@ -716,7 +716,7 @@ mod tests {
                 .prepare(
                     ResponseInput {
                         tool: "localFetch".into(),
-                        query: json!({"path":"a","mainGoal": "test", "reasoning":"r","debug":false}),
+                        query: json!({"path":"a","mainGoal": "test", "reasoning":"r"}),
                         structured: envelope.clone(),
                         rendered_text: None,
                         is_error: false,
@@ -875,13 +875,13 @@ mod tests {
     }
 
     #[test]
-    fn prepares_both_channels_and_preserves_required_debug_state() {
+    fn prepares_both_channels_and_preserves_requested_extras() {
         let pager = ResponsePager::new(ResponsePagerConfig::default());
         let result = pager
             .prepare(
                 ResponseInput {
                     tool: "localFetch".into(),
-                    query: json!({"path":"a", "mainGoal":"g", "reasoning":"r", "debug":true}),
+                    query: json!({"path":"a", "mainGoal":"g", "reasoning":"r", "extras":["stats"]}),
                     structured: json!({"results":[]}),
                     rendered_text: Some("line1\nline2\nline3".into()),
                     is_error: false,
@@ -895,7 +895,7 @@ mod tests {
         // A continuation is the complete input: `{queries:[row]}`.
         assert_eq!(
             next["queries"][0],
-            json!({"path":"a", "mainGoal":"g", "reasoning":"r", "debug":true})
+            json!({"path":"a", "mainGoal":"g", "reasoning":"r", "extras":["stats"]})
         );
         assert!(
             next["responseSnapshot"]
@@ -909,8 +909,8 @@ mod tests {
     fn bulk_continuations_preserve_queries_and_pass_output_contract() {
         let pager = ResponsePager::new(ResponsePagerConfig::default());
         let queries = json!([
-            {"path":"/repo/a.ts", "mainGoal": "test", "reasoning":"read both", "debug":true, "fullContent":true},
-            {"path":"/repo/b.ts", "mainGoal": "test", "reasoning":"read both", "debug":false, "ranges":["2-5"]}
+            {"path":"/repo/a.ts", "mainGoal": "test", "reasoning":"read both", "extras":["stats","receipts"], "fullContent":true},
+            {"path":"/repo/b.ts", "mainGoal": "test", "reasoning":"read both", "ranges":["2-5"]}
         ]);
         for options in [
             options(8),

@@ -4,6 +4,8 @@
 //   core Zod schemas ── buildEnforcementContractIr ──▶ contract/tool-contract.json
 //        │                                             (native embed: schemas, rules, defaults)
 //        ├── buildNativeParityFixtures ───────────────▶ contract/contract-fixtures.json
+//        ├── tool-contract/presentation.ts ───────────▶ contract/cli-presentation.json
+//        │                                             (native embed: `schema` and `<tool> --help`)
 //        └── tool-contract/bundle.ts ──▶ contract/tool-types.schema.json
 //                 ├── tool-contract/typescript.ts ──▶ src/contracts/toolTypes.generated.ts
 //                 └── tool-contract/rust.ts ────────▶ contract/tool_types.rs
@@ -20,6 +22,7 @@ import {
   canonicalizeNativeContractIr,
 } from '@octocodeai/octocode-core/schema';
 import { buildToolTypesBundle } from './tool-contract/bundle.ts';
+import { buildCliPresentation } from './tool-contract/presentation.ts';
 import { renderRust, rustHeader } from './tool-contract/rust.ts';
 import { renderTypeScript } from './tool-contract/typescript.ts';
 
@@ -59,6 +62,7 @@ export async function generateToolContract(): Promise<{
     files: new Map([
       [contractFile('tool-contract.json'), contractJson],
       [contractFile('contract-fixtures.json'), `${JSON.stringify(buildNativeParityFixtures(), null, 2)}\n`],
+      [contractFile('cli-presentation.json'), `${JSON.stringify(buildCliPresentation())}\n`],
       [contractFile('provenance.json'), `${JSON.stringify(provenance, null, 2)}\n`],
       [contractFile('tool-types.schema.json'), bundleJson],
       [tsPath, await renderTypeScript(fingerprint, bundle)],

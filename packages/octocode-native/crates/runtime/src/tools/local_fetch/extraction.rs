@@ -430,7 +430,10 @@ fn expand_context_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation
     wide.unit = None;
     wide.length = None;
     wide.snapshot = None;
-    follow_up(wide, "Show the full ±10-line window around each hit.")
+    follow_up(
+        wide,
+        &format!("Show the full ±{DEFAULT_MATCH_CONTEXT_LINES}-line window around each hit."),
+    )
 }
 
 /// The whole matched lines a long-line match showed only byte windows of.
@@ -446,8 +449,9 @@ fn whole_lines_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation> {
 }
 
 /// Lines shown around each `matchString` hit when `contextLines` is unset
-/// (and no `contextBytes` window replaces them).
-const DEFAULT_MATCH_CONTEXT_LINES: usize = 10;
+/// (and no `contextBytes` window replaces them): contract
+/// `limits.defaultReadContextLines`.
+pub(crate) const DEFAULT_MATCH_CONTEXT_LINES: usize = crate::tools::id::DEFAULT_READ_CONTEXT_LINES;
 
 fn match_extract(
     q: &LocalFetchQuery,
@@ -554,20 +558,20 @@ fn match_extract(
         );
         if !uncovered(&full, &ranges).is_empty() {
             warnings.push(format!(
-                "Long lines: each hit shows whole lines within {MATCH_WINDOW_BYTES} bytes, fewer than ±{DEFAULT_MATCH_CONTEXT_LINES}; next.expandContext shows the full window."
+                "Long lines: each hit shows whole lines within {MATCH_WINDOW_BYTES} bytes, fewer than ±{DEFAULT_MATCH_CONTEXT_LINES}."
             ));
             next.expand_context = expand_context_lead(q);
         }
     }
     if long_lines {
         warnings.push(format!(
-            "longMatchedLines: a matched line exceeds {LONG_LINE_BYTES} bytes (minified source), so each match is shown with {LONG_LINE_CONTEXT_BYTES} bytes of context; `... [N bytes omitted] ...` marks gaps. next.wholeLines (contextLines:0) reads the whole matched lines; contextBytes resizes the windows."
+            "longMatchedLines: a matched line exceeds {LONG_LINE_BYTES} bytes (minified source), so each match is shown with {LONG_LINE_CONTEXT_BYTES} bytes of context; `... [N bytes omitted] ...` marks gaps; contextBytes resizes the windows."
         ));
         next.whole_lines = whole_lines_lead(q);
     }
     if let Some(line) = limit_line {
         warnings.push(format!(
-            "Regex match limit: the scan stopped after {MAX_REGEX_MATCHES} matches at line {line}; matches after it are not selected. hints.textSearch pages every match."
+            "Regex match limit: the scan stopped after {MAX_REGEX_MATCHES} matches at line {line}; matches after it are not selected; narrow the regex to select them."
         ));
         next.text_search = match_limit_lead(q, patterns);
     }

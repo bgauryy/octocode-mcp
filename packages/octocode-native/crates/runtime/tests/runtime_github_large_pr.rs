@@ -165,7 +165,7 @@ async fn large_pr_inventory_flags_patchless_files_and_keeps_rename_origin() {
         Duration::ZERO,
     )
     .await;
-    let data = run(&server, json!({"sections":["files"], "debug": false})).await;
+    let data = run(&server, json!({"sections":["files"], "extras": []})).await;
     // Compact rows: consecutive files of one directory share a group.
     assert_eq!(
         data["pullRequests"][0]["files"],
@@ -192,7 +192,7 @@ async fn pr_inventory_carries_the_identity_header_and_its_own_next_steps_only() 
         Duration::ZERO,
     )
     .await;
-    let data = run(&server, json!({"sections":["files"], "debug": false})).await;
+    let data = run(&server, json!({"sections":["files"], "extras": ["hints"]})).await;
     let row = &data["pullRequests"][0];
     for kept in [
         "number",
@@ -264,7 +264,7 @@ async fn pr_inventory_picks_the_largest_source_patch_and_keeps_all_patches() {
         Duration::ZERO,
     )
     .await;
-    let data = run(&server, json!({"sections":["files"], "debug": false})).await;
+    let data = run(&server, json!({"sections":["files"], "extras": ["hints"]})).await;
     let menu = &data["hints"];
     let selected = &menu["readSelectedPatches"];
     assert_eq!(
@@ -293,7 +293,7 @@ async fn pr_file_filter_narrows_the_inventory_and_its_counts() {
     mount_file_batches(&server, batches, Duration::ZERO).await;
     let data = run(
         &server,
-        json!({"sections":["files"], "debug": true,
+        json!({"sections":["files"],
                "include":["*.md","src/b3/"],"status":["added","modified"],"minChanges":3}),
     )
     .await;
@@ -302,7 +302,7 @@ async fn pr_file_filter_narrows_the_inventory_and_its_counts() {
     assert_eq!(row["contentPagination"]["files"]["totalItems"], 1, "{row}");
     let data = run(
         &server,
-        json!({"sections":["files"], "debug": false,
+        json!({"sections":["files"], "extras": [],
                "include":["src/b3/"],"status":["added"]}),
     )
     .await;
@@ -332,7 +332,7 @@ async fn pure_rename_patch_is_empty_not_a_provider_omission() {
     .await;
     let data = run(
         &server,
-        json!({"sections":["patches"], "debug": false, "minify": "none"}),
+        json!({"sections":["patches"], "extras": [], "minify": "none"}),
     )
     .await;
     let files = &data["pullRequests"][0]["files"];
@@ -352,7 +352,7 @@ async fn pr_file_list_stopped_by_the_provider_cap_is_not_complete() {
     mount_file_batches(&server, vec![numbered(1, 100)], Duration::ZERO).await;
     let data = run(
         &server,
-        json!({"sections":["files"], "pageSize": 100, "debug": false}),
+        json!({"sections":["files"], "pageSize": 100, "extras": []}),
     )
     .await;
     let page = &data["pullRequests"][0]["contentPagination"]["files"];
@@ -378,7 +378,7 @@ async fn pr_inventory_page_reports_the_provider_total() {
     .await;
     let data = run(
         &server,
-        json!({"sections":["files"], "pageSize": 100, "debug": false}),
+        json!({"sections":["files"], "pageSize": 100, "extras": []}),
     )
     .await;
     let page = &data["pullRequests"][0]["contentPagination"]["files"];
@@ -399,8 +399,8 @@ async fn pr_continuation_reads_carry_only_the_identity_header() {
     )
     .await;
     // Page one carries the header and menu; a later page re-proves identity only.
-    let query = json!({"sections":["files"], "pageSize": 100, "debug": false});
-    let follow = json!({"sections":["files"], "pageSize": 100, "filePage": 2, "debug": false});
+    let query = json!({"sections":["files"], "pageSize": 100, "extras": ["hints"]});
+    let follow = json!({"sections":["files"], "pageSize": 100, "filePage": 2, "extras": ["hints"]});
     let first = run(&server, query).await;
     let first_row = &first["pullRequests"][0];
     assert_eq!(first_row["title"], "Large refactor", "{first_row}");
@@ -443,10 +443,11 @@ async fn pr_continuation_reads_carry_only_the_identity_header() {
     assert_eq!(group.as_array().map(Vec::len), Some(100), "{row}");
     assert!(data["next"]["nextFilePage"].is_object(), "{data}");
 
-    // debug keeps the full header.
-    let debug = json!({"sections":["files"], "pageSize": 100, "filePage": 2, "debug": true});
-    let debug = run(&server, debug).await;
-    assert_eq!(debug["pullRequests"][0]["labels"], json!(["refactor"]));
+    // The details extra keeps the full header.
+    let details =
+        json!({"sections":["files"], "pageSize": 100, "filePage": 2, "extras": ["details"]});
+    let details = run(&server, details).await;
+    assert_eq!(details["pullRequests"][0]["labels"], json!(["refactor"]));
 }
 
 #[tokio::test]
@@ -466,7 +467,7 @@ async fn patch_window_does_not_repeat_the_file_cursor_in_content_pagination() {
     let data = run(
         &server,
         json!({"sections":["patches"],"include":["src/big.rs"],
-               "minify": "none", "debug": false}),
+               "minify": "none", "extras": []}),
     )
     .await;
     let row = &data["pullRequests"][0];
@@ -493,7 +494,7 @@ async fn selected_patch_scan_reads_file_batches_concurrently() {
     let data = run(
         &server,
         json!({"sections":["patches"],"include":["src/late.rs"],
-               "minify": "none", "debug": false}),
+               "minify": "none", "extras": []}),
     )
     .await;
     let elapsed = started.elapsed();
@@ -526,22 +527,23 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     let data = run(
         &server,
         json!({"sections":["patches"], "matchString": "esbuild",
-               "minify": "none", "debug": false}),
+               "minify": "none", "extras": []}),
     )
     .await;
     let files = &data["pullRequests"][0]["files"];
     assert_eq!(files.as_array().map(Vec::len), Some(1), "{data}");
     let patch = files[0]["patch"].as_str().expect("patch");
-    // 10 context lines around each hit by default, the rest re-read whole.
+    // The contract's default context lines around each hit
+    // (`limits.defaultReadContextLines`, 3), the rest re-read whole.
     assert!(
-        patch.starts_with("@@ -191,21 +191,21 @@\n191\t line 191\n"),
+        patch.starts_with("@@ -198,7 +198,7 @@\n198\t line 198\n"),
         "{patch}"
     );
     assert!(
         patch.contains("\n201\t-old esbuild\n201\t+new esbuild\n"),
         "{patch}"
     );
-    assert!(patch.ends_with("211\t line 10\n"), "{patch}");
+    assert!(patch.ends_with("204\t line 3\n"), "{patch}");
     assert!(patch.len() < 600, "{patch}");
     // The narrowed-view marker selects the continuation; rows omit it.
     assert!(files[0].get("fullPatchChars").is_none(), "{data}");
@@ -568,7 +570,7 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     let (status, none) = run_status(
         &server,
         json!({"sections":["patches"], "matchString": "absent-term",
-               "minify": "none", "debug": false}),
+               "minify": "none", "extras": []}),
     )
     .await;
     assert_eq!(none["pullRequests"][0]["title"], "Large refactor", "{none}");
@@ -580,7 +582,7 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     let only_hits = run(
         &server,
         json!({"sections":["patches"], "matchString": "esbuild",
-               "contextLines": 0, "minify": "none", "debug": false}),
+               "contextLines": 0, "minify": "none", "extras": []}),
     )
     .await;
     assert_eq!(
@@ -641,7 +643,7 @@ async fn minified_pr_views_carry_lossless_raw_reads() {
     .await;
     let data = run(
         &server,
-        json!({"sections":["body","patches"], "debug": false}),
+        json!({"sections":["body","patches"], "extras": ["hints"]}),
     )
     .await;
     let row = &data["pullRequests"][0];
@@ -706,7 +708,7 @@ async fn match_string_without_content_searches_the_filtered_patches() {
     let data = run(
         &server,
         json!({"matchString": "import", "contextLines": 0,
-               "include":["src/mod/**"], "debug": false}),
+               "include":["src/mod/**"], "extras": []}),
     )
     .await;
     let files = data["pullRequests"][0]["files"]
@@ -748,7 +750,7 @@ async fn match_string_lists_the_patchless_files_it_could_not_search() {
     let data = run(
         &server,
         json!({"sections":["patches"], "matchString": "import",
-               "debug": false}),
+               "extras": []}),
     )
     .await;
     assert_eq!(data["isPartial"], true, "{data}");
@@ -786,32 +788,32 @@ async fn merged_pr_rows_keep_merge_state_on_every_read() {
     batches[0][0] = rest_file("src/hit.rs", Some("@@ -1 +1 @@\n-a\n+needle"), 1, 1);
     mount_file_batches(&server, batches, Duration::ZERO).await;
     for (label, query, first_page) in [
-        ("summary", json!({"debug": false}), true),
+        ("summary", json!({"extras": []}), true),
         (
             "body+inventory",
-            json!({"sections":["body","files"], "debug": false}),
+            json!({"sections":["body","files"], "extras": []}),
             true,
         ),
         (
             "inventory",
-            json!({"sections":["files"], "debug": false}),
+            json!({"sections":["files"], "extras": []}),
             true,
         ),
         (
             "patches",
             json!({"sections":["patches"],"include":["src/hit.rs"],
-                   "minify": "none", "debug": false}),
+                   "minify": "none", "extras": []}),
             true,
         ),
         (
             "matchString",
-            json!({"matchString": "needle", "debug": false}),
+            json!({"matchString": "needle", "extras": []}),
             true,
         ),
         (
             "later page",
             json!({"sections":["files"], "pageSize": 100, "filePage": 2,
-                   "debug": false}),
+                   "extras": []}),
             false,
         ),
     ] {
@@ -924,7 +926,7 @@ async fn explicit_response_page_sizes_patch_walk_windows() {
         async move {
             let mut first = json!({"operation": "pullRequest", "owner": "a", "repo": "b",
                 "number": 9, "mainGoal": "g", "reasoning": "r", "minify": "none",
-                "sections": ["patches"]});
+                "sections": ["patches"], "extras": ["hints"]});
             if let Some(length) = char_length {
                 first["length"] = json!(length);
             }
@@ -1051,7 +1053,7 @@ async fn match_string_covers_every_file_page_in_one_call() {
     }
     let second = (18..36).map(hit).collect::<Vec<_>>();
     mount_file_batches(&server, vec![first, second], Duration::ZERO).await;
-    let data = run(&server, json!({"matchString": "miri", "debug": false})).await;
+    let data = run(&server, json!({"matchString": "miri", "extras": []})).await;
     let files = data["pullRequests"][0]["files"]
         .as_array()
         .cloned()
@@ -1092,7 +1094,7 @@ async fn include_scopes_a_body_and_patch_read() {
     let flat = run(
         &server,
         json!({"sections":["body","patches"],
-               "include":["src/**"], "minify": "none", "debug": false}),
+               "include":["src/**"], "minify": "none", "extras": []}),
     )
     .await;
     assert!(flat["pullRequests"][0].get("body").is_some(), "{flat}");
@@ -1131,7 +1133,7 @@ async fn files_scope_matching_nothing_is_an_empty_row_with_a_hint() {
         &runtime,
         "ghGetHistoryItem",
         json!({"operation": "pullRequest", "owner": "a", "repo": "b", "number": 9,
-               "sections": ["patches"], "include": ["fastapi/_runtime.py"], "debug": false}),
+               "sections": ["patches"], "include": ["fastapi/_runtime.py"], "extras": []}),
     )
     .await
     .expect("read");
@@ -1186,7 +1188,11 @@ async fn read_at_merge_picks_the_code_file_of_the_whole_pr_not_the_first_window(
         added("pkg/client/types.go", Some("@@ -0,0 +1 @@\n+type T int"), 1),
     ];
     mount_file_batches(&server, vec![files], Duration::ZERO).await;
-    let data = run(&server, json!({"sections":["patches"], "debug": false})).await;
+    let data = run(
+        &server,
+        json!({"sections":["patches"], "extras": ["hints"]}),
+    )
+    .await;
     let shown = data["pullRequests"][0]["files"]
         .as_array()
         .expect("patch rows")
@@ -1224,7 +1230,7 @@ async fn match_string_with_zero_hits_says_so() {
     .await;
     let (status, alone) = run_status(
         &server,
-        json!({"matchString": "absentNeedle", "debug": false}),
+        json!({"matchString": "absentNeedle", "extras": []}),
     )
     .await;
     assert_eq!(status, "empty", "{alone}");
@@ -1232,7 +1238,7 @@ async fn match_string_with_zero_hits_says_so() {
     assert!(tip.contains("matchString"), "{alone}");
     let with_body = run(
         &server,
-        json!({"sections": ["body", "patches"], "matchString": "absentNeedle", "debug": false}),
+        json!({"sections": ["body", "patches"], "matchString": "absentNeedle", "extras": []}),
     )
     .await;
     assert!(
@@ -1298,7 +1304,7 @@ async fn later_review_comment_pages_load_provider_batches_concurrently() {
     }
     let data = run(
         &server,
-        json!({"sections":["reviewComments"], "commentPage": 15, "pageSize": 30, "debug": false}),
+        json!({"sections":["reviewComments"], "commentPage": 15, "pageSize": 30, "extras": []}),
     )
     .await;
     let elapsed = first_request.get().expect("the PR was read").elapsed();
@@ -1356,7 +1362,7 @@ async fn match_context_past_the_hunk_reads_the_head_text() {
         .await;
     let data = run(
         &server,
-        json!({"sections":["patches"], "matchString": "needle", "minify": "none", "debug": false}),
+        json!({"sections":["patches"], "matchString": "needle", "contextLines": 10, "minify": "none", "extras": []}),
     )
     .await;
     let file = &data["pullRequests"][0]["files"][0];
@@ -1389,7 +1395,7 @@ async fn match_context_clipped_by_the_hunk_is_flagged_with_a_head_read() {
     .await;
     let (_, data) = run_status(
         &server,
-        json!({"sections":["patches"], "matchString": "needle", "minify": "none", "debug": false}),
+        json!({"sections":["patches"], "matchString": "needle", "contextLines": 10, "minify": "none", "extras": []}),
     )
     .await;
     let file = &data["pullRequests"][0]["files"][0];
@@ -1549,7 +1555,7 @@ async fn history_b_merged_match_string_read_offers_the_source_side_only() {
     .await;
     let data = run(
         &server,
-        json!({"matchString": "needle", "contextLines": 1, "debug": false}),
+        json!({"matchString": "needle", "contextLines": 1, "extras": ["hints"]}),
     )
     .await;
     let lead = |name: &str| {
@@ -1573,11 +1579,12 @@ async fn history_b_merged_match_string_read_offers_the_source_side_only() {
 /// HI9: a 115-file, ~560k-char pull request walked by following its leads
 /// only (`continuePatch`, then `nextFilePage`) at a 20k configured page reads
 /// every patch byte-identical (after the gutters) with no gap and no
-/// repeat, never overflows the page a hop asks for, and takes half the
-/// calls it did (44 → 21: hop pages doubled once per walk, windows packed
-/// to line ends; the numbered view is ~10% larger than the raw patches).
+/// repeat, and never overflows its page. Every hop runs at the first call's
+/// page (no doubled `responseLength`, 2026-10-09): 21 → 44 calls, each the
+/// size of the first (the numbered view is ~10% larger than the raw
+/// patches).
 #[tokio::test]
-async fn history_b_large_pr_lead_walk_is_lossless_in_half_the_calls() {
+async fn history_b_large_pr_lead_walk_is_lossless_at_the_first_page_size() {
     let server = MockServer::builder().start().await;
     mount_pr(&server, 115).await;
     // A few large patches and a long tail of small ones (~560k chars).
@@ -1616,7 +1623,7 @@ async fn history_b_large_pr_lead_walk_is_lossless_in_half_the_calls() {
     )
     .await;
     let workspace = Workspace::new();
-    // A 20k configured page: a 15k first window, doubled hop pages.
+    // A 20k configured page: 15k patch windows on every call.
     let runtime = workspace.runtime(&[
         ("GITHUB_API_URL", format!("{}/api/v3", server.uri())),
         ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
@@ -1677,16 +1684,16 @@ async fn history_b_large_pr_lead_walk_is_lossless_in_half_the_calls() {
             "{path}"
         );
     }
-    assert!(calls <= 21, "{calls} calls");
+    assert!(calls <= 45, "{calls} calls");
     runtime.close().await;
 }
 
-/// P2: a patch-walk hop that outgrows the page it asks for pages its
-/// response by whole rows (`responseScope:"rows"`), never by text windows
+/// P2: a patch-walk hop that outgrows its page pages its response by
+/// whole rows (automatic `responseScope:"rows"`), never by text windows
 /// that empty the structured `results` and bury the walk's `next.*`. File
 /// page 2 lists 96 patch-less files with long names beside a few patches:
-/// the first window's metadata rows and summary alone exceed the hop's 40k
-/// page, so the row splits into structured `rowPart`s. Following
+/// the first window's metadata rows and summary alone exceed the 20k page,
+/// so the row splits into structured `rowPart`s. Following
 /// `responsePagination.next` first, then `continuePatch`/`nextFilePage`,
 /// every call keeps its rows, every patch arrives exactly once, and every
 /// patch-less file is listed exactly once: the walk's cursor rides the last

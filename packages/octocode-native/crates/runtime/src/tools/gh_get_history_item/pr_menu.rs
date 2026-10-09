@@ -31,7 +31,7 @@ pub(super) fn base_public_query(q: &HistoryItemRequest, operation: ItemOperation
                 ItemOperation::Compare => "compare",
             }),
         );
-        m.remove("debug");
+        m.remove("extras");
         match operation {
             ItemOperation::PullRequest => {
                 // pageSize has no contract default: each surface sizes its own

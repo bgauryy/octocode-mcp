@@ -8,6 +8,7 @@ Load when a run errors or returns nothing. Why: Change the failing cause before 
 |---|---|
 | `Chrome not running on port` / `No page targets` | `open-browser.mjs --headless` first, or `--new-tab about:blank` |
 | `Page.navigate` times out everywhere | Stale session: `--cleanup`, relaunch |
+| `NO_TRACKED_SESSION` while a browser holds the port | `reason: NOT_PACKAGE_PROFILE` or `NO_SESSION_FILE`: cleanup didn't launch or record that browser, so it won't stop it; close it yourself or use another port. Cleanup from another cwd still finds isolated sessions |
 | Profile locked (cookie bridge) | Use `--from-port` / `--from-storage-state`, or quit Chrome |
 | Need a cross-origin iframe (snapshot inlines only same-process frames) or worker | `--list-targets`, then `--target-url <pattern>` or `--target-type service_worker` |
 | Long script killed | Sandbox `--script-timeout <ms>` (300000), runner `--timeout <ms>` (60000) |

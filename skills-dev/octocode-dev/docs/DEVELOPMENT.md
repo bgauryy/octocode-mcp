@@ -1,6 +1,6 @@
 # Developing Octocode
 
-This page owns the monorepo map, the contract pipeline, build commands, development-only environment variables, and ownership rules. Repository-wide agent rules are in `<repo>/AGENTS.md`. The tool concept is in `<repo>/docs/OCTOCODE_PROTOCOL.md`.
+This page owns the native crate map, the contract pipeline, build commands, development-only environment variables, and ownership rules. Repository-wide agent rules are in `<repo>/AGENTS.md`. The tool concept is in `<repo>/docs/OCTOCODE_PROTOCOL.md`.
 
 Other dev docs: [ADDING_CONFIG.md](ADDING_CONFIG.md) (new settings), [TOOL_CONNECTIONS.md](TOOL_CONNECTIONS.md) (every `next.*` page and `hints.*` lead), [TOOL_QUALITY.md](TOOL_QUALITY.md) (acceptance criteria), [RELEASE.md](RELEASE.md) (release gates), [scripts/README.md](../scripts/README.md) (root automation), and the [benchmark results](../../../packages/octocode-benchmark/results/SUMMARY.md).
 
@@ -13,28 +13,11 @@ octocode-mcp-vscode ───┘          ├──▶ embedded contract from @o
                                   └──▶ configuration resolved in Rust, same rules as @octocodeai/config
 ```
 
-`octocode-native` is the one owner of public tool validation, providers, security, batching, pagination, response shaping, and cancellation. Interfaces register, delegate, render, or offer interactive selection. There is no TypeScript tool fallback.
+`octocode-native` is the one owner of public tool validation, providers, security, batching, pagination, response shaping, and cancellation. Interfaces register, delegate, render, or offer interactive selection.
 
-## Packages
+## Native crates
 
-Versions come from each `package.json`. Workspace packages version independently.
-
-| Path | npm name | Version | Owns |
-|---|---|---|---|
-| sibling repo `octocode-mcp-host/packages/octocode-core` | `@octocodeai/octocode-core` | external | Every tool's Zod input schema, description, output schema, limits, and shared MCP/CLI instructions. Never executes tools. Nothing in this repo authors contract content. |
-| `packages/octocode-config` | `@octocodeai/config` | 20.1.0 (private, bundled) | The only tool-contract generator (`generate:tool-contract` writes `contract/` and `src/contracts/toolTypes.generated.ts`; re-exports core through `./schema` and `./mcp`). Also the configuration contract (`config-contract.json` → `<repo>/docs/generated/CONFIG_SETTINGS.md`), Octocode home, `.env` / `.octocoderc` loading, and protected keys. See [ADDING_CONFIG.md](ADDING_CONFIG.md). |
-| `packages/octocode-native` | `@octocodeai/octocode-native` | 20.1.0 | Rust implementation of every public tool. One npm package plus six platform packages (`npm/darwin-arm64`, `darwin-x64`, `linux-arm64-gnu`, `linux-x64-gnu`, `linux-x64-musl`, `win32-x64-msvc`) with the native CLI binary and addons. Publishing: `<repo>/packages/octocode-native/docs/PUBLISHING.md`. |
-| `packages/octocode-mcp` | `octocode-mcp` | 20.1.0 | Thin stdio MCP server: loads the addon, checks the core/native fingerprint, registers available tools (never the CLI-only `ghCloneRepo`, `astTopology`, and `astRewrite`), forwards calls. See `<repo>/docs/OCTOCODE_MCP.md`. |
-| `packages/octocode-mcp-cli` | `octocode-mcp-cli` (private) | 0.1.0 | Library that maps MCP tools and instructions to a Zod CLI spec, help text, generated TypeScript, and MCP tool definitions. Does not execute Octocode tools. |
-| `packages/octocode` | `octocode` | 20.1.0 | Public Node launcher: delegates to the native binary; owns `octocode skill` and the install picker. See `<repo>/packages/octocode/docs/OCTOCODE_CLI.md`. |
-| `packages/octocode-vscode` | `octocode-mcp-vscode` | 20.1.0 | VS Code extension: GitHub sign-in, token sync into MCP configs, MCP install across editors. Runs no research tools. |
-| `packages/octocode-claude-plugin` | `@octocodeai/claude-plugin` | 0.1.0 | Claude Code manifest, local MCP launch config, public skills, GitHub CLI onboarding. The marketplace points to the npm package. See its `ARCHITECTURE.md`. |
-| `packages/octocode-codex-plugin` | `@octocodeai/codex-plugin` | 0.1.0 | Codex plugin metadata, local MCP launch config, public skills, onboarding; reuses native auth and CLI skill staging. See its `ARCHITECTURE.md`. |
-| `packages/octocode-skill-installer` | `@octocodeai/octocode-skill-installer` (private) | 0.1.0 | Library bundled into the CLI: canonical skill copies, per-platform links or copies, upgrades, conflict policy, atomic replacement. |
-| `packages/octocode-benchmark` | `@octocodeai/octocode-benchmark` (private) | 20.1.0 | CLI research benchmark: 30 GitHub questions, Octocode CLI vs `gh` / `gh` + RTK / `gh` + Headroom, blind judge, measured characters. Start at `<repo>/packages/octocode-benchmark/README.md`. |
-| `packages/octocode-agents-communication` | `@octocodeai/octocode-agents-communication` | 0.1.0 | Session identity, path leases, messages. |
-
-Native Cargo crates under `crates/`:
+The package map is in `<repo>/AGENTS.md`. Native Cargo crates under `crates/`:
 
 | Crate dir | Cargo name | Owns |
 |---|---|---|
@@ -43,11 +26,6 @@ Native Cargo crates under `crates/`:
 | `github` | `octocode-github` | GitHub REST/GraphQL transport, bounded provider operations, credential traits |
 | `cli` | `octocode-cli` | The native `octocode` binary: tool commands, `schema`, `config`, `auth`, `graph`, `skill`, `install` |
 | `runtime-napi` | `octocode-runtime-napi` | N-API adapter the MCP server loads in-process |
-
-Other folders:
-
-- `skills/`: public Agent Skills installed by `octocode skill install`. `skills-beta/` holds tested unpublished skills; `skills-dev/` holds skills for work on this repo.
-- `octocode-local-testing/` (not a package): `harness/` runs end-to-end suites against the built MCP server (`node octocode-local-testing/harness/run-all.mjs`); `validate/` holds validation scripts; `repos/` holds pinned clones. See `<repo>/octocode-local-testing/README.md`. Benchmark results: `<repo>/docs/BENCHMARKS.md` (pending).
 
 ## Concept to code
 
@@ -88,7 +66,7 @@ Until native is rebuilt, the MCP server refuses to start and CLI `schema` refuse
 ### Adding a tool field
 
 1. Add it in core and regenerate as above.
-2. Declare and implement it per the `field-effect-coverage.json` rule in [SKILL.md](../SKILL.md#hard-rules).
+2. Declare and implement it in `crates/runtime/src/contracts/field-effect-coverage.json`.
 3. A public limit change trips the `public_response_and_tree_limits_are_pinned` test by design. Update it deliberately.
 4. Check the result against [TOOL_QUALITY.md](TOOL_QUALITY.md), then update `<repo>/docs/OCTOCODE_TOOLS.md`.
 
@@ -103,10 +81,18 @@ Run from the repo root. Repo-wide tasks run through `node skills-dev/octocode-de
 
 | Package | Test | Lint / format |
 |---|---|---|
-| native | `test` (scripts + vitest + `test:rust`), `test:rust` alone | `lint` (clippy `-D warnings`), `fmt:rust`, `fmt:rust:check`, `check:crate-boundaries`, `docs:claims` |
+| native | `test` (scripts + vitest + `test:rust`), `test:rust` alone | `lint` (clippy `-D warnings`), `fmt:rust`, `fmt:rust:check` |
 | config | `test`, `check:tool-contract`, `check:config-contract` | `lint` |
 | mcp | `test` | `lint`, `format:check` |
 | octocode, vscode, skill-installer, benchmark | `test` | `lint` |
+
+### Cargo builds
+
+- `build:dev` (debug native + TypeScript, no clean or lint) is the default local build; use `build` only for release or performance artifacts. Check exit codes, not output paths.
+- Rust integration tests are one binary per crate: `tests/main.rs` declares each `tests/*.rs` as a `mod`.
+- Don't commit local lld or sccache Cargo configuration.
+- One build lane uses the repo's warm `target/`. Parallel lanes share at most three Cargo target directories in total, each in a scratch directory (never `target/<name>`), deleted when done. Cargo's lock serializes builds in one directory, and the same `--features` keeps compiled units shared.
+- Reset a bloated `target/` with `dev.mjs clean:cache` (stale native copies) or `dev.mjs clean` (all build outputs).
 
 ## Development environment variables
 

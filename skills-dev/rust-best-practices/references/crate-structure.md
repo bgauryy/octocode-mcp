@@ -46,7 +46,7 @@ Load when you decide module boundaries or file placement inside a crate, what go
 - `crates/runtime`: request admission, cancellation, dispatch, validation, and response shaping. It has no N-API dependency or executable target.
 - `crates/cli`: arguments, output, exits, and regex-worker executable. `crates/runtime-napi`: Node conversion and lifecycle over the same runtime.
 - Keep host adapters free of tool business logic and fallback execution. Check the actual manifest before assuming a dependency edge.
-- Verify with `yarn workspace @octocodeai/octocode-native check:crate-boundaries`; the check reads Cargo metadata rather than folder names.
+- Verify with `cargo metadata --format-version 1 --no-deps` (Cargo metadata, not folder names): each crate's dependencies must follow `packages/octocode-native/ARCHITECTURE.md`.
 
 ## Extract a module into a crate
 1. In the current crate, make the module self-contained: only `pub(crate)` surface used by siblings, no `super::`/`crate::` reach-ins, its own error type.

@@ -303,7 +303,10 @@ pub(super) async fn shape_pr_commits(
                 let (files, mut files_page) =
                     paginate_window(files, 0, !more, Some(1), Some(query.collection_page_size()));
                 let (mut files, cursor) = shape_files(files, true, query);
-                let reshaped = take_reshaped_paths(Some(&mut files), query.debug());
+                let reshaped = take_reshaped_paths(
+                    Some(&mut files),
+                    query.wants(crate::contracts::tool_types::ExtraKind::Details),
+                );
                 attach_patch_cursor(&mut files_page, cursor);
                 let cursors = DiffCursors::of_file_page(
                     &files_page,

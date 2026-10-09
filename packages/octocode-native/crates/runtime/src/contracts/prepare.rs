@@ -1,4 +1,3 @@
-use crate::tools::id::ToolId;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::fmt::{Display, Formatter};
@@ -33,8 +32,8 @@ pub struct PreparedQuery {
 /// one-element array, or a one-row `{queries}` envelope. Shape and relation
 /// validation is a later stage that never rewrites tool fields; bulk input
 /// goes through `prepare_many_and_validate`.
-pub fn prepare(tool_name: &str, input: Value) -> Result<PreparedQuery, ContractInputError> {
-    let mut object = match input {
+pub fn prepare(_tool_name: &str, input: Value) -> Result<PreparedQuery, ContractInputError> {
+    let object = match input {
         Value::Array(mut values) => {
             if values.len() != 1 {
                 return Err(ContractInputError::new(
@@ -65,14 +64,6 @@ pub fn prepare(tool_name: &str, input: Value) -> Result<PreparedQuery, ContractI
             return Err(ContractInputError::new("tool input must be an object"));
         }
     };
-    // The contract's `debug` default (a tool without one gets none).
-    if let Some(default) = ToolId::from_name(tool_name)
-        .and_then(|tool| super::schema_facts::query_schema_value(tool, None, "debug", "default"))
-    {
-        object
-            .entry("debug".to_owned())
-            .or_insert_with(|| default.clone());
-    }
     Ok(PreparedQuery { query: object })
 }
 
@@ -113,11 +104,12 @@ mod tests {
     }
 
     #[test]
-    fn defaults_debug_and_never_invents_goal_or_reasoning() {
+    fn injects_no_extras_and_never_invents_goal_or_reasoning() {
         let prepared =
             prepare("localFetch", json!({"path":"/tmp/a", "mainGoal":" "})).expect("valid input");
         assert_eq!(prepared.query["mainGoal"], " ");
-        assert_eq!(prepared.query["debug"], false);
+        assert!(prepared.query.get("extras").is_none());
+        assert!(prepared.query.get("debug").is_none());
         assert!(prepared.query.get("reasoning").is_none());
     }
 

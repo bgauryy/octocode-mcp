@@ -4,7 +4,7 @@ use crate::contracts;
 use crate::policy::path::{PathPolicy, PathPolicyConfig};
 use crate::regex::{IsolatedRegexEngine, IsolatedRegexLimits};
 use crate::response::pager::{ResponsePageOptions, TextContent};
-use crate::response::{continuations, read_share, render, rows, stage, verbose};
+use crate::response::{continuations, extras, read_share, render, rows, stage};
 use crate::security::{ContentSecurity, ValidationResult};
 use crate::tools::ast_graph::store as graph_store;
 use crate::tools::cancel::CancellationCheck;
@@ -215,7 +215,7 @@ fn rejected_row(
         "hints": formatted["details"],
     });
     let mut row = rows::result_row(tool, index, &raw, data, Some("error"));
-    verbose::prune_row(&mut row, tool, &raw);
+    extras::prune_row(&mut row, tool, &raw);
     (index, row)
 }
 
@@ -465,15 +465,7 @@ impl ToolRuntime {
             (options.surface == RuntimeSurface::Cli)
                 .then(|| std::env::current_exe().ok())
                 .flatten()
-                .and_then(|path| {
-                    path.parent().map(|parent| {
-                        parent.join(if cfg!(windows) {
-                            "octocode-regex-worker.exe"
-                        } else {
-                            "octocode-regex-worker"
-                        })
-                    })
-                })
+                .and_then(|exe| regex_worker_beside(&exe))
         });
         if let Some(path) = worker_path {
             runtime.regex = Some(Arc::new(IsolatedRegexEngine::new(
@@ -1479,7 +1471,7 @@ impl ChannelRun {
                 row["cache"] = json!(1);
             }
             rows::apply_hint_policy(&mut row, id, query);
-            verbose::prune_row(&mut row, id, query);
+            extras::prune_row(&mut row, id, query);
             rows::minimize_row(&mut row, id, query);
             rows.push(row);
         }
@@ -1542,6 +1534,20 @@ fn runtime_execution_error(error: ExecutionError) -> RuntimeError {
         },
         format!("{error:?}"),
     )
+}
+
+/// The regex worker shipped beside the CLI. macOS reports `current_exe` as
+/// the path it was launched through, so a package manager's `bin` symlink
+/// (Homebrew) would point at the link's directory; resolve the real binary
+/// first and fall back to the reported path.
+fn regex_worker_beside(exe: &std::path::Path) -> Option<PathBuf> {
+    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+    let name = if cfg!(windows) {
+        "octocode-regex-worker.exe"
+    } else {
+        "octocode-regex-worker"
+    };
+    exe.parent().map(|parent| parent.join(name))
 }
 
 impl CancellationCheck for ExecutionContext {
@@ -1694,6 +1700,35 @@ mod security_issue_tests {
                 .iter()
                 .all(|issue| issue.rule_id == "security.credential"),
             "{issues:?}"
+        );
+    }
+}
+
+#[cfg(all(test, unix))]
+mod regex_worker_path_tests {
+    use super::regex_worker_beside;
+
+    #[test]
+    fn worker_is_found_beside_the_real_binary_behind_a_symlink() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cellar = root.path().join("cellar/libexec");
+        let bin = root.path().join("bin");
+        std::fs::create_dir_all(&cellar).expect("cellar");
+        std::fs::create_dir_all(&bin).expect("bin");
+        let exe = cellar.join("octocode");
+        std::fs::write(&exe, b"").expect("exe");
+        let link = bin.join("octocode");
+        std::os::unix::fs::symlink(&exe, &link).expect("symlink");
+        let real = std::fs::canonicalize(&cellar).expect("real cellar");
+        assert_eq!(
+            regex_worker_beside(&link),
+            Some(real.join("octocode-regex-worker"))
+        );
+        // A path that cannot be resolved still yields its own sibling.
+        let missing = root.path().join("gone/octocode");
+        assert_eq!(
+            regex_worker_beside(&missing),
+            Some(root.path().join("gone/octocode-regex-worker"))
         );
     }
 }

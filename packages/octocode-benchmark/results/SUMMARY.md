@@ -5,7 +5,19 @@ Invalid or incomplete campaigns are not included in headline calculations.
 Historical complete reports remain available for traceability, but results with
 different harness generations are not summed into one synthetic total.
 
-## Latest complete campaigns
+## Current picture (Oct 2026)
+
+Full tables: [MATRIX.md](MATRIX.md) · dashboard: [index.html](index.html).
+
+- **Same campaign, same agent (fair):** Octocode v20 MCP vs gh-lean, i.e. gh with `--json/--jq` and
+  `grep -n`/`sed -n` filters. Correctness tied (9 vs 9 in whole points). gh-lean used **0.71×** the
+  characters (CI 0.58–0.85). Time was a near tie (gh-lean 1.08×, CI 0.97–1.21).
+- **Against the Aug 2026 arms (orientation, different agents):** Octocode v20 MCP is about 2.1×
+  leaner than Octocode v18 CLI, about 4.3× leaner than plain gh, and 7–8× leaner than gh+RTK and
+  gh+Headroom, all at the same correctness band.
+- **clasify:** offered in 30/30 sessions and called 0 times on these questions; no effect.
+
+## August 2026 CLI campaigns
 
 Each matchup is a full **30-question v2 set × 3 passes** (local build `out/octocode.js`
 v18.1.1), blind neutral **gpt-5.5** judge, X/Y randomized per question, leanest-path enforced,

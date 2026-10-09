@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 export async function fetchScrapingAnt({ url, pageId, config, apiKey }) {
@@ -185,32 +185,24 @@ export async function fetchRobotsPolicy(targetUrl) {
   }
 }
 
-// --provider cdp uses the Chrome package's browser runtime, not the guidance-only skill.
-// Resolve a workspace checkout first, then an installed npm package; missing runtime
-// produces a fetchError rather than duplicating CDP logic here.
-//
-// chrome-devtools' own session tracking (for its --cleanup flag) is scoped to process.cwd()
-// at launch time. If a prior call launched Chrome from a different cwd (crash, inconsistent
-// invocation), cleanupCdp()'s call into open-browser.mjs --cleanup silently no-ops — it can't
-// find a session file it never wrote. findAndKillPortListener() below is the real fallback:
-// verify the port is actually free after that call, and if a genuine Chrome debug process is
-// still there, kill it directly, regardless of which cwd tracked it.
+// --provider cdp drives the Chrome package through its public executable (`/raw open`,
+// `script`, `cleanup`); this skill never imports package internals. Resolve a workspace
+// checkout first, then an installed npm package; a missing package yields a fetchError.
 const __cdpDir = dirname(fileURLToPath(import.meta.url));
-const workspaceChrome = resolve(__cdpDir, '../../../../packages/octocode-chrome-devtools');
+const CHROME_BIN = 'bin/octocode-chrome-devtools.mjs';
 function chromePackageRoot() {
-  if (existsSync(join(workspaceChrome, 'scripts/cdp-sandbox.mjs'))) return workspaceChrome;
+  const workspace = resolve(__cdpDir, '../../../../packages/octocode-chrome-devtools');
+  if (existsSync(join(workspace, CHROME_BIN))) return workspace;
   try { return dirname(createRequire(import.meta.url).resolve('@octocodeai/octocode-chrome-devtools/package.json')); }
-  catch { return workspaceChrome; }
+  catch { return workspace; }
 }
 export const CHROME_DEVTOOLS_DIR = chromePackageRoot();
 let cdpBrowserLaunched = false; // this process has a ready browser on the port
 let cdpBrowserOwned = false;    // ...and launched it (reused sessions belong to the caller)
 
-// The CDP sandbox runs under Node.js Permission Model, granting --allow-fs-read to the cwd
-// subtree. If cwd is a subdirectory (e.g. skills/octocode-scraping) the sandbox cannot resolve
-// node_modules that live at the monorepo root → ERR_ACCESS_DENIED during ESM import. Fix: pin
-// all CDP spawns to the nearest ancestor directory that contains node_modules, so module
-// resolution is always within the granted read tree. Falls back to __cdpDir if none found.
+// The CDP sandbox runs under the Node.js Permission Model with reads granted to the cwd
+// subtree; pin every spawn to the nearest ancestor holding node_modules so module
+// resolution stays inside the granted tree.
 function findNodeModulesRoot(from) {
   let d = from;
   while (true) {
@@ -222,35 +214,12 @@ function findNodeModulesRoot(from) {
 }
 const CDP_SPAWN_CWD = findNodeModulesRoot(__cdpDir);
 
-function findListeningPid(port) {
-  try {
-    const res = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8' });
-    if (res.status !== 0 || !res.stdout) return null;
-    return res.stdout.trim().split('\n')[0] || null;
-  } catch { return null; }
-}
-
-function isOurChromeDebugProcess(pid, port) {
-  try {
-    const res = spawnSync('ps', ['-p', pid, '-o', 'command='], { encoding: 'utf8' });
-    const cmd = (res.stdout || '').trim();
-    return cmd.includes(`--remote-debugging-port=${port}`) && /chrome/i.test(cmd);
-  } catch { return false; }
-}
-
-/** Best-effort (macOS/Linux via lsof/ps; no-ops elsewhere): kill whatever Chrome debug process is still on `port`, independent of cwd-scoped session tracking. */
-function findAndKillPortListener(port) {
-  const pid = findListeningPid(port);
-  if (pid && isOurChromeDebugProcess(pid, port)) {
-    try { process.kill(Number(pid), 'SIGTERM'); return true; } catch { return false; }
-  }
-  return false;
-}
+const chrome = (args, options = {}) =>
+  spawnSync(process.execPath, [resolve(CHROME_DEVTOOLS_DIR, CHROME_BIN), '/raw', ...args], { encoding: 'utf8', cwd: CDP_SPAWN_CWD, ...options });
 
 async function ensureCdpBrowser(port) {
   if (cdpBrowserLaunched) return { ok: true };
-  const openBrowser = resolve(CHROME_DEVTOOLS_DIR, 'scripts/open-browser.mjs');
-  const res = spawnSync(process.execPath, [openBrowser, '--headless', '--port', port, '--url', 'about:blank'], { encoding: 'utf8', cwd: CDP_SPAWN_CWD });
+  const res = chrome(['open', '--headless', '--port', port, '--url', 'about:blank']);
   let parsed = null;
   try { parsed = JSON.parse(res.stdout); } catch {}
   if (parsed?.status === 'BROWSER_READY') { cdpBrowserLaunched = true; cdpBrowserOwned = parsed.reused !== true; return { ok: true }; }
@@ -272,7 +241,7 @@ export async function fetchCdp({ url, pageId, config }) {
       fetchedAt,
     };
   }
-  if (!existsSync(join(CHROME_DEVTOOLS_DIR, 'scripts/cdp-sandbox.mjs'))) {
+  if (!existsSync(join(CHROME_DEVTOOLS_DIR, CHROME_BIN))) {
     return { pageId, url, status: 0, contentType: '', body: '', fetchError: `Chrome runtime not found at ${CHROME_DEVTOOLS_DIR} — install @octocodeai/octocode-chrome-devtools to use --provider cdp`, creditCost: null, fetchedAt };
   }
   const port = config.cdpPort || '9331';
@@ -281,27 +250,22 @@ export async function fetchCdp({ url, pageId, config }) {
     return { pageId, url, status: 0, contentType: '', body: '', fetchError: `Chrome launch failed: ${launch.error}`, creditCost: null, fetchedAt };
   }
 
-  const sandbox = resolve(CHROME_DEVTOOLS_DIR, 'scripts/cdp-sandbox.mjs');
   const runnerDir = resolve(CDP_SPAWN_CWD, '.octocode', 'tmp', 'cdp-provider');
   await mkdir(runnerDir, { recursive: true });
   const runnerPath = join(runnerDir, `${pageId}-${randomUUID()}-runner.mjs`);
   const bodyPath = join(runnerDir, `${pageId}-${randomUUID()}-body.html`);
   const waitMs = config.cdpWaitMs ?? 8000;
-  const stealthModuleUrl = pathToFileURL(resolve(CHROME_DEVTOOLS_DIR, 'scripts/undercover.mjs')).href;
-  const stealthStep = config.cdpStealth !== true ? '' : `
-  const { applyStealthPatches, verifyStealth } = await import(${JSON.stringify(stealthModuleUrl)});
-  await applyStealthPatches(cdp);
-  const stealthResult = await verifyStealth(cdp);
-  console.log('[METRIC] stealth self-test: ' + stealthResult.passed + '/' + stealthResult.total + ' passed');
-  if (stealthResult.failed > 0) throw new Error('[STEALTH_GATE] cdp provider fetch blocked: ' + stealthResult.failed + ' stealth checks failed');`;
   await writeFile(runnerPath, `import { writeFileSync } from 'node:fs';
-import { waitForPageReady } from ${JSON.stringify(pathToFileURL(resolve(CDP_SPAWN_CWD, '.octocode/dom-actionability.mjs')).href)};
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 export async function run(cdp) {
+  // The runner stages its helpers under <cwd>/.octocode.
+  const { waitForPageReady } = await import(pathToFileURL(resolve(process.cwd(), '.octocode', 'dom-actionability.mjs')).href);
   await cdp.send('Page.enable', {});
   await cdp.send('Network.enable', {});
   let status = 0;
   const { frameTree } = await cdp.send('Page.getFrameTree');
-  cdp.on('Network.responseReceived', (p) => { if (p.type === 'Document' && p.frameId === frameTree.frame.id) status = p.response.status; });${stealthStep}
+  cdp.on('Network.responseReceived', (p) => { if (p.type === 'Document' && p.frameId === frameTree.frame.id) status = p.response.status; });
   const navigation = await cdp.send('Page.navigate', { url: ${JSON.stringify(url)} });
   if (navigation.errorText) throw new Error(navigation.errorText);
   if (!await waitForPageReady(cdp, ${waitMs}, { selector: ${JSON.stringify(config.waitFor || '')}, text: ${JSON.stringify(config.waitText || '')} })) throw new Error('CDP readiness timed out');
@@ -314,8 +278,9 @@ export async function run(cdp) {
 
   let status = 0, body = '', fetchError = null;
   try {
-    const run = spawnSync(process.execPath, [sandbox, runnerPath, '--port', port, '--new-tab', 'about:blank', '--timeout', String(waitMs + 15000), '--no-reload'], { encoding: 'utf8', cwd: CDP_SPAWN_CWD, timeout: waitMs + 30000, maxBuffer: 16 * 1024 * 1024 });
-    if (run.error || run.status !== 0) throw new Error(run.error?.message || run.stderr || 'CDP runner failed');
+    // --stealth applies the package's emulation and its self-test gate before run(cdp).
+    const run = chrome(['script', runnerPath, '--port', port, '--new-tab', 'about:blank', '--timeout', String(waitMs + 15000), '--no-reload', ...(config.cdpStealth === true ? ['--stealth'] : [])], { timeout: waitMs + 30000, maxBuffer: 16 * 1024 * 1024 });
+    if (run.error || run.status !== 0) throw new Error(run.error?.message || (run.stderr.match(/\[STEALTH_GATE\][^\n]*/)?.[0]) || run.stderr || 'CDP runner failed');
     const line = (run.stdout || '').split('\n').find((l) => l.startsWith('CDP_FETCH_RESULT:'));
     if (line) {
       const parsed = JSON.parse(line.slice('CDP_FETCH_RESULT:'.length));
@@ -345,11 +310,8 @@ export async function cleanupCdp(config = {}) {
   cdpBrowserOwned = false;
   // A reused browser (e.g. a logged-in chrome-devtools session on --cdp-port) is the caller's.
   if (!owned) return;
-  const openBrowser = resolve(CHROME_DEVTOOLS_DIR, 'scripts/open-browser.mjs');
-  spawnSync(process.execPath, [openBrowser, '--port', port, '--cleanup'], { encoding: 'utf8', cwd: CDP_SPAWN_CWD });
-  // The tracked-session cleanup above is cwd-scoped and can silently no-op; verify the port
-  // is actually free and kill the Chrome debug process we launched if it is still there.
-  findAndKillPortListener(port);
+  // Cleanup finds the tracked session from the browser on the port, whichever cwd launched it.
+  chrome(['cleanup', '--port', port]);
 }
 
 export async function discoverSitemap({ targetUrl, maxPages, sameDomain }) {

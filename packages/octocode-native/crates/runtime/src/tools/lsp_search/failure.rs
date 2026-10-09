@@ -237,6 +237,9 @@ pub(super) fn push_reason(row: &mut Value, reason: &str, warnings: &[String]) {
     {
         reasons.push(json!(reason));
     }
+    if warnings.is_empty() {
+        return;
+    }
     if let Some(existing) = object
         .entry("warnings")
         .or_insert_with(|| json!([]))
@@ -557,31 +560,32 @@ pub(super) fn flag_partial(
     row: &mut Value,
     query: &LspSearchQuery,
     reason: &str,
-    warning: &str,
+    warning: Option<&str>,
     scope: &super::scope::Scope,
 ) {
     let name = query.symbol_name().filter(|name| !name.trim().is_empty());
     let text_only = name.and_then(|name| scope.text_only_files(name));
     let agrees = text_only.as_ref().is_some_and(Vec::is_empty);
     if let Some(payload) = row.get_mut("payload").and_then(Value::as_object_mut) {
-        let coverage = payload
-            .entry("coverage")
-            .or_insert_with(|| json!({"scope":"languageServer","exhaustive":false}));
-        coverage["exhaustive"] = json!(false);
         if let Some(files) = &text_only {
-            coverage["textOnlyFiles"] = json!(files.len());
+            payload.entry("coverage").or_insert_with(|| json!({}))["textOnlyFiles"] =
+                json!(files.len());
         }
         if agrees && FILE_LEVEL_REASONS.contains(&reason) {
             return;
         }
-        coverage["reason"] = json!(reason);
+        // A named row states its reason once, in `partialReasons`.
+        if name.is_none() {
+            payload.entry("coverage").or_insert_with(|| json!({}))["reason"] = json!(reason);
+        }
     }
+    let warnings = warning.map(str::to_owned).into_iter().collect::<Vec<_>>();
     // A warning, not a hint: the hint policy keeps hints for empty/error rows
     // only, and this caveat matters most when the row looks complete.
     match name {
         // Partial only with an executable recovery.
         Some(name) => {
-            push_reason(row, reason, &[warning.to_owned()]);
+            push_reason(row, reason, &warnings);
             row["next"]["textSearch"] = text_search_lead(name, scope, text_only.as_deref());
             if CAPPED_REASONS.contains(&reason) {
                 // A fixed per-request cap: no page or retry reaches the
@@ -592,11 +596,31 @@ pub(super) fn flag_partial(
         // A position anchor has no name to search for: coverage reason and
         // warning only.
         None => match row.get_mut("warnings").and_then(Value::as_array_mut) {
-            Some(warnings) => warnings.push(json!(warning)),
-            None => row["warnings"] = json!([warning]),
+            Some(existing) => existing.extend(warnings.into_iter().map(Value::from)),
+            None if !warnings.is_empty() => row["warnings"] = json!(warnings),
+            None => {}
         },
     }
 }
+
+/// Whether [`flag_partial`] already flagged `row` with `reasons`' reason:
+/// the coverage reason of an unnamed row, or a `partialReasons` entry.
+pub(super) fn flagged_with(row: &Value, reasons: &[&str]) -> bool {
+    row.pointer("/payload/coverage/reason").is_some()
+        || row
+            .get("partialReasons")
+            .and_then(Value::as_array)
+            .is_some_and(|listed| {
+                listed
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|reason| reasons.contains(&reason))
+            })
+}
+
+/// How a coverage warning names the lexical check: the `textSearch` lead is
+/// opt-in (`extras: ["hints"]`), so the warning names the search itself.
+pub(super) const TEXT_CHECK: &str = "a localSearch of the name";
 
 /// The lexical lead: one row per text-only file when there are a few,
 /// otherwise the whole scope with the language family's globs.

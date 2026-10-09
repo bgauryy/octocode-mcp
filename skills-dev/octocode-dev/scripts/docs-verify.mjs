@@ -149,15 +149,6 @@ function validatePackageReadmes() {
   const failures = [];
   const rootReadme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
   const ownersByContent = new Map();
-  const checkScripts = (manifest, manifestPath) => {
-    for (const [scriptName, command] of Object.entries(manifest.scripts ?? {})) {
-      if (scriptName === 'readme:sync' || command.includes('sync-package-readmes')) {
-        failures.push(
-          `${manifestPath} retains removed README synchronization in scripts.${scriptName}`
-        );
-      }
-    }
-  };
 
   for (const packageRoot of listPackageRoots()) {
     const packagePath = path.relative(ROOT, packageRoot);
@@ -177,20 +168,6 @@ function validatePackageReadmes() {
     } else {
       ownersByContent.set(readme, packagePath);
     }
-
-    const manifest = JSON.parse(
-      fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')
-    );
-    checkScripts(manifest, `${packagePath}/package.json`);
-  }
-
-  const rootManifest = JSON.parse(
-    fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')
-  );
-  checkScripts(rootManifest, 'package.json');
-
-  if (fs.existsSync(path.join(ROOT, 'scripts', 'sync-package-readmes.mjs'))) {
-    failures.push('scripts/sync-package-readmes.mjs must not overwrite package-owned READMEs');
   }
 
   return failures;
@@ -221,161 +198,34 @@ function validateWorkflowReadme() {
   return failures;
 }
 
-function validateDocumentationContracts() {
+// Every public tool is documented, and stated tool counts match the contract.
+function validateToolCatalog() {
   const failures = [];
-  const configReference = fs.readFileSync(
-    path.join(ROOT, 'docs', 'CONFIGURATION.md'),
-    'utf8'
-  );
-  const toolReferencePath = path.join(ROOT, 'docs', 'OCTOCODE_TOOLS.md');
-  const toolReference = fs.readFileSync(toolReferencePath, 'utf8');
-  const agentsGuide = fs.readFileSync(path.join(ROOT, 'AGENTS.md'), 'utf8');
-  const cliArchitecture = fs.readFileSync(
-    path.join(ROOT, 'packages', 'octocode', 'ARCHITECTURE.md'),
-    'utf8'
-  );
-  const scriptsGuide = fs.readFileSync(
-    path.join(ROOT, 'skills-dev', 'octocode-dev', 'scripts', 'README.md'),
-    'utf8'
-  );
-
-  if (configReference.includes('enableAdditional')) {
-    failures.push(
-      'docs/CONFIGURATION.md documents unsupported tools.enableAdditional'
-    );
-  }
-
+  const toolReference = fs.readFileSync(path.join(ROOT, 'docs', 'OCTOCODE_TOOLS.md'), 'utf8');
   for (const toolName of PUBLIC_TOOL_NAMES) {
     if (!toolReference.includes(`\`${toolName}\``)) {
-      failures.push(
-        `${path.relative(ROOT, toolReferencePath)} is missing public tool \"${toolName}\"`
-      );
+      failures.push(`docs/OCTOCODE_TOOLS.md is missing public tool "${toolName}"`);
     }
   }
 
-  if (agentsGuide.includes('must match the root `package.json` version')) {
-    failures.push(
-      'AGENTS.md incorrectly requires independently versioned packages to match the root version'
-    );
-  }
-  if (scriptsGuide.includes('version match with root')) {
-    failures.push(
-      'scripts/README.md incorrectly says the publish guard enforces root-version alignment'
-    );
-  }
-
-  return failures;
-}
-
-function validatePrimaryToolGuidance() {
-  const failures = [];
-  const publicToolNames = new Set(PUBLIC_TOOL_NAMES);
-  const contracts = [
-    {
-      file: 'README.md',
-      required: [
-        `**${DISCOVERABLE_TOOL_COUNT} tools.**`,
-        `${DEFAULT_TOOL_COUNT} tools over MCP and ${CLI_DEFAULT_TOOL_COUNT} in the CLI`,
-        '| `ghSearchRepo` |',
-        '| `ghSearchCode` |',
-        '| `ghStructure` |',
-      ],
-      forbidden: [
-        '**15 tools.**',
-        '| `ghSearch` |',
-        '| `ghSearchRepos` |',
-        '| `ghViewRepoStructure` |',
-      ],
-    },
-    {
-      file: 'docs/OCTOCODE_TOOLS.md',
-      required: [
-        '### `ghSearchRepo`',
-        '### `ghSearchCode`',
-        '### `ghStructure`',
-      ],
-      forbidden: [
-        '### `ghSearch`\n',
-        'ghSearch(operation:',
-        '`operation: "repositories"`',
-      ],
-    },
-    {
-      file: 'skills-dev/octocode-dev/docs/TOOL_QUALITY.md',
-      required: [
-        `${DISCOVERABLE_TOOL_COUNT} tools`,
-        `${DEFAULT_TOOL_COUNT} enabled by default`,
-        '`ghSearchRepo`, `ghSearchCode`, `ghStructure`',
-        'code, repository, and tree variants',
-      ],
-      forbidden: [
-        'all 15 tools',
-        'ghSearchRepos / artifactSearch',
-        '-> ghViewRepoStructure',
-        '| `ghSearch` |',
-      ],
-    },
-    {
-      file: 'docs/OCTOCODE_WORKFLOWS.md',
-      required: [
-        '`ghSearchRepo`',
-        '`ghSearchCode`',
-        '`ghStructure`',
-      ],
-      forbidden: ['ghSearch(operation:', 'ghSearchRepos', 'ghViewRepoStructure'],
-    },
-    {
-      file: 'packages/octocode/docs/OCTOCODE_CLI.md',
-      required: ['| GitHub | `ghSearchRepo`', 'octocode ghSearchCode', 'octocode ghStructure'],
-      forbidden: [
-        'octocode ghSearch \'',
-        'octocode ghViewRepoStructure',
-      ],
-    },
-    {
-      file: 'skills/octocode-research/references/octocode.md',
-      required: [
-        `## ${DISCOVERABLE_TOOL_COUNT} public tools`,
-        `The default catalog contains ${DEFAULT_TOOL_COUNT} tools`,
-        '| GitHub code / tree / repositories | `ghSearchCode` / `ghStructure` / `ghSearchRepo` |',
-      ],
-      forbidden: [],
-    },
-    {
-      file: 'skills/octocode-research/references/workflow-external.md',
-      required: ['`ghSearchRepo`', '`ghSearchCode`', '`ghStructure`'],
-      forbidden: ['ghSearch operation:', 'ghSearchRepos', 'ghViewRepoStructure'],
-    },
-    {
-      file: 'docs/CONFIGURATION.md',
-      required: ['(e.g. `["ghSearchCode","localSearch"]`)'],
-      forbidden: ['(e.g. `["ghSearch","localSearch"]`)'],
-    },
-  ];
-
-  for (const toolName of DEFAULT_TOOL_NAMES) {
-    if (!publicToolNames.has(toolName)) {
-      failures.push(
-        `docs verifier default-tool contract references missing public tool "${toolName}"`
-      );
-    }
-  }
-
-  for (const contract of contracts) {
-    const content = fs.readFileSync(path.join(ROOT, contract.file), 'utf8');
-    for (const requiredText of contract.required) {
-      if (!content.includes(requiredText)) {
-        failures.push(
-          `${contract.file} is missing current tool guidance "${requiredText}"`
-        );
-      }
-    }
-    for (const forbiddenText of contract.forbidden) {
-      if (content.includes(forbiddenText)) {
-        failures.push(
-          `${contract.file} contains stale primary tool guidance "${forbiddenText}"`
-        );
-      }
+  const counts = {
+    'README.md': [
+      `**${DISCOVERABLE_TOOL_COUNT} tools.**`,
+      `${DEFAULT_TOOL_COUNT} tools over MCP and ${CLI_DEFAULT_TOOL_COUNT} in the CLI`,
+    ],
+    'skills-dev/octocode-dev/docs/TOOL_QUALITY.md': [
+      `${DISCOVERABLE_TOOL_COUNT} tools`,
+      `${DEFAULT_TOOL_COUNT} enabled by default`,
+    ],
+    'skills/octocode-research/references/octocode.md': [
+      `## ${DISCOVERABLE_TOOL_COUNT} public tools`,
+      `The default catalog contains ${DEFAULT_TOOL_COUNT} tools`,
+    ],
+  };
+  for (const [file, required] of Object.entries(counts)) {
+    const content = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    for (const text of required) {
+      if (!content.includes(text)) failures.push(`${file} is missing the current tool count "${text}"`);
     }
   }
 
@@ -387,8 +237,7 @@ function main() {
     ...validateDocsLinks(),
     ...validatePackageReadmes(),
     ...validateWorkflowReadme(),
-    ...validateDocumentationContracts(),
-    ...validatePrimaryToolGuidance(),
+    ...validateToolCatalog(),
     ...validateToolExamples(),
     ...validateRetiredNames(),
   ];

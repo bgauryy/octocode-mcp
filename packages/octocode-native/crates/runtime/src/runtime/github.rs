@@ -412,7 +412,6 @@ impl GitHubServices {
         };
         // Patch windows fill this row's share of the response page.
         query.auto_page_chars = Some(context.response_window.unwrap_or(self.auto_page_chars));
-        query.configured_page_chars = Some(self.auto_page_chars);
         let result = gh_get_history_item::execute(
             &self.provider.transport,
             &query,

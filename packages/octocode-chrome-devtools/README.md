@@ -4,14 +4,20 @@ Chrome MCP server and CLI for DOM actions, snapshots, arbitrary CDP methods/even
 
 ## Build and local use
 
-Requires Chrome and Node 24.15+. This package is private; it has not been published. From the monorepo:
+Requires Chrome and Node 24.15+. Run from the workspace cwd:
+
+```sh
+npx -y @octocodeai/octocode-chrome-devtools /cli --help
+```
+
+From the monorepo:
 
 ```sh
 yarn workspace @octocodeai/octocode-chrome-devtools build
 node /absolute/repo/packages/octocode-chrome-devtools/bin/octocode-chrome-devtools.mjs /cli --help
 ```
 
-Run from the workspace cwd. A local package install/link exposes `octocode-chrome-devtools`. Built npm archives include the bundled runtime and shared config; no runtime dependency installation is needed. `src/` owns the TypeScript adapter and browser engines; `dist/` contains generated runtime code. `tests/` and `tools/` are development-only.
+An install or local link exposes `octocode-chrome-devtools`. Built npm archives include the bundled runtime and shared config; no runtime dependency installation is needed. `src/` owns the TypeScript adapter and browser engines; `dist/` contains generated runtime code. `tests/` and `tools/` are development-only.
 
 ## One package, two interfaces
 
@@ -38,6 +44,8 @@ yarn workspace @octocodeai/octocode-chrome-devtools test:webmcp
 
 `verify` builds, typechecks all TypeScript sources (strict checking at the shared boundaries), checks tooling syntax and the guidance-only skill boundary, runs the hermetic groups, then runs the same advanced local Chrome fixtures through raw CLI, MCP and typed CLI. It also packs and extracts the package outside the monorepo, launches isolated Chrome, executes the documented research capture through both transports, verifies a typed CLI CDP call and checks a synthetic cookie round trip. Run `test:package` for that archive smoke test alone. `check:build` detects stale or obsolete generated engine/adapter/config outputs.
 
-The protocol suite inventories every advertised command/event separately from executed methods. Representative fixtures cover DOM/CSS/accessibility, trusted input, workers, interception, debugger/CPU profiling, heap chunks, trace/PDF streams, WebSockets, storage, emulation, large plans, readiness and fail-stop evidence. Structural dispatch is not proof that every operation works in every target, permission or Chrome version. Use `--only <name>`, `--transport legacy|mcp|typed-cli` and `--report /absolute/coverage.json` for focused verification.
+The protocol suite plan-validates every advertised command/event offline (`planValidatedCommands`) and reports the methods its fixtures send to Chrome (`testedMethods`). Representative fixtures cover DOM/CSS/accessibility, trusted input, workers, interception, debugger/CPU profiling, heap chunks, trace/PDF streams, WebSockets, storage, emulation, large plans, readiness and fail-stop evidence. Use `--only <name>`, `--transport legacy|mcp|typed-cli` and `--report /absolute/coverage.json` for focused verification.
+
+`test:cdp-all` (part of `verify`) sends every command the installed Chrome advertises to a disposable isolated headless browser, with params built only from the schema (required fields, type placeholders, first enum value, resolved `$ref`). Each reply is classified: `ok`, `chrome-error` (Chrome routed and rejected the call, with its code), `exception`, `timeout`, `target-destroyed`/`browser-destroyed` (loss reproduced by replay; the suite replaces the target or relaunches and continues), `unavailable` (-32601 on page and browser targets for an experimental or deprecated member), `not-found` (-32601 on a stable member), `transport` (unreproduced loss) and `engine`. The last three fail. It also registers a `listen` step for every advertised event. `--via script` (default, about 25 s) sends the queue over one sandboxed `script` connection; `--via run` sends batched `run` plans of `cdp` steps, resuming after each stop (about 2.5 min, one engine call per stop). Use `--only <Domain>` and `--report <file>`; a timeout or a reply shaped by placeholder params is evidence of routing, not of the command's semantics.
 
 [Architecture and ownership](ARCHITECTURE.md) describes implementation boundaries. Optional scraping bridges require the separate scraping skill; use `--scraping-skill-dir /absolute/skill` when it cannot be discovered.

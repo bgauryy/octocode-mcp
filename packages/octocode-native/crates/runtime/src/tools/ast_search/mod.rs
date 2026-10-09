@@ -321,8 +321,7 @@ mod tests {
             "{syntax}"
         );
         assert!(
-            crate::tools::id::ToolId::AstSearch
-                .verbose_paths()
+            crate::response::extras::all_paths(crate::tools::id::ToolId::AstSearch)
                 .contains(&"results[].data.nodeBytes"),
             "nodeBytes is verbose"
         );

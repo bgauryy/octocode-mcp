@@ -105,6 +105,7 @@ pub(crate) async fn execute<C: ConditionalCache>(
         .and_then(|resolution| resolution.sha.clone());
     let reads = code_output::shape_files(&mut value, &mut items, query, resolution);
     code_output::merge_identical(&mut items);
+    code_output::hoist_shared(&mut value, &mut items);
     if !items.is_empty() {
         value["files"] = json!(items);
     }

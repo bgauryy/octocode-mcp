@@ -575,7 +575,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "keywords": [
             "code research"
           ],
@@ -602,7 +601,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "octocat",
           "sort": "best-match",
           "page": 1,
@@ -627,7 +625,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "octocat",
           "sort": "best-match",
           "page": 1,
@@ -656,7 +653,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "keywords": [
             "localSearch"
           ],
@@ -687,7 +683,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "filename": "package.json",
@@ -715,7 +710,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "path": "packages",
@@ -743,12 +737,12 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "facebook",
           "repo": "react",
           "path": "packages/react/src/ReactHooks.js",
           "matchString": "export function useState",
-          "contextLines": 5
+          "contextLines": 5,
+          "minify": "standard"
         }
       ]
     }
@@ -770,7 +764,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "facebook",
           "repo": "react",
           "path": "packages/react/src/ReactHooks.js",
@@ -796,7 +789,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "path": "README.md",
@@ -822,11 +814,11 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "path": "README.md",
-          "fullContent": true
+          "fullContent": true,
+          "minify": "standard"
         }
       ]
     }
@@ -852,7 +844,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "keywords": [
             "localSearch"
           ],
@@ -887,7 +878,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "keywords": [
@@ -920,7 +910,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "path": "packages/octocode-native/crates",
@@ -952,7 +941,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "keywords": [
@@ -982,11 +970,10 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "keywords": [
             "schema"
           ],
-          "pageSize": 30,
+          "pageSize": 10,
           "page": 1,
           "operation": "pullRequest"
         }
@@ -1009,10 +996,9 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "o",
           "repo": "r",
-          "pageSize": 30,
+          "pageSize": 10,
           "page": 1,
           "operation": "issue"
         }
@@ -1035,10 +1021,9 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "o",
           "repo": "r",
-          "pageSize": 30,
+          "pageSize": 10,
           "page": 1,
           "operation": "commit"
         }
@@ -1062,7 +1047,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "microsoft",
           "repo": "TypeScript",
           "minify": "standard",
@@ -1094,7 +1078,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "microsoft",
           "repo": "TypeScript",
           "matchString": "esbuild",
@@ -1132,7 +1115,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "rust-lang",
           "repo": "rust",
           "minify": "standard",
@@ -1172,7 +1154,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "microsoft",
           "repo": "TypeScript",
           "minify": "none",
@@ -1209,7 +1190,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "pageSize": 30,
@@ -1240,7 +1220,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "pageSize": 30,
@@ -1269,7 +1248,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "base": "main",
@@ -1299,7 +1277,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "o",
           "repo": "r",
           "minify": "standard",
@@ -1326,7 +1303,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "o",
           "repo": "r",
           "pageSize": 30,
@@ -1353,7 +1329,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "o",
           "repo": "r",
           "pageSize": 30,
@@ -1382,7 +1357,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "o",
           "repo": "r",
           "base": "main",
@@ -1410,7 +1384,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "npm",
           "packageName": "zod"
         }
@@ -1435,7 +1408,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "npm",
           "keywords": [
             "schema",
@@ -1461,7 +1433,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "pypi",
           "packageName": "requests"
         }
@@ -1483,7 +1454,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "maven",
           "packageName": "com.google.guava:guava"
         }
@@ -1505,7 +1475,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "go",
           "packageName": "github.com/gin-gonic/gin"
         }
@@ -1527,7 +1496,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode"
         }
@@ -1550,7 +1518,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "bgauryy",
           "repo": "octocode",
           "path": "packages/octocode-native"
@@ -1575,7 +1542,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "matchString": "buildDirectToolCommandPatterns",
           "path": "/ABS/repo/src",
           "caseMode": "smart",
@@ -1608,7 +1574,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "matchString": "handler.call($value)",
           "path": "/ABS/repo/src",
           "caseMode": "smart",
@@ -1639,7 +1604,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "matchString": "toolSchemas",
           "path": ".",
           "caseMode": "smart",
@@ -1669,7 +1633,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "tree",
           "path": "/ABS/repo",
           "maxDepth": 2,
@@ -1696,7 +1659,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "files",
           "path": "/ABS/repo",
           "include": [
@@ -1727,7 +1689,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "tree",
           "path": "/ABS/repo",
           "maxDepth": 2,
@@ -1754,7 +1715,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "tree",
           "path": ".",
           "maxDepth": 2,
@@ -1781,7 +1741,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "files",
           "path": ".",
           "include": [
@@ -1810,7 +1769,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "symbols",
           "path": "/ABS/repo/src",
           "symbolName": "buildDirectToolCommandPatterns",
@@ -1838,7 +1796,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/src",
           "matchContentLength": 500,
           "language": "typescript",
@@ -1870,7 +1827,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "symbols",
           "path": "/ABS/repo/src/index.ts",
           "maxFiles": 2000,
@@ -1897,7 +1853,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/src",
           "matchContentLength": 500,
           "language": "typescript",
@@ -1931,7 +1886,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "matchContentLength": 500,
           "language": "typescript",
@@ -1964,7 +1918,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "syntaxTree",
           "path": "/repo/src/index.ts",
           "namedOnly": true,
@@ -1989,7 +1942,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "symbols",
           "path": ".",
           "maxFiles": 2000,
@@ -2015,7 +1967,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo",
           "page": 1,
           "pageSize": 20,
@@ -2042,7 +1993,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo",
           "page": 1,
           "pageSize": 20,
@@ -2069,7 +2019,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo",
           "page": 1,
           "pageSize": 50,
@@ -2098,7 +2047,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo",
           "page": 1,
           "pageSize": 50,
@@ -2127,7 +2075,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo",
           "page": 1,
           "pageSize": 50,
@@ -2155,7 +2102,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo",
           "page": 1,
           "pageSize": 20,
@@ -2182,7 +2128,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "page": 1,
           "pageSize": 50,
@@ -2210,7 +2155,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "page": 1,
           "pageSize": 50,
@@ -2239,7 +2183,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "page": 1,
           "pageSize": 50,
@@ -2266,7 +2209,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "page": 1,
           "pageSize": 50,
@@ -2291,7 +2233,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "page": 1,
           "pageSize": 50,
@@ -2317,7 +2258,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "page": 1,
           "pageSize": 50,
@@ -2344,7 +2284,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "page": 1,
           "pageSize": 50,
@@ -2372,7 +2311,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/src",
           "language": "typescript",
           "apply": false,
@@ -2408,7 +2346,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/src",
           "language": "typescript",
           "apply": true,
@@ -2443,7 +2380,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "language": "typescript",
           "apply": false,
@@ -2479,7 +2415,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": ".",
           "language": "typescript",
           "apply": true,
@@ -2515,7 +2450,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/packages/octocode-native/Cargo.toml",
           "ranges": [
             "1-30"
@@ -2542,7 +2476,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/src/index.ts",
           "matchString": "export",
           "contextLines": 5,
@@ -2566,7 +2499,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/README.md",
           "minify": "symbols"
         }
@@ -2588,7 +2520,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/README.md",
           "fullContent": true
         }
@@ -2612,7 +2543,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/packages/octocode-native/crates/runtime/src/runtime/engine.rs",
           "operation": "definition",
           "symbolName": "ToolRuntime",
@@ -2641,7 +2571,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/src/index.ts",
           "operation": "references",
           "symbolName": "run",
@@ -2668,7 +2597,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/packages/octocode-native/crates/runtime/src/runtime/engine.rs",
           "operation": "documentSymbols",
           "page": 1
@@ -2691,7 +2619,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/ABS/repo/src/index.ts",
           "operation": "diagnostic",
           "page": 1
@@ -2716,7 +2643,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "src/index.ts",
           "operation": "definition",
           "symbolName": "main",
@@ -2742,7 +2668,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "src/index.ts",
           "operation": "documentSymbols",
           "page": 1
@@ -2766,7 +2691,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "src/index.ts",
           "operation": "workspaceSymbol",
           "symbolName": "Schema",
@@ -2791,7 +2715,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "operation": "workspaceSymbol",
           "symbolName": "Schema",
           "page": 1,
@@ -2814,7 +2737,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/fixture/a.ts"
         }
       ]
@@ -2836,7 +2758,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/fixture/a.ts"
         }
       ]
@@ -2887,7 +2808,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/fixture/a.ts",
           "fullContent": true
         }
@@ -2911,7 +2831,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/fixture/a.ts",
           "matchString": "needle",
           "contextBytes": 10,
@@ -3010,7 +2929,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/fixture/a.ts",
           "ranges": [
             "3-5",
@@ -3099,7 +3017,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/fixture/a.ts",
           "matchString": [
             "a",
@@ -3126,7 +3043,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "path": "/fixture/a.ts",
           "matchString": "a",
           "contextLines": 100
@@ -3190,7 +3106,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "npm",
           "packageName": "zod"
         }
@@ -3214,7 +3129,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "crates",
           "keywords": [
             "parser"
@@ -3240,7 +3154,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "npm",
           "registryUrl": "https://registry.example.test/base/",
           "packageName": "x"
@@ -3361,7 +3274,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "ecosystem": "npm",
           "packageName": "zod",
           "version": "^3"
@@ -3402,7 +3314,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "matchString": "x",
           "path": "/r",
           "caseMode": "smart",
@@ -3433,7 +3344,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "matchString": "x",
           "path": "/r",
           "caseMode": "smart",
@@ -3463,7 +3373,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "matchString": "x",
           "path": "/r",
           "caseMode": "smart",
@@ -3603,14 +3512,13 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "keywords": [
             "cache"
           ],
           "owner": "o",
           "repo": "r",
           "qualifiers": "head:feature base:main",
-          "pageSize": 30,
+          "pageSize": 10,
           "page": 1,
           "operation": "pullRequest"
         }
@@ -3766,7 +3674,6 @@
     "normalized": {
       "queries": [
         {
-          "debug": false,
           "owner": "o",
           "repo": "r",
           "minify": "standard",

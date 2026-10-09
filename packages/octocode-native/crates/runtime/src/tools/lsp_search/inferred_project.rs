@@ -23,7 +23,7 @@ use std::path::Path;
 pub(super) const REASON: &str = "inferredProject";
 /// The lexical importer scan failed, so no importer was verified.
 pub(super) const FAILED_REASON: &str = "importerScanFailed";
-const INFERRED_WARNING: &str = "No tsconfig.json or jsconfig.json covers this file, so the TypeScript server used an inferred project that sees only opened files and their imports; results from other files are missing. Add a tsconfig.json/jsconfig.json at the workspace root, or confirm with hints.textSearch.";
+const INFERRED_WARNING: &str = "No tsconfig.json or jsconfig.json covers this file, so the TypeScript server used an inferred project that sees only opened files and their imports; results from other files are missing. Add a tsconfig.json/jsconfig.json at the workspace root, or confirm with a localSearch of the name.";
 
 /// Operations whose answer depends on files the server has not opened.
 pub(super) fn is_incoming(operation: &str) -> bool {
@@ -74,19 +74,19 @@ pub(super) fn annotate(
         Some(SCAN_COMPLETE | SCAN_CAPPED) => return,
         Some(SCAN_FAILED) => (
             FAILED_REASON,
-            "Importer recovery could not read, open, or resolve every candidate, or its scan failed. Some importers remain unverified; confirm with hints.textSearch.".to_owned(),
+            "Importer recovery could not read, open, or resolve every candidate, or its scan failed. Some importers remain unverified; confirm with a localSearch of the name.".to_owned(),
         ),
         _ if lacks_project_config(Path::new(anchor_path)) => (REASON, INFERRED_WARNING.to_owned()),
         _ => return,
     };
-    flag_partial(row, query, reason, &warning, scope);
+    flag_partial(row, query, reason, Some(&warning), scope);
 }
 
 const CLANGD_LANGUAGE_IDS: [&str; 4] = ["c", "cpp", "objective-c", "objective-cpp"];
 const COMPILE_DATABASE_HINT: &str = "Generate compile_commands.json for clangd (CMake: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON), or use astSearch/localSearch.";
 /// Coverage reason of a C/C++ row answered without a compilation database.
 pub(super) const NO_COMPILE_DATABASE_REASON: &str = "noCompileDatabase";
-const NO_COMPILE_DATABASE_WARNING: &str = "clangd found no compile_commands.json, compile_flags.txt, or .clangd for this file, so it answered from the opened file alone: references in other files are missing. Generate a compilation database (CMake: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON; Make: bear -- make), or confirm with hints.textSearch.";
+const NO_COMPILE_DATABASE_WARNING: &str = "clangd found no compile_commands.json, compile_flags.txt, or .clangd for this file, so it answered from the opened file alone: references in other files are missing. Generate a compilation database (CMake: -DCMAKE_EXPORT_COMPILE_COMMANDS=ON; Make: bear -- make), or confirm with a localSearch of the name.";
 
 /// Whether a clangd compilation database or flags file covers `start`
 /// (clangd also looks in a `build/` subdirectory of each ancestor).
@@ -131,7 +131,7 @@ pub(super) fn annotate_compile_database(
             row,
             query,
             NO_COMPILE_DATABASE_REASON,
-            NO_COMPILE_DATABASE_WARNING,
+            Some(NO_COMPILE_DATABASE_WARNING),
             scope,
         );
     }
@@ -176,8 +176,12 @@ mod tests {
             &Scope::new(root.clone(), Vec::new()),
         );
         assert_eq!(row["isPartial"], true, "{row}");
+        // The reason is stated once, in partialReasons.
         assert_eq!(row["partialReasons"], json!([REASON]));
-        assert_eq!(row["payload"]["coverage"]["reason"], REASON);
+        assert!(
+            row["payload"].pointer("/coverage/reason").is_none(),
+            "{row}"
+        );
         assert!(
             row["warnings"][0]
                 .as_str()
@@ -260,8 +264,9 @@ mod tests {
         found["payload"]["matches"] = json!([{"path":"a.hpp","line":1}]);
         annotate_compile_database(&mut found, &query, Some("cpp"), &path, &root);
         assert_eq!(
-            found["payload"]["coverage"]["reason"],
-            NO_COMPILE_DATABASE_REASON
+            found["partialReasons"],
+            json!([NO_COMPILE_DATABASE_REASON]),
+            "{found}"
         );
         assert!(
             found["warnings"][0]

@@ -35,10 +35,18 @@ pub(super) fn move_text(object: &mut Map<String, Value>) {
 ///   limit allows ([`merge_repeats`]);
 /// - leads move from `next` to `hints`, which keeps at most
 ///   [`MAX_HINT_LEADS`] of them, each reading only its top hit;
-/// - `confidence` goes from every call once it has ranked the leads.
+/// - `confidence` goes from every call once it has ranked the leads;
+/// - with `opt_in_leads` (a successful row whose `extras` lacks `hints`),
+///   only the contract's `defaultLeads` stay: the row already holds the
+///   path, ref and lines a next call is built from.
 ///
 /// Idempotent.
-pub(super) fn shape(object: &mut Map<String, Value>, tool: ToolId, recovery: bool) {
+pub(super) fn shape(
+    object: &mut Map<String, Value>,
+    tool: ToolId,
+    recovery: bool,
+    opt_in_leads: bool,
+) {
     for key in [PAGES_KEY, HINTS_KEY] {
         let Some(Value::Object(calls)) = object.get_mut(key) else {
             continue;
@@ -66,6 +74,14 @@ pub(super) fn shape(object: &mut Map<String, Value>, tool: ToolId, recovery: boo
         merge_repeats(next, tool);
     }
     split(object, tool);
+    if opt_in_leads && let Some(Value::Object(hints)) = object.get_mut(HINTS_KEY) {
+        hints.retain(|name, _| {
+            name == HINT_TEXT_KEY || continuation_channels::DEFAULT_LEADS.contains(&kind(name))
+        });
+        if hints.is_empty() {
+            object.remove(HINTS_KEY);
+        }
+    }
     if single_hit(object)
         && let Some(Value::Object(hints)) = object.get_mut(HINTS_KEY)
     {
@@ -344,7 +360,7 @@ mod tests {
                 if object.get("tool").is_some() && object.get("query").is_some() {
                     return;
                 }
-                shape(object, tool, false);
+                shape(object, tool, false, false);
                 for (key, child) in object.iter_mut() {
                     if key != "next" && key != "hints" {
                         walk(child, tool);

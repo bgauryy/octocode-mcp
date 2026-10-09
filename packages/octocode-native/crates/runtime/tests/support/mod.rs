@@ -153,9 +153,20 @@ pub async fn call(
         .await
 }
 
+/// Every opt-in output kind: the full view integration tests inspect.
+pub const ALL_EXTRAS: [&str; 6] = [
+    "hints",
+    "details",
+    "stats",
+    "receipts",
+    "echo",
+    "diagnostics",
+];
+
 /// A test row (or a `{queries}` input) as the one input shape tools take:
 /// `{queries:[row]}`, each row briefed, response-paging fields on the
-/// envelope.
+/// envelope. A row without `extras` asks for every kind (the full view); a
+/// row with `"extras": []` sends none (the default view).
 pub fn envelope(mut input: Value) -> Value {
     let brief = |row: &mut Value| {
         if let Some(object) = row.as_object_mut() {
@@ -165,7 +176,15 @@ pub fn envelope(mut input: Value) -> Value {
             object
                 .entry("reasoning")
                 .or_insert_with(|| json!("Exercise the native runtime integration path."));
-            object.entry("debug").or_insert_with(|| json!(true));
+            match object.get("extras") {
+                None => {
+                    object.insert("extras".into(), json!(ALL_EXTRAS));
+                }
+                Some(Value::Array(kinds)) if kinds.is_empty() => {
+                    object.remove("extras");
+                }
+                Some(_) => {}
+            }
         }
     };
     if let Some(rows) = input.get_mut("queries").and_then(Value::as_array_mut) {

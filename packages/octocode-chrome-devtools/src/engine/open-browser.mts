@@ -5,6 +5,7 @@ import { platform } from 'os';
 import { existsSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'fs';
 import { join, resolve } from 'path';
 import { getOctocodeHome, propagateOctocodeEnv } from './octocode-config.mjs';
+import { browserMajorVersion, planRealProfile } from './real-profile.mjs';
 
 const argv = process.argv.slice(2);
 const getArg = (flag: string, def?: string) => {
@@ -22,14 +23,15 @@ Options:
   --port <n>              CDP port (default: 9222)
   --url <url>             Initial URL
   --headless              Use an isolated headless profile
-  --profile <name>        Use the real Chrome profile (needs approval; Chrome must be quit)
+  --profile <name>        Use the real browser profile (needs approval; quit the browser;
+                          Google Chrome 136+ refuses, Chromium/Chrome for Testing work)
   --chromePath <path>     Explicit Chrome executable
   --windowSize <WxH>      Browser window size
   --enableFeatures <csv>  Chrome feature flags
   --userAgent <ua>        User-Agent override
   --proxyServer <url>     Proxy (also --proxyBypassList, --proxyPacUrl)
   --config <path>         Proxy configuration file
-  --cleanup               Stop the tracked isolated session
+  --cleanup               Stop the isolated session tracked for this port (from any cwd)
   --dry-run               Preview cleanup without stopping Chrome
   -h, --help              Show this help and exit`);
   process.exit(0);
@@ -51,35 +53,30 @@ const PROXY_BYPASS_LIST = getArg('--proxyBypassList', '');
 const PROXY_PAC_URL = getArg('--proxyPacUrl', '');
 const CONFIG_PATH = getArg('--config', '');
 
-propagateOctocodeEnv({ cwd: process.cwd(), trusted: true });
-
-function octocodeOutputBase() {
-  const workspace = resolve(process.cwd(), '.octocode');
-  mkdirSync(workspace, { recursive: true, mode: 0o700 });
-  return workspace;
-}
-
-const OCTOCODE_OUTPUT_BASE = octocodeOutputBase();
-const CHROME_STATE_DIR = join(
-  OCTOCODE_OUTPUT_BASE,
-  'tmp',
-  'chrome-devtools',
-  'browser-state'
-);
-mkdirSync(CHROME_STATE_DIR, { recursive: true, mode: 0o700 });
-const SESSION_FILE = join(CHROME_STATE_DIR, `cdp-session-${PORT}.json`);
-const HEADLESS_PROFILE_DIR = join(
-  CHROME_STATE_DIR,
-  `cdp-chrome-profile-${PORT}`
-);
-
 function ok(payload) {
   console.log(JSON.stringify(payload));
 }
-function err(message) {
+function err(message: string): never {
   console.log(JSON.stringify({ status: 'ERROR', message }));
   process.exit(1);
 }
+
+// PORT names the session file and the profile directory that cleanup deletes.
+if (!/^\d+$/.test(PORT) || Number(PORT) < 1 || Number(PORT) > 65535)
+  err('--port needs a positive integer <= 65535');
+
+propagateOctocodeEnv({ cwd: process.cwd(), trusted: true });
+
+// Every isolated profile and session file lives at
+// <workspace>/.octocode/tmp/chrome-devtools/browser-state/, keyed by port.
+const STATE_SUBPATH = ['.octocode', 'tmp', 'chrome-devtools', 'browser-state'];
+const sessionFileIn = stateDir => join(stateDir, `cdp-session-${PORT}.json`);
+const profileDirIn = stateDir => join(stateDir, `cdp-chrome-profile-${PORT}`);
+
+const WORKSPACE = process.cwd();
+const CHROME_STATE_DIR = join(WORKSPACE, ...STATE_SUBPATH);
+const SESSION_FILE = sessionFileIn(CHROME_STATE_DIR);
+const HEADLESS_PROFILE_DIR = profileDirIn(CHROME_STATE_DIR);
 
 function readJsonFile(filePath, { strict = false } = {}) {
   if (!filePath || !existsSync(filePath)) return null;
@@ -179,12 +176,103 @@ async function checkRunning() {
   return null;
 }
 
-function readSession() {
+function readSession(sessionFile = SESSION_FILE) {
   try {
-    return JSON.parse(readFileSync(SESSION_FILE, 'utf8'));
+    return JSON.parse(readFileSync(sessionFile, 'utf8'));
   } catch {
     return null;
   }
+}
+
+// The OS pid of the browser process serving this CDP endpoint.
+async function browserPid(wsUrl, timeoutMs = 3000): Promise<number | null> {
+  if (typeof wsUrl !== 'string' || !wsUrl) return null;
+  return new Promise<number | null>(resolvePid => {
+    let socket;
+    const done = pid => {
+      clearTimeout(timer);
+      try {
+        socket?.close();
+      } catch {}
+      resolvePid(pid);
+    };
+    const timer = setTimeout(() => done(null), timeoutMs);
+    try {
+      socket = new WebSocket(wsUrl);
+    } catch {
+      return done(null);
+    }
+    socket.onopen = () =>
+      socket.send(
+        JSON.stringify({ id: 1, method: 'SystemInfo.getProcessInfo' })
+      );
+    socket.onerror = () => done(null);
+    socket.onclose = () => done(null);
+    socket.onmessage = event => {
+      try {
+        const message = JSON.parse(String(event.data));
+        if (message.id !== 1) return;
+        const browser = message.result?.processInfo?.find(
+          info => info.type === 'browser'
+        );
+        done(Number.isSafeInteger(browser?.id) ? browser.id : null);
+      } catch {
+        done(null);
+      }
+    };
+  });
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// The isolated profile this package created for PORT, read from a Chrome
+// command line: <workspace>/.octocode/tmp/chrome-devtools/browser-state/cdp-chrome-profile-<PORT>.
+function packageProfileFromCommand(command) {
+  const sep = '[\\\\/]';
+  const suffix = [...STATE_SUBPATH, `cdp-chrome-profile-${PORT}`]
+    .map(escapeRegExp)
+    .join(sep);
+  const match = command.match(
+    new RegExp(`--user-data-dir=(.+?)${sep}${suffix}(?=["\\s]|$)`)
+  );
+  // A lazy match must not span into another flag's value.
+  if (!match || /\s--/.test(match[1])) return null;
+  const workspace = match[1].replace(/^"/, '');
+  const stateDir = join(workspace, ...STATE_SUBPATH);
+  return { workspace, stateDir, profileDir: profileDirIn(stateDir) };
+}
+
+// Finds the workspace that launched the Chrome listening on PORT, when it is an
+// isolated profile this package created. Returns its session for the normal
+// verified cleanup; never trusts the listener alone.
+async function discoverListenerSession(info): Promise<{
+  reason?: string;
+  listenerPid?: number;
+  workspace?: string;
+  sessionFile?: string;
+  session?: any;
+}> {
+  const running = info ?? (await checkRunning());
+  if (!running) return { reason: 'NO_LISTENER' };
+  const pid = await browserPid(running.webSocketDebuggerUrl);
+  if (!pid) return { reason: 'LISTENER_PID_UNKNOWN' };
+  const owner = packageProfileFromCommand(getProcessCommand(pid));
+  if (!owner) return { listenerPid: pid, reason: 'NOT_PACKAGE_PROFILE' };
+  const sessionFile = sessionFileIn(owner.stateDir);
+  const session = readSession(sessionFile);
+  if (
+    !session ||
+    String(session.port) !== String(PORT) ||
+    resolve(String(session.profileDir ?? '')) !== resolve(owner.profileDir)
+  )
+    return {
+      listenerPid: pid,
+      workspace: owner.workspace,
+      reason: 'NO_SESSION_FILE',
+    };
+  return { listenerPid: pid, workspace: owner.workspace, sessionFile, session };
 }
 
 function writeSession(pid) {
@@ -195,7 +283,7 @@ function writeSession(pid) {
       port: PORT,
       profileDir: HEADLESS_PROFILE_DIR,
       headless: HEADLESS,
-      isolated: HEADLESS || usingIsolatedProfile,
+      isolated: usingIsolatedProfile,
       startedAt: Date.now(),
       chromePath,
     }),
@@ -269,11 +357,34 @@ async function removeDirWithRetry(dir) {
 }
 
 async function cleanupSession() {
-  const session = readSession();
+  let session = readSession();
+  let sessionFile = SESSION_FILE;
+  let owner: Record<string, unknown> = { workspace: WORKSPACE, sessionFile };
   if (!session) {
-    console.error('[BROWSER] No tracked session found for port', PORT);
-    ok({ status: 'NO_TRACKED_SESSION', port: PORT });
-    return;
+    const found = await discoverListenerSession(null);
+    if (!found.session) {
+      console.error(
+        `[BROWSER] No tracked session found for port ${PORT} (${found.reason})`
+      );
+      ok({
+        status: 'NO_TRACKED_SESSION',
+        port: PORT,
+        reason: found.reason,
+        listenerPid: found.listenerPid,
+        workspace: found.workspace,
+      });
+      return;
+    }
+    session = found.session;
+    sessionFile = found.sessionFile;
+    owner = {
+      workspace: found.workspace,
+      sessionFile,
+      discoveredFromListener: true,
+    };
+    console.error(
+      `[BROWSER] Port ${PORT} belongs to the session of workspace ${found.workspace}`
+    );
   }
   if (String(session.port) !== String(PORT)) {
     err(
@@ -291,13 +402,14 @@ async function cleanupSession() {
         pid: session.pid,
         matchesTrackedSession: false,
         wouldKill: false,
+        ...owner,
       });
       return;
     }
     try {
-      rmSync(SESSION_FILE, { force: true });
+      rmSync(sessionFile, { force: true });
     } catch {}
-    ok({ status: 'STALE_SESSION_REMOVED', port: PORT });
+    ok({ status: 'STALE_SESSION_REMOVED', port: PORT, ...owner });
     return;
   }
 
@@ -309,6 +421,7 @@ async function cleanupSession() {
       matchesTrackedSession: true,
       wouldKill: true,
       profileDir: session.profileDir,
+      ...owner,
     });
     return;
   }
@@ -338,16 +451,21 @@ async function cleanupSession() {
   }
 
   try {
-    rmSync(SESSION_FILE, { force: true });
+    rmSync(sessionFile, { force: true });
   } catch {}
   console.error('[BROWSER] Session cleaned up');
-  ok({ status: 'CLEANED_UP', port: PORT });
+  ok({ status: 'CLEANED_UP', port: PORT, pid: session.pid, ...owner });
 }
 
 if (CLEANUP) {
   await cleanupSession();
   process.exit(0);
 }
+
+if (REAL_PROFILE && HEADLESS)
+  err(
+    '--profile drives the real profile in a visible window; drop --headless, or drop --profile for an isolated headless session.'
+  );
 
 const proxyConfig = loadProxyConfig();
 const effectiveProxyServer =
@@ -360,20 +478,34 @@ const proxyRequested = Boolean(effectiveProxyServer || effectiveProxyPacUrl);
 
 const existing = await checkRunning();
 if (existing) {
+  // Report which workspace's isolated session owns the reused browser, if any.
+  const owner = await discoverListenerSession(existing);
+  const notApplied = [
+    proxyRequested && 'proxy settings',
+    ENABLE_FEATURES && '--enableFeatures',
+    REAL_PROFILE && '--profile',
+    USER_AGENT && '--userAgent',
+    hasFlag('--windowSize') && '--windowSize',
+  ].filter(Boolean);
   ok({
     status: 'BROWSER_READY',
     wsUrl: existing.webSocketDebuggerUrl,
     port: PORT,
     reused: true,
     browser: existing.Browser,
+    ...(owner.session
+      ? {
+          isolated: true,
+          sessionFile: owner.sessionFile,
+          workspace: owner.workspace,
+        }
+      : {}),
     proxyConfigured: false,
     proxyRequested,
     enableFeaturesRequested: ENABLE_FEATURES || undefined,
-    warning: proxyRequested
-      ? 'Existing Chrome was reused; proxy settings cannot be applied to an already-running CDP session. Run cleanup or use another port for a fresh proxied session.'
-      : ENABLE_FEATURES
-        ? 'Existing Chrome was reused; --enableFeatures cannot be applied to an already-running CDP session. Run cleanup or use another port for a fresh session.'
-        : undefined,
+    warning: notApplied.length
+      ? `Existing Chrome was reused; ${notApplied.join(', ')} apply only when launching a fresh browser and were not applied. Run cleanup or use another port for a fresh session.`
+      : undefined,
   });
   process.exit(0);
 }
@@ -386,67 +518,21 @@ if (!chromePath)
 if (CHROME_PATH && !existsSync(CHROME_PATH))
   err(`Chrome not found at --chromePath: ${CHROME_PATH}`);
 
-const HOME = process.env.HOME ?? process.env.USERPROFILE;
-
-function isChromeRunning() {
-  if (platform() === 'darwin') {
-    try {
-      execSync('pgrep -x "Google Chrome" > /dev/null 2>&1');
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  if (platform() === 'linux') {
-    for (const name of [
-      'chrome',
-      'google-chrome',
-      'chromium',
-      'chromium-browser',
-    ]) {
-      try {
-        execSync(`pgrep -x "${name}" > /dev/null 2>&1`);
-        return true;
-      } catch {}
-    }
-    return false;
-  }
-  if (platform() === 'win32') {
-    try {
-      const out = execSync('tasklist /FI "IMAGENAME eq chrome.exe" /NH', {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
-      return out.includes('chrome.exe');
-    } catch {
-      return false;
-    }
-  }
-  return false;
-}
-
 let userDataDir;
 let usingIsolatedProfile = false;
 
-if (HEADLESS) {
-  mkdirSync(HEADLESS_PROFILE_DIR, { recursive: true });
-  userDataDir = HEADLESS_PROFILE_DIR;
-} else if (!REAL_PROFILE || isChromeRunning()) {
-  usingIsolatedProfile = true;
-  mkdirSync(HEADLESS_PROFILE_DIR, { recursive: true });
-  userDataDir = HEADLESS_PROFILE_DIR;
-  console.error(
-    REAL_PROFILE
-      ? '[BROWSER] Chrome already running (profile locked) - launching isolated CDP session'
-      : '[BROWSER] Visible isolated profile (pass --profile <name> for the real profile, after approval)'
-  );
-} else {
-  userDataDir =
-    platform() === 'darwin'
-      ? `${HOME}/Library/Application Support/Google/Chrome`
-      : platform() === 'win32'
-        ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\User Data`
-        : `${HOME}/.config/google-chrome`;
+mkdirSync(CHROME_STATE_DIR, { recursive: true, mode: 0o700 });
+
+if (REAL_PROFILE) {
+  const plan = planRealProfile({
+    chromePath,
+    profile: PROFILE,
+    os: platform(),
+    env: process.env,
+    major: () => browserMajorVersion(chromePath, platform()),
+  });
+  if ('error' in plan) err(plan.error);
+  userDataDir = plan.userDataDir;
   console.error(
     '[BROWSER] WARNING: Using real user Chrome profile. CDP scripts will have access'
   );
@@ -456,6 +542,14 @@ if (HEADLESS) {
   console.error(
     '[BROWSER] WARNING: Use --headless for isolated inspection without profile access.'
   );
+} else {
+  usingIsolatedProfile = true;
+  mkdirSync(HEADLESS_PROFILE_DIR, { recursive: true });
+  userDataDir = HEADLESS_PROFILE_DIR;
+  if (!HEADLESS)
+    console.error(
+      '[BROWSER] Visible isolated profile (pass --profile <name> for the real profile, after approval)'
+    );
 }
 
 const chromeArgs = [
@@ -466,7 +560,7 @@ const chromeArgs = [
   '--disable-background-mode',
 ];
 
-if (!HEADLESS && !usingIsolatedProfile)
+if (!usingIsolatedProfile)
   chromeArgs.push(`--profile-directory=${PROFILE}`, '--restore-last-session');
 if (HEADLESS) chromeArgs.push('--headless=new', '--disable-dev-shm-usage');
 if (HEADLESS && platform() === 'linux') chromeArgs.push('--disable-gpu');
@@ -500,7 +594,7 @@ const child = spawn(chromePath, chromeArgs, {
 });
 child.unref();
 
-if (HEADLESS || usingIsolatedProfile) writeSession(child.pid);
+if (usingIsolatedProfile) writeSession(child.pid);
 
 let attempts = 0;
 while (attempts < 40) {
@@ -513,8 +607,8 @@ while (attempts < 40) {
       port: PORT,
       reused: false,
       browser: info.Browser,
-      isolated: HEADLESS || usingIsolatedProfile,
-      sessionFile: HEADLESS || usingIsolatedProfile ? SESSION_FILE : null,
+      isolated: usingIsolatedProfile,
+      sessionFile: usingIsolatedProfile ? SESSION_FILE : null,
       proxyConfigured: proxyRequested,
       enableFeaturesConfigured: ENABLE_FEATURES || undefined,
       windowSize: WINDOW_SIZE || undefined,
@@ -524,9 +618,24 @@ while (attempts < 40) {
   attempts++;
 }
 
-if ((HEADLESS || usingIsolatedProfile) && existsSync(HEADLESS_PROFILE_DIR)) {
+if (usingIsolatedProfile && existsSync(HEADLESS_PROFILE_DIR)) {
+  // The isolated child is ours: stop it before deleting the profile it holds.
+  try {
+    process.kill(child.pid, 'SIGKILL');
+  } catch {}
+  await waitForExit(child.pid, 2000);
   rmSync(HEADLESS_PROFILE_DIR, { recursive: true, force: true });
   rmSync(SESSION_FILE, { force: true });
+}
+if (!usingIsolatedProfile) {
+  // The real-profile browser we started never exposed CDP; close it gracefully so the
+  // profile is not left held by a window the caller cannot drive.
+  try {
+    process.kill(child.pid, 'SIGTERM');
+  } catch {}
+  err(
+    `Chrome did not expose CDP on port ${PORT} within 20s for the real profile and was asked to quit. This browser build may ignore --remote-debugging-port on its default data directory; use an isolated session with cookies --from-port or --from-storage-state.`
+  );
 }
 err(
   `Chrome did not respond on port ${PORT} after 20s. Try launching manually with --remote-debugging-port=${PORT}`

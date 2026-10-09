@@ -68,7 +68,7 @@ and generated tool contracts. The artifact registry cache is runtime-owned: each
 persistent, and there is no process-global cache. `crates/cli` owns `octocode` and
 `octocode-regex-worker`; `crates/runtime-napi` owns the runtime `cdylib` and its
 Node conversions. All five crates inherit one workspace version and remain
-unpublished Cargo packages. `check:crate-boundaries` validates these boundaries.
+unpublished Cargo packages.
 
 `crates/engine` is consumed as a Rust library with its default grammar set. PCRE2 and embedded ast-grep rewrite are unconditional; only `tree-sitter-cuda` is outside the default build. It exposes reusable algorithms, not public policy, and has no N-API surface; `crates/runtime-napi` does not depend on it. Engine errors carry a `reason` and an `ErrorKind`.
 

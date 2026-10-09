@@ -79,6 +79,21 @@ pub(super) fn map_pr(v: Value) -> Value {
     row
 }
 
+/// Drop what the query or the row already says: a `state` equal to the
+/// query's `state` filter, and a merged row's `createdAt` (its `mergedAt`
+/// dates it) unless the rows are sorted by creation (`keep_created`).
+pub(super) fn drop_implied(row: &mut Value, state: Option<&str>, keep_created: bool) {
+    let Some(fields) = row.as_object_mut() else {
+        return;
+    };
+    if state.is_some() && fields.get("state").and_then(Value::as_str) == state {
+        fields.shift_remove("state");
+    }
+    if !keep_created && fields.contains_key("mergedAt") {
+        fields.shift_remove("createdAt");
+    }
+}
+
 pub(super) fn concise_row(v: &Value) -> Value {
     json!(format!(
         "#{} {}",

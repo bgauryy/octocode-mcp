@@ -26,7 +26,7 @@ Config source of truth: `packages/octocode-config/config-contract.json`; contrib
 - Check with `$OCTO config --json` and one MCP session per relevant setting. Generated drift: `yarn workspace @octocodeai/config check:config-contract`.
 - Tool facts (fields, defaults, views, limits, tool and enabled-by-default counts) in each doc of the `references/surface-map.md` Docs row match live `schema` output and code. After every rename, search docs for the old name.
 - Keep one owner section per fact and link to it; keep `##`/`###` anchors stable. Example calls in `skills/*/` still validate against the live schema.
-- Gates: `node skills-dev/octocode-dev/scripts/dev.mjs docs:verify`, `node packages/octocode-native/scripts/check-doc-claims.cjs`. Doc repair beyond a fact fix → `octocode-documentation`.
+- Gate: `node skills-dev/octocode-dev/scripts/dev.mjs docs:verify`. Doc repair beyond a fact fix → `octocode-documentation`.
 
 Record per finding: layer, field or sentence, evidence (core `file:line` + live `schema` output), proposed change, owner repo.
 

@@ -20,13 +20,23 @@ for (const directory of ['tools', 'bin', 'tests'])
     if (result.status !== 0) throw Error(result.stderr);
   }
 const skill = join(root, '../../skills/octocode-chrome-devtools');
-const entries = readdirSync(skill);
-// Guidance only: the skill, its README, and its output format (output.md).
-if (
-  entries.some(entry => !['SKILL.md', 'README.md', 'output.md'].includes(entry))
-)
+const entries = readdirSync(skill, { recursive: true });
+// Guidance only: the skill, its README, its output format (output.md), and the
+// report renderer every public skill shares.
+const allowed = [
+  'SKILL.md',
+  'README.md',
+  'output.md',
+  'scripts',
+  join('scripts', 'render-report.mjs'),
+];
+if (entries.some(entry => !allowed.includes(entry)))
   throw Error('Chrome skill must contain guidance only');
-if (readFileSync(join(skill, 'SKILL.md'), 'utf8').includes('scripts/'))
+if (
+  /packages\/octocode-chrome-devtools|\b(?:src|dist)\//.test(
+    readFileSync(join(skill, 'SKILL.md'), 'utf8')
+  )
+)
   throw Error(
     'Chrome skill must use package CLI/MCP, not implementation paths'
   );

@@ -72,6 +72,10 @@ fn range_start(query: &serde_json::Value) -> u64 {
     window.split_once('-').unwrap().0.parse().unwrap()
 }
 
+/// The extras of the full per-page receipt: every page and runner-up
+/// (`details`) and provider usage (`stats`).
+const VERBOSE: [&str; 2] = ["details", "stats"];
+
 /// The call input for one matrix (`{queries:[matrix]}`); an input that is
 /// already a call passes through.
 fn call(matrix: serde_json::Value) -> serde_json::Value {
@@ -82,7 +86,7 @@ fn call(matrix: serde_json::Value) -> serde_json::Value {
     }
 }
 
-/// The full per-page receipt (`debug:true`): these tests inspect page
+/// The full per-page receipt (`extras: details, stats`): these tests inspect page
 /// internals (scopes, sources, runner-up matches) the default output compacts.
 fn verbose(input: serde_json::Value) -> serde_json::Value {
     let mut input = call(input);
@@ -92,7 +96,7 @@ fn verbose(input: serde_json::Value) -> serde_json::Value {
     {
         queries
             .iter_mut()
-            .for_each(|query| query["debug"] = json!(true));
+            .for_each(|query| query["extras"] = json!(VERBOSE));
     }
     input
 }
@@ -987,7 +991,11 @@ async fn page_budget_continuation_round_trips_through_the_public_contract() {
         .unwrap();
     let assess = outcome.structured_content["queries"][0]["next"]["clasify"]["queries"][0].clone();
     assert!(assess.is_object(), "{}", outcome.structured_content);
-    assert_eq!(assess["debug"], true, "a debug walk continues as one");
+    assert_eq!(
+        assess["extras"],
+        json!(VERBOSE),
+        "an extras walk continues as one"
+    );
     assert_eq!(
         assess["questions"][0]["id"], "relevant",
         "Continuation must preserve question identity"
@@ -2855,10 +2863,10 @@ async fn symbols_scout_judges_each_file_once_across_outline_pages() {
     runtime.close().await;
 }
 
-/// The default output is compact; `debug:true` returns the full receipt
-/// plus provider usage.
+/// The default output is compact; `extras: details, stats` returns the full
+/// receipt plus provider usage.
 #[tokio::test]
-async fn a_matrix_compacts_by_default_and_debug_returns_the_full_receipt() {
+async fn a_matrix_compacts_by_default_and_extras_return_the_full_receipt() {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
@@ -2904,13 +2912,13 @@ async fn a_matrix_compacts_by_default_and_debug_returns_the_full_receipt() {
         "{}",
         compact.structured_content
     );
-    unified["debug"] = json!(true);
+    unified["extras"] = json!(VERBOSE);
     unified["questions"][0]["ask"] = json!("the fact, judged again");
-    let debug = runtime
-        .execute("debug".into(), "clasify".into(), call(unified))
+    let full = runtime
+        .execute("extras".into(), "clasify".into(), call(unified))
         .await
-        .expect("debug is accepted");
-    let query = &debug.structured_content["queries"][0];
+        .expect("extras are accepted");
+    let query = &full.structured_content["queries"][0];
     assert_eq!(query["usage"]["calls"], 1, "{query}");
     assert_eq!(query["usage"]["inputTokens"], 7);
     assert_eq!(query["usage"]["outputTokens"], 2);
@@ -3283,7 +3291,7 @@ async fn an_oversized_next_page_shrinks_and_the_replay_advances() {
     let runtime = provider_runtime(&workspace, &server);
     let mut input = json!({
         "id":"walk","reasoning":"Walk the file in bounded pages.","mainGoal":"Decide the next read.",
-        "debug":true,
+        "extras":VERBOSE,
         "resources":[{"id":"doc","maxChars":400,"tool":"localFetch","query":{
             "path":file,"unit":"lines","length":8
         }}],
@@ -3315,7 +3323,7 @@ async fn an_oversized_next_page_shrinks_and_the_replay_advances() {
         }
         match query["next"].get("clasify") {
             Some(next) => {
-                assert_eq!(next["queries"][0]["debug"], true, "{next}");
+                assert_eq!(next["queries"][0]["extras"], json!(VERBOSE), "{next}");
                 input = next.clone();
             }
             None => break,
@@ -3347,7 +3355,7 @@ async fn an_oversized_ranges_read_is_judged_in_fitting_windows() {
     let runtime = provider_runtime(&workspace, &server);
     let mut input = json!({
         "id":"ranges","reasoning":"Judge one range in bounded pages.","mainGoal":"Decide the next read.",
-        "debug":true,
+        "extras":VERBOSE,
         "resources":[{"id":"doc","maxChars":400,"tool":"localFetch","query":{
             "path":file,"ranges":["3-22"]
         }}],
@@ -3404,7 +3412,7 @@ async fn an_oversized_whole_file_read_shrinks_into_line_chunks() {
     let runtime = provider_runtime(&workspace, &server);
     let mut input = json!({
         "id":"whole","reasoning":"Judge the whole file in bounded pages.","mainGoal":"Decide the next read.",
-        "debug":true,
+        "extras":VERBOSE,
         "resources":[{"id":"doc","maxChars":400,"tool":"localFetch","query":{"path":file}}],
         "questions":[{"id":"q","type":"yesno","ask":"Is the marker stated?"}]
     });
@@ -3554,7 +3562,7 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
     let file = file.to_string_lossy().into_owned();
     let runtime = provider_runtime(&workspace, &server);
     let mut kinds = std::collections::BTreeSet::new();
-    for (debug, briefed, ask) in [
+    for (full, briefed, ask) in [
         (false, false, "Where the walk sets its filler value"),
         (true, false, "Where the walk sets its filler value"),
         (false, true, "Where the walk sets its filler value"),
@@ -3563,8 +3571,8 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
             "resources":[{"id":"f","maxChars":20000,"tool":"localFetch","query":{"path":file}}],
             "questions":[{"id":"t","type":"locate","ask":ask}]
         });
-        if debug {
-            input["debug"] = json!(true);
+        if full {
+            input["extras"] = json!(VERBOSE);
         }
         if briefed {
             input["mainGoal"] = json!("Find where the walk sets its value.");
@@ -3593,7 +3601,7 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
                 );
                 let tips = query["hints"]["text"].to_string();
                 assert!(!tips.contains("hints.read"), "no read-first prose: {query}");
-                if !debug {
+                if !full {
                     assert_eq!(query["hints"]["read"]["tool"], "localFetch", "{query}");
                 }
                 let keys: Vec<&String> = query.as_object().unwrap().keys().collect();
@@ -3611,13 +3619,13 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
         assert!(calls >= 2, "{ask}: the file spans several calls");
     }
     // A literal target routes straight to its literal search (no walk).
-    for (debug, briefed) in [(true, false), (false, true)] {
+    for (full, briefed) in [(true, false), (false, true)] {
         let mut input = json!({
             "resources":[{"id":"f","maxChars":20000,"tool":"localFetch","query":{"path":file}}],
             "questions":[{"id":"t","type":"locate","ask":"Where walk_filler_7 is set"}]
         });
-        if debug {
-            input["debug"] = json!(true);
+        if full {
+            input["extras"] = json!(VERBOSE);
         }
         if briefed {
             input["mainGoal"] = json!("Find where the walk sets its value.");
@@ -4098,7 +4106,7 @@ async fn an_oversized_github_ranges_read_is_judged_in_fitting_windows() {
     ]);
     let mut input = json!({
         "id":"ghranges","reasoning":"Judge one range in bounded pages.","mainGoal":"Decide the next read.",
-        "debug":true,
+        "extras":VERBOSE,
         "resources":[{"id":"doc","maxChars":400,"tool":"ghGetFileContent","query":{
             "owner":"o","repo":"r","path":"uneven.txt","ref":"main","ranges":["3-22"]
         }}],

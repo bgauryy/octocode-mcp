@@ -43,7 +43,7 @@ The `read` query passes the input security policy first: a rejected query is dro
 - Symlinks are revalidated against their canonical targets; escaped descendants are rejected.
 - File type, size, mutation, and snapshot checks run before evidence is returned.
 
-Denial messages name the path as requested or relative to `~`; outside-root denials list the allowed roots. With `debug: true`, a `localFetch` row's `resolvedPath` holds the resolved path, which can be absolute.
+Denial messages name the path as requested or relative to `~`; outside-root denials list the allowed roots. With `extras:["echo"]`, a `localFetch` row's `resolvedPath` holds the resolved path, which can be absolute.
 
 `OCTOCODE_ENABLE_LOCAL=false` disables local tools. `OCTOCODE_BETA=true` (or `local.beta: true`; shell or home config only; default off) gates the CLI-only `astTopology` and `astRewrite`, including the `astRewrite` hash-guarded apply path. MCP never exposes them.
 

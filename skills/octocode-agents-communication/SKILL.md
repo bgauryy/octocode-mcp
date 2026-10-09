@@ -84,6 +84,8 @@ Use the Node.js and Python versions supported by the installed release, with Pyt
 
 Omitting `--database` uses the shared Octocode home database. Choose one database for all collaborators and keep each agent's actual checkout path. Hooks and native delivery are optional host integrations; load the package's setup guide when needed. Installing this skill alone does not configure them.
 
+If a command reports an incompatible store, run `db info --json`. When it shows `compatible: false` with an older `schemaVersion`, stop clients still using that database, then run `db migrate --backup <absolute new path>`; it snapshots first, keeps all history, and rolls back on error. Report the migration and backup path; do not switch to another coordination tool silently.
+
 If `npx` cannot resolve the package, report the registry or access error. A workspace-local executable or local archive can verify the runtime but does not prove a fresh registry installation works.
 
 ## Related skills
@@ -93,4 +95,4 @@ If `npx` cannot resolve the package, report the registry or access error. A work
 
 ## Output
 
-See [output.md](output.md) for the response and saved-artifact format.
+See [output.md](output.md) for the response and saved-artifact format. Save substantial results under `<workspace>/.octocode/octocode-agents-communication/`; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).

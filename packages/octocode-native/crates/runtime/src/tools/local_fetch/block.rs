@@ -267,7 +267,7 @@ pub fn widen_matches(
     }
     if oversized > 0 {
         warnings.push(format!(
-            "block: {oversized} match(es) sit in declarations over {BLOCK_MAX_LINES} lines; those keep their context window, and hints.readBlock reads the rest of each declaration."
+            "block: {oversized} match(es) sit in declarations over {BLOCK_MAX_LINES} lines; those keep their context window; read the rest of each with ranges."
         ));
     }
     widened

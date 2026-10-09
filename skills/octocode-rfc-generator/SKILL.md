@@ -21,7 +21,7 @@ flowchart LR
 
 ## One document
 
-For an RFC task, keep the decision, prerequisites, implementation sequence, success criteria, rollback, open questions, and citations in **one Markdown file**. Default to `RFC.md` in the requested or established RFC location. Do not generate companion plan, KPI, resource, prerequisite, audit, or receipt files. Link existing source code and authoritative documentation instead of copying them. Create another deliverable only when the user explicitly requests it.
+For an RFC task, keep the decision, prerequisites, implementation sequence, success criteria, rollback, open questions, and citations in **one Markdown file**. Save it at `<workspace>/.octocode/octocode-rfc-generator/<YYYY-MM-DD>-<slug>/RFC.md` unless the user names another path (see [output](output.md#delivery)). Do not generate companion plan, KPI, resource, prerequisite, audit, or receipt files. Link existing source code and authoritative documentation instead of copying them. Create another deliverable only when the user explicitly requests it.
 
 One file gives reviewers a continuous argument and one diff to discuss; it keeps acceptance criteria beside the design and prevents competing copies of the plan. Use sections and anchors to navigate a long RFC. A standalone plan request can produce one plan document without inventing an open decision.
 
@@ -46,6 +46,10 @@ The structure draws on the [Rust RFC template](https://github.com/rust-lang/rfcs
 
 Check the proposal against current sources, implementation dependencies, acceptance criteria, and relevant project checks. Use `octocode-documentation` for language and readability. Report material gaps in plain language; keep diagnostic records outside the deliverable. Reuse the user's authorization for scoped saves and edits. Writing an RFC does not itself authorize implementation.
 
+## Output
+
+Use [output.md](output.md) for structure, language, and delivery. Save every RFC at `<workspace>/.octocode/octocode-rfc-generator/<YYYY-MM-DD>-<slug>/RFC.md`, render its folder with [render-report.mjs](scripts/render-report.mjs), and reply with the HTML path for the person and the `RFC.md` path for agents. List earlier RFCs as JSON with its `--manifest` option before writing one that may repeat them.
+
 ## Resources
 
 | When needed | Read |
@@ -55,7 +59,7 @@ Check the proposal against current sources, implementation dependencies, accepta
 | Find questions that can block the decision or execution | [completeness](references/rfc-completeness.md) |
 | Choose a diagram that explains the design | [diagrams](references/rfc-diagrams.md) |
 | A typed judgment could help resolve a remaining disagreement | [optional clasify tool review](references/clasify-review.md) |
-| An explicitly requested HTML view of the RFC | [render-rfc.mjs](scripts/render-rfc.mjs), using [viewer shell](assets/rfc-viewer.html) and [viewer behavior](assets/rfc-viewer.js) |
+| The local HTML view shown to the user after saving, or the JSON catalog of earlier reports | [render-report.mjs](scripts/render-report.mjs) |
 
 ## Related skills
 

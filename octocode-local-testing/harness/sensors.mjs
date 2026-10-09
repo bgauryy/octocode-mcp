@@ -24,7 +24,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const HINT_KEYS = ['hints', 'next'];
 export const isHintKey = key => HINT_KEYS.includes(key);
 /** Brief and presentation fields: never part of a continuation's identity. */
-export const BRIEF_KEYS = ['mainGoal', 'reasoning', 'debug'];
+export const BRIEF_KEYS = ['mainGoal', 'reasoning', 'extras'];
 export const isHint = v => !!v && typeof v === 'object' && !Array.isArray(v) && typeof v.tool === 'string' && v.query && typeof v.query === 'object';
 /** `{name, hint}` for each executable entry of a continuation container (a map of named hints, an array, or one hint). */
 export function hintEntries(container, name = 'hints') {
@@ -209,7 +209,7 @@ const VERBOSE_CHECKS = {
 };
 /**
  * Default-output fields from the verbose list in one response. Rows queried
- * with `debug:true` are skipped (the sensor measures `debug:false` output).
+ * with a non-empty `extras` are skipped (the sensor measures default output).
  * Returns {ruleId: {count, bytes}} plus `debugRows`.
  */
 export function verboseFields(entry, rules) {
@@ -230,7 +230,7 @@ export function verboseFields(entry, rules) {
   if (rows) {
     rows.forEach((row, i) => {
       const query = queries[row?.index ?? i] ?? queries[0] ?? {};
-      if (query?.debug === true) { out.debugRows = (out.debugRows ?? 0) + 1; return; }
+      if (query?.extras?.length) { out.debugRows = (out.debugRows ?? 0) + 1; return; }
       const hints = allHintEntries(row).flatMap(e => e.hint.query.queries ?? []);
       visit(row, { inHint: false, hints, query });
     });
@@ -357,7 +357,7 @@ export function selfTest() {
   assert(v['warnings-name-list']?.count === 1, 'verbose: inlined skipped-file name list reported');
   const quiet = verboseFields({ args: { queries: [{}] }, raw: { results: [{ data: { pagination: { hasMore: true, nextPage: 2 } } }], responsePagination: { hasMore: true } } }, rules);
   assert(Object.keys(quiet).length === 0, 'verbose: needed pagination (hasMore:true, no duplicate) not reported');
-  assert(verboseFields({ args: { queries: [{ debug: true }] }, raw: { results: [{ data: { responsePagination: { hasMore: false } } }] } }, rules).debugRows === 1, 'verbose: debug:true rows skipped');
+  assert(verboseFields({ args: { queries: [{ extras: ['echo'] }] }, raw: { results: [{ data: { responsePagination: { hasMore: false } } }] } }, rules).debugRows === 1, 'verbose: extras rows skipped');
   const partial = (providerLimit) => verboseFields({ args: { queries: [{}] }, raw: { results: [{ data: { isPartial: true, partialReasons: ['GitHub code search caps results at 1000'], providerLimit } }] } }, rules);
   assert(Object.keys(partial({ maxResults: 1000 })).length === 0, 'verbose: isPartial + partialReasons + providerLimit{maxResults} carry different facts (not reported)');
   assert(partial({ maxResults: 1000, reason: 'GitHub code search caps results at 1000' })['partial-reason-repeated']?.count === 1, 'verbose: providerLimit.reason repeating a partialReasons entry reported');

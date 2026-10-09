@@ -10,7 +10,6 @@ pub(crate) use validate::{levenshtein, qualifier_terms};
 
 use crate::tools::id::ToolId;
 pub use prepare::{ContractInputError, prepare};
-#[cfg(test)]
 pub(crate) use schema_facts::query_schema_value;
 pub use schema_facts::{query_schema_max, query_schema_number};
 pub(crate) use schema_facts::{resolve_ref, restorable_fields};
@@ -258,6 +257,20 @@ pub const fn contract_json() -> &'static str {
     generated::CONTRACT_JSON
 }
 
+/// CLI discovery content (`schema` views, `<tool> --help` sections), parsed
+/// on first use. Built from the same contract; the build checks the fingerprint.
+pub fn cli_presentation() -> Result<&'static serde_json::Value, &'static str> {
+    static PRESENTATION: std::sync::OnceLock<Result<serde_json::Value, String>> =
+        std::sync::OnceLock::new();
+    PRESENTATION
+        .get_or_init(|| {
+            serde_json::from_str(generated::CLI_PRESENTATION_JSON)
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(String::as_str)
+}
+
 /// Provenance written by `@octocodeai/config`: core package version, contract
 /// fingerprint, and the digest of the embedded contract bytes.
 #[cfg(test)]
@@ -386,8 +399,8 @@ mod contract_owner_tests {
         assert_eq!(queries.len(), 2);
         assert_eq!(queries[0]["path"], "/tmp/a");
         assert_eq!(queries[1]["path"], "/tmp/b");
-        assert_eq!(queries[0]["debug"], false);
-        assert_eq!(queries[1]["debug"], false);
+        assert!(queries[0].get("extras").is_none());
+        assert!(queries[1].get("extras").is_none());
         let split = prepare_many_and_validate(
             "localFetch",
             json!({"queries":[
@@ -706,7 +719,7 @@ mod contract_owner_tests {
                                 "number":463,
                                 "sections":["body"],
                                 "mainGoal": "test", "reasoning":"Read the optional body.",
-                                "debug":false
+                                "extras":["details"]
                             }]}
                         }
                     }

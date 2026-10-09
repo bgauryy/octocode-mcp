@@ -94,13 +94,13 @@ impl ArtifactSearchQuery {
         }
     }
 
-    /// `debug:true`: keep diagnostic row fields (registry URLs).
-    pub(crate) fn debug(&self) -> bool {
+    /// Whether the query's `extras` names `kind`.
+    pub(crate) fn wants(&self, kind: crate::contracts::tool_types::ExtraKind) -> bool {
         match self {
-            Self::NpmExact(query) => query.debug,
-            Self::NpmDiscovery(query) => query.debug,
-            Self::RegistryExact(query) => query.debug,
-            Self::RegistryDiscovery(query) => query.debug,
+            Self::NpmExact(query) => query.extras.contains(&kind),
+            Self::NpmDiscovery(query) => query.extras.contains(&kind),
+            Self::RegistryExact(query) => query.extras.contains(&kind),
+            Self::RegistryDiscovery(query) => query.extras.contains(&kind),
         }
     }
 

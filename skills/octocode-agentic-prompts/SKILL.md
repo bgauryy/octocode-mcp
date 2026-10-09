@@ -71,4 +71,4 @@ Run a focused behavioral evaluation before claiming improved reliability or acti
 
 ## Output
 
-Use [output.md](output.md) for replacement text, review findings, and change summaries.
+Use [output.md](output.md) for replacement text, review findings, and change summaries. Edit prompts at their source path; save standalone reviews and undestined drafts under `<workspace>/.octocode/octocode-agentic-prompts/`. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).

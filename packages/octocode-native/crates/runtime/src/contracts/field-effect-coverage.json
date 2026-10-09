@@ -46,8 +46,9 @@
         "carry": [
           "consumed"
         ],
-        "debug": [
-          "consumed"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "id": [
           "consumed"
@@ -149,8 +150,9 @@
         "created": [
           "forwarded"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "keywords": [
           "forwarded"
@@ -211,8 +213,9 @@
           "forwarded",
           "output-control"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "extensions": [
           "forwarded"
@@ -274,8 +277,9 @@
         ]
       },
       "fields": {
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "include": [
           "forwarded"
@@ -356,8 +360,9 @@
           "forwarded",
           "output-control"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "forceRefresh": [
           "forwarded"
@@ -436,8 +441,9 @@
           "forwarded",
           "output-control"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "keywords": [
           "forwarded"
@@ -530,8 +536,9 @@
           "forwarded",
           "output-control"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "filePage": [
           "forwarded",
@@ -642,8 +649,9 @@
         ]
       },
       "fields": {
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "ecosystem": [
           "forwarded"
@@ -686,8 +694,9 @@
       "variants": [],
       "discriminators": {},
       "fields": {
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "forceRefresh": [
           "forwarded"
@@ -739,8 +748,9 @@
           "consumed",
           "output-control"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "defaultExcludes": [
           "consumed"
@@ -855,9 +865,9 @@
           "consumed",
           "security-policy"
         ],
-        "debug": [
-          "workflow-metadata",
-          "output-control"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "defaultExcludes": [
           "consumed"
@@ -983,9 +993,9 @@
         "captureText": [
           "consumed"
         ],
-        "debug": [
-          "workflow-metadata",
-          "output-control"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "defaultExcludes": [
           "consumed"
@@ -1120,8 +1130,9 @@
           "consumed",
           "security-policy"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "defaultExcludes": [
           "consumed"
@@ -1212,9 +1223,9 @@
         "constraints": [
           "consumed"
         ],
-        "debug": [
-          "workflow-metadata",
-          "output-control"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "defaultExcludes": [
           "consumed"
@@ -1329,8 +1340,9 @@
           "consumed",
           "output-control"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "fullContent": [
           "consumed",
@@ -1412,8 +1424,9 @@
           "consumed",
           "output-control"
         ],
-        "debug": [
-          "workflow-metadata"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "depth": [
           "consumed"

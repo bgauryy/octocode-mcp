@@ -284,7 +284,6 @@ async function main() {
     console.error(
       `[CDP_RUNNER] Opened new tab (${tab.id}) -> ${openUrl}${pendingNavigate ? ` (pending ${pendingNavigate})` : ''}`
     );
-    await new Promise(r => setTimeout(r, 800));
   } else if (TARGET_ID) {
     const targets = await getTargets();
     const t = targets.find(x => x.id === TARGET_ID);
@@ -346,6 +345,24 @@ async function main() {
 
   const cdp: Awaited<ReturnType<typeof createSession>> & Record<string, any> =
     await createSession(targetWsUrl, targetInfo);
+  // A tab opened on about: or data: is usable once its document has loaded.
+  if (openedTabId)
+    await cdp
+      .send(
+        'Runtime.evaluate',
+        {
+          expression:
+            "document.readyState === 'complete' || new Promise(resolve => addEventListener('load', resolve, { once: true }))",
+          awaitPromise: true,
+        },
+        undefined,
+        { timeoutMs: 15000 }
+      )
+      .catch(error =>
+        console.error(
+          `[CDP_RUNNER] New tab load not confirmed: ${error.message}`
+        )
+      );
   cdp.foreground = async () => {
     if (targetInfo.type !== 'iframe') return cdp.send('Page.bringToFront');
     const browser = await createSession(version.webSocketDebuggerUrl, {

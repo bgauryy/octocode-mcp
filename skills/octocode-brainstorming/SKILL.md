@@ -75,7 +75,7 @@ The parent owns the final judgment. Recommend the best-supported direction and t
 | When needed | Read |
 |---|---|
 | Momentum, papers, or landscape sources | [research](references/research.md) |
-| A saved brief is requested | [brief-template](references/brief-template.md) |
+| Saving a brief | [brief-template](references/brief-template.md) |
 
 ## Related skills
 
@@ -87,4 +87,4 @@ The parent owns the final judgment. Recommend the best-supported direction and t
 
 ## Output
 
-Use [output.md](output.md) for the comparison and recommendation, including each direction's rationale and evidence limits.
+Use [output.md](output.md) for the comparison and recommendation, including each direction's rationale and evidence limits. Save substantial results under `<workspace>/.octocode/octocode-brainstorming/`; [output.md](output.md) says when and how. Save and render substantial results as a local HTML page, and list earlier reports as JSON for agents, with [render-report.mjs](scripts/render-report.mjs).

@@ -48,7 +48,7 @@ node packages/octocode/out/octocode.js schema localFetch --view query
 
 ### Evidence and output integrity
 
-- With `debug: true`, check row-local `meta.evidence` (`kind`, `confidence`) and `meta.diagnostics` after response shaping, then the operation's own completeness fields (no universal `answerReady` or `complete` exists).
+- With `extras:["diagnostics"]`, check row-local `meta.evidence` (`kind`, `confidence`) and `meta.diagnostics` after response shaping, then the operation's own completeness fields (no universal `answerReady` or `complete` exists).
 - MCP must not publish `outputSchema`. Validate real structured results against the internal core/native validator, not static output types.
 - Verify `none` views against source after redaction, and transformed views separately; short is not faithful.
 - Keep source and revision anchors; search, AST, graph, package, and LSP evidence differ. Verify CLI compact output (`shared`, `root`) by reconstructed meaning.

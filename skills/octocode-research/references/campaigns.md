@@ -17,13 +17,13 @@ Load when one query is not enough: repeated Act → Observe → Learn loops, bud
 
 ## Durable brief
 
-Save a brief when requested or needed for an authorized handoff. Capture the question, scope, deciding evidence, gaps, and next checks. Keep internal evidence records separate from user-facing content. These JSON/JSONL examples serve a machine consumer; do not append them as metadata to a delivered brief:
+Save a brief under the rule in [output](../output.md), or when an authorized handoff needs one. Capture the question, scope, deciding evidence, gaps, and next checks. Keep internal evidence records separate from user-facing content. These JSON/JSONL examples serve a machine consumer; do not append them as metadata to a delivered brief:
 
 ```json
 {"id":"ev1","type":"exact-file","source":"local","locator":"src/example.ts:42","quoteOrFact":"X calls Y","quality":"primary"}
-{"id":"cl1","claim":"A supports X","status":"partial","confidence":"likely","supportingEvidenceIds":["ev1"],"counterEvidenceIds":[],"nextCheck":"read tests"}
+{"id":"cl1","claim":"A supports X","status":"Likely","confidence":"medium","supportingEvidenceIds":["ev1"],"counterEvidenceIds":[],"nextCheck":"read tests"}
 ```
-Choose status and quality labels that help the consumer. Summarize the decision in chat and link saved evidence rather than dumping raw records.
+Use the report header's values: status `Confirmed`, `Likely`, `Refuted`, or `Open`, and confidence `high`, `medium`, or `low`. Save the records as `<report-stem>.evidence.jsonl` beside the report, summarize the decision in chat, and link the saved evidence rather than dumping raw records.
 
 ## Repository landscape
 

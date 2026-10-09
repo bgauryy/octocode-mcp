@@ -1,9 +1,9 @@
-# Octocode benchmark skill
+# octocode-benchmark
 
-By-hand CLI comparison from markdown questions: a fresh isolated agent per question and
-per tool arm (baseline CLI vs `octocode <tool> '<json>'`), plus one blind judge agent per
-question. No harness, no JSON, no schemas — results measured in total characters through the model (model-in delivered into context + model-out commands/args + final answer).
+Rates an Octocode MCP version against other GitHub research tool setups (gh, gh lean,
+gh + RTK, gh + Headroom, other Octocode versions): fresh isolated agents answer the shared
+questions, a blind judge grades them, transcripts measure the characters, and the result is a
+matrix plus a dashboard.
 
-Start at `SKILL.md`. Concrete run recipe (preflight, measurement wrapper, spawn packets,
-outputs) in `references/run-with-agents.md`; matchup-README convention in
-`references/matchup-readme.md`.
+Start at [SKILL.md](SKILL.md). Results land in `packages/octocode-benchmark/results/`; see
+[output.md](output.md) for what a finished campaign produces.

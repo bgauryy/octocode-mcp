@@ -199,7 +199,7 @@ fn semantic_snapshot_ignores_paging_and_workflow_metadata() {
     let first: LspSearchQuery = serde_json::from_value(serde_json::json!({
         "operation": "references",
         "mainGoal": "test", "reasoning": "Find every reference.",
-        "debug": false,
+        "extras": ["receipts"],
         "path": "/repo/src/lib.rs",
         "symbolName": "run",
         "lineHint": 4,
@@ -1428,8 +1428,7 @@ fn failed_hierarchy_expansion_is_an_error_or_a_marked_partial_row() {
         "{listed:?}"
     );
     assert!(
-        crate::tools::id::ToolId::LspSearch
-            .verbose_paths()
+        crate::response::extras::all_paths(crate::tools::id::ToolId::LspSearch)
             .contains(&"results[].data.expansionFailures")
     );
 }
@@ -2830,14 +2829,17 @@ fn file_level_partial_clears_when_text_files_match() {
         "operation": "references", "path": root.join("a.ts").to_string_lossy(),
         "symbolName": "foo", "lineHint": 1
     }));
-    let row = || {
-        serde_json::json!({"payload": {"kind": "references",
-        "coverage": {"scope": "languageServer", "exhaustive": false}}})
-    };
+    let row = || serde_json::json!({"payload": {"kind": "references"}});
     // One file only the text scan sees: flagged, and the lead lists it.
     scope.answer([root.join("a.ts").to_string_lossy()]);
     let mut partial = row();
-    flag_partial(&mut partial, &q, "importerScanCapped", "capped", &scope);
+    flag_partial(
+        &mut partial,
+        &q,
+        "importerScanCapped",
+        Some("capped"),
+        &scope,
+    );
     assert_eq!(partial["isPartial"], true, "{partial}");
     // The importer cap is a window, not a terminal limit:
     // `next.nextImporterPage` verifies the unchecked candidates.
@@ -2856,7 +2858,13 @@ fn file_level_partial_clears_when_text_files_match() {
     // reason is moot.
     scope.answer([root.join("b.ts").to_string_lossy()]);
     let mut agreed = row();
-    flag_partial(&mut agreed, &q, "importerScanCapped", "capped", &scope);
+    flag_partial(
+        &mut agreed,
+        &q,
+        "importerScanCapped",
+        Some("capped"),
+        &scope,
+    );
     assert!(agreed.get("isPartial").is_none(), "{agreed}");
     assert!(agreed.get("next").is_none(), "{agreed}");
     assert_eq!(
@@ -2886,10 +2894,15 @@ fn site_level_partial_survives_matching_counts() {
         "symbolName": "get", "lineHint": 1
     }));
     let mut row = serde_json::json!({"payload": {"kind": "references"}});
-    flag_partial(&mut row, &q, "dynamicDispatch", "dynamic", &scope);
+    flag_partial(&mut row, &q, "dynamicDispatch", Some("dynamic"), &scope);
     assert_eq!(row["isPartial"], true, "{row}");
     assert_eq!(row["payload"]["coverage"]["textOnlyFiles"], 0, "{row}");
-    assert_eq!(row["payload"]["coverage"]["reason"], "dynamicDispatch");
+    assert_eq!(
+        row["partialReasons"],
+        serde_json::json!(["dynamicDispatch"]),
+        "{row}"
+    );
+    assert!(row["payload"]["coverage"].get("reason").is_none(), "{row}");
     // No file to list: the lead searches the whole scope.
     assert_eq!(
         row["next"]["textSearch"]["query"]["queries"][0]["path"],

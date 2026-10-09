@@ -417,7 +417,7 @@ fn tool_hints(state: &Value, query: &Value) -> Vec<String> {
 }
 
 /// A lead's query without what the read inherited from clasify: the default
-/// `debug:false`, the brief (`mainGoal`, `reasoning`), and the run's
+/// the brief (`mainGoal`, `reasoning`), and the run's
 /// `pageSize`, which clasify may have lowered to its candidate budget. A
 /// paging lead (`page`) keeps its size: its offset depends on it.
 fn agent_lead(lead: &Value, run: &Value) -> Value {
@@ -429,9 +429,6 @@ fn agent_lead(lead: &Value, run: &Value) -> Value {
     for row in rows.into_iter().filter_map(Value::as_object_mut) {
         row.remove("mainGoal");
         row.remove("reasoning");
-        if row.get("debug") == Some(&Value::Bool(false)) {
-            row.remove("debug");
-        }
         if !row.contains_key("page")
             && run.get("pageSize").is_some()
             && row.get("pageSize") == run.get("pageSize")
@@ -1345,17 +1342,17 @@ mod tests {
     }
 
     /// A lead in an error hint reads as the agent would send it: no
-    /// `debug:false`, no brief, and not the page size clasify ran the read
+    /// brief, and not the page size clasify ran the read
     /// with. A paging lead keeps its size (its page offset depends on it).
     /// Each rendered lead still passes its tool's input contract.
     #[test]
     fn error_leads_render_without_clasify_internal_fields() {
         let run = json!({"operation":"pullRequest","owner":"o","repo":"r","keywords":["zz"],
-            "pageSize":12,"debug":false,"mainGoal":"g","reasoning":"why"});
-        let broaden = json!({"operation":"pullRequest","debug":false,"pageSize":12,
+            "pageSize":12,"mainGoal":"g","reasoning":"why"});
+        let broaden = json!({"operation":"pullRequest","pageSize":12,
             "mainGoal":"g","reasoning":"why","owner":"o","repo":"r"});
         let paged = json!({"operation":"pullRequest","owner":"o","repo":"r","keywords":["zz"],
-            "page":2,"pageSize":12,"debug":false});
+            "page":2,"pageSize":12});
         let state = json!({"results":[{"index":0,"status":"empty","data":{"pullRequests":[],"next":{
             "broadenSearch":{"tool":"ghSearchHistory","query":{"queries":[broaden]}},
             "nextPage":{"tool":"ghSearchHistory","query":{"queries":[paged]}}
@@ -1451,7 +1448,7 @@ mod tests {
         ] {
             let mut query = json!({
                 "operation":"pullRequest","owner":"example","repo":"repo","number":1,
-                "mainGoal": "test", "reasoning":"Inspect selected evidence","debug":false
+                "mainGoal": "test", "reasoning":"Inspect selected evidence"
             });
             query
                 .as_object_mut()

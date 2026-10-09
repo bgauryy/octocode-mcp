@@ -21,7 +21,7 @@ Compact JSON only: `ok`, `sessionId`, `sessionDir`, `route`, `status`, `pages`, 
 - Before extraction, define the target schema or claim list. Record route, source URL, status, content type, and fetch time in `sources.jsonl`.
 - Emit counts and 3–5 sample rows for structured extraction. Spot-check critical facts against raw HTML or source snippets; cross-check important claims with another selector or source when possible.
 - Mark partial, blocked, transformed, or inferred data explicitly. Markdown transformation and AI summaries are not authoritative without exact source evidence.
-- Store rows as JSONL in `extracts/`, compact evidence excerpts in `snippets/`, and the narrative in `reports/summary.md`.
+- Store rows as JSONL in `extracts/` and compact evidence excerpts in `snippets/`. `reports/summary.md` is the script's session overview; write the narrative as the saved report under `<workspace>/.octocode/octocode-scraping/` (see [output](../output.md)) and link this session folder from it.
 
 ## Quality checks
 

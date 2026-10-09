@@ -2,6 +2,8 @@ node_modules
 # Stale test temp dirs — tests must use os.tmpdir(), not package dir
 .tmp-*
 build
+# Cargo build-script modules (`build.rs` includes them by #[path]); source, not output.
+!packages/octocode-native/crates/runtime/build/
 dist
 **/.octocode-build.lock
 .yarn/install-state.gz

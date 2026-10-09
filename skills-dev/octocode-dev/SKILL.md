@@ -35,19 +35,11 @@ Paths: `<repo>` is the monorepo root. `CORE` is `../octocode-mcp-host/packages/o
 
 ## Hard rules
 
-- Never `git commit` or `git stash`. Leave changes in the working tree.
-- Contracts have one pipeline: edit CORE → build core → `yarn contracts:regen` → `yarn workspace @octocodeai/octocode-native build:dev`.
-- Never hand-write a tool wire type (TS interface, Zod copy, or serde query/result struct). Never hand-edit `packages/octocode-config/contract/`. Never add tool logic or guidance to an interface package.
-- Declare and implement each new contract field or discriminator in `crates/runtime/src/contracts/field-effect-coverage.json`.
-- Config flows through `@octocodeai/config`. Never reimplement home, env propagation, or `.env` parsing.
-- Never lower coverage floors or special-case tests.
-- After a native, engine, or CLI change: `yarn workspace @octocodeai/octocode-native build:dev` → `yarn workspace octocode build:dev` (or `octocode-mcp`) → `$OCTO config --json && $OCTO schema` → call the changed tool.
-- An MCP server started before the rebuild serves the old contract. Restart it before you judge behavior.
-- A core/native fingerprint mismatch means regenerate and rebuild. Never use `OCTOCODE_ALLOW_CONTRACT_DRIFT`.
+The working, contract and change rules live in `<repo>/AGENTS.md`. Rebuild order after a native, engine, or CLI change: `yarn workspace @octocodeai/octocode-native build:dev` → `yarn workspace octocode build:dev` (or `octocode-mcp`) → `$OCTO config --json && $OCTO schema` → call the changed tool.
 
 ## Task runner
 
-Root `package.json` keeps only `build:native:all`, `platforms:check`, `lint:fix`, `test:quiet`, `contracts:regen`. Run every other repo task with `$DEV`. Extra arguments pass through; `$DEV --help` lists all tasks.
+Root `package.json` keeps only `build:native:all`, `lint:fix`, `test:quiet`, `contracts:regen`. Run every other repo task with `$DEV`. Extra arguments pass through; `$DEV --help` lists all tasks.
 
 | Need | Command |
 |---|---|

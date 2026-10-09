@@ -1,5 +1,6 @@
 //! ghStructure: a known repository's tree at one commit, optionally written
 //! to a local directory (`materialize`).
+use crate::contracts::tool_types::ExtraKind;
 use crate::tools::gh_shared::{
     GhFailure, PathRecovery, RepoPath, locate_path, missing_path, parent_dir, search_failure,
     tree_recovery, with_ref_recovery,
@@ -252,10 +253,12 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
         value["commitSha"] = json!(commit_sha);
     }
     page.paginate(&mut value);
-    // A listing states when each entry last changed; a materialized page
-    // hands its files to local tools and stays undated.
+    // With `extras: ["details"]` a listing states when each entry last
+    // changed (one GraphQL request per page, so only when asked); a
+    // materialized page hands its files to local tools and stays undated.
     let mut undated = 0;
-    if query.materialize != Some(true) {
+    let dated = query.extras.contains(&ExtraKind::Details);
+    if dated && query.materialize != Some(true) {
         let page_dates = dates::page_dates(
             provider,
             &query.owner,

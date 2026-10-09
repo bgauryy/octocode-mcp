@@ -9,7 +9,7 @@ or `./runtime`.
 
 ```sh
 $ npx octocode --version
-octocode 20.1.0
+octocode 20.2.0
 
 $ npx octocode schema
 {"kind":"octocode.toolCatalog","toolCount":16,"tools":[…]}      # availability + compact fields per tool
@@ -23,13 +23,22 @@ $ npx octocode localSearch '{"queries":[{"matchString":"ToolRuntime","path":"src
 
 Every tool is a first-class command under its canonical name — the same name
 and the same JSON query contract as the MCP server. There are no per-tool flag
-wrappers and no aliases. `npx octocode schema` (tool contracts, descriptions,
-examples, agent instructions) is served by the `octocode` npm launcher, which
-joins the core-owned presentation with this binary's hidden machine `catalog`
-(availability, field lists, enforcement fingerprint); the binary embeds no
-presentation of its own.
+wrappers and no aliases. `schema` (tool contracts, descriptions, examples,
+agent instructions) and each tool's `--help` (required fields and a runnable
+example) are served by the binary itself from discovery content that
+`@octocodeai/config` projects from the core contract at build time, so an agent
+with only the binary can discover every tool. The `octocode` npm launcher
+delegates both to it.
 
 ## Install
+
+### Via Homebrew (macOS and Linux, no Node)
+
+```sh
+brew install bgauryy/octocode/octocode
+```
+
+The formula installs the platform binary and its regex worker; Linux uses the glibc builds (glibc 2.30 or newer).
 
 ### Via npm (recommended — pre-built binary, no compilation)
 
@@ -127,13 +136,9 @@ packages/octocode-native/
 │   ├─ linux-x64-gnu/
 │   ├─ linux-x64-musl/
 │   └─ win32-x64-msvc/
-└─ scripts/                    ← build, staging, and release checks
+└─ scripts/                    ← build and staging
     ├─ build-native.cjs          ← hosts build → atomic staging
-    ├─ native-addon-utils.cjs    ← staging and smoke-run helpers
-    ├─ check-platform-binaries.cjs
-    ├─ check-pack-size.cjs, check-version-consistency.cjs, sync-versions.cjs
-    ├─ check-crate-boundaries.cjs, check-doc-claims.cjs, workspace-metadata.cjs
-    └─ graph-bench/              ← code-graph benchmark harness
+    └─ native-addon-utils.cjs    ← staging and smoke-run helpers
 ```
 
 Build a single platform and copy binaries:
@@ -149,9 +154,9 @@ cargo-xwin; `--jobs N` overrides the CPU/memory-derived concurrency):
 yarn workspace @octocodeai/octocode-native build:all
 ```
 
-Check all platform binaries are present before publishing:
+Before publishing, confirm a staged CLI reports the package version:
 ```sh
-yarn workspace @octocodeai/octocode-native platforms:check
+packages/octocode-native/npm/darwin-arm64/octocode --version
 ```
 
 ## Quick examples

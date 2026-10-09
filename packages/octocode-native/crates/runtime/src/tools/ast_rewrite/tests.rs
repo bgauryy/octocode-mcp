@@ -359,15 +359,15 @@ fn apply_returns_a_hash_receipt_not_the_preview_again() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// The receipt is the apply shape, not a debug-off view: `debug` adds the
-/// executable/isolation diagnostics but never re-sends the preview.
+/// The receipt is the apply shape, not an extras-off view: `receipts` adds
+/// the executable/isolation receipts but never re-sends the preview.
 #[test]
-fn debug_apply_still_returns_the_receipt() {
+fn receipts_apply_still_returns_the_receipt() {
     let (root, policy, security) = fixture();
     let (_, preview) = full_preview(&root, &policy, &security);
     let options = apply_options();
     let mut apply = preview["next"]["apply"]["query"]["queries"][0].clone();
-    apply["debug"] = json!(true);
+    apply["extras"] = json!(["receipts"]);
     let applied = rewrite_row(apply, &policy, &security, &NeverCancel, &options);
     assert_eq!(applied["transaction"]["committed"], true, "{applied}");
     assert!(applied.get("matches").is_none(), "{applied}");
@@ -636,7 +636,7 @@ fn preview_pages_carry_only_their_files_with_one_based_lines() {
     for dropped in ["afterHash", "patchBytes", "absolutePath"] {
         assert!(first_files[0].get(dropped).is_none(), "{dropped}: {first}");
     }
-    // The executable/isolation receipts are debug-only diagnostics.
+    // The executable/isolation receipts are a receipts extra.
     assert!(first.get("executable").is_none(), "{first}");
     assert!(first.get("isolation").is_none(), "{first}");
 
@@ -779,10 +779,10 @@ fn preview_pages_carry_only_the_patch_hunks_of_their_own_matches() {
 }
 
 #[test]
-fn debug_preview_keeps_full_match_and_file_rows() {
+fn details_preview_keeps_full_match_and_file_rows() {
     let (root, policy, security) = fixture();
     let mut preview_query = query(&root);
-    preview_query["debug"] = json!(true);
+    preview_query["extras"] = json!(["details"]);
     let preview = rewrite_row(
         preview_query,
         &policy,
@@ -1198,7 +1198,7 @@ fn embedded_engine_supports_inline_rules_without_an_executable() {
             "rule":{"pattern":"oldCall($A)"},
             "fix":"newCall($A)",
             "pageSize":100,
-            "debug":true
+            "extras":["receipts"]
         }),
         &policy,
         &security,

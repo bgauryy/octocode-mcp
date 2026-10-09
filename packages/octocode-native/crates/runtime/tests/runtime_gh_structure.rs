@@ -205,15 +205,21 @@ async fn materialize_reuses_only_recorded_files_at_their_size() {
     runtime.close().await;
 }
 
-/// Branches and tags page together: each page holds the same page number of
-/// both lists, and `next.nextPage` continues while either has more, so every
-/// ref is listed exactly once.
+/// With `extras: ["details"]` branches and tags page together: each page
+/// holds the same page number of both lists, and `next.nextPage` continues
+/// while either has more, so every ref is listed exactly once. Tags are
+/// names (each is a ref); the default branch's head is `commitSha`.
 #[tokio::test]
 async fn refs_list_every_branch_and_tag_once_with_the_default_branch() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"default_branch":"main"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/HEAD"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("9".repeat(40)))
         .mount(&server)
         .await;
     let sha = |n: u8| format!("{n}").repeat(40);
@@ -275,12 +281,13 @@ async fn refs_list_every_branch_and_tag_once_with_the_default_branch() {
     );
     let data = row_data(&first);
     assert_eq!(data["defaultBranch"], "main", "{data}");
+    assert_eq!(data["commitSha"], sha(9), "{data}");
     assert_eq!(
         data["branches"],
         json!({"dev":sha(1),"main":sha(2)}),
         "{data}"
     );
-    assert_eq!(data["tags"], json!({"v1.0.0":sha(4)}), "{data}");
+    assert_eq!(data["tags"], json!(["v1.0.0"]), "{data}");
     let next = data["next"]["nextPage"]["query"]["queries"][0].clone();
     assert_eq!(next["operation"], "refs", "{data}");
     assert_eq!(next["page"], 2, "{data}");
@@ -289,7 +296,7 @@ async fn refs_list_every_branch_and_tag_once_with_the_default_branch() {
         .expect("refs page 2");
     let data = row_data(&second);
     assert_eq!(data["branches"], json!({"release":sha(3)}), "{data}");
-    assert_eq!(data["tags"], json!({}), "{data}");
+    assert_eq!(data["tags"], json!([]), "{data}");
     assert!(data.get("next").is_none(), "{data}");
     runtime.close().await;
 }
@@ -302,6 +309,11 @@ async fn refs_default_page_is_thirty() {
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"default_branch":"main"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/HEAD"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("9".repeat(40)))
         .mount(&server)
         .await;
     for kind in ["branches", "tags"] {
@@ -515,8 +527,9 @@ async fn graphql_requests(server: &MockServer) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// Freshness: a tree page dates every listed file and folder at the listed
-/// commit and states that commit's date, in one GraphQL request, by default.
+/// Freshness, with `extras: ["details"]`: a tree page dates every listed
+/// file and folder at the listed commit and states that commit's date, in
+/// one GraphQL request. A default listing makes no dating request.
 #[tokio::test]
 async fn a_tree_page_dates_every_entry_and_the_listed_commit() {
     let server = listing_server(&[
@@ -532,10 +545,24 @@ async fn a_tree_page_dates_every_entry_and_the_listed_commit() {
         .await;
     let workspace = Workspace::new();
     let runtime = github(&workspace, &server);
+    let plain = call(
+        &runtime,
+        "ghStructure",
+        json!({"owner": "a", "repo": "b", "extras": []}),
+    )
+    .await
+    .expect("listing");
+    let data = row_data(&plain);
+    assert!(data.get("commitDate").is_none(), "{data}");
+    assert!(updated(&data["entries"][0]).is_empty(), "{data}");
+    assert!(
+        graphql_requests(&server).await.is_empty(),
+        "no dating request"
+    );
     let outcome = call(
         &runtime,
         "ghStructure",
-        json!({"owner": "a", "repo": "b", "debug": false}),
+        json!({"owner": "a", "repo": "b", "extras": ["details"]}),
     )
     .await
     .expect("listing");
@@ -591,7 +618,7 @@ async fn a_page_past_one_hundred_entries_dates_the_first_hundred_and_expands_the
     );
     let warning = data["warnings"][0].as_str().unwrap_or_default();
     assert!(
-        warning.contains("150 more") && warning.contains("next.expandDates"),
+        warning.contains("150 more are undated") && !warning.contains("next.expandDates"),
         "{data}"
     );
     let expand = &data["next"]["expandDates"];
@@ -715,7 +742,7 @@ async fn a_graphql_failure_keeps_the_listing_and_warns_once() {
     let outcome = call(
         &runtime,
         "ghStructure",
-        json!({"owner": "a", "repo": "b", "debug": false}),
+        json!({"owner": "a", "repo": "b", "extras": ["details"]}),
     )
     .await
     .expect("listing");
@@ -934,6 +961,54 @@ async fn a_renamed_repository_without_a_ref_costs_no_extra_metadata_read() {
     assert_eq!(
         data["hints"]["read"]["query"]["queries"][0]["owner"], "c",
         "{data}"
+    );
+    runtime.close().await;
+}
+
+/// A default refs page names the default branch, its head, and tag names
+/// only: no branches request is made.
+#[tokio::test]
+async fn default_refs_name_the_default_branch_and_tags_without_listing_branches() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"default_branch":"main"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/HEAD"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("9".repeat(40)))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/tags"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!([{"name":"v1","commit":{"sha":"1".repeat(40)}}])),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/branches"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = github(&workspace, &server);
+    let outcome = call(
+        &runtime,
+        "ghStructure",
+        json!({"owner": "a", "repo": "b", "operation": "refs", "extras": []}),
+    )
+    .await
+    .expect("refs");
+    assert_eq!(
+        row_data(&outcome),
+        &json!({"defaultBranch":"main","commitSha":"9".repeat(40),"tags":["v1"]}),
+        "{}",
+        outcome.structured_content
     );
     runtime.close().await;
 }

@@ -16,7 +16,6 @@ describe('artifactSearch schema', () => {
     expect(parsedQuery({ ecosystem: 'npm', packageName: 'lodash' })).toEqual({
       mainGoal: 'test goal',
       reasoning: REASONING,
-      debug: false,
       ecosystem: 'npm',
       packageName: 'lodash',
     });

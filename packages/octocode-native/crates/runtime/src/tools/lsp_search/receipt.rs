@@ -149,7 +149,7 @@ pub(super) fn attach_provider_context(
             lsp.insert("source".into(), json!("lsp"));
         }
         // `lsp.receipt` is verbose (core field class): the verbose stage
-        // drops it unless the row asked for `debug: true`.
+        // drops it unless the row's `extras` names `receipts`.
         let mut receipt = resolved_server_receipt(config, client);
         // Anchored rows already carry `workspaceRoot` at the top level.
         if anchored && let Some(receipt) = receipt.as_object_mut() {

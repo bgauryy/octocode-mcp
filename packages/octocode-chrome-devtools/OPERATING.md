@@ -11,7 +11,7 @@ For a research question, load `skill --topic web-research`. It connects source d
 3. Use `snapshot` for controls/refs and `protocol` for the installed CDP schema. CLI command `--help --json` or MCP tool schemas describe typed inputs.
 4. Choose the next action from observed state. Combine only known transitions into a plan; inspect new state after a menu, navigation or frame change.
 5. Execute `run` or `step`; verify task readiness. Read the resulting complete artifacts and continuations.
-6. Cleanup only the isolated session or new tabs whose lifecycle you own.
+6. Cleanup only the isolated session or new tabs whose lifecycle you own. `cleanup --port N` works from any cwd: without a local session it reads the profile of the Chrome on that port and stops it only when it is an isolated profile with a recorded session from some workspace (reported as `workspace`); other browsers stay running.
 
 ```sh
 octocode-chrome-devtools /cli --help

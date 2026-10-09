@@ -24,12 +24,12 @@ for (const [variant, ext] of [['cjs-noconfig', 'cjs'], ['cjs-jsconfig', 'cjs'], 
   const file = path.join(NATIVE, 'scripts/native-addon-utils.cjs');
   // Anchor on the live declaration line: this is a real repo file that moves.
   const lineHint = fs.readFileSync(file, 'utf8').split('\n').findIndex(line => line.startsWith('function stageFile(')) + 1;
-  // LP8: coverage.importerScan is a verbose (stats) field, listed only under debug.
-  const refs = await call('lspSearch', { path: file, symbolName: 'stageFile', lineHint, operation: 'references', debug: true });
+  // LP8: coverage.importerScan is a verbose (stats) field, listed only under extras:["stats"].
+  const refs = await call('lspSearch', { path: file, symbolName: 'stageFile', lineHint, operation: 'references', extras: ['stats'] });
   const files = new Set(locations(refs).map(f => path.basename(f)));
   check('F1 real repo: stageFile references span build-native.cjs + test', files.has('build-native.cjs') && files.has('build-publication.test.cjs'), [...files].join(','));
   const coverage = rowData(refs)?.payload?.coverage;
-  check('F1: coverage reports a complete importer scan (debug)', coverage?.importerScan === 'complete', JSON.stringify(coverage));
+  check('F1: coverage reports a complete importer scan (extras stats)', coverage?.importerScan === 'complete', JSON.stringify(coverage));
 }
 
 // F2 — workspaceSymbol ranks the exact name first.

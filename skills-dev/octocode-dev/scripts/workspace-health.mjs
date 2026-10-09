@@ -11,7 +11,6 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 
 const PACKAGE_SCRIPT_POLICY = ['build', 'lint', 'test', 'typecheck', 'verify'];
 const SKILL_SCRIPT_POLICY = ['build', 'lint', 'test'];
-const VERIFY_ORDER = ['@octocodeai/octocode-native', 'octocode-mcp', 'octocode', 'octocode-mcp-vscode'];
 // Build-order edges that are not package dependencies: the consumer's build
 // reads or rewrites files another workspace's build generates, so they must
 // never run concurrently (or out of order).
@@ -405,28 +404,16 @@ function runVerify(workspaces) {
   runCommand('node', ['skills-dev/octocode-dev/scripts/dedupe-deps.mjs']);
   runCommand('node', ['skills-dev/octocode-dev/scripts/docs-verify.mjs']);
 
-  const packagesInVerifyOrder = VERIFY_ORDER
-    .map(packageName => workspaces.find(workspace => workspace.name === packageName))
-    .filter(Boolean);
-
-  for (const workspace of packagesInVerifyOrder) {
-    console.log(`\n==> ${workspace.location}: verify`);
-    runCommand('yarn', ['workspace', workspace.name, 'run', 'verify']);
-  }
-
-  const remaining = workspaces.filter(
-    workspace => !VERIFY_ORDER.includes(workspace.name)
-  );
-  const nonVerifyWorkspaces = remaining.filter(workspace => !workspace.packageJson.scripts?.verify);
-
-  for (const scriptName of SKILL_SCRIPT_POLICY) {
-    runWorkspaceScript(nonVerifyWorkspaces, scriptName);
-  }
-
-  // A workspace owns its complete gate, including checks beyond build/lint/test.
-  for (const workspace of remaining.filter(workspace => workspace.packageJson.scripts?.verify)) {
-    console.log(`\n==> ${workspace.location}: verify`);
-    runCommand('yarn', ['workspace', workspace.name, 'run', 'verify']);
+  // A workspace with a verify script owns its complete gate; the rest run build/lint/test.
+  // Dependency order (package deps + BUILD_INPUTS) keeps generated inputs built first.
+  for (const workspace of topologicallySort(workspaces)) {
+    const scripts = workspace.packageJson.scripts?.verify
+      ? ['verify']
+      : SKILL_SCRIPT_POLICY.filter(name => workspace.requiredScripts.includes(name));
+    for (const script of scripts) {
+      console.log(`\n==> ${workspace.location}: ${script}`);
+      runCommand('yarn', ['workspace', workspace.name, 'run', script]);
+    }
   }
 
   checkBuildOutputs(workspaces);

@@ -145,6 +145,48 @@ The following table rates each source tool, measured on ast-grep (`crates/`, 156
 
 With a provider key, `localSearch`, `localFetch`, `ghSearchCode`, `ghGetFileContent`, and `ghSearchHistory` add one clasify handoff sentence to their descriptions.
 
+## Let the tools hand off: goal-first
+
+You rarely have to write a clasify request by hand. When a read or search is too wide to read, and you told it **what you are looking for**, it hands you a ready `hints.clasify` call. Run it unchanged, then read the window it returns.
+
+```mermaid
+flowchart LR
+    Q["read or search<br/>+ mainGoal: what you want"] --> W{wide?}
+    W -- no --> A[read the result]
+    W -- yes --> H["hints.clasify<br/>(ready call)"]
+    H --> C[clasify Locate / Scout]
+    C --> R["best window + hints.read<br/>(about 1 KB)"]
+    R --> V[read only those lines]
+```
+
+The handoff appears only when all three hold:
+
+1. **clasify is available.** A provider key is set; without one the lead is dropped and the descriptions never mention clasify.
+2. **The query describes its target.** `mainGoal` (or `reasoning`) says what the answer is, in words: "Where does the text model choose the line ending for new text?" A goal that is just a name (`encodeNode`, `"retry"`) is a literal lookup. Search it instead: a Locate of a literal costs 1.5–9× more than reading its hits.
+3. **The result is wide.**
+
+| Source call | Wide when | Hand-off | What you get |
+|---|---|---|---|
+| `localSearch`, `ghSearchCode` | 8 or more files for a plain multi-word phrase | **Scout** (`relevant` + `sufficient`) over the same search | every file judged whole, ranked; read the top `hints.read` |
+| `localFetch`, `ghGetFileContent` without `matchString` | a paged read of a file of 2,000 or more lines, with a goal that asks *where* | **Locate** over the file | the best window and its exact read |
+| `localFetch`, `ghGetFileContent` with `matchString` | 60 or more lines returned, or more match pages | **Locate** over the file (Locate needs contiguous source, so it judges the file, not the hit windows) | the window that answers the goal, out of all the hits |
+
+A successful row shows `hints.clasify` by default. You don't need `extras: ["hints"]` for it, because the handoff exists to replace a wide read. The handoff carries only the brief you sent.
+
+**Example** (2026-10-09, VS Code `textModel.ts`, 2,745 lines). Three common literals (`EOL`, `eol`, `setValue`) with `contextLines:1` and the goal "Where does the text model choose the line ending for new text?":
+
+| Step | Characters read |
+|---|---:|
+| the wide `matchString` read (142 lines of hits) | 8,493 |
+| its `hints.clasify` → Locate | 925: best window 487–494 (`exists` 0.81), runner-ups at 1306 and 195 |
+| the window's `hints.read` | about 400; line 491 `createTextBuffer(value, this._options.defaultEOL)` answers it |
+
+Going to clasify first, with the goal in `mainGoal`, skips the 8.5 KB read entirely.
+
+**Why the goal matters.** In the 2026-10-09 GitHub benchmark, 0 of 144 file reads sent `mainGoal` or `reasoning`, so no handoff could fire. The brief is optional, and agents skip it for simple lookups. That is right for a lookup and wrong for a described target. If your agent researches described targets, tell it in your prompt or rules: *"When you can describe the target but not name it, put the description in `mainGoal` and run `hints.clasify` when a read or search offers it."*
+
+**Opt-in detail.** clasify's own output is compact. `extras: ["details"]` adds every page's full answers and runner-up windows, and `extras: ["stats"]` adds provider usage (calls, tokens, time).
+
 ## Worked examples
 
 The following examples are real calls from 2026-10-08, trimmed to the deciding fields.
@@ -376,7 +418,8 @@ Results run `queries[] → resources[] → pages[] → answers[questionId]` and 
 - A page carries `hints.read` unless that read is `localFetch {path, ranges:["line-endLine"]}` of the page itself.
 - `coverage` appears only as `partial` (more remains: never read it as absence) or `error`.
 - A failed page or answer carries `error:{errorCode, error, hints?}`. A page with neither `answers` nor `error` was not judged, for the reason the resource states.
-- `debug:true` adds the full receipt: `source`, `scope`, runner-up windows, and provider `usage`.
+- `extras:["details"]` adds the full receipt: `source`, `scope`, full page answers, and runner-up windows; `extras:["stats"]` adds provider `usage`.
+- A page's `hints.read` is the located read, the result itself: it shows without `extras:["hints"]`.
 
 Run `next.clasify` and `hints.read` unchanged. Treat `partial`, `error`, `insufficient`, and mid-band scores as unresolved. Cite the source, not the score.
 

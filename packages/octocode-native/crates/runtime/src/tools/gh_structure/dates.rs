@@ -133,7 +133,7 @@ pub(super) fn expand(
         rows.push(row);
     }
     let warning = json!(format!(
-        "Dates cover the first {DATED_PER_PAGE} entries; {undated} more: next.expandDates."
+        "Dates cover the first {DATED_PER_PAGE} entries; {undated} more are undated."
     ));
     match value.get_mut("warnings").and_then(Value::as_array_mut) {
         Some(warnings) => warnings.push(warning),

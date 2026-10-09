@@ -101,7 +101,7 @@ const NATURAL_NEXT = {
 };
 /** Withheld evidence must be a `next` page, never a `hints` lead (PLAN C7, PG6). */
 const WITHHELD = /^(readHits\d*|readDeclaration\d*|wholeLines|readBoundedLines|readFullPatches\d*|readUntrimmed)$/;
-/** Debug counters that belong under debug:true (PLAN B5). */
+/** Counters that belong under an `extras` kind (PLAN B5). */
 const DEBUG_COUNTERS = ['sourceChars', 'returnedChars', 'returnedLines', 'returnedBytes', 'sourceBytes', 'httpStatus', 'retryable'];
 /** Fixed live samples: competitor task ids (first matching step); `drop` removes fields the sample does not need. */
 const SAMPLES = {
@@ -513,8 +513,8 @@ async function liveChecks(tools, contract, tasks) {
         // Output: verbose fields (contract verbosePaths + harness rules + B5 counters).
         const ct = contract.tools.find(x => x.name === tool);
         const queries = e.args?.queries ?? [];
-        if (!queries.some(q => q?.debug === true) && e.raw) {
-          for (const vp of ct.verbosePaths ?? []) { const vals = pathValues(e.raw, vp); if (vals.length) { const k = vp.replace(/^results\[\]\./, ''); res.output.verbose[k] = (res.output.verbose[k] ?? 0) + vals.length; } }
+        if (!queries.some(q => q?.extras?.length) && e.raw) {
+          for (const vp of Object.values(ct.extraPaths ?? {}).flat()) { const vals = pathValues(e.raw, vp); if (vals.length) { const k = vp.replace(/^results\[\]\./, ''); res.output.verbose[k] = (res.output.verbose[k] ?? 0) + vals.length; } }
           for (const [rule, v] of Object.entries(verboseFields(e, rules))) if (rule !== 'debugRows') res.output.verbose[`rule:${rule}`] = (res.output.verbose[`rule:${rule}`] ?? 0) + v.count;
           const keyWalk = (n, inLead) => { if (!n || typeof n !== 'object') return; for (const [k, v] of Object.entries(n)) { if (k === 'hints' || k === 'next' || k === 'query') continue; if (!inLead && DEBUG_COUNTERS.includes(k)) res.output.verbose[k] = (res.output.verbose[k] ?? 0) + 1; keyWalk(v, inLead); } };
           keyWalk(e.raw, false);
@@ -588,7 +588,7 @@ async function liveChecks(tools, contract, tasks) {
     }
     // Verdicts.
     const vb = Object.entries(res.output.verbose);
-    if (vb.length) { res.output.ok = false; res.output.reasons.push(`verbose without debug: ${vb.map(([k, n]) => `${k}×${n}`).join(', ')}`); }
+    if (vb.length) { res.output.ok = false; res.output.reasons.push(`verbose without extras: ${vb.map(([k, n]) => `${k}×${n}`).join(', ')}`); }
     if (res.output.dates.length) { res.output.ok = false; res.output.reasons.push(`non-UTC dates: ${res.output.dates.slice(0, 2).join('; ')}`); }
     const c = res.communicate;
     if (c.missingMore.length) c.reasons.push(`${c.missingMore.length}/${c.pagesWithNext} pages with next lack an "N more" line (${short(c.missingMore[0], 90)})`);

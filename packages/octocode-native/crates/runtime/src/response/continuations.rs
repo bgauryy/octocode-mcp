@@ -5,7 +5,7 @@
 //! where `query` is the complete tool input. [`finalize`] then shapes every
 //! call of a response once, row by row:
 //! 1. inherit the source row's intent fields (only the fields it sent,
-//!    never over the call's own): the brief on same-tool calls, `debug:true`
+//!    never over the call's own): the brief on same-tool calls, a non-empty `extras`
 //!    on every call;
 //! 2. drop cross-tool calls this surface cannot run (a row whose drop a scope
 //!    rule names gets one warning);
@@ -176,7 +176,17 @@ fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
                     }
                 }
             }
-            super::channels::shape(object, ctx.tool, ctx.recovery);
+            // Row-level leads of a successful row are opt-in (`extras`
+            // `hints`); an item's leads (a PR row's content menu) disclose
+            // what that item withholds and stay.
+            let row_level = path.len() <= 3;
+            // A resource-major tool's reads are its deliverable (clasify's
+            // located windows), never optional leads.
+            let opt_in_leads = row_level
+                && !ctx.recovery
+                && !ctx.tool.output().resource_major()
+                && !wants_hints(&ctx.intent);
+            super::channels::shape(object, ctx.tool, ctx.recovery, opt_in_leads);
             for key in [PAGES_KEY, HINTS_KEY] {
                 if let Some(Value::Object(calls)) = object.get_mut(key) {
                     for (name, call) in calls.iter_mut() {
@@ -248,21 +258,33 @@ fn inherit(call: &mut Value, ctx: &Visit<'_, '_>) {
     };
     for row in rows.iter_mut().filter_map(Value::as_object_mut) {
         for (field, value) in &ctx.intent {
-            if same_tool || field == "debug" {
+            if same_tool || field == "extras" {
                 row.entry(field.clone()).or_insert_with(|| value.clone());
             }
         }
     }
 }
 
-/// The intent fields `query` sent; `debug` only when on (off is the default).
+/// Whether the source row's `extras` opts into lead hints.
+fn wants_hints(intent: &Map<String, Value>) -> bool {
+    let hints = super::extras::name(crate::contracts::tool_types::ExtraKind::Hints);
+    intent
+        .get("extras")
+        .and_then(Value::as_array)
+        .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Some(hints)))
+}
+
+/// The intent fields `query` sent: the brief strings and a non-empty
+/// `extras` list.
 fn intent_of(query: &Value) -> Map<String, Value> {
     INTENT_FIELDS
         .into_iter()
         .filter_map(|field| {
             query
                 .get(field)
-                .filter(|value| value.is_string() || *value == &Value::Bool(true))
+                .filter(|value| {
+                    value.is_string() || value.as_array().is_some_and(|kinds| !kinds.is_empty())
+                })
                 .map(|value| (field.to_owned(), value.clone()))
         })
         .collect()
@@ -434,9 +456,9 @@ mod tests {
     }
 
     #[test]
-    fn same_tool_calls_inherit_the_brief_and_every_call_inherits_debug_true() {
-        let first = json!({"mainGoal":"Find a.","reasoning":"First.","debug":true});
-        let second = json!({"mainGoal":"Find b.","debug":false});
+    fn same_tool_calls_inherit_the_brief_and_every_call_inherits_extras() {
+        let first = json!({"mainGoal":"Find a.","reasoning":"First.","extras":["hints","stats"]});
+        let second = json!({"mainGoal":"Find b.","extras":[]});
         let mut out = json!({"results":[
             {"index":0,"data":{"next":{
                 "nextPage":call("ghSearchCode", json!({"owner":"o","keywords":["a"],"page":2})),
@@ -458,14 +480,18 @@ mod tests {
         let page = &out["results"][0]["data"]["next"]["nextPage"]["query"]["queries"][0];
         assert_eq!(page["mainGoal"], "Find a.", "a page keeps the brief");
         assert_eq!(page["reasoning"], "First.");
-        assert_eq!(page["debug"], true);
+        assert_eq!(page["extras"], json!(["hints", "stats"]));
         let lead = &out["results"][0]["data"]["hints"]["viewRepo"]["query"]["queries"][0];
         assert!(
             lead.get("mainGoal").is_none(),
             "a cross-tool lead takes no brief: {lead}"
         );
         assert!(lead.get("reasoning").is_none(), "{lead}");
-        assert_eq!(lead["debug"], true, "debug follows the source row");
+        assert_eq!(
+            lead["extras"],
+            json!(["hints", "stats"]),
+            "extras follow the source row"
+        );
         let clasify = &out["results"][0]["data"]["hints"]["clasify"]["query"]["queries"][0];
         assert_eq!(clasify["mainGoal"], "Locate.", "an existing brief is kept");
         let items = &out["results"][1]["data"]["items"][0];
@@ -476,12 +502,67 @@ mod tests {
             "only the fields the row sent"
         );
         assert!(
-            page.get("debug").is_none(),
-            "debug:false is the default: {page}"
+            page.get("extras").is_none(),
+            "an empty extras array is the default: {page}"
         );
         let read = &items["hints"]["read"]["query"]["queries"][0];
         assert!(read.get("mainGoal").is_none(), "{read}");
-        assert!(read.get("debug").is_none(), "{read}");
+        assert!(read.get("extras").is_none(), "{read}");
+    }
+
+    /// A successful row offers only the contract's default leads unless its
+    /// `extras` names `hints`; empty and error rows keep every lead, and an
+    /// item's leads (inside a row's array) always stay.
+    #[test]
+    fn row_level_leads_of_a_successful_row_are_opt_in() {
+        let next = || {
+            json!({
+                "nextPage":call("ghSearchCode", json!({"owner":"o","keywords":["a"],"page":2})),
+                "viewRepo":call("ghStructure", json!({"owner":"o","repo":"r"})),
+                "includeArchived":call("ghSearchCode", json!({"owner":"o","keywords":["a"]}))
+            })
+        };
+        let plain = json!({"mainGoal":"Find a."});
+        let hinted = json!({"mainGoal":"Find a.","extras":["hints"]});
+        let mut out = json!({"results":[
+            {"index":0,"data":{"next":next()}},
+            {"index":1,"data":{"next":next()}},
+            {"index":2,"status":"empty","data":{"next":next()}},
+            {"index":3,"data":{"items":[{"next":next()}]}}
+        ]});
+        run(
+            &mut out,
+            ToolId::GhSearchCode,
+            &[Some(&plain), Some(&hinted), Some(&plain), Some(&plain)],
+        );
+        let default = &out["results"][0]["data"];
+        assert!(
+            default["next"]["nextPage"].is_object(),
+            "pages stay: {default}"
+        );
+        assert!(
+            default["hints"].get("viewRepo").is_none(),
+            "a row-level lead is opt-in: {default}"
+        );
+        assert!(
+            default["hints"]["includeArchived"].is_object(),
+            "a contract default lead stays: {default}"
+        );
+        assert!(
+            out["results"][1]["data"]["hints"]["viewRepo"].is_object(),
+            "extras:[hints] keeps the lead: {}",
+            out["results"][1]
+        );
+        assert!(
+            out["results"][2]["data"]["hints"]["viewRepo"].is_object(),
+            "an empty row keeps its leads: {}",
+            out["results"][2]
+        );
+        assert!(
+            out["results"][3]["data"]["items"][0]["hints"]["viewRepo"].is_object(),
+            "an item's leads stay: {}",
+            out["results"][3]
+        );
     }
 
     #[test]
@@ -513,7 +594,7 @@ mod tests {
 
     #[test]
     fn compaction_drops_only_fields_validation_restores() {
-        let row = json!({"matchString":"foo","path":"/tmp","mainGoal":"Find foo.","reasoning":"r","debug":false,
+        let row = json!({"matchString":"foo","path":"/tmp","mainGoal":"Find foo.","reasoning":"r","extras":["stats"],
             "caseMode":"smart","matchContentLength":200,"page":2,"contextLines":0});
         let mut out =
             json!({"results":[{"index":0,"data":{"next":{"nextPage":call("localSearch", row)}}}]});
@@ -523,7 +604,7 @@ mod tests {
         // contextLines), so validation cannot restore it and it is kept.
         assert_eq!(
             query,
-            &json!({"matchString":"foo","path":"/tmp","mainGoal":"Find foo.","reasoning":"r","matchContentLength":200,"page":2,"contextLines":0})
+            &json!({"matchString":"foo","path":"/tmp","mainGoal":"Find foo.","reasoning":"r","extras":["stats"],"matchContentLength":200,"page":2,"contextLines":0})
         );
     }
 
@@ -573,7 +654,7 @@ mod tests {
 
     #[test]
     fn compact_input_leaves_an_invalid_row_as_sent() {
-        let row = json!({"bogus":true,"debug":false});
+        let row = json!({"bogus":true,"extras":[]});
         let mut input = json!({"queries":[row.clone()]});
         compact_input("localSearch", &mut input);
         assert_eq!(input["queries"][0], row);
@@ -610,20 +691,20 @@ mod tests {
         for (tool, query) in [
             (
                 "localSearch",
-                json!({"matchString":"foo","path":"/tmp","mainGoal":"g","debug":false,
+                json!({"matchString":"foo","path":"/tmp","mainGoal":"g","extras":["stats"],
                 "caseMode":"smart","page":1,"matchContentLength":200,"contextLines":0,"sort":"relevance"}),
             ),
             (
                 "localFetch",
-                json!({"path":"/a","debug":false,"matchString":"x","reasoning":" "}),
+                json!({"path":"/a","matchString":"x","reasoning":" ","caseMode":"smart"}),
             ),
             (
                 "ghSearchCode",
-                json!({"owner":"o","repo":"r","keywords":["a"],"page":1,"debug":false}),
+                json!({"owner":"o","repo":"r","keywords":["a"],"page":1,"extras":["stats"]}),
             ),
             (
                 "structureSearch",
-                json!({"operation":"tree","path":"/a","debug":false}),
+                json!({"operation":"tree","path":"/a","extras":["receipts","echo"]}),
             ),
         ] {
             let mut compact = query.clone();
@@ -634,7 +715,7 @@ mod tests {
 
     #[test]
     fn compacts_each_row_of_an_input_and_keeps_window_fields() {
-        let mut input = json!({"queries":[{"matchString":"a","path":"/tmp","mainGoal":"Find a.","reasoning":"r","debug":false}],
+        let mut input = json!({"queries":[{"matchString":"a","path":"/tmp","mainGoal":"Find a.","reasoning":"r","caseMode":"smart"}],
             "responseOffset":10});
         compact_input("localSearch", &mut input);
         assert_eq!(

@@ -1,4 +1,4 @@
-// Apply stealth patches before navigation, then self-test the result.
+// Apply stealth overrides before navigation, then self-test the result on a detector page.
 //
 // Usage:
 //   node packages/octocode-chrome-devtools/scripts/cdp-sandbox.mjs \
@@ -6,7 +6,7 @@
 //     --port 9222 --stealth --new-tab "about:blank" --timeout 30000
 //
 // Configure the target with STEALTH_CHECK_URL (default: bot.sannysoft.com, a public
-// bot-detection self-test page — see references/launch-stealth.md for more test sites).
+// bot-detection self-test page — see docs/launch-stealth.md for more test sites).
 //
 import { writeFileSync } from 'fs';
 import { join, resolve } from 'path';
@@ -26,8 +26,17 @@ export async function run(cdp) {
     throw new Error('Use --stealth for this dedicated emulation check');
 
   console.log(`[STATUS] Navigating to ${TARGET_URL}`);
+  let loaded;
+  const onLoad = (_params, meta) => {
+    if (!meta?.sessionId) loaded();
+  };
+  const load = new Promise(r => (loaded = r));
+  cdp.on('Page.loadEventFired', onLoad);
   await cdp.send('Page.navigate', { url: TARGET_URL });
-  await new Promise(r => setTimeout(r, 2000));
+  await Promise.race([load, new Promise(r => setTimeout(r, 15000))]);
+  cdp.off('Page.loadEventFired', onLoad);
+  // Detector pages finish their async probes shortly after load.
+  await new Promise(r => setTimeout(r, 1000));
 
   const result = await verifyStealth(cdp);
   console.log(
@@ -81,7 +90,7 @@ export async function run(cdp) {
     );
   } else {
     console.log(
-      '[FINDING] Patch self-checks passed; website acceptance is not established.'
+      '[FINDING] Override self-checks passed; website acceptance is not established.'
     );
   }
 }

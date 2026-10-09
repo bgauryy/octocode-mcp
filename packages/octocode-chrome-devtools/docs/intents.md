@@ -32,8 +32,8 @@ Load when choosing what to capture or do. Why: Match the capture to the task. Us
 ## Auth
 
 - **login / user-auth**: visible Chrome (`open-browser.mjs --url <url>`); the user signs in. Never automate passwords or MFA unless approved. Confirm success from a deterministic post-login URL or cookie name.
-- **real profile** (`--profile`): warn that CDP can read cookies, tokens, and storage.
-- **cookie bridge**, preferred source order: same visible port (no transfer) → `--from-storage-state <jar>` → `--from-port <cdp>` → `--from-profile` (Chrome fully quit, approved). Values are never printed.
+- **real profile** (`--profile`): warn that CDP can read cookies, tokens, and storage. Google Chrome 136+ refuses it (`launch-stealth.md`); Chromium and Chrome for Testing work.
+- **cookie bridge**, preferred source order: same visible port (no transfer) → `--from-storage-state <jar>` → `--from-port <cdp>` → `--from-profile` (browser fully quit, approved; not Google Chrome 136+; `--chromePath` picks the browser). Values are never printed. The transfer keeps domain/host-only scope, path, expiry, flags and partition keys, reads the target back, and exits nonzero with `COOKIE_REJECTED` / `COOKIE_NOT_STORED` names when a cookie did not land. `--urls` keeps cookies that domain-match those hosts. Exports use the Playwright storage-state shape (mode 0600).
 
 ```bash
 node "$CDP" cookies --i-understand-secrets --from-port 9333 --to-port 9222 --urls "https://app.example.com"

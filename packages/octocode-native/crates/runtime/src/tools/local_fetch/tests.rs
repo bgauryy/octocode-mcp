@@ -154,8 +154,8 @@ fn wire_form_omits_metadata_derivable_from_emitted_fields() {
         assert!(wire.get(redundant).is_none(), "{redundant}: {wire}");
     }
     // Explanation counters are built for every read; the contract classes
-    // them verbose, so a response shows them only under `debug: true`.
-    let verbose = crate::tools::id::ToolId::LocalFetch.verbose_paths();
+    // them `stats` extras, so a response shows them only under `extras:["stats"]`.
+    let verbose = crate::response::extras::all_paths(crate::tools::id::ToolId::LocalFetch);
     for counter in [
         "modified",
         "sourceChars",
@@ -330,8 +330,15 @@ fn matches_on_minified_lines_default_to_byte_windows() {
         "anchor kept"
     );
     assert!(
-        r.warnings.iter().any(|w| w.contains("contextLines")),
+        r.warnings
+            .iter()
+            .any(|w| w.starts_with("longMatchedLines:") && w.contains("contextBytes")),
         "{:?}",
+        r.warnings
+    );
+    assert!(
+        !r.warnings.iter().any(|w| w.contains("next.wholeLines")),
+        "the warning does not restate the continuation: {:?}",
         r.warnings
     );
     // An explicit contextLines keeps whole lines.
@@ -1719,11 +1726,17 @@ fn minified_default_window_is_byte_bounded() {
     assert!(content.len() <= 2600, "{} bytes", content.len());
     assert!(content.contains("var v126=HIT;"), "{content}");
     let next = serde_json::to_value(result.next.as_ref().expect("next")).expect("json");
+    let window = crate::tools::id::DEFAULT_READ_CONTEXT_LINES;
     assert_eq!(
-        next["expandContext"]["query"]["queries"][0]["contextLines"], 10,
+        next["expandContext"]["query"]["queries"][0]["contextLines"], window,
         "{next}"
     );
-    // Short-line sources keep the full ±10 window and no lead.
+    assert_eq!(
+        next["expandContext"]["why"],
+        format!("Show the full ±{window}-line window around each hit."),
+        "{next}"
+    );
+    // Short-line sources keep the full default window and no lead.
     let short = t.0.join("a.txt");
     fs::write(&short, numbered(40).replace("l20\n", "l20 HIT\n")).expect("fixture");
     let plain = fetch(
@@ -1737,7 +1750,10 @@ fn minified_default_window_is_byte_bounded() {
             .is_none_or(|next| next.expand_context.is_none()),
         "{plain:?}"
     );
-    assert_eq!(plain.content.expect("content").lines().count(), 21);
+    assert_eq!(
+        plain.content.expect("content").lines().count(),
+        2 * window + 1
+    );
 }
 
 /// N3: a cut-declaration lead never points at a minified bundle's IIFE.
@@ -1805,7 +1821,7 @@ fn read_block_covers_every_cut_declaration() {
         .iter()
         .filter_map(|range| range.as_str().map(str::to_owned))
         .collect::<Vec<_>>();
-    // Lines of `a` (1-63) and `b` (65-127) outside the ±10 windows.
+    // Lines of `a` (1-63) and `b` (65-127) outside the default windows.
     let covers = |line: usize| {
         ranges.iter().any(|range| {
             range

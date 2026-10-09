@@ -4,6 +4,9 @@ import { existsSync, statSync, mkdtempSync, readFileSync, readdirSync, rmSync, w
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 
+// Lines every skill's Saved report section shares with octocode-skills/output.md, word for word.
+const SHARED_OUTPUT_LINES = ['Start the file with this header', 'Before starting work that may repeat', 'Markdown that renders well:'];
+
 function filesUnder(root) {
   const files = [];
   function visit(dir) {
@@ -85,6 +88,19 @@ function review(dir) {
   if (!files.includes('README.md')) add('ERROR', 'readme-missing', 'README.md is missing.');
   if (!files.includes('output.md')) add('ERROR', 'output-missing', 'output.md is missing.');
   if (![...localPaths(skill)].some((path) => resolve(dir, path) === join(dir, 'output.md'))) add('WARN', 'output-route-missing', 'Link the output format from SKILL.md using any descriptive label.');
+  const viewer = join(dir, 'scripts', 'render-report.mjs');
+  const canonicalViewer = resolve(dir, '..', 'octocode-skills', 'scripts', 'render-report.mjs');
+  if (existsSync(viewer) && existsSync(canonicalViewer) && resolve(viewer) !== canonicalViewer && !readFileSync(viewer).equals(readFileSync(canonicalViewer))) add('ERROR', 'shared-file-drift', 'scripts/render-report.mjs differs from octocode-skills/scripts/render-report.mjs; run report-viewer-sync.mjs.');
+  if (!existsSync(viewer) && [...texts.values()].some((text) => text.includes('scripts/render-report.mjs'))) add('ERROR', 'missing-script', 'Docs reference scripts/render-report.mjs but the skill does not ship it; run report-viewer-sync.mjs.');
+  const canonicalOutput = resolve(dir, '..', 'octocode-skills', 'output.md');
+  if (texts.has('output.md') && files.includes('scripts/render-report.mjs') && existsSync(canonicalOutput) && resolve(dir, 'output.md') !== canonicalOutput) {
+    const own = texts.get('output.md').split(/\r?\n/);
+    for (const line of readFileSync(canonicalOutput, 'utf8').split(/\r?\n/).filter((l) => SHARED_OUTPUT_LINES.some((prefix) => l.startsWith(prefix)))) {
+      if (!own.includes(line)) add('WARN', 'shared-text-drift', `output.md should repeat this shared line from octocode-skills/output.md exactly: "${line.slice(0, 60)}…"`);
+    }
+  }
+  if (texts.has('output.md') && files.includes('scripts/render-report.mjs') && !/^## Saved report\b[\s\S]*--manifest/m.test(texts.get('output.md'))) add('WARN', 'saved-report-missing', 'output.md should have a "## Saved report" section: when to save, the shared header, rendering with scripts/render-report.mjs, and --manifest for earlier reports.');
+  if (texts.has('output.md') && !texts.get('output.md').includes('.octocode/')) add('WARN', 'output-location-missing', `output.md should name where saved results go: <workspace>/.octocode/${name}/ (scratch under <workspace>/.octocode/tmp/).`);
 
   for (const [path, text] of texts) {
     for (const target of localPaths(text)) {
@@ -126,7 +142,13 @@ function selfTest() {
     writeFileSync(join(skill, 'SKILL.md'), '---\nname: example-skill\ndescription: "Use when an example needs review."\n---\n\n# Example\n\n## Related skills\n\n- `other-skill`: For another job.\n\n## Output\n\nSee [output.md](output.md).\n');
     writeFileSync(join(skill, 'README.md'), '# Example\n');
     writeFileSync(join(skill, 'output.md'), '# Output\n\nAn answer.\n');
+    if (!review(skill).findings.some((item) => item.code === 'output-location-missing')) throw new Error('missing output location was not found');
+    writeFileSync(join(skill, 'output.md'), '# Output\n\nAn answer. Save requested files under `<workspace>/.octocode/example-skill/`.\n');
     if (review(skill).findings.length) throw new Error('valid skill failed');
+    mkdirSync(join(skill, 'scripts'));
+    writeFileSync(join(skill, 'scripts/render-report.mjs'), '// viewer\n');
+    if (!review(skill).findings.some((item) => item.code === 'saved-report-missing')) throw new Error('missing saved-report section was not found');
+    rmSync(join(skill, 'scripts'), { recursive: true });
     writeFileSync(join(skill, 'README.md'), '# Example\n\nSee [missing.md](missing.md).\n');
     if (!review(skill).findings.some((item) => item.code === 'missing-path')) throw new Error('missing path was not found');
     writeFileSync(join(skill, 'README.md'), '# Example\n');

@@ -2482,7 +2482,7 @@ fn many_text_cut_files_are_a_count_with_a_lossless_listing() {
         .find(|w| w.starts_with("binaryFileSkipped:"))
         .expect("binary warning");
     assert!(
-        warning.starts_with("binaryFileSkipped: 300 files (.rlib 300; structureSearch"),
+        warning.starts_with("binaryFileSkipped: 300 files (.rlib 300) were"),
         "{warning}"
     );
     assert!(!warning.contains("libcrate"), "{warning}");
@@ -2534,9 +2534,7 @@ fn leading_nul_binaries_are_counted_with_a_listing_continuation() {
     assert_eq!(result.stats.cap_reason, None, "{body}");
     assert_eq!(
         result.warnings,
-        [
-            "binarySkipped: 31 binary files not searched (.woff2 30, .png 1); structureSearch operation:\"files\" with these extensions lists them."
-        ],
+        ["binarySkipped: 31 binary files not searched (.woff2 30, .png 1)."],
         "{body}"
     );
     let text = body.to_string();
@@ -2613,9 +2611,7 @@ fn opaque_binary_files_in_scope_do_not_make_a_search_partial() {
     assert_ne!(body["status"], "partial", "{body}");
     assert_eq!(
         body["warnings"],
-        serde_json::json!([
-            "binarySkipped: 1 binary file not searched (.node 1); structureSearch operation:\"files\" with these extensions lists it."
-        ]),
+        serde_json::json!(["binarySkipped: 1 binary file not searched (.node 1)."]),
         "{body}"
     );
     assert!(

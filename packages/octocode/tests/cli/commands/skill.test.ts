@@ -516,6 +516,37 @@ describe('skill command', () => {
     expect(parsed.error).toContain('not-a-real-skill');
   });
 
+  it('names the closest bundled skill and the list command for a typo', () => {
+    run(['install', 'octocode-reserch'], { json: true });
+    const parsed = loggedJson<{ error: string }>();
+    expect(parsed.error).toContain('Did you mean "octocode-research"?');
+    expect(parsed.error).toContain('octocode skill list');
+    vi.mocked(console.log).mockClear();
+    run(['install', 'zzzzzzzzzzzz'], { json: true });
+    expect(loggedJson<{ error: string }>().error).not.toContain('Did you mean');
+  });
+
+  it('warns that an install without --platform reaches no agent', () => {
+    run(['install', 'octocode-research'], { 'dry-run': true, json: true });
+    const unlinked = loggedJson<{ warnings?: string[] }>();
+    expect(unlinked.warnings?.[0]).toContain('--platform <pi|');
+    vi.mocked(console.log).mockClear();
+    run(['install', 'octocode-research'], {
+      platform: 'claude',
+      global: true,
+      'dry-run': true,
+      json: true,
+    });
+    expect(loggedJson<{ warnings?: string[] }>().warnings).toBeUndefined();
+    vi.mocked(console.log).mockClear();
+    run(['install', 'octocode-research'], { 'dry-run': true });
+    const human = vi
+      .mocked(console.log)
+      .mock.calls.map(call => String(call[0]))
+      .join('\n');
+    expect(human).toContain('no agent reads it there');
+  });
+
   it('checks a bundled skill without requiring environment variables', () => {
     run(['check', 'octocode-research'], { 'no-env': true, json: true });
     const parsed = loggedJson<{

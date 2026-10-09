@@ -59,7 +59,7 @@ for (const r of Object.values(pinned)) {
     const lines = localLines(r.dir, file);
     const base = { owner: r.owner, repo: r.repo, ref: r.sha, path: file };
     // Whole file when it fits; otherwise the tool must say why and offer a way on.
-    const whole = await call('ghGetFileContent', { ...base, fullContent: true, debug: true });
+    const whole = await call('ghGetFileContent', { ...base, fullContent: true, extras: ['stats'] });
     const w = fileRow(whole);
     check(`${r.dir}/${file}: totalLines and sourceBytes match git`, w?.totalLines === lines.length && w?.sourceBytes === Buffer.byteLength(text), `tool ${w?.totalLines}L/${w?.sourceBytes}B vs git ${lines.length}L/${Buffer.byteLength(text)}B`);
     if (!w?.isPartial) {
@@ -243,8 +243,8 @@ for (const r of Object.values(pinned)) {
   const r = pinned.rust;
   const parent = git(r.dir, 'rev-parse', 'HEAD^').trim();
   const numstat = git(r.dir, 'diff', '--numstat', parent, 'HEAD').trim().split('\n').map(l => { const [a, d, f] = l.split('\t'); return { f, a: +a, d: +d }; });
-  // `parents` is metadata (debug-only); the exact SHA equality needs it.
-  const commit = rowData(await call('ghGetHistoryItem', { operation: 'commit', owner: r.owner, repo: r.repo, ref: r.sha, debug: true }));
+  // The exact SHA equality needs `parents`; full rows keep every commit field.
+  const commit = rowData(await call('ghGetHistoryItem', { operation: 'commit', owner: r.owner, repo: r.repo, ref: r.sha, extras: ['details', 'echo'] }));
   check('commit: message equals git', (commit?.message ?? '').trim() === git(r.dir, 'log', '-1', '--format=%B').trim(), commit?.message?.slice(0, 80));
   check('commit: author name/email and parents equal git', commit?.author?.name === git(r.dir, 'log', '-1', '--format=%an').trim() && commit?.author?.email === git(r.dir, 'log', '-1', '--format=%ae').trim() && JSON.stringify(commit?.parents) === JSON.stringify([parent]), JSON.stringify({ a: commit?.author, p: commit?.parents }));
   // Commit file rows: `path` + `stat` ("M +3 -1"), like PR patch rows.

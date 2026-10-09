@@ -103,14 +103,11 @@ pub(crate) async fn execute<C: ConditionalCache>(
     };
     let provider_capped = provider_matched > SEARCH_RESULT_CAP;
     let mut leads = top_leads(data.items.first());
-    // Archived repositories are excluded unless the caller set `archived`:
-    // a search states it once (page 1); a listing, whenever it skipped some.
+    // Archived repositories are excluded unless the caller set `archived`;
+    // a listing that skipped some offers them (the description states the
+    // search default once).
     let archived_skipped = listing.as_ref().map_or(0, |listing| listing.archived);
-    let excluded = query.archived.is_none()
-        && match &listing {
-            Some(_) => archived_skipped > 0,
-            None => current == 1,
-        };
+    let excluded = query.archived.is_none() && archived_skipped > 0;
     if excluded {
         leads.insert(
             leads.len().min(1),
@@ -275,7 +272,7 @@ fn include_archived(query: &GhSearchRepoQuery) -> Value {
         row.retain(|key, value| {
             !matches!(
                 key.as_str(),
-                "page" | "debug" | "sort" | "pageSize" | "mainGoal" | "reasoning"
+                "page" | "extras" | "sort" | "pageSize" | "mainGoal" | "reasoning"
             ) && !value.is_null()
         });
     }

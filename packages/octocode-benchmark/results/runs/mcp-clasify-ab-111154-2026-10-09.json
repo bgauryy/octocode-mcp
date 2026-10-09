@@ -1,0 +1,1720 @@
+{
+ "campaign": "mcp-clasify-ab-111154-2026-10-09",
+ "octocode_label": "Octocode v20",
+ "runner_model": "claude-sonnet-5-5",
+ "judge_model": "gpt-5.5",
+ "runs": [
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 6482,
+   "model_in": 4952,
+   "model_out": 1530,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63564,
+   "output_tokens": 748,
+   "cost_usd": 0.030254600000000003,
+   "turns": 3,
+   "secs": 9.342,
+   "model_secs": 8.761,
+   "tool_secs": 0.581,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 7104,
+   "model_in": 4447,
+   "model_out": 2657,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 65324,
+   "output_tokens": 1404,
+   "cost_usd": 0.0808286,
+   "turns": 6,
+   "secs": 13.268,
+   "model_secs": 12.727,
+   "tool_secs": 0.541,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 8156,
+   "model_in": 5479,
+   "model_out": 2677,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 64826,
+   "output_tokens": 1262,
+   "cost_usd": 0.0794648,
+   "turns": 3,
+   "secs": 29.436,
+   "model_secs": 12.576,
+   "tool_secs": 16.86,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 5330,
+   "model_in": 2514,
+   "model_out": 2816,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 41945,
+   "output_tokens": 1183,
+   "cost_usd": 0.0678744,
+   "turns": 2,
+   "secs": 12.132,
+   "model_secs": 11.031,
+   "tool_secs": 1.101,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 16348,
+   "model_in": 13674,
+   "model_out": 2674,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 70151,
+   "output_tokens": 1244,
+   "cost_usd": 0.095831,
+   "turns": 3,
+   "secs": 17.477,
+   "model_secs": 13.25,
+   "tool_secs": 4.227,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 2626,
+   "model_in": 1159,
+   "model_out": 1467,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 41357,
+   "output_tokens": 731,
+   "cost_usd": 0.0610518,
+   "turns": 2,
+   "secs": 9.443,
+   "model_secs": 8.4,
+   "tool_secs": 1.043,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 6328,
+   "model_in": 4143,
+   "model_out": 2185,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 42339,
+   "output_tokens": 887,
+   "cost_usd": 0.0665854,
+   "turns": 2,
+   "secs": 12.737,
+   "model_secs": 11.075,
+   "tool_secs": 1.662,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 3620,
+   "model_in": 1724,
+   "model_out": 1896,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 63109,
+   "output_tokens": 1044,
+   "cost_usd": 0.07066,
+   "turns": 4,
+   "secs": 13.578,
+   "model_secs": 11.343,
+   "tool_secs": 2.235,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 12120,
+   "model_in": 8840,
+   "model_out": 3280,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 65812,
+   "output_tokens": 1484,
+   "cost_usd": 0.0864914,
+   "turns": 3,
+   "secs": 27.521,
+   "model_secs": 14.696,
+   "tool_secs": 12.825,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 4423,
+   "model_in": 1609,
+   "model_out": 2814,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 84681,
+   "output_tokens": 1713,
+   "cost_usd": 0.08309300000000001,
+   "turns": 4,
+   "secs": 16.825,
+   "model_secs": 15.6,
+   "tool_secs": 1.225,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 12466,
+   "model_in": 8698,
+   "model_out": 3768,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 66412,
+   "output_tokens": 1648,
+   "cost_usd": 0.0900032,
+   "turns": 3,
+   "secs": 18.636,
+   "model_secs": 16.978,
+   "tool_secs": 1.658,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 6102,
+   "model_in": 4190,
+   "model_out": 1912,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 64804,
+   "output_tokens": 957,
+   "cost_usd": 0.0740506,
+   "turns": 5,
+   "secs": 20.668,
+   "model_secs": 10.359,
+   "tool_secs": 10.309,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 8349,
+   "model_in": 5231,
+   "model_out": 3118,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 65242,
+   "output_tokens": 1472,
+   "cost_usd": 0.08039400000000001,
+   "turns": 3,
+   "secs": 19.568,
+   "model_secs": 17.898,
+   "tool_secs": 1.67,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 25562,
+   "model_in": 19239,
+   "model_out": 6323,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 130881,
+   "output_tokens": 3021,
+   "cost_usd": 0.1373632,
+   "turns": 6,
+   "secs": 58.246,
+   "model_secs": 35.217,
+   "tool_secs": 23.029,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 17077,
+   "model_in": 13727,
+   "model_out": 3350,
+   "calls": 3,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 98632,
+   "output_tokens": 1640,
+   "cost_usd": 0.10609880000000001,
+   "turns": 4,
+   "secs": 18.251,
+   "model_secs": 16.567,
+   "tool_secs": 1.684,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 8293,
+   "model_in": 5070,
+   "model_out": 3223,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 44003,
+   "output_tokens": 1483,
+   "cost_usd": 0.0784756,
+   "turns": 2,
+   "secs": 13.87,
+   "model_secs": 11.724,
+   "tool_secs": 2.146,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 13114,
+   "model_in": 8788,
+   "model_out": 4326,
+   "calls": 8,
+   "failed": 2,
+   "clasify_calls": 0,
+   "input_tokens": 138239,
+   "output_tokens": 2778,
+   "cost_usd": 0.12062319999999999,
+   "turns": 9,
+   "secs": 51.778,
+   "model_secs": 24.888,
+   "tool_secs": 26.89,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 9908,
+   "model_in": 6793,
+   "model_out": 3115,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 65812,
+   "output_tokens": 1374,
+   "cost_usd": 0.082245,
+   "turns": 3,
+   "secs": 13.948,
+   "model_secs": 12.745,
+   "tool_secs": 1.203,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 4806,
+   "model_in": 2659,
+   "model_out": 2147,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 85025,
+   "output_tokens": 1262,
+   "cost_usd": 0.07913060000000001,
+   "turns": 4,
+   "secs": 15.262,
+   "model_secs": 12.699,
+   "tool_secs": 2.563,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 5209,
+   "model_in": 2550,
+   "model_out": 2659,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 41883,
+   "output_tokens": 1257,
+   "cost_usd": 0.068374,
+   "turns": 2,
+   "secs": 10.573,
+   "model_secs": 9.567,
+   "tool_secs": 1.006,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 29078,
+   "model_in": 24214,
+   "model_out": 4864,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 97807,
+   "output_tokens": 2191,
+   "cost_usd": 0.126355,
+   "turns": 4,
+   "secs": 43.791,
+   "model_secs": 18.284,
+   "tool_secs": 25.507,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 10997,
+   "model_in": 7292,
+   "model_out": 3705,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 65934,
+   "output_tokens": 1627,
+   "cost_usd": 0.0857684,
+   "turns": 3,
+   "secs": 23.485,
+   "model_secs": 14.583,
+   "tool_secs": 8.902,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 8573,
+   "model_in": 5760,
+   "model_out": 2813,
+   "calls": 6,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 89100,
+   "output_tokens": 1468,
+   "cost_usd": 0.0883288,
+   "turns": 7,
+   "secs": 23.558,
+   "model_secs": 15.598,
+   "tool_secs": 7.96,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 7635,
+   "model_in": 3787,
+   "model_out": 3848,
+   "calls": 2,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 63479,
+   "output_tokens": 1584,
+   "cost_usd": 0.0783494,
+   "turns": 3,
+   "secs": 22.713,
+   "model_secs": 14.371,
+   "tool_secs": 8.342,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 8271,
+   "model_in": 4803,
+   "model_out": 3468,
+   "calls": 3,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 64592,
+   "output_tokens": 1583,
+   "cost_usd": 0.0820314,
+   "turns": 4,
+   "secs": 20.384,
+   "model_secs": 14.725,
+   "tool_secs": 5.659,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 38579,
+   "model_in": 34121,
+   "model_out": 4458,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 105948,
+   "output_tokens": 1942,
+   "cost_usd": 0.1414722,
+   "turns": 4,
+   "secs": 21.156,
+   "model_secs": 19.427,
+   "tool_secs": 1.729,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 6636,
+   "model_in": 3647,
+   "model_out": 2989,
+   "calls": 7,
+   "failed": 2,
+   "clasify_calls": 0,
+   "input_tokens": 153575,
+   "output_tokens": 2079,
+   "cost_usd": 0.1061742,
+   "turns": 8,
+   "secs": 23.019,
+   "model_secs": 22.242,
+   "tool_secs": 0.777,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 5787,
+   "model_in": 3657,
+   "model_out": 2130,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 42586,
+   "output_tokens": 925,
+   "cost_usd": 0.0679192,
+   "turns": 2,
+   "secs": 12.104,
+   "model_secs": 11.042,
+   "tool_secs": 1.062,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 4387,
+   "model_in": 2429,
+   "model_out": 1958,
+   "calls": 3,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 84183,
+   "output_tokens": 987,
+   "cost_usd": 0.0751292,
+   "turns": 4,
+   "secs": 35.612,
+   "model_secs": 13.631,
+   "tool_secs": 21.981,
+   "ok": true
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 9749,
+   "model_in": 7345,
+   "model_out": 2404,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 87611,
+   "output_tokens": 1286,
+   "cost_usd": 0.087788,
+   "turns": 5,
+   "secs": 32.892,
+   "model_secs": 12.365,
+   "tool_secs": 20.527,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 4529,
+   "model_in": 2863,
+   "model_out": 1666,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 59659,
+   "output_tokens": 797,
+   "cost_usd": 0.0250578,
+   "turns": 3,
+   "secs": 8.851,
+   "model_secs": 8.787,
+   "tool_secs": 0.064,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 8339,
+   "model_in": 5535,
+   "model_out": 2804,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 84600,
+   "output_tokens": 1524,
+   "cost_usd": 0.08803060000000001,
+   "turns": 6,
+   "secs": 42.425,
+   "model_secs": 15.302,
+   "tool_secs": 27.123,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 6216,
+   "model_in": 3580,
+   "model_out": 2636,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 61046,
+   "output_tokens": 1365,
+   "cost_usd": 0.0772954,
+   "turns": 4,
+   "secs": 19.045,
+   "model_secs": 14.776,
+   "tool_secs": 4.269,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 5835,
+   "model_in": 3306,
+   "model_out": 2529,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 40342,
+   "output_tokens": 1129,
+   "cost_usd": 0.0685338,
+   "turns": 2,
+   "secs": 11.097,
+   "model_secs": 11.022,
+   "tool_secs": 0.075,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 10797,
+   "model_in": 8018,
+   "model_out": 2779,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 64246,
+   "output_tokens": 1443,
+   "cost_usd": 0.0856162,
+   "turns": 3,
+   "secs": 20.662,
+   "model_secs": 14.942,
+   "tool_secs": 5.72,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 3648,
+   "model_in": 2108,
+   "model_out": 1540,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 40054,
+   "output_tokens": 764,
+   "cost_usd": 0.0637812,
+   "turns": 3,
+   "secs": 8.959,
+   "model_secs": 8.923,
+   "tool_secs": 0.036,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 6185,
+   "model_in": 4143,
+   "model_out": 2042,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 40337,
+   "output_tokens": 860,
+   "cost_usd": 0.0659188,
+   "turns": 2,
+   "secs": 9.521,
+   "model_secs": 8.893,
+   "tool_secs": 0.628,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 3715,
+   "model_in": 2078,
+   "model_out": 1637,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 60279,
+   "output_tokens": 897,
+   "cost_usd": 0.06930800000000001,
+   "turns": 4,
+   "secs": 12.402,
+   "model_secs": 9.92,
+   "tool_secs": 2.482,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 11696,
+   "model_in": 8580,
+   "model_out": 3116,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62717,
+   "output_tokens": 1444,
+   "cost_usd": 0.08512660000000001,
+   "turns": 3,
+   "secs": 27.534,
+   "model_secs": 15.453,
+   "tool_secs": 12.081,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 2985,
+   "model_in": 907,
+   "model_out": 2078,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 39239,
+   "output_tokens": 1099,
+   "cost_usd": 0.063666,
+   "turns": 2,
+   "secs": 11.123,
+   "model_secs": 11.078,
+   "tool_secs": 0.045,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 17977,
+   "model_in": 13120,
+   "model_out": 4857,
+   "calls": 5,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 137408,
+   "output_tokens": 2448,
+   "cost_usd": 0.122629,
+   "turns": 6,
+   "secs": 30.252,
+   "model_secs": 23.835,
+   "tool_secs": 6.417,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 7574,
+   "model_in": 5699,
+   "model_out": 1875,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62427,
+   "output_tokens": 912,
+   "cost_usd": 0.0761918,
+   "turns": 4,
+   "secs": 17.042,
+   "model_secs": 10.38,
+   "tool_secs": 6.662,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 11048,
+   "model_in": 7221,
+   "model_out": 3827,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 64326,
+   "output_tokens": 1749,
+   "cost_usd": 0.08710760000000001,
+   "turns": 3,
+   "secs": 15.236,
+   "model_secs": 14.526,
+   "tool_secs": 0.71,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 44391,
+   "model_in": 37238,
+   "model_out": 7153,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 178693,
+   "output_tokens": 3528,
+   "cost_usd": 0.1839268,
+   "turns": 7,
+   "secs": 40.373,
+   "model_secs": 32.001,
+   "tool_secs": 8.372,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 13931,
+   "model_in": 10943,
+   "model_out": 2988,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 93442,
+   "output_tokens": 1429,
+   "cost_usd": 0.0990634,
+   "turns": 4,
+   "secs": 17.937,
+   "model_secs": 16.594,
+   "tool_secs": 1.343,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 10614,
+   "model_in": 6529,
+   "model_out": 4085,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 86846,
+   "output_tokens": 2134,
+   "cost_usd": 0.098851,
+   "turns": 5,
+   "secs": 23.211,
+   "model_secs": 17.226,
+   "tool_secs": 5.985,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 12891,
+   "model_in": 9004,
+   "model_out": 3887,
+   "calls": 4,
+   "failed": 2,
+   "clasify_calls": 0,
+   "input_tokens": 107224,
+   "output_tokens": 1978,
+   "cost_usd": 0.10344500000000001,
+   "turns": 5,
+   "secs": 48.251,
+   "model_secs": 19.404,
+   "tool_secs": 28.847,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 9310,
+   "model_in": 6085,
+   "model_out": 3225,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62499,
+   "output_tokens": 1391,
+   "cost_usd": 0.0805782,
+   "turns": 3,
+   "secs": 15.713,
+   "model_secs": 14.103,
+   "tool_secs": 1.61,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 4263,
+   "model_in": 2123,
+   "model_out": 2140,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 80454,
+   "output_tokens": 1135,
+   "cost_usd": 0.075966,
+   "turns": 4,
+   "secs": 16.158,
+   "model_secs": 12.851,
+   "tool_secs": 3.307,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 5152,
+   "model_in": 2550,
+   "model_out": 2602,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 39918,
+   "output_tokens": 1285,
+   "cost_usd": 0.0684054,
+   "turns": 2,
+   "secs": 9.843,
+   "model_secs": 9.806,
+   "tool_secs": 0.037,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 31567,
+   "model_in": 26248,
+   "model_out": 5319,
+   "calls": 3,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 95351,
+   "output_tokens": 2383,
+   "cost_usd": 0.1293684,
+   "turns": 4,
+   "secs": 61.728,
+   "model_secs": 19.388,
+   "tool_secs": 42.34,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 22457,
+   "model_in": 16837,
+   "model_out": 5620,
+   "calls": 5,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 130786,
+   "output_tokens": 2572,
+   "cost_usd": 0.1268348,
+   "turns": 6,
+   "secs": 37.811,
+   "model_secs": 25.606,
+   "tool_secs": 12.205,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 7970,
+   "model_in": 5205,
+   "model_out": 2765,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 62018,
+   "output_tokens": 1338,
+   "cost_usd": 0.0798684,
+   "turns": 5,
+   "secs": 16.14,
+   "model_secs": 13.363,
+   "tool_secs": 2.777,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 14726,
+   "model_in": 10835,
+   "model_out": 3891,
+   "calls": 3,
+   "failed": 2,
+   "clasify_calls": 0,
+   "input_tokens": 63808,
+   "output_tokens": 1715,
+   "cost_usd": 0.09126580000000001,
+   "turns": 4,
+   "secs": 46.818,
+   "model_secs": 18.135,
+   "tool_secs": 28.683,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 12077,
+   "model_in": 8074,
+   "model_out": 4003,
+   "calls": 4,
+   "failed": 2,
+   "clasify_calls": 0,
+   "input_tokens": 84739,
+   "output_tokens": 1888,
+   "cost_usd": 0.09524000000000002,
+   "turns": 5,
+   "secs": 25.759,
+   "model_secs": 17.471,
+   "tool_secs": 8.288,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 24738,
+   "model_in": 20249,
+   "model_out": 4489,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 67902,
+   "output_tokens": 1838,
+   "cost_usd": 0.1089022,
+   "turns": 3,
+   "secs": 18.187,
+   "model_secs": 17.223,
+   "tool_secs": 0.964,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 5646,
+   "model_in": 3250,
+   "model_out": 2396,
+   "calls": 5,
+   "failed": 1,
+   "clasify_calls": 0,
+   "input_tokens": 102112,
+   "output_tokens": 1310,
+   "cost_usd": 0.08471500000000001,
+   "turns": 6,
+   "secs": 18.449,
+   "model_secs": 17.346,
+   "tool_secs": 1.103,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 6091,
+   "model_in": 3657,
+   "model_out": 2434,
+   "calls": 1,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 40574,
+   "output_tokens": 1000,
+   "cost_usd": 0.0682326,
+   "turns": 2,
+   "secs": 9.751,
+   "model_secs": 9.687,
+   "tool_secs": 0.064,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 4278,
+   "model_in": 2202,
+   "model_out": 2076,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 59973,
+   "output_tokens": 956,
+   "cost_usd": 0.06904640000000001,
+   "turns": 3,
+   "secs": 34.174,
+   "model_secs": 13.728,
+   "tool_secs": 20.446,
+   "ok": true
+  },
+  {
+   "arm": "mcp-noclasify",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 6905,
+   "model_in": 5038,
+   "model_out": 1867,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "input_tokens": 60874,
+   "output_tokens": 915,
+   "cost_usd": 0.0731638,
+   "turns": 3,
+   "secs": 39.313,
+   "model_secs": 9.244,
+   "tool_secs": 30.069,
+   "ok": true
+  }
+ ],
+ "judgments": [
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q1",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers are fully correct; X wins the tie on measured characters, 4,529 vs 6,482."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q10",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both answers are fully correct; Y wins the tie on fewer measured characters (7104 vs 8339)."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q11",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Y includes the extra verified buildOrContext wrapper and main.go service-mode dispatch; X is correct but stops before those proof points despite using fewer characters."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q12",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Y verifies the addListener -> _addListener bookkeeping delegation that X states but admits it did not read; chars only favor X after correctness."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q13",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Correctness ties on all requested Redis issue/PR facts; Y wins the tiebreak with 10,797 chars vs X's 16,348."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q14",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Y directly cites the exact dependency, peerDependency, and peerDependenciesMeta fields; X gets the conclusion right but admits inferring key containing fields."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q15",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Y and X both answer the required facts, but X adds an extra inaccurate Child union claim while both share the helper-name error."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q16",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Y matches the correct eslint\u2192espree\u2192acorn chain and directly cites espree's dependencies.acorn field; X infers both containing dependency fields despite fewer characters."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q17",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers are fully correct; Y wins the tie on fewer instrumented characters (11,696 vs 12,120)."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q18",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers are fully correct; Y wins the correctness-tie tiebreak by using 2,985 characters versus X's 4,423."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q19",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Correctness tied; X wins on the verified 12,466 vs 17,977 character footprint while both leave native C++ dispatch symbols only partially evidenced."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q2",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Correctness tied; X identified the relevant source files and used fewer measured characters (6102 vs 7574)."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q20",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Y verifies the child_process import/API and ExecOutput interface while X only presumes the import and infers the interface, despite X using fewer characters."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q21",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "X is more correct on the conditional graph, especially after_model[0] targets where END is mapped to exitNode; Y is leaner but overstates that target set."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q22",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers are fully correct, but Y wins the correctness tie by the verified 13,931 vs 17,077 character footprint and no failed call."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q23",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Correctness tied on the syscall-to-vfs path; X wins the tie with fewer characters (8293 vs 10614) and leaner workflow."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q24",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "X and Y both enumerate the core sites correctly, but Y falsely says the http.js result feeds buildURL while X avoids that error and is slightly leaner."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q25",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Correctness is tied, but X cites the direct config-section resolved hunk and uses fewer instrumented characters (9310 vs 9908)."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q26",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers are materially correct; Y wins the tie on fewer measured characters (4263 vs 4806)."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q27",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 3
+    },
+    "mcp-noclasify": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Y is more complete on the core classes re-exported by line 4 (e.g. includes MutationObserver and QueriesObserver) and is slightly leaner; both skipped verifying query-core."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q28",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "X answers the required live conversation_history/messages data structure and session flush path; Y explicitly leaves that central memory path unknown despite lower chars."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q29",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Y uses the current 2026-07-28 authorization spec split and covers token acquisition more fully; X is correct on discovery/header but uses the older 2025-11-25 file and admits token-acquisition gaps."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q3",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Core correctness is tied; X wins on the character/workflow tiebreak, 7,970 chars and 4 calls versus Y's 8,573 chars and 6 calls with one failed call."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q30",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 3
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Correctness is tied; Y gives the pipe endpoint model more precisely and wins the character/workflow tiebreak (7,635 vs 14,726 chars)."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q4",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 3
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both identify the required fields/branches/methods, but X verifies more of the upstream request/redirect method bodies; Y is leaner but relies on comments/inference for decisive trace details."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q5",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Y ties the key unmount-before-resolve hydration scenarios to the added tests while X is source-correct but did not read the tests/one patch tail."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q6",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers get the required facts right, but X wins the tied-correctness comparison by the measured character gap (5,646 vs 6,636) and fewer failed/redundant calls."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q7",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-noclasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "X is fully correct while Y hedges the per-request wiring and cannot rule out dependencies.react; X is also leaner at 5,787 vs 6,091 chars."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q8",
+   "scores": {
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers get the class, base class, file paths, and dispatchEvent method right; X wins the correctness-tie tiebreak by fewer instrumented characters (4278 vs 4387) and fewer calls."
+  },
+  {
+   "pair": "mcp-clasify~mcp-noclasify",
+   "pass": 1,
+   "q": "Q9",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-noclasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-noclasify",
+   "reason": "Both answers are materially correct, but Y wins the correctness tie with the same verified facts in 6,905 chars/2 calls versus X's 9,749 chars/4 calls."
+  }
+ ]
+}

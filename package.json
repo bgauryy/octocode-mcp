@@ -1,7 +1,7 @@
 {
   "name": "octocode-monorepo",
   "description": "Monorepo for Octocode MCP and related packages - Model Context Protocol server for advanced GitHub repository analysis and code discovery.",
-  "version": "20.1.0",
+  "version": "20.2.0",
   "author": "Guy Bary <bgauryy@octocodeai.com>",
   "bugs": "https://github.com/bgauryy/octocode/issues",
   "devDependencies": {
@@ -24,7 +24,6 @@
   "scripts": {
     "build:native:all": "yarn workspaces foreach -Ap --include @octocodeai/octocode-native run build:all",
     "lint:fix": "yarn workspaces foreach -Apt run lint:fix",
-    "platforms:check": "yarn workspace @octocodeai/octocode-native platforms:check",
     "test:quiet": "yarn workspaces foreach -Apt run test:quiet",
     "contracts:regen": "yarn install && yarn workspace @octocodeai/config generate:tool-contract"
   },
@@ -33,5 +32,17 @@
     "packages/*",
     "packages/octocode-native/npm/*",
     "skills"
-  ]
+  ],
+  "resolutions": {
+    "@octocodeai/config": "workspace:*",
+    "@octocodeai/octocode-core": "file:///Users/bgaryy/code/octocode-mcp-host/packages/octocode-core",
+    "@octocodeai/octocode-native": "workspace:*",
+    "@octocodeai/octocode-native-darwin-arm64": "workspace:*",
+    "@octocodeai/octocode-native-darwin-x64": "workspace:*",
+    "@octocodeai/octocode-native-linux-arm64-gnu": "workspace:*",
+    "@octocodeai/octocode-native-linux-x64-gnu": "workspace:*",
+    "@octocodeai/octocode-native-linux-x64-musl": "workspace:*",
+    "@octocodeai/octocode-native-win32-x64-msvc": "workspace:*",
+    "@octocodeai/octocode-skill-installer": "workspace:*"
+  }
 }

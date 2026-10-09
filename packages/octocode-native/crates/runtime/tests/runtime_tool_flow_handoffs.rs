@@ -62,7 +62,8 @@ async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected
         "mainGoal":"How does the retry policy stop repeated failed attempts?",
         "reasoning":"Select the deciding source among candidates and preserve exceptions.",
         "path":root.parent().unwrap(), "matchString":"retry delay",
-        "sort":"path", "page":page, "pageSize":page_size, "contextLines":1
+        "sort":"path", "page":page, "pageSize":page_size, "contextLines":1,
+        "extras":["hints"]
     });
     let outcome = runtime
         .execute(
@@ -189,7 +190,7 @@ async fn large_paged_local_read_offers_clasify_locate() {
         }
     };
     let brief = |extra: Value| {
-        let mut query = json!({"mainGoal":"find the housekeeping timer","reasoning":"read the file","path":file});
+        let mut query = json!({"mainGoal":"find the housekeeping timer","reasoning":"read the file","path":file,"extras":["hints"]});
         query
             .as_object_mut()
             .unwrap()

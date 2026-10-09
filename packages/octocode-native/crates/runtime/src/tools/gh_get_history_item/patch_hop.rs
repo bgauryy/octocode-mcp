@@ -10,11 +10,14 @@ use std::collections::HashSet;
 
 /// The lossless re-read of every patch row a `matchString` view narrowed
 /// (hit lines, clipped long lines; rows marked `fullPatchChars`, kept on
-/// rows only with `debug`): `next.readFullPatches` reads the selected files
+/// rows only with `extras: ["details"]`): `next.readFullPatches` reads the selected files
 /// whole and pages through the patch window; more files than one selection
 /// holds continue in `readFullPatches2`, `readFullPatches3`, ….
 pub(super) fn attach_full_patch_continuation(out: &mut Value, q: &HistoryItemRequest) {
-    let narrowed = take_reshaped_paths(out.pointer_mut("/pullRequests/0/files"), q.debug());
+    let narrowed = take_reshaped_paths(
+        out.pointer_mut("/pullRequests/0/files"),
+        q.wants(crate::contracts::tool_types::ExtraKind::Details),
+    );
     if narrowed.is_empty() {
         return;
     }
@@ -86,55 +89,7 @@ pub(super) fn patch_continuation(mut nq: Value, entry: &Value, q: &HistoryItemRe
         nq["offset"] = cursor.clone();
     }
     clamp_hop_length(&mut nq, q);
-    with_hop_page(menu_read(nq), q)
-}
-
-/// The response page a patch-walk hop (`continuePatch`, or the next file
-/// page of a patch read) asks for. A hop reads patches only, so it asks for
-/// twice the configured page (`output.pagination.defaultCharLength`, up to
-/// the contract's `responseLength` maximum) whatever page it ran with: the
-/// walk takes about half the calls at a page that scales with the configured
-/// one, and never doubles twice. A caller's explicit `length` keeps the
-/// call's page. `None` when the runtime named no page.
-pub(super) fn hop_response_length(q: &HistoryItemRequest) -> Option<usize> {
-    let page = q.auto_page_chars.filter(|page| *page > 0)?;
-    let max = crate::contracts::tool_contract(ToolId::GhGetHistoryItem)
-        .ok()?
-        .pointer("/inputSchema/properties/responseLength/maximum")?
-        .as_u64()
-        .and_then(|max| usize::try_from(max).ok())?;
-    let page = if q.char_length().is_some() {
-        page
-    } else {
-        q.configured_page_chars
-            .filter(|configured| *configured > 0)
-            .unwrap_or(page)
-            .saturating_mul(2)
-    };
-    Some(page.min(max))
-}
-
-/// The next file page of a patch walk, at the walk's page
-/// ([`hop_response_length`]).
-pub(super) fn patch_walk_file_page(lead: Value, q: &HistoryItemRequest) -> Value {
-    with_hop_page(lead, q)
-}
-
-/// `lead` asking for the [`hop_response_length`] page, paged by whole rows
-/// (`responseScope:"rows"`): an explicit `responseLength` alone pages the
-/// rendered text, so a row that outgrew its page would fall back to text
-/// windows that empty the structured `results` and bury the walk's
-/// `next.*`. Row paging splits it into structured `rowPart`s instead, and
-/// the walk's `continuePatch`/`nextFilePage` rides the last part.
-pub(super) fn with_hop_page(mut lead: Value, q: &HistoryItemRequest) -> Value {
-    if let (Some(page), Some(input)) = (
-        hop_response_length(q),
-        lead.get_mut("query").and_then(Value::as_object_mut),
-    ) {
-        input.insert("responseLength".into(), json!(page));
-        input.insert("responseScope".into(), json!("rows"));
-    }
-    lead
+    menu_read(nq)
 }
 
 /// A hop carries the caller's `length` as the window it got, so a length
@@ -242,7 +197,7 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
     let typed = || -> Option<GhGetHistoryItemQuery> {
         Some(GhGetHistoryItemQuery::Commit {
             base: None,
-            debug: false,
+            extras: Vec::new(),
             file_page: q
                 .file_page()
                 .or((!nested).then_some(1))
@@ -279,7 +234,7 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
     let mut value = typed()
         .and_then(|query| serde_json::to_value(query).ok())
         .unwrap_or_default();
-    remove_key(&mut value, "debug");
+    remove_key(&mut value, "extras");
     value
 }
 
@@ -330,16 +285,13 @@ pub(super) fn attach_diff_continuations(
         let mut nq = base.clone();
         nq["filePage"] = json!(page);
         remove_key(&mut nq, "offset");
-        let lead = make(
-            nq,
-            "Continue the changed-file list from the beginning of each new patch.",
+        next.insert(
+            "nextFilePage".into(),
+            make(
+                nq,
+                "Continue the changed-file list from the beginning of each new patch.",
+            ),
         );
-        let lead = if q.include_diff() {
-            patch_walk_file_page(lead, q)
-        } else {
-            lead
-        };
-        next.insert("nextFilePage".into(), lead);
     }
     // Files were listed without patches: offer the same page with diffs.
     if base.get("sections").is_none() && cursors.files_listed {
@@ -358,7 +310,7 @@ pub(super) fn attach_diff_continuations(
         clamp_hop_length(&mut nq, q);
         next.insert(
             "continuePatch".into(),
-            with_hop_page(make(nq, "Continue the current patch window."), q),
+            make(nq, "Continue the current patch window."),
         );
     }
     if matches!(operation, ItemOperation::Commit)
