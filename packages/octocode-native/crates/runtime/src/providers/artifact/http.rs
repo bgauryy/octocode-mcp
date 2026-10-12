@@ -842,7 +842,7 @@ mod tests {
     #[tokio::test]
     async fn server_errors_retry_the_configured_number_of_times() {
         for (retries, requests) in [(0u8, 1usize), (2, 3)] {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             Mock::given(method("GET"))
                 .respond_with(ResponseTemplate::new(503))
                 .mount(&server)
@@ -879,7 +879,7 @@ mod tests {
             ("120", 1),
             ("Fri, 31 Dec 9999 23:59:59 GMT", 1),
         ] {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             Mock::given(method("GET"))
                 .respond_with(ResponseTemplate::new(429).insert_header("retry-after", retry_after))
                 .mount(&server)
@@ -1021,7 +1021,7 @@ mod tests {
 
     #[tokio::test]
     async fn dns_pin_connects_to_the_validated_address() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("GET"))
             .and(path("/package"))
             .respond_with(ResponseTemplate::new(200).set_body_string("{}"))

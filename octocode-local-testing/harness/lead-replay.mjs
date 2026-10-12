@@ -1,20 +1,21 @@
 // Lead replay: run every follow-up lead a fixture call emits and
 // check it does what its key promises. A lead is `{tool, query}` under `next.*`
 // or `hints.*`; the recurring defect is a key that says one thing while its
-// query does another (an includeIgnored lead that only lifts defaultExcludes, a
+// query does another (an includeHidden lead that only lifts defaultExcludes, a
 // findText lead whose regex ran as literal text, a narrowScope lead with an
 // unpinned ref that returns notFound, a viewReleaseSource lead on a build path).
 //
 // Phase 1 runs a fixture set over the local corpus (a synthetic workspace with
-// ignored/hidden/excluded/paged content, repos/*, fixtures/large) and, when a
-// GitHub token is present, a few GitHub calls. Phase 2 executes every distinct
+// ignored/hidden/excluded/paged content, repos/*, fixtures/large) and, with
+// OCTOCODE_LIVE=1 (the live part), a few GitHub and registry calls. Phase 2 executes every distinct
 // lead verbatim (bounded per key, two levels deep). Each lead is checked by
 // predicates chosen from its KEY FAMILY (docs/OCTOCODE_TOOLS.md,
 // docs/TOOL_DATA_CONTRACT.md), never per fixture:
 //   valid         the lead is accepted (no transport error, no invalid* row error)
 //   executes      no error row (notFound, fileAccessFailed, ...)
 //   key-tool      the key's tool/operation matches (findCallers -> lspSearch callers)
-//   lifts-flag    include* keys set the flag they name (includeIgnored:true, ...)
+//   lifts-flag    include* keys set the flag they name (includeHidden:true, ...)
+//   lifts-skip    an includeSkipped lead lifts at least one skip cause the source reported
 //   keeps-scope   same-tool lead keeps every source field it does not mutate
 //   extras        same-tool lead inherits extras; no lead inherits mainGoal/reasoning
 //   ref-pinned    a lead ref equals the source ref or is a full commit SHA
@@ -25,14 +26,13 @@
 //   covers-anchor a read lead shows a source anchor line or its matchString
 //   anchor-line   an lspSearch lead's line holds its symbolName
 //   not-build     a release-source lead is not a build-output path
-// Known-open defects are listed in KNOWN_OPEN with their backlog ID and print as
-// XFAIL (neither pass nor fail). Anything else FAILs with source, key, query, outcome.
+// A failed assertion FAILs with source, key, query, outcome.
 //
 //   node harness/lead-replay.mjs      (OCTOCODE_LEAD_REPLAY_BUDGET_MS, default 140000)
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { FIXTURES, REPOS, ROOT, checks, cliEntry, startServer, writeResults } from './mcp-client.mjs';
+import { FIXTURES, LIVE, REPOS, ROOT, checks, cliEntry, startServer, writeResults } from './mcp-client.mjs';
 
 const SUITE = 'lead-replay';
 const { check, skip, summary, results } = checks(SUITE);
@@ -43,30 +43,27 @@ const CONCURRENCY = 4;
 const MAX_DEPTH = 2;
 const WALK_PAGES = 2;
 
-// Known-open defects: shown as XFAIL with the backlog ID, never hidden.
-const KNOWN_OPEN = [
-  {
-    id: 'B38', assertion: 'lifts-flag', key: /^includeIgnored$/,
-    why: 'the shared includeIgnored key also runs defaultExcludes:false or includeHidden:true (name it by what it lifts)',
-  },
-];
-const knownOpen = (assertion, key) => KNOWN_OPEN.find(k => k.assertion === assertion && k.key.test(key));
-
 // Key families.
 const PAGE_KEYS = /^(nextPage|nextMatchPage|nextFilePage|nextCommitPage|nextCommentPage|nextReviewPage|nextImporterPage|nextDiagnosticPage|continue[A-Za-z]*|expandScan|readHits|readDeclaration|wholeLines|readBoundedLines|responsePagination\.next)$/;
-const FLAG_KEYS = { includeIgnored: 'includeIgnored', includeHidden: 'includeHidden', includeArchived: 'includeArchived' };
+const FLAG_KEYS = { includeHidden: 'includeHidden', includeArchived: 'includeArchived' };
+// The skip causes an includeSkipped lead may lift: the query flag that lifts each, and the words a source's hint or warning names it by.
+const SKIP_CAUSES = [
+  { cause: 'ignored', lifted: q => q.includeIgnored === true, named: /gitignore|\.ignore|ignored/i },
+  { cause: 'hidden', lifted: q => q.includeHidden === true, named: /hidden|dot entr|['"(/\s]\.[\w-]+/i },
+  { cause: 'default-excluded', lifted: q => q.defaultExcludes === false, named: /default|exclud|prune/i },
+];
 // Leads that promise evidence the source row is known to hold. find* leads may legitimately answer empty (the source found nothing either).
-const NOT_EMPTY_KEYS = /^(read(Block|Files|Commit|Issue|PullRequest|AtCommit|AtMerge|MergeCommit|Parent|Patches|SelectedPatches|FullPatches)?|include(Ignored|Hidden|Archived)|narrowScope|view(Tree|Repo|Refs|ReleaseSource)|repair|ignoreCase)$/;
+const NOT_EMPTY_KEYS = /^(read(Block|Files|Commit|Issue|PullRequest|AtCommit|AtMerge|MergeCommit|Parent|Patches|SelectedPatches|FullPatches)?|include(Skipped|Hidden|Archived)|narrowScope|view(Tree|Repo|Refs|ReleaseSource)|repair|ignoreCase)$/;
 const SAME_TOOL_PAGE_KEYS = /^(next[A-Za-z]*Page|continue[A-Za-z]*|expandScan|restart)$/;
 // Fields a same-tool lead may change (besides CONTINUATION_FIELDS), per key family.
 const MUTABLE = [
-  [/^include(Ignored|Hidden|Archived)$/, new Set(['includeIgnored', 'includeHidden', 'includeArchived', 'defaultExcludes'])],
+  [/^include(Skipped|Hidden|Archived)$/, new Set(['includeIgnored', 'includeHidden', 'includeArchived', 'defaultExcludes'])],
   [/^expandScan$/, new Set(['maxEntries', 'maxFiles', 'maxDepth'])],
   [/^continue[A-Za-z]*$/, new Set(['fullContent'])],
 ];
 // Enrichment and clipped-read leads add the option that widens the same read.
 const ADDS_OPTIONS = /^(expand[A-Za-z]*|wholeLines|readBoundedLines|readHits|readDeclaration)$/;
-const SAME_TOOL_KEYS = /^(includeIgnored|includeHidden|includeArchived|narrowScope|restart|retry|repair|broadenSearch|ignoreCase)$/;
+const SAME_TOOL_KEYS = /^(includeSkipped|includeHidden|includeArchived|narrowScope|restart|retry|repair|broadenSearch|ignoreCase)$/;
 const SKIP_EXEC_KEYS = { cloneRepo: 'writes the clone cache', exploreClone: 'writes the clone cache', clasify: 'paid provider call' };
 const CONTINUATION_FIELDS = new Set(['page', 'snapshot', 'scanOffset', 'matchPage', 'offset', 'importerPage', 'diagnosticPage', 'diagnosticSnapshot', 'supersedes', 'materializeOffset', 'extras', 'mainGoal', 'reasoning', 'ranges', 'length', 'unit']);
 const KEY_TOOLS = [
@@ -354,10 +351,6 @@ const githubFixtures = [
 
 // Execution.
 const octocodeBin = path.join(ROOT, 'packages/octocode/out/octocode.js');
-function tokenAvailable() {
-  if (process.env.GITHUB_TOKEN || process.env.GH_TOKEN) return true;
-  return spawnSync(process.execPath, [octocodeBin, 'auth', 'status'], { encoding: 'utf8', timeout: 20_000 }).status === 0;
-}
 buildWorkspace();
 const client = await startServer({ env: { OCTOCODE_BETA: 'true', PATH: `${path.join(ROOT, 'node_modules', '.bin')}${path.delimiter}${process.env.PATH}` }, timeoutMs: 90_000 });
 const mcpTools = new Set(client.tools.map(t => t.name));
@@ -378,14 +371,14 @@ async function pool(items, worker) {
   await Promise.all(Array.from({ length: CONCURRENCY }, async () => { while (i < items.length) await worker(items[i++]); }));
 }
 
-const haveGithub = tokenAvailable();
 const plan = fixtures().filter(([tool, , label]) => {
   if (onMcp(tool) || CLI_ONLY.has(tool)) return true;
   skip(`fixture ${label}`, `${tool} is not registered on this server`);
   return false;
 });
-if (haveGithub) plan.push(...githubFixtures);
-else skip('GitHub fixtures', 'no GitHub token (GITHUB_TOKEN, GH_TOKEN or `octocode auth status`): GitHub leads are not replayed');
+// GitHub and registry fixtures are the live part of this suite (they need the network and the caller's GitHub login).
+if (LIVE) plan.push(...githubFixtures);
+else skip('GitHub and registry fixtures', 'live (set OCTOCODE_LIVE=1): GitHub and registry leads are not replayed');
 
 // A brief on these fixtures probes that no continuation inherits mainGoal/reasoning (one per tool family).
 const BRIEF = new Set(['lf large default window', 'ss files paged', 'as symbols dir', 'lsp references', 'gh code', 'gh history prs', 'topology deadCode ceiling', 'lf matchString windows']);
@@ -410,7 +403,6 @@ sources.sort((a, b) => plan.findIndex(p => p[2] === a.label) - plan.findIndex(p 
 
 // Judging.
 const failures = [];
-const xfails = [];
 const replayed = [];
 const stats = { sourceCalls: sources.length, leadsSeen: 0, replayed: 0, duplicates: 0, capped: 0, overBudget: 0, skipped: {}, assertions: 0 };
 
@@ -424,21 +416,14 @@ function outcomeOf(entry) {
 
 let batch = [];
 function record(_lead, _source, assertion, ok, detail) { batch.push({ assertion, ok: !!ok, detail }); stats.assertions += 1; return ok; }
-/** One PASS line per lead listing the assertions that held; a FAIL (or XFAIL) line each for the rest. */
+/** One PASS line per lead listing the assertions that held; a FAIL line each for the rest. */
 function flush(lead, source) {
   const base = `${source.label} :: ${lead.key} (${lead.container}) -> ${lead.tool}`;
   const passed = batch.filter(b => b.ok).map(b => b.assertion);
   if (passed.length) check(`${base} :: ${passed.join(',')}`, true);
   for (const { assertion, detail } of batch.filter(b => !b.ok)) {
     const name = `${base} :: ${assertion}`;
-    const known = knownOpen(assertion, lead.key);
-    const info = { source: source.label, sourceTool: source.tool, sourceQuery: source.args, leadPath: lead.path, key: lead.key, tool: lead.tool, query: lead.query, assertion, outcome: short(detail, 600), ...(known && { knownOpen: known.id }) };
-    if (known) {
-      xfails.push(info);
-      results.push({ suite: SUITE, name, ok: null, skipped: `expected failure ${known.id}: ${known.why}`, detail: short(detail, 220) });
-      console.log(`XFAIL [${SUITE}] ${name} - ${known.id}: ${short(detail, 160)}`);
-      continue;
-    }
+    const info = { source: source.label, sourceTool: source.tool, sourceQuery: source.args, leadPath: lead.path, key: lead.key, tool: lead.tool, query: lead.query, assertion, outcome: short(detail, 600) };
     failures.push(info);
     check(name, false, detail);
     console.log(`  source: ${source.tool} ${short(canon(source.args), 300)}\n  lead  : ${lead.key} ${short(canon(lead.query), 400)}\n  result: ${short(detail, 400)}`);
@@ -503,8 +488,19 @@ function judge(lead, source, entry, shown, { walked = false } = {}) {
     record(lead, source, 'lifts-flag', lq[flag] === true, `${flag}=${lq[flag] ?? 'unset'} includeHidden=${lq.includeHidden ?? 'unset'} defaultExcludes=${lq.defaultExcludes ?? 'unset'}`);
   }
 
+  // includeSkipped lifts at least one skip cause, and one the source named
+  // when its hints or warnings name any (the flag set is the minimal one the
+  // probe found, so it may lift several).
+  if (key === 'includeSkipped' && single) {
+    const lifted = SKIP_CAUSES.filter(c => c.lifted(lq) && !c.lifted(sq));
+    const said = outcomeOf(source.entry).text;
+    const reported = SKIP_CAUSES.filter(c => c.named.test(said));
+    const ok = lifted.length > 0 && (reported.length === 0 || lifted.some(c => reported.includes(c)));
+    record(lead, source, 'lifts-skip', ok, `lifted=${lifted.map(c => c.cause).join('+') || 'none'} reported=${reported.map(c => c.cause).join('+') || 'none'}`);
+  }
+
   // A same-tool lead keeps everything it does not mutate.
-  if (single && sameTool && (flag || PAGE_KEYS.test(key) || /^(restart|retry)$/.test(key))) {
+  if (single && sameTool && (flag || key === 'includeSkipped' || PAGE_KEYS.test(key) || /^(restart|retry)$/.test(key))) {
     const mutable = MUTABLE.find(([re]) => re.test(key))?.[1];
     const changed = scopeChanges(sq, lq, { mutable, additions: ADDS_OPTIONS.test(key) || /^continue/.test(key) });
     record(lead, source, 'keeps-scope', changed.length === 0, changed.join('; '));
@@ -641,12 +637,12 @@ const unexercised = [...contractKeys].filter(k => !emitted.has(k)).sort();
 if (stats.overBudget) skip('replay budget', `${stats.overBudget} leads not replayed: the ${BUDGET_MS} ms budget ended (raise OCTOCODE_LEAD_REPLAY_BUDGET_MS)`);
 for (const [key, n] of Object.entries(stats.skipped)) skip(`lead ${key}`, `${n} not executed: ${SKIP_EXEC_KEYS[key]}`);
 console.log(`\n[${SUITE}] ${stats.sourceCalls} source calls, ${stats.leadsSeen} leads seen, ${stats.replayed} replayed, ${stats.duplicates} duplicates, ${stats.capped} over the per-key cap (${PER_KEY}), ${stats.overBudget} over budget, ${(Date.now() - STARTED) / 1000}s`);
-console.log(`[${SUITE}] expected failures: ${xfails.length}; contract lead keys no fixture emitted: ${unexercised.join(', ') || 'none'}`);
+console.log(`[${SUITE}] contract lead keys no fixture emitted: ${unexercised.join(', ') || 'none'}`);
 const keyTable = [...keyStats].sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => `${k} ${v.replayed}/${v.emitted}`).join(', ');
 console.log(`[${SUITE}] replayed/emitted per key: ${keyTable}`);
 
 const result = summary();
-writeResults(SUITE, { stats, keyStats: Object.fromEntries(keyStats), unexercised, failures, xfails, replayed, sources: sources.map(s => ({ label: s.label, tool: s.tool, args: s.args, ms: s.entry.ms, outcome: outcomeOf(s.entry).text })), results: result.results });
+writeResults(SUITE, { stats, keyStats: Object.fromEntries(keyStats), unexercised, failures, replayed, sources: sources.map(s => ({ label: s.label, tool: s.tool, args: s.args, ms: s.entry.ms, outcome: outcomeOf(s.entry).text })), results: result.results });
 client.close();
 if (!process.env.OCTOCODE_LEAD_REPLAY_KEEP) { fs.rmSync(WABS, { recursive: true, force: true }); fs.rmSync(SABS, { recursive: true, force: true }); }
 process.exitCode = result.failed.length ? 1 : 0;

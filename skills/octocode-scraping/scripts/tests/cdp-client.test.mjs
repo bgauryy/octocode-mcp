@@ -19,8 +19,8 @@ function fixture(failedChecks) {
   // Only the Chrome package's public executable is a fixture. The client generates and
   // executes its real runner through real child processes; the fake executable plays the
   // package's `/raw open|script|cleanup` contract, including the --stealth gate.
-  mkdirSync(join(root, '.octocode'));
-  writeFileSync(join(root, '.octocode/dom-actionability.mjs'), 'export async function waitForPageReady() { return true; }\n');
+  mkdirSync(join(root, '.octocode/tmp/chrome-devtools/helpers'), { recursive: true });
+  writeFileSync(join(root, '.octocode/tmp/chrome-devtools/helpers/dom-actionability.mjs'), 'export async function waitForPageReady() { return true; }\n');
   const tracePath = join(root, 'trace.json');
   const commandsPath = join(root, 'commands.json');
   writeFileSync(join(bin, 'octocode-chrome-devtools.mjs'), `

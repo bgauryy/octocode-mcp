@@ -79,7 +79,7 @@ fn an_empty_name_search_does_not_blame_files_it_scanned() {
     assert_eq!(out["filesScanned"], 5, "{out}");
     let hints = out["hints"].to_string();
     assert!(!hints.contains("skipped paths"), "{hints}");
-    assert!(out["next"].get("includeIgnored").is_none(), "{out}");
+    assert!(out["next"].get("includeSkipped").is_none(), "{out}");
 }
 
 /// Files behind a hidden directory are counted by themselves, not with the
@@ -101,14 +101,11 @@ fn an_empty_name_search_counts_only_the_hidden_files() {
     assert!(hints.contains("hidden .cfg/"), "{hints}");
 }
 
-/// The first astSearch row of a result's `narrowScope` lead (the hidden
-/// entry: `symbols` has no `includeHidden`), its relative `path` resolved
-/// against `root`.
-fn hidden_lead(root: &std::path::Path, out: &serde_json::Value) -> serde_json::Value {
-    let mut lead = out["next"]["narrowScope"]["query"]["queries"][0].clone();
-    assert!(lead.is_object(), "no narrowScope lead: {out}");
-    let at = std::path::PathBuf::from(lead["path"].as_str().expect("lead path"));
-    lead["path"] = json!(root.join(at).to_string_lossy());
+/// The astSearch row of a result's `includeSkipped` lead: the same scope
+/// with the walk flags that reach the skipped files.
+fn skipped_lead(out: &serde_json::Value) -> serde_json::Value {
+    let lead = out["next"]["includeSkipped"]["query"]["queries"][0].clone();
+    assert!(lead.is_object(), "no includeSkipped lead: {out}");
     lead
 }
 
@@ -131,8 +128,8 @@ fn found_files(out: &serde_json::Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The hidden-folder lead narrows `path` to the entry, so a root-anchored
-/// `exclude` is rebased onto it: the lead finds what the hint counted.
+/// The hidden-path lead keeps the scope, so a root-anchored `exclude` keeps
+/// its meaning: the lead finds what the hint counted.
 #[test]
 fn the_hidden_lead_keeps_the_exclude_anchored_to_the_scan_root() {
     let root = Fixture::new();
@@ -146,15 +143,17 @@ fn the_hidden_lead_keeps_the_exclude_anchored_to_the_scan_root() {
     );
     assert_eq!(out["status"], "empty", "{out}");
     assert!(out["hints"].to_string().contains("1 file(s)"), "{out}");
-    let lead = hidden_lead(&root.0, &out);
-    assert_eq!(lead["exclude"], json!(["skip/**"]), "{lead}");
+    let lead = skipped_lead(&out);
+    assert_eq!(lead["exclude"], json!([".cfg/skip/**"]), "{lead}");
+    assert_eq!(lead["includeHidden"], json!(true), "{lead}");
     let ran = run_lead(&root.0, lead);
     assert_eq!(found_files(&ran).len(), 1, "{ran}");
     assert!(found_files(&ran)[0].ends_with("keep.ts"), "{ran}");
 }
 
-/// `languageGlobs` match paths relative to the scanned root: the lead
-/// rebases them, so the hidden header is still parsed with the mapped grammar.
+/// `languageGlobs` map a hidden header to a grammar: the probe counts it
+/// as outlinable (as the scan does), and the lead parses it with the mapped
+/// grammar.
 #[test]
 fn the_hidden_lead_keeps_the_language_globs_anchored_to_the_scan_root() {
     let root = Fixture::new();
@@ -169,10 +168,10 @@ fn the_hidden_lead_keeps_the_language_globs_anchored_to_the_scan_root() {
         json!({"symbolName":"Widget","languageGlobs":{"cpp":[".cfg/include/**/*.h"]}}),
     );
     assert_eq!(out["status"], "empty", "{out}");
-    let lead = hidden_lead(&root.0, &out);
+    let lead = skipped_lead(&out);
     assert_eq!(
         lead["languageGlobs"],
-        json!({"cpp":["include/**/*.h"]}),
+        json!({"cpp":[".cfg/include/**/*.h"]}),
         "{lead}"
     );
     let ran = run_lead(&root.0, lead);
@@ -180,10 +179,35 @@ fn the_hidden_lead_keeps_the_language_globs_anchored_to_the_scan_root() {
     assert!(ran["files"].to_string().contains("Widget"), "{ran}");
 }
 
-/// A hidden *file* is outlined as one file, where `languageGlobs` is an
-/// error: the lead names its grammar with `language` instead and still runs.
+/// A file only `languageGlobs` map to a grammar (an extension no outlined
+/// language has) behind a `.gitignore` rule is counted and offered.
 #[test]
-fn the_hidden_file_lead_runs_with_language_not_language_globs() {
+fn a_language_globs_file_behind_an_ignore_rule_gets_a_lead() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
+    std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+    std::fs::create_dir_all(root.0.join("gen")).expect("dir");
+    std::fs::write(
+        root.0.join("gen/api.tsx.in"),
+        "export function zzMapped() {}\n",
+    )
+    .expect("mapped source");
+    std::fs::write(root.0.join("main.ts"), "export const kept = 1;\n").expect("source");
+    let out = empty_outline(
+        &root.0,
+        json!({"symbolName":"zzMapped","languageGlobs":{"typescript":["**/*.tsx.in"]}}),
+    );
+    assert_eq!(out["status"], "empty", "{out}");
+    let lead = skipped_lead(&out);
+    assert_eq!(lead["includeIgnored"], json!(true), "{lead}");
+    let ran = run_lead(&root.0, lead);
+    assert!(ran.to_string().contains("zzMapped"), "{ran}");
+}
+
+/// A hidden *file* is reached the same way: the lead keeps the scope and its
+/// filters and lifts `includeHidden`.
+#[test]
+fn the_hidden_file_lead_keeps_the_scope_and_its_filters() {
     let root = Fixture::new();
     std::fs::write(root.0.join(".hidden.ts"), "export function hf() {}\n").expect("hidden");
     std::fs::write(root.0.join("plain.ts"), "export function other() {}\n").expect("plain");
@@ -192,13 +216,17 @@ fn the_hidden_file_lead_runs_with_language_not_language_globs() {
         json!({"symbolName":"hf","languageGlobs":{"typescript":["**/*.ts"]},"exclude":["**/none/**"]}),
     );
     assert_eq!(out["status"], "empty", "{out}");
-    let lead = hidden_lead(&root.0, &out);
-    assert!(lead.get("languageGlobs").is_none(), "{lead}");
-    assert!(lead.get("exclude").is_none(), "{lead}");
-    assert_eq!(lead["language"], "typescript", "{lead}");
+    let lead = skipped_lead(&out);
+    assert_eq!(
+        lead["languageGlobs"],
+        json!({"typescript":["**/*.ts"]}),
+        "{lead}"
+    );
+    assert_eq!(lead["exclude"], json!(["**/none/**"]), "{lead}");
+    assert_eq!(lead["includeHidden"], json!(true), "{lead}");
     let ran = run_lead(&root.0, lead);
     assert!(ran.get("errorCode").is_none(), "{ran}");
-    assert!(ran["symbols"].to_string().contains("hf"), "{ran}");
+    assert!(ran["files"].to_string().contains("hf"), "{ran}");
 }
 
 /// The fixture of a lead-replay defect: the name sits in a
@@ -222,9 +250,8 @@ fn skipped_workspace(hidden_name: &str, ignored_name: &str) -> Fixture {
 }
 
 /// A name that sits only in the ignored `build/` leads to the same scope
-/// with the walk flags that reach it. The hidden directory holds another
-/// symbol, so it is not offered (its lead would be empty), and the lead
-/// never moves `path`.
+/// with the walk flags that reach it, and not `includeHidden`: the hidden
+/// directory holds another symbol.
 #[test]
 fn an_ignored_symbol_leads_to_its_own_scope_with_the_ignore_flags_lifted() {
     let root = skipped_workspace("hiddenSym", "ignoredSym");
@@ -234,70 +261,60 @@ fn an_ignored_symbol_leads_to_its_own_scope_with_the_ignore_flags_lifted() {
     let hints = out["hints"].to_string();
     assert!(hints.contains("1 file(s)"), "{hints}");
     assert!(!hints.contains(".hidden"), "{hints}");
-    let lead = &out["next"]["includeIgnored"]["query"]["queries"][0];
+    let lead = skipped_lead(&out);
     assert_eq!(lead["path"], json!(root.0.to_string_lossy()), "{out}");
     assert_eq!(lead["includeIgnored"], json!(true), "{out}");
     assert_eq!(lead["defaultExcludes"], json!(false), "{out}");
     assert!(lead.get("includeHidden").is_none(), "{out}");
-    let found = run_lead(&root.0, lead.clone());
+    let found = run_lead(&root.0, lead);
     assert_eq!(found_files(&found).len(), 1, "{found}");
     assert!(found.to_string().contains("ignoredSym"), "{found}");
 }
 
-/// A name only a hidden directory holds leads to that directory, and not
-/// to the walks that lift ignore rules and default prunes.
+/// A name only a hidden directory holds lifts `includeHidden` alone.
 #[test]
-fn a_hidden_symbol_leads_to_its_directory_only() {
+fn a_hidden_symbol_lead_lifts_only_the_hidden_flag() {
     let root = skipped_workspace("hiddenSym", "ignoredSym");
     let out = empty_outline(&root.0, json!({"symbolName":"hiddenSym"}));
     assert_eq!(out["status"], "empty", "{out}");
-    assert!(out["next"].get("includeIgnored").is_none(), "{out}");
-    let lead = hidden_lead(&root.0, &out);
-    assert!(
-        lead["path"]
-            .as_str()
-            .is_some_and(|p| p.ends_with(".hidden")),
-        "{lead}"
-    );
+    let lead = skipped_lead(&out);
+    assert_eq!(lead["includeHidden"], json!(true), "{lead}");
     assert!(lead.get("includeIgnored").is_none(), "{lead}");
+    assert!(lead.get("defaultExcludes").is_none(), "{lead}");
     let found = run_lead(&root.0, lead);
     assert!(found.to_string().contains("hiddenSym"), "{found}");
 }
 
-/// A name held both by a hidden directory and by an ignored one gets one
-/// lead per cause; each reaches its own files.
+/// A name held both by a hidden directory and by an ignored one: one lead
+/// lifts both causes and reaches every file, and the hint names both.
 #[test]
-fn a_symbol_behind_hidden_and_ignored_paths_gets_a_lead_per_cause() {
+fn a_symbol_behind_hidden_and_ignored_paths_gets_one_lead_lifting_both() {
     let root = skipped_workspace("sharedSym", "sharedSym");
     let out = empty_outline(&root.0, json!({"symbolName":"sharedSym"}));
     assert_eq!(out["status"], "empty", "{out}");
-    // The response keeps the first two leads: the skip leads go before the
-    // text fallback, which is the one that gives way.
+    // The text fallback gives way to the skip lead.
     let channels: Vec<&str> = out["next"]
         .as_object()
         .expect("next")
         .keys()
         .map(String::as_str)
         .collect();
-    assert_eq!(
-        channels.last().copied(),
-        Some("findText"),
-        "findText follows the skip leads: {out}"
-    );
-    assert!(channels.len() >= 3, "{out}");
-    let flags = &out["next"]["includeIgnored"]["query"]["queries"][0];
-    assert_eq!(flags["path"], json!(root.0.to_string_lossy()), "{out}");
-    assert_eq!(flags["includeIgnored"], json!(true), "{out}");
-    let ignored = run_lead(&root.0, flags.clone());
-    assert_eq!(found_files(&ignored).len(), 1, "{ignored}");
-    assert!(found_files(&ignored)[0].ends_with("out.ts"), "{ignored}");
-    let hidden = run_lead(&root.0, hidden_lead(&root.0, &out));
-    assert_eq!(found_files(&hidden).len(), 1, "{hidden}");
-    assert!(found_files(&hidden)[0].ends_with("h.ts"), "{hidden}");
+    assert_eq!(channels.last().copied(), Some("findText"), "{out}");
+    let hints = out["hints"].to_string();
+    assert!(hints.contains("hidden .hidden/"), "{hints}");
+    assert!(hints.contains(".gitignore:1 'build/'"), "{hints}");
+    let lead = skipped_lead(&out);
+    assert_eq!(lead["path"], json!(root.0.to_string_lossy()), "{out}");
+    assert_eq!(lead["includeIgnored"], json!(true), "{out}");
+    assert_eq!(lead["includeHidden"], json!(true), "{out}");
+    let found = run_lead(&root.0, lead);
+    let files = found_files(&found);
+    assert_eq!(files.len(), 2, "{found}");
+    assert!(files.iter().any(|f| f.ends_with("out.ts")), "{found}");
+    assert!(files.iter().any(|f| f.ends_with("h.ts")), "{found}");
 }
 
-/// With `includeIgnored` already on, the ignore lead is not offered
-/// again; the hidden directory lead keeps the flag.
+/// With `includeIgnored` already on, the lead lifts only what is left.
 #[test]
 fn a_symbol_lead_never_repeats_a_flag_the_request_already_set() {
     let root = skipped_workspace("hiddenSym", "ignoredSym");
@@ -306,16 +323,16 @@ fn a_symbol_lead_never_repeats_a_flag_the_request_already_set() {
         json!({"symbolName":"hiddenSym","includeIgnored":true}),
     );
     assert_eq!(out["status"], "empty", "{out}");
-    assert!(out["next"].get("includeIgnored").is_none(), "{out}");
-    let lead = hidden_lead(&root.0, &out);
+    let lead = skipped_lead(&out);
     assert_eq!(lead["includeIgnored"], json!(true), "{lead}");
+    assert_eq!(lead["includeHidden"], json!(true), "{lead}");
     assert!(run_lead(&root.0, lead).to_string().contains("hiddenSym"));
 }
 
-/// Several hidden directories holding the name are all offered, one row
-/// each, so no hidden file stays unreachable behind the first one.
+/// Several hidden directories holding the name are all reached by the one
+/// lead, so no hidden file stays unreachable behind the first one.
 #[test]
-fn every_hidden_directory_holding_the_name_is_offered() {
+fn every_hidden_directory_holding_the_name_is_reached() {
     let root = Fixture::new();
     for dir in [".alpha", ".beta"] {
         std::fs::create_dir_all(root.0.join(dir)).expect("dir");
@@ -327,16 +344,11 @@ fn every_hidden_directory_holding_the_name_is_offered() {
     }
     std::fs::write(root.0.join("main.ts"), "export const kept = 1;\n").expect("source");
     let out = empty_outline(&root.0, json!({"symbolName":"twinSym"}));
-    let rows = out["next"]["narrowScope"]["query"]["queries"]
-        .as_array()
-        .expect("rows");
-    let paths = rows
-        .iter()
-        .filter_map(|row| row["path"].as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(paths.len(), 2, "{out}");
-    assert!(paths.iter().any(|p| p.ends_with(".alpha")), "{out}");
-    assert!(paths.iter().any(|p| p.ends_with(".beta")), "{out}");
+    let found = run_lead(&root.0, skipped_lead(&out));
+    let files = found_files(&found);
+    assert_eq!(files.len(), 2, "{found}");
+    assert!(files.iter().any(|p| p.contains(".alpha")), "{found}");
+    assert!(files.iter().any(|p| p.contains(".beta")), "{found}");
 }
 
 /// A `symbols` page for a scan the time budget cut at `resume`.
@@ -412,7 +424,7 @@ fn an_outline_leaves_out_gitignored_files_and_leads_to_them() {
     assert_eq!(out["status"], "empty", "{out}");
     let hints = out["hints"].to_string();
     assert!(hints.contains(".gitignore:1 'gen/'"), "{hints}");
-    let lead = out["next"]["includeIgnored"]["query"]["queries"][0].clone();
+    let lead = out["next"]["includeSkipped"]["query"]["queries"][0].clone();
     assert_eq!(lead["includeIgnored"], json!(true), "{out}");
     assert_eq!(lead["path"], json!(root.0.to_string_lossy()), "{out}");
     let found = run_lead(&root.0, lead);

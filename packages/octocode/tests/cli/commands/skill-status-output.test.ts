@@ -23,6 +23,7 @@ vi.mock('../../../src/utils/colors.js', () => ({
 import { runList } from '../../../src/cli/commands/skills/commands/list.js';
 import { runCheck } from '../../../src/cli/commands/skills/commands/check.js';
 import { getSkill } from '../../../src/cli/commands/skills/registry.js';
+import { fakeNative } from '../../utils/fake-native.js';
 
 const SKILL = 'octocode-research';
 
@@ -49,6 +50,7 @@ describe('skill status output surfaces stale installs', () => {
     // may reach the developer's real home.
     vi.stubEnv('HOME', path.join(sandbox.root, 'home'));
     vi.stubEnv('OCTOCODE_HOME', path.join(sandbox.root, 'home'));
+    vi.stubEnv('OCTOCODE_NATIVE_BIN', fakeNative(sandbox.root));
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
   });
 

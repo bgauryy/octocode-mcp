@@ -55,7 +55,7 @@ function unitKey(unit) {
  */
 export function diffUnitGraphs(build, test, exempt = EXEMPT) {
   const buildKeys = new Set(build.units.map(unitKey));
-  const buildPackages = new Set(build.units.map(unit => packageName(unit.pkg_id)));
+  const buildPackages = new Set(build.units.map(unit => unit.pkg_id));
   // Recursive identity: a digest of a unit's own key and its dependencies' identities.
   const identities = graph => {
     const memo = new Map();
@@ -73,7 +73,7 @@ export function diffUnitGraphs(build, test, exempt = EXEMPT) {
   const testIds = identities(test);
   const shared = index => {
     const unit = test.units[index];
-    return !TEST_MODES.has(unit.mode) && buildPackages.has(packageName(unit.pkg_id));
+    return !TEST_MODES.has(unit.mode) && buildPackages.has(unit.pkg_id);
   };
   const ownDrift = index => shared(index) && !buildKeys.has(unitKey(test.units[index]));
   // Whether a non-exempt crate's own drift reaches this unit.
@@ -98,14 +98,14 @@ export function diffUnitGraphs(build, test, exempt = EXEMPT) {
   return { root, derived, exempted };
 }
 
-/** `cargo tree --prefix none -f '{p}|{f}'` → package → set of feature lists seen. */
+/** `cargo tree --prefix none -f '{p}|{f}'` → `name version` → set of feature lists seen. */
 export function parseTree(text) {
   const packages = new Map();
   for (const raw of text.split('\n')) {
     const line = raw.replace(/ \(\*\)$/, '').trim();
     const bar = line.lastIndexOf('|');
     if (bar < 0) continue;
-    const name = line.slice(0, bar).split(' ')[0];
+    const name = line.slice(0, bar).split(' ').slice(0, 2).join(' ');
     const features = line.slice(bar + 1).split(',').filter(Boolean).sort().join(',');
     if (!packages.has(name)) packages.set(name, new Set());
     packages.get(name).add(features);
@@ -116,9 +116,10 @@ export function parseTree(text) {
 /** Shared packages whose test feature set is not one the build graph compiles. */
 export function diffTrees(build, test, exempt = EXEMPT) {
   const root = [], exempted = [];
-  for (const [name, variants] of test) {
-    const built = build.get(name);
+  for (const [id, variants] of test) {
+    const built = build.get(id);
     if (!built) continue;
+    const name = id.split(' ')[0];
     for (const features of variants) {
       if (built.has(features)) continue;
       const row = { package: name, features: features ? features.split(',') : [], built: [...built].map(f => (f ? f.split(',') : [])) };

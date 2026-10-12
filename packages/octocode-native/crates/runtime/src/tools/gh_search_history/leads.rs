@@ -2,8 +2,9 @@
 //! recovery from an empty search.
 use super::GhSearchHistoryQuery;
 use super::rows::{is_completed, is_merged, item_number, item_repo, read_target};
+use crate::tools::gh_shared::{broaden_lead, drop_each_keyword, without};
 use crate::tools::id::ToolId;
-use crate::tools::result::{Continuation, remove_null_fields};
+use crate::tools::result::{Continuation, query_row};
 use serde_json::{Value, json};
 
 /// The default PR read: body and the patch-free file inventory.
@@ -132,12 +133,7 @@ pub(super) fn issue_links_read(q: &GhSearchHistoryQuery) -> Option<Value> {
 /// The same query as a wire row without `page`, the base of every
 /// same-tool continuation.
 fn same_query(q: &GhSearchHistoryQuery) -> Value {
-    let mut row = serde_json::to_value(q).unwrap_or_default();
-    remove_null_fields(&mut row);
-    if let Some(row) = row.as_object_mut() {
-        row.remove("page");
-    }
-    row
+    query_row(q, &["page"])
 }
 
 /// The search again without its person qualifiers: the way on when GitHub
@@ -161,10 +157,11 @@ pub(super) fn without_users(q: &GhSearchHistoryQuery) -> Option<Value> {
     )
 }
 
-/// The next result page, at the page size this one used.
+/// Result page `page` (the cursor [`crate::tools::paging::next_cursor`]
+/// admitted), at the page size this one used.
 pub(super) fn next_page(q: &GhSearchHistoryQuery, page: usize, page_size: usize) -> Value {
     let mut next = same_query(q);
-    next["page"] = json!(page + 1);
+    next["page"] = json!(page);
     next["pageSize"] = json!(page_size);
     Continuation::new(ToolId::GhSearchHistory, next)
         .confidence("exact")
@@ -181,43 +178,15 @@ const BROADEN_VARIANTS: usize = 5;
 /// lone keyword; `qualifiers` and the `since`/`until` window drop whole.
 pub(super) fn broaden_search(q: &GhSearchHistoryQuery) -> Option<Value> {
     let base = same_query(q);
-    let without = |keys: &[&str]| {
-        let mut row = base.clone();
-        if let Some(object) = row.as_object_mut() {
-            for key in keys {
-                object.remove(*key);
-            }
-        }
-        row
-    };
-    let keywords = q.keywords();
-    let mut variants = Vec::new();
-    if keywords.len() >= 2 {
-        variants.extend((0..keywords.len()).rev().map(|dropped| {
-            let mut row = base.clone();
-            row["keywords"] = json!(
-                keywords
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| *index != dropped)
-                    .map(|(_, keyword)| *keyword)
-                    .collect::<Vec<_>>()
-            );
-            row
-        }));
-    } else if !keywords.is_empty() && q.owner().is_some() && q.repo().is_some() {
-        variants.push(without(&["keywords"]));
+    let mut variants = drop_each_keyword(&base);
+    if q.keywords().len() == 1 && q.owner().is_some() && q.repo().is_some() {
+        variants.push(without(&base, &["keywords"]));
     }
     if q.qualifiers().is_some() {
-        variants.push(without(&["qualifiers"]));
+        variants.push(without(&base, &["qualifiers"]));
     }
     if q.since().is_some() || q.until().is_some() {
-        variants.push(without(&["since", "until"]));
+        variants.push(without(&base, &["since", "until"]));
     }
-    variants.truncate(BROADEN_VARIANTS);
-    (!variants.is_empty()).then(|| {
-        Continuation::input(ToolId::GhSearchHistory, json!({ "queries": variants }))
-            .confidence("low")
-            .build()
-    })
+    broaden_lead(ToolId::GhSearchHistory, variants, BROADEN_VARIANTS)
 }

@@ -291,56 +291,50 @@ mod tests {
         }
     }
 
+    /// The query prefilter keeps only literals every match must contain.
     #[test]
-    fn prefilter_covers_simple_rule_pattern() {
-        assert_eq!(
-            StructuralQuery::new(None, Some("rule:\n  pattern: await $C\n"))
-                .expect("valid query")
-                .prefilter(),
-            Prefilter::Single("await".to_owned())
-        );
-    }
-
-    #[test]
-    fn prefilter_uses_positive_anchor_when_not_present_without_any() {
-        // `not:` alone is safe — the top-level positive `pattern:` implies the
-        // file must contain the literal; `not:` only filters what's found.
-        // Only the parsed positive pattern supplies the required anchor.
-        let rule = "rule:\n  pattern: await $C\n  not:\n    pattern: bar\n";
-        let q = StructuralQuery::new(None, Some(rule)).expect("valid query");
-        assert_eq!(q.prefilter(), Prefilter::Single("await".to_owned()));
-    }
-
-    #[test]
-    fn prefilter_any_with_single_anchor_uses_single() {
-        let rule = "rule:\n  any:\n    - pattern: foo($X)\n";
-        let q = StructuralQuery::new(None, Some(rule)).expect("valid query");
-        assert_eq!(q.prefilter(), Prefilter::Single("foo".to_owned()));
-    }
-
-    #[test]
-    fn prefilter_any_with_multiple_anchors_uses_union() {
-        let rule = "rule:\n  any:\n    - pattern: foo($X)\n    - pattern: bar($X)\n";
-        let q = StructuralQuery::new(None, Some(rule)).expect("valid query");
-        assert_eq!(
-            q.prefilter(),
-            Prefilter::Union(vec!["bar".to_owned(), "foo".to_owned()])
-        );
-    }
-
-    #[test]
-    fn prefilter_not_does_not_hide_required_any_anchor() {
-        let rule = "rule:\n  not:\n    pattern: bar\n  any:\n    - pattern: foo($X)\n";
-        let q = StructuralQuery::new(None, Some(rule)).expect("valid query");
-        assert_eq!(q.prefilter(), Prefilter::Single("foo".to_owned()));
-    }
-
-    #[test]
-    fn prefilter_any_without_extractable_anchors_is_none() {
-        // Patterns with only metavars produce no safe literal anchor.
-        let rule = "rule:\n  any:\n    - pattern: $X\n    - pattern: $Y\n";
-        let q = StructuralQuery::new(None, Some(rule)).expect("valid query");
-        assert_eq!(q.prefilter(), Prefilter::None);
+    fn rule_prefilter_keeps_only_required_anchors() {
+        let single = |anchor: &str| Prefilter::Single(anchor.to_owned());
+        let cases = [
+            (
+                "simple rule pattern",
+                "rule:\n  pattern: await $C\n",
+                single("await"),
+            ),
+            // `not:` alone is safe — the top-level positive `pattern:` implies the
+            // file must contain the literal; `not:` only filters what's found.
+            // Only the parsed positive pattern supplies the required anchor.
+            (
+                "positive anchor when not is present without any",
+                "rule:\n  pattern: await $C\n  not:\n    pattern: bar\n",
+                single("await"),
+            ),
+            (
+                "any with a single anchor uses single",
+                "rule:\n  any:\n    - pattern: foo($X)\n",
+                single("foo"),
+            ),
+            (
+                "any with multiple anchors uses union",
+                "rule:\n  any:\n    - pattern: foo($X)\n    - pattern: bar($X)\n",
+                Prefilter::Union(vec!["bar".to_owned(), "foo".to_owned()]),
+            ),
+            (
+                "not does not hide the required any anchor",
+                "rule:\n  not:\n    pattern: bar\n  any:\n    - pattern: foo($X)\n",
+                single("foo"),
+            ),
+            // Patterns with only metavars produce no safe literal anchor.
+            (
+                "any without extractable anchors is none",
+                "rule:\n  any:\n    - pattern: $X\n    - pattern: $Y\n",
+                Prefilter::None,
+            ),
+        ];
+        for (case, rule, expected) in cases {
+            let query = StructuralQuery::new(None, Some(rule)).expect(case);
+            assert_eq!(query.prefilter(), expected, "{case}");
+        }
     }
 
     #[test]

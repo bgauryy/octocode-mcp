@@ -1,11 +1,9 @@
 import { writeFileSync, readFileSync } from 'fs';
-import { dirname, join, resolve } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
-const helper = name =>
-  import(pathToFileURL(resolve(process.cwd(), '.octocode', name)).href);
-const { waitForPageReady } = await helper('dom-actionability.mjs');
-const { collectRefs, clip, flat } = await helper('ax-snapshot.mjs');
+import { waitForPageReady } from '../dom-actionability.mjs';
+import { collectRefs, clip, flat } from '../ax-snapshot.mjs';
 
 // Compact, ref-based page view from the accessibility tree: controls, headings, and
 // non-semantic clickables in document order (same-process iframes inlined), each with a

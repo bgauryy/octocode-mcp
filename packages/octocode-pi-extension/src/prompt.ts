@@ -57,7 +57,7 @@ export function octocodePrompt(input: PromptInputs): string {
       ]
     : [
         '# Subagent',
-        '- You are a subagent working for your parent; your task names your id, your parent and your scratch folder. Finish the task yourself.',
+        '- You are a subagent working for your parent; your task names your name, role, goal, parent and scratch folder; teammates address you by name. Finish the task yourself.',
         '- Your final answer is your report and reaches your parent by itself: do not message it that you are done or wait to be asked. Report what you found or changed, how you verified it, and open questions.',
         input.canWrite === false
           ? `- Put the result in the report and lead with a short summary: your parent keeps the first ${REPORT_MAX_BYTES / 1024} KB, and a longer report is saved whole in your scratch folder for on-demand reading.`

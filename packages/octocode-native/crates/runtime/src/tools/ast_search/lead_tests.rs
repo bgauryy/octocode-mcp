@@ -184,7 +184,7 @@ fn skipped_hint_respects_the_query_include() {
     assert!(hint.contains("hidden .github/"), "{hint}");
     assert!(!hint.contains(".spin"), "{hint}");
     assert!(out["next"].get("repair").is_none(), "{out}");
-    let lead = &out["next"]["includeIgnored"]["query"]["queries"][0];
+    let lead = &out["next"]["includeSkipped"]["query"]["queries"][0];
     assert_eq!(lead["includeHidden"], json!(true), "{out}");
     assert_eq!(lead["include"], json!([".github/**"]), "{out}");
 }
@@ -204,7 +204,7 @@ fn skipped_files_outside_the_include_are_not_named() {
     );
     let hint = out["hints"][0].as_str().expect("hint");
     assert!(!hint.contains("skipped as"), "{hint}");
-    assert!(out["next"].get("includeIgnored").is_none(), "{out}");
+    assert!(out["next"].get("includeSkipped").is_none(), "{out}");
 }
 
 /// An empty match names what it searched: the files parsed and the grammar,

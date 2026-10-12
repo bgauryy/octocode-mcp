@@ -141,7 +141,7 @@ fn disabled_tool_is_an_execution_failure() {
 }
 
 async fn github(status: u16, headers: &[(&str, &str)]) -> (Workspace, MockServer, Output) {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let mut response = ResponseTemplate::new(status).set_body_json(json!({"message": "fixture"}));
     for (name, value) in headers {
         response = response.insert_header(*name, *value);
@@ -176,7 +176,7 @@ async fn github_failures_exit_by_failure_kind() {
 }
 
 async fn classification_provider(delay: std::time::Duration) -> MockServer {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/v1/systemone"))
         .respond_with(

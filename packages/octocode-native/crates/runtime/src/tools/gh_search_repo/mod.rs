@@ -8,12 +8,14 @@ use crate::providers::github::{
     RequestContext,
 };
 use crate::tools::gh_shared::{
-    GhFailure, SEARCH_RESULT_CAP, add_next, apply_partial, field_names, pick_rows, push_warning,
-    reject_window, search_failure, with_search_repair,
+    GhFailure, SEARCH_RESULT_CAP, SearchReach, add_next, apply_partial, broaden_lead,
+    drop_each_keyword, field_names, pick_rows, reject_window, search_failure, with_search_repair,
+    without,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
-use crate::tools::result::{Continuation, ToolData, remove_null_fields};
+use crate::tools::paging::push_warnings;
+use crate::tools::result::{Continuation, ToolData, query_row, remove_null_fields};
 use serde_json::{Value, json};
 
 pub use crate::contracts::tool_types::{GhSearchRepoQuery, GhSearchRepoQuerySort};
@@ -69,7 +71,6 @@ pub(crate) async fn execute<C: ConditionalCache>(
     query: &GhSearchRepoQuery,
     context: &RequestContext,
 ) -> Result<ToolData, ProviderError> {
-    query::validate_repo_scope(query)?;
     if let (Some(owner), Some(repo)) = (query.owner.as_deref(), query.repo.as_deref())
         && !filtered(query)
     {
@@ -103,11 +104,10 @@ pub(crate) async fn execute<C: ConditionalCache>(
             (data, None)
         }
     };
-    let total = data.total_count.min(SEARCH_RESULT_CAP);
-    let pages = total.div_ceil(per);
+    let reach = SearchReach::new(data.total_count, per);
     let more = match &listing {
         Some(listing) => listing.more,
-        None => current < pages,
+        None => current < reach.pages,
     };
     let provider_incomplete = data.incomplete_results;
     // An owner listing reports no total (REST pages, no search window).
@@ -137,13 +137,17 @@ pub(crate) async fn execute<C: ConditionalCache>(
         .map(|item| repository_row(item, &wanted))
         .collect::<Vec<_>>();
     let repositories_empty = repositories.is_empty();
+    let ignored_language = match &listing {
+        None => ignored_language(provider, query, &repositories, provider_matched, context).await,
+        Some(_) => None,
+    };
     // A page past the last has no rows though the search (or the listing's
     // earlier pages) has some: the shared response stage restarts it.
     let past_end = repositories_empty
         && current > 1
         && match &listing {
             Some(_) => archived_skipped == 0,
-            None => total > 0 && current > pages,
+            None => reach.past_last(current),
         };
     let mut value = match &listing {
         // The REST listing reports no total: `page` is the provider page
@@ -158,7 +162,7 @@ pub(crate) async fn execute<C: ConditionalCache>(
             json!({"repositories":repositories,"pagination":pagination})
         }
         None => json!({"repositories":repositories,"pagination":
-            crate::response::pages::PageFacts::counted(current, per, total)
+            crate::response::pages::PageFacts::counted(current, per, reach.total)
                 .out_of_range(past_end)
                 .to_value()}),
     };
@@ -180,17 +184,20 @@ pub(crate) async fn execute<C: ConditionalCache>(
         "repository",
     );
     if archived_skipped > 0 {
-        push_warning(
+        push_warnings(
             &mut value,
-            format!(
+            [format!(
                 "{} skipped",
                 crate::response::pages::counted(
                     u64::try_from(archived_skipped).unwrap_or(u64::MAX),
                     "archived repository",
                     "archived repositories"
                 )
-            ),
+            )],
         );
+    }
+    if let Some(warning) = ignored_language {
+        push_warnings(&mut value, [warning]);
     }
     pick_rows(&mut value, "repositories", REPO_ID, &fields);
     let output = repository_output(
@@ -239,6 +246,61 @@ fn set_filters(query: &GhSearchRepoQuery) -> Vec<&'static str> {
     .into_iter()
     .filter_map(|(name, set)| set.then_some(name))
     .collect()
+}
+
+/// GitHub drops a `language:` qualifier it does not know and returns
+/// unfiltered rows. When no row on the page is that language, the filter
+/// was ignored if the rows span several languages; if they share one (an
+/// alias GitHub resolved, like `js` or `golang`, or unfiltered rows that
+/// happen to agree), one more search without the qualifier decides: an
+/// ignored qualifier leaves the count unchanged. That probe runs only on
+/// such a page, so an alias costs one extra search request.
+async fn ignored_language<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhSearchRepoQuery,
+    rows: &[Value],
+    matched: usize,
+    context: &RequestContext,
+) -> Option<String> {
+    let wanted = query.language.as_deref()?;
+    let languages = rows
+        .iter()
+        .filter_map(|row| row["language"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    if languages.is_empty()
+        || languages
+            .iter()
+            .any(|language| language.eq_ignore_ascii_case(wanted))
+    {
+        return None;
+    }
+    if languages.len() == 1 {
+        // One other language: an alias GitHub resolved, or an ignored
+        // filter whose rows happen to agree. An ignored qualifier changes
+        // no count, so the same search without it tells them apart. The
+        // probe is advisory: if it fails, nothing is claimed.
+        let mut without = query.clone();
+        without.language = None;
+        let probe = provider
+            .transport
+            .search_repositories(
+                &RepositorySearchRequest {
+                    query: query::repositories(&without),
+                    sort: None,
+                    page: 1,
+                    per_page: 1,
+                },
+                context,
+            )
+            .await
+            .ok()?;
+        if probe.total_count != matched {
+            return None;
+        }
+    }
+    Some(format!(
+        "GitHub ignored language `{wanted}`, not a language name it knows: these rows are unfiltered."
+    ))
 }
 
 /// Filters beside owner+repo search inside that repository; without them
@@ -324,21 +386,29 @@ fn top_leads(
     )]
 }
 
-/// The same search with archived repositories included, from its first page.
-fn include_archived(query: &GhSearchRepoQuery) -> Value {
-    let mut row = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
-    if let Some(row) = row.as_object_mut() {
-        // Defaults and the brief stay out of the copied call.
-        row.retain(|key, value| {
-            !matches!(
-                key.as_str(),
-                "page" | "extras" | "sort" | "pageSize" | "mainGoal" | "reasoning"
-            ) && !value.is_null()
-        });
-    }
+/// The search a lead copies, from its first page: defaults and the brief
+/// stay out of the copied call.
+fn copied_search(query: &GhSearchRepoQuery) -> Value {
+    let mut row = query_row(
+        query,
+        &[
+            "page",
+            "extras",
+            "sort",
+            "pageSize",
+            "mainGoal",
+            "reasoning",
+        ],
+    );
     if query.sort != GhSearchRepoQuerySort::BestMatch {
         row["sort"] = json!(query.sort.to_string());
     }
+    row
+}
+
+/// The same search with archived repositories included, from its first page.
+fn include_archived(query: &GhSearchRepoQuery) -> Value {
+    let mut row = copied_search(query);
     row["includeArchived"] = json!(true);
     Continuation::new(ToolId::GhSearchRepo, row).build()
 }
@@ -346,56 +416,17 @@ fn include_archived(query: &GhSearchRepoQuery) -> Value {
 /// Broadened variants at most: one call's batch.
 const BROADEN_VARIANTS: usize = 5;
 
-/// An empty search, broadened: one variant per set filter (and, with
-/// several keywords, one per dropped keyword), run as one batch, so the
-/// variant that returns rows names what emptied the search. A variant the
-/// tool would reject (nothing left to search by) is skipped.
+/// An empty search, broadened: one variant per set filter, then, with
+/// several keywords, one per dropped keyword. A variant with nothing left to
+/// search by is skipped.
 fn broaden_search(query: &GhSearchRepoQuery) -> Option<Value> {
-    let mut base = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
-    if let Some(row) = base.as_object_mut() {
-        // Defaults and the brief stay out of the copied call.
-        row.retain(|key, value| {
-            !matches!(
-                key.as_str(),
-                "page" | "extras" | "sort" | "pageSize" | "mainGoal" | "reasoning"
-            ) && !value.is_null()
-        });
-    }
-    if query.sort != GhSearchRepoQuerySort::BestMatch {
-        base["sort"] = json!(query.sort.to_string());
-    }
-    let mut variants = Vec::new();
-    for filter in set_filters(query) {
-        let mut row = base.clone();
-        if let Some(object) = row.as_object_mut() {
-            object.remove(filter);
-        }
-        variants.push(row);
-    }
-    if query.keywords.len() >= 2 {
-        variants.extend((0..query.keywords.len()).rev().map(|dropped| {
-            let mut row = base.clone();
-            row["keywords"] = json!(
-                query
-                    .keywords
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| *index != dropped)
-                    .map(|(_, keyword)| keyword)
-                    .collect::<Vec<_>>()
-            );
-            row
-        }));
-    }
-    variants.retain(|row| {
-        crate::contracts::validate(ToolId::GhSearchRepo.as_str(), json!({"queries":[row]})).is_ok()
-    });
-    variants.truncate(BROADEN_VARIANTS);
-    (!variants.is_empty()).then(|| {
-        Continuation::input(ToolId::GhSearchRepo, json!({ "queries": variants }))
-            .confidence("low")
-            .build()
-    })
+    let base = copied_search(query);
+    let mut variants = set_filters(query)
+        .into_iter()
+        .map(|filter| without(&base, &[filter]))
+        .collect::<Vec<_>>();
+    variants.extend(drop_each_keyword(&base));
+    broaden_lead(ToolId::GhSearchRepo, variants, BROADEN_VARIANTS)
 }
 
 /// Provider pages read by one owner-only listing call before it stops.

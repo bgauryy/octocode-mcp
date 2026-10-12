@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult
 import { Box, Text } from '@earendil-works/pi-tui';
 import { formatDuration } from '../shared/format.js';
 import { resultBlock } from '../shared/render.js';
-import type { Subcommands } from '../shared/commands.js';
+import { say, type Subcommands } from '../shared/commands.js';
 import { HOOKS_ENV, envFlag } from '../shared/env.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { configFileLines, repoKey, tildePath } from '../shared/home.js';
@@ -58,8 +58,8 @@ interface HooksView {
   summary(): string;
   /** On/off, the loaded commands per event, the files read (✓ = exists) and any config errors. */
   report(cwd: string): string;
-  /** The PreToolUse hooks as a tool-call gate (a no-op while hooks are off). */
-  preToolUse(event: ToolCallEvent, ctx: ExtensionContext): Promise<ToolCallEventResult | undefined>;
+  /** The PreToolUse hooks as a tool-call gate (a no-op while hooks are off); `ask` carries a hook's ask to the permission gate. */
+  preToolUse(event: ToolCallEvent, ctx: ExtensionContext): Promise<(ToolCallEventResult & { ask?: string }) | undefined>;
   /** Runs the Notification hooks matching `notice.type` in the background (a no-op while hooks are off). */
   notification(notice: HookNotice, ctx: ExtensionContext): void;
 }
@@ -145,7 +145,8 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     const verdicts = await Promise.all(hooks.map(async (hook) => interpret(event, await timeHook(ctx, event, hook, () => runHook(hook, payload, ctx.cwd, env, signal)))));
     const block = verdicts.map((verdict) => verdict.block).filter(Boolean).join('\n\n');
     const context = verdicts.map((verdict) => verdict.context).filter(Boolean).join('\n\n');
-    return { ...(block ? { block: capContext(block) } : {}), ...(context ? { context: capContext(context) } : {}) };
+    const ask = verdicts.map((verdict) => verdict.ask).filter(Boolean).join('\n\n');
+    return { ...(block ? { block: capContext(block) } : {}), ...(context ? { context: capContext(context) } : {}), ...(ask ? { ask: capContext(ask) } : {}) };
   };
 
   /**
@@ -213,7 +214,9 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     const calls = hookCalls(event.toolName, event.input, ctx.cwd);
     const verdicts = await Promise.all(calls.map((call) => dispatch(ctx, 'PreToolUse', call.names, () => ({ tool_name: call.tool_name, pi_tool_name: event.toolName, tool_input: call.tool_input }))));
     const block = verdicts.find((verdict) => verdict.block)?.block;
-    return block ? { block: true, reason: `Blocked by a PreToolUse hook: ${block}` } : undefined;
+    if (block) return { block: true, reason: `Blocked by a PreToolUse hook: ${block}` };
+    const ask = verdicts.map((verdict) => verdict.ask).filter(Boolean).join('\n\n');
+    return ask ? { ask: capContext(ask) } : undefined;
   };
 
   view.notification = (notice, ctx) => {
@@ -270,6 +273,6 @@ function registerStopRenderer(pi: ExtensionAPI): void {
 export function registerHooksCommand(commands: Subcommands, hooks: HooksView): void {
   commands.add('hooks', {
     description: 'hooks — hooks on/off, loaded commands and the files to configure',
-    handler: async (_args, ctx) => ctx.ui.notify(sanitizeTerminalText(hooks.report(ctx.cwd)), 'info'),
+    handler: async (_args, ctx) => say(ctx, hooks.report(ctx.cwd)),
   });
 }

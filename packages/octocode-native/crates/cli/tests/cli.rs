@@ -1237,7 +1237,7 @@ fn install_rejects_unknown_method_and_names_near_miss_ids() {
 async fn github_authentication_failure_uses_exit_four_and_actionable_hint() {
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(401).set_body_json(serde_json::json!({
             "message": "Bad credentials"

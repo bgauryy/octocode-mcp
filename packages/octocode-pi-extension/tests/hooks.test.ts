@@ -82,6 +82,12 @@ describe('hook runner', () => {
     expect(interpret('SessionStart', { ...deny, stdout: 'plain context\n' })).toEqual({ context: 'plain context' });
     expect(interpret('PreToolUse', { ...deny, code: 2, stderr: '\u001b[31mno\u001b[0m rm\u0007' })).toEqual({ block: 'no rm' });
     expect(interpret('SessionStart', { ...deny, stdout: JSON.stringify({ hookSpecificOutput: { additionalContext: 'a\u001b]0;title\u0007b' } }) })).toEqual({ context: 'ab' });
+    const ask = (decision: string, reason?: string) => ({ ...deny, stdout: JSON.stringify({ hookSpecificOutput: { permissionDecision: decision, ...(reason ? { permissionDecisionReason: reason } : {}) } }) });
+    expect(interpret('PreToolUse', ask('ask', 'prod \u001b[2Jdeploy'))).toEqual({ ask: 'prod deploy' });
+    expect(interpret('PreToolUse', ask('ask'))).toEqual({ ask: expect.stringMatching(/hook asks/) });
+    expect(interpret('PostToolUse', ask('ask', 'x'))).toEqual({});
+    // A hook's allow is not honoured: it never skips an ask.
+    expect(interpret('PreToolUse', ask('allow', 'fine'))).toEqual({});
     expect(interpret('PreToolUse', { ...deny, stdout: 'plain' })).toEqual({});
     expect(interpret('PreToolUse', { ...deny, code: 1 })).toEqual({});
     const slow = await runHook({ command: 'sleep 5', timeoutMs: 100, source: 't' }, {}, tmp());

@@ -11,8 +11,9 @@
 //! Arrays: MCP hosts send list fields JSON-encoded (`include:"[\"*.go\"]"`)
 //! or as a bare scalar (`keywords:"term"`). Where every schema that can hold
 //! the value is an array (a `null` alternative is neutral), a string that
-//! parses as a JSON array (curly double quotes read as `"`), or as that JSON
-//! encoded once more (`[\"a\"]`), becomes that array, and a scalar every
+//! parses as a JSON array (curly double quotes read as `"`, HTML character
+//! references such as `&quot;` decoded), or as that JSON encoded once more
+//! (`[\"a\"]`), becomes that array, and a scalar every
 //! array alternative's items accept becomes a one-element array. Any string,
 //! untyped, or other alternative vetoes the repair.
 //!
@@ -212,9 +213,10 @@ fn array_form(schemas: &[Typed<'_>], value: &Value) -> Option<Value> {
         .then(|| Value::Array(vec![item]))
 }
 
-/// The array `text` encodes: JSON (curly double quotes read as `"`), or that
-/// JSON encoded once more, with its quotes escaped (`[\"a\"]`) or as a JSON
-/// string (`"[\"a\"]"`).
+/// The array `text` encodes: JSON (curly double quotes read as `"`, or HTML
+/// character references decoded: `[&quot;a&quot;]`), or that JSON encoded
+/// once more, with its quotes escaped (`[\"a\"]`) or as a JSON string
+/// (`"[\"a\"]"`).
 fn encoded_array(text: &str) -> Option<Value> {
     let parse = |text: &str| match serde_json::from_str::<Value>(text) {
         Ok(parsed @ Value::Array(_)) => Some(parsed),
@@ -224,6 +226,7 @@ fn encoded_array(text: &str) -> Option<Value> {
     if trimmed.starts_with('[') {
         return parse(trimmed)
             .or_else(|| parse(&straight_quotes(trimmed)))
+            .or_else(|| parse(&html_unescaped(trimmed)?))
             .or_else(|| {
                 let unescaped = serde_json::from_str::<String>(&format!("\"{trimmed}\"")).ok()?;
                 parse(&unescaped)
@@ -236,13 +239,66 @@ fn encoded_array(text: &str) -> Option<Value> {
 }
 
 /// `["…`, `[{…`, `[[…` or `[\"…`: the text is an attempted JSON array, not a
-/// literal. A curly double quote counts as `"`.
+/// literal. A curly double quote, or an HTML reference to `"`, counts as `"`.
 pub(super) fn looks_like_json_array(text: &str) -> bool {
-    let mut chars = text.trim_start().chars();
-    chars.next() == Some('[')
-        && chars.find(|c| !c.is_whitespace()).is_some_and(|c| {
-            matches!(c, '"' | '{' | '[' | '\\') || CURLY_DOUBLE_QUOTES.contains(&c)
-        })
+    let Some(rest) = text.trim_start().strip_prefix('[') else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    rest.chars()
+        .next()
+        .is_some_and(|c| matches!(c, '"' | '{' | '[' | '\\') || CURLY_DOUBLE_QUOTES.contains(&c))
+        || html_reference(rest).is_some_and(|(c, _)| c == '"')
+}
+
+/// `text` with every HTML character reference decoded in one pass (`&quot;`,
+/// `&apos;`, `&amp;`, `&lt;`, `&gt;`, `&#34;`, `&#x22;`): the JSON a host meant
+/// when it HTML-escaped an encoded list. `None` when `text` holds none.
+fn html_unescaped(text: &str) -> Option<String> {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    let mut decoded = false;
+    while let Some(at) = rest.find('&') {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        match html_reference(tail) {
+            Some((c, length)) => {
+                out.push(c);
+                rest = &tail[length..];
+                decoded = true;
+            }
+            None => {
+                out.push('&');
+                rest = &tail[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    decoded.then_some(out)
+}
+
+/// The character an HTML reference at the start of `text` names, and the
+/// reference's byte length; `None` when `text` does not start with one.
+fn html_reference(text: &str) -> Option<(char, usize)> {
+    let body = text.strip_prefix('&')?;
+    let end = body.char_indices().take(10).find(|&(_, c)| c == ';')?.0;
+    let name = &body[..end];
+    let c = match name {
+        "quot" => '"',
+        "apos" => '\'',
+        "amp" => '&',
+        "lt" => '<',
+        "gt" => '>',
+        _ => {
+            let number = name.strip_prefix('#')?;
+            let code = match number.strip_prefix(['x', 'X']) {
+                Some(hex) => u32::from_str_radix(hex, 16).ok()?,
+                None => number.parse::<u32>().ok()?,
+            };
+            char::from_u32(code)?
+        }
+    };
+    Some((c, end + 2))
 }
 
 /// Double quotes rich-text hosts substitute for `"`.
@@ -588,6 +644,37 @@ mod tests {
             coerced(&nested, json!({"include": r#"["*.ts"]"#})),
             json!({"include":["*.ts"]})
         );
+    }
+
+    /// A host that HTML-escaped an encoded list (`&quot;`, a numeric
+    /// reference, `&amp;` inside an item) meant that list; a malformed
+    /// escaped list is not one literal item.
+    #[test]
+    fn html_escaped_arrays_parse_where_only_arrays_are_accepted() {
+        let strings = json!({"type":"array","items":{"type":"string"}});
+        for (text, expected) in [
+            ("[&quot;*.md&quot;]", json!(["*.md"])),
+            ("[&#34;a&#34;, &#x22;b&#X22;]", json!(["a", "b"])),
+            (
+                "[&quot;a&amp;b&quot;, &quot;&lt;T&gt;&quot;, &quot;it&apos;s&quot;]",
+                json!(["a&b", "<T>", "it's"]),
+            ),
+            ("[&quot;&amp;quot;&quot;]", json!(["&quot;"])),
+        ] {
+            assert_eq!(coerced(&strings, json!(text)), expected, "{text}");
+        }
+        // Malformed escaped lists stay for the validator to report.
+        assert_eq!(
+            coerced(&strings, json!("[&quot;*.md")),
+            json!("[&quot;*.md")
+        );
+        assert!(super::looks_like_json_array("[&quot;*.md"));
+        assert!(super::looks_like_json_array("[ &#34;x"));
+        // A glob class that merely holds `&` is still one literal item.
+        assert_eq!(coerced(&strings, json!("[&]*.ts")), json!(["[&]*.ts"]));
+        let ranges =
+            json!({"type":"array","items":{"type":"string","pattern":"^[1-9]\\d*-[1-9]\\d*$"}});
+        assert_eq!(coerced(&ranges, json!("[&quot;1-3&quot;]")), json!(["1-3"]));
     }
 
     /// A list encoded one level too deep (escaped quotes, or the encoded

@@ -13,6 +13,10 @@ answer.md, result.json (the run's final `result` event: usage, cost, turns) and 
 (ok=false when the runner crashed, hit its turn cap, or its MCP server never connected).
 
     transcript_to_log.py --transcript t.jsonl --log Q1.jsonl --run-dir runs/<id> --question Q1
+
+--format pi reads the pi runner's JSON event stream (pi_runner.py) instead: tool calls and
+tool results from its finalized messages, and a claude-shaped result.json (usage, cost, turns,
+durations from the runner's receive timestamps) so campaign_summary.py reads both alike.
 """
 from __future__ import annotations
 
@@ -48,12 +52,89 @@ def tool_label(name: str, tool_input: dict) -> str:
     return f"{short} {json.dumps(tool_input, ensure_ascii=False, separators=(',', ':'))}"
 
 
+def parse_pi(transcript: Path, run_dir: Path, max_turns: int):
+    """The pi runner's events as (uses, order, results, final, problems)."""
+    uses: dict[str, tuple[str, dict]] = {}
+    order: list[str] = []
+    results: dict[str, tuple[str, bool]] = {}
+    problems: list[str] = []
+    usage = {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "output_tokens": 0}
+    cost = 0.0
+    turns = 0
+    answer = ""
+    last_stop = None
+    error = None
+    tools_added: list[str] = []
+    tool_start: dict[str, float] = {}
+    tool_secs = 0.0
+    end: dict = {}
+    model = None
+    for line in transcript.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        event = json.loads(line)
+        kind = event.get("type")
+        if kind == "bench_end":
+            end = event
+        elif kind == "tool_execution_start":
+            tool_start[event["toolCallId"]] = event["_t"]
+        elif kind == "tool_execution_end" and event.get("toolCallId") in tool_start:
+            tool_secs += event["_t"] - tool_start.pop(event["toolCallId"])
+        if kind != "message_end":
+            continue
+        message = event["message"]
+        role = message.get("role")
+        if role == "system":
+            tools_added += [t.get("name", "") for t in message.get("toolsAdded") or []]
+        elif role == "assistant":
+            turns += 1
+            model = message.get("model")
+            u = message.get("usage") or {}
+            usage["input_tokens"] += u.get("input", 0)
+            usage["cache_creation_input_tokens"] += u.get("cacheWrite", 0)
+            usage["cache_read_input_tokens"] += u.get("cacheRead", 0)
+            usage["output_tokens"] += u.get("output", 0)
+            cost += (u.get("cost") or {}).get("total", 0) or 0
+            last_stop = message.get("stopReason")
+            error = message.get("errorMessage") or error
+            texts = []
+            for block in message.get("content") or []:
+                if block.get("type") == "toolCall":
+                    uses[block["id"]] = (block["name"], block.get("arguments") or {})
+                    order.append(block["id"])
+                elif block.get("type") == "text":
+                    texts.append(block.get("text", ""))
+            if texts:
+                answer = "\n".join(texts)
+        elif role == "toolResult":
+            results[message["toolCallId"]] = (result_text(message.get("content")), bool(message.get("isError")))
+    runner = json.loads((run_dir / "runner.json").read_text()) if (run_dir / "runner.json").exists() else {}
+    if runner.get("mcp") and not any(n.startswith("mcp__") for n in tools_added):
+        problems.append("mcp server never connected (no mcp__ tools offered)")
+    if turns > max_turns:
+        problems.append(f"runner passed the {max_turns}-turn cap ({turns} turns)")
+    secs = (end.get("_t", 0) - end.get("start", 0)) if end else 0
+    ok_end = bool(end) and not end.get("timedOut") and end.get("exit") == 0 and last_stop == "stop"
+    final = {}
+    if end:
+        final = {
+            "type": "result", "runner": "pi", "model": model,
+            "subtype": "success" if ok_end else ("timeout" if end.get("timedOut") else f"stop:{last_stop}"),
+            "is_error": not ok_end, "error": error, "result": answer, "usage": usage,
+            "total_cost_usd": round(cost, 6), "num_turns": turns,
+            "duration_ms": round(secs * 1000), "duration_api_ms": round(max(0.0, secs - tool_secs) * 1000),
+        }
+    return uses, order, results, final, problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--transcript", required=True, type=Path)
     ap.add_argument("--log", required=True, type=Path)
     ap.add_argument("--run-dir", required=True, type=Path)
     ap.add_argument("--question", required=True)
+    ap.add_argument("--format", choices=["claude", "pi"], default="claude")
+    ap.add_argument("--max-turns", type=int, default=60)
     args = ap.parse_args()
 
     uses: dict[str, tuple[str, dict]] = {}
@@ -61,7 +142,9 @@ def main() -> int:
     results: dict[str, tuple[str, bool]] = {}
     final: dict = {}
     problems: list[str] = []
-    for line in args.transcript.read_text(encoding="utf-8").splitlines():
+    if args.format == "pi":
+        uses, order, results, final, problems = parse_pi(args.transcript, args.run_dir, args.max_turns)
+    for line in ([] if args.format == "pi" else args.transcript.read_text(encoding="utf-8").splitlines()):
         if not line.strip():
             continue
         event = json.loads(line)

@@ -3,6 +3,7 @@ use super::*;
 use crate::contracts::tool_types::ExtraKind;
 use crate::contracts::tool_types::GhStructureQueryOperation;
 use crate::providers::github::{NamedRef, RefKind, RefMatch};
+use crate::tools::paging::push_warnings;
 use octocode_github::MAX_PER_PAGE;
 
 /// Refs per page when `pageSize` is omitted (a tree page is 300 entries).
@@ -81,10 +82,18 @@ async fn refs<C: crate::providers::github::ConditionalCache>(
         "tags": tags.refs.iter().map(|named| named.name.as_str()).collect::<Vec<_>>(),
     });
     if requested > per_page {
-        crate::tools::gh_shared::push_warning(
+        push_warnings(
             &mut value,
-            format!("pageSize {requested} reads as {MAX_PER_PAGE}, GitHub's ref page."),
+            [format!(
+                "pageSize {requested} reads as {MAX_PER_PAGE}, GitHub's ref page."
+            )],
         );
+    }
+    if !with_branches {
+        // Branches are read only when asked: the lead asks for them.
+        let mut listed = query_row(query, &[]);
+        listed["extras"] = json!([ExtraKind::Details.to_string()]);
+        value["next"]["viewRefs"] = continuation(listed, "exact");
     }
     if let Some(branches) = &branches {
         // `{name: sha}`: one key per branch instead of repeated `name`/`sha` keys.
@@ -97,15 +106,31 @@ async fn refs<C: crate::providers::github::ConditionalCache>(
         );
     }
     let more = tags.has_more || branches.as_ref().is_some_and(|branches| branches.has_more);
+    // A page past the last lists no ref of any listed kind: the shared
+    // response stage words it and restarts from page 1.
+    let past_end = page > 1
+        && tags.refs.is_empty()
+        && branches
+            .as_ref()
+            .is_none_or(|branches| branches.refs.is_empty());
+    if past_end {
+        value["pagination"] = crate::response::pages::PageFacts::open(page, Some(per_page), false)
+            .out_of_range(true)
+            .to_value();
+    }
     if more {
         value["pagination"] =
             crate::response::pages::PageFacts::open(page, Some(per_page), true).to_value();
-        if page >= crate::tools::id::query_limits::gh_structure::PAGE_MAXIMUM {
-            value["terminalLimit"] = json!(true);
-        } else {
-            let mut next = public_query(query)?;
+        if let Some(next_page) = crate::tools::paging::next_cursor(
+            &mut value,
+            crate::tools::id::ToolId::GhStructure,
+            None,
+            "page",
+            page + 1,
+        ) {
+            let mut next = query_row(query, &[]);
             // `pageSize` rides along only when the caller set it.
-            next["page"] = json!(page + 1);
+            next["page"] = json!(next_page);
             value["next"]["nextPage"] = continuation(next, "exact");
         }
     }

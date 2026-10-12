@@ -875,6 +875,9 @@ fn source_dirs_named_output_cache_vendor_are_searched_but_node_modules_is_not() 
             == "Default excludes skipped 1 dir (node_modules/); the same search with defaultExcludes:false covers them."),
         "{body}"
     );
+    // The lead that searches them is the one skipped-paths lead.
+    let lead = &result.next.as_ref().expect("next")["includeSkipped"]["query"]["queries"][0];
+    assert_eq!(lead["defaultExcludes"], false, "{body}");
 }
 
 /// Explicitly targeting a single file that the engine skips (over the
@@ -1050,6 +1053,42 @@ fn a_directory_path_include_searches_its_files() {
     assert!(!text.contains("pkg/test/b.ts"), "{body}");
 }
 
+/// Globs match paths under `path`, so a `..` segment never matches: an
+/// include that reaches up searches nothing, and an exclude that does
+/// excludes nothing. Both name the glob.
+#[test]
+fn a_glob_that_reaches_above_path_is_named() {
+    for (glob, key) in [("../src/*.ts", "include"), ("../pkg/**", "exclude")] {
+        let body = search_fixture(
+            &[("pkg/src/a.ts", "needle\n")],
+            ls_query(
+                serde_json::json!({"matchString": "needle", key: [glob]}),
+                None,
+            ),
+        );
+        let warnings = body["warnings"].to_string();
+        assert!(
+            warnings.contains(glob) && warnings.contains(".."),
+            "{key} {glob}: {body}"
+        );
+    }
+}
+
+/// The listing lead after a `..` include leaves the glob out: re-sending it
+/// to structureSearch would list nothing again.
+#[test]
+fn the_listing_lead_leaves_out_a_glob_that_reaches_above_path() {
+    let body = search_fixture(
+        &[("pkg/src/a.ts", "needle\n")],
+        ls_query(
+            serde_json::json!({"matchString": "needle", "include": ["../src/*.ts", "*.md"]}),
+            None,
+        ),
+    );
+    let listing = &body["next"]["viewTree"]["query"]["queries"][0];
+    assert_eq!(listing["include"], serde_json::json!(["*.md"]), "{body}");
+}
+
 /// When include/exclude leave no file to search, the row says the scope
 /// matched nothing instead of suggesting a different spelling of the text.
 #[test]
@@ -1148,7 +1187,7 @@ fn small_pages_name_enclosing_declarations_and_lead_to_callers() {
         "{insensitive}"
     );
 
-    // Every hit in one declaration names it (Q7: a later row without it
+    // Every hit in one declaration names it (a later row without it
     // read as "no enclosing function"); a hit outside any has none.
     let run =
         "fn f() {\n    helper();\n    helper();\n    helper();\n}\nstatic H: fn() = helper;\n";
@@ -2848,6 +2887,42 @@ fn an_empty_result_with_a_binary_cut_is_partial_not_empty() {
     assert!(!body["hints"].to_string().contains("NUL byte"), "{body}");
 }
 
+/// A NUL byte in one visible file cuts that file's content, not the walk:
+/// the empty row still names the match under an ignored path and leads to
+/// it, and a row with that retry is not a terminal limit.
+#[test]
+fn a_binary_cut_keeps_the_ignored_path_disclosure_and_is_not_terminal() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    fs::create_dir(root.path().join(".git")).expect("repository marker");
+    fs::write(root.path().join(".gitignore"), "ign/\n").expect("gitignore");
+    fs::create_dir_all(root.path().join("ign")).expect("ignored dir");
+    fs::write(root.path().join("ign/secret.ts"), "needleIgnored\n").expect("fixture");
+    fs::write(root.path().join("nul.txt"), "needle one\n\u{0}needle two\n").expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needleIgnored"}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+        .expect("search");
+    assert!(result.files.is_empty());
+    assert!(result.is_partial, "the binary cut leaves a gap: {result:?}");
+    let next = result.next.as_ref().expect("lead");
+    assert_eq!(
+        next["includeSkipped"]["query"]["queries"][0]["includeIgnored"], true,
+        "{next}"
+    );
+    assert!(
+        result
+            .hints
+            .iter()
+            .any(|hint| hint.contains("match in skipped paths")),
+        "{:?}",
+        result.hints
+    );
+    assert!(!result.terminal_limit, "{result:?}");
+}
+
 #[test]
 fn relevance_cap_keeps_hot_file_and_marks_first_and_final_pages_partial() {
     let root = tempfile::tempdir().expect("fixture directory");
@@ -3101,7 +3176,7 @@ fn an_include_matching_only_ignored_files_names_the_skip_not_the_scope() {
     );
     let next = result.next.as_ref().expect("lead");
     assert_eq!(
-        next["includeIgnored"]["query"]["queries"][0]["includeIgnored"], true,
+        next["includeSkipped"]["query"]["queries"][0]["includeIgnored"], true,
         "{next}"
     );
     assert!(next.get("viewTree").is_none(), "{next}");
@@ -3137,7 +3212,7 @@ fn an_empty_search_names_matches_under_ignored_and_hidden_paths() {
     );
     assert!(hint.len() <= 120, "{hint}");
     let next = result.next.as_ref().expect("lead");
-    let lead = &next["includeIgnored"];
+    let lead = &next["includeSkipped"];
     assert_eq!(
         lead["query"]["queries"][0]["includeIgnored"], true,
         "{lead}"
@@ -3181,7 +3256,7 @@ fn an_empty_search_names_default_excluded_directories_that_match() {
         hint.starts_with("1 file(s) match in skipped paths") && hint.contains("(build/)"),
         "{hint}"
     );
-    let lead = &result.next.as_ref().expect("lead")["includeIgnored"]["query"]["queries"][0];
+    let lead = &result.next.as_ref().expect("lead")["includeSkipped"]["query"]["queries"][0];
     assert_eq!(lead["defaultExcludes"], false, "{lead}");
     let retried: LocalSearchQuery = serde_json::from_value(lead.clone()).expect("lead query");
     let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
@@ -3221,7 +3296,7 @@ fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
     assert!(!hints.contains("matched no file"), "{hints}");
     assert!(!hints.contains("No matches in"), "{hints}");
     let next = result.next.as_ref().expect("lead");
-    let lead = &next["includeIgnored"]["query"]["queries"][0];
+    let lead = &next["includeSkipped"]["query"]["queries"][0];
     assert_eq!(lead["includeIgnored"], true, "{next}");
     assert!(next.get("viewTree").is_none(), "{next}");
     let retried: LocalSearchQuery = serde_json::from_value(lead.clone()).expect("lead query");
@@ -3501,7 +3576,7 @@ fn binary_warning_never_names_a_capped_lead() {
     );
 }
 
-/// Q5: an unset `regex` is literal for every text, regex-shaped or not, and
+/// An unset `regex` is literal for every text, regex-shaped or not, and
 /// an empty literal search names the `regex` field that would run it as one.
 #[test]
 fn an_unset_regex_is_literal_even_for_regex_shaped_text() {
@@ -3534,7 +3609,7 @@ fn an_unset_regex_is_literal_even_for_regex_shaped_text() {
     assert_eq!(pattern["matchCount"], 1, "{pattern}");
 }
 
-/// N8a: the withheld notice lives once, in warnings; the empty hint does
+/// The withheld notice lives once, in warnings; the empty hint does
 /// not repeat it and gives no spelling advice.
 #[test]
 fn withheld_notice_appears_once_on_empty_rows() {
@@ -3834,6 +3909,7 @@ fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
             .expect("json");
     assert_eq!(unchanged, second);
     let denied = run(&page(3)).expect_err("page 3 shows the swapped file");
+    assert_eq!(denied.code, "symlinkEscape", "{}", denied.message);
     assert!(
         denied.message.contains("denied by the active path policy"),
         "{}",
@@ -3841,6 +3917,7 @@ fn a_stored_page_checks_the_read_policy_of_the_files_it_shows() {
     );
     swap_for_outside_copy(&root.path().join(&on_two[0]), outside.path());
     let denied = run(&page(2)).expect_err("page 2 shows the swapped file");
+    assert_eq!(denied.code, "symlinkEscape", "{}", denied.message);
     assert!(
         denied.message.contains("denied by the active path policy"),
         "{}",
@@ -4177,7 +4254,7 @@ fn enclosing_names_leave_room_for_the_rendered_path_prefix() {
     }
 }
 
-/// Q24/Q13: a hit in a JSON or TOML file names its key path, one
+/// A hit in a JSON or TOML file names its key path, one
 /// `matchKeys` map per file row; other files carry none.
 #[test]
 fn json_and_toml_hits_name_their_key_paths() {
@@ -4214,7 +4291,7 @@ fn json_and_toml_hits_name_their_key_paths() {
     assert!(file("notes.md").get("matchKeys").is_none(), "{body}");
 }
 
-/// Q18: the over-1 MiB note counts only files whose language has
+/// The over-1 MiB note counts only files whose language has
 /// declarations (a lockfile never had any), and says `1 hit row`.
 #[test]
 fn oversized_enclosing_note_skips_files_without_declarations() {
@@ -4531,7 +4608,7 @@ fn an_empty_search_over_ignored_nested_repositories_names_the_ignore_rule() {
     let hint = &result.hints[0];
     assert!(hint.contains("../.gitignore:1 'repos/*'"), "{hint}");
     assert!(!hint.contains("hidden a/.github"), "{hint}");
-    let lead = &result.next.as_ref().expect("lead")["includeIgnored"];
+    let lead = &result.next.as_ref().expect("lead")["includeSkipped"];
     assert_eq!(
         lead["query"]["queries"][0]["includeIgnored"], true,
         "{lead}"

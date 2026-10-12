@@ -301,7 +301,7 @@ pub(crate) fn scan_graph_facts_with_budget<T: Send>(
         FileSystemQueryOptions {
             path: options.path,
             recursive: Some(true),
-            show_hidden: Some(false),
+            show_hidden: Some(options.show_hidden.unwrap_or(false)),
             entry_type: Some("f".to_owned()),
             extensions: Some(crate::signatures::graph_facts::graph_fact_extensions()),
             exclude_dir: options.exclude_dir,

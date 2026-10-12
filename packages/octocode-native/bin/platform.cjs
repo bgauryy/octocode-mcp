@@ -13,7 +13,7 @@ const PLATFORMS = {
   'win32-x64-msvc': { triple: 'x86_64-pc-windows-msvc', os: 'win32', arch: 'x64', libc: null },
 };
 
-const BINARIES = ['octocode', 'octocode-regex-worker'];
+const BINARIES = ['octocode'];
 
 function isMusl(system = {}) {
   const platform = system.platform ?? process.platform;
@@ -41,7 +41,7 @@ function getPlatformSuffix(system = {}) {
   return match ? match[0] : null;
 }
 
-/** Executable file name of a native binary (`octocode`, `octocode-regex-worker`) for an OS. */
+/** Executable file name of a native binary (`octocode`) for an OS. */
 function executableName(binary, os = process.platform) {
   return os === 'win32' ? `${binary}.exe` : binary;
 }

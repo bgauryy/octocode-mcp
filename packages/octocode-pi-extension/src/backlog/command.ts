@@ -19,21 +19,33 @@ const ACTIONS = {
   move: 'Move to…',
   edit: 'Edit',
   priority: 'Priority…',
-  notes: 'Show notes',
+  from: 'Came from…',
+  notes: 'Show notes and changes',
   remove: 'Delete',
 } as const;
 
+/** The item's title and body, and where it came from, as a prompt hands it over. */
+const brief = (item: Item) =>
+  `${sanitizeTerminalText(item.title)}${item.body ? `\n\n${sanitizeTerminalText(item.body)}` : ''}${item.from === undefined ? '' : `\n\nIt came from B${item.from}: get that item for context.`}`;
+
 /** The prompt that hands an item to the agent ("Do it now"). */
 export function doItPrompt(item: Item): string {
-  return `Work on backlog item ${item.ref}: ${sanitizeTerminalText(item.title)}${item.body ? `\n\n${sanitizeTerminalText(item.body)}` : ''}\n\nWhen finished, mark it done with the backlog tool (note what changed and how it was verified).`;
+  return `Work on backlog item ${item.ref}: ${brief(item)}\n\nAdd follow-ups you leave for later with from: ${item.ref}. When finished, mark it done with the backlog tool (note what changed and how it was verified).`;
 }
 
 /** The prompt that asks the agent to hand an item to a subagent. */
 function delegatePrompt(item: Item): string {
   return (
-    `Delegate backlog item ${item.ref} to a subagent with the agent tool: ${sanitizeTerminalText(item.title)}${item.body ? `\n\n${sanitizeTerminalText(item.body)}` : ''}\n\n` +
-    `Give the subagent the item id ${item.ref}; it records progress with the backlog tool and marks the item done (noting what changed and how it was verified) when finished.`
+    `Delegate backlog item ${item.ref} to a subagent with the agent tool: ${brief(item)}\n\n` +
+    `Give the subagent the item id ${item.ref}; it records progress with the backlog tool, proposes follow-ups with from: ${item.ref}, and marks the item done (noting what changed and how it was verified) when finished.`
   );
+}
+
+/** The full detail the user sees: origin, the items that came from it, and the latest notes and changes. */
+function detail(backlog: Backlog, item: Item, notes = 10): string {
+  const origin = item.from === undefined ? undefined : backlog.store.get(item.from);
+  const options = { self: backlog.session, version: true, ...(origin ? { origin } : {}), derived: backlog.store.derived(item) };
+  return itemDetail(item, backlog.store.notes(item, notes), backlog.store.noteCount(item), Date.now(), options);
 }
 
 /** Writes `<repo>/.octocode/backlog.md` and returns its path. */
@@ -136,8 +148,11 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
       const priority = await ctx.ui.select(`Priority of ${item.ref}`, [...PRIORITIES]);
       const index = priority ? PRIORITIES.indexOf(priority as (typeof PRIORITIES)[number]) : -1;
       if (index >= 0) applyAndSay(ctx, () => backlog.store.update(item.ref, { priority: index, version: item.version, force: true }, backlog.actor));
+    } else if (choice === ACTIONS.from) {
+      const ref = await ctx.ui.input(`${item.ref} came from (empty clears)`, item.from === undefined ? 'B12' : `B${item.from}`);
+      if (ref !== undefined) applyAndSay(ctx, () => backlog.store.update(item.ref, { from: ref.trim() === '' ? null : ref.trim(), version: item.version, force: true }, backlog.actor));
     } else if (choice === ACTIONS.notes) {
-      say(ctx, itemDetail(item, backlog.store.notes(item, 50), backlog.store.noteCount(item), Date.now(), { self: backlog.session, version: true }));
+      say(ctx, detail(backlog, item, 50));
     } else if (choice === ACTIONS.remove) {
       await remove(ctx, backlog, item, `${sanitizeTerminalText(item.title)}\n\nThe item and its notes are removed for every session.`);
     }
@@ -237,7 +252,7 @@ export function backlogCommand(pi: ExtensionAPI, deps: CommandDeps): Subcommand 
             await actions(ctx, backlog, item.ref);
             return;
           }
-          return say(ctx, itemDetail(item, backlog.store.notes(item), backlog.store.noteCount(item), Date.now(), { self: backlog.session, version: true }));
+          return say(ctx, detail(backlog, item));
         }
         if (isState(verb)) {
           const refused = move(ctx, backlog, item, verb);

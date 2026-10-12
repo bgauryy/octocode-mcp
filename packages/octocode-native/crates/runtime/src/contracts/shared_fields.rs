@@ -25,8 +25,8 @@ fn can_share_field(key: &str, value: &Value) -> bool {
         "owner",
         "repo",
         "name",
-        // A declaration's name is its lspSearch anchor: symbols containers
-        // (whose member-less siblings are entry strings) keep it on the row.
+        // A declaration's name is its lspSearch anchor: every symbols row
+        // keeps it.
         "symbolName",
         "id",
         "type",
@@ -294,17 +294,18 @@ mod tests {
         }
     }
 
-    /// Outline containers keep their names even when every one shares it
-    /// (two `impl Foo` blocks); member-less declarations are entry strings,
-    /// never hoisted.
+    /// Outline rows keep their names even when every one shares it (a
+    /// struct and two `impl Foo` blocks).
     #[test]
     fn outline_container_names_stay_on_their_rows() {
         let mut rows = vec![json!({"index":0,"data":{"symbols":[
-            "Foo (1, struct)",
-            {"symbolName":"Foo","kind":"impl","line":3,"endLine":5,"members":["a (4, function)"]},
-            {"symbolName":"Foo","kind":"impl","line":7,"endLine":9,"members":["b (8, function)"]}
+            {"symbolName":"Foo","kind":"struct","line":1},
+            {"symbolName":"Foo","kind":"impl","line":3,"endLine":5,"members":[{"symbolName":"a","kind":"function","line":4}]},
+            {"symbolName":"Foo","kind":"impl","line":7,"endLine":9,"members":[{"symbolName":"b","kind":"function","line":8}]}
         ]}})];
         assert!(super::hoist(&mut rows).is_none(), "{rows:?}");
-        assert_eq!(rows[0]["data"]["symbols"][1]["symbolName"], "Foo");
+        for row in rows[0]["data"]["symbols"].as_array().expect("rows") {
+            assert_eq!(row["symbolName"], "Foo", "{rows:?}");
+        }
     }
 }

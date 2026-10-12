@@ -38,8 +38,8 @@ semicolon_if_nothing_returned = "warn"
 
 [dependencies]
 aho-corasick = "1"
-ast-grep-core = "0.45.3"
-ast-grep-config = "0.45.3"
+ast-grep-core = "0.50.0"
+ast-grep-config = "0.50.0"
 grep-matcher = "0.1.9"
 grep-pcre2 = "0.1.10"
 grep-regex = "0.1.14"
@@ -48,12 +48,12 @@ globset = { workspace = true }
 hex = { workspace = true }
 ignore = { workspace = true }
 moka = { version = "0.12", default-features = false, features = ["sync"] }
-oxc_allocator = "=0.150.0"
-oxc_ast = "=0.150.0"
-oxc_ast_visit = "=0.150.0"
-oxc_parser = "=0.150.0"
-oxc_semantic = "=0.150.0"
-oxc_span = "=0.150.0"
+oxc_allocator = "=0.152.0"
+oxc_ast = "=0.152.0"
+oxc_ast_visit = "=0.152.0"
+oxc_parser = "=0.152.0"
+oxc_semantic = "=0.152.0"
+oxc_span = "=0.152.0"
 rayon = "1"
 regex = { workspace = true }
 regex-syntax = "0.8"

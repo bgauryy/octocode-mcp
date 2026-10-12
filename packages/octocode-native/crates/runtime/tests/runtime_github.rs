@@ -233,7 +233,7 @@ async fn github_tree_materialize_is_accepted_and_emits_location() {
     let exhausted = call(&runtime, "ghStructure", json!({"owner":"a","repo":"b","ref":sha,"pageSize":1,"materialize":true,"materializeOffset":1})).await.expect("boundary offset");
     let boundary = row_data(&exhausted);
     assert_eq!(boundary["pagination"]["hasMore"], true, "{boundary}");
-    // GS6b: a materialize resumed inside its page does not re-send the
+    // A materialize resumed inside its page does not re-send the
     // entries its first call listed; `location` anchors it.
     let resumed = call(
         &runtime,
@@ -879,10 +879,9 @@ async fn gh_get_history_item_commit_not_found_surfaces_error() {
     runtime.close().await;
 }
 
-/// ghCloneRepo: no GitHub API call precedes git. A missing or
-/// inaccessible repository is classified from the metadata API only after
-/// git fails (unit-tested in `runtime::github`); here the endpoint cannot
-/// be cloned at all, and the API is never asked.
+/// ghCloneRepo: no GitHub API call precedes git. After git fails, one
+/// `commits/{ref}` call classifies the missing repository, which leads to a
+/// search for it.
 #[tokio::test]
 async fn gh_clone_repo_makes_no_metadata_call_before_git() {
     let server = MockServer::builder().start().await;
@@ -902,12 +901,32 @@ async fn gh_clone_repo_makes_no_metadata_call_before_git() {
     .expect("clone error row");
     let data = row_data(&outcome);
     assert_eq!(row_status(&outcome), "error", "{data}");
-    assert_eq!(data["errorCode"], "configuration", "{data}");
+    assert_eq!(data["errorCode"], "notFound", "{data}");
     assert!(
         !data.to_string().contains("defaultBranchUnavailable"),
         "{data}"
     );
-    assert_eq!(server.received_requests().await.unwrap().len(), 0);
+    // The missing repository leads to a search for it (a failed row keeps
+    // its recovery lead).
+    assert_eq!(
+        data["hints"]["findRepository"]["tool"], "ghSearchRepo",
+        "{data}"
+    );
+    let api_calls: Vec<String> = server
+        .received_requests()
+        .await
+        .unwrap()
+        .iter()
+        .map(|request| request.url.path().to_owned())
+        .filter(|path| path.starts_with("/api/"))
+        .collect();
+    // No repository metadata call precedes git; after git fails, exactly one
+    // `commits/{ref}` call explains the failure (gh_clone_repo/mod.rs).
+    assert_eq!(
+        api_calls,
+        ["/api/v3/repos/ghost/nope/commits/HEAD"],
+        "{api_calls:?}"
+    );
     runtime.close().await;
 }
 

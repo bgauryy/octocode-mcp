@@ -178,7 +178,7 @@ pub(super) fn resume_search(
         .and_then(Value::as_u64)
         .unwrap_or_else(|| default_search_page_size(source))
         .max(1);
-    start_page_at(query, page, size, position)?;
+    start_page_at(tool, query, page, size, position)?;
     Some(resumed)
 }
 
@@ -251,9 +251,10 @@ fn list_page_at(source: &Value, offset: u64, size: u64) -> Option<Value> {
     } else {
         fields.insert("resumePageSize".into(), json!(original));
     }
+    let tool = tool_of(source)?;
     let query = fields.get_mut("query")?.as_object_mut()?;
     query.insert("pageSize".into(), json!(limit));
-    query.insert("page".into(), json!(offset / limit + 1));
+    query.insert("page".into(), json!(page_at(tool, offset, limit)?));
     Some(resumed)
 }
 
@@ -261,6 +262,7 @@ fn list_page_at(source: &Value, offset: u64, size: u64) -> Option<Value> {
 /// `position`: the largest page size up to `size` that divides the new
 /// offset keeps every later page aligned.
 fn start_page_at(
+    tool: ToolId,
     query: &mut serde_json::Map<String, Value>,
     page: u64,
     size: u64,
@@ -275,8 +277,15 @@ fn start_page_at(
         limit -= 1;
     }
     query.insert("pageSize".into(), json!(limit));
-    query.insert("page".into(), json!(offset / limit + 1));
+    query.insert("page".into(), json!(page_at(tool, offset, limit)?));
     Some(())
+}
+
+/// The page of `limit` rows that starts at row `offset`, when `tool`'s
+/// contract admits it: a re-paged read never names a page past its maximum.
+fn page_at(tool: ToolId, offset: u64, limit: u64) -> Option<usize> {
+    let page = usize::try_from(offset / limit).ok()?.checked_add(1)?;
+    crate::tools::paging::admitted(tool, None, "page", page)
 }
 
 /// Re-reads one oversized file page may take to fit the resource cap.

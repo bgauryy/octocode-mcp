@@ -384,7 +384,13 @@ impl GitHubServices {
                     retryable: error.code == "timeout",
                     ..Upstream::default()
                 };
-                DomainResult::provider(error.code, error.message, error.hints, None, upstream)
+                DomainResult::provider(
+                    error.code,
+                    error.message,
+                    error.hints,
+                    error.next.map(|next| *next),
+                    upstream,
+                )
             }
         }
     }

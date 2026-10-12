@@ -640,7 +640,7 @@ async fn execute(runtime: &ToolRuntime, tool: &str, input: Value, json_out: bool
                     == Interrupted::Forced
                 {
                     // Work that ignores cancellation must not hold the
-                    // terminal hostage: the user asked twice (M5).
+                    // terminal hostage: the user asked twice.
                     std::process::exit(130);
                 }
                 return 130;
@@ -773,7 +773,7 @@ mod tests {
     };
     use serde_json::json;
 
-    /// M5: after the first Ctrl-C cancels, a second Ctrl-C must stop waiting
+    /// After the first Ctrl-C cancels, a second Ctrl-C must stop waiting
     /// for work that ignores cancellation; without one, the drain completes.
     #[tokio::test]
     async fn second_interrupt_stops_waiting_for_uncooperative_work() {

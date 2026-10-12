@@ -1,11 +1,9 @@
 import type { LaunchedChrome } from 'chrome-launcher';
 import { BROWSER_VISIBLE_ENV, envFlag, envInt } from '../shared/env.js';
 import { errorMessage, withTimeout } from '../shared/util.js';
+import { abortError, throwIfAborted, unlessAborted } from './abort.js';
 import { applyDownloads, applyLocale } from './emulation.js';
 import { launchChrome, persistentProfileDir, profileLocked, profilePort, recordProfilePort } from './launch.js';
-
-/** The error an aborted browser operation rejects with: the signal's own reason when it is an Error. */
-export const abortError = (signal: AbortSignal): Error => (signal.reason instanceof Error ? signal.reason : new Error('Aborted'));
 
 /**
  * Minimal Chrome DevTools Protocol session over the page websocket. Launches its own Chrome, or, when the user opts in
@@ -197,9 +195,14 @@ interface OpenOptions {
   reuseTab?: boolean;
   /** Checks each document request of every page the session drives (links, redirects, script navigations, frames). */
   guard?: NavigationGuard;
+  /** The tool call's signal: an abort stops the open at once and releases a Chrome that finishes starting later. */
+  signal?: AbortSignal | undefined;
 }
 
+
 export async function openBrowser(env: NodeJS.ProcessEnv = process.env, options: OpenOptions = {}): Promise<BrowserSession> {
+  const { signal } = options;
+  throwIfAborted(signal);
   // Someone else's Chrome only on an explicit port: an `attach` call, or the user's OCTOCODE_CHROME_PORT opt-in.
   const shared = options.port ?? sharedChromePort(env);
   let chrome: LaunchedChrome | undefined;
@@ -230,9 +233,10 @@ export async function openBrowser(env: NodeJS.ProcessEnv = process.env, options:
     };
   } else if (!target) {
     headless = !profile && envFlag(env, 'OCTOCODE_BROWSER_HEADLESS', true);
-    chrome = await launchChrome(headless, profile);
+    chrome = await unlessAborted(launchChrome(headless, profile), signal, (late) => Promise.resolve(late.kill()).catch(() => undefined));
     onProfile = profile !== undefined;
     try {
+      throwIfAborted(signal);
       // Chrome writes this file only for port 0; chrome-launcher picks a fixed port, so record it (in Chrome's format)
       // for the next run.
       if (profile) await recordProfilePort(profile, chrome.port);
@@ -244,6 +248,7 @@ export async function openBrowser(env: NodeJS.ProcessEnv = process.env, options:
   }
   let page: CdpPage | undefined;
   try {
+    throwIfAborted(signal);
     page = await CdpPage.connect(target.webSocketDebuggerUrl);
     const kind = chrome ? 'own' : options.reuseTab ? 'attached' : 'shared';
     const session = startSession(page, target.id, { port: chrome?.port ?? port, kind, chrome, headless, closeTab, profile: onProfile ? profile : undefined, guard: options.guard });
@@ -386,15 +391,7 @@ export async function switchTo(session: BrowserSession, target: PageTarget): Pro
   await page.send('Page.bringToFront').catch(() => undefined);
 }
 
-async function newTab(port: number): Promise<PageTarget> {
-  const response = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT', signal: AbortSignal.timeout(2_000) });
-  if (!response.ok) throw new Error(`Chrome on port ${port} refused a new tab (HTTP ${response.status})`);
-  return (await response.json()) as PageTarget;
-}
+const newTab = (port: number): Promise<PageTarget> => openTab(port, 'about:blank');
 
-/** The about:blank page of a Chrome this session launched. */
-async function firstPage(port: number): Promise<PageTarget> {
-  const targets = (await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(2_000) })).json()) as Array<Partial<PageTarget> & { type: string }>;
-  const page = targets.find((target) => target.type === 'page' && target.webSocketDebuggerUrl && target.id);
-  return page ? (page as PageTarget) : newTab(port);
-}
+/** The about:blank page of a Chrome this session launched (a new tab when it lists none). */
+const firstPage = async (port: number): Promise<PageTarget> => (await pageTargets(port))[0] ?? newTab(port);

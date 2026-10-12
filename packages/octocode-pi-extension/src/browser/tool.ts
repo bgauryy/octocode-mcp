@@ -10,7 +10,8 @@ import { click, drag, elementExpr, fillFields, hover, pressKey, refForText, sett
 import { screenshot } from './screenshot.js';
 import { snapshot } from './snapshot.js';
 import { describeTabs, followNewTab, newTab, selectTab, tabIds } from './tabs.js';
-import { withDialog } from '../shared/locks.js';
+import type { Permission } from '../permission/ask.js';
+import { isWithin } from '../shared/home.js';
 import { resultText, timedTool } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { capOutputToFile } from '../shared/spill.js';
@@ -24,22 +25,23 @@ const PAGE_ACTIONS = new Set(['click', 'hover', 'drag', 'type', 'fill', 'press',
 const WAIT_DEFAULT_S = 10;
 const WAIT_MAX_S = 60;
 
-type Confirmer = Pick<ExtensionContext, 'hasUI' | 'ui'>;
+type Confirmer = Pick<ExtensionContext, 'hasUI' | 'ui'> & { signal?: AbortSignal | undefined };
 /** Before any tool call supplies a context: nothing to ask, so what needs confirmation is refused. */
 const NO_UI = { hasUI: false } as Confirmer;
 
 export class BrowserTool {
   #session: BrowserSession | undefined;
-  /** Private hosts (`host:port`) the user allowed this session. */
-  readonly allowedHosts = new Set<string>();
   /** The latest tool call's context: where the navigation guard asks for confirmation. */
   #confirmer: Confirmer = NO_UI;
   /** Checks every page and frame load the session's pages start, not only URLs the agent passes. */
   readonly #guard: NavigationGuard = (url) => this.checkUrl(url);
 
+  /** `permission` asks about private hosts and uploads; its session grants remember the hosts the user allowed. */
+  constructor(readonly permission: Permission) {}
+
   /** Whether the browser may open `url`, asking through the latest tool call's context when it needs confirmation. */
   checkUrl(url: string): Promise<void> {
-    return checkBrowserUrl(url, this.#confirmer, this.allowedHosts);
+    return checkBrowserUrl(url, this.#confirmer, this.permission);
   }
 
   /** Remembers the calling tool's context for confirmations the session's pages trigger while it runs. */
@@ -52,19 +54,19 @@ export class BrowserTool {
     return this.#session?.page.open === true;
   }
 
-  async session(): Promise<BrowserSession> {
+  async session(signal?: AbortSignal): Promise<BrowserSession> {
     if (this.#session?.page.open) return this.#session;
     // The page connection dropped: release what the old session owns before opening a new one.
     await this.close();
-    this.#session = await openBrowser(process.env, { guard: this.#guard });
+    this.#session = await openBrowser(process.env, { guard: this.#guard, signal });
     return this.#session;
   }
 
   /** Drive a browser that is already open on a DevTools port, in its current page, instead of opening our own. */
-  async attach(port: number | undefined): Promise<BrowserSession> {
+  async attach(port: number | undefined, signal?: AbortSignal): Promise<BrowserSession> {
     if (!port) throw new Error('attach needs port (the DevTools port of an open browser).');
     await this.close();
-    this.#session = await openBrowser(process.env, { port, reuseTab: true, guard: this.#guard });
+    this.#session = await openBrowser(process.env, { port, reuseTab: true, guard: this.#guard, signal });
     return this.#session;
   }
 
@@ -132,11 +134,12 @@ export function registerBrowserTool(pi: ExtensionAPI, browser: BrowserTool): voi
     renderResult: (result, _options, theme, context) => browserResult(result, theme, context),
     async execute(_id, params, signal, _onUpdate, ctx) {
       const { action } = params;
-      browser.useContext(ctx);
+      const callCtx = { ...ctx, signal: signal ?? ctx.signal };
+      browser.useContext(callCtx);
       if (isSessionAction(action)) return SESSION_HANDLERS[action](browser, params, signal);
-      const session = await browser.session();
+      const session = await browser.session(signal);
       if (session.dialog && PAGE_ACTIONS.has(action)) return pageResult(dialogNotice(session.dialog));
-      return PAGE_HANDLERS[action]({ session, page: session.page, params, signal, ctx, browser });
+      return PAGE_HANDLERS[action]({ session, page: session.page, params, signal, ctx: callCtx, browser });
     },
   }, { exclusive: true }));
   pi.on('session_shutdown', async () => browser.close({ keepVisible: true }));
@@ -166,13 +169,13 @@ const SESSION_HANDLERS: Record<SessionAction, (browser: BrowserTool, params: Bro
   info: async (browser, _params, signal) => {
     // A status query must not launch Chrome (a visible window under webLive).
     if (!browser.isOpen) return pageResult('No browser is open. navigate or attach starts one.');
-    const { kind, port, headless, page, profile, dialog } = await browser.session();
+    const { kind, port, headless, page, profile, dialog } = await browser.session(signal);
     const where = kind === 'own' ? `own Chrome (${headless ? 'headless' : 'visible'})` : kind === 'attached' ? 'attached window' : 'shared Chrome, own tab';
     const current = dialog ? dialogNotice(dialog) : String(await page.evaluate('location.href + " | " + document.title', signal));
     return pageResult(`${where}${profile ? ` · profile ${profile}` : ''} · DevTools port ${port} · ${current}`);
   },
   attach: async (browser, params, signal) => {
-    const session = await browser.attach(params.port);
+    const session = await browser.attach(params.port, signal);
     return pageResult(`Attached to the browser on DevTools port ${session.port}. Other CDP tools (for example the octocode-chrome-devtools skill's scripts) can use --port ${session.port}.\n\n${await snapshot(session, signal)}`);
   },
 };
@@ -201,11 +204,11 @@ function withBlockedNote(session: BrowserSession, text: string): string {
 }
 
 /**
- * Refuses non-http(s) URLs, and private or local hosts (loopback, LAN, cloud metadata) unless the user confirms them
- * once per session or OCTOCODE_WEB_ALLOW_PRIVATE=1: page content steers the agent, so it must not reach internal
- * services the `web` tool deliberately blocks.
+ * Refuses non-http(s) URLs. A private or local host (loopback, LAN, cloud metadata) is a `net.private` permission ask
+ * (allowed per host for the session) unless OCTOCODE_WEB_ALLOW_PRIVATE=1: page content steers the agent, so it must
+ * not reach internal services the `web` tool deliberately blocks.
  */
-export async function checkBrowserUrl(raw: string, ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, allowed: Set<string>): Promise<void> {
+export async function checkBrowserUrl(raw: string, ctx: Confirmer, permission: Permission): Promise<void> {
   let url: URL;
   try {
     url = new URL(raw);
@@ -213,33 +216,29 @@ export async function checkBrowserUrl(raw: string, ctx: Pick<ExtensionContext, '
     throw new Error(`Not a URL: ${raw}`);
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`The browser opens http(s) URLs only, not ${url.protocol}`);
-  if (allowPrivate() || allowed.has(url.host)) return;
+  if (allowPrivate()) return;
   const host = await classifyHost(url);
   if (host.kind === 'public') return;
   // A name that does not resolve here may still resolve in Chrome (its own DNS, hosts file, proxy) to a private address.
   const what = host.kind === 'private' ? 'a local or private network address' : 'a name that does not resolve here and may reach a local or private address';
-  if (ctx.hasUI && (await withDialog(() => ctx.ui.confirm('Open a private address?', `The browser wants to open ${url.host}, ${what}.`)))) {
-    allowed.add(url.host);
-    return;
-  }
+  const verdict = await permission.check(ctx, { action: 'net.private', title: 'Open a private address?', what: [`The browser wants to open ${url.host}, ${what}.`], grant: { key: url.host, label: url.host }, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+  if (verdict.allowed) return;
   const blocked = host.kind === 'private' ? 'Blocked private or local address' : 'Blocked unresolved host';
-  throw new Error(`${blocked}: ${url.host}. Ask the user to allow private addresses (OCTOCODE_WEB_ALLOW_PRIVATE=1); do not retry.`);
+  throw new Error(`${blocked}: ${url.host}. ${verdict.message} The user can allow private addresses for good with OCTOCODE_WEB_ALLOW_PRIVATE=1.`);
 }
 
 /**
  * Upload paths resolved against `cwd` and through symlinks: the files Chrome will read, returned for the upload. A
- * path outside the workspace (a symlink inside it pointing out included) needs the user's confirmation.
+ * path outside the workspace (a symlink inside it pointing out included) is an `upload.outside` permission ask.
  */
-export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd' | 'hasUI' | 'ui'>): Promise<string[]> {
+export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd'> & Confirmer, permission: Permission): Promise<string[]> {
   const root = realPath(path.resolve(ctx.cwd));
   const paths = files.map((file) => realPath(path.resolve(ctx.cwd, file)));
-  const outside = paths.filter((file) => {
-    const relative = path.relative(root, file);
-    return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
-  });
+  const outside = paths.filter((file) => !isWithin(file, root));
   if (outside.length === 0) return paths;
-  if (ctx.hasUI && (await withDialog(() => ctx.ui.confirm('Upload files from outside the workspace?', outside.join('\n'))))) return paths;
-  throw new Error(`Refused to upload files outside the workspace without the user's confirmation: ${outside.join(', ')}`);
+  const verdict = await permission.check(ctx, { action: 'upload.outside', title: 'Upload files from outside the workspace?', what: outside, ...(ctx.signal ? { signal: ctx.signal } : {}) });
+  if (verdict.allowed) return paths;
+  throw new Error(`Refused to upload files outside the workspace: ${outside.join(', ')}. ${verdict.message}`);
 }
 
 /** `file` with symlinks resolved; a missing tail (a file that does not exist yet) is kept under its real parent. */
@@ -339,8 +338,8 @@ const PAGE_HANDLERS: Record<PageActionName, (action: PageAction) => Promise<Acti
     return pageResult(withBlockedNote(session, await snapshot(session, signal)));
   },
   dialog: async ({ session, params, signal }) => pageResult(await answerDialog(session, params.accept ?? true, params.text, signal)),
-  upload: async ({ page, params, signal, ctx }) => {
-    const files = await checkUploadPaths(params.files ?? [], ctx);
+  upload: async ({ page, params, signal, ctx, browser }) => {
+    const files = await checkUploadPaths(params.files ?? [], ctx, browser.permission);
     return pageResult(await uploadFiles(page, requireRef(params.ref), elementExpr(requireRef(params.ref)), files, signal));
   },
   download: async ({ session, page, params, signal }) => {

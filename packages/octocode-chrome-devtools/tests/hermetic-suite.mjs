@@ -24,6 +24,7 @@ const checks = [
   'unit/agent.test.mjs',
   'unit/capture.test.mjs',
   'unit/package.test.mjs',
+  'unit/sandbox-layout.test.mjs',
   'sandbox-env-self-test.mjs',
   'portability-self-test.mjs',
   'artifact-self-test.mjs',

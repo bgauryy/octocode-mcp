@@ -8,10 +8,10 @@
 //! relative module path names no file. Everything else stays unverified.
 
 use crate::policy::PolicyErrorCode;
-use crate::policy::path::PathPolicy;
+use crate::policy::path::{PathPolicy, lexical};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 /// Zero-based start of an import binding in its file.
 type Spot = (u32, u32);
@@ -133,7 +133,7 @@ fn resolves_nowhere(specifier: &str, file: &str, missing: &dyn Fn(&Path) -> bool
     let Some(directory) = Path::new(file).parent() else {
         return false;
     };
-    let base = normalize(&directory.join(specifier));
+    let base = lexical(&directory.join(specifier));
     module_candidates(&base).iter().all(|path| missing(path))
 }
 
@@ -158,21 +158,6 @@ fn module_candidates(base: &Path) -> Vec<PathBuf> {
     }
     candidates.push(base.join("package.json"));
     candidates
-}
-
-/// `.` and `..` folded lexically; the policy canonicalizes the rest.
-fn normalize(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out
 }
 
 #[cfg(test)]

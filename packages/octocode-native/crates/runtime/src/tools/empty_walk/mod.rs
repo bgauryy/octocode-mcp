@@ -141,43 +141,6 @@ pub(crate) fn lift(query: &mut Value, causes: &[Cause]) {
     }
 }
 
-/// `globs` anchored at the scan root, restated for a scan rooted at `entry`
-/// (a path below that root), so a lead that narrows `path` to a skipped
-/// entry keeps the request's filters. A glob with a path (`a/b/**`) is
-/// anchored: its leading literal segments must spell the entry, and are
-/// dropped; one that spells another directory cannot match inside the entry
-/// and is dropped whole. A glob without a path (`*.min.js`) matches at any
-/// depth and stays as written, as does one whose segment within the entry's
-/// depth is a wildcard (`**/gen/**`): a wildcard may span the entry, so it
-/// cannot be rebased exactly.
-pub(crate) fn rebase_globs(globs: &[String], entry: &Path) -> Vec<String> {
-    let entry: Vec<_> = entry
-        .components()
-        .map(|part| part.as_os_str().to_string_lossy())
-        .collect();
-    globs
-        .iter()
-        .filter_map(|glob| {
-            let anchored = glob.trim_start_matches("./").trim_end_matches('/');
-            if !anchored.contains('/') {
-                return Some(glob.clone());
-            }
-            let mut segments = anchored.split('/');
-            for part in &entry {
-                let segment = segments.next()?;
-                if segment.contains(['*', '?', '[', '{']) {
-                    return Some(glob.clone());
-                }
-                if segment != part {
-                    return None;
-                }
-            }
-            let rest = segments.collect::<Vec<_>>().join("/");
-            (!rest.is_empty()).then_some(rest)
-        })
-        .collect()
-}
-
 /// What a probe's relaxed walk found.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Hits {
@@ -230,18 +193,25 @@ impl Diagnosis {
     /// The hint's reason: the named rules, entries and directories (the first
     /// few, then a count), else the causes.
     pub(crate) fn because(&self) -> String {
-        let reasons = self
-            .skips
-            .iter()
-            .map(|skip| skip.reason.as_str())
-            .collect::<Vec<_>>();
-        if reasons.is_empty() {
+        if self.skips.is_empty() {
             return self.labels();
         }
-        let shown = reasons[..reasons.len().min(NAMED_REASONS)].join(", ");
-        match reasons.len().checked_sub(NAMED_REASONS) {
-            Some(more) if more > 0 => format!("{shown}, +{more} more"),
-            _ => shown,
+        let shown = crate::response::pages::first_named(
+            self.skips.iter().map(|skip| skip.reason.clone()),
+            NAMED_REASONS,
+        );
+        // Every lifted cause is named: one no sampled file's reason states
+        // (a file behind two causes, past the sample) by its label.
+        let unnamed = self
+            .causes
+            .iter()
+            .filter(|cause| !self.skips.iter().any(|skip| skip.cause == **cause))
+            .map(|cause| cause.label())
+            .collect::<Vec<_>>();
+        if unnamed.is_empty() {
+            shown
+        } else {
+            format!("{shown}; also {}", unnamed.join(", "))
         }
     }
 
@@ -298,29 +268,50 @@ pub(crate) fn diagnose<E>(
             Verdict::Absent
         });
     }
+    // Smallest sets first; a larger set is probed only while the sets found
+    // so far reach fewer files than lifting everything does, and kept only
+    // when it reaches more than the found sets inside it (a file behind two
+    // causes, beside files behind one of them).
     let mut revealed: Vec<(usize, Hits)> = Vec::new();
+    let within = |revealed: &[(usize, Hits)], mask: usize| -> usize {
+        revealed
+            .iter()
+            .filter(|(known, _)| known & mask == *known)
+            .map(|(_, found)| found.count)
+            .sum()
+    };
     for size in 1..off.len() {
-        for mask in (1..full).filter(|mask| mask.count_ones() as usize == size) {
-            let found = probe(walk.lifting(&subset(mask)))?;
-            if found.count > 0 {
-                revealed.push((mask, found));
-            }
-        }
-        if !revealed.is_empty() {
+        if within(&revealed, full) >= everything.count {
             break;
         }
+        let mut level = Vec::new();
+        for mask in (1..full).filter(|mask| mask.count_ones() as usize == size) {
+            let found = probe(walk.lifting(&subset(mask)))?;
+            if found.count > within(&revealed, mask) {
+                level.push((mask, found));
+            }
+        }
+        revealed.extend(level);
     }
     if revealed.is_empty() {
         revealed.push((full, everything));
     }
     // Causes that reach the same files are alternatives (a walk that couples
     // two flags): the first of them in cause order is enough.
+    // A larger set kept above reaches files its subsets do not, whatever its
+    // sample shows.
     let mut covered = std::collections::BTreeSet::new();
-    revealed.retain(|(_, found)| {
-        let new = found.sample.iter().any(|file| !covered.contains(file));
+    let mut kept: Vec<(usize, Hits)> = Vec::new();
+    for (mask, found) in revealed {
+        let new = found.sample.iter().any(|file| !covered.contains(file))
+            || (kept.iter().any(|(known, _)| known & mask == *known)
+                && found.count > within(&kept, mask));
         covered.extend(found.sample.iter().cloned());
-        new
-    });
+        if new {
+            kept.push((mask, found));
+        }
+    }
+    let revealed = kept;
     let union = revealed.iter().fold(0, |union, (mask, _)| union | mask);
     let found = match revealed.iter().find(|(mask, _)| *mask == union) {
         Some((_, found)) => found.clone(),

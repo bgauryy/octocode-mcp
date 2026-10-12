@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { sharedAgentDb } from '../agentdb/db.js';
+import type { Permission } from '../permission/ask.js';
 import { repoKey } from '../shared/home.js';
 import type { Subcommands } from '../shared/commands.js';
 import { envFlag, MEMORY_AUTO_ENV } from '../shared/env.js';
@@ -22,12 +23,12 @@ export function memoryStore(cwd: string, env: NodeJS.ProcessEnv = process.env): 
  * Durable memories: the `memory` tool, automatic injection of pinned and relevant memories before each prompt (hidden
  * from the transcript), and `/octocode memory`. Project memories reach the model only in a trusted project.
  */
-export function registerMemory(pi: ExtensionAPI, options: { commands: Subcommands; isSubagent: boolean; env?: NodeJS.ProcessEnv }): void {
+export function registerMemory(pi: ExtensionAPI, options: { commands: Subcommands; isSubagent: boolean; permission: Permission; env?: NodeJS.ProcessEnv }): void {
   const env = options.env ?? process.env;
   const storeFor = (ctx: Pick<ExtensionContext, 'cwd'>) => memoryStore(ctx.cwd, env);
   const autoEnv = () => envFlag(env, MEMORY_AUTO_ENV, true);
 
-  registerMemoryTool(pi, storeFor, { isSubagent: options.isSubagent });
+  registerMemoryTool(pi, storeFor, { isSubagent: options.isSubagent, permission: options.permission });
 
   pi.on('before_agent_start', async (event, ctx) => {
     if (!autoEnv()) return undefined;

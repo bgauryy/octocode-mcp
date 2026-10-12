@@ -1,24 +1,34 @@
 import type { AgentToolResult, MessageRenderer, Theme, ToolRenderResultOptions } from '@earendil-works/pi-coding-agent';
 import { Box, type Component } from '@earendil-works/pi-tui';
-import { formatDuration, formatTokens, shortPath } from '../shared/format.js';
+import { formatCost, formatDuration, formatTokenUsage, shortPath } from '../shared/format.js';
 import { clip, timingOf, plural, resultBlock, toolHeader, type RenderContext } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { contentText, isRecord } from '../shared/util.js';
 
 /**
- * How the `agent` tool and a background subagent's report message are drawn: `● Agent(profile) · 38s`, then live
- * progress while it runs and `⎿ Done (4 tool calls · 12k tokens · 38s)` with the answer once it finishes. The row
+ * How the `agent` tool and a background subagent's report message are drawn: `● Agent(profile · goal) · 38s`, then live
+ * progress while it runs and `⎿ Done (name · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12 · 38s)` with the answer once it finishes. The row
  * stays one short line; the full prompt the agent was given shows in the expanded view, above its progress or report.
  */
 
 /** The `agent` tool's result details, updated as the child streams. */
 export interface RunDetails {
+  /** The agent's name. */
   id: string;
+  /** Its role. */
   profile: string;
+  goal: string;
   toolCalls: number;
+  /** Tool calls the child could not run without the user's approval. */
+  denied?: number | undefined;
   activity: string[];
+  /** Every prompt token (uncached, cache reads and writes); `cacheRead` is the part read from cache. */
   input: number;
+  cacheRead: number;
   output: number;
+  /** Pi's estimate; `unpriced`: part of the usage came from a model without pricing and is not in it. */
+  cost: number;
+  unpriced: boolean;
   startedAt: number;
   seconds?: number;
   /** running: foreground, still working; background: returned at once, the report arrives as a message. */
@@ -34,8 +44,11 @@ export interface RunDetails {
 /** What the background-result message carries for its renderer: the outcome, not parsed back out of the text. */
 export interface ResultDetails {
   id: string;
+  /** Its role and its goal, as the call header shows them (absent in a report saved before they existed). */
+  profile?: string;
+  goal?: string;
   status: 'done' | 'failed' | 'stopped';
-  /** The `⎿` line, e.g. `Done (4 tool calls · 12k tokens · 38s)`. */
+  /** The `⎿` line, e.g. `Done (name · 4 tool calls · ↑12k ↓2k · ≈$0.12 · 38s)`. */
   summary: string;
   durationMs?: number;
   /** A stop someone asked for (`/agents kill`, `coordinate stop`): drawn as an outcome, not as a failure. */
@@ -50,13 +63,24 @@ export function modelLabel(details: Pick<RunDetails, 'model' | 'fallback'>): str
   return `${details.model ?? 'parent model'} (${details.fallback} unavailable)`;
 }
 
-/** `Done (4 tool calls · 12k tokens · 38s · provider/id)`. */
-export function doneSummary(details: Pick<RunDetails, 'toolCalls' | 'input' | 'output' | 'model' | 'fallback'>, durationMs: number | undefined): string {
-  return `Done (${[plural(details.toolCalls, 'tool call'), `${formatTokens(details.input + details.output)} tokens`, durationMs === undefined ? '' : formatDuration(durationMs, true), modelLabel(details)].filter(Boolean).join(' · ')})`;
+/** `2 denied`: tool calls the child had no one to approve (empty when none). */
+export const deniedLabel = (details: Pick<RunDetails, 'denied'>): string => (details.denied ? `${details.denied} denied` : '');
+
+type Progress = Pick<RunDetails, 'id' | 'toolCalls' | 'denied' | 'input' | 'cacheRead' | 'output' | 'cost' | 'unpriced' | 'model' | 'fallback'>;
+
+/** `inky-kraken · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12`, then `extra` (a duration), then the model. */
+function runStats(details: Progress, ...extra: string[]): string {
+  return [details.id, plural(details.toolCalls, 'tool call'), deniedLabel(details), formatTokenUsage(details), formatCost(details), ...extra, modelLabel(details)].filter(Boolean).join(' · ');
+}
+
+/** `Done (inky-kraken · 4 tool calls · ↑12k (80% cached) ↓2k · ≈$0.12 · 38s · provider/id)`. */
+export function doneSummary(details: Progress, durationMs: number | undefined): string {
+  return `Done (${runStats(details, durationMs === undefined ? '' : formatDuration(durationMs, true))})`;
 }
 
 interface AgentArgs {
   task?: string | undefined;
+  goal?: string | undefined;
   profile?: string | undefined;
   model?: string | undefined;
   background?: boolean | undefined;
@@ -78,9 +102,9 @@ export function promptPreface(theme: Theme, task: string | undefined, next: stri
   return [heading('Prompt'), ...rows.map((row) => theme.fg('muted', row)), ...(next ? ['', heading(next)] : [])];
 }
 
-/** `implementer · gpt-5 · isolated`: what the row says about the run, never the prompt. */
+/** `implementer · audit auth token refresh · gpt-5 · isolated`: what the row says about the run, never the prompt. */
 function runLabel(args: AgentArgs): string {
-  return [args.profile ?? 'general', args.model ? clip(args.model, 40) : '', args.isolate ? 'isolated' : ''].filter(Boolean).join(' · ');
+  return [args.profile ?? 'general', args.goal ? clip(args.goal, 60) : '', args.model ? clip(args.model, 40) : '', args.isolate ? 'isolated' : ''].filter(Boolean).join(' · ');
 }
 
 export function renderAgentCall(args: AgentArgs, theme: Theme, context: RenderContext): Component {
@@ -99,7 +123,7 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
   if (isPartial) {
     // Live progress: counts, then the latest steps (the header carries the running clock).
     const lines = [...details.activity.slice(-3).map((line) => theme.fg('dim', clip(line, 200))), ...(details.shot ? [theme.fg('dim', `📷 ${clip(shortPath(details.shot), 200)}`)] : [])];
-    return resultBlock(theme, context, { summary: [details.id, plural(details.toolCalls, 'tool call'), `↑${formatTokens(details.input)} ↓${formatTokens(details.output)}`, modelLabel(details)].filter(Boolean).join(' · '), lines, max: lines.length, prefaceLabel: 'prompt', preface: promptPreface(theme, task, lines.length > 0 ? 'Progress' : undefined) });
+    return resultBlock(theme, context, { summary: runStats(details), lines, max: lines.length, prefaceLabel: 'prompt', preface: promptPreface(theme, task, lines.length > 0 ? 'Progress' : undefined) });
   }
   if (details.status === 'background') {
     // The first line is for the model; only a later note (an isolation warning) is worth expanding to.
@@ -111,9 +135,6 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
   return resultBlock(theme, context, { summary: doneSummary(details, durationMs), body, prefaceLabel: 'prompt', preface: promptPreface(theme, task, body.trim() ? 'Report' : undefined), ...timing, ...(durationMs === undefined ? {} : { durationMs }) });
 }
 
-/** The report message's `Task: …` line: for the model (it names the task a report answers); the renderer shows the full prompt instead. */
-const TASK_LINE = /^Task: /;
-
 /**
  * A background subagent's report, drawn like the tool row it came from: `● Agent(id)` then `⎿ Done (…)` and
  * the report; expanded, the full prompt comes first.
@@ -121,15 +142,13 @@ const TASK_LINE = /^Task: /;
 export const renderAgentMessage: MessageRenderer = (message, { expanded, outputPad }, theme) => {
   const details = (message.details ?? {}) as Partial<ResultDetails>;
   const [head = '', ...rest] = contentText(message.content).split('\n');
-  // Older reports carry no task in their details: keep their task line as text.
-  if (details.task !== undefined && rest.length > 0 && TASK_LINE.test(rest[0]!)) rest.shift();
   const report = rest.join('\n');
   const stopped = details.status === 'stopped';
   // A stop (asked for or not) is an interruption, not a failure: drawn `◼` in the warning colour.
   const context = { isPartial: false, isError: details.status === 'failed' || stopped, expanded, state: stopped ? { stopped: true } : {} };
   // Pi draws custom messages flush left; pad them like a tool row.
   const box = new Box(outputPad ?? 1, 0);
-  box.addChild(toolHeader(theme, context, 'Agent', details.id ?? 'background', details.durationMs === undefined ? { meta: 'background' } : { meta: 'background', durationMs: details.durationMs }));
+  box.addChild(toolHeader(theme, context, 'Agent', [details.id ?? 'background', details.profile, details.goal && clip(details.goal, 60)].filter(Boolean).join(' · '), details.durationMs === undefined ? { meta: 'background' } : { meta: 'background', durationMs: details.durationMs }));
   box.addChild(resultBlock(theme, context, { summary: details.summary ?? head, body: report, stopped, prefaceLabel: 'prompt', preface: promptPreface(theme, details.task, report.trim() ? 'Report' : undefined) }));
   return box;
 };

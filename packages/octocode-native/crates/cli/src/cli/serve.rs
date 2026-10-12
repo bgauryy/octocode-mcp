@@ -10,9 +10,11 @@
 //!   (every env name the config contract binds, plus Octocode, GitHub and gh
 //!   variables), and config file version: the socket name hashes all of
 //!   them, so a rebuild, config edit or settings change gets a fresh server.
-//! - The socket lives in `<octocode home>/run` (mode 0700); only the owner
-//!   can connect. With `storage.mode = memory`, or on Windows, calls run in
-//!   process as before.
+//! - The socket lives in `<temp dir>/octocode-<uid>` (mode 0700); only the
+//!   owner can connect. Its name carries the home through the key, so its
+//!   length does not depend on the home's (a long home once skipped the
+//!   server silently). With `storage.mode = memory`, or on Windows, calls
+//!   run in process as before; an unusable socket location is stated.
 //! - Any failure to reach the server falls back to an in-process call.
 //! - The server exits after [`IDLE_EXIT`] without a request; a client that
 //!   disconnects mid-call cancels its request.
@@ -125,8 +127,9 @@ fn spawn_server(socket: &std::path::Path) -> Option<()> {
     command.spawn().ok().map(|_| ())
 }
 
-/// `<home>/run/lsp-<key>.sock`, or `None` when the server must not be used:
-/// memory storage, an unsafe run directory, or a path too long for a socket.
+/// `<temp>/octocode-<uid>/lsp-<key>.sock`, or `None` when the server must
+/// not be used: memory storage (by choice, silent), or a location that is
+/// unsafe or too long for a socket (stated on stderr, then in process).
 #[cfg(unix)]
 fn socket_path() -> Option<std::path::PathBuf> {
     use octocode_native::config::{
@@ -147,20 +150,36 @@ fn socket_path() -> Option<std::path::PathBuf> {
     if !is_persistent_storage_enabled(&config.resolved) {
         return None;
     }
-    let run = config.home.join("run");
     let key = server_key(&env, &cwd, &config.home)?;
-    let socket = run.join(format!("lsp-{key}.sock"));
-    // macOS limits a socket path to 104 bytes.
-    if socket.as_os_str().len() >= 100 {
-        return None;
-    }
-    private_dir(&run)?;
-    Some(socket)
+    socket_in(&std::env::temp_dir(), &key)
+        .map_err(|reason| {
+            eprintln!(
+                "octocode: warm lspSearch server unavailable ({reason}); running in process."
+            );
+        })
+        .ok()
 }
 
-/// A directory only this user can enter, created when missing.
+/// The socket for `key` in this user's private directory under `temp`, or
+/// why it cannot be used. The length limit is the platform's own
+/// (`sockaddr_un`, 104 bytes on macOS, 108 on Linux).
 #[cfg(unix)]
-fn private_dir(dir: &std::path::Path) -> Option<()> {
+fn socket_in(temp: &std::path::Path, key: &str) -> Result<std::path::PathBuf, String> {
+    // SAFETY: getuid has no preconditions.
+    let uid = unsafe { libc::getuid() };
+    let dir = temp.join(format!("octocode-{uid}"));
+    let socket = dir.join(format!("lsp-{key}.sock"));
+    if std::os::unix::net::SocketAddr::from_pathname(&socket).is_err() {
+        return Err(format!("socket path too long: {}", socket.display()));
+    }
+    private_dir(&dir, uid)
+        .ok_or_else(|| format!("{} is not a private directory of this user", dir.display()))?;
+    Ok(socket)
+}
+
+/// A directory only user `uid` can enter, created when missing.
+#[cfg(unix)]
+fn private_dir(dir: &std::path::Path, uid: u32) -> Option<()> {
     use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     if !dir.exists() {
         std::fs::DirBuilder::new()
@@ -170,8 +189,6 @@ fn private_dir(dir: &std::path::Path) -> Option<()> {
             .ok()?;
     }
     let meta = std::fs::symlink_metadata(dir).ok()?;
-    // SAFETY: getuid has no preconditions.
-    let uid = unsafe { libc::getuid() };
     (meta.is_dir() && meta.uid() == uid && meta.permissions().mode() & 0o077 == 0).then_some(())
 }
 
@@ -455,13 +472,34 @@ mod tests {
         assert!(!stale.exists());
     }
 
+    /// The socket's place does not depend on the Octocode home, so a
+    /// long home (a macOS `$TMPDIR` one) still gets a warm server; a
+    /// location too long for a socket says so instead of being skipped.
     #[test]
-    fn run_directory_must_be_private() {
-        use std::os::unix::fs::PermissionsExt;
-        let home = tempfile::tempdir().expect("home");
-        let run = home.path().join("run");
-        assert!(super::private_dir(&run).is_some());
-        std::fs::set_permissions(&run, std::fs::Permissions::from_mode(0o755)).expect("chmod");
-        assert!(super::private_dir(&run).is_none());
+    fn the_socket_lives_under_the_temp_dir_whatever_the_home() {
+        let temp = tempfile::tempdir().expect("temp");
+        let socket = super::socket_in(temp.path(), "0123456789abcdef").expect("socket");
+        assert!(socket.starts_with(temp.path()), "{}", socket.display());
+        assert!(
+            std::os::unix::net::SocketAddr::from_pathname(&socket).is_ok(),
+            "{}",
+            socket.display()
+        );
+        let deep = temp.path().join("d".repeat(120));
+        std::fs::create_dir_all(&deep).expect("deep");
+        let refused = super::socket_in(&deep, "0123456789abcdef").expect_err("too long");
+        assert!(refused.contains("too long"), "{refused}");
+    }
+
+    #[test]
+    fn socket_directory_must_be_private() {
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+        let temp = tempfile::tempdir().expect("temp");
+        let uid = std::fs::metadata(temp.path()).expect("meta").uid();
+        let sockets = temp.path().join(format!("octocode-{uid}"));
+        assert!(super::private_dir(&sockets, uid).is_some());
+        assert!(super::private_dir(&sockets, uid + 1).is_none());
+        std::fs::set_permissions(&sockets, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        assert!(super::private_dir(&sockets, uid).is_none());
     }
 }

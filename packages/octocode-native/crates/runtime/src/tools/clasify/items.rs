@@ -149,21 +149,15 @@ pub(crate) fn local_read(path: &str, lines: Vec<u64>) -> Value {
 /// The 1-based line a result row names: a bare number (`lines` lists), the
 /// leading number of a compact string row (structural match
 /// `"<line>[-<end>]\t<value>"`, reference `"<line>:<col> <text>"`, caller
-/// `"<line>:<col> in …"`), a symbols outline entry's first field
-/// (`"<symbolName> (<line>[-<end>], …)"`), or an object row's `key`. Every
-/// row reader here goes through this accessor, so either row shape yields
-/// the same candidate lines.
+/// `"<line>:<col> in …"`), or an object row's `key` (a symbols outline
+/// declaration's `line`). Every row reader here goes through this accessor,
+/// so either row shape yields the same candidate lines.
 pub(crate) fn line(value: &Value, key: &str) -> Option<u64> {
     if let Some(line) = value.as_u64() {
         return Some(line);
     }
     if let Some(text) = value.as_str() {
         let text = text.trim_start();
-        if !text.starts_with(|c: char| c.is_ascii_digit()) {
-            return crate::tools::symbol_outline::parse_entry(text)?
-                .get("line")?
-                .as_u64();
-        }
         let end = text
             .find(|c: char| !c.is_ascii_digit())
             .unwrap_or(text.len());
@@ -397,22 +391,24 @@ mod tests {
         // Declaration rows (directory and single file), match rows, compact
         // references and direct callers all name their line.
         let symbols = json!({"tool":"astSearch","query":{"operation":"symbols","path":"/repo"}});
-        // Outline rows: entry strings, and containers as objects.
+        // Outline rows: declaration objects, containers with members.
         let grouped = wrap(json!({"files":[
             {"path":"x.rs","symbols":[
                 {"symbolName":"A","kind":"struct","line":10,"endLine":12,"exported":true,
-                 "members":["a (11, function)"]}
+                 "members":[{"symbolName":"a","kind":"function","line":11}]}
             ]},
-            {"path":"y.rs","symbols":["b (300, function, doc 299)"]}
+            {"path":"y.rs","symbols":[{"symbolName":"b","kind":"function","line":300,"docStartLine":299}]}
         ]}));
         let items = split(&symbols, &grouped).expect("grouped outline split");
         assert_eq!(items.len(), 2);
         assert_eq!(first_line(&items[0]), 1);
         assert_eq!(first_line(&items[1]), 240);
-        let items = single_outline(json!(["a (400, function)"]));
+        let items = single_outline(json!([{"symbolName":"a","kind":"function","line":400}]));
         assert_eq!(first_line(&items[0]), 340);
-        // A name holding " (" still reads its own line.
-        let items = single_outline(json!(["operator() (400-402, method)"]));
+        // A name holding "()" still reads its own line.
+        let items = single_outline(
+            json!([{"symbolName":"operator()","kind":"method","line":400,"endLine":402}]),
+        );
         assert_eq!(first_line(&items[0]), 340);
 
         let matches =

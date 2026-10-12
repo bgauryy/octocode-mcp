@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NO_REPLY, startCdpStub, type CdpHandler, type CdpStub } from './fixtures/cdp-stub.js';
+import { fakePermission } from './fake-pi.js';
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
@@ -73,7 +74,7 @@ async function setup(handle: CdpHandler) {
 }
 
 function register() {
-  const browser = new BrowserTool();
+  const browser = new BrowserTool(fakePermission());
   tools.push(browser);
   let tool: Tool | undefined;
   const handlers = new Map<string, () => Promise<void>>();

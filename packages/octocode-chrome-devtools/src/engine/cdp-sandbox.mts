@@ -99,8 +99,16 @@ const safePath = p => {
   }
 };
 
-const TMPDIR_RAW = OCTOCODE_OUTPUT_BASE;
-const TMPDIR_REAL = safePath(TMPDIR_RAW);
+// The child reads the whole .octocode tree (staged helpers, earlier runs' artifacts) but writes only below
+// tmp/chrome-devtools: its run folder, its session metadata and a scratch TMPDIR. The .octocode root holds reports only.
+const OCTOCODE_TREE_REAL = safePath(OCTOCODE_OUTPUT_BASE);
+/** Where scripts import the staged helpers from: `<cwd>/.octocode/tmp/chrome-devtools/helpers/<name>.mjs`. */
+const HELPERS_DIR = join(RUNS_DIR, 'helpers');
+/** The child's TMPDIR/TMP/TEMP, so a library that writes temp files stays inside the run tree. */
+const SCRATCH_DIR = join(RUNS_DIR, 'tmp');
+mkdirSync(HELPERS_DIR, { recursive: true, mode: 0o700 });
+mkdirSync(SCRATCH_DIR, { recursive: true, mode: 0o700 });
+const SCRATCH_REAL = safePath(SCRATCH_DIR);
 const RUNNER_REAL = safePath(RUNNER);
 const CONFIG_ENTRY_REAL = safePath(CONFIG_ENTRY);
 const OUTPUT_REAL = safePath(OUTPUT_DIR);
@@ -117,7 +125,7 @@ const HELPERS = [
 ];
 for (const helper of HELPERS) {
   const src = resolve(__dir, helper);
-  const dst = join(TMPDIR_RAW, helper);
+  const dst = join(HELPERS_DIR, helper);
   if (existsSync(src)) {
     try {
       copyFileSync(src, dst);
@@ -161,8 +169,8 @@ const readPaths = [
     CONFIG_ENTRY_REAL,
     resolve(__dir, 'chrome-contract.mjs'),
     safePath(resolve(__dir, 'chrome-contract.mjs')),
-    TMPDIR_RAW,
-    TMPDIR_REAL,
+    OCTOCODE_OUTPUT_BASE,
+    OCTOCODE_TREE_REAL,
     ...['dom-actionability.mjs', 'human-input.mjs', 'ax-snapshot.mjs'].flatMap(
       name => [resolve(__dir, name), safePath(resolve(__dir, name))]
     ),
@@ -171,8 +179,8 @@ const readPaths = [
 ];
 const writePaths = [
   ...new Set([
-    TMPDIR_RAW,
-    TMPDIR_REAL,
+    SCRATCH_DIR,
+    SCRATCH_REAL,
     OUTPUT_DIR,
     OUTPUT_REAL,
     SESSION_META_DIR,
@@ -262,9 +270,9 @@ const scriptEnv = Object.fromEntries(
 const childEnv = {
   CDP_OUTPUT_DIR: OUTPUT_DIR,
   CDP_SESSION_META_DIR: SESSION_META_DIR,
-  TMPDIR: OCTOCODE_OUTPUT_BASE,
-  TMP: OCTOCODE_OUTPUT_BASE,
-  TEMP: OCTOCODE_OUTPUT_BASE,
+  TMPDIR: SCRATCH_DIR,
+  TMP: SCRATCH_DIR,
+  TEMP: SCRATCH_DIR,
   ...scriptEnv,
   ...(VERBOSE ? { CDP_VERBOSE: '1' } : {}),
   ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
@@ -278,7 +286,7 @@ if (VERBOSE) {
   console.error(`[CDP_SANDBOX]  Output dir:    ${OUTPUT_DIR}`);
   console.error(`[CDP_SANDBOX]  Session meta:  ${SESSION_META_DIR}`);
   console.error(
-    `[CDP_SANDBOX]  FS write:      output dir + session meta dir (mode 0700)`
+    `[CDP_SANDBOX]  FS write:      output dir + session meta dir + scratch TMPDIR (mode 0700)`
   );
   console.error(`[CDP_SANDBOX]  FS read:       .octocode output tree + runner`);
   console.error(`[CDP_SANDBOX]  child_process: blocked`);

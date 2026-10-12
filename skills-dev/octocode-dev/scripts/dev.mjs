@@ -22,6 +22,8 @@ const TASKS = {
   'build:publish': ['Resolution check, 6-platform native build, MCP publish build', [script('prepublish.mjs'), yarn('build:native:all'), yarn('workspace', 'octocode-mcp', 'build')]],
   test: ['Run every workspace test script', [health('run', 'test')]],
   'test:ci': ['Tests without benchmark or native', [health('run', 'test', ...CI_EXCLUDE)]],
+  // Not in test:ci: it drives the built native binary and addon, which CI never builds.
+  'test:tools': ['End-to-end health of every tool via CLI and MCP, hermetic (needs build:dev; [tool,...])', [['node', [path.join(ROOT, 'octocode-local-testing/harness/tool-health.mjs')]]]],
   lint: ['Run every workspace lint script', [health('run', 'lint')]],
   'lint:ci': ['Lint without benchmark or native', [health('run', 'lint', ...CI_EXCLUDE)]],
   typecheck: ['Run every workspace typecheck script', [health('run', 'typecheck')]],

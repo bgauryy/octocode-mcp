@@ -33,6 +33,40 @@ function setup(env: Record<string, string> = {}) {
 const deadPid = (): number => spawnSync(process.execPath, ['-e', '0']).pid!;
 
 describe('/octocode api', () => {
+  it('rejects malformed or trailing arguments before starting or stopping a server', async () => {
+    const { run, notes, wired, dir } = setup();
+    const start = vi.spyOn(wired.api, 'start');
+    const stop = vi.spyOn(wired.api, 'stop');
+    try {
+      for (const args of ['on httpp', 'on http extra', 'off http', 'off extra', 'sideways']) {
+        await run(args);
+        expect(notes.at(-1)).toEqual({ type: 'warning', message: 'Usage: /octocode api [on [http] | off]' });
+      }
+      expect(start).not.toHaveBeenCalled();
+      expect(stop).not.toHaveBeenCalled();
+      expect(listInstances(dir)).toEqual([]);
+    } finally {
+      start.mockRestore();
+      stop.mockRestore();
+    }
+  });
+
+  it('reports command status and failures on stderr in headless mode', async () => {
+    const { commands, wired } = setup();
+    const ctx = fakeCtx({ cwd: tmp(), hasUI: false });
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const start = vi.spyOn(wired.api, 'start').mockRejectedValueOnce(new Error('Cannot start fixture'));
+    try {
+      await commands.get('api')!.handler('', ctx);
+      expect(stderr).toHaveBeenLastCalledWith(expect.stringContaining('Octocode API is off.'));
+      await commands.get('api')!.handler('on', ctx);
+      expect(stderr).toHaveBeenLastCalledWith('Cannot start fixture\n');
+    } finally {
+      stderr.mockRestore();
+      start.mockRestore();
+    }
+  });
+
   it('reports off, starts on the socket, adds HTTP, stops again, and rejects unknown actions', async () => {
     const { run, notes, wired, dir } = setup();
     await run('');

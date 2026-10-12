@@ -795,7 +795,7 @@ mod tests {
 
     #[tokio::test]
     async fn firewall_block_preserves_request_and_is_not_retried() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let request = json!({
             "state": {"content": "path is /etc/passwd and ../x"},
             "questions": {"q": {"instructions": "Does this read /etc/passwd?"}}
@@ -838,7 +838,7 @@ mod tests {
                 "invalidClassificationResponse",
             ),
         ] {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             Mock::given(method("POST"))
                 .respond_with(response)
                 .expect(1)
@@ -862,7 +862,7 @@ mod tests {
 
     #[tokio::test]
     async fn expired_deadline_prevents_transport() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(200))
             .expect(0)
@@ -886,7 +886,7 @@ mod tests {
     #[tokio::test]
     async fn transient_statuses_are_retried_then_succeed() {
         for status in [408, 500, 502, 504, 503, 529, 429] {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             Mock::given(method("POST"))
                 .respond_with(ResponseTemplate::new(status).insert_header("retry-after-ms", "1"))
                 .up_to_n_times(1)
@@ -908,7 +908,7 @@ mod tests {
 
     #[tokio::test]
     async fn bad_request_is_not_retried_and_maps_the_provider_error_type() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(
                 ResponseTemplate::new(400)
@@ -926,7 +926,7 @@ mod tests {
 
     #[tokio::test]
     async fn payment_required_is_remembered_for_every_call_until_the_memo_expires() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(402).set_body_json(json!({"detail":"no credit"})))
             .expect(2)
@@ -975,7 +975,7 @@ mod tests {
     #[tokio::test]
     async fn system_overloaded_body_is_retried_and_shrinks_the_gate() {
         for status in [500, 400] {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             Mock::given(method("POST"))
                 .respond_with(
                     ResponseTemplate::new(status)
@@ -999,7 +999,7 @@ mod tests {
             );
         }
         // Retries exhausted: the overload surfaces as rate limiting.
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(
                 ResponseTemplate::new(503)
@@ -1017,7 +1017,7 @@ mod tests {
 
     #[tokio::test]
     async fn retry_after_beyond_the_deadline_is_rate_limited_not_timeout() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "120"))
             .expect(1)

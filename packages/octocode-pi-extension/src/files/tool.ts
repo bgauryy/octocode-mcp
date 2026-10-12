@@ -9,13 +9,15 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { Type, type Static } from 'typebox';
 import { atomicWriteFile, changedOnDisk, sha256, sha256File } from '../shared/atomic.js';
-import { canonicalPath, octocodeHome, repoKey, resolveToolPath } from '../shared/home.js';
+import { canonicalPath, isWithin, repoKey, resolveToolPath } from '../shared/home.js';
+import type { Permission } from '../permission/ask.js';
+import { runsLater, stateFolderRefusal } from '../permission/gate.js';
 import { lastUserEntry, type Capture, type Checkpoints } from './checkpoint.js';
-import { reviewChanges, type ReviewMode } from './review.js';
-import { exclusive, withDialog } from '../shared/locks.js';
+import { askReview } from './review.js';
+import { exclusive } from '../shared/locks.js';
 import { timed } from '../shared/render.js';
 import { renderFileCall, renderFileResult, type QueryOutcome } from './render.js';
-import { readPaths } from './reads.js';
+import { readPaths } from '../shared/home.js';
 import { contentText, elisionMarkers, errorMessage, isRecord } from '../shared/util.js';
 
 /**
@@ -28,8 +30,8 @@ import { contentText, elisionMarkers, errorMessage, isRecord } from '../shared/u
  * it is changed, even if the disk did not move.
  *
  * Paths are checked against the workspace first: Octocode's own state folder (the Octocode home, holding trust
- * decisions, memory and sessions) is never changed, and a path outside the repository needs the user's confirmation
- * (refused without a UI to ask in).
+ * decisions, memory and sessions) is never changed, and a path outside the repository is a `file.outside` permission
+ * ask. In `manual` mode the batch's review dialog is its `file.workspace` ask.
  *
  * A read is recorded by stat (size, mtime, ctime, inode) of the canonical path, without reading the file again; its
  * digest is known only when the read returned the whole file (Pi's read) or the file tool wrote it, and is then
@@ -229,6 +231,7 @@ async function runQuery(
   guard: FileGuard,
   ctx: ExtensionToolContext,
   signal: AbortSignal | undefined,
+  permission: Permission,
   checkpoints?: Checkpoints,
 ): Promise<QueryOutcome> {
   const base = { type: query.type, path: query.path, reasoning: query.reasoning };
@@ -237,7 +240,7 @@ async function runQuery(
   try {
     if (query.type === 'edit' && !query.edits?.length) throw new Error('edit needs a non-empty edits array.');
     if (query.type === 'write' && query.content === undefined) throw new Error('write needs content.');
-    const outside = await workspaceRefusal(file, query, ctx, signal);
+    const outside = await workspaceRefusal(file, query, ctx, signal, permission);
     if (outside) throw new Error(outside);
     const { refusal, current, expected } = guard.inspect(file, query.type, query.path);
     if (refusal) throw new Error(refusal);
@@ -283,25 +286,27 @@ async function runQuery(
   }
 }
 
-const inside = (file: string, dir: string): boolean => {
-  const relative = path.relative(dir, file);
-  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-};
-
 /**
- * Why `file` may not be changed for its place: inside Octocode's state folder (always refused), or outside the
- * repository and the user did not confirm (refused without a UI). Undefined when the change may go ahead.
+ * Why `file` may not be changed for its place: inside Octocode's state folder (always refused, in every mode), or
+ * outside the repository and the `file.outside` ask was not allowed. Undefined when the change may go ahead.
  */
-async function workspaceRefusal(file: string, query: FileQuery, ctx: ExtensionToolContext, signal: AbortSignal | undefined): Promise<string | undefined> {
+async function workspaceRefusal(file: string, query: FileQuery, ctx: ExtensionToolContext, signal: AbortSignal | undefined, permission: Permission): Promise<string | undefined> {
   const real = canonicalPath(file);
-  if (inside(real, canonicalPath(octocodeHome()))) return `${query.path} is in Octocode's state folder; the file tool does not change it. Ask the user to change it themselves.`;
+  const home = stateFolderRefusal(real, query.path, 'the file tool');
+  if (home) return home;
   const root = repoKey(ctx.cwd).root;
-  if (inside(real, root)) return undefined;
-  const refusal = `${query.path} is outside the workspace (${root}).`;
-  if (!ctx.hasUI) return `${refusal} Changing it needs the user's confirmation; ask the user to make this change themselves.`;
-  const question = `${query.type} ${real}\n\nThis path is outside the workspace (${root}).\nReason: ${query.reasoning}\n\nAllow this change?`;
-  const allowed = await withDialog(() => ctx.ui.confirm('Change a file outside the workspace?', question, signal ? { signal } : undefined), signal);
-  return allowed ? undefined : `${refusal} The user did not allow this change; do not retry it.`;
+  const inside = isWithin(real, root);
+  if (inside && !runsLater(real, root)) return undefined;
+  const dir = path.dirname(real);
+  const verdict = await permission.check(ctx, {
+    action: 'file.outside',
+    title: inside ? 'Change a file that runs in later sessions?' : 'Change a file outside the workspace?',
+    what: [`${query.type} ${real}`, `workspace: ${root}`],
+    why: inside ? `it loads code, hooks or instructions in later sessions. ${query.reasoning}` : query.reasoning,
+    grant: { key: dir, label: `file changes under ${dir}` },
+    ...(signal ? { signal } : {}),
+  });
+  return verdict.allowed ? undefined : `${query.path} is ${inside ? 'a file that runs in later sessions' : `outside the workspace (${root})`}. ${verdict.message}`;
 }
 
 /** The first context-shortening placeholder a change would add to the file (one already in the file or the replaced text is fine). */
@@ -338,7 +343,7 @@ export function returnedContent(toolName: string, input: Record<string, unknown>
   return typeof text === 'string' ? { sha256: sha256(text), size: Buffer.byteLength(text) } : undefined;
 }
 
-export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, review?: ReviewMode, checkpoints?: Checkpoints): void {
+export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, permission: Permission, checkpoints?: Checkpoints): void {
   pi.registerTool({
     name: 'file',
     label: 'File',
@@ -354,14 +359,30 @@ export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, review?: Re
     // them still run in parallel. Each path's writes also queue behind Pi's edit/write through withFileMutationQueue.
     execute: exclusive(timed(async (id: string, params: Static<typeof Params>, signal: AbortSignal | undefined, _onUpdate: unknown, ctx: ExtensionToolContext) => {
       const outcomes: QueryOutcome[] = [];
-      // With review on, nothing is applied until the user has said yes to each change (or to all of them).
-      const rejected = review?.on && ctx.hasUI ? await reviewChanges(ctx, params.queries, signal) : new Set<number>();
+      // When the mode asks (manual), the review is the ask: nothing is applied until the user has said yes to each
+      // change (or to all of them). Without a UI to ask in, the batch is refused.
+      let rejected = new Map<number, string | undefined>();
+      const verdict = await permission.check(
+        ctx,
+        { action: 'file.workspace', title: 'Apply these file changes?', what: params.queries.map((query) => `${query.type} ${query.path}`), ...(signal ? { signal } : {}) },
+        async (dialogCtx, request) => {
+          const answer = await askReview(dialogCtx, params.queries, request.signal);
+          if (answer === 'cancelled') return undefined;
+          if (answer === 'session') return 'kind';
+          rejected = answer;
+          if (answer.size !== params.queries.length) return 'once';
+          const notes = [...answer].flatMap(([index, note]) => note ? [`${params.queries[index]!.path}: ${note}`] : []);
+          return notes.length > 0 ? { deny: notes.join('\n') } : 'deny';
+        },
+      );
       // A dismissed or interrupted review is not a verdict on the changes.
-      if (rejected === 'cancelled' || signal?.aborted) throw new Error('Cancelled before any change was applied.');
-      if (rejected.size === params.queries.length) throw new Error('The user rejected these changes. Do not retry them; ask what they want changed instead.');
+      if ((!verdict.allowed && verdict.via === 'cancelled') || signal?.aborted) throw new Error('Cancelled before any change was applied.');
+      if (!verdict.allowed) throw new Error(verdict.message);
       for (const [index, query] of params.queries.entries()) {
-        const skip = rejected.has(index) ? 'Rejected by the user; do not retry this change.' : signal?.aborted ? 'Not applied: the batch was aborted.' : undefined;
-        outcomes.push(skip ? { type: query.type, path: query.path, reasoning: query.reasoning, ok: false, message: skip } : await runQuery(query, index, id, guard, ctx, signal, checkpoints));
+        const note = rejected.get(index);
+        const skip = rejected.has(index) ? `Rejected by the user; do not retry this change.${note ? ` User's note: ${note}` : ''}` : signal?.aborted ? 'Not applied: the batch was aborted.' : undefined;
+        const skipped = skip ? { type: query.type, path: query.path, reasoning: query.reasoning, ok: false, message: skip } : undefined;
+        outcomes.push(skipped ?? (await runQuery(query, index, id, guard, ctx, signal, permission, checkpoints)));
       }
       if (outcomes.every((outcome) => !outcome.ok)) throw new Error(formatOutcomes(outcomes));
       return { content: [{ type: 'text' as const, text: formatOutcomes(outcomes) }], details: { outcomes } as { outcomes: QueryOutcome[]; durationMs?: number } };

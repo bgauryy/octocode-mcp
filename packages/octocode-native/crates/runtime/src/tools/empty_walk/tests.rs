@@ -107,6 +107,29 @@ fn a_match_behind_two_causes_lifts_exactly_those_two() {
     }
 }
 
+/// Files behind a dot path alone, and one behind a dot path and an ignore
+/// rule together: the smallest set reaches only some of them, so the larger
+/// set is probed too, and the hint and lead name both causes.
+#[test]
+fn a_larger_cause_set_is_probed_while_files_stay_unreached() {
+    let root = repo(".both/\n", &[".cfg", ".cfg/deep", ".both"]);
+    let diagnosis = skipped(&root.0, DEFAULTS);
+    assert_eq!(diagnosis.causes(), [Cause::Ignored, Cause::Hidden]);
+    assert_eq!(diagnosis.found().count, 3, "{diagnosis:?}");
+    let reasons = diagnosis.because();
+    assert!(reasons.contains("hidden .cfg/"), "{reasons}");
+    assert!(
+        reasons.contains(".gitignore:1 '.both/'") || reasons.contains("ignored"),
+        "{reasons}"
+    );
+    let mut lead = serde_json::json!({"path": "."});
+    lift(&mut lead, diagnosis.causes());
+    assert_eq!(
+        lead,
+        serde_json::json!({"path": ".", "includeIgnored": true, "includeHidden": true})
+    );
+}
+
 /// Matches behind different causes in different directories lift each
 /// cause that holds some, and never one that holds none.
 #[test]
@@ -337,27 +360,4 @@ fn a_probe_stays_within_the_request_globs() {
         .find(DEFAULTS.lifting(&[Cause::Hidden]))
         .expect("probe");
     assert_eq!(found.count, 2, "{found:?}");
-}
-
-/// A glob anchored at the scan root keeps its meaning under a narrowed root:
-/// literal leading segments that name the entry are dropped, a glob that
-/// cannot match inside the entry is dropped, and position-independent globs
-/// (a bare name, a leading `**/`, a leading wildcard) stay as written.
-#[test]
-fn rebased_globs_match_the_same_files_from_the_entry() {
-    let globs = |items: &[&str]| items.iter().map(|g| (*g).to_owned()).collect::<Vec<_>>();
-    let rebase = |items: &[&str]| super::rebase_globs(&globs(items), Path::new(".cfg/in"));
-    assert_eq!(rebase(&[".cfg/in/skip/**"]), globs(&["skip/**"]));
-    assert_eq!(rebase(&[".cfg/in/**/*.h"]), globs(&["**/*.h"]));
-    assert_eq!(rebase(&["src/**", ".cfg/other/**"]), Vec::<String>::new());
-    assert_eq!(
-        rebase(&["*.min.js", "**/skip/**", "*/gen/**"]),
-        globs(&["*.min.js", "**/skip/**", "*/gen/**"])
-    );
-    // The entry itself is the root of the narrowed scan: a glob naming it
-    // leaves nothing to rebase, and a leading `./` is the same as none.
-    assert_eq!(
-        rebase(&[".cfg/in", ".cfg/in/", "./.cfg/in/*"]),
-        globs(&["*"])
-    );
 }

@@ -302,10 +302,14 @@ async fn structure_search_dispatches_on_both_surfaces_and_owns_file_discovery() 
     workspace.write("docs/readme.md", "# docs\n");
     let mcp = ToolRuntime::from_host(HostOptions {
         cwd: Some(workspace.workspace.clone()),
-        env: Some(BTreeMap::from([(
-            "OCTOCODE_ENABLE_LOCAL".into(),
-            "true".into(),
-        )])),
+        // The fixture home, so the user's ~/.octocode is never read or written.
+        env: Some(BTreeMap::from([
+            ("OCTOCODE_ENABLE_LOCAL".into(), "true".into()),
+            (
+                "OCTOCODE_HOME".into(),
+                workspace.home.to_string_lossy().into_owned(),
+            ),
+        ])),
         surface: RuntimeSurface::Mcp,
         ..HostOptions::default()
     })
@@ -425,9 +429,14 @@ async fn host_options_environment_controls_embedded_tool_availability() {
     let workspace = Workspace::new();
     let runtime = ToolRuntime::from_host(HostOptions {
         cwd: Some(workspace.workspace.clone()),
+        // The fixture home, so the user's ~/.octocode is never read or written.
         env: Some(BTreeMap::from([
             ("OCTOCODE_ENABLE_LOCAL".into(), "true".into()),
             ("OCTOCODE_BETA".into(), "true".into()),
+            (
+                "OCTOCODE_HOME".into(),
+                workspace.home.to_string_lossy().into_owned(),
+            ),
         ])),
         surface: RuntimeSurface::Mcp,
         ..HostOptions::default()
@@ -551,11 +560,23 @@ async fn ast_topology_executes_only_after_beta_opt_in() {
     runtime.close().await;
 }
 
+/// The markdown server is a missing command, so the row does not depend on
+/// which language servers this machine has installed.
 #[tokio::test]
 async fn lsp_search_returns_a_typed_row_when_no_server_is_configured() {
     let workspace = Workspace::new();
     let path = workspace.write("notes.md", "# title\n");
-    let runtime = workspace.runtime(&[]);
+    // Inside the workspace: anchored operations read the server config
+    // through the path policy.
+    let config = workspace.write(
+        "config/lsp.json",
+        json!({"languageServers": {".md": {
+            "command": "octocode-test-missing-lsp", "args": [], "languageId": "markdown"
+        }}})
+        .to_string(),
+    );
+    let runtime =
+        workspace.runtime(&[("OCTOCODE_LSP_CONFIG", config.to_string_lossy().into_owned())]);
     let outcome = call(
         &runtime,
         "lspSearch",
@@ -566,10 +587,16 @@ async fn lsp_search_returns_a_typed_row_when_no_server_is_configured() {
     )
     .await
     .expect("lspSearch");
-    let status = row_status(&outcome);
-    assert!(
-        status == "error" || status == "empty" || status == "success",
-        "unexpected status {status}: {}",
+    assert_eq!(
+        row_status(&outcome),
+        "error",
+        "{}",
+        outcome.structured_content
+    );
+    assert_eq!(
+        row_data(&outcome)["errorCode"],
+        "serverUnavailable",
+        "{}",
         outcome.structured_content
     );
     let symbol_failure = call(
@@ -585,6 +612,12 @@ async fn lsp_search_returns_a_typed_row_when_no_server_is_configured() {
     .await
     .expect("symbol recovery output satisfies its contract");
     assert_eq!(row_status(&symbol_failure), "error");
+    assert_eq!(
+        row_data(&symbol_failure)["errorCode"],
+        "serverUnavailable",
+        "{}",
+        symbol_failure.structured_content
+    );
     assert_eq!(
         row_data(&symbol_failure)["hints"]["read"]["tool"],
         "localFetch"
@@ -1317,13 +1350,13 @@ async fn local_search_discloses_default_excluded_dirs_and_files_with_a_rerun() {
     );
     let lead = found
         .structured_content
-        .pointer("/results/0/data/hints/includeIgnored")
+        .pointer("/results/0/data/hints/includeSkipped")
         .or_else(|| {
             found
                 .structured_content
-                .pointer("/results/0/data/next/includeIgnored")
+                .pointer("/results/0/data/next/includeSkipped")
         })
-        .unwrap_or_else(|| panic!("includeIgnored lead: {text}"));
+        .unwrap_or_else(|| panic!("includeSkipped lead: {text}"));
     assert_eq!(
         lead["query"]["queries"][0]["defaultExcludes"], false,
         "{lead}"

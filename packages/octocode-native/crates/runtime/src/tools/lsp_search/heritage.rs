@@ -163,12 +163,12 @@ pub(super) fn implementation_failure_has_fallback(failure: &LspFailure) -> bool 
 }
 
 /// What the heritage scan read: the subtypes of `base` among the `files`
-/// that spell it, and how many of those `unread` files could not be read.
+/// that spell it, and the `unread` files (canonical paths) it could not read.
 pub(super) struct HeritageScan {
     pub(super) base: String,
     pub(super) files: usize,
     pub(super) found: Vec<JsCodeSnippet>,
-    pub(super) unread: usize,
+    pub(super) unread: Vec<String>,
 }
 
 /// How long the server's `textDocument/implementation` answer may still
@@ -280,44 +280,47 @@ pub(super) fn subtype_snippets(content: &str, file: &str, base: &str) -> Vec<JsC
 }
 
 /// The subtypes of `base` among `files` (canonical paths of the files that
-/// spell it), by file path then position, and the count of files that could
-/// not be read. Files are parsed in parallel; `stopped` abandons the scan.
+/// spell it), by file path then position, and the files that could not be
+/// read, by path. Files are parsed in parallel; `stopped` abandons the scan.
 pub(super) fn scan_subtypes(
     files: &BTreeSet<String>,
     base: &str,
     stopped: &(dyn Fn() -> bool + Sync),
-) -> (Vec<JsCodeSnippet>, usize) {
+) -> (Vec<JsCodeSnippet>, Vec<String>) {
     let files = files.iter().collect::<Vec<_>>();
     let workers = std::thread::available_parallelism().map_or(1, usize::from);
     let chunk = files.len().div_ceil(workers).max(1);
-    let unread = std::sync::atomic::AtomicUsize::new(0);
-    let unread_ref = &unread;
-    let mut found = std::thread::scope(|scope| {
+    let (mut found, mut unread) = std::thread::scope(|scope| {
         let handles = files
             .chunks(chunk)
             .map(|files| {
                 scope.spawn(move || {
                     let mut found = Vec::new();
+                    let mut unread = Vec::new();
                     for file in files {
                         if stopped() {
                             break;
                         }
                         match read_bounded_source(std::path::Path::new(file)) {
                             Ok(content) => found.extend(subtype_snippets(&content, file, base)),
-                            Err(_) => {
-                                unread_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                            }
+                            Err(_) => unread.push((*file).clone()),
                         }
                     }
-                    found
+                    (found, unread)
                 })
             })
             .collect::<Vec<_>>();
-        handles
-            .into_iter()
-            .flat_map(|handle| handle.join().unwrap_or_default())
-            .collect::<Vec<_>>()
+        handles.into_iter().fold(
+            (Vec::new(), Vec::new()),
+            |(mut found, mut unread), handle| {
+                let (more_found, more_unread) = handle.join().unwrap_or_default();
+                found.extend(more_found);
+                unread.extend(more_unread);
+                (found, unread)
+            },
+        )
     });
+    unread.sort();
     found.sort_by(|left, right| {
         (&left.uri, left.range.start.line, left.range.start.character).cmp(&(
             &right.uri,
@@ -325,7 +328,23 @@ pub(super) fn scan_subtypes(
             right.range.start.character,
         ))
     });
-    (found, unread.into_inner())
+    (found, unread)
+}
+
+/// The warning about the files a heritage scan could not read: their
+/// subtypes are missing from the answer. It names as many as the text-search
+/// lead lists one row each and counts the rest; the lead reaches them all.
+pub(super) fn describe_unread(unread: &[String]) -> String {
+    let named = unread.len().min(super::failure::LISTED_TEXT_FILES);
+    let rest = match unread.len() - named {
+        0 => String::new(),
+        more => format!(" and {more} more"),
+    };
+    format!(
+        "The heritage scan could not read {} file(s), so subtypes declared there are missing: {}{rest}.",
+        unread.len(),
+        unread[..named].join(", ")
+    )
 }
 
 /// The caller-facing note of a heritage scan that replaced a failed
@@ -334,21 +353,15 @@ pub(super) fn describe_scan(
     failure: &LspFailure,
     base: &str,
     files: usize,
-    unread: usize,
     operation: &str,
 ) -> String {
-    let unread = if unread == 0 {
-        String::new()
-    } else {
-        format!(" {unread} of them could not be read.")
-    };
     let noun = if operation == "implementation" {
         "implementations"
     } else {
         "subtypes"
     };
     format!(
-        "The language server did not answer textDocument/implementation in time ({}): {noun} are the declarations whose extends/implements clause names `{base}`, read from source in the {files} files that spell it. They are direct {noun} only; run {operation} on each to descend. They are unverified: the base is matched by name, not resolved to this declaration. Retry asks the server again.{unread}",
+        "The language server did not answer textDocument/implementation in time ({}): {noun} are the declarations whose extends/implements clause names `{base}`, read from source in the {files} files that spell it. They are direct {noun} only; run {operation} on each to descend. They are unverified: the base is matched by name, not resolved to this declaration. Retry asks the server again.",
         failure.message
     )
 }
@@ -467,6 +480,32 @@ mod tests {
         assert!(subtypes(source, "/work/a.ts", "Base").is_empty());
     }
 
+    /// The warning names as many unread files as the lead lists one row
+    /// each, and counts the rest.
+    #[test]
+    fn the_unread_warning_names_a_few_and_counts_the_rest() {
+        let unread = (1..=7).map(|n| format!("/r/f{n}.ts")).collect::<Vec<_>>();
+        let warning = describe_unread(&unread);
+        assert!(warning.contains("7 file(s)"), "{warning}");
+        assert!(warning.contains("/r/f5.ts and 2 more."), "{warning}");
+        assert!(!warning.contains("/r/f6.ts"), "{warning}");
+        assert!(describe_unread(&unread[..1]).ends_with("missing: /r/f1.ts."));
+    }
+
+    /// The scan names every file it could not read, so the gap in a
+    /// heritage answer can be followed.
+    #[test]
+    fn the_scan_names_the_files_it_could_not_read() {
+        let dir = tempfile::tempdir().expect("workspace");
+        let readable = dir.path().join("a.ts");
+        std::fs::write(&readable, "class A extends Base {}\n").expect("source");
+        let missing = dir.path().join("gone.ts").display().to_string();
+        let files = BTreeSet::from([readable.display().to_string(), missing.clone()]);
+        let (found, unread) = scan_subtypes(&files, "Base", &|| false);
+        assert_eq!(found.len(), 1);
+        assert_eq!(unread, vec![missing]);
+    }
+
     /// Every no-hierarchy path says which relatives it lists: the clause
     /// reads are direct only, the implementation answer mixes both.
     #[test]
@@ -479,8 +518,8 @@ mod tests {
         }];
         assert!(describe(&bases).contains("direct bases only"));
         let failure = LspFailure::invalid_query("x");
-        assert!(describe_scan(&failure, "Base", 3, 0, "subtypes").contains("direct subtypes only"));
-        let implementations = describe_scan(&failure, "Base", 3, 0, "implementation");
+        assert!(describe_scan(&failure, "Base", 3, "subtypes").contains("direct subtypes only"));
+        let implementations = describe_scan(&failure, "Base", 3, "implementation");
         assert!(
             implementations.contains("direct implementations only")
                 && implementations.contains("run implementation on each"),

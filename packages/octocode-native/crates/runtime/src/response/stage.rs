@@ -240,7 +240,7 @@ mod tests {
                 "query":{"queries":[{"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","offset":1}]}}}}})
     }
 
-    /// M9: a rendered response past the 8 MiB ceiling pages (rows, else
+    /// A rendered response past the 8 MiB ceiling pages (rows, else
     /// envelope windows) with an executable continuation instead of failing.
     #[test]
     fn oversized_responses_page_by_rows_instead_of_failing() {

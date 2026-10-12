@@ -37,7 +37,7 @@ loadNativeBinding → new NativeRuntime({ surface: 'mcp' }) → ABI version chec
 - Startup fails with `No native tools are available` when no tool is available, for example a `TOOLS_TO_RUN` list of only unknown names.
 - Settings and env tokens resolve once at startup. Stored logins and `gh` resolve per request, so a new `auth login` applies without a restart.
 
-Native validates arguments once, as on the CLI, and an invalid call gets the same repair guidance (nearest field, allowed values, the missing field's fix). Every call is `{queries:[...]}`; a flat row or bare array is rejected. A JSON-encoded or bare-scalar value for a list-only field, or an exact integer or boolean string for an integer- or boolean-only field, is repaired; fields that also accept a string are never rewritten. In a batch, valid rows run and each invalid row returns its own error.
+Native validates arguments once, as on the CLI, and an invalid call gets the same repair guidance (nearest field, allowed values, the missing field's fix). Every call is `{queries:[...]}`; a flat row or bare array is rejected. A JSON-encoded (curly quotes or HTML character references such as `&quot;` included) or bare-scalar value for a list-only field, or an exact integer or boolean string for an integer- or boolean-only field, is repaired; fields that also accept a string are never rewritten. In a batch, valid rows run and each invalid row returns its own error.
 
 ## Tool catalog
 

@@ -8,7 +8,9 @@ const say = (text, extra = {}) => ({ type: 'message_end', message: { role: 'assi
 // A 1x1 PNG, as a browser tool would return.
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
-if (task.startsWith('oversized')) {
+if (task.includes('linger')) {
+  emit(say(`LINGER mode=${process.env.OCTOCODE_PERMISSION} grants=${process.env.OCTOCODE_PERMISSION_GRANTS ?? ''} ${process.argv.slice(2).join(' ')}`));
+} else if (task.startsWith('oversized')) {
   process.stdout.write('x'.repeat(17 * 1024 * 1024));
 } else if (task.startsWith('fail')) {
   process.stderr.write('boom\n');
@@ -26,6 +28,13 @@ if (task.startsWith('oversized')) {
   // Answers, then exits while a grandchild that left the process group keeps the stdio pipes open.
   require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => undefined, 8000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }).unref();
   emit(say('ORPHAN REPORT'));
+} else if (task.startsWith('detached helper')) {
+  // Like a Chrome the child launched: a detached process in a group of its own, which the child never closes.
+  const helper = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { detached: true, stdio: 'ignore' });
+  helper.unref();
+  emit({ type: 'tool_execution_start', toolName: 'bash', args: { command: `helper ${helper.pid}` } });
+  process.on('SIGTERM', () => process.exit(143));
+  setTimeout(() => undefined, 60_000);
 } else if (task.startsWith('hang')) {
   // A stalled model stream: no events at all.
   process.on('SIGTERM', () => process.exit(143));
@@ -55,6 +64,21 @@ if (task.startsWith('oversized')) {
   emit(say('FULL REPORT'));
   emit({ type: 'message_end', message: { role: 'custom', content: 'Background bash job finished' } });
   emit(say('That job was my coverage rerun; findings unchanged.'));
+} else if (task.startsWith('grants')) {
+  emit(say(`mode=${process.env.OCTOCODE_PERMISSION ?? ''} grants=${process.env.OCTOCODE_PERMISSION_GRANTS ?? ''}`));
+} else if (task.startsWith('denied')) {
+  // Two calls refused for lack of approval (a blocked call's error text) and one ordinary failure.
+  const denied = (text) => ({ type: 'tool_execution_end', toolName: 'bash', isError: true, result: { content: [{ type: 'text', text }] } });
+  emit({ type: 'tool_execution_start', toolName: 'bash', args: { command: 'npm test' } });
+  emit(denied(process.env.OCTOCODE_FAKE_DENIAL));
+  emit({ type: 'tool_execution_start', toolName: 'file', args: {} });
+  emit(denied(process.env.OCTOCODE_FAKE_DENIAL));
+  emit({ type: 'tool_execution_start', toolName: 'bash', args: { command: 'false' } });
+  emit(denied('Command exited with code 1'));
+  emit(say('blocked: need approval for npm test and the edit'));
+} else if (task.startsWith('unpriced')) {
+  // A model without pricing (a free local one): tokens spent, no cost. Most of the prompt came from cache.
+  emit(say('free answer', { provider: 'local', model: 'llama', usage: { ...usage, cacheRead: 300, totalTokens: 420, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }));
 } else if (task.startsWith('edit')) {
   fs.writeFileSync('child.txt', 'from the child\n');
   emit(say('edited child.txt'));
@@ -64,7 +88,7 @@ if (task.startsWith('oversized')) {
   process.stdout.write('not json\n');
   emit({ type: 'message_end', message: { role: 'user', content: [] } });
   const env = process.env;
-  const facts = { id: env.OCTOCODE_AGENT_ID, parent: env.OCTOCODE_PARENT_ID, subagent: env.OCTOCODE_SUBAGENT, collaborate: env.OCTOCODE_AGENT_COLLABORATE, scratch: env.OCTOCODE_AGENT_SCRATCH, workspace: env.OCTOCODE_TEAM_WORKSPACE, trustRoot: env.OCTOCODE_TRUST_ROOT, cwd: process.cwd(), args: process.argv.slice(2, -1), task };
+  const facts = { id: env.OCTOCODE_AGENT_ID, role: env.OCTOCODE_AGENT_ROLE, goal: env.OCTOCODE_AGENT_GOAL, parent: env.OCTOCODE_PARENT_ID, subagent: env.OCTOCODE_SUBAGENT, collaborate: env.OCTOCODE_AGENT_COLLABORATE, scratch: env.OCTOCODE_AGENT_SCRATCH, workspace: env.OCTOCODE_TEAM_WORKSPACE, trustRoot: env.OCTOCODE_TRUST_ROOT, cwd: process.cwd(), args: process.argv.slice(2, -1), task };
   // The last event has no trailing newline: the parent must still read it at exit.
   process.stdout.write(JSON.stringify(say(`report ${JSON.stringify(facts)}`)));
 }

@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { sweepStaleOutputs, workspacePaths, workspaceScratchDir } from '../shared/home.js';
+import { atomicWriteFileSync } from '../shared/atomic.js';
+import { privateDir, readPaths, sessionDir, sweepStaleOutputs, workspacePaths, workspaceScratchDir } from '../shared/home.js';
 import { processStartTime, sameProcess } from '../shared/process.js';
 import type { ResultDetails } from './render.js';
 import { teamWorkspace } from '../team/store.js';
@@ -48,15 +49,15 @@ function ownerRunning(dir: string): boolean {
 }
 
 /** Removes scratch folders untouched for a week, except those whose owning Pi process (this or another session) is alive. */
-export function sweepScratch(root: string): void {
+export async function sweepScratch(root: string): Promise<void> {
   let names: string[];
   try {
-    names = fs.readdirSync(root);
+    names = await fs.promises.readdir(root);
   } catch {
     return;
   }
   const owned = new Set(names.filter((name) => ownerRunning(path.join(root, name))));
-  sweepStaleOutputs(root, SCRATCH_MAX_AGE_MS, owned);
+  await sweepStaleOutputs(root, SCRATCH_MAX_AGE_MS, owned);
 }
 
 /** Background reports finishing within this window reach the parent together, as one wake. */
@@ -67,6 +68,42 @@ export interface Report {
   details: ResultDetails;
   /** Start a parent turn for it (not for a stop someone asked for, nor a report the parent already read). */
   wake: boolean;
+}
+
+/**
+ * `<session folder>/reports/pending`: background reports that finished after the session that started them ended (a
+ * reload, /resume of another session), kept owner-only for the next start of the same Pi session.
+ */
+export const pendingReportsDir = (sessionId: string, env: NodeJS.ProcessEnv = process.env): string => path.join(sessionDir(sessionId, env), 'reports', 'pending');
+
+/** Saves a report nobody could receive; never throws (a report that cannot be saved is lost, as before). */
+export function savePendingReport(dir: string, id: string, report: Report): void {
+  try {
+    privateDir(dir);
+    atomicWriteFileSync(path.join(dir, `${Date.now()}-${id.replace(/[^\w.-]/g, '_')}.json`), JSON.stringify(report), { mode: 0o600 });
+  } catch {
+    // No disk: nothing more to do.
+  }
+}
+
+/** The saved reports, oldest first, each removed as it is taken so it is delivered once. */
+export function takePendingReports(dir: string): Report[] {
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir).filter((name) => name.endsWith('.json')).sort();
+  } catch {
+    return [];
+  }
+  return names.flatMap((name) => {
+    const file = path.join(dir, name);
+    try {
+      const report = JSON.parse(fs.readFileSync(file, 'utf8')) as Report;
+      fs.rmSync(file, { force: true });
+      return [{ ...report, content: `(Arrived after the session restarted) ${report.content}` }];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /**
@@ -116,10 +153,8 @@ export class ReadReports {
   }
 
   observe(toolName: string, input: Record<string, unknown>, cwd: string): void {
-    const paths = toolName === 'read' ? [input['path']] : [];
-    for (const file of paths) {
-      if (typeof file !== 'string' || !file) continue;
-      const id = this.scratch.get(path.resolve(cwd, file.replace(/^@/, '')));
+    for (const file of readPaths(toolName, input, cwd)) {
+      const id = this.scratch.get(file);
       if (id) this.readAt.set(id, Date.now());
     }
   }

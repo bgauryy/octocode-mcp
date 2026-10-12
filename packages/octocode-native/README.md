@@ -38,7 +38,7 @@ delegates both to it.
 brew install bgauryy/octocode/octocode
 ```
 
-The formula installs the platform binary and its regex worker; Linux uses the glibc builds (glibc 2.30 or newer).
+The formula installs the platform binary; Linux uses the glibc builds (glibc 2.30 or newer).
 
 ### Via npm (recommended — pre-built binary, no compilation)
 
@@ -123,7 +123,7 @@ custom LSP configuration remain language-agnostic. See
 ```
 packages/octocode-native/
 ├─ crates/runtime/               ← pure ToolRuntime library
-├─ crates/cli/                   ← CLI and regex worker binaries
+├─ crates/cli/                   ← CLI binary
 ├─ crates/runtime-napi/          ← runtime Node adapter
 ├─ crates/github/                ← GitHub protocol services
 ├─ crates/engine/                ← reusable primitives (Rust library)

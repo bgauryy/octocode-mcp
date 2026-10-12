@@ -44,7 +44,7 @@ Load when you decide module boundaries or file placement inside a crate, what go
 ## Octocode ownership example
 - `crates/engine`: reusable algorithms; `crates/github`: protocol and transport. Runtime owns tool contracts, policy, configuration, credential selection, and caches.
 - `crates/runtime`: request admission, cancellation, dispatch, validation, and response shaping. It has no N-API dependency or executable target.
-- `crates/cli`: arguments, output, exits, and regex-worker executable. `crates/runtime-napi`: Node conversion and lifecycle over the same runtime.
+- `crates/cli`: arguments, output, exits, and the `octocode` executable. `crates/runtime-napi`: Node conversion and lifecycle over the same runtime.
 - Keep host adapters free of tool business logic and fallback execution. Check the actual manifest before assuming a dependency edge.
 - Verify with `cargo metadata --format-version 1 --no-deps` (Cargo metadata, not folder names): each crate's dependencies must follow `packages/octocode-native/ARCHITECTURE.md`.
 

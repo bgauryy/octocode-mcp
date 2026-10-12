@@ -3,21 +3,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Usage } from '@earendil-works/pi-ai';
-import { BROWSER_VISIBLE_ENV, envInt, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
+import { BROWSER_VISIBLE_ENV, CACHE_RETENTION_ENV, childCacheRetention, envInt, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
+import type { ActionClass, PermissionMode } from '../permission/mode.js';
+import { NEEDS_APPROVAL } from '../permission/ask.js';
+import { atomicWriteFileSync, sha256 } from '../shared/atomic.js';
 import { formatDuration } from '../shared/format.js';
-import { killTree } from '../shared/process.js';
+import { sessionOutputDir } from '../shared/home.js';
+import { stopTree } from '../shared/process.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
-import { addUsage, emptyUsage, isRecord, toolHint } from '../shared/util.js';
-import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_SCRATCH_ENV, AGENT_TASK_ENV, PARENT_ID_ENV, PARENT_PID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
+import { addUsage, contentText, emptyUsage, isRecord, toolHint } from '../shared/util.js';
+import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_GOAL_ENV, AGENT_ROLE_ENV, AGENT_SCRATCH_ENV, PARENT_ID_ENV, PARENT_PID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
 import type { AgentProfile } from './profiles.js';
 import { imagesOf } from './screenshots.js';
 import { ReportTracker } from './report.js';
 
-/** The child's place in the team: its own id, the agent that started it, and its task line. */
+/** The child's place in the team: its name (id), its role (profile), its goal, and the agent that started it. */
 export interface Identity {
   id: string;
+  role?: string;
   parentId?: string;
-  task?: string;
+  goal?: string;
   /** Works with its sibling subagents (messages them directly), not only for its parent. */
   collaborate?: boolean;
   /** The parent's team workspace, for a child whose cwd is an isolated worktree (a different git root). */
@@ -28,6 +33,8 @@ export interface Identity {
   scratch?: string;
   /** The parent's Pi session id: the backlog claims the child may update. */
   parentSession?: string;
+  /** The parent's permission mode now, and what its spawn ask granted: the child is never looser than its parent. */
+  permission?: { mode: PermissionMode; grants: readonly ActionClass[] };
 }
 
 /**
@@ -38,24 +45,32 @@ export interface Identity {
 export function subagentProcessEnv(profile: AgentProfile | undefined, base: NodeJS.ProcessEnv = process.env, identity?: Identity): NodeJS.ProcessEnv {
   const hooks = base[HOOKS_ENV];
   const inherited = { ...base };
-  // User settings survive; run identity, trust delegation and browser mode belong to this child.
-  const owned = [HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, AGENT_ID_ENV, PARENT_ID_ENV, AGENT_TASK_ENV, AGENT_COLLABORATE_ENV, AGENT_SCRATCH_ENV, PARENT_SESSION_ENV, PARENT_PID_ENV];
+  // User settings survive; run identity, trust delegation, permissions and browser mode belong to this child.
+  const owned = [
+    ...[HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, PERMISSION_ENV, PERMISSION_GRANTS_ENV, CACHE_RETENTION_ENV],
+    ...[AGENT_ID_ENV, AGENT_ROLE_ENV, PARENT_ID_ENV, AGENT_GOAL_ENV, AGENT_COLLABORATE_ENV, AGENT_SCRATCH_ENV, PARENT_SESSION_ENV, PARENT_PID_ENV],
+  ];
   for (const key of owned) delete inherited[key];
   return {
     ...inherited,
     ...(profile?.hooks && hooks !== undefined ? { [HOOKS_ENV]: hooks } : {}),
     [SUBAGENT_ENV]: '1',
+    // Short-lived and back to back: a 5-minute cache entry, unless the user exported a retention.
+    [CACHE_RETENTION_ENV]: childCacheRetention(base),
     ...(profile?.visibleBrowser ? { [BROWSER_VISIBLE_ENV]: '1' } : {}),
     ...(profile?.mcp === false ? { [MCP_ENV]: '0' } : {}),
     ...(identity ? { [AGENT_ID_ENV]: identity.id } : {}),
     ...(identity?.parentId ? { [PARENT_ID_ENV]: identity.parentId } : {}),
-    ...(identity?.task ? { [AGENT_TASK_ENV]: identity.task } : {}),
+    ...(identity?.role ? { [AGENT_ROLE_ENV]: identity.role } : {}),
+    ...(identity?.goal ? { [AGENT_GOAL_ENV]: identity.goal } : {}),
     ...(identity?.collaborate ? { [AGENT_COLLABORATE_ENV]: '1' } : {}),
     ...(identity?.workspace ? { [TEAM_WORKSPACE_ENV]: identity.workspace } : {}),
     ...(identity?.trustRoot ? { [TRUST_ROOT_ENV]: identity.trustRoot } : {}),
     ...(identity?.scratch ? { [AGENT_SCRATCH_ENV]: identity.scratch } : {}),
     ...(identity?.parentSession ? { [PARENT_SESSION_ENV]: identity.parentSession } : {}),
     ...(identity ? { [PARENT_PID_ENV]: String(process.pid) } : {}),
+    ...(identity?.permission ? { [PERMISSION_ENV]: identity.permission.mode } : {}),
+    ...(identity?.permission?.grants.length ? { [PERMISSION_GRANTS_ENV]: identity.permission.grants.join(',') } : {}),
   };
 }
 
@@ -80,8 +95,23 @@ function selfExtensionPath(): string | undefined {
   return ['index.js', 'index.ts'].map((file) => path.join(dir, file)).find((file) => fs.existsSync(file));
 }
 
-export function buildAgentArgs(task: string, profile: AgentProfile | undefined, model: string | undefined, extension = selfExtensionPath()): string[] {
-  const args = ['--mode', 'json', '--no-session'];
+/**
+ * Writes a profile prompt to an owner-only file in `dir`, named by its content hash, and returns the path. Pi's
+ * `--append-system-prompt` takes text or a path and reads an existing path as a file, so a prompt passed as text that
+ * happens to name a file would be replaced by that file: a path it always reads is unambiguous.
+ */
+function promptFile(prompt: string, dir: string): string {
+  const file = path.join(dir, `system-prompt-${sha256(prompt).slice(0, 16)}.md`);
+  atomicWriteFileSync(file, prompt, { mode: 0o600 });
+  return file;
+}
+
+export function buildAgentArgs(
+  task: string, profile: AgentProfile | undefined, model: string | undefined, extension = selfExtensionPath(), promptDir?: string,
+  session?: { dir: string; id: string },
+): string[] {
+  // Ephemeral, unless it lingers: then its conversation is saved under its own name, and a follow-up resumes it.
+  const args = ['--mode', 'json', ...(session ? ['--session-dir', session.dir, '--session-id', session.id] : ['--no-session'])];
   // `--no-extensions` also turns off Pi's built-in MCP and tool-search extensions, which serve Octocode's research tools
   // and the user's own deferred MCP servers: load them back unless the profile opts out of MCP.
   if (extension) args.push('--no-extensions', '-e', extension, ...(profile?.mcp === false ? [] : ['-e', 'builtin:mcp', '-e', 'builtin:tool-search']));
@@ -90,7 +120,7 @@ export function buildAgentArgs(task: string, profile: AgentProfile | undefined, 
   if (model) args.push('--model', model);
   if (profile?.tools) args.push('--tools', profile.tools);
   if (profile?.excludeTools) args.push('--exclude-tools', expandExcludes(profile.excludeTools));
-  if (profile?.prompt) args.push('--append-system-prompt', profile.prompt);
+  if (profile?.prompt) args.push('--append-system-prompt', promptFile(profile.prompt, promptDir ?? sessionOutputDir('output')));
   // `--` stops Pi's flag parsing, so a task starting with `-` stays the message; Pi still reads a positional `@path`
   // after `--` as a file to attach, so a leading `@` gets a space in front.
   args.push('--', task.startsWith('@') ? ` ${task}` : task);
@@ -142,6 +172,20 @@ export function exitReason(code: number | null, signal: NodeJS.Signals | null): 
   return code === null && signal ? `was killed by ${signal}` : `exited with code ${code ?? 'unknown'}`;
 }
 
+/** One step of a running child, for the parent's live row. */
+export interface ChildProgress {
+  /** A tool call it started (`→ bash ls`). */
+  activity?: string | undefined;
+  /** Its usage so far. */
+  usage: Usage;
+  /** The assistant reply that just ended (with its `provider`, `model` and `usage`): its model may have no pricing. */
+  reply?: Record<string, unknown>;
+  /** The latest screenshot a tool returned. */
+  image?: { data: string; mimeType: string };
+  /** A tool call the child could not run without the user's approval (it has no one to ask). */
+  denied?: boolean;
+}
+
 interface SubagentOutcome {
   text: string;
   usage: Usage;
@@ -155,7 +199,7 @@ export function runSubagent(
   profile: AgentProfile | undefined,
   identity: Identity,
   signal: AbortSignal | undefined,
-  onProgress: (activity: string | undefined, usage: Usage, image?: { data: string; mimeType: string }) => void,
+  onProgress: (progress: ChildProgress) => void,
   onSpawn?: (pid: number) => void,
   limits: WatchdogLimits = watchdogLimits(),
 ): Promise<SubagentOutcome> {
@@ -170,7 +214,12 @@ export function runSubagent(
     let stderr = '';
     let frameBytes = 0;
     let streamFailure: Error | undefined;
-    const abort = () => killTree(child.pid, SUBAGENT_STOP_GRACE_MS);
+    // One stop per run. The run settles only after it: the SIGKILL of a tree that ignored SIGTERM (and of detached
+    // helpers like a Chrome the child launched) then happens before the parent can exit, not on a timer lost with it.
+    let stopped: Promise<void> | undefined;
+    const abort = () => {
+      stopped ??= stopTree(child.pid, SUBAGENT_STOP_GRACE_MS);
+    };
     signal?.addEventListener('abort', abort, { once: true });
     // Watchdog: a child stuck on a stalled model stream emits nothing; stop it instead of spinning forever.
     const startedAt = Date.now();
@@ -193,9 +242,9 @@ export function runSubagent(
       : undefined;
     watchdog?.unref();
     // Progress is display only: a failure there (a screenshot write, a stale render) must not throw out of the stream handler.
-    const progress: typeof onProgress = (...update) => {
+    const progress: typeof onProgress = (update) => {
       try {
-        onProgress(...update);
+        onProgress(update);
       } catch {
         // Keep the run going; the final answer does not depend on it.
       }
@@ -209,12 +258,14 @@ export function runSubagent(
         toolsRunning++;
         settling = false;
         lastActivity = describeToolCall(event['toolName'], event['args']);
-        progress(lastActivity, usage);
+        progress({ activity: lastActivity, usage });
       }
       if (event['type'] === 'tool_execution_end') {
         toolsRunning = Math.max(0, toolsRunning - 1);
         const image = imagesOf(event['result']).at(-1);
-        if (image) progress(undefined, usage, image);
+        if (image) progress({ usage, image });
+        const result = event['result'];
+        if (event['isError'] === true && isRecord(result) && contentText(result['content']).startsWith(NEEDS_APPROVAL)) progress({ usage, denied: true });
       }
       if (event['type'] !== 'message_end' || !isRecord(event['message'])) return;
       const message = event['message'];
@@ -223,7 +274,7 @@ export function runSubagent(
         return;
       }
       addUsage(usage, message['usage']);
-      progress(undefined, usage);
+      progress({ usage, reply: message });
       settling = message['stopReason'] !== 'toolUse';
       lastActivity = settling ? 'answered; settling' : 'model turn';
       report.answer(assistantText(message), message['stopReason'], message['errorMessage']);
@@ -276,6 +327,10 @@ export function runSubagent(
     child.on('close', (code, exitSignal) => settle(code, exitSignal));
     const settle = (code: number | null, exitSignal: NodeJS.Signals | null) => {
       if (!finish()) return;
+      if (stopped) void stopped.then(() => conclude(code, exitSignal));
+      else conclude(code, exitSignal);
+    };
+    const conclude = (code: number | null, exitSignal: NodeJS.Signals | null) => {
       for (const stream of [child.stdout, child.stderr]) stream.destroy();
       if (buffer.trim()) handleLine(buffer);
       const { text: finalText, error, answered } = report.result();

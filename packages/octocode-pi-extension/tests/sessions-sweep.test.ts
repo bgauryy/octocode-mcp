@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeSharedAgentDb, sharedAgentDb } from '../src/agentdb/db.js';
 import { sessionDir, sessionOutputDir, setCurrentSession } from '../src/shared/home.js';
 import { SessionIndex } from '../src/sessions/store.js';
@@ -83,6 +83,22 @@ describe('session sweep', () => {
     expect(await sweepSessions(index, 'current', { listed, now: Date.now() + 7 * HOUR })).toEqual(['unindexed-new']);
   });
 
+  it('walks and removes without synchronous file calls, so a large sessions folder never blocks the UI', async () => {
+    const index = new SessionIndex(sharedAgentDb());
+    age(folder('unindexed-old', ['output', 'bash', 'checkpoints/blobs']), 15 * DAY);
+    const log = path.join(folder('kept'), 'output', 'old.txt');
+    fs.writeFileSync(log, 'x');
+    fs.utimesSync(log, new Date(Date.now() - 31 * DAY), new Date(Date.now() - 31 * DAY));
+    const sync = (['statSync', 'readdirSync', 'rmSync', 'existsSync'] as const).map((name) => vi.spyOn(fs, name));
+    try {
+      expect(await sweepSessions(index, 'current', { force: true, listed: async () => new Set(['kept']) })).toEqual(['unindexed-old']);
+      for (const spy of sync) expect(spy, spy.getMockName()).not.toHaveBeenCalled();
+    } finally {
+      for (const spy of sync) spy.mockRestore();
+    }
+    expect(fs.existsSync(log)).toBe(false);
+  });
+
   it('removes nothing when Pi cannot list its sessions', async () => {
     const index = new SessionIndex(sharedAgentDb());
     age(folder('unindexed-old'), 15 * DAY);
@@ -91,6 +107,35 @@ describe('session sweep', () => {
     // The failed sweep does not count: the next session start tries again instead of waiting 6 hours.
     expect(await sweepSessions(index, 'current', { listed: async () => Promise.reject(new Error('no')) })).toEqual([]);
     expect(await sweepSessions(index, 'current', { listed: async () => new Set<string>() })).toEqual(['unindexed-old']);
+  });
+
+  it('keeps the folders of sessions Pi keeps in a recorded custom session dir, still removes true orphans', async () => {
+    const index = new SessionIndex(sharedAgentDb());
+    const savedAgentDir = process.env['PI_CODING_AGENT_DIR'];
+    // Pi's default listing reads an empty agent dir, so only the recorded custom dir can name the kept session.
+    process.env['PI_CODING_AGENT_DIR'] = tmp();
+    try {
+      const custom = tmp();
+      const id = '01a1f000-0000-7000-8000-000000000001';
+      const header = { type: 'session', version: 3, id, timestamp: new Date().toISOString(), cwd: tmp() };
+      fs.writeFileSync(path.join(custom, `2026-01-01T00-00-00-000Z_${id}.jsonl`), `${JSON.stringify(header)}\n`);
+      index.addSessionDir(custom);
+      index.addSessionDir(custom);
+      expect(index.sessionDirs()).toEqual([custom]);
+      age(folder(id), 8 * DAY);
+      age(folder('orphan'), 8 * DAY);
+      expect(await sweepSessions(index, 'current', { force: true })).toEqual(['orphan']);
+      expect(fs.existsSync(path.join(home, 'agent', 'pi', 'sessions', id))).toBe(true);
+
+      // A recorded dir that cannot be read is a failed listing: nothing is removed.
+      age(folder('orphan-2'), 8 * DAY);
+      index.addSessionDir(path.join(custom, 'missing'));
+      expect(await sweepSessions(index, 'current', { force: true })).toEqual([]);
+      expect(fs.existsSync(path.join(home, 'agent', 'pi', 'sessions', 'orphan-2'))).toBe(true);
+    } finally {
+      if (savedAgentDir === undefined) delete process.env['PI_CODING_AGENT_DIR'];
+      else process.env['PI_CODING_AGENT_DIR'] = savedAgentDir;
+    }
   });
 
   it('follows OCTOCODE_CLEANUP_DAYS: 0 turns the sweep off, N days sets how long output is kept', async () => {

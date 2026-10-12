@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { loadSkillsFromDir, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { envFlag, EXTRA_SKILLS_ENV, SUBAGENT_ENV } from './shared/env.js';
 import { globalPaths, projectSkillDirs } from './shared/home.js';
 import { projectTrust } from './shared/trust.js';
@@ -37,22 +37,14 @@ export const SYNCED_SKILLS_DIR = 'synced';
 
 /**
  * A Claude `skills` folder without its `synced/` subtree. Pi walks a skill directory recursively and has no exclude
- * option, so a folder holding `synced/` is replaced by its other entries: each subdirectory, and each root `.md` file
- * (which Pi reads as a skill when it scans the folder itself). A folder without `synced/`, or one that is a skill
+ * option, so discover from the original root with Pi's loader and pass explicit skill files outside `synced/`.
+ * This preserves root-only loose Markdown and inherited ignore rules. A folder without `synced/`, or one that is a skill
  * itself (has SKILL.md), is returned as is.
  */
 export function withoutSynced(dir: string): string[] {
   if (!isDirectory(path.join(dir, SYNCED_SKILLS_DIR)) || fs.existsSync(path.join(dir, 'SKILL.md'))) return [dir];
-  let names: string[];
-  try {
-    names = fs.readdirSync(dir).sort();
-  } catch {
-    return [];
-  }
-  return names
-    .filter((name) => name !== SYNCED_SKILLS_DIR && !name.startsWith('.') && name !== 'node_modules')
-    .map((name) => path.join(dir, name))
-    .filter((entry) => isDirectory(entry) || (entry.endsWith('.md') && fs.statSync(entry).isFile()));
+  const synced = path.join(dir, SYNCED_SKILLS_DIR) + path.sep;
+  return loadSkillsFromDir({ dir, source: 'path' }).skills.map((skill) => skill.filePath).filter((file) => !file.startsWith(synced));
 }
 
 /**

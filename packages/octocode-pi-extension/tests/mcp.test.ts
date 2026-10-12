@@ -45,11 +45,11 @@ describe('Octocode MCP launch and ownership', () => {
     expect(fs.existsSync(octocodeLaunch('/w').args[0]!)).toBe(true);
   });
 
-  it('follows the newest octocode-mcp release: the dependency and the npx fallback are both latest', () => {
+  it('runs octocode-mcp 20.2.0 or a later 20.x: the dependency and the npx fallback share the range', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, '..', 'package.json'), 'utf8')) as { dependencies: Record<string, string> };
-    expect(manifest.dependencies['octocode-mcp']).toBe('latest');
-    expect(OCTOCODE_MCP_SPEC).toBe('octocode-mcp@latest');
-    expect(octocodeLaunch('/w', {}, '')).toMatchObject({ command: 'npx', args: ['-y', 'octocode-mcp@latest'] });
+    expect(manifest.dependencies['octocode-mcp']).toBe('^20.2.0');
+    expect(OCTOCODE_MCP_SPEC).toBe('octocode-mcp@^20.2.0');
+    expect(octocodeLaunch('/w', {}, '')).toMatchObject({ command: 'npx', args: ['-y', 'octocode-mcp@^20.2.0'] });
   });
 
   it('reads an octocode entry from Pi\'s mcp.json, the trusted project file replacing the global one', () => {
@@ -332,20 +332,20 @@ describe('Octocode tool results and rendering', () => {
   const tool = { name: 'localFetch', description: ' Read files ', inputSchema: { type: 'object' as const }, annotations: { readOnlyHint: true, title: 'x' } };
   const binding = { prefix: 'mcp__octocode__', namespace: { name: 'mcp__octocode' }, call: async () => ({ content: [{ type: 'text' as const, text: 'ok' }] }) };
 
-  it('gives a page over 20 KB to the model whole: no cut, no marker, non-ASCII intact', () => {
+  it('gives a page over 20 KB to the model whole: no cut, no marker, non-ASCII intact', async () => {
     const page = `${'- row: héllo wörld — 日本語\n'.repeat(2_000)}  next:\n    continueChars: { charOffset: 20000 }\n${'- last row ✓\n'.repeat(500)}`;
     expect(Buffer.byteLength(page)).toBeGreaterThan(40 * 1024);
-    const result = toToolResult('localFetch', { content: [{ type: 'text', text: page }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
+    const result = await toToolResult('localFetch', { content: [{ type: 'text', text: page }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
     expect(result.content).toEqual([{ type: 'text', text: page }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }]);
     expect(result).not.toHaveProperty('structuredContent');
     expect(result).not.toHaveProperty('isError');
   });
 
-  it('spills text over the budget to a file and replaces an oversized image by a note naming its file', () => {
+  it('spills text over the budget to a file and replaces an oversized image by a note naming its file', async () => {
     const huge = `${'- row: some repository text\n'.repeat(12_000)}tail line`;
     expect(Buffer.byteLength(huge)).toBeGreaterThan(300_000);
     const bigImage = 'A'.repeat(700_000);
-    const result = toToolResult('localSearch', { content: [{ type: 'text', text: huge }, { type: 'image', data: bigImage, mimeType: 'image/png' }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
+    const result = await toToolResult('localSearch', { content: [{ type: 'text', text: huge }, { type: 'image', data: bigImage, mimeType: 'image/png' }, { type: 'image', data: 'aW1n', mimeType: 'image/png' }] }, false);
     const [text, dropped, kept] = result.content as Array<{ type: string; text?: string; data?: string }>;
     expect(Buffer.byteLength(text!.text!)).toBeLessThan(210_000);
     expect(text!.text).toContain('tail line');
@@ -358,14 +358,14 @@ describe('Octocode tool results and rendering', () => {
     expect(kept).toEqual({ type: 'image', data: 'aW1n', mimeType: 'image/png' });
   });
 
-  it('turns other blocks into text, an empty error into a message, and keeps structuredContent only when declared', () => {
-    const linked = toToolResult('t', { content: [{ type: 'resource_link', uri: 'file:///a', name: 'a' }] }, false);
+  it('turns other blocks into text, an empty error into a message, and keeps structuredContent only when declared', async () => {
+    const linked = await toToolResult('t', { content: [{ type: 'resource_link', uri: 'file:///a', name: 'a' }] }, false);
     expect(linked.content).toHaveLength(1);
     expect(linked.content[0]).toMatchObject({ type: 'text' });
-    expect(toToolResult('t', { content: [], isError: true }, false)).toMatchObject({ isError: true, content: [{ type: 'text', text: 't failed without a message.' }] });
+    expect(await toToolResult('t', { content: [], isError: true }, false)).toMatchObject({ isError: true, content: [{ type: 'text', text: 't failed without a message.' }] });
     const structured = { content: [{ type: 'text' as const, text: '{}' }], structuredContent: { a: 1 } };
-    expect(toToolResult('t', structured, true).structuredContent).toEqual({ a: 1 });
-    expect(toToolResult('t', structured, false)).not.toHaveProperty('structuredContent');
+    expect((await toToolResult('t', structured, true)).structuredContent).toEqual({ a: 1 });
+    expect(await toToolResult('t', structured, false)).not.toHaveProperty('structuredContent');
   });
 
   it('defines the Pi tool from the listed tool: name, hints, schema, declared output', async () => {
@@ -399,9 +399,9 @@ describe('Octocode tool results and rendering', () => {
 });
 
 describe('Octocode result sanitizing', () => {
-  it('sanitizes tool results: text parts and structured content, clean ones untouched', () => {
+  it('sanitizes tool results: text parts and structured content, clean ones untouched', async () => {
     const dirty = 'a\u202eb\u{e0041}\u{e0042}c\u001b]0;title\u0007d\u001b[31me\u0000f';
-    const result = toToolResult('localSearch', { content: [{ type: 'text', text: dirty }, { type: 'image', data: 'x', mimeType: 'image/png' }], structuredContent: { files: [{ path: 'p', text: dirty, n: 1 }] } }, true);
+    const result = await toToolResult('localSearch', { content: [{ type: 'text', text: dirty }, { type: 'image', data: 'x', mimeType: 'image/png' }], structuredContent: { files: [{ path: 'p', text: dirty, n: 1 }] } }, true);
     expect(result.content).toEqual([{ type: 'text', text: 'abcdef' }, { type: 'image', data: 'x', mimeType: 'image/png' }]);
     expect(result.structuredContent).toEqual({ files: [{ path: 'p', text: 'abcdef', n: 1 }] });
     const clean = { a: ['x', { b: 'tab\there\n' }], n: 1 };

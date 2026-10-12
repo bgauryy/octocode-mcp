@@ -3,8 +3,9 @@ import { num, type Row } from './rows.js';
 
 /**
  * The agent database's schema: durable sessions, backlog and memories, and the team's transient state (presence,
- * messages kept a day, leases, recent edits). It migrates forward in ordered steps keyed by `user_version`; a file that
- * is not ours, or was written by a newer Octocode, is refused and never dropped.
+ * messages kept a day, leases, recent edits). It is one version until the schema is published; after that, changes
+ * append forward steps keyed by `user_version`. A file that is not ours, or was written by a newer Octocode, is refused
+ * and never dropped.
  */
 
 
@@ -13,26 +14,35 @@ export class AgentDbError extends Error {}
 
 /** Marks the file as an Octocode for Pi agent database ("OcPg"); a file with another id is never touched. */
 export const AGENT_APPLICATION_ID = 0x4f635067;
-export const AGENT_SCHEMA_VERSION = 2;
+export const AGENT_SCHEMA_VERSION = 1;
 
-/** v1, the first published schema: sessions, backlog, memories and the team tables. */
+/**
+ * v1: sessions (`pid_started`: the process start time, so a reused pid is not taken for the session; `unpriced`: part of
+ * its usage came from a model without pricing), the backlog (`goal`: what done means; `started_at`: when it was last
+ * claimed; `from_item`: the row id of the item it came from, cleared by the store when that item is removed) and its
+ * notes (`kind`: the agent's text or the change log the store writes on every update), memories and the team tables
+ * (`agents.cache_read`: prompt tokens read from cache).
+ */
 const V1 = `
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY, branch TEXT, head TEXT,
-  cost REAL NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, files_changed INTEGER NOT NULL DEFAULT 0, pid INTEGER);
+  cost REAL NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, files_changed INTEGER NOT NULL DEFAULT 0, pid INTEGER,
+  pid_started TEXT, unpriced INTEGER NOT NULL DEFAULT 0);
 
 CREATE TABLE backlog (
   id INTEGER PRIMARY KEY AUTOINCREMENT, repo_key TEXT NOT NULL, seq INTEGER NOT NULL,
-  title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL, goal TEXT NOT NULL DEFAULT '', body TEXT NOT NULL DEFAULT '',
   state TEXT NOT NULL CHECK(state IN ('backlog','todo','ongoing','done')),
   priority INTEGER NOT NULL DEFAULT 2 CHECK(priority BETWEEN 0 AND 3), tags TEXT NOT NULL DEFAULT '',
   assignee TEXT, created_by TEXT NOT NULL, source_session TEXT,
-  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, done_at INTEGER, version INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, started_at INTEGER, done_at INTEGER,
+  from_item INTEGER, version INTEGER NOT NULL DEFAULT 1,
   UNIQUE(repo_key, seq));
 CREATE INDEX backlog_board ON backlog(repo_key, state, priority, updated_at);
+CREATE INDEX backlog_from ON backlog(from_item) WHERE from_item IS NOT NULL;
 CREATE TABLE backlog_notes (
   id INTEGER PRIMARY KEY AUTOINCREMENT, item INTEGER NOT NULL REFERENCES backlog(id) ON DELETE CASCADE,
-  at INTEGER NOT NULL, author TEXT NOT NULL, text TEXT NOT NULL);
+  at INTEGER NOT NULL, author TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'note' CHECK(kind IN ('note','change')), text TEXT NOT NULL);
 CREATE INDEX backlog_notes_item ON backlog_notes(item, at);
 
 CREATE TABLE memories (
@@ -49,8 +59,8 @@ CREATE TABLE agents (
   id TEXT PRIMARY KEY, workspace TEXT NOT NULL, role TEXT NOT NULL, parent_id TEXT, pid INTEGER NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('idle','working')), task TEXT, activity TEXT,
   joined_at INTEGER NOT NULL, seen_at INTEGER NOT NULL,
-  tool_calls INTEGER NOT NULL DEFAULT 0, input INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0,
-  model TEXT);
+  tool_calls INTEGER NOT NULL DEFAULT 0, input INTEGER NOT NULL DEFAULT 0, cache_read INTEGER NOT NULL DEFAULT 0, output INTEGER NOT NULL DEFAULT 0,
+  cost REAL NOT NULL DEFAULT 0, unpriced INTEGER NOT NULL DEFAULT 0, model TEXT);
 CREATE INDEX agents_scope ON agents(workspace, joined_at);
 CREATE TABLE messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, sender TEXT NOT NULL, body TEXT NOT NULL,
@@ -73,12 +83,8 @@ CREATE TABLE edits (
 CREATE INDEX edits_recent ON edits(workspace, at);
 `;
 
-/** Step `i` moves a file from `user_version` i to i + 1. Append only once published; never edit a shipped step. */
-const MIGRATIONS: ReadonlyArray<(db: DatabaseSync) => void> = [
-  (db) => db.exec(V1),
-  // v2: the start time of the session's process, so a reused pid is not taken for it (null in rows from before).
-  (db) => db.exec('ALTER TABLE sessions ADD COLUMN pid_started TEXT'),
-];
+/** Step `i` moves a file from `user_version` i to i + 1. Append only; once the schema is published, never edit a shipped step. */
+const MIGRATIONS: ReadonlyArray<(db: DatabaseSync) => void> = [(db) => db.exec(V1)];
 
 const FTS = `
 CREATE VIRTUAL TABLE memories_fts USING fts5(title, keywords, body, content='memories', content_rowid='id', tokenize='porter unicode61');

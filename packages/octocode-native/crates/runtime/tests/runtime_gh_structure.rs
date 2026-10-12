@@ -304,7 +304,7 @@ async fn refs_list_every_branch_and_tag_once_with_the_default_branch() {
     runtime.close().await;
 }
 
-/// GS6a: refs page 30 by default (a tree page is 300 entries), and the
+/// Refs page 30 by default (a tree page is 300 entries), and the
 /// continuation does not restate the default.
 #[tokio::test]
 async fn refs_default_page_is_thirty() {
@@ -630,7 +630,7 @@ async fn a_tree_page_dates_every_entry_and_the_listed_commit() {
     runtime.close().await;
 }
 
-/// GS5: a page dates its first 100 entries in one GraphQL request; the
+/// A page dates its first 100 entries in one GraphQL request; the
 /// rest are named by count and reached by `next.expandDates` (the same
 /// listing pinned to its SHA at `pageSize:100`, one row per undated 100),
 /// whose every row dates its page in one request.
@@ -710,7 +710,7 @@ async fn a_page_past_one_hundred_entries_dates_the_first_hundred_and_expands_the
     runtime.close().await;
 }
 
-/// GS3: a listing states each file's size, in the structureSearch entry
+/// A listing states each file's size, in the structureSearch entry
 /// form `"<name> (<bytes>)"`; folders stay bare and dates key bare names.
 #[tokio::test]
 async fn a_listing_states_each_file_size() {
@@ -882,7 +882,7 @@ async fn materialize_sends_no_date_request() {
     runtime.close().await;
 }
 
-/// GS1: a listing under `path` names each row's `dir` repo-relative (the
+/// A listing under `path` names each row's `dir` repo-relative (the
 /// same base as `path` and `include`), and every listed name keeps its date.
 #[tokio::test]
 async fn a_scoped_listing_names_repo_relative_dirs_and_dates_every_name() {
@@ -1101,5 +1101,92 @@ async fn default_refs_name_the_default_branch_and_tags_without_listing_branches(
         "{}",
         outcome.structured_content
     );
+    runtime.close().await;
+}
+
+/// With leads asked for, a refs page offers the branch listing it left out.
+#[tokio::test]
+async fn refs_without_branches_lead_to_the_branch_listing() {
+    let server = MockServer::builder().start().await;
+    for (route, body) in [
+        ("/api/v3/repos/a/b", json!({"default_branch":"main"})),
+        (
+            "/api/v3/repos/a/b/tags",
+            json!([{"name":"v1","commit":{"sha":"1".repeat(40)}}]),
+        ),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/HEAD"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("9".repeat(40)))
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = github(&workspace, &server);
+    let hinted = call(
+        &runtime,
+        "ghStructure",
+        json!({"owner": "a", "repo": "b", "operation": "refs", "extras": ["hints"]}),
+    )
+    .await
+    .expect("refs with hints");
+    let lead = &row_data(&hinted)["hints"]["viewRefs"];
+    assert_eq!(lead["tool"], "ghStructure", "{}", hinted.structured_content);
+    assert_eq!(
+        lead["query"]["queries"][0]["extras"],
+        json!(["details"]),
+        "{}",
+        hinted.structured_content
+    );
+    runtime.close().await;
+}
+
+/// A refs page past the last listed page is the shared out-of-range
+/// outcome: `outOfRange` on its pagination, a reason naming the page, and a
+/// restart from page 1.
+#[tokio::test]
+async fn a_refs_page_past_the_end_leads_back_to_the_first_page() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"default_branch":"main"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/HEAD"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("9".repeat(40)))
+        .mount(&server)
+        .await;
+    for kind in ["tags", "branches"] {
+        Mock::given(method("GET"))
+            .and(path(format!("/api/v3/repos/a/b/{kind}")))
+            .and(query_param("page", "9"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+    }
+    let workspace = Workspace::new();
+    let runtime = github(&workspace, &server);
+    for extras in [json!([]), json!(["details"])] {
+        let outcome = call(
+            &runtime,
+            "ghStructure",
+            json!({"owner": "a", "repo": "b", "operation": "refs", "page": 9, "extras": extras}),
+        )
+        .await
+        .expect("refs");
+        let data = row_data(&outcome);
+        assert_eq!(data["pagination"]["outOfRange"], true, "{data}");
+        assert_eq!(data["pagination"]["currentPage"], 9, "{data}");
+        assert_eq!(data["reason"], "page 9 is past the last page", "{data}");
+        let restart = &data["next"]["restart"]["query"]["queries"][0];
+        assert_eq!(restart["operation"], "refs", "{data}");
+        assert!(restart.get("page").is_none(), "restart is page 1: {data}");
+    }
     runtime.close().await;
 }

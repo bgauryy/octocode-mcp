@@ -7,6 +7,8 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['tests/**/*.test.ts'],
+    // Temp home, no credentials, dead proxy, guarded fetch and child processes.
+    setupFiles: ['../../test-utils/external-effects-guard.ts'],
     // CI never builds the native addon (OCTOCODE_NO_NATIVE=1); these suites load it.
     exclude: process.env.OCTOCODE_NO_NATIVE === '1' ? ['tests/native/**', '**/node_modules/**'] : ['**/node_modules/**'],
     testTimeout: 10000,

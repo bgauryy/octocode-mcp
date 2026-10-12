@@ -2,7 +2,8 @@
 //! partial state.
 use super::{HistoryOperation, HistorySearch, leads, rows};
 use crate::providers::github::HistoryPage;
-use crate::tools::gh_shared::{SEARCH_RESULT_CAP, pick_rows, push_warning};
+use crate::tools::gh_shared::{SEARCH_RESULT_CAP, SearchReach, pick_rows};
+use crate::tools::paging::push_warnings;
 use crate::tools::result::remove_null_fields;
 use serde_json::{Value, json};
 
@@ -30,10 +31,11 @@ pub(super) struct Paging {
 
 impl Paging {
     pub(super) fn new(result: &HistoryPage, page: usize, per: usize) -> Self {
-        let total = if result.listed {
-            0
+        // A REST list has no search window and states no total.
+        let reach = if result.listed {
+            SearchReach::new(0, per)
         } else {
-            result.total_count.min(SEARCH_RESULT_CAP)
+            SearchReach::new(result.total_count, per)
         };
         let current = if result.listed {
             result.provider_page
@@ -43,15 +45,15 @@ impl Paging {
         let more = if result.listed {
             result.has_more
         } else {
-            current < total.div_ceil(per).max(1)
+            current < reach.pages
         };
         Self {
             page,
             per,
             current,
             more,
-            total,
-            capped: !result.listed && result.total_count > SEARCH_RESULT_CAP,
+            total: reach.total,
+            capped: reach.capped,
             matched: result.total_count,
             exact_list_total: (result.listed && current == 1 && !more)
                 .then_some(result.items.len()),
@@ -59,7 +61,7 @@ impl Paging {
             incomplete: result.incomplete_results,
             past_end: result.items.is_empty()
                 && page > 1
-                && (result.listed || total > 0 && page > total.div_ceil(per)),
+                && (result.listed || reach.past_last(page)),
         }
     }
     /// The total a page reports: the search total, or an exact list count.
@@ -70,10 +72,25 @@ impl Paging {
             Some(self.total)
         }
     }
+    /// The total when it is exact: an uncapped, complete search count or an
+    /// exact list count. A capped or incomplete count is no page count.
+    fn exact_total(&self) -> Option<usize> {
+        if self.listed {
+            self.exact_list_total
+        } else {
+            (!self.capped && !self.incomplete).then_some(self.total)
+        }
+    }
+    /// The page facts; `totalPages` only beside an exact total (a capped
+    /// one states `partialReasons:["providerResultCap"]` instead).
     fn pagination(&self, current: usize) -> Value {
-        let mut page = crate::response::pages::PageFacts::open(current, Some(self.per), self.more)
-            .out_of_range(self.past_end)
-            .to_value();
+        let facts = crate::response::pages::PageFacts::open(current, Some(self.per), self.more)
+            .out_of_range(self.past_end);
+        let facts = match self.exact_total() {
+            Some(total) => facts.with_total(total),
+            None => facts,
+        };
+        let mut page = facts.to_value();
         if self.more {
             page["nextPage"] = json!(current + 1);
         }
@@ -115,9 +132,9 @@ pub(super) fn shape(
     // A REST list has no total (a search has): say why the first page of a
     // longer list shows none, so a caller pages on instead of waiting for one.
     if paging.listed && paging.more && paging.current == 1 {
-        push_warning(
+        push_warnings(
             &mut value,
-            "GitHub's commit list gives no total, so pagination has no totalItems: page until hasMore is false.".to_owned(),
+            ["GitHub's commit list gives no total, so pagination has no totalItems: page until hasMore is false.".to_owned()],
         );
     }
     if query.operation() == HistoryOperation::Issue
@@ -127,16 +144,20 @@ pub(super) fn shape(
     {
         map.remove("pagination");
     }
-    let reachable =
-        paging.current < crate::tools::id::query_limits::gh_search_history::PAGE_MAXIMUM;
-    if query.operation() == HistoryOperation::Commit && paging.more && reachable {
-        value["pagination"]["nextPage"] = json!(paging.current + 1);
-    }
-    if paging.more && reachable {
-        value["next"]["nextPage"] = leads::next_page(query, paging.current, paging.per);
-    }
-    if paging.more && !reachable {
-        value["terminalLimit"] = json!(true);
+    let next_page = paging.more.then(|| {
+        crate::tools::paging::next_cursor(
+            &mut value,
+            crate::tools::id::ToolId::GhSearchHistory,
+            None,
+            "page",
+            paging.current + 1,
+        )
+    });
+    if let Some(next_page) = next_page.flatten() {
+        if query.operation() == HistoryOperation::Commit {
+            value["pagination"]["nextPage"] = json!(next_page);
+        }
+        value["next"]["nextPage"] = leads::next_page(query, next_page, paging.per);
     }
     remove_null_fields(&mut value);
     mark_empty(&mut value, paging.more);
@@ -185,7 +206,7 @@ fn pull_requests(query: &HistorySearch, items: &[Value], paging: &Paging, terms:
         &["number", "owner", "repo"],
         &fields,
     );
-    // Pages follow from totalItems and pageSize: no totalPages. A capped
+    // An exact total states totalPages (see `Paging::pagination`); a capped
     // total is `partialReasons:["providerResultCap"]`, not a second flag.
     if !paging.listed {
         v["pagination"]["totalItems"] = json!(paging.total);
@@ -284,23 +305,24 @@ fn mark_partial(value: &mut Value, paging: &Paging) {
     if !paging.incomplete && !paging.capped {
         return;
     }
-    value["isPartial"] = json!(true);
-    if !paging.more {
-        value["terminalLimit"] = json!(true);
-    }
-    value["partialReasons"] = json!([if paging.capped {
+    let reason = if paging.capped {
         "providerResultCap"
     } else {
         "providerIncompleteResults"
-    }]);
+    };
+    if paging.more {
+        crate::tools::paging::mark_partial(value, reason, &[]);
+    } else {
+        crate::tools::paging::terminal_limit(value, reason, &[]);
+    }
     if paging.capped {
         // The reachable `totalItems` is not the match count: state GitHub's.
-        push_warning(
+        push_warnings(
             value,
-            format!(
+            [format!(
                 "GitHub matched {} results; the first {SEARCH_RESULT_CAP} are reachable.",
                 paging.matched
-            ),
+            )],
         );
     }
 }

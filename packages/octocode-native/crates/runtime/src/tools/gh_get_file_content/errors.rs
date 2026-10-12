@@ -8,7 +8,7 @@ use crate::tools::gh_shared::{
     with_ref_recovery,
 };
 use crate::tools::id::ToolId;
-use crate::tools::result::{Continuation, remove_nulls};
+use crate::tools::result::{Continuation, query_row};
 use serde_json::{Value, json};
 
 pub(super) fn repo_path(query: &GhGetFileContentQuery) -> RepoPath<'_> {
@@ -70,7 +70,7 @@ pub(crate) fn failure(
     {
         (
             Some(
-                "Binary content cannot be returned as text; retrying will not help. Use ghCloneRepo for a local copy.",
+                "Binary content cannot be returned as text; retrying will not help. ghStructure lists its path and size.",
             ),
             None,
         )
@@ -133,8 +133,7 @@ fn path_recovery(
     // deepest existing directory (the lead's path is the fact).
     match found.file {
         Some(path) => {
-            let mut read = serde_json::to_value(query).unwrap_or_default();
-            remove_nulls(&mut read);
+            let mut read = query_row(query, &[]);
             read["path"] = json!(path);
             let read = Continuation::new(ToolId::GhGetFileContent, read)
                 .confidence("high")

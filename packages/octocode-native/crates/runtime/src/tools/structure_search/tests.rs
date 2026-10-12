@@ -33,7 +33,7 @@ fn run(root: &std::path::Path, query: Value) -> StructureResult {
 /// `size`, `totalLines` and `modifiedMs` fields.
 fn listed(out: &Value) -> Vec<Value> {
     let root = out["path"].as_str().expect("path").to_owned();
-    // Group dirs are workspace-relative (SS2); fixtures list the workspace
+    // Group dirs are workspace-relative; fixtures list the workspace
     // root itself (`.`) or a direct child of it (named like `root`).
     let join = |dir: &str| {
         if dir.is_empty() || dir == "." {
@@ -550,6 +550,30 @@ fn file_rows_omit_the_default_file_type() {
     }
 }
 
+/// `tree` and `files` count a symlink alike in `summary`: a non-directory
+/// entry of its own size.
+#[cfg(unix)]
+#[test]
+fn tree_and_files_summaries_count_symlinks_alike() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("target.md"), "abc").expect("target");
+    std::fs::create_dir(root.0.join("links")).expect("dir");
+    for name in ["a", "b"] {
+        std::os::unix::fs::symlink("../target.md", root.0.join("links").join(name)).expect("link");
+    }
+    let summary = |operation: &str| {
+        let out = run(
+            &root.0,
+            json!({"operation":operation,"path":root.0.join("links"),"extras":["details"]}),
+        )
+        .expect("listing");
+        out["summary"].clone()
+    };
+    let tree = summary("tree");
+    assert_eq!(tree["files"], 2, "{tree}");
+    assert_eq!(tree, summary("files"));
+}
+
 /// A tree entry has the one listing-entry shape `files` uses and the output
 /// schema states: `extras: ["details"]` adds `totalLines=N` and
 /// `modifiedMs=N` to each file, and a symlink is its own size plus the `symlink` field.
@@ -690,6 +714,44 @@ fn tree_groups_follow_walk_order_and_name_filtered_parents() {
         ]),
         "{rs}"
     );
+}
+
+/// Every page of a sorted, paged `files` listing (directories fold into
+/// group headers, so the walk discovers more entries than it lists) carries
+/// only declared pagination fields.
+#[test]
+fn sorted_paged_files_pages_satisfy_the_output_contract() {
+    let root = Fixture::new();
+    for dir in ["a/x", "b", "c"] {
+        std::fs::create_dir_all(root.0.join(dir)).expect("dirs");
+    }
+    for file in ["a/x/k.rs", "a/m.rs", "b/n.rs", "c/o.rs", "p.rs"] {
+        std::fs::write(root.0.join(file), "x\n").expect("file");
+    }
+    for sort in ["name", "size", "modified", "lines"] {
+        let mut query = json!({"operation":"files","path":root.0,"sort":sort,"pageSize":2});
+        let mut pages = 0;
+        loop {
+            let out = run(&root.0, query.clone()).expect("files page");
+            pages += 1;
+            let mut public = json!({"results":[{"index":0,"data":out.clone()}]});
+            crate::response::continuations::finalize(
+                &mut public,
+                crate::tools::id::ToolId::StructureSearch,
+                &crate::response::continuations::Sources::Rows(&[]),
+                &crate::response::continuations::Scope::everything(),
+            )
+            .expect("valid continuations");
+            crate::contracts::validate_output("structureSearch", &public)
+                .unwrap_or_else(|error| panic!("sort {sort} page {pages}: {error:?}\n{out}"));
+            let Some(next) = out["next"]["nextPage"]["query"].as_object() else {
+                break;
+            };
+            query = Value::Object(next.clone());
+            assert!(pages < 10, "pages end: {out}");
+        }
+        assert!(pages > 1, "sort {sort} pages");
+    }
 }
 
 /// A page that continues a group repeats its `dir`, so each page reads on
@@ -926,7 +988,7 @@ fn all_ignored_listing_names_the_ignore_rules_and_offers_a_retry() {
             .is_some_and(|h| h.contains("repos/*")),
         "{tree}"
     );
-    let retry = &tree["next"]["includeIgnored"];
+    let retry = &tree["next"]["includeSkipped"];
     assert_eq!(retry["tool"], "structureSearch", "{tree}");
     assert_eq!(
         retry["query"]["queries"][0]["includeIgnored"], true,
@@ -952,7 +1014,7 @@ fn all_ignored_listing_names_the_ignore_rules_and_offers_a_retry() {
     assert_eq!(files["status"], "empty", "{files}");
     assert_eq!(files["hints"].as_array().map(Vec::len), Some(1), "{files}");
     assert!(files["summary"]["ignored"].as_u64() > Some(0), "{files}");
-    let retry = &files["next"]["includeIgnored"];
+    let retry = &files["next"]["includeSkipped"];
     assert_eq!(
         retry["query"]["queries"][0]["includeIgnored"], true,
         "{files}"
@@ -977,7 +1039,7 @@ fn empty_listing_without_ignored_entries_offers_no_ignore_retry() {
         let out = run(&root.0, query).expect("listing");
         assert_eq!(out["status"], "empty", "{out}");
         assert!(out.get("hints").is_none(), "{out}");
-        assert!(out["next"].get("includeIgnored").is_none(), "{out}");
+        assert!(out["next"].get("includeSkipped").is_none(), "{out}");
     }
 }
 
@@ -1490,7 +1552,7 @@ fn default_pruned_directories_are_named_and_an_empty_listing_walks_them() {
         json!(["build", "node_modules"]),
         "{tree}"
     );
-    assert!(tree["next"].get("includeIgnored").is_none(), "{tree}");
+    assert!(tree["next"].get("includeSkipped").is_none(), "{tree}");
 
     let files = run(
         &root.0,
@@ -1505,7 +1567,7 @@ fn default_pruned_directories_are_named_and_an_empty_listing_walks_them() {
             .is_some_and(|h| h.contains("build/")),
         "{files}"
     );
-    let retry = &files["next"]["includeIgnored"]["query"]["queries"][0];
+    let retry = &files["next"]["includeSkipped"]["query"]["queries"][0];
     assert_eq!(retry["defaultExcludes"], false, "{files}");
     assert!(retry.get("snapshot").is_none(), "{files}");
     let found = run(&root.0, retry.clone()).expect("retry");
@@ -1683,7 +1745,7 @@ fn files_at_the_walk_ceiling_page_every_listed_row_and_lead_to_narrow() {
     assert!(pages > 1);
 }
 
-/// SS3: the files read lead skips generated and large files.
+/// The files read lead skips generated and large files.
 #[test]
 fn files_read_lead_skips_generated_and_large() {
     let root = Fixture::new();
@@ -1704,7 +1766,7 @@ fn files_read_lead_skips_generated_and_large() {
     assert!(read.ends_with("b.rs"), "{out}");
 }
 
-/// SS3: a root tree leads to its manifest, read whole.
+/// A root tree leads to its manifest, read whole.
 #[test]
 fn root_tree_leads_to_manifest() {
     let root = Fixture::new();
@@ -1767,7 +1829,7 @@ fn tree_read_lead_ranks_like_ghstructure() {
     leads(&["pkg/package.json", "util.rs"], "util.rs");
 }
 
-/// SS4: tree and files print the same exact byte size.
+/// Tree and files print the same exact byte size.
 #[test]
 fn tree_and_files_print_exact_byte_sizes() {
     let root = Fixture::new();
@@ -1794,7 +1856,7 @@ fn tree_and_files_print_exact_byte_sizes() {
     );
 }
 
-/// SS4: a directory root is the listing, never one of its rows.
+/// A directory root is the listing, never one of its rows.
 #[test]
 fn files_never_lists_root_dot() {
     let root = Fixture::new();
@@ -1812,7 +1874,7 @@ fn files_never_lists_root_dot() {
     );
 }
 
-/// SS6: a gitignored directory named like a default-pruned one is lifted
+/// A gitignored directory named like a default-pruned one is lifted
 /// in one hop. The files walk lists `.gitignore`d entries once the default
 /// prune is off, so the retry sets that one flag, the smallest that lists
 /// the files; the hint names the pruned directory.
@@ -1830,7 +1892,7 @@ fn include_ignored_lead_lifts_gitignore_and_prune_in_one_hop() {
     )
     .expect("files");
     assert_eq!(out["status"], "empty", "{out}");
-    let retry = out["next"]["includeIgnored"]["query"]["queries"][0].clone();
+    let retry = out["next"]["includeSkipped"]["query"]["queries"][0].clone();
     assert_eq!(retry["defaultExcludes"], false, "{out}");
     assert!(retry.get("includeIgnored").is_none(), "{out}");
     assert!(
@@ -1953,7 +2015,7 @@ fn listed_paths(rows: &[Value]) -> Vec<String> {
         .collect()
 }
 
-/// D-2: `next.expandScan` resumes after the rows its window listed, so the
+/// `next.expandScan` resumes after the rows its window listed, so the
 /// chain of pages and widened scans lists every entry exactly once (each
 /// window groups its own rows by directory), for `files` under each sort and
 /// for `tree`.
@@ -2042,7 +2104,7 @@ fn expand_scan_rides_the_last_page_of_its_window() {
     assert_eq!(resumed["atLeast"], 9, "{resumed}");
 }
 
-/// U19: an `include`-filtered `files` walk by `next.nextPage` lists every
+/// An `include`-filtered `files` walk by `next.nextPage` lists every
 /// matching file exactly once; no page repeats a row of another.
 #[test]
 fn an_include_files_walk_lists_every_file_exactly_once() {
@@ -2126,4 +2188,102 @@ fn summary_dirs_equals_the_stubs_plus_the_groups_the_listing_shows() {
         all.contains("\"mid/\""),
         "a directory of groups keeps a stub: {out}"
     );
+}
+
+/// `files` counts `summary.dirs` from the walk, like `tree`: a chain of
+/// single-child directories names each directory once (a group header or a
+/// `name/` stub), and the summary counts every one of them.
+#[test]
+fn files_summary_dirs_counts_every_walked_directory() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join("a/b/c/d/e")).expect("dirs");
+    std::fs::write(root.0.join("a/b/c/d/e/leaf.txt"), "x\n").expect("leaf");
+    for operation in ["tree", "files"] {
+        let out = run(
+            &root.0,
+            json!({"operation":operation,"path":root.0,"maxDepth":10}),
+        )
+        .expect("listing");
+        let (mut stubs, mut groups) = (0, 0);
+        for group in out["files"].as_array().expect("files") {
+            groups += usize::from(group["dir"] != ".");
+            stubs += group["files"]
+                .as_array()
+                .expect("entries")
+                .iter()
+                .filter(|entry| entry.as_str().is_some_and(|entry| entry.ends_with('/')))
+                .count();
+        }
+        assert_eq!(out["summary"]["dirs"], 5, "{operation}: {out}");
+        assert_eq!(
+            stubs + groups,
+            5,
+            "{operation}: every directory shows once: {out}"
+        );
+    }
+}
+
+/// A non-empty listing whose walk left out `.gitignore`d entries leads to
+/// the same listing over them.
+#[test]
+fn a_listing_with_ignored_entries_leads_to_include_ignored() {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+    std::fs::write(root.0.join(".gitignore"), "ign/\n").expect("gitignore");
+    std::fs::create_dir(root.0.join("ign")).expect("ignored dir");
+    std::fs::write(root.0.join("ign/secret.ts"), "x\n").expect("ignored");
+    std::fs::write(root.0.join("main.rs"), "x\n").expect("file");
+    for operation in ["tree", "files"] {
+        let out = run(&root.0, json!({"operation":operation,"path":root.0})).expect("listing");
+        assert_eq!(out["summary"]["ignored"], 1, "{operation}: {out}");
+        let lead = &out["next"]["includeSkipped"]["query"]["queries"][0];
+        assert_eq!(lead["includeIgnored"], true, "{operation}: {out}");
+        assert_eq!(lead["operation"], operation, "{out}");
+        let all = run(&root.0, lead.clone()).expect("relaxed listing");
+        assert!(all["next"].get("includeSkipped").is_none(), "{all}");
+    }
+}
+
+/// An include or exclude glob with a `..` segment never matches under
+/// `path`: both operations name it, with the localSearch wording.
+#[test]
+fn a_glob_that_reaches_above_path_is_named_by_both_operations() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("main.rs"), "x\n").expect("file");
+    let expected = crate::policy::include::parent_glob_warning(&["../src/*.rs".to_owned()], &[])
+        .expect("warning");
+    for operation in ["tree", "files"] {
+        for key in ["include", "exclude"] {
+            let out = run(
+                &root.0,
+                json!({"operation":operation,"path":root.0,key:["../src/*.rs"]}),
+            )
+            .expect("listing");
+            assert!(
+                out["warnings"]
+                    .as_array()
+                    .is_some_and(|warnings| warnings.iter().any(|w| *w == expected.as_str())),
+                "{operation} {key}: {out}"
+            );
+        }
+    }
+}
+
+/// A symlink to a target outside the allowed roots is withheld in a tree
+/// too: the listing says one symlink was not followed instead of dropping
+/// it silently, as `files` does.
+#[cfg(unix)]
+#[test]
+fn a_tree_names_a_symlink_that_leaves_the_allowed_roots() {
+    let root = Fixture::new();
+    let outside = Fixture::new();
+    std::fs::write(root.0.join("main.rs"), "x\n").expect("file");
+    std::os::unix::fs::symlink(&outside.0, root.0.join("outside")).expect("link");
+    for operation in ["tree", "files"] {
+        let out = run(&root.0, json!({"operation":operation,"path":root.0})).expect("listing");
+        assert_eq!(
+            out["warnings"][0], "1 entry withheld by path policy: 1 symlink not followed.",
+            "{operation}: {out}"
+        );
+    }
 }

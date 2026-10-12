@@ -174,6 +174,9 @@ pub struct CloneError {
     pub message: String,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hints: Vec<String>,
+    /// Runnable recovery calls (`findRepository`, `viewRefs`) beside the hints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next: Option<Box<serde_json::Value>>,
 }
 
 impl CloneError {
@@ -182,6 +185,7 @@ impl CloneError {
             code: code.into(),
             message: message.into(),
             hints: Vec::new(),
+            next: None,
         }
     }
 }
@@ -195,6 +199,9 @@ pub fn repository_not_found(query: &GhCloneRepoQuery) -> CloneError {
         // The message names the repository; the hint stays within the
         // response stage's guidance cap so it is never cut mid-sentence.
         hints: vec![crate::tools::gh_shared::REPOSITORY_ACCESS_HINT.into()],
+        next: Some(Box::new(serde_json::json!({
+            "findRepository": crate::tools::gh_shared::repository_search(repo.as_str())
+        }))),
         ..CloneError::new("notFound", format!("Repository not found: {owner}/{repo}"))
     }
 }
@@ -254,6 +261,9 @@ pub(crate) fn explain_git_failure(
                 hints: vec![
                     "Verify the branch, tag, or SHA (ghStructure lists a ref), or omit ref for the default branch.".into(),
                 ],
+                next: Some(Box::new(serde_json::json!({
+                    "viewRefs": crate::tools::gh_shared::ref_recovery(&query.owner, &query.repo)
+                }))),
                 ..CloneError::new(
                     "notFound",
                     format!(
@@ -808,7 +818,9 @@ fn repository_url(
     let base = endpoint
         .rest(&[])
         .map_err(|error| CloneError::new("configuration", error.message))?;
-    if base.scheme() != "https"
+    let secure = base.scheme() == "https"
+        || (base.scheme() == "http" && octocode_github::is_loopback(&base));
+    if !secure
         || !base.username().is_empty()
         || base.password().is_some()
         || base.query().is_some()
@@ -842,7 +854,7 @@ fn repository_url(
 fn unsupported_endpoint() -> CloneError {
     CloneError::new(
         "configuration",
-        "ghCloneRepo requires an HTTPS GitHub API endpoint: https://api.github.com or a GitHub Enterprise endpoint ending in /api/v3, without credentials or query parameters. Use ghGetFileContent for other API proxies.",
+        "ghCloneRepo requires an HTTPS GitHub API endpoint (plain http only on loopback): https://api.github.com or a GitHub Enterprise endpoint ending in /api/v3, without credentials or query parameters. Use ghGetFileContent for other API proxies.",
     )
 }
 

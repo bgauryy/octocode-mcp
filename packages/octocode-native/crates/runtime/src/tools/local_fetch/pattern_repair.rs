@@ -27,8 +27,8 @@ fn compiles(pattern: &str, pcre2: bool) -> bool {
 /// One invalid item, repaired: its one unclosed group of bare alternatives
 /// closed, else its alternatives escaped one by one, else escaped whole.
 fn repair_item(item: &str, pcre2: bool) -> String {
-    crate::regex::repair::close_unclosed_group(item, pcre2)
-        .or_else(|| crate::regex::repair::repair_alternation(item, pcre2))
+    crate::regex_repair::close_unclosed_group(item, pcre2)
+        .or_else(|| crate::regex_repair::repair_alternation(item, pcre2))
         .filter(|repaired| compiles(repaired, pcre2))
         .unwrap_or_else(|| escape(item))
 }
@@ -47,7 +47,7 @@ pub(super) fn repair(q: &LocalFetchQuery) -> Option<Continuation> {
     if items.iter().all(|item| compiles(item, pcre2)) {
         return None;
     }
-    if crate::regex::repair::only_pcre2_compiles(items.iter().copied(), pcre2) {
+    if crate::regex_repair::only_pcre2_compiles(items.iter().copied(), pcre2) {
         let mut query = q.clone();
         query.regex = Some(ReadRegex::Pcre2);
         return Some(Continuation { query });

@@ -1,7 +1,7 @@
 // node --test harness/acceptance.test.mjs — one red and one green fixture per acceptance check.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { checkChainFit, checkRowContract, descriptionLint, packedCoordinates, packedStrings, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
+import { SURFACE_BUDGET, checkChainFit, checkRowContract, descriptionLint, packedCoordinates, packedStrings, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
 
 const inputs = { localFetch: new Set(['path', 'matchString', 'startLine', 'endLine']), lspSearch: new Set(['path', 'symbolName', 'line', 'operation']) };
 const published = t => inputs[t] ?? null;
@@ -18,11 +18,15 @@ test('C1 packed coordinates: lsp/ast packed rows fail, "<line>\\t<value>" passes
   assert.equal(packedCoordinates('2026-05-30T23:55:19Z'), 0);
 });
 
-test('C1 packed coordinates: a symbols outline entry passes only under symbols/members', () => {
-  const outline = { results: [{ data: { symbols: ['a (3-5, function, doc 2)', { symbolName: 'B', kind: 'impl', line: 7, endLine: 20, members: ['c (8-10, doc 7)'] }] } }] };
+test('C1 packed coordinates: outline rows are declaration objects; a packed string fails under any key', async t => {
+  const outline = { results: [{ data: { symbols: [{ symbolName: 'a', kind: 'function', line: 3, endLine: 5, docStartLine: 2 }, { symbolName: 'B', kind: 'impl', line: 7, endLine: 20, members: [{ symbolName: 'c', line: 8, endLine: 10 }] }] } }] };
   assert.deepEqual(packedStrings(outline), []);
-  assert.equal(packedStrings({ results: [{ data: { locations: ['c (8-10, doc 7)'] } }] }).length, 1);
-  assert.equal(packedStrings({ results: [{ data: { symbols: ['227-428 function x +'] } }] }).length, 1);
+  for (const [name, data] of [
+    ['locations', { locations: ['c (8-10, doc 7)'] }],
+    ['symbols', { symbols: ['227-428 function x +'] }],
+    ['symbols outline string', { symbols: ['a (3-5, function, doc 2)'] }],
+    ['members', { symbols: [{ symbolName: 'B', line: 7, members: ['c (8-10, doc 7)'] }] }],
+  ]) await t.test(name, () => assert.equal(packedStrings({ results: [{ data }] }).length, 1));
 });
 
 test('C1 chain fit: unknown target field and packed row fail; clean row passes', () => {
@@ -76,12 +80,21 @@ test('C4 no silent omission: unlistedNested without next fails; with next or ter
   assert.deepEqual(silentOmissions({ results: [{ data: { stats: { skippedFiles: 0 } } }] }), []);
 });
 
-test('C5 description lint: neighbor with a field passes; none fails; budget', () => {
-  const fields = t => (t === 'localFetch' ? new Set(['matchString']) : new Set());
-  assert.deepEqual(descriptionLint('localSearch', 'Read hits with localFetch (matchString).', ['localSearch', 'localFetch'], fields), []);
-  assert.deepEqual(descriptionLint('localSearch', 'Find text.', ['localSearch', 'localFetch'], fields), ['names no next tool']);
-  assert.equal(descriptionLint('localSearch', 'Then localFetch.', ['localSearch', 'localFetch'], fields).length, 1);
-  assert.equal(surfaceBudget({ a: 14_000 }, 1_057).reasons.length, 1);
-  assert.deepEqual(surfaceBudget({ a: 13_000 }, 1_000).reasons, []);
-  assert.equal(surfaceBudget({ a: 500 }, 0, { quotas: { a: 400 } }).reasons.length, 1);
+test('C5 description lint: a <workflow> note naming a neighbor names one of its fields', async t => {
+  const fields = tool => (tool === 'localFetch' ? new Set(['matchString']) : new Set());
+  for (const [name, description, reasons] of [
+    ['neighbor with its field passes', 'Find text. <workflow>hit → localFetch matchString</workflow>', []],
+    ['terminal note naming no tool passes', 'Read lines. <workflow>cite lines by number</workflow>', []],
+    ['missing note fails', 'Find text with localFetch matchString.', ['no <workflow> note']],
+    ['neighbor without a field fails', 'Find text. <workflow>then localFetch</workflow>', ['names localFetch but none of its fields']],
+  ]) await t.test(name, () => assert.deepEqual(descriptionLint('localSearch', description, ['localSearch', 'localFetch'], fields), reasons));
+});
+
+test('C5 surface budget: total above SURFACE_BUDGET or a tool above its quota fails', async t => {
+  for (const [name, perTool, instructions, options, failures] of [
+    ['total at the budget passes', { a: SURFACE_BUDGET - 1 }, 1, {}, 0],
+    ['total one byte over fails', { a: SURFACE_BUDGET }, 1, {}, 1],
+    ['tool within its quota passes', { a: 400 }, 0, { quotas: { a: 400 } }, 0],
+    ['tool over its quota fails', { a: 500 }, 0, { quotas: { a: 400 } }, 1],
+  ]) await t.test(name, () => assert.equal(surfaceBudget(perTool, instructions, options).reasons.length, failures));
 });

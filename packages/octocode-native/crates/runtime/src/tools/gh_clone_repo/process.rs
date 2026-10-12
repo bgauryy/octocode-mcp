@@ -1,12 +1,11 @@
 use super::CloneError;
+use crate::tools::bounded_process::{BoundedError, run_bounded};
 use crate::tools::cancel::CancellationCheck;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::ffi::OsString;
 use std::fmt;
-use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::thread;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 const MAX_OUTPUT_BYTES: usize = 5 * 1024 * 1024;
@@ -161,17 +160,22 @@ impl SystemGit {
     }
 }
 
-/// The header value git sends: HTTP Basic with the `x-access-token` user.
+/// The header value git builds from the helper's answers: HTTP Basic with the
+/// `x-access-token` user.
 fn basic_credential(token: &str) -> String {
     STANDARD.encode(format!("x-access-token:{token}"))
 }
 
 impl SystemGit {
     /// An isolated git invocation: no user or system config, no prompts or
-    /// hooks, and the credential (when any) as an HTTP header for one URL.
-    fn command(&self, request: &GitRunRequest<'_>, git_home: &Path) -> Command {
+    /// hooks, and the credential (when any) answered by `askpass` alone.
+    fn command(
+        &self,
+        request: &GitRunRequest<'_>,
+        git_home: &Path,
+        askpass: Option<&AskPass>,
+    ) -> Command {
         let mut command = Command::new(&self.executable);
-        configure_process_group(&mut command);
         command
             .env_clear()
             .env("HOME", git_home)
@@ -185,28 +189,93 @@ impl SystemGit {
             .env("LANG", "C")
             .arg("-c")
             .arg(format!("core.hooksPath={}", null_device()))
-            .args(&request.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .args(&request.args);
         command.envs(self.passthrough.iter().map(|(name, value)| (name, value)));
-        if let (Some(token), Some(url)) = (request.authorization, request.authorization_url) {
-            // Use HTTP Basic with the `x-access-token` username instead of
-            // `Bearer`: GitHub's git-over-HTTPS accepts Basic for every token
-            // class (classic / fine-grained PAT AND `gho_` OAuth), whereas a
-            // `Bearer gho_…` header 401s — and with prompts disabled that fails
-            // the clone even for a public repo that would succeed anonymously.
-            let basic = basic_credential(token);
-            command
-                .env("GIT_CONFIG_COUNT", "1")
-                .env("GIT_CONFIG_KEY_0", format!("http.{url}.extraHeader"))
-                .env(
-                    "GIT_CONFIG_VALUE_0",
-                    format!("Authorization: Basic {basic}"),
-                );
+        if let Some(askpass) = askpass {
+            // The path to a helper, never the token: the child's environment
+            // and argv are readable by other processes of the same user.
+            command.env("GIT_ASKPASS", &askpass.script);
         }
         command
     }
+}
+
+/// An owner-only GIT_ASKPASS helper for one git run, removed on drop. Git
+/// asks it only after the server challenges; it answers with the
+/// `x-access-token` user and the token for the authorized origin, and with
+/// nothing (a failure) for any other prompt, so a redirect to another host
+/// never receives the credential.
+struct AskPass {
+    directory: PathBuf,
+    script: PathBuf,
+}
+
+impl AskPass {
+    fn create(parent: &Path, token: &str, url: &str) -> Result<Self, CloneError> {
+        let failed = |reason: String| {
+            CloneError::new(
+                "gitFailed",
+                format!("Failed to create the Git credential helper: {reason}"),
+            )
+        };
+        let url = url::Url::parse(url).map_err(|error| failed(error.to_string()))?;
+        let host = url
+            .host_str()
+            .ok_or_else(|| failed("the authorized URL names no host".into()))?;
+        let authority = match url.port() {
+            Some(port) => format!("{host}:{port}"),
+            None => host.to_owned(),
+        };
+        let scheme = url.scheme();
+        let mut nonce = [0_u8; 16];
+        getrandom::fill(&mut nonce).map_err(|error| failed(error.to_string()))?;
+        let directory = parent.join(format!("askpass-{}", hex::encode(nonce)));
+        let mut builder = std::fs::DirBuilder::new();
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder
+            .create(&directory)
+            .map_err(|error| failed(error.to_string()))?;
+        let helper = Self {
+            script: directory.join("askpass"),
+            directory,
+        };
+        let body = format!(
+            "#!/bin/sh\ncase \"$1\" in\n\
+             {user}*) printf '%s\\n' x-access-token ;;\n\
+             {password}*) printf '%s\\n' {token} ;;\n\
+             *) exit 1 ;;\n\
+             esac\n",
+            user = shell_quote(&format!("Username for '{scheme}://{authority}'")),
+            password = shell_quote(&format!(
+                "Password for '{scheme}://x-access-token@{authority}'"
+            )),
+            token = shell_quote(token),
+        );
+        let mut file = crate::private_file::create_new(&helper.script, 0o700)
+            .map_err(|error| failed(error.to_string()))?;
+        std::io::Write::write_all(&mut file, body.as_bytes())
+            .map_err(|error| failed(error.to_string()))?;
+        drop(file);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&helper.script, std::fs::Permissions::from_mode(0o700))
+                .map_err(|error| failed(error.to_string()))?;
+        }
+        Ok(helper)
+    }
+}
+
+impl Drop for AskPass {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.directory);
+    }
+}
+
+/// `text` as one single-quoted POSIX shell word.
+fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 impl GitRunner for SystemGit {
@@ -225,80 +294,44 @@ impl GitRunner for SystemGit {
                 "Clone request deadline elapsed before Git execution.",
             ));
         }
-        let git_home = control.cache_home.join("tmp").join("git-home");
+        let git_tmp = control.cache_home.join("tmp");
+        let git_home = git_tmp.join("git-home");
         std::fs::create_dir_all(&git_home).map_err(|error| {
             CloneError::new(
                 "gitFailed",
                 format!("Failed to create isolated Git home: {error}"),
             )
         })?;
-        let mut command = self.command(request, &git_home);
-        let mut child = command.spawn().map_err(|error| {
-            CloneError::new(
-                "gitFailed",
-                format!("git {} failed to start: {error}", request.label),
-            )
-        })?;
-        let mut process_tree = ProcessTreeGuard::attach(&child)?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| CloneError::new("gitFailed", "Git stdout pipe was unavailable"))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| CloneError::new("gitFailed", "Git stderr pipe was unavailable"))?;
-        let stdout_reader = thread::spawn(move || read_bounded(stdout));
-        let stderr_reader = thread::spawn(move || read_bounded(stderr));
-        let started = Instant::now();
+        let askpass = match (request.authorization, request.authorization_url) {
+            (Some(token), Some(url)) => Some(AskPass::create(&git_tmp, token, url)?),
+            _ => None,
+        };
         let timeout = request
             .timeout
-            .min(control.deadline.saturating_duration_since(started));
-        let status = loop {
-            if let Err(message) = control.cancellation.check() {
-                terminate_and_reap(&mut child, &mut process_tree);
-                join_reader(stdout_reader)?;
-                join_reader(stderr_reader)?;
-                return Err(CloneError::new("cancelled", message));
-            }
-            if started.elapsed() >= timeout || Instant::now() >= control.deadline {
-                terminate_and_reap(&mut child, &mut process_tree);
-                join_reader(stdout_reader)?;
-                join_reader(stderr_reader)?;
-                return Err(CloneError::new(
-                    "timeout",
-                    format!("git {} exceeded its execution deadline", request.label),
-                ));
-            }
-            match child.try_wait() {
-                Ok(Some(status)) => break status,
-                Ok(None) => thread::sleep(Duration::from_millis(20)),
-                Err(error) => {
-                    terminate_and_reap(&mut child, &mut process_tree);
-                    join_reader(stdout_reader)?;
-                    join_reader(stderr_reader)?;
-                    return Err(CloneError::new(
-                        "gitFailed",
-                        format!("git {} could not be reaped: {error}", request.label),
-                    ));
-                }
-            }
-        };
-        let (stdout, stdout_truncated) = join_reader(stdout_reader)?;
-        let (stderr, stderr_truncated) = join_reader(stderr_reader)?;
-        if stdout_truncated || stderr_truncated {
-            return Err(CloneError::new(
-                "gitFailed",
-                format!("git {} exceeded the 5MB output limit", request.label),
-            ));
-        }
-        let stdout = String::from_utf8_lossy(&stdout).into_owned();
+            .min(control.deadline.saturating_duration_since(Instant::now()));
+        let output = run_bounded(
+            self.command(request, &git_home, askpass.as_ref()),
+            &format!("git {}", request.label),
+            timeout,
+            MAX_OUTPUT_BYTES,
+            control.cancellation,
+        )
+        .map_err(|error| match error {
+            BoundedError::Cancelled(message) => CloneError::new("cancelled", message),
+            BoundedError::TimedOut(_) => CloneError::new(
+                "timeout",
+                format!("git {} exceeded its execution deadline", request.label),
+            ),
+            BoundedError::Failed(message) => CloneError::new("gitFailed", message),
+        })?;
+        drop(askpass);
+        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
         let stderr = scrub(
-            &String::from_utf8_lossy(&stderr),
+            &String::from_utf8_lossy(&output.stderr),
             request.authorization,
             control.cache_home,
         );
-        if !status.success() {
+        if !output.status.success() {
             let suffix = if stderr.trim().is_empty() {
                 String::new()
             } else {
@@ -313,41 +346,11 @@ impl GitRunner for SystemGit {
     }
 }
 
-fn read_bounded(mut reader: impl Read) -> io::Result<(Vec<u8>, bool)> {
-    let mut output = Vec::new();
-    let mut buffer = [0_u8; 8192];
-    let mut truncated = false;
-    loop {
-        let read = reader.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        let remaining = MAX_OUTPUT_BYTES.saturating_sub(output.len());
-        output.extend_from_slice(&buffer[..read.min(remaining)]);
-        truncated |= read > remaining;
-    }
-    Ok((output, truncated))
-}
-
-fn join_reader(
-    reader: thread::JoinHandle<io::Result<(Vec<u8>, bool)>>,
-) -> Result<(Vec<u8>, bool), CloneError> {
-    reader
-        .join()
-        .map_err(|_| CloneError::new("gitFailed", "Git output reader failed"))?
-        .map_err(|error| {
-            CloneError::new(
-                "gitFailed",
-                format!("Git output could not be read: {error}"),
-            )
-        })
-}
-
 fn scrub(text: &str, token: Option<&str>, home: &Path) -> String {
     let mut result = text.to_owned();
     if let Some(token) = token {
-        // The base64 header value first: it does not contain the token, and
-        // git can echo it without the `Authorization:` prefix.
+        // The base64 header value git builds first: it does not contain the
+        // token, and git can echo it without the `Authorization:` prefix.
         result = result
             .replace(&basic_credential(token), "[REDACTED]")
             .replace(token, "[REDACTED]");
@@ -362,11 +365,11 @@ fn scrub(text: &str, token: Option<&str>, home: &Path) -> String {
             result = stage.replace_all(&result, "<checkout>").into_owned();
         }
     }
-    // Redact the injected credential regardless of scheme. The clone token is
-    // sent as `Authorization: Basic <base64(x-access-token:…)>`; the base64 form
-    // does NOT contain the plaintext token, so this header pattern — not the
-    // token replace above — is what stops a reversible credential from leaking
-    // if git echoes its environment.
+    // Redact any authorization header regardless of scheme. Git sends the
+    // helper's answers as `Authorization: Basic <base64(x-access-token:…)>`;
+    // the base64 form does NOT contain the plaintext token, so this header
+    // pattern — not the token replace above — stops a reversible credential
+    // from leaking if git echoes a request.
     static AUTH: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         #[allow(clippy::expect_used)]
         regex::Regex::new(r"(?i)Authorization:\s*(Bearer|token|Basic)\s+\S+")
@@ -374,114 +377,6 @@ fn scrub(text: &str, token: Option<&str>, home: &Path) -> String {
     });
     AUTH.replace_all(&result, "Authorization: [REDACTED]")
         .into_owned()
-}
-
-#[cfg(unix)]
-fn configure_process_group(command: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    command.process_group(0);
-}
-
-#[cfg(not(unix))]
-fn configure_process_group(_command: &mut Command) {}
-
-#[cfg(unix)]
-fn terminate_and_reap(child: &mut Child, process_tree: &mut ProcessTreeGuard) {
-    // SAFETY: the child was started as process-group leader; negative pid targets that group.
-    unsafe {
-        libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    process_tree.terminate();
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(not(unix))]
-fn terminate_and_reap(child: &mut Child, process_tree: &mut ProcessTreeGuard) {
-    process_tree.terminate();
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-#[cfg(not(windows))]
-struct ProcessTreeGuard;
-
-#[cfg(not(windows))]
-impl ProcessTreeGuard {
-    fn attach(_child: &Child) -> Result<Self, CloneError> {
-        Ok(Self)
-    }
-
-    fn terminate(&mut self) {}
-}
-
-#[cfg(windows)]
-struct ProcessTreeGuard(Option<windows_sys::Win32::Foundation::HANDLE>);
-
-#[cfg(windows)]
-impl ProcessTreeGuard {
-    fn attach(child: &Child) -> Result<Self, CloneError> {
-        use std::mem::{size_of, zeroed};
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-            SetInformationJobObject,
-        };
-
-        // SAFETY: null security/name creates an unnamed job owned by the returned handle.
-        let job = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
-        if job.is_null() {
-            return Err(CloneError::new(
-                "gitFailed",
-                format!(
-                    "failed to create Windows job object: {}",
-                    io::Error::last_os_error()
-                ),
-            ));
-        }
-        // SAFETY: the Windows structure is plain data and zero is its documented baseline.
-        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { zeroed() };
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        // SAFETY: job is valid and info points to the correct structure for this information class.
-        let configured = unsafe {
-            SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                (&raw const info).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        } != 0;
-        // SAFETY: child owns a valid process handle while Child is alive.
-        let assigned =
-            configured && unsafe { AssignProcessToJobObject(job, child.as_raw_handle() as _) } != 0;
-        if !assigned {
-            // SAFETY: job is owned by this function.
-            unsafe { windows_sys::Win32::Foundation::CloseHandle(job) };
-            return Err(CloneError::new(
-                "gitFailed",
-                format!(
-                    "failed to contain Git in a Windows job object: {}",
-                    io::Error::last_os_error()
-                ),
-            ));
-        }
-        Ok(Self(Some(job)))
-    }
-
-    fn terminate(&mut self) {
-        if let Some(job) = self.0.take() {
-            // Closing a kill-on-close job terminates every descendant before pipe readers join.
-            unsafe { windows_sys::Win32::Foundation::CloseHandle(job) };
-        }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for ProcessTreeGuard {
-    fn drop(&mut self) {
-        self.terminate();
-    }
 }
 
 #[cfg(windows)]
@@ -521,7 +416,7 @@ mod env_and_scrub_tests {
         }
     }
 
-    /// M8: the isolated git keeps the runtime's proxy and CA settings (a
+    /// The isolated git keeps the runtime's proxy and CA settings (a
     /// corporate network needs them) and its PATH, but nothing else.
     #[test]
     fn isolated_git_keeps_runtime_proxy_ca_and_path_only() {
@@ -538,7 +433,7 @@ mod env_and_scrub_tests {
             .map(|(key, value)| (key.to_owned(), value.to_owned())),
         );
         let git = SystemGit::with_env(&runtime_env);
-        let envs = envs(&git.command(&request(), Path::new("/tmp/git-home")));
+        let envs = envs(&git.command(&request(), Path::new("/tmp/git-home"), None));
         let get = |key: &str| envs.get(key).cloned().flatten();
         assert_eq!(
             get("HTTPS_PROXY").as_deref(),
@@ -550,6 +445,86 @@ mod env_and_scrub_tests {
         assert_eq!(get("PATH").as_deref(), Some("/runtime/bin"));
         assert_eq!(get("GIT_SSL_NO_VERIFY"), None);
         assert_eq!(get("GITHUB_TOKEN"), None);
+    }
+
+    /// The token reaches git only through an owner-only GIT_ASKPASS
+    /// helper that answers for the authorized origin alone. It is in neither
+    /// the child's environment nor its argv, and the helper is gone once git
+    /// exits.
+    #[cfg(unix)]
+    #[test]
+    fn the_token_reaches_git_only_through_an_owner_only_askpass_helper() {
+        use std::os::unix::fs::PermissionsExt;
+        let home = tempfile::tempdir().expect("home");
+        let dump = home.path().join("dump");
+        let script = home.path().join("git");
+        std::fs::write(
+            &script,
+            format!(
+                concat!(
+                    "#!/bin/sh\n{{\n",
+                    "env; printf 'arg:%s\\n' \"$@\"\n",
+                    "printf 'askpass:%s\\n' \"$GIT_ASKPASS\"\n",
+                    "ls -ld \"$GIT_ASKPASS\" \"$(dirname \"$GIT_ASKPASS\")\" | sed 's/^/mode:/'\n",
+                    "printf 'user:%s\\n' \"$(\"$GIT_ASKPASS\" \"Username for 'https://github.com': \")\"\n",
+                    "printf 'pass:%s\\n' \"$(\"$GIT_ASKPASS\" \"Password for 'https://x-access-token@github.com': \")\"\n",
+                    "printf 'other:%s\\n' \"$(\"$GIT_ASKPASS\" \"Password for 'https://x-access-token@evil.example': \")\"\n",
+                    "}} > '{}'\n"
+                ),
+                dump.display()
+            ),
+        )
+        .expect("fixture git");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).expect("chmod");
+        let token = "ghp_secretToken123";
+        SystemGit::new(&script)
+            .run(
+                &GitRunRequest {
+                    args: vec!["clone".into(), "https://github.com/owner/repo.git".into()],
+                    timeout: Duration::from_secs(10),
+                    label: "askpass fixture".into(),
+                    authorization: Some(token),
+                    authorization_url: Some("https://github.com/owner/repo.git"),
+                },
+                &GitRunControl {
+                    cancellation: &crate::tools::cancel::NeverCancel,
+                    deadline: Instant::now() + Duration::from_secs(15),
+                    cache_home: home.path(),
+                },
+            )
+            .expect("fixture runs");
+        let dump = std::fs::read_to_string(&dump).expect("dump");
+        let (answers, child): (Vec<&str>, Vec<&str>) = dump.lines().partition(|line| {
+            line.starts_with("user:") || line.starts_with("pass:") || line.starts_with("other:")
+        });
+        let child = child.join("\n");
+        assert!(!child.contains(token), "{child}");
+        assert!(!child.contains(&basic_credential(token)), "{child}");
+        assert!(!child.contains("GIT_CONFIG_VALUE"), "{child}");
+        assert_eq!(
+            answers,
+            ["user:x-access-token", &format!("pass:{token}"), "other:"],
+            "the helper answers only for the authorized origin"
+        );
+        let modes: Vec<&str> = child
+            .lines()
+            .filter_map(|line| line.strip_prefix("mode:"))
+            .collect();
+        assert_eq!(modes.len(), 2, "{child}");
+        assert!(
+            modes
+                .iter()
+                .all(|mode| mode.get(1..10) == Some("rwx------")),
+            "{modes:?}"
+        );
+        let helper = child
+            .lines()
+            .find_map(|line| line.strip_prefix("askpass:"))
+            .expect("GIT_ASKPASS set");
+        assert!(
+            !Path::new(helper).exists(),
+            "helper removed after git exits"
+        );
     }
 
     /// Git may echo the injected header value without its

@@ -26,7 +26,10 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     path::Path,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -313,6 +316,146 @@ impl Block {
     }
 }
 
+/// One group's slot rules for an admission: the spacing after its last start,
+/// the code-search window, and the one cap and deadline bounding the wait.
+struct SlotPlan {
+    group: Group,
+    spacing: u64,
+    window: bool,
+    per_minute: usize,
+    cap: Duration,
+    deadline: Instant,
+}
+
+/// When a slot could start, measured from `now`.
+#[derive(Clone, Copy)]
+struct PlannedStart {
+    start: u64,
+    now: u64,
+}
+
+/// What a refusal is about: one admission, or a row of `n` code searches
+/// checked before its first is sent.
+#[derive(Clone, Copy)]
+enum Subject {
+    Request,
+    Batch(usize),
+}
+
+impl SlotPlan {
+    /// `window`: this admission takes a code-search window slot.
+    fn new(
+        group: Group,
+        config: &ExecutorConfig,
+        window: bool,
+        cap: Duration,
+        deadline: Instant,
+    ) -> Self {
+        Self {
+            group,
+            spacing: config.spacing(group).as_millis() as u64,
+            window: window && config.code_search_per_minute != usize::MAX,
+            per_minute: config.code_search_per_minute,
+            cap,
+            deadline,
+        }
+    }
+
+    /// Whether admissions under this plan wait for a slot at all.
+    fn takes_slot(&self) -> bool {
+        self.spacing > 0 || self.window
+    }
+
+    /// The earliest start these facts allow for a slot that does (or does
+    /// not) take a window slot, without taking it: the peek and the
+    /// reservation decide by the same rule.
+    fn earliest(&self, facts: &KeyFacts, now: u64, window: bool) -> PlannedStart {
+        let mut start = now;
+        if let Some(last) = facts.last_start_ms.get(self.group.name()) {
+            start = start.max(last.saturating_add(self.spacing));
+        }
+        if window {
+            let live = || {
+                facts
+                    .code_search_ms
+                    .iter()
+                    .filter(|stamp| stamp.saturating_add(60_000) > now)
+            };
+            if live().count() >= self.per_minute
+                && let Some(oldest) = live().next()
+            {
+                start = start.max(oldest.saturating_add(60_000));
+            }
+        }
+        PlannedStart { start, now }
+    }
+
+    /// This plan's earliest start.
+    fn start(&self, facts: &KeyFacts, now: u64) -> PlannedStart {
+        self.earliest(facts, now, self.window)
+    }
+
+    /// This plan's start once the slots `ahead` of it are taken, simulated on
+    /// a copy of the facts. The order of plain and windowed slots ahead is
+    /// not known; plain slots are placed first, so the peek never refuses a
+    /// start some queue order could reach (the reservation stays exact).
+    fn start_after(&self, facts: &KeyFacts, now: u64, ahead: Ahead) -> PlannedStart {
+        if ahead.plain + ahead.windowed == 0 {
+            return self.start(facts, now);
+        }
+        let mut facts = facts.clone();
+        let slots = std::iter::repeat_n(false, ahead.plain)
+            .chain(std::iter::repeat_n(true, ahead.windowed));
+        for window in slots {
+            let taken = self.earliest(&facts, now, window).start;
+            facts
+                .last_start_ms
+                .insert(self.group.name().to_owned(), taken);
+            if window {
+                facts.code_search_ms.push_back(taken);
+            }
+        }
+        self.start(&facts, now)
+    }
+
+    /// The refusal for a start past the cap or the deadline, labelled by its
+    /// cause and subject. It carries only what the client decided, the wait:
+    /// GitHub reported no exhausted bucket, so no `remaining` or reset is
+    /// claimed.
+    fn refusal(&self, planned: PlannedStart, subject: Subject) -> Option<ProviderError> {
+        let wait = Duration::from_millis(planned.start.saturating_sub(planned.now));
+        if wait <= self.cap.max(Duration::from_millis(self.spacing))
+            && Instant::now() + wait < self.deadline
+        {
+            return None;
+        }
+        let group = self.group.name();
+        let message = match (self.window, subject) {
+            (true, Subject::Request) => {
+                "GitHub code search window is full; request not sent.".to_owned()
+            }
+            (true, Subject::Batch(searches)) => format!(
+                "GitHub code search window cannot fit this row's {searches} searches; requests not sent."
+            ),
+            (false, Subject::Request) => {
+                format!("GitHub {group} request spacing exceeds the deadline; request not sent.")
+            }
+            (false, Subject::Batch(searches)) => format!(
+                "GitHub {group} request spacing cannot fit this row's {searches} searches before the deadline; requests not sent."
+            ),
+        };
+        Some(rate_limited_error(
+            &message,
+            RateLimit {
+                remaining: None,
+                reset_epoch_seconds: None,
+                retry_after_seconds: Some(ceil_secs(wait)),
+                resource: Some(self.group.bucket().into()),
+            },
+        ))
+    }
+}
+
 pub(crate) fn rate_limited_error(message: &str, rate_limit: RateLimit) -> ProviderError {
     let mut error = ProviderError::new(ProviderErrorKind::RateLimited, message);
     error.rate_limit = Some(Box::new(rate_limit));
@@ -331,10 +474,86 @@ pub struct AuthAdmission {
     _admission: Admission,
 }
 
+/// One group's admission lane: the permit that serializes its requests, and
+/// the admissions that passed the peek but have not reserved a slot yet.
+struct Lane {
+    permit: Arc<Semaphore>,
+    queued: Arc<QueueCounts>,
+}
+
+/// Admissions queued in a [`Lane`], split by whether they take a code-search
+/// window slot. Entering and reserving both happen under the key's facts
+/// lock, so a peek sees each queued admission either here or as a slot in the
+/// facts, never both.
+#[derive(Default)]
+struct QueueCounts {
+    plain: AtomicUsize,
+    windowed: AtomicUsize,
+}
+
+impl QueueCounts {
+    fn counter(&self, window: bool) -> &AtomicUsize {
+        if window { &self.windowed } else { &self.plain }
+    }
+
+    fn ahead(&self) -> Ahead {
+        Ahead {
+            plain: self.plain.load(Ordering::SeqCst),
+            windowed: self.windowed.load(Ordering::SeqCst),
+        }
+    }
+}
+
+/// Slots that admissions queued ahead will take first.
+#[derive(Clone, Copy, Default)]
+struct Ahead {
+    plain: usize,
+    windowed: usize,
+}
+
+impl Ahead {
+    fn add(&mut self, window: bool, slots: usize) {
+        if window {
+            self.windowed += slots;
+        } else {
+            self.plain += slots;
+        }
+    }
+}
+
+/// One admission queued in a [`Lane`]; it leaves the count when dropped
+/// (reserved, refused or cancelled).
+struct Queued {
+    counts: Arc<QueueCounts>,
+    window: bool,
+}
+
+impl Queued {
+    /// Join the lane's queue, returning the slots queued ahead. Call with the
+    /// key's facts locked.
+    fn enter(lane: &Lane, window: bool) -> (Self, Ahead) {
+        let ahead = lane.queued.ahead();
+        lane.queued.counter(window).fetch_add(1, Ordering::SeqCst);
+        let queued = Self {
+            counts: Arc::clone(&lane.queued),
+            window,
+        };
+        (queued, ahead)
+    }
+}
+
+impl Drop for Queued {
+    fn drop(&mut self) {
+        self.counts
+            .counter(self.window)
+            .fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 pub(crate) struct KeyState {
     key: LimiterKey,
     global: Arc<Semaphore>,
-    groups: HashMap<&'static str, Arc<Semaphore>>,
+    groups: HashMap<&'static str, Lane>,
     git: Arc<Semaphore>,
     facts: Mutex<KeyFacts>,
     persist: Mutex<Option<persist::Persist>>,
@@ -401,7 +620,13 @@ impl KeyState {
             Group::Auth,
         ]
         .into_iter()
-        .map(|group| (group.name(), Arc::new(Semaphore::new(1))))
+        .map(|group| {
+            let lane = Lane {
+                permit: Arc::new(Semaphore::new(1)),
+                queued: Arc::default(),
+            };
+            (group.name(), lane)
+        })
         .collect();
         Self {
             key,
@@ -557,22 +782,44 @@ impl KeyState {
         let mut reservation = None;
         let mut permits = Vec::with_capacity(2);
         if let Some(group) = group {
-            if let Some(semaphore) = self.groups.get(group.name()) {
-                permits.push(acquire(semaphore, deadline, cancellation).await?);
+            let plan = SlotPlan::new(group, config, count_code_search, cap, deadline);
+            let window = plan.window;
+            let persisted = matches!(group, Group::Search | Group::CodeSearch | Group::Graphql);
+            let lane = self.groups.get(group.name());
+            let mut queued = None;
+            if plan.takes_slot() {
+                // Peek before the group permit: a wait the current facts
+                // already put past the cap is refused now, not after queueing
+                // behind another request's permit. The admissions queued
+                // ahead in this process take their slots first, so the peek
+                // plans past them. Entering the queue and peeking share one
+                // facts lock, and an admission leaves the queue under the
+                // lock that records its slot, so each one is counted exactly
+                // once. The reserve below stays authoritative: a peer process
+                // can fill the window meanwhile.
+                if persisted {
+                    self.refresh_from_disk();
+                }
+                let facts = self.facts();
+                let (entered, ahead) = lane.map(|lane| Queued::enter(lane, window)).unzip();
+                queued = entered;
+                let peeked = plan.start_after(&facts, now_ms(), ahead.unwrap_or_default());
+                drop(facts);
+                if let Some(refusal) = plan.refusal(peeked, Subject::Request) {
+                    return Err(refusal);
+                }
             }
-            let spacing = config.spacing(group).as_millis() as u64;
-            let window = count_code_search && config.code_search_per_minute != usize::MAX;
-            if spacing > 0 || window {
+            if let Some(lane) = lane {
+                permits.push(acquire(&lane.permit, deadline, cancellation).await?);
+            }
+            if plan.takes_slot() {
                 // Take the start slot (and window slot) from this key's
                 // facts: the spacing after the group's last start, and the
                 // window's oldest stamp when the window is full. One cap,
                 // `cap`, bounds every wait, the code-search window's too.
                 let reserve = |facts: &mut KeyFacts| {
+                    drop(queued);
                     let now = now_ms();
-                    let mut start = now;
-                    if let Some(last) = facts.last_start_ms.get(group.name()) {
-                        start = start.max(last.saturating_add(spacing));
-                    }
                     if window {
                         while facts
                             .code_search_ms
@@ -581,34 +828,12 @@ impl KeyState {
                         {
                             facts.code_search_ms.pop_front();
                         }
-                        if facts.code_search_ms.len() >= config.code_search_per_minute
-                            && let Some(oldest) = facts.code_search_ms.front()
-                        {
-                            start = start.max(oldest.saturating_add(60_000));
-                        }
                     }
-                    let wait = Duration::from_millis(start.saturating_sub(now));
-                    if wait > cap.max(config.spacing(group)) || Instant::now() + wait >= deadline {
-                        // Label the wait by its cause: the code-search window,
-                        // or this group's own spacing (review L10).
-                        let message = if window {
-                            "GitHub code search window is full; request not sent.".to_owned()
-                        } else {
-                            format!(
-                                "GitHub {} request spacing exceeds the deadline; request not sent.",
-                                group.name()
-                            )
-                        };
-                        return Err(rate_limited_error(
-                            &message,
-                            RateLimit {
-                                remaining: Some(0),
-                                reset_epoch_seconds: Some(start.div_ceil(1000)),
-                                retry_after_seconds: Some(ceil_secs(wait)),
-                                resource: Some(group.bucket().into()),
-                            },
-                        ));
+                    let planned = plan.start(facts, now);
+                    if let Some(refusal) = plan.refusal(planned, Subject::Request) {
+                        return Err(refusal);
                     }
+                    let start = planned.start;
                     let previous = facts.last_start_ms.insert(group.name().to_owned(), start);
                     if window {
                         facts.code_search_ms.push_back(start);
@@ -616,9 +841,8 @@ impl KeyState {
                     Ok((start, previous))
                 };
                 // Mirrored groups reserve under the cross-process file lock,
-                // against every process's slots (review: two processes took
-                // the same slot when each reserved from its own view).
-                let persisted = matches!(group, Group::Search | Group::CodeSearch | Group::Graphql);
+                // against every process's slots: reserving from each
+                // process's own view lets two processes take the same slot.
                 let (start, previous) = if persisted {
                     self.reserve_shared(deadline, cancellation, reserve)
                         .await??
@@ -700,6 +924,35 @@ impl KeyState {
         if remaining == 0 {
             self.persist();
         }
+    }
+
+    /// A row that needs `searches` sends (one per extension) is refused
+    /// before the first one when the planner puts the last start past the
+    /// cap or the deadline; a refusal midway would spend window slots on a
+    /// page that is then discarded. The starts are simulated with the rule
+    /// the admission uses, on a copy of the facts, so nothing is reserved.
+    pub fn code_search_batch_refusal(
+        &self,
+        searches: usize,
+        config: &ExecutorConfig,
+        cap: Duration,
+        deadline: Instant,
+    ) -> Option<ProviderError> {
+        if searches < 2 {
+            return None;
+        }
+        self.refresh_from_disk();
+        let plan = SlotPlan::new(Group::CodeSearch, config, true, cap, deadline);
+        let facts = self.facts();
+        let mut ahead = self
+            .groups
+            .get(Group::CodeSearch.name())
+            .map(|lane| lane.queued.ahead())
+            .unwrap_or_default();
+        ahead.add(plan.window, searches - 1);
+        let last = plan.start_after(&facts, now_ms(), ahead);
+        drop(facts);
+        plan.refusal(last, Subject::Batch(searches))
     }
 
     /// Code searches the 60 s window still has room for, counting what other
@@ -954,8 +1207,8 @@ mod tests {
         (budget, state)
     }
 
-    /// Review L10: a spacing rejection names the group's own bucket, not the
-    /// code-search window.
+    /// A spacing rejection names the group's own bucket, not the code-search
+    /// window.
     #[tokio::test]
     async fn spacing_rejection_names_its_own_resource() {
         let (budget, state) = limited(ExecutorConfig {
@@ -1339,6 +1592,209 @@ mod tests {
                 .is_none_or(|start| *start <= now_ms()),
             "no phantom spacing reservation on disk"
         );
+    }
+
+    /// A refusal the window already decides is returned before the group
+    /// permit, not after queueing behind another request's permit.
+    #[tokio::test]
+    async fn a_window_refusal_is_decided_before_the_group_permit() {
+        let (budget, state) = full_code_search_window();
+        let semaphore = state
+            .groups
+            .get(Group::CodeSearch.name())
+            .expect("code-search group")
+            .permit
+            .clone();
+        let _held = semaphore.acquire_owned().await.expect("held permit");
+        let started = Instant::now();
+        let error = state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(1),
+                Instant::now() + Duration::from_secs(5),
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .expect("window full");
+        assert_eq!(error.kind, ProviderErrorKind::RateLimited);
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "refused after {:?}",
+            started.elapsed()
+        );
+    }
+
+    /// The peek counts the admission queued ahead: with one window slot left
+    /// and one sibling waiting for it, the next is refused at once instead of
+    /// queueing behind the sibling and being refused after the wait.
+    #[tokio::test]
+    async fn a_peek_counts_the_admissions_queued_ahead_in_this_process() {
+        let budget = Arc::new(GitHubBudget::with_config(ExecutorConfig {
+            code_search_per_minute: 2,
+            ..ExecutorConfig::relaxed()
+        }));
+        let state = budget.key_state(&LimiterKey::new("h", None), None);
+        state.facts().code_search_ms.push_back(now_ms() - 1_000);
+        let permit = state
+            .groups
+            .get(Group::CodeSearch.name())
+            .expect("code-search group")
+            .permit
+            .clone();
+        let held = permit.acquire_owned().await.expect("held permit");
+        let token = CancellationToken::new();
+        let ahead = {
+            let (budget, state, token) = (Arc::clone(&budget), Arc::clone(&state), token.clone());
+            tokio::spawn(async move {
+                state
+                    .admit(
+                        Some(Group::CodeSearch),
+                        budget.config(),
+                        true,
+                        Duration::from_secs(1),
+                        Instant::now() + Duration::from_secs(10),
+                        &token,
+                    )
+                    .await
+                    .map(drop)
+            })
+        };
+        while state.groups[Group::CodeSearch.name()]
+            .queued
+            .ahead()
+            .windowed
+            == 0
+        {
+            tokio::task::yield_now().await;
+        }
+        let started = Instant::now();
+        let error = state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(1),
+                Instant::now() + Duration::from_secs(10),
+                &token,
+            )
+            .await
+            .err()
+            .expect("the last slot is taken by the sibling ahead");
+        assert_eq!(error.kind, ProviderErrorKind::RateLimited);
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "refused after {:?}",
+            started.elapsed()
+        );
+        drop(held);
+        ahead
+            .await
+            .expect("join")
+            .expect("the sibling gets the slot");
+    }
+
+    /// A retry queued ahead takes its spacing slot but no window slot: with
+    /// one window slot left, a new search queued behind it is still admitted.
+    #[tokio::test]
+    async fn a_retry_queued_ahead_takes_no_window_slot() {
+        let budget = Arc::new(GitHubBudget::with_config(ExecutorConfig {
+            code_search_per_minute: 2,
+            search_spacing: Duration::from_millis(50),
+            ..ExecutorConfig::relaxed()
+        }));
+        let state = budget.key_state(&LimiterKey::new("h", None), None);
+        state.facts().code_search_ms.push_back(now_ms() - 1_000);
+        let permit = state.groups[Group::CodeSearch.name()].permit.clone();
+        let held = permit.acquire_owned().await.expect("held permit");
+        let token = CancellationToken::new();
+        let admit = |window: bool| {
+            let (budget, state, token) = (Arc::clone(&budget), Arc::clone(&state), token.clone());
+            tokio::spawn(async move {
+                state
+                    .admit(
+                        Some(Group::CodeSearch),
+                        budget.config(),
+                        window,
+                        Duration::from_secs(1),
+                        Instant::now() + Duration::from_secs(10),
+                        &token,
+                    )
+                    .await
+                    .map(drop)
+            })
+        };
+        let retry = admit(false);
+        while state.groups[Group::CodeSearch.name()].queued.ahead().plain == 0 {
+            tokio::task::yield_now().await;
+        }
+        let search = admit(true);
+        while state.groups[Group::CodeSearch.name()]
+            .queued
+            .ahead()
+            .windowed
+            == 0
+        {
+            tokio::task::yield_now().await;
+        }
+        drop(held);
+        retry.await.expect("join").expect("the retry is admitted");
+        search
+            .await
+            .expect("join")
+            .expect("the search takes the last window slot");
+        assert_eq!(state.facts().code_search_ms.len(), 2);
+    }
+
+    /// A batch refused by spacing alone names the spacing, not the window.
+    #[test]
+    fn a_batch_refused_by_spacing_names_the_spacing() {
+        let (budget, state) = limited(ExecutorConfig {
+            search_spacing: Duration::from_secs(2),
+            ..ExecutorConfig::relaxed()
+        });
+        let refusal = state
+            .code_search_batch_refusal(
+                3,
+                budget.config(),
+                Duration::from_secs(1),
+                Instant::now() + Duration::from_secs(30),
+            )
+            .expect("three starts 2 s apart exceed the cap");
+        assert!(
+            refusal
+                .message
+                .contains("spacing cannot fit this row's 3 searches"),
+            "{}",
+            refusal.message
+        );
+        assert!(!refusal.message.contains("window"), "{}", refusal.message);
+    }
+
+    /// A client-side refusal reports only what the client knows: the wait.
+    /// GitHub's counters were not consulted, so none are claimed.
+    #[tokio::test]
+    async fn a_client_refusal_claims_no_provider_counters() {
+        let (budget, state) = full_code_search_window();
+        let error = state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(1),
+                Instant::now() + Duration::from_secs(5),
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .expect("window full");
+        let rate = error.rate_limit.expect("rate-limit metadata");
+        assert_eq!(rate.remaining, None);
+        assert_eq!(rate.reset_epoch_seconds, None);
+        assert!(rate.retry_after_seconds.is_some_and(|secs| secs > 0));
+        assert_eq!(rate.resource.as_deref(), Some("code_search"));
     }
 
     #[tokio::test]

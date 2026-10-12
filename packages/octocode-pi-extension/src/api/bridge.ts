@@ -271,10 +271,10 @@ export class OctocodeApi {
   }
 
   /** `agents.tell`: bounded like any team message; a refusal (unknown agent, nobody reachable) is an RPC error. */
-  private tell(params: Record<string, unknown>): unknown {
+  private async tell(params: Record<string, unknown>): Promise<unknown> {
     const to = stringParam(params, 'to')!;
     const text = this.label(stringParam(params, 'text', { max: this.agents.maxChars ?? AGENT_MESSAGE_MAX_CHARS })!);
-    const result = this.agents.tell(to, text);
+    const result = await this.agents.tell(to, text);
     if (result && typeof result === 'object' && typeof (result as { error?: unknown }).error === 'string') throw new RpcError(ERR.invalidParams, (result as { error: string }).error);
     return result;
   }

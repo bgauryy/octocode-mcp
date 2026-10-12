@@ -1278,6 +1278,22 @@ mod dead_code_root_tests {
         );
     }
 
+    /// A suppressed verdict proves nothing either way: the row is partial
+    /// with `entrypointsUnresolved`, never an empty "no dead export".
+    #[test]
+    fn a_suppressed_dead_code_verdict_is_partial_not_empty() {
+        let temp = fixture(&[("util.rs", "pub fn util() {}\n")]);
+        let out = topology(temp.path(), json!({"operation":"deadCode"}));
+        assert_ne!(out["status"], "empty", "{out}");
+        assert_eq!(out["isPartial"], true, "{out}");
+        assert_eq!(
+            out["partialReasons"],
+            json!(["entrypointsUnresolved"]),
+            "{out}"
+        );
+        assert_eq!(out["coverage"]["state"], "partial", "{out}");
+    }
+
     /// Unreferenced-export rows for a TS fixture rooted at `main.ts`, as
     /// `(name, exportedAs)` pairs.
     fn dead_exports(files: &[(&str, &str)]) -> Vec<(String, Value)> {

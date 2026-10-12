@@ -240,7 +240,7 @@ mod tests {
 
     #[tokio::test]
     async fn one_request_dates_every_path_and_the_commit() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .and(path("/api/graphql"))
             .respond_with(Echo)
@@ -268,7 +268,7 @@ mod tests {
 
     #[tokio::test]
     async fn paths_past_one_hundred_are_chunked_in_order() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .and(path("/api/graphql"))
             .respond_with(Echo)
@@ -299,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn quotes_backslashes_and_unicode_travel_as_variables() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .and(path("/api/graphql"))
             .respond_with(Echo)
@@ -327,7 +327,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_graphql_error_dates_nothing_and_names_the_failure() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .and(path("/api/graphql"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -348,7 +348,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failed_chunk_stops_later_requests_and_keeps_earlier_dates() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .and(path("/api/graphql"))
             .respond_with(Echo)
@@ -376,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_token_or_disabled_graphql_sends_nothing() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let anonymous = transport(&server)
             .path_commit_dates("a", "b", SHA, &["one"], &context(false))
             .await;
@@ -398,7 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_path_without_history_has_no_date() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .and(path("/api/graphql"))
             .respond_with(ResponseTemplate::new(200).set_body_json(

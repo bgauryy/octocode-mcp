@@ -109,6 +109,10 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
   let unsubscribe: (() => void) | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
   let lastAnswer = '';
+  // Focus reporting outlives the process unless turned off: a crash or a terminal hand-off without session_shutdown
+  // would leave the shell printing ESC[I / ESC[O. Exit handlers run synchronously, so the write still lands.
+  const focusOffAtExit = () => write(FOCUS_OFF);
+  const dropExitHook = () => process.removeListener('exit', focusOffAtExit);
 
   const baseTitle = (current: ExtensionContext): string => {
     const raw = pi.getSessionName();
@@ -161,7 +165,11 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
       unmark();
       return undefined;
     });
-    if (condition !== 'off') write(FOCUS_ON);
+    if (condition !== 'off') {
+      write(FOCUS_ON);
+      dropExitHook();
+      process.once('exit', focusOffAtExit);
+    }
   });
   pi.on('session_info_changed', async (_event, current) => {
     if (current.mode === 'tui' && current.hasUI) current.ui.setTitle(`${marked ? `${MARK} ` : ''}${baseTitle(current)}`);
@@ -170,6 +178,7 @@ export function registerNotify(pi: ExtensionAPI, options: NotifyOptions = {}): v
     clearIdle();
     unsubscribe?.();
     unsubscribe = undefined;
+    dropExitHook();
     if (ctx?.mode === 'tui' && ctx.hasUI && condition !== 'off') write(FOCUS_OFF);
     unmark();
     ctx = undefined;

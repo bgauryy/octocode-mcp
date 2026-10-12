@@ -5,7 +5,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['tests/**/*.test.ts'],
-    setupFiles: ['tests/setup.ts'],
+    // Temp home, no credentials, dead proxy, guarded fetch and child processes.
+    setupFiles: ['../../test-utils/external-effects-guard.ts', 'tests/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

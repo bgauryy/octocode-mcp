@@ -14,7 +14,9 @@ use crate::tools::cancel::CancellationCheck;
 use crate::tools::gh_shared::{GhFailure, locate_path, missing_path};
 use crate::tools::local_fetch::{LocalFetchQuery, RegexMatch, WindowUnit, process_fetched_content};
 use crate::tools::result::ToolData;
-use leads::{default_minify, empty_match_lead, ignore_case_lead, rewrite_continuations};
+use leads::{
+    default_minify, empty_match_lead, ignore_case_lead, last_window_repair, rewrite_continuations,
+};
 
 pub use crate::contracts::tool_types::GhGetFileContentQuery;
 
@@ -332,6 +334,17 @@ fn shape(
         && let Some(calls) = next.get_or_insert_with(|| json!({})).as_object_mut()
     {
         calls.insert(name.into(), lead);
+    }
+    if content.error.is_some()
+        && let Some(lead) = last_window_repair(
+            query,
+            &local,
+            String::from_utf8_lossy(&acquired.bytes).lines().count(),
+            &acquired.resolved_ref,
+        )
+        && let Some(calls) = next.get_or_insert_with(|| json!({})).as_object_mut()
+    {
+        calls.insert("repair".into(), lead);
     }
     if match_not_found
         && let Some(lead) = ignore_case_lead(query, &local, &acquired, regex)
@@ -722,7 +735,7 @@ mod tests {
 
     #[tokio::test]
     async fn shared_pipeline_ranges_redacts_and_emits_remote_continuation() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         mount_json(
             &server,
@@ -764,7 +777,7 @@ mod tests {
 
     #[tokio::test]
     async fn match_string_runs_on_redacted_text() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         mount_json(
             &server,
@@ -821,7 +834,7 @@ mod tests {
     /// a failed read send none.
     #[tokio::test]
     async fn a_receipts_first_page_states_the_last_change_for_one_extra_request() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let body: String = (1..=40).map(|i| format!("line {i}\n")).collect();
         mount_json(
@@ -903,7 +916,7 @@ mod tests {
     /// for more.
     #[tokio::test]
     async fn windows_stay_windows_on_small_files() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let small: String = (1..=30).map(|i| format!("line {i}\n")).collect();
         mount_json(&server, "/api/v3/repos/a/b/contents/small.py".to_owned(), 200, serde_json::json!({"type":"file","encoding":"base64","content":STANDARD.encode(&small)}),).await;
@@ -932,12 +945,52 @@ mod tests {
         }
     }
 
+    /// `ranges` that all start past the file end fail with a runnable
+    /// repair: the same read of the file's last window, as wide as the
+    /// widest requested range, at the read commit.
+    #[tokio::test]
+    async fn ranges_past_the_end_repair_to_the_last_window() {
+        let server = MockServer::builder().start().await;
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        let small: String = (1..=30).map(|i| format!("line {i}\n")).collect();
+        mount_json(&server, "/api/v3/repos/a/b/contents/small.py".to_owned(), 200, serde_json::json!({"type":"file","encoding":"base64","content":STANDARD.encode(&small)}),).await;
+        let provider = mock_provider(&server, RetryPolicy::default());
+        let past = read(
+            &provider,
+            serde_json::json!({"owner":"a","repo":"b","path":"small.py","ref":sha,"ranges":["99-103","200-201"]}),
+        )
+        .await;
+        let file = &past.files[0];
+        assert!(file.content.error.is_some(), "{:?}", file.content);
+        let repair = &file.next.as_ref().expect("repair lead")["repair"];
+        assert_eq!(repair["tool"], "ghGetFileContent", "{repair}");
+        let row = &repair["query"]["queries"][0];
+        assert_eq!(row["ranges"], serde_json::json!(["26-30"]), "{repair}");
+        assert_eq!(row["ref"], sha, "{repair}");
+        assert_eq!(row["path"], "small.py", "{repair}");
+        // A range that reaches into the file is read (clamped), not repaired.
+        let inside = read(
+            &provider,
+            serde_json::json!({"owner":"a","repo":"b","path":"small.py","ref":sha,"ranges":["29-40"]}),
+        )
+        .await;
+        assert!(inside.files[0].content.error.is_none());
+        assert!(
+            inside.files[0]
+                .next
+                .as_ref()
+                .is_none_or(|next| next.get("repair").is_none()),
+            "{:?}",
+            inside.files[0].next
+        );
+    }
+
     /// A path-only read of a file over one page gets localFetch's guarded
     /// head, not a 2,000-line page; the continuation reaches the rest, and
     /// an explicit whole-file read stays one call away.
     #[tokio::test]
     async fn a_path_only_read_of_a_large_file_returns_a_head_and_a_continuation() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let body: String = (1..=1_500).map(|i| format!("line of text {i}\n")).collect();
         mount_json(
@@ -985,7 +1038,7 @@ mod tests {
     /// them verbatim reaches the end byte-identical.
     #[tokio::test]
     async fn a_minified_file_walks_to_its_end_through_next_continue() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let body: String = (0..40_000)
             .map(|i| format!("needle{i} "))
@@ -1033,7 +1086,7 @@ mod tests {
     /// without `fullContent`.
     #[tokio::test]
     async fn continuations_omit_default_view_fields() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let body: String = (1..=6000).map(|i| format!("line of text {i}\n")).collect();
         mount_json(
@@ -1071,7 +1124,7 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_full_content_is_partial_not_empty() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         mount_json(&server, "/api/v3/repos/a/b/contents/big.txt", 200, serde_json::json!({"type":"file","encoding":"base64","content":STANDARD.encode("line of text\n".repeat(6000))})).await;
         let provider = mock_provider(&server, RetryPolicy::default());
@@ -1133,7 +1186,7 @@ mod tests {
     /// names where that lead is. No listing at `HEAD` is spent.
     #[tokio::test]
     async fn wrong_case_path_leads_once_to_the_case_corrected_read() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         Mock::given(method("GET"))
             .and(path("/api/v3/repos/a/b/commits/HEAD"))
@@ -1191,7 +1244,7 @@ mod tests {
     /// echo of the request.
     #[tokio::test]
     async fn no_match_read_keeps_its_leads_without_empty_echo() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         mount_json(&server, "/api/v3/repos/a/b/contents/a.txt", 200, serde_json::json!({"type":"file","encoding":"base64","content":STANDARD.encode("one\ntwo\n")}),).await;
         let provider = mock_provider(&server, RetryPolicy::default());
@@ -1278,7 +1331,7 @@ mod tests {
     /// of that file at the read's commit.
     #[tokio::test]
     async fn no_match_in_a_large_file_leads_to_clasify() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         let text = (0..1200).map(|n| format!("line {n}\n")).collect::<String>();
         mount_json(
@@ -1310,7 +1363,7 @@ mod tests {
     /// not echoed.
     #[tokio::test]
     async fn a_block_read_row_carries_path_commit_gutter_and_blocks() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         Mock::given(method("GET"))
             .and(path("/api/v3/repos/a/b/commits/main"))

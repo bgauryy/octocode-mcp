@@ -116,4 +116,15 @@ describe('chrome', () => {
       vi.useRealTimers();
     }
   });
+
+  it('repaints the banner in the new colours after invalidate (a theme change)', () => {
+    const live = { ...(colorTheme as object), colors: { ...(colorTheme as { colors: object }).colors } } as { colors: Record<string, unknown> };
+    const header = bannerHeader({ requestRender: vi.fn() }, live as never, undefined);
+    const before = header.render(120);
+    live.colors = { ...live.colors, accent: rgbColor(255, 0, 0), borderAccent: rgbColor(255, 0, 0), mdLink: rgbColor(255, 0, 0), syntaxOperator: rgbColor(255, 0, 0) };
+    header.invalidate();
+    const after = header.render(120);
+    expect(after).not.toEqual(before);
+    expect(after.join('\n')).toContain('255;0;0');
+  });
 });

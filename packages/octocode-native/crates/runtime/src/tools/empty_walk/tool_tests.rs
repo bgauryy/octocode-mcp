@@ -1,8 +1,7 @@
 //! One scenario table, run against every local walking tool: when a walk is
 //! empty because its matches sit behind a skipped path, each tool names the
-//! rule or directory, and its lead (`next.includeIgnored`; `symbols` reaches
-//! hidden entries by `next.narrowScope`) lifts exactly the causes that held
-//! matches and runs to the match. When nothing sits behind
+//! rule or directory, and its lead (`next.includeSkipped`) lifts exactly the
+//! causes that held matches and runs to the match. When nothing sits behind
 //! the skipped paths there is no lead.
 use super::Cause;
 use crate::policy::path::PathPolicy;
@@ -23,8 +22,6 @@ struct Scenario {
     dir: &'static str,
     /// The causes that skip it.
     causes: &'static [Cause],
-    /// The topmost skipped entry, root-relative.
-    entry: &'static str,
     /// How the diagnosis names each cause.
     reasons: &'static [(Cause, &'static str)],
 }
@@ -35,7 +32,6 @@ const SCENARIOS: &[Scenario] = &[
         gitignore: "gen/\n",
         dir: "gen/inner",
         causes: &[Cause::Ignored],
-        entry: "gen",
         reasons: &[(Cause::Ignored, ".gitignore:1 'gen/'")],
     },
     Scenario {
@@ -43,7 +39,6 @@ const SCENARIOS: &[Scenario] = &[
         gitignore: "",
         dir: ".cfg/inner",
         causes: &[Cause::Hidden],
-        entry: ".cfg",
         reasons: &[(Cause::Hidden, "hidden .cfg/")],
     },
     Scenario {
@@ -51,7 +46,6 @@ const SCENARIOS: &[Scenario] = &[
         gitignore: "",
         dir: "node_modules/pkg",
         causes: &[Cause::DefaultExcluded],
-        entry: "node_modules",
         reasons: &[(Cause::DefaultExcluded, "node_modules/")],
     },
     Scenario {
@@ -59,7 +53,6 @@ const SCENARIOS: &[Scenario] = &[
         gitignore: ".gen/\n",
         dir: ".gen",
         causes: &[Cause::Ignored, Cause::Hidden],
-        entry: ".gen",
         reasons: &[
             (Cause::Ignored, ".gitignore:1 '.gen/'"),
             (Cause::Hidden, "hidden .gen/"),
@@ -70,7 +63,6 @@ const SCENARIOS: &[Scenario] = &[
         gitignore: "build/\n",
         dir: "build/out",
         causes: &[Cause::Ignored, Cause::DefaultExcluded],
-        entry: "build",
         reasons: &[
             (Cause::Ignored, ".gitignore:1 'build/'"),
             (Cause::DefaultExcluded, "build/"),
@@ -124,7 +116,7 @@ fn local_search() -> Tool {
         name: "localSearch",
         skips: &FLAGGED,
         defaults_lift_ignored: false,
-        channel: |_| "includeIgnored",
+        channel: |_| "includeSkipped",
         query: |root| row(root, json!({"matchString": "needle"})),
         run: |root, query| {
             let (paths, security) = simple_policy(root);
@@ -144,7 +136,7 @@ fn ast_match() -> Tool {
         name: "astSearch match",
         skips: &FLAGGED,
         defaults_lift_ignored: false,
-        channel: |_| "includeIgnored",
+        channel: |_| "includeSkipped",
         query: |root| {
             row(
                 root,
@@ -165,21 +157,14 @@ fn run_ast(root: &Path, query: &Value) -> Value {
     execute_ast(&query, &paths, &security, &NeverCancel, None).expect("astSearch")
 }
 
-/// `symbols` honors `.gitignore` like `match` (`includeIgnored` lifts it) and
-/// takes no `includeHidden`: a hidden match is reached by narrowing `path` to
-/// the hidden entry.
+/// `symbols` honors `.gitignore` and hides dot entries like `match`;
+/// `includeIgnored`, `includeHidden` and `defaultExcludes:false` lift them.
 fn ast_symbols() -> Tool {
     Tool {
         name: "astSearch symbols",
         skips: &[Cause::Ignored, Cause::Hidden, Cause::DefaultExcluded],
         defaults_lift_ignored: false,
-        channel: |scenario| {
-            if scenario.causes.contains(&Cause::Hidden) {
-                "narrowScope"
-            } else {
-                "includeIgnored"
-            }
-        },
+        channel: |_| "includeSkipped",
         query: |root| {
             row(
                 root,
@@ -188,27 +173,9 @@ fn ast_symbols() -> Tool {
         },
         run: |root, query| run_ast(root, query),
         found: |out| non_empty(out, "files"),
-        lifts: |lead, cause, root, scenario| match cause {
-            // The scan's root is entered whatever its own rules say, so a
-            // path narrowed to the skipped entry lifts both the hidden dot
-            // and an ignore rule that names the entry itself.
-            Cause::Hidden => narrowed_to_entry(lead, root, scenario),
-            Cause::Ignored
-                if scenario.causes.contains(&Cause::Hidden)
-                    && scenario.causes.contains(&Cause::Ignored) =>
-            {
-                narrowed_to_entry(lead, root, scenario)
-            }
-            _ => by_flag(lead, cause, root, scenario),
-        },
+        lifts: by_flag,
         prose_when_nothing_found: true,
     }
-}
-
-/// The lead's `path` is the scenario's skipped entry.
-fn narrowed_to_entry(lead: &Value, root: &Path, scenario: &Scenario) -> bool {
-    let narrowed = lead["path"].as_str().map(std::fs::canonicalize);
-    narrowed.is_some_and(|path| path.ok() == std::fs::canonicalize(root.join(scenario.entry)).ok())
 }
 
 fn structure(operation: &'static str, skips: &'static [Cause]) -> Tool {
@@ -220,7 +187,7 @@ fn structure(operation: &'static str, skips: &'static [Cause]) -> Tool {
         },
         skips,
         defaults_lift_ignored: operation == "files",
-        channel: |_| "includeIgnored",
+        channel: |_| "includeSkipped",
         query: if operation == "tree" {
             |root| row(root, json!({"operation": "tree", "extensions": ["ts"]}))
         } else {
@@ -243,7 +210,7 @@ fn ast_rewrite() -> Tool {
         name: "astRewrite",
         skips: &FLAGGED,
         defaults_lift_ignored: false,
-        channel: |_| "includeIgnored",
+        channel: |_| "includeSkipped",
         query: |root| {
             row(
                 root,
@@ -392,7 +359,7 @@ fn nothing_behind_the_skipped_paths_leads_nowhere() {
             let query = (tool.query)(&root.0);
             let out = (tool.run)(&root.0, &query);
             assert!(!(tool.found)(&out), "{label}: {out}");
-            for channel in ["includeIgnored", "narrowScope"] {
+            for channel in ["includeSkipped", "narrowScope"] {
                 assert!(
                     lead_query(&out, channel).is_none(),
                     "{label}: lead to nothing: {out}"

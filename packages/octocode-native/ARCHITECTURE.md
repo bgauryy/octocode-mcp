@@ -66,8 +66,8 @@ transport services, plus the shared retry timing (`retry.rs`: `header_u64`,
 clasify transport reuse; runtime keeps configuration, credential selection, cache policy,
 and generated tool contracts. The artifact registry cache is runtime-owned: each
 `ToolRuntime` builds one under `<home>/tmp/response` only when storage is
-persistent, and there is no process-global cache. `crates/cli` owns `octocode` and
-`octocode-regex-worker`; `crates/runtime-napi` owns the runtime `cdylib` and its
+persistent, and there is no process-global cache. `crates/cli` owns the `octocode`
+binary; `crates/runtime-napi` owns the runtime `cdylib` and its
 Node conversions. All five crates inherit one workspace version and remain
 unpublished Cargo packages.
 
@@ -167,7 +167,7 @@ host artifacts.
 - Binary builds select `octocode-cli` and contain the full CLI/runtime. Neither host crate declares default Cargo features.
 - Every build stages the host binaries into their platform package so the local CLI launcher executes the rebuilt runtime. Staging (binaries and addons) atomically replaces each inode — never an in-place overwrite, which can crash a running MCP server that has the addon mapped or leave a stale macOS code-signature cache.
 - Runtime addon builds select `octocode-runtime-napi` and expose the same runtime to MCP. Its optional `napi-test` feature is for Rust tests only.
-- Each platform package contains the optimized native CLI, regex worker, and runtime addon.
+- Each platform package contains the optimized native CLI and runtime addon.
 - Root entrypoints `.`/`./runtime` load the runtime addon lazily.
 - Darwin addons are ad-hoc signed after staging because target-specific linker signatures are not a sufficient loadability guarantee.
 - Host-platform staging and platform verification load the addon in a subprocess before release acceptance.

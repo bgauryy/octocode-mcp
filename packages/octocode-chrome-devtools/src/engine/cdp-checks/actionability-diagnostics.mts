@@ -1,11 +1,7 @@
 import { writeFileSync } from 'fs';
-import { join, resolve } from 'path';
-import { pathToFileURL } from 'url';
+import { join } from 'path';
 
-const { ACTIONABILITY_HELPERS_JS } = await import(
-  pathToFileURL(resolve(process.cwd(), '.octocode', 'dom-actionability.mjs'))
-    .href
-);
+import { ACTIONABILITY_HELPERS_JS } from '../dom-actionability.mjs';
 
 const argv = process.argv.slice(2);
 const getArg = (flag, def = '') => {

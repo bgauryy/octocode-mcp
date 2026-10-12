@@ -11,8 +11,8 @@
 use super::LspSearchQuery;
 use super::failure::{continuation, empty};
 use super::render::{
-    PageCut, as_array, document_symbol_rows, flatten_document_symbol, paginate, plain_sizes,
-    symbol_kind_name, uri_to_path,
+    PageCut, as_array, document_symbol_rows, flatten_document_symbol, page_window, paginate,
+    plain_sizes, symbol_kind_name, uri_to_path,
 };
 use super::source::SourceCache;
 use crate::tools::id::ToolId;
@@ -713,18 +713,19 @@ fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget:
     if snapshot_mismatch(query, &snapshot) {
         return snapshot_changed(query);
     }
-    // A symbol costs the row it prints as, not its raw provider object.
-    let sizes = symbols
+    // Pages count top-level rows, each with its members; a row costs what
+    // it prints as, not its raw provider objects.
+    let spans = crate::tools::symbol_outline::top_level_spans(&symbols);
+    let sizes = spans
         .iter()
-        .map(|symbol| {
+        .map(|span| {
             crate::tools::stream_page::json_chars(&document_symbol_rows(
-                std::slice::from_ref(symbol),
+                &symbols[span.clone()],
                 &[],
             )) + 1
         })
         .collect::<Vec<_>>();
-    let (page, mut pagination) = paginate(
-        &symbols,
+    let (window, mut pagination) = page_window(
         query.page().unwrap_or(1),
         &PageCut {
             page_size: query.page_size(),
@@ -732,6 +733,11 @@ fn document_symbols_payload(query: &LspSearchQuery, raw_items: &[Value], budget:
             sizes: &sizes,
         },
     );
+    let page = if window.is_empty() {
+        Vec::new()
+    } else {
+        symbols[spans[window.start].start..spans[window.end - 1].end].to_vec()
+    };
     pagination["snapshot"] = json!(snapshot);
     let mut row = json!({
         "kind": "documentSymbols",

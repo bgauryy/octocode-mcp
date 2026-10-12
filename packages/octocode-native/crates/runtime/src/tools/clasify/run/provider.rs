@@ -327,7 +327,7 @@ mod tests {
         use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
         for batched in [false, true] {
             for scenario in ["rejected", "malformed", "known", "unknown", "retried"] {
-                let server = MockServer::start().await;
+                let server = MockServer::builder().start().await;
                 let attempts = Arc::new(AtomicUsize::new(0));
                 let seen = attempts.clone();
                 Mock::given(method("POST"))

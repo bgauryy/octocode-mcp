@@ -545,7 +545,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
         hits.structured_content
     );
     assert!(first.get("in").is_none(), "{first}");
-    // A declaration without members is an entry string.
+    // A declaration without members is an object too.
     let outline = run(
         &runtime,
         "astSearch",
@@ -554,11 +554,11 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
     .await;
     assert_eq!(
         data(&outline)["files"][0]["symbols"][0],
-        json!("run (1-4, function, exported)"),
+        json!({"symbolName":"run","kind":"function","line":1,"endLine":4,"exported":true}),
         "{}",
         outline.structured_content
     );
-    // AS2: match rows are objects; the 1-based column is a detail.
+    // Match rows are objects; the 1-based column is a detail.
     let matched = run(
         &runtime,
         "astSearch",
@@ -571,7 +571,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
         "{}",
         matched.structured_content
     );
-    // SS2/SS4: one listing shape, workspace-relative groups, key `files`.
+    // One listing shape, workspace-relative groups, key `files`.
     let tree = run(&runtime, "structureSearch", json!({"path":"pkg"})).await;
     assert!(
         data(&tree).get("entries").is_none(),

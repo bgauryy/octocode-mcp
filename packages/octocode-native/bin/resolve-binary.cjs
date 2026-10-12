@@ -2,8 +2,8 @@
 
 /**
  * Shared platform → binary resolver: the single place that maps the current
- * platform to a compiled native binary. Used by this package's launcher bins
- * (`octocode.cjs`, `octocode-regex-worker.cjs`) and by the `octocode` npm CLI's
+ * platform to a compiled native binary. Used by this package's launcher bin
+ * (`octocode.cjs`) and by the `octocode` npm CLI's
  * delegation boundary, so the platform-selection logic is never duplicated and
  * the npm CLI spawns the native binary directly instead of routing through a
  * second shim.

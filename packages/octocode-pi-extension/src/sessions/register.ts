@@ -1,11 +1,12 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import path from 'node:path';
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
 import { sharedAgentDb } from '../agentdb/db.js';
 import { currentSessionId, repoKey } from '../shared/home.js';
 import type { Subcommands } from '../shared/commands.js';
 import { expandKey, plural } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
-import { addUsage, clipText, contentText, emptyUsage, errorMessage } from '../shared/util.js';
+import { addUsage, carriesUsage, clipText, contentText, emptyUsage, errorMessage, modelLookup, unpricedModel, type ModelLookup } from '../shared/util.js';
 import { ongoingItems, resumeBrief, type BriefInput } from './brief.js';
 import { registerSessionsCommand } from './command.js';
 import { gitCommitsBetween, gitDirty, gitState, SessionIndex } from './store.js';
@@ -28,22 +29,26 @@ interface SessionsOptions {
   filesChanged?: () => number;
 }
 
-type Entry = { type?: string; timestamp?: string; message?: { role?: string; usage?: unknown } };
+type Entry = { type?: string; timestamp?: string; message?: { role?: string; usage?: unknown; details?: unknown } };
+
 
 /**
  * Cost and tokens of a session, read once at start; later replies are added as they end. A fork (or clone) starts with
  * its parent's history copied in, entries keeping their original times: those were paid for in the parent, so with a
- * `parentSession` only entries from the fork's own start (its header time) on count.
+ * `parentSession` only entries from the fork's own start (its header time) on count. Replies and tool results that carry
+ * usage (a subagent's `agent` result) count, the same entries as the footer.
  */
-function totals(entries: readonly Entry[], header?: { timestamp?: string; parentSession?: string } | null): ReturnType<typeof emptyUsage> {
+function totals(entries: readonly Entry[], header: { timestamp?: string; parentSession?: string } | null | undefined, find: ModelLookup): { usage: ReturnType<typeof emptyUsage>; unpriced: boolean } {
   const forkedAt = header?.parentSession ? Date.parse(header.timestamp ?? '') : Number.NaN;
   const usage = emptyUsage();
+  let unpriced = false;
   for (const entry of entries) {
-    if (entry.type !== 'message' || entry.message?.role !== 'assistant') continue;
+    if (entry.type !== 'message' || !carriesUsage(entry.message?.role)) continue;
     if (Number.isFinite(forkedAt) && Date.parse(entry.timestamp ?? '') < forkedAt) continue;
-    addUsage(usage, entry.message.usage);
+    addUsage(usage, entry.message?.usage);
+    unpriced ||= unpricedModel(entry.message, find) !== undefined;
   }
-  return usage;
+  return { usage, unpriced };
 }
 
 /** When the session was last active: its last entry's time, or undefined when Pi recorded none. */
@@ -101,8 +106,9 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
   let warned = false;
   /** A resumed session's record from before this start, briefed at the next prompt (not now: the user may come back later). */
   let pending: Omit<BriefInput, 'git'> | undefined;
-  /** This session's running cost and tokens. */
+  /** This session's running cost and tokens, and whether part of it came from a model without pricing. */
   let usage = emptyUsage();
+  let unpriced = false;
   const index = () => new SessionIndex(sharedAgentDb());
   const safely = (ctx: ExtensionContext, work: (sessions: SessionIndex) => void) => {
     try {
@@ -128,7 +134,7 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
     pending = undefined;
     const id = ctx.sessionManager.getSessionId();
     const entries = (ctx.sessionManager.getEntries?.() ?? []) as readonly Entry[];
-    usage = totals(entries, ctx.sessionManager.getHeader?.());
+    ({ usage, unpriced } = totals(entries, ctx.sessionManager.getHeader?.(), modelLookup(ctx)));
     safely(ctx, (sessions) => {
       const previous = sessions.get(id);
       const resumed = event?.reason === 'resume' || (event?.reason === 'startup' && hasUserMessage(entries));
@@ -140,6 +146,10 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
         pending = { previous: recorded, lastActive: at, sessionId: id, repoKey: repoKey(ctx.cwd).key, ...(unreported.length > 0 ? { unreported } : {}) };
       }
       sessions.start(id);
+      // Pi's default listing misses sessions kept under --session-dir: the sweep must list that dir too, or it removes their folders.
+      // Pi's own listing covers every folder of `<agent dir>/sessions`; any other dir is recorded.
+      const dir = ctx.sessionManager.getSessionDir?.();
+      if (dir && path.dirname(path.resolve(dir)) !== path.join(getAgentDir(), 'sessions')) sessions.addSessionDir(path.resolve(dir));
       // Off the start path; at most once per 6 h across all sessions.
       const env = { ...process.env };
       setImmediate(() => void sweepSessions(sessions, currentSessionId(), { env }));
@@ -147,8 +157,10 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
     void recordGit(ctx, id);
   });
 
-  pi.on('message_end', async (event) => {
-    if (event.message.role === 'assistant') addUsage(usage, (event.message as { usage?: unknown }).usage);
+  pi.on('message_end', async (event, ctx) => {
+    if (!carriesUsage(event.message.role)) return undefined;
+    addUsage(usage, (event.message as { usage?: unknown }).usage);
+    unpriced ||= unpricedModel(event.message, modelLookup(ctx)) !== undefined;
     return undefined;
   });
 
@@ -168,7 +180,7 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
 
   pi.on('agent_end', async (_event, ctx) => {
     const id = ctx.sessionManager.getSessionId();
-    const stats = { cost: usage.cost.total, tokens: usage.totalTokens, filesChanged: options.filesChanged?.() ?? 0 };
+    const stats = { cost: usage.cost.total, tokens: usage.totalTokens, filesChanged: options.filesChanged?.() ?? 0, unpriced };
     safely(ctx, (sessions) => sessions.stats(id, stats));
     void recordGit(ctx, id);
   });

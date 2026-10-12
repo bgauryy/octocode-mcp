@@ -102,6 +102,26 @@ describe('isolated subagent worktrees', () => {
     expect(await mergeAgent(dir, '../evil')).toMatchObject({ ok: false });
   });
 
+  it('leaves an existing merge and its in-progress resolution untouched', async () => {
+    const dir = repo();
+    const worktree = await createWorktree(dir, 'existing-merge', tmp());
+    fs.writeFileSync(path.join(worktree.path, 'src', 'a.txt'), 'agent change\n');
+    await finishWorktree(worktree);
+    fs.writeFileSync(path.join(dir, 'src', 'a.txt'), 'user change\n');
+    git(dir, 'commit', '-q', '-am', 'user change');
+    expect(() => git(dir, 'merge', '--no-ff', '--no-edit', 'refs/octocode/pi/existing-merge')).toThrow();
+    fs.writeFileSync(path.join(dir, 'src', 'a.txt'), 'resolution in progress\n');
+    const mergeHead = git(dir, 'rev-parse', 'MERGE_HEAD');
+    const index = fs.readFileSync(path.join(dir, '.git', 'index'));
+
+    const result = await mergeAgent(dir, 'existing-merge');
+    expect(result).toMatchObject({ ok: false, text: expect.stringMatching(/merge.*in progress/i) });
+    expect(fs.readFileSync(path.join(dir, 'src', 'a.txt'), 'utf8')).toBe('resolution in progress\n');
+    expect(git(dir, 'rev-parse', 'MERGE_HEAD')).toBe(mergeHead);
+    expect(fs.readFileSync(path.join(dir, '.git', 'index'))).toEqual(index);
+    expect(await pendingRefs(dir)).toEqual(['existing-merge']);
+  });
+
   it('refuses an id whose kept worktree still exists, leaving its owner record intact', async () => {
     const dir = repo();
     const home = tmp();
@@ -142,8 +162,11 @@ describe('isolated subagent worktrees', () => {
       return worktree;
     };
     await orphan('race-1');
-    const [first, second] = await Promise.all([pruneWorktrees(dir, home), pruneWorktrees(dir, home)]);
-    expect([...first.saved, ...second.saved]).toEqual([{ agentId: 'race-1', ref: 'refs/octocode/pi/race-1' }]);
+    // In one process, a second prune joins the one in flight (no git index.lock contention); across processes the rename claim decides.
+    const pending = [pruneWorktrees(dir, home), pruneWorktrees(dir, home)];
+    expect(pending[0]).toBe(pending[1]);
+    const [first] = await Promise.all(pending);
+    expect(first!.saved).toEqual([{ agentId: 'race-1', ref: 'refs/octocode/pi/race-1' }]);
     expect(git(dir, 'for-each-ref', '--format=%(refname)', 'refs/octocode/pi/')).toBe('refs/octocode/pi/race-1');
 
     // A session that died mid-prune leaves its claim behind; the next prune takes it over.

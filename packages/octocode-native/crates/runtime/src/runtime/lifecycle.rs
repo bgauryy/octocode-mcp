@@ -38,8 +38,6 @@ pub enum ExecutionError {
     InvalidLimits,
     Cancelled,
     Timeout,
-    /// The rendered or serialized response exceeds the pager's byte cap.
-    ResponseTooLarge,
     /// A tool reached a dispatcher that has no route for it.
     UnroutedTool,
     WorkerFailed,

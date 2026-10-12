@@ -94,7 +94,8 @@ export function showBoard(ctx: ExtensionContext, source: BoardSource, selectRef?
           if (selected) selectedLine = listed.length;
           const owner = item.state === 'ongoing' && item.assignee ? (item.assignee === source.self ? ' (you)' : ` (@${sanitizeTerminalText(item.assignee)})`) : '';
           const tags = item.tags.length ? ` ${item.tags.map((tag) => `#${tag}`).join(' ')}` : '';
-          const text = `${item.ref} ${priorityName(item.priority)} ${sanitizeTerminalText(item.title)}${theme.fg('dim', `${tags}${owner}`)}`;
+          const from = item.from === undefined ? '' : ` ←B${item.from}`;
+          const text = `${item.ref} ${priorityName(item.priority)} ${sanitizeTerminalText(item.title)}${theme.fg('dim', `${tags}${from}${owner}`)}`;
           listed.push(selected ? `${theme.fg('accent', ' › ')}${theme.fg('accent', text)}` : `   ${text}`);
         }
       }

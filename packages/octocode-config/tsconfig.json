@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "outDir": "./dist",
+    "rootDir": "../..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

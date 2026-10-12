@@ -19,12 +19,16 @@ export interface SessionExtra {
   pid: number | null;
   /** When that process started (`processStartTime`); null in rows from before it was recorded, or where it is unknown. */
   pid_started: string | null;
+  /** 1 when part of the session's usage came from a model without pricing (its cost is incomplete). */
+  unpriced: number;
 }
 
 interface SessionStats {
   cost: number;
   tokens: number;
   filesChanged: number;
+  /** Part of the usage came from a model without pricing. */
+  unpriced: boolean;
   branch?: string;
   head?: string;
 }
@@ -102,11 +106,11 @@ export class SessionIndex {
   stats(id: string, stats: SessionStats): void {
     this.agent.db
       .prepare(
-        `INSERT INTO sessions (id, cost, tokens, files_changed, branch, head, pid, pid_started) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (id, cost, tokens, files_changed, unpriced, branch, head, pid, pid_started) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET cost = excluded.cost, tokens = excluded.tokens, files_changed = excluded.files_changed,
-           branch = COALESCE(excluded.branch, sessions.branch), head = COALESCE(excluded.head, sessions.head)`,
+           unpriced = excluded.unpriced, branch = COALESCE(excluded.branch, sessions.branch), head = COALESCE(excluded.head, sessions.head)`,
       )
-      .run(id, stats.cost, stats.tokens, stats.filesChanged, stats.branch ?? null, stats.head ?? null, process.pid, processStartTime(process.pid) ?? null);
+      .run(id, stats.cost, stats.tokens, stats.filesChanged, stats.unpriced ? 1 : 0, stats.branch ?? null, stats.head ?? null, process.pid, processStartTime(process.pid) ?? null);
   }
 
   /** Records where git stood, without touching the stats. */
@@ -136,4 +140,23 @@ export class SessionIndex {
   setMeta(key: string, value: string): void {
     this.agent.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
   }
+
+  /** Session dirs other than Pi's default that a session ran from (meta `session_dirs`): the sweep lists their sessions too. */
+  sessionDirs(): string[] {
+    try {
+      const dirs: unknown = JSON.parse(this.meta(SESSION_DIRS_KEY) ?? '[]');
+      return Array.isArray(dirs) ? dirs.filter((dir): dir is string => typeof dir === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  addSessionDir(dir: string): void {
+    this.agent.transaction(() => {
+      const dirs = this.sessionDirs();
+      if (!dirs.includes(dir)) this.setMeta(SESSION_DIRS_KEY, JSON.stringify([...dirs, dir]));
+    });
+  }
 }
+
+const SESSION_DIRS_KEY = 'session_dirs';

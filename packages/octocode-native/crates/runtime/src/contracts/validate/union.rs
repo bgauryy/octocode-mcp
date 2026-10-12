@@ -898,15 +898,10 @@ mod tests {
                     "hints":{"retry":continuation}}}
             ]})
         };
-        let mut compared = 0;
-        let mut rejected = 0;
-        let mut compare = |output_tool: &str, output: &Value| {
-            let (fast, reference) = both(|| validate_output_normalized(output_tool, output));
-            assert_eq!(fast, reference, "{output_tool}: {output}");
-            assert_in_place_matches(output_tool, output);
-            compared += 1;
-            rejected += usize::from(fast.is_err());
-        };
+        // Collect every (output tool, envelope) pair, then compare them on all
+        // cores: the reference algorithm is slow on this union, and each
+        // worker's `REFERENCE_ONLY` flag is its own thread-local.
+        let mut cases: Vec<(String, Value)> = Vec::new();
         let mut seen = Vec::new();
         for fixture in fixtures() {
             let tool = fixture["tool"].as_str().expect("tool").to_owned();
@@ -920,15 +915,38 @@ mod tests {
                 tools.clone()
             };
             for output_tool in output_tools {
-                compare(output_tool, &unchanged);
+                cases.push((output_tool.to_owned(), unchanged.clone()));
             }
             for (index, variant) in query_variants(query).into_iter().enumerate().step_by(6) {
                 let named = if index % 7 == 6 { "localFetch" } else { &tool };
                 let output = envelope(json!({"tool":named,"query":{"queries":[variant]}}));
-                compare(&tool, &output);
+                cases.push((tool.clone(), output));
             }
             seen.push(tool);
         }
+        let compare = |(output_tool, output): &(String, Value)| {
+            let (fast, reference) = both(|| validate_output_normalized(output_tool, output));
+            assert_eq!(fast, reference, "{output_tool}: {output}");
+            assert_in_place_matches(output_tool, output);
+            fast.is_err()
+        };
+        let workers = std::thread::available_parallelism().map_or(1, usize::from);
+        let chunk = cases.len().div_ceil(workers).max(1);
+        let rejected: usize = std::thread::scope(|scope| {
+            let handles: Vec<_> = cases
+                .chunks(chunk)
+                .map(|part| scope.spawn(move || part.iter().filter(|case| compare(case)).count()))
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                })
+                .sum()
+        });
+        let compared = cases.len();
         eprintln!("compared {compared} outputs, {rejected} rejected");
         assert!(compared > 600 && rejected > 200, "{compared}/{rejected}");
     }

@@ -81,7 +81,14 @@ pub(crate) fn drift(
 
     // A diff of two cut graphs is never complete: a file-scan cut offers
     // the widened rebuild; any other cut is a terminal limit.
-    let page_limit = has_more && q.page() as usize >= PAGE_MAXIMUM;
+    let page_limit = has_more
+        && crate::tools::paging::admitted(
+            crate::tools::id::ToolId::AstTopology,
+            None,
+            "page",
+            q.page() as usize + 1,
+        )
+        .is_none();
     let mut reasons = cuts.reasons();
     if page_limit {
         reasons.push("pageLimit");

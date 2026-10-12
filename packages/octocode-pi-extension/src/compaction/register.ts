@@ -1,24 +1,26 @@
-import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ContextEditEntryDraft, ExtensionAPI, SessionBeforeCompactEvent, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
-import { readPaths } from '../files/reads.js';
 import type { FileGuard } from '../files/tool.js';
-import { shortPath } from '../shared/format.js';
-import { saveFullOutput } from '../shared/spill.js';
+import { chooseSessionCacheRetention } from '../shared/env.js';
+import { readPaths } from '../shared/home.js';
+import { saveContentCopy } from '../shared/spill.js';
 import { cutText, elisionMarkers, isRecord } from '../shared/util.js';
-import { IMAGE_NOTE, REQUEST_PRESSURE_CHARS, contextChars, hasImage, imageChars, isRequestTooLarge, keptImageResults, parts, texts, withoutImages, type ContextEntry } from './images.js';
+import { contextChars, hasImage, imageChars, imageNote, isRequestTooLarge, keptImageResults, parts, saveImages, texts, withoutImages, type ContextEntry } from './images.js';
+import { PromptCacheLifetimes, promptCacheTtlMs, warmingDecision } from './cache.js';
+import { recentWindowChars, trimValue, trimsDue, type TrimBatch } from './policy.js';
 import { TooLargeRecovery } from './recovery.js';
 
 /** At most this many recent tool results stay verbatim... */
 export const KEEP_RECENT_RESULTS = 12;
 /** ...and at least this many, whatever their size. */
 export const KEEP_RECENT_MIN = 4;
-/** Beyond the minimum, recent results stay verbatim only while their text fits this budget (~20k tokens). */
-const KEEP_RECENT_CHARS = 80_000;
-/** Older results are trimmed in batches so the trimmed prefix (and the prompt cache) changes rarely: */
+/**
+ * Beyond the minimum, recent results stay verbatim only while their text fits the recent window: the tail Pi keeps
+ * verbatim when it compacts (`recentWindowChars`). Older results are trimmed in batches, so the trimmed prefix changes
+ * rarely; whether a batch runs is the policy's cost decision (`batchPays`), and below that a floor keeps edits from
+ * being trivial: a batch of TRIM_STEP saving TRIM_STEP_MIN_SAVED_CHARS, or any batch saving TRIM_MIN_SAVED_CHARS.
+ */
 export const TRIM_STEP = 10;
-/** a batch of TRIM_STEP runs only if it saves this much (a smaller one costs more in cache rewrites than it saves), */
 const TRIM_STEP_MIN_SAVED_CHARS = 20_000;
-/** and any batch runs once it saves this much (a few huge results must not wait for ten). */
 const TRIM_MIN_SAVED_CHARS = 60_000;
 const TRIM_ABOVE_CHARS = 3_000;
 /** A trimmed result keeps its head and its tail (where spill pointers, exit codes and summaries usually are)... */
@@ -28,7 +30,6 @@ const TRIM_TAIL_CHARS = 300;
 const TRIM_KEEP_CHARS = 1_200;
 /** ...and every line pointing at the full text on disk (`Full output: <path>`, a report or log path), clipped to this. */
 const POINTER_LINE = /(?:Full output|Full report|Log): /;
-const POINTER_PATH = /(?:Full output|Full report|Log): ([^\s\];]+)/;
 const POINTER_MAX_CHARS = 400;
 const MAX_POINTERS = 3;
 /** Results of these tools show file content; trimming one takes that content out of view (see FileGuard.forget). */
@@ -50,53 +51,6 @@ const ARG_KEEP_CHARS = 160;
 /** A call counts as a candidate only when shrinking it saves at least this much. */
 const ARGS_MIN_SAVED_CHARS = 1_000;
 
-/**
- * The cache lifetime assumed, per retention, for a model that declares no `promptCache` (custom-provider models) but
- * whose responses show caching: the shortest common provider lifetimes (5 minutes short, 1 hour long), in seconds.
- */
-const INFERRED_CACHE_TTL_SECONDS = { short: 300, long: 3600 } as const;
-
-/**
- * The prompt-cache lifetime of a request to `model`, in ms, for the retention Pi uses (`PI_CACHE_RETENTION=long`, else
- * short): the model's `promptCache` tier. A model that declares none caches when `latest` (the turn's assistant
- * message) reports cache reads or writes in its usage; it gets `INFERRED_CACHE_TTL_SECONDS`. Undefined otherwise.
- */
-export function promptCacheTtlMs(model: Pick<Model<Api>, 'promptCache'> | undefined, latest?: unknown, env: NodeJS.ProcessEnv = process.env): number | undefined {
-  const tier = env['PI_CACHE_RETENTION'] === 'long' ? 'long' : 'short';
-  if (model?.promptCache) {
-    const seconds = model.promptCache[tier];
-    return seconds === undefined ? undefined : seconds * 1000;
-  }
-  const usage = isRecord(latest) && isRecord(latest['usage']) ? latest['usage'] : undefined;
-  const cached = usage !== undefined && (Number(usage['cacheRead']) > 0 || Number(usage['cacheWrite']) > 0);
-  return cached ? INFERRED_CACHE_TTL_SECONDS[tier] * 1000 : undefined;
-}
-
-/** When the cached prompt was last written or refreshed, and how long such an entry lives. */
-interface CacheState {
-  written: number | undefined;
-  ttlMs: number | undefined;
-}
-
-/** Context use (percent of the window) from which trims run even on a warm cache: the room matters more than one rewrite. */
-export const TRIM_PRESSURE_PERCENT = 50;
-
-/**
- * Whether trims may change the context now. A trim rewrites the cached prompt from the first trimmed result on, so
- * pending trims wait until the next request would miss the cache anyway (a cache lifetime passed since the prompt was
- * last written or kept warm, or the model has no prompt cache) or the context is filling up. Until then nothing
- * changes: they are planned again, from scratch, at a later turn.
- *
- * Trims run only at a turn boundary, so the cold start of a run after the user idled is not one: its first request
- * rewrites the cache before any boundary, and trimming right after would rewrite it again.
- */
-export function trimsDue(cache: CacheState, usagePercent: number | null | undefined, now = Date.now(), sizeChars = 0): boolean {
-  if (usagePercent != null && usagePercent >= TRIM_PRESSURE_PERCENT) return true;
-  if (sizeChars >= REQUEST_PRESSURE_CHARS) return true;
-  if (cache.ttlMs === undefined) return true;
-  return cache.written !== undefined && now - cache.written >= cache.ttlMs;
-}
-
 /** The request time of a turn's assistant message (Pi stamps it when the request starts). */
 function requestTime(message: unknown): number | undefined {
   return isRecord(message) && message['role'] === 'assistant' && typeof message['timestamp'] === 'number' ? message['timestamp'] : undefined;
@@ -110,24 +64,30 @@ const KEEP_VERBATIM_TOOLS = new Set(['agent', 'askUser']);
  * (its arguments are too small, or its edit was already proposed), else its shrunk arguments and the gain. A
  * call's arguments do not change, so each settled call is measured once per session.
  */
-export type TrimMemo = Map<string, false | { arguments: unknown; saved: number }>;
+export type TrimMemo = Map<string, false | { saved: number }>;
 
 /**
  * Plan append-only context edits that shrink old, large tool results and the
  * large arguments of old successful tool calls (a written file's content, edit
  * texts: the result is on disk). Pi keeps the raw entries in the session; only
- * future model context changes. The recent window is bounded by count and size;
- * edits are proposed only when a batch saves enough to be worth rewriting the
- * cached prompt prefix. Calls whose result failed keep their arguments, so the
- * model can still see what it sent.
+ * future model context changes. The recent window is bounded by count and size; a batch must clear the floor and,
+ * given `net` (the policy's value, `batchNet`), only the batch worth most runs: an edit rewrites the cached prompt from
+ * its position on, so on a warm cache a batch of the newest candidates can pay where one reaching back cannot. Calls
+ * whose result failed keep their arguments, so the model can still see what it sent.
  */
-export function planContextTrims(entries: ContextEntry[], memo: TrimMemo = new Map(), unseen: ReadonlySet<string> = new Set()): ContextEditEntryDraft[] {
+export function planContextTrims(
+  entries: ContextEntry[],
+  memo: TrimMemo = new Map(),
+  unseen: ReadonlySet<string> = new Set(),
+  options: { keepRecentChars?: number; net?: (batch: TrimBatch) => number } = {},
+): ContextEditEntryDraft[] {
+  const keepRecentChars = options.keepRecentChars ?? recentWindowChars({});
   const results = entries.filter((entry) => isRecord(entry.message) && entry.message['role'] === 'toolResult');
   let kept = 0;
   let used = 0;
   for (let index = results.length - 1; index >= 0 && kept < KEEP_RECENT_RESULTS; index--) {
     const size = resultChars(results[index]!.message);
-    if (kept >= KEEP_RECENT_MIN && used + size > KEEP_RECENT_CHARS) break;
+    if (kept >= KEEP_RECENT_MIN && used + size > keepRecentChars) break;
     kept++;
     used += size;
   }
@@ -156,60 +116,110 @@ export function planContextTrims(entries: ContextEntry[], memo: TrimMemo = new M
     return content ? [{ entry, ...content }] : [];
   });
   for (const id of memo.keys()) if (!present.has(id)) memo.delete(id);
-  const saved =
-    candidates.reduce((sum, entry) => sum + resultChars(entry.message) - TRIM_KEEP_CHARS, 0) +
-    oldImages.reduce((sum, entry) => sum + imageChars(entry.message, IMAGE_CHARS), 0) +
-    calls.reduce((sum, call) => sum + call.saved, 0);
-  const count = candidates.length + oldImages.length + calls.length;
-  if (saved < TRIM_MIN_SAVED_CHARS && (count < TRIM_STEP || saved < TRIM_STEP_MIN_SAVED_CHARS)) return [];
-  for (const call of calls) for (const id of call.ids) memo.set(id, false);
+  const position = new Map(entries.map((entry, index) => [entry.id, index]));
+  const items = [
+    ...candidates.map((entry) => ({ entry, saved: resultChars(entry.message) - TRIM_KEEP_CHARS })),
+    ...oldImages.map((entry) => ({ entry, saved: imageChars(entry.message, IMAGE_CHARS) })),
+    ...calls.map((call) => ({ entry: call.entry, saved: call.saved })),
+  ].sort((a, b) => position.get(b.entry.id)! - position.get(a.entry.id)!);
+  const start = chooseBatchStart(entries, items, position, options.net);
+  if (start === undefined) return [];
+  const chosen = (entry: ContextEntry) => position.get(entry.id)! >= start;
   return [
-    ...calls.map(({ entry, content }) => ({ type: 'context_edit' as const, targetId: entry.id, replacement: { content } as never })),
-    ...candidates.flatMap((entry) => {
+    ...calls.filter((call) => chosen(call.entry)).flatMap(({ entry, content, ids }) => {
+      const shrunk = savedAndShrunk(content, new Set(ids), memo);
+      return shrunk ? [{ type: 'context_edit' as const, targetId: entry.id, replacement: { content: shrunk } as never }] : [];
+    }),
+    ...candidates.filter(chosen).flatMap((entry) => {
       const content = trimmedContent(entry.message);
       return content ? [{ type: 'context_edit' as const, targetId: entry.id, replacement: { content } }] : [];
     }),
-    ...oldImages.map((entry) => ({ type: 'context_edit' as const, targetId: entry.id, replacement: { content: withoutImages(entry.message) } })),
+    ...oldImages.filter(chosen).flatMap((entry) => {
+      const content = withoutImages(entry.message);
+      return content ? [{ type: 'context_edit' as const, targetId: entry.id, replacement: { content } }] : [];
+    }),
   ];
 }
 
-/** The assistant content with settled calls' long string arguments cut, or undefined when that saves too little. */
+/**
+ * The entry position the batch starts at: every item at or after it is trimmed. Each start is a suffix of the items
+ * (newest first in `items`); one clears the floor when it saves TRIM_MIN_SAVED_CHARS, or TRIM_STEP_MIN_SAVED_CHARS
+ * over at least TRIM_STEP items. Without `net` the whole set is taken; with it, the start of greatest positive value.
+ */
+function chooseBatchStart(entries: ContextEntry[], items: Array<{ entry: ContextEntry; saved: number }>, position: Map<string, number>, net?: (batch: TrimBatch) => number): number | undefined {
+  const tail: number[] = new Array<number>(entries.length + 1).fill(0);
+  for (let index = entries.length - 1; index >= 0; index--) tail[index] = tail[index + 1]! + contextChars([entries[index]!]);
+  let best: { start: number; value: number } | undefined;
+  let saved = 0;
+  items.forEach((item, count) => {
+    saved += item.saved;
+    const start = position.get(item.entry.id)!;
+    const next = items[count + 1];
+    if (next && position.get(next.entry.id) === start) return;
+    if (saved < TRIM_MIN_SAVED_CHARS && (count + 1 < TRIM_STEP || saved < TRIM_STEP_MIN_SAVED_CHARS)) return;
+    const value = net ? net({ savedChars: saved, rewriteChars: tail[start]! }) : saved;
+    if (value > 0 && (!best || value >= best.value)) best = { start, value };
+  });
+  return best?.start;
+}
+
+/** The settled calls in an assistant message worth shrinking (by tool-call id) and what that saves; undefined when none is. */
 function shrunkCalls(content: unknown[], settled: Set<string>, memo: TrimMemo): { content: unknown[]; saved: number; ids: string[] } | undefined {
   let saved = 0;
   const ids: string[] = [];
-  const next = content.map((part) => {
-    if (!isRecord(part) || part['type'] !== 'toolCall' || typeof part['id'] !== 'string' || !settled.has(part['id']) || !isRecord(part['arguments'])) return part;
-    if (KEEP_ARGS_VERBATIM_TOOLS.has(String(part['name']))) return part;
+  for (const part of content) {
+    if (!isRecord(part) || part['type'] !== 'toolCall' || typeof part['id'] !== 'string' || !settled.has(part['id']) || !isRecord(part['arguments'])) continue;
+    if (KEEP_ARGS_VERBATIM_TOOLS.has(String(part['name']))) continue;
     let verdict = memo.get(part['id']);
     if (verdict === undefined) {
       verdict = shrinkVerdict(part['arguments']);
       memo.set(part['id'], verdict);
     }
-    if (!verdict) return part;
+    if (!verdict) continue;
     saved += verdict.saved;
     ids.push(part['id']);
-    return { ...part, arguments: verdict.arguments };
-  });
-  return saved > 0 ? { content: next, saved, ids } : undefined;
+  }
+  return saved > 0 ? { content, saved, ids } : undefined;
 }
 
-function shrinkVerdict(args: Record<string, unknown>): false | { arguments: unknown; saved: number } {
+/**
+ * The assistant content with the given calls' arguments saved whole to the session output folder, then shrunk with notes
+ * naming that file. A call whose arguments cannot be saved keeps them (and is planned again later); undefined when none
+ * changed. A shrunk call is never proposed again.
+ */
+function savedAndShrunk(content: unknown[], ids: ReadonlySet<string>, memo: TrimMemo): unknown[] | undefined {
+  let changed = false;
+  const next = content.map((part) => {
+    if (!isRecord(part) || typeof part['id'] !== 'string' || !ids.has(part['id'])) return part;
+    const copy = saveContentCopy(JSON.stringify(part['arguments'], null, 2), `trimmed-args-${String(part['name'])}`, 'json');
+    if (!copy) return part;
+    memo.set(part['id'], false);
+    changed = true;
+    return { ...part, arguments: shrinkArgument(part['arguments'], copy) };
+  });
+  return changed ? next : undefined;
+}
+
+function shrinkVerdict(args: Record<string, unknown>): false | { saved: number } {
   const before = JSON.stringify(args).length;
   if (before <= ARGS_TRIM_ABOVE_CHARS) return false;
-  const shrunk = shrinkArgument(args);
-  const gain = before - JSON.stringify(shrunk).length;
-  return gain < ARGS_MIN_SAVED_CHARS ? false : { arguments: shrunk, saved: gain };
+  const gain = before - JSON.stringify(shrinkArgument(args)).length;
+  return gain < ARGS_MIN_SAVED_CHARS ? false : { saved: gain };
 }
 
-/** Cut long strings anywhere in a call's arguments; structure, keys and short values stay. */
-export function shrinkArgument(value: unknown): unknown {
+/**
+ * Cut long strings anywhere in a call's arguments; structure, keys and short values stay. Each cut names `saved`, the
+ * file that holds the call's full arguments (as JSON), when given.
+ */
+export function shrinkArgument(value: unknown, saved?: string): unknown {
   if (typeof value === 'string') {
     if (value.length <= ARG_KEEP_CHARS * 2) return value;
     const kept = cutText(value, ARG_KEEP_CHARS, { chars: true });
-    return `${kept}… [${value.length - kept.length} more characters of this earlier, successful call omitted]`;
+    const where = saved ? `; its full arguments are saved at ${saved}` : '';
+    return `${kept}… [${value.length - kept.length} more characters of this earlier, successful call omitted${where}]`;
   }
-  if (Array.isArray(value)) return value.map(shrinkArgument);
-  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shrinkArgument(item)]));
+  if (Array.isArray(value)) return value.map((item) => shrinkArgument(item, saved));
+  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shrinkArgument(item, saved)]));
   return value;
 }
 
@@ -248,12 +258,14 @@ function needsTrim(message: unknown): boolean {
  * A trimmed result: its first `TRIM_HEAD_CHARS` and last `TRIM_TAIL_CHARS` characters, plus any line in between that
  * points at the full text on disk (spill notes sit at the end of a result, but a middle one must survive too), and a
  * note naming the file that holds the full text, so the model reads it instead of rerunning the call. A result that
- * names no saved copy is saved to the session output folder first; when that fails it is not trimmed (undefined), since
+ * is saved to the session output folder first; output text is not proof of a saved copy. When saving fails it is not trimmed (undefined), since
  * the model cannot reach session history and the evidence would be gone.
  */
 function trimmedContent(message: unknown): Array<{ type: 'text'; text: string }> | undefined {
   const text = texts(message).join('\n');
-  const note = hasImage(message) ? [{ type: 'text' as const, text: IMAGE_NOTE }] : [];
+  const images = hasImage(message) ? saveImages(message) : [];
+  if (!images) return undefined;
+  const note = hasImage(message) ? [{ type: 'text' as const, text: imageNote(images) }] : [];
   if (text.length <= TRIM_ABOVE_CHARS) return [...(text ? [{ type: 'text' as const, text }] : []), ...note];
   const head = cutText(text, TRIM_HEAD_CHARS, { chars: true });
   const tail = cutText(text, TRIM_TAIL_CHARS, { chars: true, tail: true });
@@ -264,20 +276,13 @@ function trimmedContent(message: unknown): Array<{ type: 'text'; text: string }>
     .slice(-MAX_POINTERS)
     .map((line) => (line.length > POINTER_MAX_CHARS ? `${cutText(line, POINTER_MAX_CHARS, { chars: true })}…` : line));
   const inMiddle = pointers.filter((line) => !head.includes(line) && !tail.includes(line) && middle.includes(line.replace(/…$/, '')));
-  const saved =
-    pointers.map((line) => POINTER_PATH.exec(line)?.[1]).filter((found): found is string => Boolean(found)).at(-1) ??
-    savedCopy(text, isRecord(message) ? String(message['toolName']) : 'tool');
+  const saved = saveContentCopy(text, `trimmed-${isRecord(message) ? String(message['toolName']) : 'tool'}`);
   if (!saved) return undefined;
   const omitted = text.length - head.length - tail.length;
   const gap = `\n[… ${omitted} more characters from this earlier tool result were trimmed. The full text is saved at ${saved}; read that file rather than rerunning the call.]\n`;
   return [{ type: 'text' as const, text: `${head}${gap}${inMiddle.length > 0 ? `${inMiddle.join('\n')}\n…\n` : ''}${tail}` }, ...note];
 }
 
-/** `text` saved whole to the session output folder, as a short path; undefined when it could not be written. */
-function savedCopy(text: string, toolName: string): string | undefined {
-  const file = saveFullOutput(text, `trimmed-${toolName}`);
-  return file && shortPath(file);
-}
 
 /**
  * Files whose latest successful read is among the `trimmed` results: their content leaves the model's view, so the
@@ -310,12 +315,15 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
   // When the cached prompt was last written: each request, and each refresh Pi sends to keep it warm (by default
   // while a run is active, at 90% of the lifetime).
   let refreshed: number | undefined;
-  pi.on('cache_warming_decision', async (event) => {
-    if (event.action === 'warm') refreshed = Date.now();
-    return undefined;
-  });
   const tooLarge = new TooLargeRecovery();
+  const lifetimes = new PromptCacheLifetimes();
+  pi.on('cache_warming_decision', async (event, ctx) => {
+    const decision = warmingDecision(event, ctx, promptCacheTtlMs(lifetimes.of(ctx.model)));
+    if ((decision?.action ?? event.action) === 'warm') refreshed = Date.now();
+    return decision;
+  });
   pi.on('turn_end', async (event, ctx) => {
+    lifetimes.observe(pi, ctx, event.message);
     const session = ctx.sessionManager.getSessionId();
     if (session !== memoSession) {
       forget();
@@ -334,9 +342,12 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
     const at = requestTime(event.message);
     // A refresh Pi sent during this turn's tool calls is newer than the request that started it.
     if (at !== undefined && (refreshed === undefined || at > refreshed)) refreshed = at;
-    const due = trimsDue({ written: refreshed, ttlMs: promptCacheTtlMs(ctx.model, event.message) }, ctx.getContextUsage()?.percent, Date.now(), contextChars(entries));
-    if (!due) return undefined;
-    const trims = planContextTrims(entries, memo, new Set(event.toolResultEntryIds));
+    const usage = ctx.getContextUsage();
+    const due = trimsDue({ written: refreshed, ttlMs: promptCacheTtlMs(lifetimes.of(ctx.model)) }, usage?.percent, Date.now(), contextChars(entries));
+    // A cold cache or real pressure makes any batch free; on a warm cache only a batch that pays for its rewrite runs.
+    const settings = pi.getSettings();
+    const net = trimValue({ due, model: ctx.model, entries, usage, settings });
+    const trims = planContextTrims(entries, memo, new Set(event.toolResultEntryIds), { keepRecentChars: recentWindowChars(settings), net });
     if (trims.length === 0) return undefined;
     for (const file of trimmedReadPaths(entries, new Set(trims.map((trim) => trim.targetId)), ctx.cwd)) guard.forget(file);
     return { entries: [...event.entries, ...trims] };
@@ -351,10 +362,14 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
   });
 
   // File contents read before compaction, or on another branch, are no longer in context: require fresh reads.
-  pi.on('session_start', async () => {
+  // The retention is chosen before the session's first request, so pi-ai, Pi's warmer and the trims share one lifetime,
+  // and again before every run, so a process that lost it (an earlier build, a reload mid-rebuild) heals at once.
+  pi.on('session_start', async (_event, ctx) => {
+    chooseSessionCacheRetention(ctx.hasUI);
     forget();
     tooLarge.reset();
   });
+  pi.on('before_agent_start', async (_event, ctx) => void chooseSessionCacheRetention(ctx.hasUI));
   pi.on('session_compact', async () => {
     forget();
     guard.reset();

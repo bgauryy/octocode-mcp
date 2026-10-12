@@ -2,8 +2,9 @@
 //! lists, a file the index did not search at the requested ref).
 use super::GhSearchCodeQuery;
 use super::code_output::{Resolution, requested_ref, row_repo};
+use crate::tools::gh_shared::{broaden_lead, drop_each_keyword, without};
 use crate::tools::id::ToolId;
-use crate::tools::result::{Continuation, continuation_row_mut};
+use crate::tools::result::{Continuation, continuation_row_mut, query_row};
 use serde_json::{Value, json};
 
 /// Code-search fragments carry no line numbers. Point the top hit at an exact
@@ -274,50 +275,31 @@ const BROADEN_VARIANTS: usize = 2;
 /// emptied the search. Variants the tool would reject are skipped, and no
 /// more are offered than `window_room`, the code searches the window has left.
 pub(super) fn broaden_search(query: &GhSearchCodeQuery, window_room: usize) -> Option<Value> {
-    let mut base = serde_json::to_value(query).ok()?;
-    let row = base.as_object_mut()?;
-    row.retain(|key, value| {
-        !matches!(
-            key.as_str(),
-            "page" | "pageSize" | "extras" | "fields" | "mainGoal" | "reasoning"
-        ) && !value.is_null()
-            && value.as_array().is_none_or(|items| !items.is_empty())
-    });
-    let mut variants = Vec::new();
-    for filter in ["path", "filename", "extensions", "language"] {
-        if let Some(object) = base.as_object()
-            && object.contains_key(filter)
-        {
-            let mut row = base.clone();
-            row.as_object_mut()?.remove(filter);
-            variants.push(row);
-        }
-    }
-    if query.keywords.len() >= 2 {
-        variants.extend((0..query.keywords.len()).rev().map(|dropped| {
-            let mut row = base.clone();
-            row["keywords"] = json!(
-                query
-                    .keywords
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| *index != dropped)
-                    .map(|(_, keyword)| keyword)
-                    .collect::<Vec<_>>()
-            );
-            row
-        }));
-    }
-    variants.retain(|row| {
-        crate::contracts::validate(ToolId::GhSearchCode.as_str(), json!({"queries":[row]})).is_ok()
-    });
-    variants.truncate(window_room);
-    variants.truncate(BROADEN_VARIANTS);
-    (!variants.is_empty()).then(|| {
-        Continuation::input(ToolId::GhSearchCode, json!({ "queries": variants }))
-            .confidence("low")
-            .build()
-    })
+    let base = query_row(
+        query,
+        // Code search indexes only the default branch: a `ref` adds nothing
+        // to a broader search.
+        &[
+            "page",
+            "pageSize",
+            "extras",
+            "fields",
+            "mainGoal",
+            "reasoning",
+            "ref",
+        ],
+    );
+    let mut variants = ["path", "filename", "extensions", "language"]
+        .into_iter()
+        .filter(|filter| base.get(filter).is_some())
+        .map(|filter| without(&base, &[filter]))
+        .collect::<Vec<_>>();
+    variants.extend(drop_each_keyword(&base));
+    broaden_lead(
+        ToolId::GhSearchCode,
+        variants,
+        window_room.min(BROADEN_VARIANTS),
+    )
 }
 
 #[cfg(test)]
@@ -373,6 +355,20 @@ mod tests {
         let bare: GhSearchCodeQuery =
             serde_json::from_value(json!({"owner":"o","keywords":["alpha"]})).expect("query");
         assert!(broaden_search(&bare, 10).is_none());
+    }
+
+    /// Code search indexes only the default branch: a broader variant of a
+    /// ref-scoped empty search drops the `ref` instead of repeating it.
+    #[test]
+    fn broadened_rows_drop_the_requested_ref() {
+        let query: GhSearchCodeQuery = serde_json::from_value(json!({
+            "owner":"o","repo":"r","keywords":["alpha","beta"],"path":"src","ref":"v2"
+        }))
+        .expect("query");
+        let lead = broaden_search(&query, 10).expect("variants");
+        let rows = lead["query"]["queries"].as_array().expect("rows");
+        assert!(!rows.is_empty(), "{lead}");
+        assert!(rows.iter().all(|row| row.get("ref").is_none()), "{lead}");
     }
 
     /// Every variant is one more code search in a 10-per-minute window: a

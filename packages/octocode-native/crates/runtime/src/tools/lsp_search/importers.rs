@@ -20,11 +20,11 @@
 //! verified in exactly one window and a changed list restarts the walk.
 
 use super::LspSearchQuery;
-use super::failure::{LspFailure, flag_partial, query_value};
+use super::failure::{LspFailure, flag_partial, ignored_text_lead, query_value};
 use super::import_stop::{proven_missing, stays_on_import};
 use super::recovery::{get_locations, resolve_definition_chain, snippet_identity};
 use super::render::{TS_LANGUAGE_IDS, uri_to_path};
-use super::scope::{Scope, canonical};
+use super::scope::{IgnoredMentions, Scope, canonical};
 use super::source::SourceCache;
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
@@ -49,6 +49,8 @@ const SKIP_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 const DIGEST_PREFIX: &str = "lsp-imp:";
 /// Partial reason of a window that leaves later windows unverified.
 pub(super) const CAPPED_REASON: &str = "importerScanCapped";
+/// Partial reason of a scan whose ignore rules hid files that spell the name.
+pub(super) const IGNORED_REASON: &str = "importerScanIgnored";
 /// Settle/ready bounds for the last candidate open; the load it triggers
 /// covers every candidate opened before it.
 const OPEN_SETTLE_MS: u32 = 200;
@@ -82,6 +84,9 @@ pub(super) struct Importers {
     /// the declaration lives elsewhere): neither verified nor rejected, so
     /// they stay out of the answer and count as text-only files.
     pub(super) unverified: Vec<String>,
+    /// Files that spell the name but that ignore rules kept out of the
+    /// candidate scan: never verified, so the row names them.
+    pub(super) ignored: IgnoredMentions,
 }
 
 /// Which importer window a request verifies (`importerPage`, one-based),
@@ -373,6 +378,32 @@ impl Importers {
         );
     }
 
+    /// Ignored files that spell the name are outside the candidate scan: the
+    /// row is partial, names the deciding rules, and leads to their text.
+    fn disclose_ignored(&self, row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
+        let Some(name) = query
+            .symbol_name()
+            .filter(|_| !self.ignored.files.is_empty())
+        else {
+            return;
+        };
+        let count = self.ignored.files.len();
+        let rules = match self.ignored.rules.as_slice() {
+            [] => "ignore rules".to_owned(),
+            rules => rules.join(", "),
+        };
+        let files = if count == 1 {
+            "1 file that spells this name is".to_owned()
+        } else {
+            format!("{count} files that spell this name are")
+        };
+        let warning = format!(
+            "{files} gitignored ({rules}), so importer recovery did not verify them; a localSearch with includeIgnored reads their text."
+        );
+        crate::tools::paging::mark_partial(row, IGNORED_REASON, &[warning]);
+        row["next"]["includeSkipped"] = ignored_text_lead(name, scope, &self.ignored.files);
+    }
+
     /// Record the scan on the row's coverage so readers and
     /// `inferred_project::annotate` know importers were checked. A window
     /// with later windows left is partial (not a terminal limit) and, on
@@ -397,7 +428,17 @@ impl Importers {
         if let Some(window) = &self.window {
             self.settle_silent_page(row, query, window);
         }
+        self.disclose_ignored(row, query, scope);
         let Some(window) = self.window.as_ref().filter(|window| window.more()) else {
+            return;
+        };
+        let Some(importer_page) = crate::tools::paging::next_cursor(
+            row,
+            crate::tools::id::ToolId::LspSearch,
+            None,
+            "importerPage",
+            usize::try_from(window.page).map_or(usize::MAX, |page| page.saturating_add(1)),
+        ) else {
             return;
         };
         let range = window.range(window.page + 1);
@@ -419,7 +460,7 @@ impl Importers {
         let mut next = query_value(query);
         if let Some(fields) = next.as_object_mut() {
             fields.remove("page");
-            fields.insert("importerPage".into(), json!(window.page + 1));
+            fields.insert("importerPage".into(), json!(importer_page));
             fields.insert("snapshot".into(), json!(window.digest));
         }
         row["next"]["nextImporterPage"] =
@@ -476,6 +517,9 @@ pub(super) async fn verified_anchors(
             });
         }
     };
+    let ignored = scope
+        .ignored_text_files(symbol, &skip, sources.policy(), cancel)
+        .await?;
     let declaration = identities(
         client,
         sources,
@@ -490,6 +534,7 @@ pub(super) async fn verified_anchors(
         return Ok(Importers {
             window: Some(window),
             failed: true,
+            ignored,
             ..Importers::default()
         });
     };
@@ -532,6 +577,7 @@ pub(super) async fn verified_anchors(
         failed: !unverified.is_empty(),
         rejected,
         unverified,
+        ignored,
     })
 }
 

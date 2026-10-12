@@ -7,7 +7,6 @@ use super::types::*;
 use crate::canonical_json::canonicalize;
 use crate::policy::prune::DefaultsFlag;
 use crate::tools::id::ToolId;
-use crate::tools::id::query_limits::local_search::{MATCH_PAGE_MAXIMUM, PAGE_MAXIMUM};
 use crate::tools::result::Continuation;
 use crate::tools::result::ToolError;
 use serde_json::{Value, json};
@@ -135,9 +134,14 @@ pub(super) fn build_next(
     let base = normalized_query(q, streamed);
     // A `nextPage` continuation is never emitted past the contract page
     // maximum; callers must narrow the query to reach later results.
-    if page < total_pages && (page as usize) < PAGE_MAXIMUM {
+    let cursor = |field: &str, current: u32| {
+        crate::tools::paging::admitted(ToolId::LocalSearch, None, field, current as usize + 1)
+    };
+    if page < total_pages
+        && let Some(next_page) = cursor("page", page)
+    {
         let mut n = base.clone();
-        n["page"] = json!(page + 1);
+        n["page"] = json!(next_page);
         // A new file page starts at each file's first match row.
         n["matchPage"] = json!(1);
         if let Some(s) = snapshot {
@@ -150,9 +154,9 @@ pub(super) fn build_next(
                 .build(),
         );
     }
-    if leftover_matches && (match_page as usize) < MATCH_PAGE_MAXIMUM {
+    if leftover_matches && let Some(next_match_page) = cursor("matchPage", match_page) {
         let mut n = base;
-        n["matchPage"] = json!(match_page + 1);
+        n["matchPage"] = json!(next_match_page);
         if let Some(s) = snapshot {
             n["snapshot"] = json!(s)
         };

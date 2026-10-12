@@ -1,10 +1,4 @@
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -16,34 +10,10 @@ import {
   isEnvSet,
   SKILL_ENV_PARAMS,
 } from '../../../../src/cli/commands/skills/env-params.js';
+import { fakeNative } from '../../../utils/fake-native.js';
 
 const classificationKeys = configFieldEnvNames('classification.api');
 const allKeys = [...ENV_TOKEN_VARS, ...classificationKeys];
-
-/**
- * A stand-in native binary whose `config check <token> --json` reports
- * `source` as the GitHub token it would use (none when undefined).
- */
-function fakeNative(dir: string, source?: string): string {
-  const bin = path.join(dir, `octocode-${source ?? 'none'}`);
-  const reply = JSON.stringify({
-    key: ENV_TOKEN_VARS[0],
-    set: false,
-    ...(source ? { githubTokenSource: source } : {}),
-  });
-  const expected = JSON.stringify([
-    'config',
-    'check',
-    ENV_TOKEN_VARS[0],
-    '--json',
-  ]);
-  writeFileSync(
-    bin,
-    `#!/usr/bin/env node\nif (JSON.stringify(process.argv.slice(2)) === ${JSON.stringify(expected)}) process.stdout.write(${JSON.stringify(reply)});\nprocess.exit(1);\n`
-  );
-  chmodSync(bin, 0o755);
-  return bin;
-}
 
 describe('skill env params come from the config contract', () => {
   let home: string;

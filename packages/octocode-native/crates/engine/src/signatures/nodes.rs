@@ -439,7 +439,11 @@ pub(super) fn is_exported_declaration(
 ) -> bool {
     let text = node_text(node, content).unwrap_or("").trim_start();
     match ext {
-        "rs" => text.starts_with("pub ") || text.starts_with("pub("),
+        // Only plain `pub` leaves the crate: `pub(crate)`, `pub(super)`,
+        // `pub(self)` and `pub(in path)` stay inside it.
+        "rs" => text
+            .strip_prefix("pub")
+            .is_some_and(|rest| rest.starts_with(char::is_whitespace)),
         "go" => name.chars().next().is_some_and(char::is_uppercase),
         "py" | "pyi" => parent.is_none() && !name.starts_with('_'),
         "java" | "cs" => text.starts_with("public ") || text.starts_with("export "),

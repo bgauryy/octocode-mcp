@@ -1,10 +1,55 @@
+import path from 'node:path';
+import type { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { EXTERNAL_SENDER, messageText, USER_SENDER, wakes } from '../src/team/routing.js';
-import type { Message } from '../src/team/model.js';
+import type { Member, Message } from '../src/team/model.js';
+import { TeamStore } from '../src/team/store.js';
+import { tmp } from './helpers.js';
 
 const message = (over: Partial<Message> = {}): Message => ({ id: 7, from: 'researcher-1234', to: 'main-aaaaaa', text: 'hi', at: 0, replyRequired: false, ...over });
 
 describe('team message delivery', () => {
+  it('checks recipient liveness inside the transaction that stores the message', () => {
+    const store = TeamStore.open(tmp(), path.join(tmp(), 'team.sqlite'));
+    try {
+      const member: Member = { id: 'a-0001', role: 'a', pid: process.pid, status: 'idle', joinedAt: 1_000, updatedAt: Date.now(), toolCalls: 0, input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false };
+      store.save(member);
+      const inTransaction: boolean[] = [];
+      const list = store.list.bind(store);
+      const db = (store as unknown as { db: DatabaseSync }).db;
+      store.list = (now?: number) => (inTransaction.push(db.isTransaction), list(now));
+      expect(store.send('main-aaaaaa', ['a-0001'], 'hi', { replyRequired: false }).id).toBeGreaterThan(0);
+      expect(inTransaction).toEqual([true]);
+    } finally { store.close(); }
+  });
+
+  it('keeps the short busy wait for background work across nested quick calls', () => {
+    const store = TeamStore.open(tmp(), path.join(tmp(), 'team.sqlite'));
+    try {
+      const db = (store as unknown as { db: DatabaseSync }).db;
+      const timeout = () => Number((db.prepare('PRAGMA busy_timeout').get() as Record<string, unknown>)['timeout']);
+      const long = timeout();
+      const seen = store.quick(() => (store.quick(() => undefined), timeout()));
+      expect(seen).toBeLessThan(long);
+      expect(timeout()).toBe(long);
+    } finally { store.close(); }
+  });
+
+  it('keeps a message pending until the recipient acknowledges it (two-phase delivery)', () => {
+    const store = TeamStore.open(tmp(), path.join(tmp(), 'team.sqlite'));
+    try {
+      store.save({ id: 'a-0001', role: 'a', pid: process.pid, status: 'idle', joinedAt: 1_000, updatedAt: Date.now(), toolCalls: 0, input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false });
+      const id = store.send('main-aaaaaa', ['a-0001'], 'hi', { replyRequired: false }).id!;
+      const later = store.send('main-aaaaaa', ['a-0001'], 'later', { replyRequired: false }).id!;
+      // Read but not acknowledged (not seen yet): still pending; `after` skips what was already handed over.
+      expect(store.pending('a-0001').map((m) => m.id)).toEqual([id, later]);
+      expect([store.waiting('a-0001', id), store.pending('a-0001', id).map((m) => m.id)]).toEqual([1, [later]]);
+      store.ack('a-0001', [id, later]);
+      expect(store.pending('a-0001')).toEqual([]);
+      expect(store.recent()[0]!.state).toBe('delivered');
+    } finally { store.close(); }
+  });
+
   it('wakes an idle agent only for a question, an answer to its own question, the user or an API client', () => {
     expect(wakes(message())).toBe(false);
     expect(wakes(message({ replyRequired: true }))).toBe(true);

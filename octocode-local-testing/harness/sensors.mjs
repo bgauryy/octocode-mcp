@@ -1,3 +1,4 @@
+// BENCHMARK library (not a suite): response sensors for competitors/kpi; chain-check reuses its schema and hint helpers.
 // Response sensors shared by the competitor harness (RFC tool-quality-efficiency):
 // continuation (hint) walking, schema-error counting, the verbose-field
 // report, body hash + key byte shares, and the byte-regression gate (pinned

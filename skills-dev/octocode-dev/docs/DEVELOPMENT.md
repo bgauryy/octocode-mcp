@@ -2,7 +2,7 @@
 
 This page owns the native crate map, the contract pipeline, build commands, development-only environment variables, and ownership rules. Repository-wide agent rules are in `<repo>/AGENTS.md`. The tool concept is in `<repo>/docs/OCTOCODE_PROTOCOL.md`.
 
-Other dev docs: [ADDING_CONFIG.md](ADDING_CONFIG.md) (new settings), [TOOL_CONNECTIONS.md](TOOL_CONNECTIONS.md) (every `next.*` page and `hints.*` lead), [TOOL_QUALITY.md](TOOL_QUALITY.md) (acceptance criteria), [RELEASE.md](RELEASE.md) (release gates), [scripts/README.md](../scripts/README.md) (root automation), and the [benchmark results](../../../packages/octocode-benchmark/results/SUMMARY.md).
+Other dev docs: [ADDING_CONFIG.md](ADDING_CONFIG.md) (new settings), [TOOL_QUALITY.md](TOOL_QUALITY.md) (acceptance criteria), [RELEASE.md](RELEASE.md) (release gates), [scripts/README.md](../scripts/README.md) (root automation), and the [benchmark results](../../../packages/octocode-benchmark/results/SUMMARY.md).
 
 ## Runtime flow
 
@@ -85,6 +85,23 @@ Run from the repo root. Repo-wide tasks run through `node skills-dev/octocode-de
 | config | `test`, `check:tool-contract`, `check:config-contract` | `lint` |
 | mcp | `test` | `lint`, `format:check` |
 | octocode, vscode, skill-installer, benchmark | `test` | `lint` |
+
+### Tool health
+
+`$DEV test:tools` (`octocode-local-testing/harness/tool-health.mjs`) is the quick end-to-end alarm for every tool in the contract. It runs each tool through the built CLI (`--json`) and the MCP stdio server and checks:
+
+- **happy**: the primary operation exits 0, returns rows with the key fields, and validates against the contract `outputSchema`;
+- **continuation**: replaying the `next.*` page lead to the end gives non-empty pages, no duplicate rows, and exactly the unpaged rows;
+- **empty**: exit 1 with a hint or lead on both surfaces;
+- **invalid**: a typed contract `errorCode`, exit 2;
+- **parity**: the CLI and MCP evidence, page leads and status class match (`hints` are surface guidance and leads to CLI-only tools are excluded, since MCP omits those tools);
+- **latency**: every call fits the tool's budget; all timings are recorded.
+
+It is hermetic: a temp `OCTOCODE_HOME`/`HOME`, no user token, fixtures in `octocode-local-testing/fixtures/tool-health/`, and a loopback mock (`harness/tool-health/mock-server.mjs`) for GitHub REST (`GITHUB_API_URL`), git smart HTTP, an npm registry (`registryUrl` with `OCTOCODE_ALLOW_PRIVATE_REGISTRY`) and the classification provider (`OCTOCODE_CLASSIFICATION_API_HOST`). Every proxy variable points at a dead loopback port, so a request that would leave the machine fails the run. It runs four tools at a time and takes under a minute. GitHub search tools share one lane, because the runtime spaces search requests 2 s apart. A contract tool without a case fails the run. Cases live in `harness/tool-health/cases.mjs`.
+
+Run it after `build:dev`. It is not part of `test:ci`, because CI builds no native binary. To run some tools only, pass their names: `$DEV test:tools ghSearchCode,localFetch`.
+
+Each tool prints one line, `PASS`/`FAIL`/`SKIP`, with its total and slowest-call time. A `FAIL` line names the first failing check, for example `FAIL ghSearchCode … — empty.hint.mcp: …`. A check name is `<phase>.<what>[.<surface>]`, with phase happy, continuation, empty, invalid, parity, latency or extra. A `SKIP` line states its reason, such as a missing TypeScript language server. Every check, its detail and per-call timings are in `octocode-local-testing/results/tool-health.json`. The run exits non-zero on any `FAIL`.
 
 ### Cargo builds
 

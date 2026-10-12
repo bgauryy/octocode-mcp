@@ -259,8 +259,8 @@ export async function fetchCdp({ url, pageId, config }) {
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 export async function run(cdp) {
-  // The runner stages its helpers under <cwd>/.octocode.
-  const { waitForPageReady } = await import(pathToFileURL(resolve(process.cwd(), '.octocode', 'dom-actionability.mjs')).href);
+  // The Chrome sandbox stages its helpers under <cwd>/.octocode/tmp/chrome-devtools/helpers.
+  const { waitForPageReady } = await import(pathToFileURL(resolve(process.cwd(), '.octocode', 'tmp', 'chrome-devtools', 'helpers', 'dom-actionability.mjs')).href);
   await cdp.send('Page.enable', {});
   await cdp.send('Network.enable', {});
   let status = 0;

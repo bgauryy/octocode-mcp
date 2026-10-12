@@ -6,9 +6,48 @@ import { addUsage, emptyUsage } from '../src/shared/util.js';
 import { assistantText, buildAgentArgs, subagentProcessEnv } from '../src/subagents/process.js';
 import { loadProfiles, parseProfile } from '../src/subagents/profiles.js';
 import { Subcommands } from '../src/shared/commands.js';
-import { collaborateByDefault, MAX_TASK_CHARS, maxSubagents, registerAgentTool, subagentLimitError, teamTask } from '../src/subagents/tool.js';
+import { collaborateByDefault, maxSubagents, subagentLimitError, teamTask } from '../src/subagents/claim.js';
+import { MAX_TASK_CHARS, registerAgentTool } from '../src/subagents/tool.js';
 import { octocodePrompt } from '../src/prompt.js';
+import { Permission } from '../src/permission/ask.js';
+import { askSpawn, profileReach } from '../src/subagents/profiles.js';
+import { fakeCtx, fakePi, fakePermission } from './fake-pi.js';
 import { tmp } from './helpers.js';
+
+describe('subagent permissions', () => {
+  it('sets the child mode and grant from the parent, never from the inherited environment', () => {
+    const env = subagentProcessEnv(undefined, { OCTOCODE_PERMISSION: 'full', OCTOCODE_PERMISSION_GRANTS: 'file.outside' }, { id: 'a-1', permission: { mode: 'manual', grants: ['shell'] } });
+    expect(env).toMatchObject({ OCTOCODE_PERMISSION: 'manual', OCTOCODE_PERMISSION_GRANTS: 'shell' });
+    const none = subagentProcessEnv(undefined, { OCTOCODE_PERMISSION: 'full', OCTOCODE_PERMISSION_GRANTS: 'shell' }, { id: 'a-1', permission: { mode: 'workspace', grants: [] } });
+    expect(none['OCTOCODE_PERMISSION']).toBe('workspace');
+    expect(none).not.toHaveProperty('OCTOCODE_PERMISSION_GRANTS');
+  });
+
+  it('grants only the workspace classes a profile\'s tools reach', () => {
+    const profile = (fields: object) => ({ name: 'p', description: '', prompt: '', ...fields });
+    expect(profileReach(undefined)).toEqual(['file.workspace', 'shell']);
+    expect(profileReach(profile({ excludeTools: 'file' }))).toEqual(['shell']);
+    expect(profileReach(profile({ tools: 'read,grep' }))).toEqual([]);
+    expect(profileReach(profile({ tools: 'read,edit,bash', excludeTools: 'bash' }))).toEqual(['file.workspace']);
+  });
+
+  it('asks once in manual and passes the grant; a denied spawn throws before anything starts', async () => {
+    const fake = fakePi();
+    const permission = new Permission({ pi: fake.pi, env: { OCTOCODE_PERMISSION: 'manual' }, isSubagent: false });
+    const ctx = fakeCtx({ cwd: tmp(), ui: { selects: ['Allow once', 'Deny'] } });
+    permission.start(ctx);
+    let title = '';
+    const select = ctx.ui.select;
+    ctx.ui.select = (async (text: string, choices: string[]) => ((title ||= text), select(text, choices))) as never;
+    const implementer = { name: 'implementer', description: '', prompt: '' };
+    expect(await askSpawn(permission, ctx, implementer, 'Fix the bug')).toEqual(['file.workspace', 'shell']);
+    expect(title).toMatch(/implementer may edit files in the repository and run shell commands[\s\S]*Fix the bug/);
+    await expect(askSpawn(permission, ctx, implementer, 'Again')).rejects.toThrow(/denied starting a subagent/);
+    permission.setMode('workspace', ctx);
+    // A mode that allows the spawn passes no grant: the child inherits the mode itself.
+    expect(await askSpawn(permission, ctx, implementer, 'Fix')).toEqual([]);
+  });
+});
 
 describe('subagents', () => {
   it('collaborate mode: off by default, lists teammates in the task, flags the child and its prompt', () => {
@@ -39,20 +78,38 @@ describe('subagents', () => {
   it('parses profile frontmatter and builds child pi arguments', () => {
     const profile = parseProfile('fallback', '---\nname: researcher\ndescription: Reads code\ntools: read,grep\n---\nBe precise.');
     expect(profile).toEqual({ name: 'researcher', description: 'Reads code', prompt: 'Be precise.', tools: 'read,grep' });
-    expect(buildAgentArgs('Find X', profile, 'anthropic/claude', '/ext/index.js')).toEqual([
-      '--mode', 'json', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--model', 'anthropic/claude', '--tools', 'read,grep', '--append-system-prompt', 'Be precise.', '--', 'Find X',
+    const dir = tmp();
+    const args = buildAgentArgs('Find X', profile, 'anthropic/claude', '/ext/index.js', dir);
+    const promptFile = args[args.indexOf('--append-system-prompt') + 1]!;
+    expect(args).toEqual([
+      '--mode', 'json', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--model', 'anthropic/claude', '--tools', 'read,grep', '--append-system-prompt', promptFile, '--', 'Find X',
     ]);
+    expect(path.dirname(promptFile)).toBe(dir);
+    expect(fs.readFileSync(promptFile, 'utf8')).toBe('Be precise.');
+  });
+
+  it('hands the profile prompt to Pi as an owner-only file, so a prompt that names a path is never read as that file', () => {
+    const dir = tmp();
+    const decoy = path.join(tmp(), 'secret.txt');
+    fs.writeFileSync(decoy, 'not the prompt');
+    const args = buildAgentArgs('X', { name: 'p', description: '', prompt: decoy }, undefined, '/ext/index.js', dir);
+    const promptFile = args[args.indexOf('--append-system-prompt') + 1]!;
+    expect(promptFile).not.toBe(decoy);
+    expect(fs.readFileSync(promptFile, 'utf8')).toBe(decoy);
+    if (process.platform !== 'win32') expect(fs.statSync(promptFile).mode & 0o777).toBe(0o600);
+    // No prompt, no file.
+    expect(buildAgentArgs('X', { name: 'p', description: '', prompt: '' }, undefined, '/ext/index.js', dir)).not.toContain('--append-system-prompt');
   });
 
   it('passes a task that looks like a flag or an @file to Pi as the message, unexpanded', () => {
     const profile = parseProfile('p', '---\ntools: read\n---\n- Be careful.');
     for (const task of ['- fix the bug', '--x', '--model evil/model', '-e /tmp/evil.js', '@src/a.ts', '@src/a.ts then review it', 'plain task']) {
-      const parsed = parseArgs(buildAgentArgs(task, profile, 'faux/model', '/ext/index.js'));
+      const parsed = parseArgs(buildAgentArgs(task, profile, 'faux/model', '/ext/index.js', tmp()));
       expect(parsed.messages.map((message) => message.trim())).toEqual([task]);
       expect(parsed.fileArgs).toEqual([]);
       expect(parsed.model).toBe('faux/model');
       expect(parsed.extensions).toEqual(['/ext/index.js', 'builtin:mcp', 'builtin:tool-search']);
-      expect(parsed.appendSystemPrompt).toEqual(['- Be careful.']);
+      expect(parsed.appendSystemPrompt?.map((file) => fs.readFileSync(file, 'utf8'))).toEqual(['- Be careful.']);
       expect(parsed.diagnostics).toEqual([]);
     }
   });
@@ -66,8 +123,9 @@ describe('subagents', () => {
   it('maps excludeTools frontmatter to --exclude-tools', () => {
     const profile = parseProfile('reviewer', '---\nexcludeTools: file\n---\nReview.');
     expect(profile.excludeTools).toBe('file');
-    expect(buildAgentArgs('Review X', profile, undefined, '/ext/index.js')).toEqual([
-      '--mode', 'json', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--exclude-tools', 'file,edit,write', '--append-system-prompt', 'Review.', '--', 'Review X',
+    const args = buildAgentArgs('Review X', profile, undefined, '/ext/index.js', tmp());
+    expect(args).toEqual([
+      '--mode', 'json', '--no-session', '--no-extensions', '-e', '/ext/index.js', '-e', 'builtin:mcp', '-e', 'builtin:tool-search', '--exclude-tools', 'file,edit,write', '--append-system-prompt', args[args.indexOf('--append-system-prompt') + 1], '--', 'Review X',
     ]);
   });
 
@@ -138,7 +196,7 @@ describe('subagents', () => {
     const tools: Array<{ name: string; parameters: { properties: Record<string, { maxLength?: number; description?: string }> } }> = [];
     const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
     const pi = { registerTool: (tool: never) => tools.push(tool), registerCommand: (name: string, command: never) => commands.set(name, command), registerMessageRenderer: () => undefined, on: () => undefined, sendMessage: () => undefined } as never;
-    const control = registerAgentTool(pi, () => new Map(), { id: undefined, view: { members: [], traffic: [] }, members: () => [] } as never);
+    const control = registerAgentTool(pi, () => new Map(), { id: undefined, view: { members: [], traffic: [] }, members: () => [], setResumer: () => undefined } as never, fakePermission());
     // index.ts adds it as `/octocode agents` with the `/agents` shortcut.
     const subcommands = new Subcommands();
     subcommands.add('agents', control.command);

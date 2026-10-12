@@ -6,7 +6,7 @@ use crate::tools::gh_shared::{
     search_failure, tree_recovery, with_ref_recovery,
 };
 use crate::tools::id::ToolId;
-use crate::tools::result::remove_nulls;
+use crate::tools::result::query_row;
 use crate::{
     providers::github::{
         ContentsEntry, GitHubProvider, ProviderError, ProviderErrorKind, ProviderErrorReason,
@@ -54,10 +54,13 @@ pub async fn run<C: crate::providers::github::ConditionalCache>(
         return Err(file_failure(error, &at));
     }
     if !missing_path(&error, Some(at.path)) {
-        return Err(with_ref_recovery(
-            search_failure(error, None),
-            at.owner,
-            at.repo,
+        // A repository that did not resolve leads to a search for its name.
+        return Err(crate::tools::gh_shared::with_search_repair(
+            with_ref_recovery(search_failure(error, None), at.owner, at.repo),
+            ToolId::GhStructure,
+            query,
+            1,
+            Some(at.repo),
         ));
     }
     let found = locate_path(provider, &at, context).await;
@@ -621,7 +624,7 @@ mod tests {
             );
         }
     }
-    /// GS1: `dir` is repo-relative, the same base as `path` and `include`.
+    /// The `dir` of a row is repo-relative, the same base as `path` and `include`.
     #[test]
     fn structure_dirs_are_repo_relative() {
         let rows = build_structure(&[
@@ -667,7 +670,7 @@ mod tests {
         const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
         async fn server() -> MockServer {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             for reference in ["main", "HEAD"] {
                 Mock::given(method("GET"))
                     .and(path(format!("/api/v3/repos/a/b/commits/{reference}")))
@@ -687,6 +690,34 @@ mod tests {
 
         fn query(value: Value) -> GhStructureQuery {
             serde_json::from_value(value).expect("ghStructure query")
+        }
+
+        /// A repository that does not resolve (a typo) leads to a search for
+        /// its name, as the search tools' failures do.
+        #[tokio::test]
+        async fn a_missing_repository_leads_to_a_repository_search() {
+            let server = MockServer::builder().start().await;
+            for route in ["/api/v3/repos/a/typo", "/api/v3/repos/a/typo/commits/HEAD"] {
+                mount_json(&server, route, 404, json!({"message":"Not Found"})).await;
+            }
+            let home = tempfile::tempdir().expect("home");
+            let provider = mock_provider(&server, RetryPolicy::default());
+            let context = fixture_context(Duration::from_secs(5), 1 << 20);
+            let failure = run(
+                &provider,
+                &query(json!({"owner":"a","repo":"typo"})),
+                Ok(&context),
+                home.path(),
+            )
+            .await
+            .expect_err("missing repository");
+            let lead = &failure.next.as_ref().expect("next")["findRepository"];
+            assert_eq!(lead["tool"], "ghSearchRepo", "{lead}");
+            assert_eq!(
+                lead["query"]["queries"][0]["keywords"],
+                json!(["typo"]),
+                "{lead}"
+            );
         }
 
         /// A `refs` read of one `ref` says what the name resolved to
@@ -849,6 +880,95 @@ mod tests {
                 json!({"node_modules":1}),
                 "{}",
                 first.data
+            );
+        }
+
+        /// A directory past the Contents API's 1,000-entry cap is listed
+        /// whole from its own git tree (the root's is the commit's; a scoped
+        /// directory's SHA comes from its parent listing) and paged like any
+        /// listing: every entry once, no provider limit, no clone lead.
+        #[tokio::test]
+        async fn a_directory_past_the_contents_cap_is_listed_whole_and_paged() {
+            let names = |count: usize| (0..count).map(|n| format!("f{n:04}.rs"));
+            let contents: Vec<Value> = names(1000)
+                .map(|name| json!({"name":name,"path":name,"type":"file","size":1}))
+                .collect();
+            let tree: Vec<Value> = names(1200)
+                .map(|name| json!({"path":name,"type":"blob","size":1}))
+                .collect();
+            let server = server().await;
+            mount_json(&server, "/api/v3/repos/a/b/contents", 200, json!(contents)).await;
+            mount_json(
+                &server,
+                format!("/api/v3/repos/a/b/git/trees/{SHA}"),
+                200,
+                json!({"sha":SHA,"truncated":false,"tree":tree}),
+            )
+            .await;
+            let mut listed = Vec::new();
+            let mut row = json!({"owner":"a","repo":"b","pageSize":500});
+            for page in 1..=3 {
+                let out = list(&server, row.clone()).await.expect("listing");
+                let data = &out.data;
+                assert!(data.get("terminalLimit").is_none(), "page {page}: {data}");
+                assert!(data.get("providerLimit").is_none(), "page {page}: {data}");
+                assert!(
+                    data["next"].get("cloneRepo").is_none(),
+                    "page {page}: {data}"
+                );
+                for name in data["files"][0]["files"].as_array().expect("files") {
+                    listed.push(name.as_str().unwrap_or_default().to_owned());
+                }
+                match data["next"].get("nextPage") {
+                    Some(next) => row = next["query"]["queries"][0].clone(),
+                    None => assert_eq!(page, 3, "{data}"),
+                }
+            }
+            let expected: Vec<String> = names(1200).map(|name| format!("{name} (1)")).collect();
+            assert_eq!(listed, expected);
+
+            // A scoped directory: its tree SHA is read from its parent.
+            let dir = "e".repeat(40);
+            let scoped: Vec<Value> = names(1000)
+                .map(
+                    |name| json!({"name":name,"path":format!("big/{name}"),"type":"file","size":1}),
+                )
+                .collect();
+            let server = self::server().await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents",
+                200,
+                json!([{"name":"big","path":"big","type":"dir","sha":dir}]),
+            )
+            .await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents/big",
+                200,
+                json!(scoped),
+            )
+            .await;
+            mount_json(
+                &server,
+                format!("/api/v3/repos/a/b/git/trees/{dir}"),
+                200,
+                json!({"sha":dir,"truncated":false,"tree":tree}),
+            )
+            .await;
+            let out = list(
+                &server,
+                json!({"owner":"a","repo":"b","path":"big","pageSize":500,"page":3}),
+            )
+            .await
+            .expect("scoped listing");
+            assert!(out.data.get("providerLimit").is_none(), "{}", out.data);
+            assert_eq!(out.data["files"][0]["dir"], "big", "{}", out.data);
+            assert_eq!(
+                out.data["files"][0]["files"].as_array().map(Vec::len),
+                Some(200),
+                "{}",
+                out.data
             );
         }
 

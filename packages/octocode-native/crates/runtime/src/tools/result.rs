@@ -239,6 +239,18 @@ pub(crate) fn stale_snapshot(restart: Value) -> Value {
     })
 }
 
+/// A typed query as a continuation row: every field it sets, except `omit`.
+pub(crate) fn query_row(query: &impl Serialize, omit: &[&str]) -> Value {
+    let mut row = serde_json::to_value(query).unwrap_or_default();
+    remove_nulls(&mut row);
+    if let Some(row) = row.as_object_mut() {
+        for key in omit {
+            row.remove(*key);
+        }
+    }
+    row
+}
+
 /// Drop `null` members from every object in `value`, including objects nested
 /// inside arrays.
 pub(crate) fn remove_nulls(value: &mut Value) {

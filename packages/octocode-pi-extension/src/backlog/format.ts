@@ -6,7 +6,6 @@ export const STATE_TITLE: Record<State, string> = { ongoing: 'Ongoing', todo: 'T
 /** Board and export order: the flow an item follows, so the board's ←/→ step up/down the sections as drawn. */
 export const BOARD_ORDER: readonly State[] = STATES;
 
-
 /** Who holds an item, from the reader's side: `(you)`, `(parent)` (a subagent's parent), `(@main-1a2b)`, or nothing. */
 export function holder(item: Item, self?: string, parents?: ReadonlySet<string>): string {
   if (!item.assignee || item.state !== 'ongoing') return '';
@@ -14,43 +13,91 @@ export function holder(item: Item, self?: string, parents?: ReadonlySet<string>)
   return parents?.has(item.assignee) ? ' (parent)' : ` (@${sanitizeTerminalText(item.assignee)})`;
 }
 
-/** `B12 [ongoing p1] Title #tag (you)` */
+/** ` (from B12)` when the item came from another one. */
+export const fromText = (item: Item): string => (item.from === undefined ? '' : ` (from B${item.from})`);
+
+/** `B14 [ongoing p1] Title #tag (from B12) (you)` */
 export function itemLine(item: Item, self?: string, parents?: ReadonlySet<string>): string {
   const tags = item.tags.map((tag) => ` #${tag}`).join('');
-  return `${item.ref} [${item.state} ${priorityName(item.priority)}] ${sanitizeTerminalText(item.title)}${tags}${holder(item, self, parents)}`;
+  return `${item.ref} [${item.state} ${priorityName(item.priority)}] ${sanitizeTerminalText(item.title)}${tags}${fromText(item)}${holder(item, self, parents)}`;
 }
 
-const ago = (at: number, now: number) => `${formatDuration(Math.max(0, now - at))} ago`;
+/** A compact span: `45s`, `12m`, `5h20m`, `3d4h`. */
+export function span(ms: number): string {
+  const safe = Math.max(0, ms);
+  const day = 86_400_000;
+  if (safe < day) return formatDuration(safe).replace(/(\d+m)\d+s$/, '$1');
+  const days = Math.floor(safe / day);
+  const hours = Math.floor((safe % day) / 3_600_000);
+  return `${days}d${hours ? `${hours}h` : ''}`;
+}
+
+export const ago = (at: number, now: number) => `${span(now - at)} ago`;
+
+/** Local wall-clock time, `2026-10-12 21:03`. */
+export function stamp(at: number): string {
+  const date = new Date(at);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
 /** Who wrote a note or holds an item, from the reader's side: `you`, `your parent`, or the id. */
 const who = (id: string, self?: string, parents?: ReadonlySet<string>) => (id === self ? 'you' : parents?.has(id) ? 'your parent' : sanitizeTerminalText(id));
 
-function noteLine(note: Note, now: number, self?: string, parents?: ReadonlySet<string>): string {
-  return `- ${ago(note.at, now)} ${who(note.author, self, parents)}: ${sanitizeTerminalText(note.text)}`;
+/**
+ * When things happened to an item, oldest first: `created 2026-10-09 14:00 (3d ago) by agent · claimed 2h ago by you ·
+ * done 5m ago (took 1h55m) · updated 5m ago`.
+ */
+export function timeline(item: Item, now: number, self?: string, parents?: ReadonlySet<string>): string[] {
+  const holder = item.assignee ? ` by ${who(item.assignee, self, parents)}` : '';
+  const parts = [`created ${stamp(item.createdAt)} (${ago(item.createdAt, now)}) by ${sanitizeTerminalText(item.createdBy)}`];
+  if (item.startedAt) parts.push(`claimed ${ago(item.startedAt, now)}${item.state === 'done' ? '' : holder}`);
+  else if (item.assignee && item.state !== 'done') parts.push(`assignee ${who(item.assignee, self, parents)}`);
+  if (item.doneAt) parts.push(`done ${ago(item.doneAt, now)}${item.startedAt && item.startedAt <= item.doneAt ? ` (took ${span(item.doneAt - item.startedAt)})` : ''}${holder}`);
+  if (item.updatedAt !== item.createdAt) parts.push(`updated ${ago(item.updatedAt, now)}`);
+  return parts;
+}
+
+/** How long the item has been where it is: claimed for ongoing, since done for done, since created otherwise. */
+export function stateAge(item: Item, now: number): string {
+  const since = item.state === 'ongoing' ? (item.startedAt ?? item.updatedAt) : item.state === 'done' ? (item.doneAt ?? item.updatedAt) : item.createdAt;
+  return span(now - since);
+}
+
+/** A note's text with later lines indented under its bullet (a change note may carry a whole replaced body). */
+const indented = (text: string, indent: string) => sanitizeTerminalText(text).replace(/\n/g, `\n${indent}`);
+
+/** `- 5m ago you: text` for a note, `- 5m ago you · state todo → ongoing` for a change the store logged. */
+export function noteLine(note: Note, now: number, self?: string, parents?: ReadonlySet<string>): string {
+  return `- ${ago(note.at, now)} ${who(note.author, self, parents)}${note.kind === 'change' ? ' ·' : ':'} ${indented(note.text, '  ')}`;
 }
 
 interface DetailOptions {
+  noteOffset?: number;
   self?: string;
   /** A subagent's parent sessions, shown as `(parent)`. */
   parents?: ReadonlySet<string>;
   /** Show the version (the board uses it for stale-edit checks; the tool has no use for it). */
   version?: boolean;
+  /** The item this one came from, and the items that came from it (all of them). */
+  origin?: Item;
+  derived?: readonly Item[];
 }
 
-/** The whole item: header, metadata, body and its last notes. */
+/** The whole item: header, goal, times, origin, body, derived items and its notes. */
 export function itemDetail(item: Item, notes: Note[], totalNotes: number, now: number, options: DetailOptions = {}): string {
   const { self, parents } = options;
-  const meta = [
-    `created ${ago(item.createdAt, now)} by ${sanitizeTerminalText(item.createdBy)}`,
-    `updated ${ago(item.updatedAt, now)}`,
-    item.doneAt ? `done ${ago(item.doneAt, now)}` : '',
-    item.assignee ? `assignee ${who(item.assignee, self, parents)}` : '',
-    options.version ? `version ${item.version}` : '',
-  ].filter(Boolean);
-  const lines = [itemLine(item, self, parents), meta.join(' · ')];
+  const meta = [...timeline(item, now, self, parents), options.version ? `version ${item.version}` : ''].filter(Boolean);
+  const lines = [itemLine(item, self, parents)];
+  if (item.goal) lines.push(`Goal: ${sanitizeTerminalText(item.goal)}`);
+  lines.push(meta.join(' · '));
+  if (options.origin) lines.push(`From: ${itemLine(options.origin, self, parents)}`);
   if (item.body) lines.push('', sanitizeTerminalText(item.body));
+  if (options.derived?.length) lines.push('', `Derived items (${options.derived.length}):`, ...options.derived.map((child) => `- ${itemLine(child, self, parents)}`));
   if (notes.length > 0) {
-    lines.push('', totalNotes > notes.length ? `Notes (last ${notes.length} of ${totalNotes}):` : 'Notes:', ...notes.map((note) => noteLine(note, now, self, parents)));
+    const offset = options.noteOffset ?? 0;
+    const label = offset > 0 ? `Notes and changes (${offset + 1}–${offset + notes.length} newest of ${totalNotes}):` : totalNotes > notes.length ? `Notes and changes (last ${notes.length} of ${totalNotes}):` : 'Notes and changes:';
+    lines.push('', label, ...notes.map((note) => noteLine(note, now, self, parents)));
   }
   return lines.join('\n');
 }
@@ -88,9 +135,15 @@ export function exportMarkdown(store: BacklogStore, repoName: string, now: numbe
     for (const item of rows) {
       const tags = item.tags.map((tag) => ` #${tag}`).join('');
       const who = item.assignee ? ` — ${sanitizeTerminalText(item.assignee)}` : '';
-      lines.push(`- **${item.ref}** [${priorityName(item.priority)}] ${sanitizeTerminalText(item.title)}${tags}${who}`);
+      lines.push(`- **${item.ref}** [${priorityName(item.priority)}] ${sanitizeTerminalText(item.title)}${tags}${fromText(item)}${who}`);
+      if (item.goal) lines.push(`  Goal: ${sanitizeTerminalText(item.goal)}`);
+      const times = [`created ${stamp(item.createdAt)} by ${sanitizeTerminalText(item.createdBy)}`, item.startedAt ? `claimed ${stamp(item.startedAt)}` : '', item.doneAt ? `done ${stamp(item.doneAt)}` : ''];
+      lines.push(`  _${times.filter(Boolean).join(' · ')}_`);
       for (const line of item.body ? sanitizeTerminalText(item.body).split('\n') : []) lines.push(`  ${line}`.trimEnd());
-      for (const note of store.notes(item, -1)) lines.push(`  - ${new Date(note.at).toISOString().slice(0, 16).replace('T', ' ')} ${sanitizeTerminalText(note.author)}: ${sanitizeTerminalText(note.text).replace(/\n/g, ' ')}`);
+      for (const note of store.notes(item, -1)) {
+        const stamp = `${new Date(note.at).toISOString().slice(0, 16).replace('T', ' ')} ${sanitizeTerminalText(note.author)}${note.kind === 'change' ? ' ·' : ':'}`;
+        lines.push(...`  - ${stamp} ${indented(note.text, '    ')}`.split('\n').map((line) => line.trimEnd()));
+      }
     }
     lines.push('');
   }

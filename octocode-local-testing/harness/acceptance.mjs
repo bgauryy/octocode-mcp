@@ -16,11 +16,7 @@
 //                       published fields; keyless surface total <= budget;
 //                       the keyed clasify addition <= its own budget; quotas.
 
-import { parseOutlineEntry } from './mcp-client.mjs';
-
 export const CHECKS = ['C1', 'C2', 'C3', 'C4', 'C5'];
-/** Arrays whose string items are symbols outline entries (docs/TOOL_DATA_CONTRACT.md location rows). */
-const OUTLINE_KEYS = new Set(['symbols', 'members']);
 /**
  * Mirrors core publishedSurfaceBudget.test.ts MAX_DEFAULT_SURFACE_BYTES; that file records why each
  * raise was made (the Zod-derived view carries every repair note and <workflow> once, so responses
@@ -83,13 +79,12 @@ export function packedCoordinates(s) {
 
 /**
  * Strings outside continuations and source-text keys that pack >=2
- * coordinates. A symbols outline entry under `symbols`/`members` is the
- * contract's labelled packed form and passes.
+ * coordinates.
  */
 export function packedStrings(sc) {
   const out = [];
   const walk = (n, at, key) => {
-    if (typeof n === 'string') { if (!SOURCE_TEXT_KEYS.has(key) && !(OUTLINE_KEYS.has(key) && parseOutlineEntry(n)) && packedCoordinates(n)) out.push(`${at}=${JSON.stringify(n.slice(0, 80))}`); return; }
+    if (typeof n === 'string') { if (!SOURCE_TEXT_KEYS.has(key) && packedCoordinates(n)) out.push(`${at}=${JSON.stringify(n.slice(0, 80))}`); return; }
     if (!n || typeof n !== 'object') return;
     if (Array.isArray(n)) { n.forEach((c, i) => walk(c, `${at}[${i}]`, key)); return; }
     for (const [k, v] of Object.entries(n)) {

@@ -35,6 +35,12 @@ pub(super) struct Coverage {
     pub(super) withheld: usize,
     /// Files the scan searched: an empty row's one fact.
     pub(super) files_searched: u32,
+    /// The warning for an include/exclude glob with a `..` segment, which
+    /// never matches: globs match paths under `path`.
+    pub(super) parent_glob: Option<String>,
+    /// The walk stopped before it reached every path (a cap other than a
+    /// binary cut, which only ends one file's content).
+    pub(super) walk_cut: bool,
 }
 
 /// The empty row's fact when include/exclude left the walk no file.
@@ -49,12 +55,15 @@ impl Coverage {
         output_root: &std::path::Path,
         skipped: &crate::policy::discovery::WalkSkips,
     ) -> Self {
-        let cap_has = |name: &str| {
+        let cap_reasons = || {
             stats
                 .cap_reason
                 .as_deref()
-                .is_some_and(|reason| reason.split(", ").any(|r| r == name))
+                .unwrap_or_default()
+                .split(", ")
+                .filter(|reason| !reason.is_empty())
         };
+        let cap_has = |name: &str| cap_reasons().any(|reason| reason == name);
         let skip_hint = skipped_target_hint(
             root.is_file(),
             stats.files_searched,
@@ -82,6 +91,13 @@ impl Coverage {
             skip_hint,
             withheld: skipped.withheld.total(),
             files_searched: stats.files_searched,
+            parent_glob: crate::policy::include::parent_glob_warning(
+                &query.include,
+                &query.exclude,
+            ),
+            walk_cut: stats.capped == Some(true)
+                && (cap_reasons().next().is_none()
+                    || cap_reasons().any(|reason| reason != "binaryQuit")),
         }
     }
 
@@ -100,6 +116,7 @@ impl Coverage {
         empty: bool,
     ) -> Vec<String> {
         let mut warnings = vec![];
+        warnings.extend(self.parent_glob.clone());
         // A clipped value is flagged on its row (`originalChars`,
         // `returnedChars`) and read whole by its `expandValues` lead.
         if shown_redacted > 0 && !layout.list {
@@ -182,8 +199,10 @@ pub(super) struct Found<'a> {
     pub(super) scanned: &'a octocode_engine::types::TextSearchStats,
     /// What the walk left out: policy-withheld and default-excluded files.
     pub(super) skipped: &'a crate::policy::discovery::WalkSkips,
-    /// Nothing capped and no coverage gap.
-    pub(super) complete: bool,
+    /// The walk reached every path. A binary cut or an unreadable file
+    /// leaves file content unread, not paths unwalked, so it does not
+    /// clear this.
+    pub(super) walk_complete: bool,
     pub(super) empty: bool,
 }
 
@@ -267,7 +286,7 @@ impl Found<'_> {
                     "Default excludes skipped {names}; the same search with defaultExcludes:false covers them."
                 ));
                 add(
-                    "includeIgnored".into(),
+                    "includeSkipped".into(),
                     lifting_lead(query, &[Cause::DefaultExcluded]),
                 );
             }
@@ -298,11 +317,11 @@ impl Found<'_> {
                 "matchString ran as literal text; regex:\"rust\" runs it as a regex.".to_owned(),
             );
         }
-        if self.empty && self.complete && self.first_page() {
+        if self.empty && self.walk_complete && self.first_page() {
             disclose_variants(query, self.paths, search_options, next, hints, cancel);
         }
         self.empty
-            && self.complete
+            && self.walk_complete
             && !self.root.is_file()
             && disclose_unsearched(
                 query,
@@ -569,7 +588,7 @@ pub(super) fn disclose_unsearched(
         hints.insert(0, hint);
     }
     if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
-        map.insert("includeIgnored".into(), lifting_lead(query, &causes));
+        map.insert("includeSkipped".into(), lifting_lead(query, &causes));
     }
     may_hold_matches
 }
@@ -597,22 +616,13 @@ fn unsearched_ignored_hint(
     root: &std::path::Path,
     ignored: &[crate::tools::empty_walk::Skip],
 ) -> String {
-    let mut names = ignored
-        .iter()
-        .take(NAMED_SKIPPED)
-        .map(|skip| {
+    let names = crate::response::pages::first_named(
+        ignored.iter().map(|skip| {
             let relative = skip.entry.strip_prefix(root).unwrap_or(&skip.entry);
             format!("{}/", relative.to_string_lossy().replace('\\', "/"))
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    if let Some(more) = ignored
-        .len()
-        .checked_sub(NAMED_SKIPPED)
-        .filter(|more| *more > 0)
-    {
-        names.push_str(&format!(", +{more} more"));
-    }
+        }),
+        NAMED_SKIPPED,
+    );
     format!(
         "Ignored paths were not searched ({names}; {}); the check of them timed out.",
         ignored[0].reason
@@ -663,16 +673,11 @@ pub(super) fn excluded_names(
     let files = skipped.generated.len();
     if files > 0 {
         let noun = if files == 1 { "file" } else { "files" };
-        let mut named = skipped
-            .generated
-            .iter()
-            .take(EXCLUDED_FILES_NAMED)
-            .cloned()
-            .collect::<Vec<_>>();
-        if files > named.len() {
-            named.push(format!("+{} more", files - named.len()));
-        }
-        parts.push(format!("{files} {noun} ({})", named.join(", ")));
+        let named = crate::response::pages::first_named(
+            skipped.generated.iter().cloned(),
+            EXCLUDED_FILES_NAMED,
+        );
+        parts.push(format!("{files} {noun} ({named})"));
     }
     (!parts.is_empty()).then(|| parts.join(" and "))
 }
@@ -883,14 +888,23 @@ pub(super) fn restart_fields(query: &LocalSearchQuery) -> Value {
 /// A structureSearch `files` listing of the searched scope with the query's
 /// own include/exclude globs and walk scope (`includeIgnored`, `defaultExcludes`;
 /// a `files` listing always shows dot entries): what the search's globs
-/// match there.
+/// match there. A glob that reaches above `path` is left out: it never
+/// matches, and the row's warning names it.
 pub(super) fn scope_listing(query: &LocalSearchQuery) -> Value {
     let mut listing = json!({"operation": "files", "path": query.path.as_str()});
-    if !query.include.is_empty() {
-        listing["include"] = json!(query.include);
+    let matchable = |globs: &[String]| {
+        globs
+            .iter()
+            .filter(|glob| !crate::policy::include::reaches_above(glob))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let (include, exclude) = (matchable(&query.include), matchable(&query.exclude));
+    if !include.is_empty() {
+        listing["include"] = json!(include);
     }
-    if !query.exclude.is_empty() {
-        listing["exclude"] = json!(query.exclude);
+    if !exclude.is_empty() {
+        listing["exclude"] = json!(exclude);
     }
     if query.include_ignored == Some(true) {
         listing["includeIgnored"] = json!(true);

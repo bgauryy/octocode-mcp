@@ -46,7 +46,7 @@ async fn native_cli_reads_main_home_credentials_before_gh() {
 }
 #[tokio::test]
 async fn native_cli_status_uses_host_scoped_gh_and_preserves_json() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/user"))
         .and(header("authorization", "Bearer synthetic-gh-credential"))
@@ -83,7 +83,7 @@ async fn native_cli_status_uses_host_scoped_gh_and_preserves_json() {
 /// never reports it as a working login.
 #[tokio::test]
 async fn native_cli_status_reports_a_rejected_token_as_invalid() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/user"))
         .respond_with(

@@ -7,7 +7,7 @@ import { registerCollab } from '../src/team/tools.js';
 import { registerActivity } from '../src/ui/activity.js';
 import { registerAgentTool, type AgentControl } from '../src/subagents/tool.js';
 import { Subcommands } from '../src/shared/commands.js';
-import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
+import { fakeCtx, fakePi, rendered, theme, fakePermission } from './fake-pi.js';
 import { TeamStore } from '../src/team/store.js';
 import { tmp } from './helpers.js';
 
@@ -24,7 +24,7 @@ function member(dbFile: string, cwd: string) {
   const { reservationGate } = registerCollab(fake.pi, team);
   // As index.ts wires it: the activity line reaches the team panel.
   registerActivity(fake.pi, { workingLine: false, onChange: (line) => team.setActivity(line) });
-  agentsCommand(fake.pi, registerAgentTool(fake.pi, () => new Map(), team));
+  agentsCommand(fake.pi, registerAgentTool(fake.pi, () => new Map(), team, fakePermission()));
   const ctx = fakeCtx({ cwd });
   // The reservation gate as index.ts runs it in the tool-call pipeline.
   const gate = async (event: unknown, context: unknown) => [await reservationGate(event as never, context as never)];
@@ -33,6 +33,21 @@ function member(dbFile: string, cwd: string) {
 
 const run = (tool: { execute: Function }, params: unknown, ctx: unknown) => tool.execute('call-1', params, undefined, undefined, ctx);
 const text = (result: { content: Array<{ text: string }> }) => result.content.map((part) => part.text).join('\n');
+
+describe('team shutdown order', () => {
+  it('stops this session\'s subagents before leaving the team, so their last messages still reach it', async () => {
+    const fake = fakePi();
+    const team = new Team(fake.pi, { OCTOCODE_AGENT_DB: path.join(tmp(), 'team.sqlite') });
+    const joinedWhileStopping: boolean[] = [];
+    registerCollab(fake.pi, team, { beforeLeave: async () => void joinedWhileStopping.push(team.id !== undefined) });
+    const ctx = fakeCtx({ cwd: tmp() });
+    await fake.emit('session_start', {}, ctx);
+    team.join();
+    await fake.emit('session_shutdown', {}, ctx);
+    expect(joinedWhileStopping).toEqual([true]);
+    expect(team.id).toBeUndefined();
+  });
+});
 
 describe('team tools on a fake Pi', () => {
   const started: Array<ReturnType<typeof member>> = [];
@@ -116,7 +131,7 @@ describe('team tools on a fake Pi', () => {
     expect(sent.details).toMatchObject({ to: [b.team.id] });
     await vi.waitFor(() => expect(b.sent.some((entry) => entry.message.customType === MESSAGE_TYPE)).toBe(true), { timeout: 5_000 });
     const delivered = b.sent.find((entry) => entry.message.customType === MESSAGE_TYPE)!;
-    expect(delivered.message.details).toMatchObject({ from: a.team.id, text: 'please review src/a.ts' });
+    expect(delivered.message.details.messages).toEqual([expect.objectContaining({ from: a.team.id, text: 'please review src/a.ts' })]);
 
     await expect(run(send, { to: 'nobody-0000', message: 'hi' }, a.ctx)).rejects.toThrow();
     const reply = await run(b.tools.get('sendMessage'), { to: 'parent', message: 'x' }, b.ctx).catch((error: Error) => error);
@@ -144,14 +159,16 @@ describe('team tools on a fake Pi', () => {
     await vi.waitFor(() => expect(b.team.members().find((entry) => entry.id === a.team.id)!.status).toBe('idle'), { timeout: 3_000 });
 
     const renderer = a.renderers.get(MESSAGE_TYPE);
-    const message = { details: { from: 'reviewer-1a2b', text: 'first\nsecond', replyRequired: true, at: Date.parse('2026-01-01T10:00:00Z') } };
+    const message = { details: { messages: [{ from: 'reviewer-1a2b', text: 'first\nsecond', replyRequired: true, at: Date.parse('2026-01-01T10:00:00Z') }] } };
     const collapsed = rendered(renderer(message, { expanded: false }, theme));
     expect(collapsed).toContain('from reviewer-1a2b');
     expect(collapsed).toContain('reply requested');
     expect(collapsed).toMatch(/first\n\s*second/);
     expect(rendered(renderer(message, { expanded: true }, theme))).toMatch(/first\n\s*second/);
-    expect(rendered(renderer({ details: { from: 'x', text: 'bad\u001b[31mred' } }, { expanded: false }, theme))).toContain('badred');
+    expect(rendered(renderer({ details: { messages: [{ from: 'x', text: 'bad\u001b[31mred' }] } }, { expanded: false }, theme))).toContain('badred');
     expect(rendered(renderer({}, { expanded: false }, theme))).toContain('from agent');
+    // Details that are not a batch (another writer, a damaged entry) show the text the model got.
+    expect(rendered(renderer({ content: 'plain text', details: { from: 'x' } }, { expanded: false }, theme))).toContain('plain text');
 
     const coordinate = a.tools.get('coordinate');
     expect(rendered(coordinate.renderCall({ action: 'lock', paths: ['a.ts', 'b/'], note: 'n' }, theme, {}))).toBe('○ Coordinate(lock 2 paths "n")');
@@ -187,7 +204,7 @@ describe('team tools on a fake Pi', () => {
     expect(a.ctx.ui.notes.at(-1)).toEqual({ message: `Queued for ${b.team.id}`, type: 'info' });
     await vi.waitFor(() => expect(b.sent.length).toBeGreaterThan(0), { timeout: 5_000 });
     // The user's text reaches the agent as typed, line breaks included.
-    expect(b.sent.at(-1)!.message.details).toMatchObject({ from: 'user', text: 'line one\n  line two' });
+    expect(b.sent.at(-1)!.message.details.messages).toEqual([expect.objectContaining({ from: 'user', text: 'line one\n  line two' })]);
     await tell.handler('ghost-0000 hi', a.ctx);
     expect(a.ctx.ui.notes.at(-1)!.type).toBe('warning');
 
@@ -202,7 +219,7 @@ describe('team tools on a fake Pi', () => {
   it('/agents warns when the team database is unusable', async () => {
     const fake = fakePi();
     const team = new Team(fake.pi, { OCTOCODE_AGENT_DB: path.join(tmp(), 'team.sqlite') });
-    agentsCommand(fake.pi, registerAgentTool(fake.pi, () => new Map(), team));
+    agentsCommand(fake.pi, registerAgentTool(fake.pi, () => new Map(), team, fakePermission()));
     vi.spyOn(team, 'snapshot').mockReturnValue({ members: [], traffic: [], error: 'schema v99 is newer' });
     const ctx = fakeCtx({ cwd: tmp() });
     await fake.commands.get('agents').handler('', ctx);
@@ -211,7 +228,7 @@ describe('team tools on a fake Pi', () => {
 });
 
 /** A Team stand-in that honors the watch contract: one listener call now and one per second. */
-function fakeTeam(read: () => { members: never[]; traffic: never[]; error?: string }, id?: string) {
+function fakeTeam(read: () => { members: never[]; traffic: never[]; error?: string; retrying?: boolean }, id?: string) {
   return {
     id,
     get view() {
@@ -227,7 +244,7 @@ function fakeTeam(read: () => { members: never[]; traffic: never[]; error?: stri
 
 describe('AgentsView', () => {
   const now = Date.now();
-  const peer = (id: string, status: 'working' | 'idle' = 'working', parentId: string | null = 'me-0001') => ({ id, status, ...(parentId ? { parentId } : {}), joinedAt: now - 5_000, updatedAt: now, toolCalls: 2, input: 1000, output: 200, task: 'review the parser', activity: 'localSearch foo' }) as never;
+  const peer = (id: string, status: 'working' | 'idle' = 'working', parentId: string | null = 'me-0001') => ({ id, status, ...(parentId ? { parentId } : {}), joinedAt: now - 5_000, updatedAt: now, toolCalls: 2, input: 1000, output: 200, goal: 'review the parser', activity: 'localSearch foo' }) as never;
 
   it('shows a widget for this session\'s subagents only, repaints, and clears when they leave', () => {
     vi.useFakeTimers();
@@ -292,6 +309,25 @@ describe('AgentsView', () => {
       vi.advanceTimersByTime(16_000);
       expect(ctx.ui.widgets.has('octocode-agents')).toBe(false);
       view.stop(ctx);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('mounts the widget once a database error clears, and shows a transient error as a retry, not as team off', () => {
+    vi.useFakeTimers({ now });
+    try {
+      let view: { members: never[]; traffic: never[]; error?: string; retrying?: boolean } = { members: [], traffic: [], error: 'Team database unavailable: database is locked', retrying: true };
+      const agents = new AgentsView(fakeTeam(() => view, 'me-0001'));
+      const ctx = fakeCtx({ cwd: tmp() });
+      agents.start(ctx);
+      expect(ctx.ui.statuses.get('octocode-team')).toBe('team retrying: Team database unavailable: database is locked');
+      expect(ctx.ui.widgets.has('octocode-agents')).toBe(false);
+      view = { members: [peer('me-0001', 'working', null), peer('reviewer-1a2b')], traffic: [] };
+      vi.advanceTimersByTime(1_000);
+      expect(ctx.ui.statuses.get('octocode-team')).toBeUndefined();
+      expect(ctx.ui.widgets.has('octocode-agents')).toBe(true);
+      agents.stop(ctx);
     } finally {
       vi.useRealTimers();
     }

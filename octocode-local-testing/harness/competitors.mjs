@@ -1,3 +1,4 @@
+// BENCHMARK, not a correctness test: run-all runs it only when named (LIVE: calls GitHub).
 // Deterministic competitor harness (beat-rg-gh PLAN): frozen tasks run as
 // an octocode recipe (MCP via the shared client; CLI for CLI-only tools) and
 // as the shell recipe an expert agent would run (rg/sed/git/gh/ast-grep/npm).
@@ -287,7 +288,8 @@ function octocodeEvidence(entry, ev, { unsearched = false } = {}) {
     if (Array.isArray(node.lines) && node.lines.every(l => typeof l === 'string')) for (const l of node.lines) { const m = /^(\d+)\t/.exec(l); if (m) pair(here, +m[1]); }
     // Compact rows: symbols outline rows (grouped and merged, see outlineRows)
     // and lean structural matches "<line>[-<end>]\t<value>".
-    if (Array.isArray(node.symbols)) for (const decl of outlineRows(node.symbols)) if (Number.isInteger(decl.line)) pair(here, decl.line);
+    // Other tools' `symbols` arrays may hold anything: only declaration objects are outline rows.
+    if (Array.isArray(node.symbols)) for (const decl of outlineRows(node.symbols.filter(row => row && typeof row === 'object' && !Array.isArray(row)))) if (Number.isInteger(decl.line)) pair(here, decl.line);
     if (Array.isArray(node.matches)) for (const row of node.matches) {
       if (typeof row !== 'string') continue;
       // Grouped lspSearch callers: "<line>:<col>[,<line>:<col>…] in <kind> <name> …" lists call sites.

@@ -18,6 +18,11 @@ crate-type = ["rlib"]
 name = "integration"
 path = "tests/main.rs"
 
+# PageReplayMemo latency and retained bytes across byte caps (prints tables).
+[[bench]]
+name = "page_replay"
+harness = false
+
 [features]
 # Dev-loop feature unification, enabled by `build:dev` and `test:rust` but never
 # by release builds. wiremock and tempfile (dev-dependencies) turn these features

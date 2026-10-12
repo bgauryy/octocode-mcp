@@ -200,7 +200,7 @@ async fn provider(server: &MockServer) -> GitHubProvider<MemoryCache> {
 
 #[tokio::test]
 async fn ghes_content_route_auth_and_decode() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let sha = "0123456789abcdef0123456789abcdef01234567";
     mount_json(
         &server,
@@ -233,7 +233,7 @@ async fn ghes_content_route_auth_and_decode() {
 
 #[tokio::test]
 async fn conditional_304_reuses_cached_body() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let provider = provider(&server).await;
     let sha = "0123456789abcdef0123456789abcdef01234567";
     mount_json(
@@ -268,7 +268,7 @@ async fn conditional_304_reuses_cached_body() {
 
 #[tokio::test]
 async fn distinguishes_permission_from_rate_limit_and_bounds_body() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(403)
@@ -285,7 +285,7 @@ async fn distinguishes_permission_from_rate_limit_and_bounds_body() {
     assert_eq!(error.kind, ProviderErrorKind::Permission);
     assert_eq!(error.request_id.as_deref(), Some("R1"));
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0; 17]))
         .mount(&server)
@@ -306,7 +306,7 @@ async fn pagination_respects_last_page_only_for_matching_numbered_links() {
         ("page=4&per_page=1", "items?page=3&per_page=2", true),
         ("page=4", "other?page=3", true),
     ] {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let next = format!("{}/api/v3/items?{next_query}", server.uri());
         let last = format!("{}/api/v3/{last_route}", server.uri());
         Mock::given(method("GET"))
@@ -342,7 +342,7 @@ async fn pagination_respects_last_page_only_for_matching_numbered_links() {
 
 #[tokio::test]
 async fn returns_same_origin_next_page_and_rejects_redirects() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let next = format!("{}/api/v3/items?page=2", server.uri());
     Mock::given(method("GET"))
         .and(path("/api/v3/items"))
@@ -364,7 +364,7 @@ async fn returns_same_origin_next_page_and_rejects_redirects() {
         .expect("page");
     assert_eq!(page.next.expect("next").as_str(), next);
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(302).insert_header("location", "https://example.com"))
         .mount(&server)
@@ -378,7 +378,7 @@ async fn returns_same_origin_next_page_and_rejects_redirects() {
 
 #[tokio::test]
 async fn retries_secondary_rate_limit_without_remaining_zero() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Arc::new(AtomicUsize::new(0));
     Mock::given(method("GET"))
         .respond_with(SecondaryThenOk(hits.clone(), Some("1")))
@@ -410,7 +410,7 @@ async fn retries_secondary_rate_limit_without_remaining_zero() {
 
 #[tokio::test]
 async fn projects_rate_limit_metadata_without_retrying_long_delays() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(429)
@@ -443,11 +443,23 @@ async fn projects_rate_limit_metadata_without_retrying_long_delays() {
     );
 }
 
+/// Signals each arrival, then answers 200 after a delay longer than the test.
+struct SignalThenDelay(Arc<tokio::sync::Notify>);
+impl Respond for SignalThenDelay {
+    fn respond(&self, _: &Request) -> ResponseTemplate {
+        self.0.notify_one();
+        ResponseTemplate::new(200).set_delay(Duration::from_secs(2))
+    }
+}
+
 #[tokio::test]
 async fn cancellation_interrupts_an_inflight_response() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
+    // The server signals once the request arrives, so the cancel lands while
+    // the delayed response is in flight rather than after a guessed sleep.
+    let arrived = Arc::new(tokio::sync::Notify::new());
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(2)))
+        .respond_with(SignalThenDelay(arrived.clone()))
         .mount(&server)
         .await;
     let endpoint = mock_endpoint(&server);
@@ -455,7 +467,7 @@ async fn cancellation_interrupts_an_inflight_response() {
     let context = RequestContext::with_timeout(Duration::from_secs(3), 16);
     let cancellation = context.budget.cancellation.clone();
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        arrived.notified().await;
         cancellation.cancel();
     });
     let error = transport
@@ -470,7 +482,7 @@ async fn cancellation_interrupts_an_inflight_response() {
 
 #[tokio::test]
 async fn rejects_cross_origin_pagination() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -493,7 +505,7 @@ async fn rejects_cross_origin_pagination() {
 
 #[tokio::test]
 async fn preserves_graphql_partial_data_and_errors() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/api/graphql"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -518,7 +530,7 @@ async fn preserves_graphql_partial_data_and_errors() {
 
 #[tokio::test]
 async fn cache_partition_covers_endpoint_credential_and_session() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let endpoint = mock_endpoint(&server);
     let transport = GitHubTransport::new(endpoint, RetryPolicy::default()).expect("transport");
     let context = with_token("one", Duration::from_secs(2), 16);
@@ -546,7 +558,7 @@ async fn cache_partition_covers_endpoint_credential_and_session() {
 /// credential (a credential rotated between requests is used at once).
 #[tokio::test]
 async fn each_request_carries_its_own_context_credential() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     for token in ["one", "two"] {
         Mock::given(method("GET"))
             .and(header("authorization", format!("Bearer {token}").as_str()))
@@ -580,7 +592,7 @@ fn canonicalizes_github_dot_com_credential_host() {
 
 #[tokio::test]
 async fn content_413_falls_back_to_parent_directory_and_blob() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let commit = "0123456789abcdef0123456789abcdef01234567";
     let blob = "89abcdef0123456789abcdef0123456789abcdef";
     mount_json(
@@ -629,7 +641,7 @@ async fn content_413_falls_back_to_parent_directory_and_blob() {
 async fn content_encoding_none_for_large_file_fetches_blob() {
     // GitHub returns 200 with `encoding:"none"` and empty content for files
     // between 1 MB and 100 MB; the bytes must come from git/blobs/{sha}.
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let commit = "0123456789abcdef0123456789abcdef01234567";
     let blob = "89abcdef0123456789abcdef0123456789abcdef";
     mount_json(
@@ -668,7 +680,7 @@ async fn content_encoding_none_for_large_file_fetches_blob() {
 
 #[tokio::test]
 async fn content_directory_symlink_and_submodule_get_clear_errors() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let commit = "0123456789abcdef0123456789abcdef01234567";
     mount_json(
         &server,
@@ -729,7 +741,7 @@ async fn content_directory_symlink_and_submodule_get_clear_errors() {
 
 #[tokio::test]
 async fn retries_transient_server_failure_once() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let attempts = Arc::new(AtomicUsize::new(0));
     Mock::given(method("GET"))
         .respond_with(FailOnce(attempts.clone()))
@@ -821,7 +833,7 @@ impl Respond for PrimaryThenOk {
 
 #[tokio::test]
 async fn primary_limit_waits_for_a_short_reset_then_retries() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Arc::new(AtomicUsize::new(0));
     let reset = epoch_secs() + 1;
     Mock::given(method("GET"))
@@ -847,7 +859,7 @@ async fn primary_limit_waits_for_a_short_reset_then_retries() {
 /// wait fails fast.
 #[tokio::test]
 async fn rate_limit_waits_do_not_spend_the_request_timeout() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Arc::new(AtomicUsize::new(0));
     let reset = epoch_secs() + 3;
     Mock::given(method("GET"))
@@ -868,7 +880,7 @@ async fn rate_limit_waits_do_not_spend_the_request_timeout() {
     assert!(context.budget.effective_deadline() > context.budget.deadline);
 
     let reset = epoch_secs() + 3;
-    let other = MockServer::start().await;
+    let other = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(PrimaryThenOk(Arc::new(AtomicUsize::new(0)), reset))
         .mount(&other)
@@ -886,7 +898,7 @@ async fn rate_limit_waits_do_not_spend_the_request_timeout() {
 
 #[tokio::test]
 async fn primary_limit_fails_fast_and_blocks_later_sends_until_reset() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let reset = epoch_secs() + 3600;
     Mock::given(method("GET"))
         .respond_with(
@@ -931,7 +943,7 @@ async fn primary_limit_fails_fast_and_blocks_later_sends_until_reset() {
 
 #[tokio::test]
 async fn secondary_limit_without_retry_after_waits_sixty_seconds_or_fails_fast() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Arc::new(AtomicUsize::new(0));
     Mock::given(method("GET"))
         .respond_with(SecondaryThenOk(hits.clone(), None))
@@ -969,7 +981,7 @@ async fn secondary_limit_without_retry_after_waits_sixty_seconds_or_fails_fast()
 #[tokio::test]
 async fn do_not_retry_statuses_are_sent_once() {
     for status in [400_u16, 401, 403, 404, 410, 422, 451] {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("GET"))
             .respond_with(
                 ResponseTemplate::new(status)
@@ -992,7 +1004,7 @@ async fn do_not_retry_statuses_are_sent_once() {
 
 #[tokio::test]
 async fn graphql_top_level_rate_limited_type_is_a_primary_limit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let reset = epoch_secs() + 3600;
     Mock::given(method("POST"))
         .and(path("/api/graphql"))
@@ -1045,7 +1057,7 @@ impl Respond for GraphqlWentWrongOnce {
 
 #[tokio::test]
 async fn graphql_something_went_wrong_is_retried_like_a_500() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Arc::new(AtomicUsize::new(0));
     Mock::given(method("POST"))
         .and(path("/api/graphql"))
@@ -1080,7 +1092,7 @@ impl Respond for ServerErrorRetryAfterOnce {
 
 #[tokio::test]
 async fn permits_are_released_while_backing_off() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Arc::new(AtomicUsize::new(0));
     Mock::given(method("GET"))
         .and(path("/api/v3/flaky"))
@@ -1147,7 +1159,7 @@ impl Respond for Arrivals {
 
 #[tokio::test]
 async fn search_requests_are_spaced_per_key() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let arrivals = Arc::new(Mutex::new(Vec::new()));
     Mock::given(method("GET"))
         .and(path("/api/v3/search/issues"))
@@ -1185,7 +1197,7 @@ async fn search_requests_are_spaced_per_key() {
 
 #[tokio::test]
 async fn limiter_keys_isolate_tokens() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let reset = epoch_secs() + 3600;
     Mock::given(method("GET"))
         .and(header("authorization", "Bearer exhausted"))
@@ -1251,7 +1263,7 @@ impl ConditionalCache for KeyedCache {
 
 #[tokio::test]
 async fn default_branch_resolves_with_one_sha_request_and_is_memoized_per_batch() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let sha = "0123456789abcdef0123456789abcdef01234567";
     // No repository-metadata round trip: HEAD resolves the default branch.
     Mock::given(method("GET"))
@@ -1314,7 +1326,7 @@ async fn legal_block_and_unmapped_statuses_are_not_network_failures() {
         ),
         (418, ProviderErrorKind::HttpStatus, "HTTP 418"),
     ] {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("GET"))
             .respond_with(
                 ResponseTemplate::new(status)
@@ -1338,7 +1350,7 @@ async fn legal_block_and_unmapped_statuses_are_not_network_failures() {
 
 #[tokio::test]
 async fn oversized_error_body_keeps_status_and_says_the_body_was_not_read() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(404).set_body_bytes(vec![b'x'; 4096]))
         .mount(&server)
@@ -1361,6 +1373,7 @@ async fn cancel_while_reading_an_error_body_is_cancelled() {
     // Headers and part of a 404 body arrive, then the server stalls.
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
     let address = listener.local_addr().expect("address");
+    let (sent, partial_sent) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
         let Ok((mut socket, _)) = listener.accept() else {
             return;
@@ -1371,6 +1384,7 @@ async fn cancel_while_reading_an_error_body_is_cancelled() {
             b"HTTP/1.1 404 Not Found\r\ncontent-type: application/json\r\ncontent-length: 100000\r\n\r\n{\"message\":\"par",
         );
         let _ = socket.flush();
+        let _ = sent.send(());
         std::thread::sleep(Duration::from_secs(3));
     });
     let endpoint =
@@ -1381,8 +1395,9 @@ async fn cancel_while_reading_an_error_body_is_cancelled() {
             .expect("transport");
     let context = RequestContext::with_timeout(Duration::from_secs(4), 1 << 20);
     let cancellation = context.budget.cancellation.clone();
+    // Cancel once the headers and partial body are on the wire.
     tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        let _ = partial_sent.await;
         cancellation.cancel();
     });
     let error = transport
@@ -1409,7 +1424,7 @@ fn code_search_request() -> CodeSearchRequest {
 /// one token must never answer a request made with another.
 #[tokio::test]
 async fn code_search_cache_is_scoped_to_the_request_credential() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1439,7 +1454,7 @@ async fn code_search_cache_is_scoped_to_the_request_credential() {
 /// failure of any other kind keeps its own kind.
 #[tokio::test]
 async fn confirm_user_is_cached_per_credential_and_types_a_missing_login() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/users/dev"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"login": "dev"})))
@@ -1490,7 +1505,7 @@ async fn confirm_user_is_cached_per_credential_and_types_a_missing_login() {
 
 #[tokio::test]
 async fn a_resolved_full_sha_is_cached_per_credential() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let sha = "0123456789abcdef0123456789abcdef01234567";
     Mock::given(method("GET"))
         .and(path(format!("/api/v3/repos/o/r/commits/{sha}")))
@@ -1518,7 +1533,7 @@ async fn a_resolved_full_sha_is_cached_per_credential() {
 
 #[tokio::test]
 async fn incomplete_code_search_pages_are_not_cached() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -1544,7 +1559,7 @@ async fn incomplete_code_search_pages_are_not_cached() {
 /// wait out the search spacing the first request reserved.
 #[tokio::test]
 async fn repeated_searches_are_served_from_cache_without_spacing() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let page = serde_json::json!({"total_count": 0, "incomplete_results": false, "items": []});
     for route in [
         "/api/v3/search/code",
@@ -1625,7 +1640,7 @@ async fn repeated_searches_are_served_from_cache_without_spacing() {
 
 #[tokio::test]
 async fn incomplete_repository_and_history_search_pages_are_not_cached() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     for route in ["/api/v3/search/repositories", "/api/v3/search/issues"] {
         Mock::given(method("GET"))
             .and(path(route))
@@ -1705,7 +1720,7 @@ fn plain_http_api_base_is_limited_to_loopback() {
 
 #[tokio::test]
 async fn history_reads_revalidate_and_pinned_commits_are_served_from_cache() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/o/r/pulls/1"))
         .and(header("if-none-match", "\"v1\""))
@@ -1757,7 +1772,7 @@ async fn history_reads_revalidate_and_pinned_commits_are_served_from_cache() {
 /// with a typed reason, not a malformed request; a 404 stays the repository.
 #[tokio::test]
 async fn missing_ref_is_not_found_with_a_ref_reason() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/r/commits/nope",
@@ -1794,7 +1809,7 @@ async fn missing_ref_is_not_found_with_a_ref_reason() {
 /// `a/b` renamed; other repositories and plain reads stay unmarked.
 #[tokio::test]
 async fn a_followed_repository_redirect_marks_the_name_renamed() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let moved = format!("{}/api/v3/repositories/7/commits/main", server.uri());
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b/commits/main"))
@@ -1861,11 +1876,11 @@ async fn get_status(
         .await
 }
 
-/// Issue 1: a row queued behind the search spacing must re-check the block
+/// A row queued behind the search spacing must re-check the block
 /// that landed while it slept, not send into a 120 s secondary cooldown.
 #[tokio::test]
 async fn a_queued_request_is_not_sent_after_a_cooldown_lands_while_it_waits() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/issues"))
         .respond_with(secondary_limit_response(Some("120")))
@@ -1931,11 +1946,11 @@ fn breaker_budget(circuit_failures: u32) -> Arc<GitHubBudget> {
     }))
 }
 
-/// Issue 2: an outage trips the breaker, and the open breaker names the real
+/// An outage trips the breaker, and the open breaker names the real
 /// cause (a server failure) rather than a rate limit.
 #[tokio::test]
 async fn an_open_circuit_reports_a_server_outage_not_a_rate_limit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Hits::new();
     mount_bad_gateway(&server, &hits).await;
     let (transport, endpoint) = executor_transport(&server, breaker_budget(2), short_retry());
@@ -1963,10 +1978,10 @@ async fn an_open_circuit_reports_a_server_outage_not_a_rate_limit() {
     );
 }
 
-/// Issue 2: retries of one logical request are one failure, not one each.
+/// Retries of one logical request are one failure, not one each.
 #[tokio::test]
 async fn the_circuit_counts_one_failure_per_logical_request() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Hits::new();
     mount_bad_gateway(&server, &hits).await;
     // 3 attempts per request: per-attempt counting opens at the first
@@ -1981,10 +1996,10 @@ async fn the_circuit_counts_one_failure_per_logical_request() {
     assert_eq!(hits.count(), 6, "both requests ran all their attempts");
 }
 
-/// Issue 2: a success closes the breaker's count.
+/// A success closes the breaker's count.
 #[tokio::test]
 async fn a_success_resets_the_circuit_count() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Hits::new();
     let flip = hits.clone();
     Mock::given(method("GET"))
@@ -2010,7 +2025,7 @@ async fn a_success_resets_the_circuit_count() {
     }
 }
 
-/// Issue 2: transport outages carry their own cause too.
+/// Transport outages carry their own cause too.
 #[tokio::test]
 async fn an_open_circuit_after_connection_failures_reports_transport() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
@@ -2041,10 +2056,10 @@ async fn an_open_circuit_after_connection_failures_reports_transport() {
     assert!(second.message.contains("unavailable"), "{}", second.message);
 }
 
-/// Issue 2: repeated secondary limits still report a rate limit.
+/// Repeated secondary limits still report a rate limit.
 #[tokio::test]
 async fn an_open_circuit_after_secondary_limits_reports_a_rate_limit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(secondary_limit_response(Some("1")))
         .mount(&server)
@@ -2064,11 +2079,11 @@ async fn an_open_circuit_after_secondary_limits_reports_a_rate_limit() {
     assert_eq!(second.kind, ProviderErrorKind::RateLimited);
 }
 
-/// Issue 6: a secondary limit's `resetEpochSeconds` is the cooldown end, not
+/// A secondary limit's `resetEpochSeconds` is the cooldown end, not
 /// the unrelated primary window reset an hour away.
 #[tokio::test]
 async fn secondary_limit_reset_is_the_cooldown_end() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(secondary_limit_response(Some("120")))
         .mount(&server)
@@ -2088,10 +2103,10 @@ async fn secondary_limit_reset_is_the_cooldown_end() {
     );
 }
 
-/// Issue 8: a 5xx `Retry-After` beyond the retry cap is surfaced, not dropped.
+/// A 5xx `Retry-After` beyond the retry cap is surfaced, not dropped.
 #[tokio::test]
 async fn a_long_server_retry_after_is_surfaced() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Hits::new();
     let counter = hits.clone();
     Mock::given(method("GET"))
@@ -2113,10 +2128,10 @@ async fn a_long_server_retry_after_is_surfaced() {
     );
 }
 
-/// Issue 7: the SAML SSO authorization URL travels with the failure.
+/// The SAML SSO authorization URL travels with the failure.
 #[tokio::test]
 async fn a_saml_sso_403_carries_the_authorization_url() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(403)
@@ -2141,10 +2156,10 @@ async fn a_saml_sso_403_carries_the_authorization_url() {
     );
 }
 
-/// Issue 7: `partial-results` names the organizations that withheld results.
+/// `partial-results` names the organizations that withheld results.
 #[tokio::test]
 async fn partial_sso_results_name_the_withheld_organizations() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(200)
@@ -2170,10 +2185,10 @@ async fn partial_sso_results_name_the_withheld_organizations() {
     assert!(plain.sso_partial_organizations().is_empty());
 }
 
-/// Issue 5: rate-limit bodies without `x-ratelimit-*` headers (proxies, GHES).
+/// Rate-limit bodies without `x-ratelimit-*` headers (proxies, GHES).
 #[tokio::test]
 async fn a_headerless_rate_limit_body_is_a_primary_limit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(403).set_body_json(
             serde_json::json!({"message": "API rate limit exceeded for user ID 1."}),
@@ -2189,10 +2204,10 @@ async fn a_headerless_rate_limit_body_is_a_primary_limit() {
     assert!(error.rate_limit.is_some());
 }
 
-/// Issue 5: the legacy abuse-detection 403 is a secondary limit.
+/// The legacy abuse-detection 403 is a secondary limit.
 #[tokio::test]
 async fn an_abuse_detection_403_is_a_secondary_limit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
             "message": "You have triggered an abuse detection mechanism. Please wait a few minutes before you try again."
@@ -2210,10 +2225,10 @@ async fn an_abuse_detection_403_is_a_secondary_limit() {
     );
 }
 
-/// Issue 5: an HTTP-date `Retry-After` is honored instead of the 60 s default.
+/// An HTTP-date `Retry-After` is honored instead of the 60 s default.
 #[tokio::test]
 async fn an_http_date_retry_after_is_honored() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let date = httpdate_after(3);
     Mock::given(method("GET"))
         .respond_with(
@@ -2270,7 +2285,7 @@ fn civil_from_days_for_test(days: i64) -> (i64, i64, i64) {
 
 #[tokio::test]
 async fn concurrent_repository_metadata_reads_share_one_request() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let hits = Arc::new(AtomicUsize::new(0));
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/o/r"))
@@ -2320,7 +2335,7 @@ impl Respond for CountedRepository {
 
 #[tokio::test]
 async fn a_failed_repository_read_is_not_memoized() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/o/r"))
         .respond_with(
@@ -2342,7 +2357,7 @@ async fn a_failed_repository_read_is_not_memoized() {
 
 #[tokio::test]
 async fn code_search_room_counts_the_searches_the_window_has_left() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(
@@ -2379,11 +2394,158 @@ async fn code_search_room_counts_the_searches_the_window_has_left() {
     );
 }
 
-/// Issue 7: a search the token only partly covered says so, and is not
+/// Four transports with their own budgets share one state directory,
+/// as four processes on one `OCTOCODE_HOME` do. Eight concurrent code
+/// searches against a 2/min window send at most 2, and every refused search
+/// returns well before its deadline instead of queueing toward it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn processes_sharing_a_state_dir_never_exceed_the_window_and_refuse_promptly() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(
+                    serde_json::json!({"total_count":0,"incomplete_results":false,"items":[]}),
+                )
+                .set_delay(Duration::from_millis(200)),
+        )
+        .mount(&server)
+        .await;
+    let state = tempfile::tempdir().expect("state directory");
+    let transports = (0..4)
+        .map(|_| {
+            let budget = Arc::new(GitHubBudget::with_config(ExecutorConfig {
+                code_search_per_minute: 2,
+                ..ExecutorConfig::relaxed()
+            }));
+            let (mut transport, _) = executor_transport(
+                &server,
+                budget,
+                RetryPolicy {
+                    max_rate_limit_wait: Duration::from_secs(1),
+                    ..short_retry()
+                },
+            );
+            transport.set_rate_limit_state_dir(Some(state.path().to_path_buf()));
+            Arc::new(transport)
+        })
+        .collect::<Vec<_>>();
+    let mut searches = tokio::task::JoinSet::new();
+    for (index, transport) in transports.iter().cycle().take(8).enumerate() {
+        let transport = Arc::clone(transport);
+        searches.spawn(async move {
+            let started = std::time::Instant::now();
+            let result = transport
+                .search_code(
+                    &CodeSearchRequest {
+                        query: format!("q{index}"),
+                        page: 1,
+                        per_page: 5,
+                        include_fragments: false,
+                    },
+                    &with_token("t", Duration::from_secs(10), 1 << 20),
+                )
+                .await;
+            (result.map(|_| ()), started.elapsed())
+        });
+    }
+    let mut sent = 0;
+    while let Some(joined) = searches.join_next().await {
+        let (result, elapsed) = joined.expect("search task");
+        match result {
+            Ok(()) => sent += 1,
+            Err(error) => {
+                assert_eq!(error.kind, ProviderErrorKind::RateLimited, "{error:?}");
+                assert!(
+                    elapsed < Duration::from_secs(3),
+                    "refused after {elapsed:?}: a refusal must not queue toward the deadline"
+                );
+            }
+        }
+    }
+    let received = server.received_requests().await.expect("recorded").len();
+    assert_eq!(received, sent);
+    assert!(received <= 2, "{received} searches reached a 2/min window");
+    assert!(sent >= 1);
+}
+
+/// A row of several code searches is refused before the first is
+/// sent when they cannot all start within the cap; the refusal reserves no
+/// slot and claims no provider counters. A search the cache answers needs no
+/// slot, so callers can count only the searches they will send.
+#[tokio::test]
+async fn a_code_search_batch_that_cannot_fit_is_refused_before_any_send() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            serde_json::json!({"total_count":0,"incomplete_results":false,"items":[]}),
+        ))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let budget = Arc::new(GitHubBudget::with_config(ExecutorConfig {
+        code_search_per_minute: 2,
+        ..ExecutorConfig::relaxed()
+    }));
+    let (mut transport, _) = executor_transport(&server, budget, short_retry());
+    transport.cache = Arc::new(PartitionedCache::default());
+    let context = with_token("t", Duration::from_secs(5), 1 << 20);
+    let request = |query: &str| CodeSearchRequest {
+        query: query.into(),
+        page: 1,
+        per_page: 5,
+        include_fragments: false,
+    };
+    transport
+        .search_code(&request("one"), &context)
+        .await
+        .expect("search");
+    assert_eq!(transport.code_search_room(&context), 1);
+
+    assert!(transport.code_search_batch_refusal(1, &context).is_none());
+    let refusal = transport
+        .code_search_batch_refusal(2, &context)
+        .expect("two searches cannot fit one slot within the cap");
+    assert_eq!(refusal.kind, ProviderErrorKind::RateLimited);
+    assert!(
+        refusal.message.contains("2 searches"),
+        "{}",
+        refusal.message
+    );
+    let rate = refusal.rate_limit.expect("rate limit");
+    assert_eq!(rate.remaining, None);
+    assert_eq!(rate.resource.as_deref(), Some("code_search"));
+    assert!(rate.retry_after_seconds.is_some());
+    assert_eq!(
+        transport.code_search_room(&context),
+        1,
+        "a refusal reserves nothing"
+    );
+
+    assert!(
+        transport
+            .cached_code_search(&request("one"), &context)
+            .await
+            .expect("lookup")
+            .is_some(),
+        "a cached search is visible without a send"
+    );
+    assert!(
+        transport
+            .cached_code_search(&request("two"), &context)
+            .await
+            .expect("lookup")
+            .is_none()
+    );
+}
+
+/// A search the token only partly covered says so, and is not
 /// cached (a cached copy would hide the authorization that fixes it).
 #[tokio::test]
 async fn a_search_partly_withheld_by_saml_names_the_organizations_and_is_not_cached() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .respond_with(
             ResponseTemplate::new(200)

@@ -21,7 +21,8 @@ impl Workspace {
             .env("ALLOWED_PATHS", &self.workspace)
             .env("OCTOCODE_ENABLE_LOCAL", "true")
             .env("NO_COLOR", "1")
-            .env("OCTOCODE_ENABLE_STATS", "false");
+            .env("OCTOCODE_ENABLE_STATS", "false")
+            .env("GITHUB_API_URL", UNMOCKED_GITHUB_API_URL);
         command
     }
 }

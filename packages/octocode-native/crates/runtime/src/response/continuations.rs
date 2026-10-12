@@ -16,7 +16,9 @@
 //!    [`super::channels`]);
 //! 4. compact each kept call: drop the fields validation restores, and
 //!    validate it against the strict input contract. An invalid call is a
-//!    runtime defect and is returned, never passed on silently.
+//!    runtime defect: it is dropped from its row, which keeps its evidence
+//!    and states the drop (`partialReasons: ["leadInvalid"]` and a
+//!    warning), and its issues are returned, never passed on silently.
 
 use std::collections::HashMap;
 
@@ -76,9 +78,14 @@ impl Sources<'_> {
     }
 }
 
-/// Shape every continuation of `structured` (see the module docs). Returns
-/// the issues of calls that fail the strict input contract, with the path of
-/// each call, for the caller to isolate.
+/// The `partialReasons` entry of a row that lost a continuation the strict
+/// input contract rejects.
+pub const LEAD_INVALID: &str = "leadInvalid";
+
+/// Shape every continuation of `structured` (see the module docs). A call
+/// that fails the strict input contract is dropped from its row, which is
+/// kept and marked [`LEAD_INVALID`]; the issues are returned, with the path
+/// of each call, so debug builds and tests fail on the defect.
 pub fn finalize(
     structured: &mut Value,
     tool: ToolId,
@@ -107,6 +114,7 @@ pub fn finalize(
         if let Some(object) = row.as_object_mut() {
             super::channels::move_text(object);
         }
+        let had_recovery = recovery && super::rows::has_recovery(row);
         let mut row_issues = Vec::new();
         let mut path = vec![rows_key.to_owned(), position.to_string()];
         visit(
@@ -121,6 +129,13 @@ pub fn finalize(
             },
             &mut path,
         );
+        drop_invalid_calls(row, &row_issues);
+        if had_recovery && !super::rows::has_recovery(row) {
+            super::rows::ensure_recovery(row, tool, source.as_ref().unwrap_or(&Value::Null));
+            if let Some(data) = row.get_mut("data").and_then(Value::as_object_mut) {
+                super::channels::move_text(data);
+            }
+        }
         issues.extend(row_issues);
     }
     if issues.is_empty() {
@@ -128,6 +143,60 @@ pub fn finalize(
     } else {
         Err(ContractValidationError { issues })
     }
+}
+
+/// Drops each call `issues` name from `row` (paths `[rows, position, …,
+/// next|hints, name, …]`) and marks the row's data partial: the evidence
+/// stays, only the lead the tool would reject is gone.
+fn drop_invalid_calls(row: &mut Value, issues: &[ValidationIssue]) {
+    let mut calls = issues
+        .iter()
+        .filter_map(|issue| {
+            let at = issue
+                .path
+                .iter()
+                .skip(2)
+                .position(|segment| segment == PAGES_KEY || segment == HINTS_KEY)?
+                + 2;
+            Some(issue.path.get(2..at + 2)?.to_vec())
+        })
+        .collect::<Vec<_>>();
+    calls.sort();
+    calls.dedup();
+    if calls.is_empty() {
+        return;
+    }
+    for call in &calls {
+        let Some((name, parent)) = call.split_last() else {
+            continue;
+        };
+        let pointer = parent.iter().fold(String::new(), |pointer, segment| {
+            format!("{pointer}/{segment}")
+        });
+        if let Some(calls) = row.pointer_mut(&pointer).and_then(Value::as_object_mut) {
+            calls.remove(name);
+            if calls.is_empty()
+                && let Some((key, owner)) = parent.split_last()
+            {
+                let owner = owner.iter().fold(String::new(), |pointer, segment| {
+                    format!("{pointer}/{segment}")
+                });
+                if let Some(owner) = row.pointer_mut(&owner).and_then(Value::as_object_mut) {
+                    owner.remove(key);
+                }
+            }
+        }
+    }
+    let target = if row.get("data").is_some_and(Value::is_object) {
+        &mut row["data"]
+    } else {
+        row
+    };
+    crate::tools::paging::mark_partial(
+        target,
+        LEAD_INVALID,
+        &["leadInvalid: a continuation failed its tool's input contract and was withheld; the shown evidence stands.".to_owned()],
+    );
 }
 
 /// Compacts one admitted tool input: a flat query or a `{queries: [...]}`
@@ -705,6 +774,34 @@ mod tests {
     }
 
     #[test]
+    fn an_invalid_call_is_dropped_and_its_row_kept() {
+        let read = call("localFetch", json!({"path":"/a"}));
+        let mut out = json!({"results":[{"index":0,"data":{"files":["a.rs"],
+            "next":{"nextPage":call("localSearch", json!({"bogus":true}))},
+            "hints":{"read":read}}},
+            {"index":1,"data":{"files":["b.rs"],"next":{"nextPage":call("localSearch", json!({"bogus":true}))}}}]});
+        finalize(
+            &mut out,
+            ToolId::LocalSearch,
+            &Sources::Rows(&[None, None]),
+            &Scope::everything(),
+        )
+        .expect_err("invalid call");
+        for row in out["results"].as_array().expect("rows") {
+            let data = &row["data"];
+            assert!(data["files"].is_array(), "the evidence stays: {row}");
+            assert!(
+                data.get("next").is_none(),
+                "the invalid lead is gone: {row}"
+            );
+            assert_eq!(data["partialReasons"], json!([LEAD_INVALID]), "{row}");
+            assert_eq!(data["isPartial"], true, "{row}");
+            let warning = data["warnings"][0].as_str().expect("warning");
+            assert!(warning.len() <= 120, "{warning}");
+        }
+    }
+
+    #[test]
     fn an_invalid_call_is_an_error_with_its_path() {
         let mut out = json!({"results":[{"index":0,"data":{"next":{"nextPage":call("localSearch", json!({"bogus":true}))}}}]});
         let error = finalize(
@@ -853,6 +950,31 @@ mod tests {
             out["results"][1]["data"].get("warnings").is_none(),
             "{}",
             out["results"][1]
+        );
+    }
+
+    #[test]
+    fn an_empty_row_that_loses_its_only_lead_to_the_surface_keeps_a_recovery_hint() {
+        let query = json!({"owner":"o","repo":"r","keywords":["zzz"]});
+        let mut out = json!({"results":[{"index":0,"status":"empty","data":{"next":{
+            "cloneRepo":call("ghCloneRepo", json!({"owner":"o","repo":"r"}))
+        }}}]});
+        let scope = Scope {
+            is_available: &|_| false,
+        };
+        finalize(
+            &mut out,
+            ToolId::GhSearchCode,
+            &Sources::Rows(&[Some(&query)]),
+            &scope,
+        )
+        .expect("valid");
+        let data = &out["results"][0]["data"];
+        assert!(data.get("next").is_none(), "{data}");
+        assert_eq!(
+            data["hints"],
+            json!({(crate::response::channels::HINT_TEXT_KEY): [ToolId::GhSearchCode.output().fallback_hint(&query)]}),
+            "{data}"
         );
     }
 

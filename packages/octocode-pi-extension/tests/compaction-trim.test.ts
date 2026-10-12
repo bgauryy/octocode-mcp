@@ -2,8 +2,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KEEP_RECENT_RESULTS, TRIM_PRESSURE_PERCENT, planContextTrims, promptCacheTtlMs, registerCompaction, trimsDue, type TrimMemo } from '../src/compaction/register.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { promptCacheTtlMs } from '../src/compaction/cache.js';
+import { TRIM_PRESSURE_PERCENT, trimsDue } from '../src/compaction/policy.js';
+import { KEEP_RECENT_RESULTS, planContextTrims, registerCompaction, type TrimMemo } from '../src/compaction/register.js';
 import type { FileGuard } from '../src/files/tool.js';
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
@@ -12,6 +14,8 @@ const call = (index: number, size: number) => ({
   id: `a${index}`,
   message: { role: 'assistant', content: [{ type: 'toolCall', id: `c${index}`, name: 'file', arguments: { queries: [{ type: 'write', path: `f${index}.ts`, content: 'w'.repeat(size) }] } }] },
 });
+/** A long user message after everything trimmable. */
+const tail = { id: 'tail', message: { role: 'user', content: 'u'.repeat(400_000) } };
 const result = (index: number) => ({ id: `r${index}`, message: { role: 'toolResult', toolName: 'file', toolCallId: `c${index}`, content: [{ type: 'text', text: 'ok' }] } });
 
 /** Pi's turn_end shape: each entry is one session message. */
@@ -22,14 +26,16 @@ const turnEnd = (entries: Array<{ id: string; message: unknown }>) => ({
 
 function register(model?: { promptCache?: { short?: number; long?: number } }) {
   const handlers = new Map<string, Handler>();
-  const pi = { on: (name: string, handler: Handler) => void handlers.set(name, handler) } as unknown as ExtensionAPI;
+  const pi = { on: (name: string, handler: Handler) => void handlers.set(name, handler), registerProvider: vi.fn(), getSettings: () => ({}) } as unknown as ExtensionAPI;
   const reset = vi.fn();
   const forget = vi.fn();
   registerCompaction(pi, { reset, forget } as unknown as FileGuard);
   let session = 's1';
   // Context pressure by default, so turn_end plans trims; tests lower it to see the cache-aware deferral.
   const usage = { percent: 80 as number | null };
-  const ctx = { model, cwd: '/repo', sessionManager: { getSessionId: () => session }, getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent: usage.percent }) };
+  const registered = model && { provider: 'p', id: 'm', api: 'anthropic-messages', ...model };
+  const modelRegistry = { getAll: () => (registered ? [registered] : []), find: () => registered };
+  const ctx = { model: registered, modelRegistry, hasUI: true, cwd: '/repo', sessionManager: { getSessionId: () => session, getBranch: () => [] }, getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent: usage.percent }) };
   return {
     usage,
     reset,
@@ -51,7 +57,12 @@ function countStringify(entries: Array<{ message: unknown }>) {
   return { count: () => count, restore: () => spy.mockRestore() };
 }
 
-afterEach(() => vi.restoreAllMocks());
+// An exported (user) retention: session_start keeps it, so these tests use the short tier throughout.
+beforeEach(() => vi.stubEnv('PI_CACHE_RETENTION', 'short'));
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 describe('trim plan memo', () => {
   it('measures each settled call once across turn_end events, and forgets on session switch, compaction and tree moves', async () => {
@@ -97,19 +108,16 @@ describe('trim plan memo', () => {
     expect(trimsDue({ written: now, ttlMs: undefined }, 10, now)).toBe(true);
 
     // The lifetime is the model's tier for the retention in use.
-    const model = { promptCache: { short: 300, long: 3600 } };
-    expect(promptCacheTtlMs(model, undefined, {})).toBe(300_000);
-    expect(promptCacheTtlMs(model, undefined, { PI_CACHE_RETENTION: 'long' })).toBe(3_600_000);
-    expect(promptCacheTtlMs({}, undefined, {})).toBeUndefined();
-    // A declared model keeps its tiers whatever its usage shows (none declared for this tier: no cache).
-    expect(promptCacheTtlMs({ promptCache: { long: 3600 } }, { usage: { cacheRead: 10 } }, {})).toBeUndefined();
-    // A model that declares no cache but reports cache use gets the conservative inferred lifetime...
-    expect(promptCacheTtlMs({}, { role: 'assistant', usage: { cacheRead: 1200, cacheWrite: 0 } }, {})).toBe(300_000);
-    expect(promptCacheTtlMs(undefined, { usage: { cacheRead: 0, cacheWrite: 50 } }, { PI_CACHE_RETENTION: 'long' })).toBe(3_600_000);
-    // ...and without cache evidence it has none.
-    expect(promptCacheTtlMs({}, { usage: { cacheRead: 0, cacheWrite: 0 } }, {})).toBeUndefined();
+    const tiers = { short: 300, long: 3600 };
+    expect(promptCacheTtlMs(tiers, {})).toBe(300_000);
+    expect(promptCacheTtlMs(tiers, { PI_CACHE_RETENTION: 'long' })).toBe(3_600_000);
+    expect(promptCacheTtlMs(undefined, {})).toBeUndefined();
+    // None declared for this tier: no cache.
+    expect(promptCacheTtlMs({ long: 3600 }, {})).toBeUndefined();
 
-    const big = Array.from({ length: KEEP_RECENT_RESULTS + 10 }, (_, index) => [call(index, 70_000), result(index)]).flat();
+    // About 1.3M request characters (room left under REQUEST_PRESSURE_CHARS), ending in a long message: on a warm cache any
+    // batch would rewrite it, which costs more than the batch saves, so only the cache decides.
+    const big = [...Array.from({ length: KEEP_RECENT_RESULTS + 10 }, (_, index) => [call(index, 40_000), result(index)]).flat(), tail];
     const session = () => {
       const s = register({ promptCache: { short: 300 } });
       s.usage.percent = 10;
@@ -130,13 +138,13 @@ describe('trim plan memo', () => {
   });
 
   it('waits for the inferred cache lifetime when a model declares no cache but its turn reports cache use', async () => {
-    const big = Array.from({ length: KEEP_RECENT_RESULTS + 10 }, (_, index) => [call(index, 70_000), result(index)]).flat();
+    const big = [...Array.from({ length: KEEP_RECENT_RESULTS + 10 }, (_, index) => [call(index, 40_000), result(index)]).flat(), tail];
     const undeclared = () => {
       const s = register({});
       s.usage.percent = 10;
       return s;
     };
-    const turn = (usage: { cacheRead: number; cacheWrite: number }) => ({ message: { role: 'assistant', timestamp: Date.now(), usage } });
+    const turn = (usage: { cacheRead: number; cacheWrite: number }) => ({ message: { role: 'assistant', provider: 'p', model: 'm', timestamp: Date.now(), usage } });
     // Cache evidence: the warm prefix is kept until the lifetime passes.
     expect(await undeclared().fire('turn_end', { ...turnEnd(big), ...turn({ cacheRead: 5_000, cacheWrite: 200 }) })).toBeUndefined();
     // No evidence: nothing to keep warm, trims are due.
@@ -153,9 +161,10 @@ describe('trim plan memo', () => {
     const big = [...small, ...Array.from({ length: KEEP_RECENT_RESULTS }, (_, index) => [call(10 + index, 70_000), result(10 + index)]).flat()];
     const counter = countStringify(small);
     const edits = planContextTrims(big, memo);
-    // The pending verdict for c0 was reused, not recomputed.
-    expect(counter.count()).toBe(0);
+    // The pending verdict for c0 was reused, not recomputed: its arguments were serialized once, to save them whole.
+    expect(counter.count()).toBe(1);
     counter.restore();
+    // Copies are named by content, so planning the same history again points at the same files.
     expect(edits).toEqual(planContextTrims(big));
     expect(edits.map((edit) => edit.targetId)).toContain('a0');
     // Once proposed, the same (still unapplied) history proposes nothing new for these calls.
@@ -177,12 +186,16 @@ describe('trimmed results', () => {
     expect(first.startsWith('HEAD ')).toBe(true);
     expect(first.endsWith(' EXIT 1')).toBe(true);
     expect(first).toMatch(/^\[Output truncated: showing 10 of 900 lines\. Full output: ~\/\.octocode\/out\/web-1\.txt; search it\]$/m);
-    expect(first).toMatch(/full text is saved at ~\/\.octocode\/out\/web-1\.txt/);
-    expect(first.length).toBeLessThan(1_500);
-    // A pointer already in the tail is not repeated, and is still named in the note.
+    expect(first.length).toBeLessThan(1_800);
+    // Auxiliary pointers survive, but neither is accepted as proof that it stores the complete result.
     const second = textOf(edits.find((edit) => edit.targetId === 'r1')!);
     expect(second.match(/Log: ~\/\.octocode\/bash\/bash-2-1\.log/g)).toHaveLength(1);
-    expect(second).toMatch(/saved at ~\/\.octocode\/bash\/bash-2-1\.log/);
+    for (const [index, text] of [first, second].entries()) {
+      const saved = /full text is saved at (\S+) \(sha256 [0-9a-f]{16}, \d+ bytes\); read that file/.exec(text)?.[1];
+      expect(saved).toBeDefined();
+      const file = saved!.startsWith('~') ? path.join(os.homedir(), saved!.slice(2)) : path.resolve(saved!);
+      expect(fs.readFileSync(file, 'utf8')).toBe(entries[index]!.message.content[0]!.text);
+    }
   });
 
   it('saves a result that names no saved copy before trimming it, and leaves it whole when it cannot be saved', () => {
@@ -190,7 +203,7 @@ describe('trimmed results', () => {
     const edits = planContextTrims([big(0, whole), ...filler(10)]);
     const text = textOf(edits.find((edit) => edit.targetId === 'r0')!);
     expect(text).not.toMatch(/session history/);
-    const saved = /full text is saved at (.+?); read that file/.exec(text)?.[1];
+    const saved = /full text is saved at (\S+) \(sha256 [0-9a-f]{16}, \d+ bytes\); read that file/.exec(text)?.[1];
     expect(saved).toBeDefined();
     const file = saved!.startsWith('~') ? path.join(os.homedir(), saved!.slice(2)) : path.resolve(saved!);
     expect(fs.readFileSync(file, 'utf8')).toBe(whole);

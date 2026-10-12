@@ -6,12 +6,11 @@ import { initTheme } from '@earendil-works/pi-coding-agent';
 import { pathToFileURL } from 'node:url';
 import { diffStats, querySize } from '../src/files/render.js';
 import { FileGuard, formatOutcomes, registerFileTool, returnedContent } from '../src/files/tool.js';
-import { canonicalPath, resolveToolPath } from '../src/shared/home.js';
-import { readPaths } from '../src/files/reads.js';
+import { canonicalPath, readPaths, resolveToolPath } from '../src/shared/home.js';
 import { Checkpoints } from '../src/files/checkpoint.js';
 import { sha256 } from '../src/shared/atomic.js';
-import { fakeCtx } from './fake-pi.js';
-import { bashSafetyGate, catastrophicCommand } from '../src/files/bash-guard.js';
+import { fakeCtx, fakePermission } from './fake-pi.js';
+import { shellSafetyGate, catastrophicCommand } from '../src/permission/shell.js';
 import { tmp } from './helpers.js';
 import { theme } from './fake-pi.js';
 
@@ -133,7 +132,7 @@ describe('file tool', () => {
     fs.writeFileSync(file, 'new!');
     const guard = new FileGuard();
     const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<void>>();
-    registerFileTool({ registerTool: () => undefined, on: (name: string, handler: never) => handlers.set(name, handler) } as never, guard);
+    registerFileTool({ registerTool: () => undefined, on: (name: string, handler: never) => handlers.set(name, handler) } as never, guard, fakePermission());
     // The model saw 'old!'; the disk already holds 'new!' when the hook runs.
     await handlers.get('tool_result')!({ toolName: 'read', input: { path: 'a.txt' }, content: [{ type: 'text', text: 'old!' }], isError: false }, { cwd });
     expect(guard.inspect(file, 'edit', 'a.txt').expected).toBe(sha256('old!'));
@@ -145,7 +144,7 @@ describe('file tool', () => {
     fs.writeFileSync(file, 'one');
     const guard = new FileGuard();
     const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<void>>();
-    registerFileTool({ registerTool: () => undefined, on: (name: string, handler: never) => handlers.set(name, handler) } as never, guard);
+    registerFileTool({ registerTool: () => undefined, on: (name: string, handler: never) => handlers.set(name, handler) } as never, guard, fakePermission());
     await handlers.get('tool_result')!({ toolName: 'mcp__octocode__localFetch', input: { queries: [{ path: file, fullContent: true }] }, content: [{ type: 'text', text: 'one' }], structuredContent: { content: [], structuredContent: { results: [{ index: 0, data: { path: 'a.txt', content: '1\tone\n', totalLines: 1 } }] } }, isError: false }, { cwd });
     expect(guard.inspect(file, 'edit', 'a.txt').refusal).toMatch(/not read in this session/);
     await handlers.get('tool_result')!({ toolName: 'read', input: { path: 'a.txt' }, content: [{ type: 'text', text: 'one' }], isError: false }, { cwd });
@@ -156,13 +155,19 @@ describe('file tool', () => {
     const cwd = tmp();
     fs.writeFileSync(path.join(cwd, 'b.txt'), 'keep');
     let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
-    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, new FileGuard());
-    // Not aborted when the batch starts, aborted from the first query on (the user pressed Esc mid-batch).
-    let checks = 0;
-    const reason = new Error('aborted');
-    const signal = { get aborted() { return ++checks > 1; }, reason, addEventListener: () => undefined, removeEventListener: () => undefined, throwIfAborted: () => { if (signal.aborted) throw reason; } } as unknown as AbortSignal;
+    const guard = new FileGuard();
+    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard, fakePermission());
+    const controller = new AbortController();
+    const record = guard.record.bind(guard);
+    // Cancel after the first write finishes, before the next query. Exercise a real signal and an observable boundary.
+    vi.spyOn(guard, 'record').mockImplementation((file, known) => {
+      record(file, known);
+      if (file === path.join(cwd, 'a.txt')) controller.abort();
+    });
     const batch = { queries: [{ reasoning: 'r', type: 'write', path: 'a.txt', content: 'x' }, { reasoning: 'r', type: 'delete', path: 'b.txt' }] };
-    await expect(tool!.execute('c', batch, signal, undefined, { cwd, hasUI: false })).rejects.toThrow(/2\. FAILED delete b\.txt: Not applied: the batch was aborted/);
+    const result = await tool!.execute('c', batch, controller.signal, undefined, fakeCtx({ cwd, hasUI: false }));
+    expect(result).toMatchObject({ details: { outcomes: [{ ok: true }, { ok: false, message: 'Not applied: the batch was aborted.' }] } });
+    expect(fs.readFileSync(path.join(cwd, 'a.txt'), 'utf8')).toBe('x');
     expect(fs.readFileSync(path.join(cwd, 'b.txt'), 'utf8')).toBe('keep');
   });
 
@@ -173,7 +178,7 @@ describe('file tool', () => {
     const guard = new FileGuard();
     guard.record(file);
     let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
-    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard);
+    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard, fakePermission());
     const ctx = { cwd, hasUI: false };
     await tool!.execute('c', { queries: [{ reasoning: 'r', type: 'write', path: 'b.txt', content: 'new' }] }, undefined, undefined, ctx);
     await tool!.execute('c', { queries: [{ reasoning: 'r', type: 'edit', path: 'a.txt', edits: [{ oldText: 'one', newText: 'two' }] }] }, undefined, undefined, ctx);
@@ -224,9 +229,9 @@ describe('file tool', () => {
       checkpoints.open(store);
       const handlers = new Map<string, (event: unknown, ctx: unknown) => Promise<void>>();
       let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
-      registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: (name: string, handler: never) => handlers.set(name, handler) } as never, guard, undefined, checkpoints);
+      registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: (name: string, handler: never) => handlers.set(name, handler) } as never, guard, fakePermission(), checkpoints);
       // ~ is outside the workspace (cwd): each change asks the user.
-      const ctx = fakeCtx({ cwd, ui: { confirms: [true, true, true] } });
+      const ctx = fakeCtx({ cwd, ui: { selects: ['Allow once', 'Allow once', 'Allow once'] } });
       await handlers.get('tool_result')!({ toolName: 'read', input: { path: '~/.bashrc' }, content: [{ type: 'text', text: 'one' }], isError: false }, ctx);
       await tool!.execute('c', { queries: [{ reasoning: 'r', type: 'edit', path: '~/.bashrc', edits: [{ oldText: 'one', newText: 'two' }] }] }, undefined, undefined, ctx);
       await tool!.execute('c', { queries: [{ reasoning: 'r', type: 'write', path: '~/.bashrc', content: 'three' }] }, undefined, undefined, ctx);
@@ -236,7 +241,7 @@ describe('file tool', () => {
       expect(fs.existsSync(path.join(cwd, '~'))).toBe(false);
       const journaled = fs.readFileSync(path.join(store, 'journal.jsonl'), 'utf8').split('\n').filter(Boolean).map((line) => (JSON.parse(line) as { path: string }).path);
       expect(new Set(journaled)).toEqual(new Set([file, path.join(home, 'new.txt')]));
-      expect(ctx.ui.confirms).toEqual([]);
+      expect(ctx.ui.selects).toEqual([]);
     } finally {
       vi.unstubAllEnvs();
     }
@@ -246,18 +251,21 @@ describe('file tool', () => {
     const cwd = tmp();
     const outside = tmp();
     let tool: { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> } | undefined;
-    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, new FileGuard());
+    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, new FileGuard(), fakePermission());
     const write = (target: string, ctx: unknown) => tool!.execute('c', { queries: [{ reasoning: 'r', type: 'write', path: target, content: 'x' }] }, undefined, undefined, ctx);
     const target = path.join(outside, 'x.txt');
-    await expect(write(target, { cwd, hasUI: false })).rejects.toThrow(/outside the workspace[\s\S]*needs the user's confirmation/);
-    const denied = fakeCtx({ cwd, ui: { confirms: [false] } });
-    await expect(write(target, denied)).rejects.toThrow(/The user did not allow this change/);
+    await expect(write(target, { cwd, hasUI: false })).rejects.toThrow(/outside the workspace[\s\S]*needs the user's approval \(workspace mode\) and no one can be asked here/);
+    const denied = fakeCtx({ cwd, ui: { selects: ['Deny'] } });
+    await expect(write(target, denied)).rejects.toThrow(/The user denied changing a file outside the workspace.*Do not retry it/);
     expect(fs.existsSync(target)).toBe(false);
-    // Octocode's home (trust decisions, memory, sessions) is refused even when the user would allow it.
+    // Octocode's home (trust decisions, memory, sessions) is refused even when the user would allow it, in full too.
     const state = path.join(process.env['OCTOCODE_HOME']!, 'pi-trust.json');
-    const allowing = fakeCtx({ cwd, ui: { confirms: [true] } });
+    const allowing = fakeCtx({ cwd, ui: { selects: ['Allow once'] } });
     await expect(write(state, allowing)).rejects.toThrow(/Octocode's state folder/);
-    expect(allowing.ui.confirms).toEqual([true]);
+    expect(allowing.ui.selects).toEqual(['Allow once']);
+    let full: typeof tool;
+    registerFileTool({ registerTool: (t: typeof tool) => (full = t), on: () => undefined } as never, new FileGuard(), fakePermission('full'));
+    await expect(full!.execute('c', { queries: [{ reasoning: 'r', type: 'write', path: state, content: 'x' }] }, undefined, undefined, { cwd, hasUI: false })).rejects.toThrow(/Octocode's state folder/);
     expect(fs.existsSync(state)).toBe(false);
     expect((await write('inside.txt', { cwd, hasUI: false })).content[0]!.text).toMatch(/OK write inside\.txt/);
   });
@@ -268,7 +276,7 @@ describe('file tool', () => {
     checkpoints.open(tmp());
     vi.spyOn(checkpoints, 'settle').mockRejectedValue(new Error('disk full'));
     let tool: { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> } | undefined;
-    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, new FileGuard(), undefined, checkpoints);
+    registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, new FileGuard(), fakePermission(), checkpoints);
     const ctx = fakeCtx({ cwd });
     const first = await tool!.execute('c', { queries: [{ reasoning: 'r', type: 'write', path: 'a.txt', content: 'a' }, { reasoning: 'r', type: 'write', path: 'b.txt', content: 'b' }] }, undefined, undefined, ctx);
     expect(first.content[0]!.text).toMatch(/1\. OK write a\.txt.*checkpoint not saved[\s\S]*2\. OK write b\.txt.*checkpoint not saved/);
@@ -298,7 +306,7 @@ describe('file change rendering', () => {
   it('shows each file change with its reasoning, size, outcome and a capped diff', () => {
     initTheme('dark');
     let tool: { renderCall: Function; renderResult: Function } | undefined;
-    registerFileTool({ registerTool: (definition: never) => (tool = definition), on: () => undefined } as never, new FileGuard());
+    registerFileTool({ registerTool: (definition: never) => (tool = definition), on: () => undefined } as never, new FileGuard(), fakePermission());
     const args = {
       queries: [
         { reasoning: 'Fix the off-by-one in the loop', type: 'edit', path: 'src/a.ts', edits: [{ oldText: 'a', newText: 'b' }, { oldText: 'c', newText: 'd' }] },
@@ -354,10 +362,10 @@ describe('bash safety', () => {
   });
 
   it('blocks catastrophic bash calls without touching the environment', async () => {
-    const call = (command: string) => bashSafetyGate({ toolName: 'bash', input: { command } } as never);
+    const call = (command: string) => shellSafetyGate({ toolName: 'bash', input: { command } } as never);
     expect(await call('rm -rf ~')).toMatchObject({ block: true, reason: expect.stringMatching(/Refused: recursive removal of ~/) });
     expect(await call('ls -la')).toBeUndefined();
-    expect(await bashSafetyGate({ toolName: 'file', input: { command: 'rm -rf /' } } as never)).toBeUndefined();
+    expect(await shellSafetyGate({ toolName: 'file', input: { command: 'rm -rf /' } } as never)).toBeUndefined();
   });
 
   it('ignores quoted text and heredoc bodies, checks dd per command and sees past sudo options', () => {

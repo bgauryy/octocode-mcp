@@ -34,7 +34,7 @@ impl Respond for Slow {
 /// runs: one round trip, not two in series, before the file reads.
 #[tokio::test]
 async fn the_head_commit_resolves_while_the_search_runs() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let delay = Duration::from_millis(300);
     let search = Slow {
         arrivals: Arc::default(),
@@ -113,7 +113,7 @@ async fn the_head_commit_resolves_while_the_search_runs() {
 /// so it resolves no commit.
 #[tokio::test]
 async fn searches_without_line_reads_resolve_no_commit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -186,12 +186,12 @@ async fn run_owner_wide(server: &MockServer) -> crate::tools::result::ToolData {
         .expect("search")
 }
 
-/// GC2: owner-wide rows are read at the commit each hit was indexed at
+/// Owner-wide rows are read at the commit each hit was indexed at
 /// (`html_url`): numbered `lines` replace fragments, and the top read is
 /// pinned to that commit instead of a `contextLines` fragment read.
 #[tokio::test]
 async fn owner_wide_rows_list_numbered_lines_at_the_indexed_commit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_owner_wide_search(&server).await;
     for repo in ["a", "b"] {
         Mock::given(method("GET"))
@@ -229,11 +229,11 @@ async fn owner_wide_rows_list_numbered_lines_at_the_indexed_commit() {
     assert!(read.get("contextLines").is_none(), "{}", out.data);
 }
 
-/// GC2: a row whose file is gone at its indexed commit keeps its fragment
+/// A row whose file is gone at its indexed commit keeps its fragment
 /// and says its lines were not read.
 #[tokio::test]
 async fn owner_wide_row_missing_at_its_commit_keeps_fragments() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_owner_wide_search(&server).await;
     Mock::given(method("GET"))
         .and(wiremock::matchers::path_regex(
@@ -254,7 +254,7 @@ async fn owner_wide_row_missing_at_its_commit_keeps_fragments() {
 /// ("N\ttext"), with no owner/repo/ref echo of the query.
 #[tokio::test]
 async fn a_repo_scoped_row_is_path_and_numbered_lines_at_one_commit() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/code"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -317,11 +317,13 @@ fn the_default_empty_hint_fits_the_keyword_count() {
     let one = hint(json!({"owner":"a","keywords":["qzxNotARealSymbol"]}));
     assert!(!one.contains("fewer"), "{one}");
     assert!(one.contains("unproven absence"), "{one}");
-    // Flipped: the clone is `ghCloneRepo`, a tool with a runnable lead.
+    // The text names only tools every surface runs; the CLI also gets the
+    // executable `cloneRepo` lead.
     assert!(
         one.starts_with("An empty index result is unproven absence")
-            && one.contains("ghCloneRepo")
-            && one.contains("localSearch"),
+            && one.contains("ghStructure")
+            && one.contains("ghGetFileContent")
+            && !one.contains("ghCloneRepo"),
         "{one}"
     );
     let several = hint(json!({"owner":"a","keywords":["alpha","beta"]}));
@@ -390,6 +392,31 @@ async fn an_empty_repo_search_leads_to_a_runnable_clone() {
     assert!(out.data["next"].get("viewTree").is_some(), "{}", out.data);
 }
 
+/// `cloneRepo` runs only where clone is available, so an empty repo-wide
+/// search also lists the root at the searched ref, a route every surface
+/// runs. A search with a narrowing to drop keeps its second lead slot for
+/// `broadenSearch` instead.
+#[tokio::test]
+async fn an_empty_repo_search_also_lists_the_root_on_every_surface() {
+    let out = run_empty(json!({"owner":"a","repo":"b","keywords":["zzqq"],"ref":"v1"})).await;
+    let tree = &out.data["next"]["viewTree"];
+    assert_eq!(tree["tool"], "ghStructure", "{}", out.data);
+    assert_eq!(
+        tree["query"]["queries"][0],
+        json!({"owner":"a","repo":"b","ref":"v1"}),
+        "{}",
+        out.data
+    );
+    assert!(out.data["next"].get("cloneRepo").is_some(), "{}", out.data);
+    let out = run_empty(json!({"owner":"a","repo":"b","keywords":["zzqq","yyrr"]})).await;
+    assert!(out.data["next"].get("viewTree").is_none(), "{}", out.data);
+    assert!(
+        out.data["next"].get("broadenSearch").is_some(),
+        "{}",
+        out.data
+    );
+}
+
 /// `path` is a directory prefix, so a file path matches nothing. The
 /// empty names the mistake, lists the file's parent directory, and reads the
 /// file itself for the keywords.
@@ -439,7 +466,9 @@ async fn a_path_scoped_empty_says_why_it_proves_nothing() {
         "{hint}"
     );
     assert!(
-        hint.contains("ghCloneRepo") && hint.contains("localSearch"),
+        hint.contains("ghStructure")
+            && hint.contains("ghGetFileContent")
+            && !hint.contains("ghCloneRepo"),
         "{hint}"
     );
     // A requested ref is still named: the index covers only the default branch.
@@ -497,7 +526,7 @@ async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
 /// its remainder through `pagination` instead.
 #[tokio::test]
 async fn a_complete_page_with_unlisted_hit_lines_names_why_it_is_partial() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let item = |name: &str| {
         json!({"name":name,"path":format!("src/{name}"),"sha":"1","html_url":"https://x",
             "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"}})
@@ -565,7 +594,7 @@ async fn a_complete_page_with_unlisted_hit_lines_names_why_it_is_partial() {
 /// exactly that file; a file whose hits all show states no count.
 #[tokio::test]
 async fn a_page_counts_files_and_a_file_with_more_hits_says_how_many_and_leads_to_them() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let item = |name: &str| {
         json!({"name":name,"path":format!("src/{name}"),"sha":"1","html_url":"https://x",
             "repository":{"full_name":"a/b","html_url":"https://x","url":"https://x"}})

@@ -3,7 +3,9 @@
 // schema view is a core Zod schema emitted once as JSON: `query` is the row
 // MCP lists, `full` the canonical row the enforcement contract carries, and
 // each `--select operation=X` that operation's row. `query` also lists the
-// continuation fields the published row hides, one line each.
+// continuation fields the published row hides, one line each, and names the
+// other accepted fields it hides (per operation, or the whole row's) with
+// the `--select` or `--view full` call that shows their schemas.
 import { buildCliInstructions } from '@octocodeai/octocode-core/mcp';
 import {
   CLASIFY_SCOUT_TOOL_NAMES,
@@ -87,6 +89,38 @@ const view = (definition: Definition, querySchema: Json, extra: Json = {}): Json
   ...extra,
 });
 
+const fieldNames = (schema: Json): string[] => Object.keys((schema.properties as Json | undefined) ?? {});
+
+/**
+ * The accepted fields the `query` view's row leaves out beyond its
+ * continuation fields and the request brief, by name only: per operation
+ * with the `--select` call that shows them, or for a one-form tool with the
+ * `--view full` call. Empty when the row shows every field.
+ */
+function hiddenFields(definition: Definition, row: Json, continuation: Json, canonical: Json): Json {
+  const { name, inputSchema } = definition;
+  const shown = new Set([...fieldNames(row), ...Object.keys(continuation), 'mainGoal', 'reasoning']);
+  const hidden = (schema: Json): string[] => fieldNames(schema).filter(field => !shown.has(field));
+  const operations = Object.entries(operationSchemas(inputSchema));
+  if (operations.length > 0) {
+    const byOperation = Object.fromEntries(
+      operations
+        .map(([operation, schema]) => [operation, hidden(publishedJson(schema))] as const)
+        .filter(([, fields]) => fields.length > 0)
+    );
+    return Object.keys(byOperation).length === 0
+      ? {}
+      : {
+          operationFields: byOperation,
+          select: `octocode schema ${name} --select operation=<operation> shows that operation's fields`,
+        };
+  }
+  const more = hidden(canonical);
+  return more.length === 0
+    ? {}
+    : { moreFields: more, full: `octocode schema ${name} --view full shows every field` };
+}
+
 /** A tool's `schema` views and `--select operation=X` views. */
 function rendered(definition: Definition): { views: Json; selections: Json } {
   const { name, inputSchema } = definition;
@@ -94,11 +128,14 @@ function rendered(definition: Definition): { views: Json; selections: Json } {
   // The canonical row is the enforcement contract's `querySchema`, emitted once.
   const { $schema: _schema, ...canonical } = getPublicToolCatalog().tools.find(tool => tool.name === name)!
     .querySchema as Json;
+  const row = publishedInputSchema(inputSchema, 'row');
+  // The row hides the fields a `next.*` page or `hints.*` lead fills; name them once here.
+  const continuation = continuationFields(inputSchema);
   return {
     views: {
-      query: view(definition, publishedInputSchema(inputSchema, 'row'), {
-        // The row hides the fields a `next.*` page or `hints.*` lead fills; name them once here.
-        continuationFields: continuationFields(inputSchema),
+      query: view(definition, row, {
+        continuationFields: continuation,
+        ...hiddenFields(definition, row, continuation, canonical),
       }),
       full: view(definition, canonical, { usage: [`octocode ${name} '{"queries":[ … ]}'`] }),
       variants: { name, description: definition.description, variants },

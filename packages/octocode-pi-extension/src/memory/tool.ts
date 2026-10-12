@@ -2,7 +2,7 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
-import { withDialog } from '../shared/locks.js';
+import type { Permission } from '../permission/ask.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { projectTrustNow } from '../shared/trust.js';
 import { clipText, firstLine, textResult } from '../shared/util.js';
@@ -20,7 +20,7 @@ function memoryPrompt(subagent: boolean): { description: string; ops: string; pr
     'Retrieve or maintain durable decisions and preferences across sessions. ' +
     (subagent
       ? 'Read-only in a subagent: report anything worth remembering to your parent. '
-      : "Near-duplicates and secrets are refused; global or pinned changes need a trusted project and, with a UI, the user's confirmation. ") +
+      : "Near-duplicates and secrets are refused; global or pinned changes need a trusted project and the user's confirmation. ") +
     'An untrusted project shows only global memories.';
   const ops =
     'search: relevant notes by query; get: full note by id; list: pinned notes first, then newest' +
@@ -71,10 +71,10 @@ function listText(memories: readonly Memory[], empty: string): string {
 /**
  * Registers the `memory` tool over the store `storeFor(ctx)` opens (one per repository). A subagent may only read: its
  * parent decides what is worth remembering. Global and pinned memories reach every session, so changing them needs a
- * trusted project (and the user's yes when there is a UI); an untrusted project reads only global memories, matching
- * what auto-injection shows there.
+ * trusted project and passes the `memory.shared` permission ask (refused without a UI unless the mode allows it); an
+ * untrusted project reads only global memories, matching what auto-injection shows there.
  */
-export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionContext) => MemoryStore, options: { isSubagent: boolean }): void {
+export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionContext) => MemoryStore, options: { isSubagent: boolean; permission: Permission }): void {
   const ops = options.isSubagent ? ['search', 'get', 'list'] as const : ['search', 'get', 'list', 'set', 'delete'] as const;
   const { ops: opsDescription, ...prompt } = memoryPrompt(options.isSubagent);
   pi.registerTool(timedTool({
@@ -107,6 +107,11 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
       const trusted = projectTrustNow(ctx) === true;
       const readScope = trusted ? (params.scope ?? 'all') : 'global';
       const note = (text: string) => (trusted ? text : `${text}\n${HIDDEN_NOTE}`);
+      /** The `memory.shared` ask for a change that reaches every session; a refusal throws. */
+      const askShared = async (title: string, what: string[]) => {
+        const verdict = await options.permission.check(ctx, { action: 'memory.shared', title, what, ...(signal ? { signal } : {}) });
+        if (!verdict.allowed) throw new MemoryError(verdict.message);
+      };
       /** Refuses changing a memory that reaches every session (global or pinned) unless the project is trusted. */
       const guardWide = (wide: boolean, what: string) => {
         if (wide && !trusted) throw new MemoryError(`Refused: ${what} is shared with every session, and this is an untrusted project. Ask the user to /trust it, or save a plain project memory.`);
@@ -144,6 +149,7 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
           const current = found;
           if (params.op === 'delete') {
             if (current) guardWide(current.scope === 'global' || current.pinned, `deleting ${memoryLabel(current.id)}`);
+            if (current && (current.scope === 'global' || current.pinned)) await askShared(`Delete ${current.scope === 'global' ? 'global' : 'pinned'} memory?`, [memoryLine(current, 120)]);
             const removed = store.delete(needId());
             return textResult(`Deleted ${memoryLine(removed, 60)}`, { ids: [removed.id] });
           }
@@ -154,15 +160,14 @@ export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionCo
           // Refusals the store would raise come first, so the user is never asked about a save that then fails.
           refuseMemorySecrets(params);
           if (!current && !params.title?.trim()) throw new MemoryError('A new memory needs a title.');
-          if ((global || pinned) && ctx.hasUI) {
-            const label = [global ? 'global' : '', pinned ? 'pinned' : ''].filter(Boolean).join(', ');
+          // Saving into shared state, or taking a memory out of it (a global moved to the project, a pin removed), asks.
+          const unpinned = current?.pinned === true && !pinned;
+          if (global || pinned || current?.scope === 'global' || unpinned) {
+            const label = [global ? 'global' : current?.scope === 'global' ? 'formerly global' : '', pinned ? 'pinned' : unpinned ? 'unpinned' : ''].filter(Boolean).join(', ');
             const title = firstLine(sanitizeTerminalText(params.title ?? current?.title ?? ''));
             const body = clipText(sanitizeTerminalText(params.body ?? current?.body ?? '').trim(), 400);
-            const move = current && current.scope !== (params.scope ?? current.scope) ? `\nScope: ${current.scope} → ${params.scope}` : '';
-            const text = `${title}${body ? `\n\n${body}` : ''}${move}\n\nIt will be shown to every ${global ? 'session in every repository' : 'session here'}.`;
-            if (!(await withDialog(() => ctx.ui.confirm(`Save ${label} memory?`, text, signal ? { signal } : undefined), signal))) {
-              throw new MemoryError('The user declined saving this global or pinned memory; save a plain project memory instead, or leave it.');
-            }
+            const move = current && current.scope !== (params.scope ?? current.scope) ? [`Scope: ${current.scope} → ${params.scope}`] : [];
+            await askShared(`Save ${label} memory?`, [title, ...(body ? [body] : []), ...move, `It will be shown to every ${global ? 'session in every repository' : 'session here'}.`]);
           }
           const { memory, created } = store.set({
             ...(id !== undefined ? { id } : {}),

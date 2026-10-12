@@ -30,19 +30,20 @@ const ALLOWED: Record<string, string[]> = {
   shared: [],
   api: ['shared'],
   ask: ['shared'],
-  files: ['shared'],
+  files: ['shared', 'permission'],
   team: ['shared', 'agentdb'],
   hooks: ['shared'],
   mcp: ['shared'],
   web: ['shared'],
-  browser: ['shared', 'web'],
+  browser: ['shared', 'web', 'permission'],
   compaction: ['shared', 'files'],
-  ui: ['shared'],
-  subagents: ['shared', 'mcp', 'team'],
+  ui: ['shared', 'permission'],
+  subagents: ['shared', 'mcp', 'team', 'permission'],
   agentdb: ['shared'],
   sessions: ['shared', 'agentdb', 'files', 'subagents'],
   backlog: ['shared', 'agentdb'],
-  memory: ['shared', 'agentdb'],
+  memory: ['shared', 'agentdb', 'permission'],
+  permission: ['shared'],
 };
 
 describe('source layout', () => {
@@ -87,13 +88,13 @@ describe('source layout', () => {
   });
 
   it('keeps one owner per shared helper', () => {
-    // Each helper has one owner (src/shared unless one domain alone uses it); a copy elsewhere drifts (as OCTOCODE_REVIEW=true once did from OCTOCODE_HOOKS=true).
+    // Each helper has one owner (src/shared unless one domain alone uses it); a copy elsewhere drifts (as a removed flag once did: `=true` read differently from OCTOCODE_HOOKS=true).
     const owners: Array<[RegExp, string]> = [
       [/process\.kill\(/, 'shared/process.ts'],
       [/instanceof Error \? [^:]+: String\(/, 'shared/util.ts'],
       [/createHash\(['"]sha256['"]\)/, 'shared/atomic.ts'],
       [/env\[[^\]]+\](?:\?\.trim\(\))? === '1'/, 'shared/env.ts'],
-      [/signal\.reason instanceof Error \?/, 'browser/cdp.ts'],
+      [/signal\.reason instanceof Error \?/, 'browser/abort.ts'],
     ];
     const copies = files.flatMap((file) => {
       const relative = path.relative(sourceRoot, file).split(path.sep).join('/');

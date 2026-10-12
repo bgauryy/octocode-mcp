@@ -34,16 +34,19 @@ const TEXT_MAX_LINES = 10_000;
  * A tool result for Pi. Text and images pass through, embedded text resources become text and other blocks a short
  * placeholder (`toLlmContent`). A server bounds and pages its own output and a cut can hide the continuation inside
  * it, so text is left whole up to `TEXT_MAX_BYTES`; a longer part is saved whole to the session's `output/` folder and
- * replaced by its head and tail plus the file's path. An image over `IMAGE_MAX_CHARS` is saved and replaced by a note
- * naming the file: a gateway rejects a request of a few MB (HTTP 413). Repository, GitHub and registry text is untrusted: terminal control
+ * replaced by its head and tail plus the file's path. An oversized image is saved and resized by Pi; the model sees
+ * the fitted image and its original path (only the path if resizing fails). Repository, GitHub and registry text is untrusted: terminal control
  * sequences, bidi overrides and invisible characters (Unicode tags among them) are stripped from every string before
  * the model reads it or the terminal draws it. `structuredContent` is the server's, kept for tools that declare an
  * `outputSchema`. An error result is the server's text as an error.
  */
-export function toToolResult(tool: string, result: CallToolResult, declaresOutput: boolean): AgentToolResult<{ tool: string }> {
-  const content = (sanitizeJson(toLlmContent(result)) as ReturnType<typeof toLlmContent>).map((part) =>
-    part.type === 'text' ? { ...part, text: capOutputToFile(part.text, { label: `mcp ${tool}`, maxBytes: TEXT_MAX_BYTES, maxLines: TEXT_MAX_LINES }) } : part.type === 'image' ? boundImagePart(part, `mcp ${tool} image`) : part,
-  );
+export async function toToolResult(tool: string, result: CallToolResult, declaresOutput: boolean): Promise<AgentToolResult<{ tool: string }>> {
+  const content: AgentToolResult['content'] = [];
+  for (const part of sanitizeJson(toLlmContent(result)) as ReturnType<typeof toLlmContent>) {
+    if (part.type === 'text') content.push({ ...part, text: capOutputToFile(part.text, { label: `mcp ${tool}`, maxBytes: TEXT_MAX_BYTES, maxLines: TEXT_MAX_LINES }) });
+    else if (part.type === 'image') content.push(...await boundImagePart(part, `mcp ${tool} image`));
+    else content.push(part);
+  }
   if (result.isError && content.length === 0) content.push({ type: 'text', text: `${tool} failed without a message.` });
   return {
     content,

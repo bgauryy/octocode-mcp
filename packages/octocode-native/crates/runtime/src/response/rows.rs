@@ -43,8 +43,8 @@ pub(crate) fn attach_diagnostics(
 #[cfg(test)]
 pub(crate) const MAX_GUIDANCE_CHARS: usize = 120;
 
-/// Row containers whose prose `hints` are agent guidance. `meta` is a `diagnostics` extra
-/// diagnostics: it keeps its own hints and never takes the row's one tip.
+/// Row containers whose prose `hints` are agent guidance. `meta` (the
+/// `diagnostics` extra) keeps its own hints and never takes the row's one tip.
 const METADATA_CONTAINERS: &[&str] = &[
     "data",
     "diagnostics",
@@ -74,7 +74,7 @@ pub(super) fn has_executable_call(value: &Value) -> bool {
         && call.get("query").is_some_and(Value::is_object)
 }
 
-fn has_recovery(value: &Value) -> bool {
+pub(crate) fn has_recovery(value: &Value) -> bool {
     if let Some(values) = value.as_array() {
         return values.iter().any(has_recovery);
     }
@@ -92,11 +92,25 @@ fn has_recovery(value: &Value) -> bool {
     {
         return true;
     }
+    let has_text = |hints: &Value| {
+        hints.as_array().is_some_and(|hints| {
+            hints
+                .iter()
+                .any(|hint| hint.as_str().is_some_and(|text| !text.trim().is_empty()))
+        })
+    };
     if node
-        .get("next")
-        .and_then(Value::as_object)
-        .is_some_and(|next| next.values().any(has_executable_call))
+        .get("hints")
+        .and_then(|hints| hints.get(crate::tools::id::continuation_channels::HINT_TEXT_KEY))
+        .is_some_and(has_text)
     {
+        return true;
+    }
+    if ["next", "hints"].iter().any(|key| {
+        node.get(*key)
+            .and_then(Value::as_object)
+            .is_some_and(|calls| calls.values().any(has_executable_call))
+    }) {
         return true;
     }
     for (key, child) in node {
@@ -238,6 +252,14 @@ fn visit(value: &mut Value, recovery: bool, seen: &mut std::collections::BTreeSe
                 .map(concise)
                 .filter(|hint| !hint.is_empty());
             for short in candidates {
+                // `hint_budget` sweeps authored literals; this checks each hint
+                // as composed (counts, names, joined sentences) in every row a
+                // test renders. Production never clips.
+                #[cfg(test)]
+                assert!(
+                    short.chars().count() <= MAX_GUIDANCE_CHARS,
+                    "hint over the {MAX_GUIDANCE_CHARS}-char guidance budget as composed: {short}"
+                );
                 if seen.insert(short.clone()) {
                     hints.push(short);
                 }
@@ -249,6 +271,13 @@ fn visit(value: &mut Value, recovery: bool, seen: &mut std::collections::BTreeSe
             node.insert("hints".into(), json!(hints));
         }
     }
+}
+
+/// The tool's fallback hint on an empty or failed row that has no recovery
+/// left, e.g. after the continuation stage dropped a lead this surface cannot
+/// run or the contract rejects.
+pub(crate) fn ensure_recovery(row: &mut Value, tool: ToolId, query: &Value) {
+    add_fallback_hint(row, 0, tool, std::slice::from_ref(query));
 }
 
 /// One concise recovery hint on an empty or failed row (continuation calls
@@ -323,6 +352,14 @@ pub fn result_row(
     let paged = !tool.output().resource_major()
         && !super::pages::is_complete(&data)
         && super::pages::has_remaining_page(tool, &data);
+    // A row with more to read is not empty, whatever the tool decided from
+    // the rows this page holds: an executable page or a pagination block
+    // stating `hasMore` means the result continues.
+    let status = if status == Some("empty") && (paged || states_more(&data)) {
+        None
+    } else {
+        status
+    };
     if let Some(object) = data.as_object_mut()
         && object.get("isPartial") == Some(&Value::Null)
     {
@@ -363,6 +400,15 @@ pub fn result_row(
         row.insert("status".into(), json!(status));
     }
     Value::Object(row)
+}
+
+/// Whether any of the row's own pagination blocks states `hasMore`.
+fn states_more(data: &Value) -> bool {
+    data.as_object().is_some_and(|object| {
+        object
+            .iter()
+            .any(|(key, block)| super::pages::is_pagination_key(key) && block["hasMore"] == true)
+    })
 }
 
 /// Whether the row's own pagination (`pagination`, `filePagination`,
@@ -856,6 +902,35 @@ fn relativize_continuation_paths(value: &mut Value, workspace: &str, depth: usiz
     }
 }
 
+/// Whether a continuation (`{tool, query}` at any depth) names a relative
+/// local `path`: it resolves against the workspace root, which the response
+/// then names as `root` even when no row carries a path (an empty row).
+fn relative_continuation_path(value: &Value, depth: usize) -> bool {
+    if depth > 12 {
+        return false;
+    }
+    match value {
+        Value::Object(map) => {
+            if map.get("tool").is_some_and(Value::is_string)
+                && let Some(Value::Array(rows)) =
+                    map.get("query").and_then(|query| query.get("queries"))
+            {
+                return rows.iter().any(|row| {
+                    row.get("path")
+                        .and_then(Value::as_str)
+                        .is_some_and(|path| !Path::new(path).is_absolute() && !path.contains("://"))
+                });
+            }
+            map.values()
+                .any(|child| relative_continuation_path(child, depth + 1))
+        }
+        Value::Array(items) => items
+            .iter()
+            .any(|item| relative_continuation_path(item, depth + 1)),
+        _ => false,
+    }
+}
+
 /// `path` relative to `workspace` (`.` for the root itself) when it is an
 /// absolute path under it.
 fn workspace_relative(path: &str, workspace: &str) -> Option<String> {
@@ -939,7 +1014,8 @@ pub fn envelope(rows: Vec<Value>) -> Value {
 
 /// Rewrite every absolute row path under `base` relative to it (the base
 /// itself becomes `.`), hoist shared leaf fields, and wrap the rows. Paths
-/// outside `base` stay absolute; without such a path there is no `base`.
+/// outside `base` stay absolute; without such a path, or a continuation
+/// whose relative `path` resolves against `base`, there is no `base`.
 fn compact(mut rows: Vec<Value>, base: Option<String>) -> Value {
     let base = base.filter(|base| {
         let inside = format!("{base}/");
@@ -950,6 +1026,9 @@ fn compact(mut rows: Vec<Value>, base: Option<String>) -> Value {
         paths
             .iter()
             .any(|path| path == base || path.starts_with(&inside))
+            || rows
+                .iter()
+                .any(|row| relative_continuation_path(&row["data"], 0))
     });
     for row in &mut rows {
         rewrite_paths(&mut row["data"], 0, base.as_deref());
@@ -1953,6 +2032,22 @@ mod tests {
         );
         assert_resolvable(&ws, &value, "src/runtime/b.rs");
 
+        // An empty row carries no path, but its lead's relative `path`
+        // resolves against the workspace: the response names it as `root`.
+        let empty = json!({"index":0,"status":"empty","data":{"files":[],
+            "next":{"includeSkipped":{"tool":"localSearch","query":{"queries":[{"path": format!("{root}/src/runtime"),"includeIgnored":true}]}}}}});
+        let value = envelope_in(
+            vec![empty],
+            ToolId::LocalSearch,
+            &[Some(&json!({"path":"src/runtime"}))],
+            &ws.paths,
+        );
+        assert_eq!(
+            value["results"][0]["data"]["next"]["includeSkipped"]["query"]["queries"][0]["path"],
+            "src/runtime"
+        );
+        assert_eq!(value["root"], root.as_str(), "{value}");
+
         let lsp = json!({"index":0,"data":{"type":"documentSymbols","uri":format!("file://{root}/src/a.rs")}});
         let value = envelope_in(vec![lsp], ToolId::LspSearch, &[Some(&json!({}))], &ws.paths);
         assert_eq!(value["results"][0]["data"]["path"], "src/a.rs");
@@ -2411,6 +2506,36 @@ mod tests {
             None,
         );
         assert_eq!(row.pointer("/data/isPartial"), Some(&json!(false)));
+    }
+
+    /// `empty` is decided per tool from the rows a page holds; a row that
+    /// can still be read on (an executable page, or a pagination block with
+    /// `hasMore`) is never `empty`, for every tool. A row with nothing more
+    /// keeps the tool's `empty`.
+    #[test]
+    fn a_row_with_more_to_read_is_never_empty() {
+        let page =
+            |tool: ToolId| json!({"tool": tool.as_str(), "query": {"queries": [{"page": 2}]}});
+        for tool in ToolId::ALL
+            .into_iter()
+            .filter(|tool| !tool.output().resource_major())
+        {
+            for data in [
+                json!({"files":[],"next":{"nextPage":page(tool)}}),
+                json!({"files":[],"pagination":{"currentPage":1,"hasMore":true}}),
+            ] {
+                let row = result_row(tool, 0, &json!({}), data.clone(), Some("empty"));
+                assert!(row.get("status").is_none(), "{tool:?} {data}: {row}");
+            }
+            let finished = result_row(
+                tool,
+                0,
+                &json!({}),
+                json!({"files":[],"pagination":{"currentPage":1,"hasMore":false}}),
+                Some("empty"),
+            );
+            assert_eq!(finished["status"], "empty", "{tool:?}: {finished}");
+        }
     }
 
     #[test]

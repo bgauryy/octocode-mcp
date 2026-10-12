@@ -10,6 +10,9 @@ export const ROOT = path.resolve(TESTING, '..');
 export const REPOS = path.join(TESTING, 'repos');
 export const FIXTURES = path.join(TESTING, 'fixtures');
 export const RESULTS = path.join(TESTING, 'results');
+/** OCTOCODE_LIVE=1 enables suites and sections that reach GitHub, package registries or the paid classifier. */
+export const LIVE = process.env.OCTOCODE_LIVE === '1';
+export { hermeticEnv } from '../../test-utils/hermetic-env.ts';
 
 export async function startServer({ env = {}, cwd = ROOT, timeoutMs = Number(process.env.OCTOCODE_TEST_CALL_TIMEOUT_MS ?? 240_000) } = {}) {
   const server = spawn(process.execPath, [path.join(ROOT, 'packages/octocode-mcp/dist/index.js')], {
@@ -275,66 +278,21 @@ export function lspLocations(entry, index = 0) {
 }
 
 /**
- * One symbols outline entry string (a declaration without members):
- * `<symbolName> (<line>[-<endLine>][, <kind>][, doc <docStartLine>][, exported][, <key>=<value>]…)`.
- * The last ` (` opens the fields; a `<key>=<value>` value is bare words or
- * JSON. Returns the declaration's fields ({symbolName, line, endLine?, kind?,
- * docStartLine?, exported?, exportedAs?, startLine?, column?, parent?,
- * parentLine?}) or null when `text` is not an entry.
- */
-export function parseOutlineEntry(text) {
-  if (typeof text !== 'string') return null;
-  const open = text.lastIndexOf(' (');
-  if (open <= 0 || !text.endsWith(')')) return null;
-  const fields = [];
-  let cur = '', quoted = false, escaped = false;
-  const inner = text.slice(open + 2, -1);
-  for (let i = 0; i < inner.length; i++) {
-    const ch = inner[i];
-    if (quoted) {
-      if (escaped) escaped = false; else if (ch === '\\') escaped = true; else if (ch === '"') quoted = false;
-    } else if (ch === '"') quoted = true;
-    else if (ch === ',' && inner[i + 1] === ' ') { fields.push(cur); cur = ''; i++; continue; }
-    cur += ch;
-  }
-  fields.push(cur);
-  const range = /^(\d+)(?:-(\d+))?$/.exec(fields[0]);
-  if (!range) return null;
-  const decl = { symbolName: text.slice(0, open), line: +range[1] };
-  if (range[2]) decl.endLine = +range[2];
-  for (const field of fields.slice(1)) {
-    if (field === 'exported') decl.exported = true;
-    else if (/^doc \d+$/.test(field)) decl.docStartLine = +field.slice(4);
-    else if (/^[A-Za-z_]+=/.test(field)) {
-      const eq = field.indexOf('=');
-      const raw = field.slice(eq + 1);
-      let value = raw;
-      if (/^-?\d+$/.test(raw) || /^["[{]/.test(raw) || raw === 'true' || raw === 'false') {
-        try { value = JSON.parse(raw); } catch { return null; }
-      }
-      decl[field.slice(0, eq)] = value;
-    } else if (field && decl.kind === undefined) decl.kind = field;
-    else return null;
-  }
-  return decl;
-}
-
-/**
- * astSearch / lspSearch outline rows as harness declarations: an entry string
- * (a declaration without members, see parseOutlineEntry) or a container
- * object {symbolName, kind, line, endLine?, docStartLine?, exported?, shared?,
- * members}. `name` = symbolName, `character` = column. `extra` (e.g. a
+ * astSearch / lspSearch outline rows as harness declarations: declaration
+ * objects {symbolName, kind, line, endLine?, docStartLine?, exported?, shared?,
+ * members?}. `name` = symbolName, `character` = column. `extra` (e.g. a
  * directory outline's file path) is merged in.
  */
 export function outlineRows(rows = [], extra = {}, parent = {}) {
   // Containers nest members under them (`members`, with fields every member
   // shares in the container's `shared`); flatten them in source order with
   // `parent`/`parentLine` restored.
-  return (rows ?? []).map(row => (typeof row === 'string' ? parseOutlineEntry(row) : row)).filter(row => row && typeof row === 'object').flatMap(row => {
+  return (rows ?? []).flatMap(row => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error(`outline row is not a declaration object: ${JSON.stringify(row)}`);
     const { symbolName, column, members, shared, ...rest } = row;
     const decl = { ...extra, ...parent, ...rest, name: symbolName };
     if (column !== undefined) decl.character = column;
-    const nested = (members ?? []).map(member => (typeof member === 'string' ? parseOutlineEntry(member) : member)).filter(Boolean).map(member => ({ ...shared, ...member }));
+    const nested = (members ?? []).map(member => ({ ...shared, ...member }));
     return [decl, ...outlineRows(nested, extra, { parent: symbolName, parentLine: row.line })];
   });
 }

@@ -5,6 +5,7 @@ use crate::providers::github::{
 };
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
+use crate::tools::paging::push_warnings;
 use crate::tools::result::Continuation;
 use crate::{
     providers::github::{CodeSearchItem, ProviderError},
@@ -77,13 +78,14 @@ pub(super) async fn empty_scope(
             "exact",
             "ghRepoArchived",
         ),
-        // The repository exists: only a scoped path is left to verify (a
-        // root listing cannot show a keyword is absent).
+        // The repository exists: a scoped path is listed; a repo-wide search
+        // gets a local copy and the root layout to verify against.
         _ => {
             let hint = "No indexed matches is unproven absence; verify the repo structure and search a bounded local copy before concluding.";
             diagnostics.add("ghScopedZeroUnproven", hint, false);
             let Some(scope) = query.path.as_deref().map(|path| path.as_str()) else {
                 add_clone_lead(value, query, owner.as_str(), repo.as_str());
+                add_root_lead(value, query, owner.as_str(), repo.as_str());
                 return Ok(());
             };
             // `path` is a directory prefix: list the directory, or for a
@@ -144,6 +146,24 @@ fn add_clone_lead(value: &mut Value, query: &GhSearchCodeQuery, owner: &str, rep
     ensure_next(value);
     value["next"]["cloneRepo"] = Continuation::new(ToolId::GhCloneRepo, clone)
         .confidence("exact")
+        .build();
+}
+
+/// `cloneRepo` runs only where clone is available, so an empty repo-wide
+/// search also gets the root listing at the searched ref, which every
+/// surface runs. A row shows two leads at most: a search with a narrowing
+/// to drop keeps that slot for `broadenSearch`.
+fn add_root_lead(value: &mut Value, query: &GhSearchCodeQuery, owner: &str, repo: &str) {
+    if super::leads::broaden_search(query, usize::MAX).is_some() {
+        return;
+    }
+    let mut root = json!({"owner":owner,"repo":repo});
+    if let Some(reference) = requested_ref(query) {
+        root["ref"] = json!(reference);
+    }
+    ensure_next(value);
+    value["next"]["viewTree"] = Continuation::new(ToolId::GhStructure, root)
+        .confidence("medium")
         .build();
 }
 
@@ -402,7 +422,7 @@ pub(super) async fn disclose_index_ref<C: crate::providers::github::ConditionalC
     // only at the ref are missing is the description's, and `viewRepo`
     // lists them.
     let warning = format!("Files from the default-branch index{index}, not {reference}{lines}.");
-    crate::tools::gh_shared::push_warning(value, warning);
+    push_warnings(value, [warning]);
     let mut listing = json!({
         "owner": owner,
         "repo": repo.as_str(),
@@ -711,7 +731,7 @@ pub(super) fn empty_hint(query: &GhSearchCodeQuery) -> Option<String> {
                 )
             }
             None => format!(
-                "No indexed match under `{}`: unproven absence (the index can lag); ghCloneRepo the path, localSearch it.",
+                "No indexed match under `{}`: unproven absence (the index can lag); ghStructure the path, ghGetFileContent its files.",
                 scope.trim_matches('/')
             ),
         })

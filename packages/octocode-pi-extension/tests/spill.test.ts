@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { PhotonImage } from '@silvia-odwyer/photon-node';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setCurrentSession } from '../src/shared/home.js';
@@ -78,6 +79,29 @@ describe('capOutputToFile', () => {
 
 
 describe('image bounds', () => {
+  it('keeps a fitted visual image and the exact original bytes for a valid oversized PNG', async () => {
+    const pixels = new Uint8Array(512 * 512 * 4);
+    let random = 17;
+    for (let index = 0; index < pixels.length; index++) {
+      random = (Math.imul(random, 1_664_525) + 1_013_904_223) >>> 0;
+      pixels[index] = index % 4 === 3 ? 255 : random >>> 24;
+    }
+    const png = new PhotonImage(pixels, 512, 512);
+    const original = Buffer.from(png.get_bytes());
+    png.free();
+    const data = original.toString('base64');
+    expect(data.length).toBeGreaterThan(IMAGE_MAX_CHARS);
+    const parts = await boundImagePart({ type: 'image', data, mimeType: 'image/png' }, 'valid-shot');
+    const image = parts.find((part) => part.type === 'image');
+    expect(image).toBeDefined();
+    expect(image!.data.length).toBeLessThanOrEqual(IMAGE_MAX_CHARS);
+    const note = parts.find((part) => part.type === 'text')!;
+    const file = /Original saved to (.+?)\.(?: |\])/.exec(note.text)?.[1];
+    expect(file).toBeDefined();
+    expect(fs.readFileSync(file!)).toEqual(original);
+    expect(image!.mimeType).toBe('image/jpeg');
+  }, 20_000);
+
   it('saves an image owner-only under the session output folder with an extension for its type', () => {
     const file = saveImageFile(Buffer.from('jpeg-bytes').toString('base64'), 'image/jpeg', 'browser screenshot')!;
     expect(path.dirname(file)).toBe(path.join(home, 'agent', 'pi', 'sessions', `_pid-${process.pid}`, 'output'));
@@ -88,15 +112,15 @@ describe('image bounds', () => {
     expect(path.extname(saveImageFile('AA', 'image/x-weird', 'x')!)).toBe('.img');
   });
 
-  it('passes an image within the budget through as the same object', () => {
+  it('passes an image within the budget through as the same object', async () => {
     const part = { type: 'image' as const, data: 'A'.repeat(IMAGE_MAX_CHARS), mimeType: 'image/png' };
-    expect(boundImagePart(part, 'x')).toBe(part);
+    expect((await boundImagePart(part, 'x'))[0]).toBe(part);
   });
 
-  it('replaces an over-budget image by a note naming the saved full file', () => {
+  it('replaces an invalid over-budget image by a note naming the saved full file', async () => {
     const data = 'A'.repeat(IMAGE_MAX_CHARS + 4);
-    const out = boundImagePart({ type: 'image', data, mimeType: 'image/png' }, 'mcp_shot');
-    expect(out.type).toBe('text');
+    const [out] = await boundImagePart({ type: 'image', data, mimeType: 'image/png' }, 'mcp_shot');
+    expect(out!.type).toBe('text');
     const file = /Saved to (\S+)\./.exec((out as { text: string }).text)?.[1];
     expect(file).toBeDefined();
     expect(fs.readFileSync(file!).length).toBe(Buffer.from(data, 'base64').length);

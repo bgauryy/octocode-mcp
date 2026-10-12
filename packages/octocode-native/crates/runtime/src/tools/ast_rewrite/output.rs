@@ -22,15 +22,9 @@ pub(super) fn success_value(
     } else {
         query.page_size()
     };
-    let offset = page.saturating_sub(1).saturating_mul(page_size);
-    let shown = if apply {
-        matches
-    } else {
-        matches
-            .get(offset..offset.saturating_add(page_size).min(matches.len()))
-            .unwrap_or(&[])
-    };
-    let has_more = !apply && offset.saturating_add(page_size) < matches.len();
+    let (window, pagination) = crate::response::pages::page_window(matches.len(), page, page_size);
+    let shown = &matches[window];
+    let has_more = pagination.has_more();
     // A preview page carries only the files its matches touch, and each
     // file's patch holds only the hunks of this page's matches, so pageSize
     // bounds the patch too. The patch applies to the original file on its
@@ -70,7 +64,7 @@ pub(super) fn success_value(
         "matches":shown.iter().map(|matched| public_match(matched, query.wants(ExtraKind::Details))).collect::<Vec<_>>(),
         "files":page_files,
         "isPartial":has_more,
-        "pagination":crate::response::pages::PageFacts::counted(page, page_size, matches.len()).to_value()
+        "pagination":pagination.to_value()
     });
     if apply {
         // The preview already showed the match rows and patch; the receipt
@@ -122,10 +116,13 @@ fn attach_leads(
     code_covered: bool,
 ) {
     let apply = query.apply();
-    if has_more {
+    if has_more
+        && let Some(next_page) =
+            crate::tools::paging::next_cursor(value, ToolId::AstRewrite, None, "page", page + 1)
+    {
         let mut next = continuation_query(query, root);
         next["apply"] = json!(false);
-        next["page"] = json!(page + 1);
+        next["page"] = json!(next_page);
         next["pageSize"] = json!(page_size);
         next["snapshot"] = json!(snapshot);
         value["next"] = json!({
@@ -250,7 +247,7 @@ fn page_patch(
     ) else {
         return;
     };
-    let patch = super::create_unified_patch(&file.shown, before, after);
+    let patch = super::create_unified_patch(file.patch_path(), before, after);
     if details {
         value["patchBytes"] = json!(patch.len());
     }

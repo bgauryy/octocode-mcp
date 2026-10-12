@@ -1348,7 +1348,6 @@ impl ChannelRun {
             scope,
         ) {
             debug_assert!(false, "invalid clasify continuation: {:?}", error.issues);
-            return Ok(Err(error));
         }
         let stage = self.stage(receipts.structured, self.response_query.clone(), false);
         stage::finish(
@@ -1372,7 +1371,7 @@ impl ChannelRun {
         let started = std::time::SystemTime::now();
         let EvaluatedRows {
             mut rows,
-            mut failure,
+            failure,
             source_digest,
         } = self.evaluate_rows(context)?;
         let rejected_at: Vec<usize> = rejected.iter().map(|(index, _)| *index).collect();
@@ -1393,7 +1392,8 @@ impl ChannelRun {
         )?;
         crate::tools::clasify::handoff::attach(&mut structured, tool, &by_row);
         // An invalid continuation is a runtime defect: it fails loudly in
-        // debug builds and withholds its row otherwise.
+        // debug builds; otherwise finalize dropped it and marked its row,
+        // which keeps its evidence.
         if let Err(error) = continuations::finalize(
             &mut structured,
             self.id,
@@ -1401,13 +1401,6 @@ impl ChannelRun {
             scope,
         ) {
             debug_assert!(false, "invalid {tool} continuation: {:?}", error.issues);
-            match contracts::isolate_row_violations(tool, &structured, &error) {
-                Some(patched) => {
-                    structured = patched;
-                    failure = failure.or(Some(FailureKind::Execution));
-                }
-                None => return Ok(Err(error)),
-            }
         }
         // A replay seed only for a response that can page: an explicit
         // window, or one near the automatic page size.
@@ -1579,7 +1572,6 @@ fn runtime_execution_error(error: ExecutionError) -> RuntimeError {
             ExecutionError::DuplicateRequest => "duplicateRequest",
             ExecutionError::Cancelled => "cancelled",
             ExecutionError::Timeout => "timeout",
-            ExecutionError::ResponseTooLarge => "responseTooLarge",
             ExecutionError::UnroutedTool => "unroutedTool",
             ExecutionError::InvalidLimits | ExecutionError::WorkerFailed => "executionFailed",
         },

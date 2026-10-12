@@ -30,15 +30,112 @@ fn oversized_line_end(content: &str, offset: usize, end: usize) -> Option<(usize
 }
 
 pub fn page(content: &str, q: &LocalFetchQuery) -> Result<Page, String> {
-    page_within(content, q, LINE_PAGE_BYTES)
+    page_within(content, q, LINE_PAGE_BYTES, None)
 }
 
-/// [`page`] with a line page of at most `line_page_bytes`.
+/// The raw source lines behind a transformed whole-file view (the standard
+/// view drops blank and comment lines): each view line's 1-based source
+/// line, ascending, and the source's line count.
+pub(super) struct SourceLines {
+    pub(super) lines: Vec<usize>,
+    pub(super) total: usize,
+}
+
+impl SourceLines {
+    /// The source line of every line of a gutter-numbered view (`N\t…`);
+    /// `None` when a line carries no number or the numbers do not ascend.
+    pub(super) fn of_gutter(view: &str, total: usize) -> Option<Self> {
+        let mut lines = Vec::new();
+        for record in view.split_inclusive('\n') {
+            let (number, _) = record.split_once(crate::tools::numbered::SEPARATOR)?;
+            let line = number.parse::<usize>().ok()?;
+            if lines.last().is_some_and(|last| *last >= line) || line > total {
+                return None;
+            }
+            lines.push(line);
+        }
+        Some(Self { lines, total })
+    }
+}
+
+/// [`page`] with a line page of at most `line_page_bytes`. With `source`, a
+/// line window counts raw source lines: `offset` and `length` name a span
+/// of the source, the page shows the view lines inside it, and the
+/// pagination states the raw span it covers, so the pages reach every
+/// source line exactly once whatever the view dropped.
 pub(super) fn page_within(
     content: &str,
     q: &LocalFetchQuery,
     line_page_bytes: usize,
+    source: Option<&SourceLines>,
 ) -> Result<Page, String> {
+    if let Some(source) = source
+        && q.unit.unwrap_or(if q.full_content == Some(true) {
+            WindowUnit::Bytes
+        } else {
+            WindowUnit::Lines
+        }) == WindowUnit::Lines
+    {
+        return raw_line_page(content, q, line_page_bytes, source);
+    }
+    view_page(content, q, line_page_bytes)
+}
+
+/// A line page over raw source lines (see [`page_within`]): the view page
+/// of the view lines whose source lines fall in the requested raw window,
+/// restated as the raw span from the requested offset to the next unshown
+/// view line's source line (or the source end).
+fn raw_line_page(
+    content: &str,
+    q: &LocalFetchQuery,
+    line_page_bytes: usize,
+    source: &SourceLines,
+) -> Result<Page, String> {
+    let offset = q.offset().unwrap_or(0);
+    let window = q.window_length().unwrap_or(DEFAULT_LINE_CHUNK);
+    let lines = &source.lines;
+    // View lines with source line <= raw offset are before the page.
+    let first = lines.partition_point(|line| *line <= offset);
+    let inside = lines.partition_point(|line| *line <= offset.saturating_add(window));
+    // A raw window holding no kept line still shows the next kept one, so
+    // every page advances.
+    let count = inside
+        .saturating_sub(first)
+        .max(usize::from(first < lines.len()));
+    let mut view_q = q.clone();
+    view_q.full_content = None;
+    view_q.unit = Some(WindowUnit::Lines);
+    view_q.offset = Some(wire_count(first));
+    view_q.length = wire_positive(count.max(1));
+    let mut page = view_page(content, &view_q, line_page_bytes)?;
+    page.out_of_range = offset > 0 && offset >= source.total;
+    let raw_of = |view_index: usize| lines.get(view_index).map(|line| line - 1);
+    let pagination = &mut page.pagination;
+    if pagination.unit == WindowUnit::Bytes {
+        // One oversized view line pages by view bytes; line paging resumes
+        // at the raw line after it.
+        pagination.resume_line = pagination.resume_line.and_then(raw_of);
+        return Ok(page);
+    }
+    let end = page.view_lines.1.max(first);
+    let next = raw_of(end).unwrap_or(source.total).max(offset);
+    let has_more = end < lines.len();
+    *pagination = Pagination {
+        unit: WindowUnit::Lines,
+        offset: offset.min(source.total),
+        length: next.saturating_sub(offset.min(source.total)),
+        window: q.window_length().unwrap_or(next.saturating_sub(offset)),
+        total_lines: source.total,
+        total_bytes: content.len(),
+        has_more,
+        next_offset: has_more.then_some(next),
+        resume_line: None,
+    };
+    Ok(page)
+}
+
+/// A window of the view itself, in view lines or bytes.
+fn view_page(content: &str, q: &LocalFetchQuery, line_page_bytes: usize) -> Result<Page, String> {
     let kind = q.unit.unwrap_or(if q.full_content == Some(true) {
         WindowUnit::Bytes
     } else {

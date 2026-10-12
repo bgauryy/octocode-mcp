@@ -11,9 +11,7 @@ import {
 } from './mcp-client.mjs';
 
 const { check, summary } = checks('lsp-importers');
-const base = path.join(os.homedir(), '.octocode', 'tmp');
-fs.mkdirSync(base, { recursive: true });
-const root = fs.mkdtempSync(path.join(base, 'lsp-importers-'));
+const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-lsp-importers-')));
 let client;
 try {
   fs.mkdirSync(path.join(root, '.git'));

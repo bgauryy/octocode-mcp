@@ -1,12 +1,11 @@
 # Publishing `@octocodeai/octocode-native`
 
-This package owns one distribution for three artifacts on six platforms:
+This package owns one distribution for two artifacts on six platforms:
 
 - the native CLI (binary file `octocode`; npm bin `octocode-native`, so the `octocode` command stays the launcher's);
-- `octocode-regex-worker`;
 - `NativeRuntime` addon exposed by `.` and `./runtime`.
 
-Five internal Rust crates compile into the same three artifacts; no Rust crate is published to a Cargo registry.
+Five internal Rust crates compile into the same two artifacts; no Rust crate is published to a Cargo registry.
 
 ## Package map
 
@@ -14,13 +13,13 @@ Five internal Rust crates compile into the same three artifacts; no Rust crate i
 packages/octocode-native/
 ├── Cargo.toml
 ├── crates/runtime/             pure runtime library
-├── crates/cli/                 CLI and regex worker
+├── crates/cli/                 CLI
 ├── crates/runtime-napi/        runtime Node adapter
 ├── crates/github/              GitHub protocol services
 ├── crates/engine/              reusable primitives (Rust library)
 ├── js/                         runtime loader/types
 ├── bin/                        Node launchers
-├── npm/<platform>/             three release artifacts per platform
+├── npm/<platform>/             two release artifacts per platform
 ├── scripts/                    build, copy, size, and version checks
 └── package.json
 ```
@@ -127,7 +126,7 @@ npx @octocodeai/octocode-native@next --version
 npx @octocodeai/octocode-native@next catalog
 ```
 
-Also start the packaged regex worker and run direct CLI, Node launcher, and real stdio MCP smoke paths.
+Also run direct CLI, Node launcher, and real stdio MCP smoke paths.
 
 ## Rollback
 

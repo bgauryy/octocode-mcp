@@ -701,8 +701,10 @@ try {
       });
       // Minimal output drops the `operation` request echo.
       assert.equal(data.operation, undefined);
-      // One outline entry; `doc 1` marks the comment block above it.
-      assert.deepEqual(data.symbols, ['add (2, function, doc 1, exported)']);
+      // One declaration object; `docStartLine` marks the comment block above it.
+      assert.deepEqual(data.symbols, [
+        { symbolName: 'add', kind: 'function', line: 2, exported: true, docStartLine: 1 },
+      ]);
       assert.equal(data.pagination?.totalItems ?? data.symbols.length, 1);
     }
   );

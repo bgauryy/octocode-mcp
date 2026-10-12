@@ -49,7 +49,7 @@ fn commit_raw(sha: &str, message: &str) -> Value {
 
 #[tokio::test]
 async fn commit_row_carries_its_sha_and_path_stat_files() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let mut raw = commit_raw(HEAD, "Fix parser");
     raw["parents"] = json!([{"sha":BASE}]);
     raw["stats"] = json!({"additions":1,"deletions":1});
@@ -85,7 +85,7 @@ async fn commit_row_carries_its_sha_and_path_stat_files() {
 /// request): it is never silently ignored.
 #[tokio::test]
 async fn commit_match_string_without_sections_reads_its_patches() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let mut raw = commit_raw(HEAD, "Fix parser");
     raw["files"] = json!([changed_file("src/a.rs"), {
         "filename":"src/b.rs","status":"modified","additions":1,"deletions":1,
@@ -120,7 +120,7 @@ async fn commit_match_string_without_sections_reads_its_patches() {
 /// file: the header is part of the diff that is shown.
 #[tokio::test]
 async fn commit_match_string_that_removes_every_file_says_so() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let mut raw = commit_raw(HEAD, "Fix parser");
     raw["files"] = json!([changed_file("src/a.rs"), {
         "filename":"src/b.rs","status":"modified","additions":1,"deletions":1,
@@ -170,7 +170,7 @@ async fn commit_match_string_that_removes_every_file_says_so() {
 
 #[tokio::test]
 async fn compare_row_names_both_resolved_commits_and_each_commit_sha() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     // The `application/vnd.github.sha` read answers the bare SHA.
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/o/r/commits/feature"))
@@ -201,9 +201,32 @@ async fn compare_row_names_both_resolved_commits_and_each_commit_sha() {
     assert_eq!(out["files"], json!(["M +1 -1 src/a.rs"]), "{out}");
 }
 
+/// A compare of identical refs changes nothing: an empty answer (exit 1),
+/// as a commit or PR whose scope holds nothing is.
+#[tokio::test]
+async fn compare_of_identical_refs_is_an_empty_answer() {
+    let server = MockServer::builder().start().await;
+    mount_json(
+        &server,
+        format!("/api/v3/repos/o/r/compare/{HEAD}...{HEAD}"),
+        200,
+        json!({"ahead_by":0,"behind_by":0,"total_commits":0,
+            "base_commit":{"sha":HEAD},"merge_base_commit":{"sha":HEAD},
+            "commits":[],"files":[]}),
+    )
+    .await;
+    let out = read(
+        &server,
+        json!({"operation":"compare","owner":"o","repo":"r","base":HEAD,"head":HEAD}),
+    )
+    .await;
+    assert_eq!(out["status"], "empty", "{out}");
+    assert_eq!(out["aheadBy"], 0, "{out}");
+}
+
 #[tokio::test]
 async fn issue_row_carries_number_state_author_and_discussion_size() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/r/issues/7",

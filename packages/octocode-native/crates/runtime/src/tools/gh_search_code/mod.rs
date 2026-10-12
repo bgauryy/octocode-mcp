@@ -14,12 +14,12 @@ use crate::providers::github::{
 };
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::{
-    GhFailure, SEARCH_RESULT_CAP, add_next, apply_partial, field_names, pick_rows,
-    push_warning_front, reject_window, search_failure, with_ref_recovery, with_search_repair,
+    GhFailure, SearchReach, add_next, apply_partial, field_names, pick_rows, push_warning_front,
+    reject_window, search_failure, with_ref_recovery, with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
-use crate::tools::result::{Continuation, ToolData, remove_null_fields};
+use crate::tools::result::{Continuation, ToolData, query_row};
 use serde_json::json;
 
 pub use crate::contracts::tool_types::{GhSearchCodeQuery, GhSearchCodeQueryMatchIn};
@@ -97,7 +97,6 @@ pub(crate) async fn execute<C: ConditionalCache>(
     context: &RequestContext,
     security: &impl ContentScan,
 ) -> Result<ToolData, ProviderError> {
-    query::validate_code_scope(query)?;
     let current = usize_of(query.page);
     let per = page_size(query);
     reject_window(current, per)?;
@@ -260,23 +259,40 @@ async fn search_page<C: ConditionalCache>(
         incomplete: false,
         sso_partial: Vec::new(),
     };
-    for extension in scopes {
-        let data = provider
-            .transport
-            .search_code(
-                &CodeSearchRequest {
-                    query: query::code(query, extension),
-                    page: current,
-                    per_page: per_search,
-                    include_fragments: query.match_in != GhSearchCodeQueryMatchIn::Path,
-                },
-                context,
-            )
-            .await?;
-        let reachable = data.total_count.min(SEARCH_RESULT_CAP);
-        page.total += reachable;
-        page.pages = page.pages.max(reachable.div_ceil(per_search));
-        page.capped |= data.total_count > SEARCH_RESULT_CAP;
+    let requests = scopes
+        .into_iter()
+        .map(|extension| CodeSearchRequest {
+            query: query::code(query, extension),
+            page: current,
+            per_page: per_search,
+            include_fragments: query.match_in != GhSearchCodeQueryMatchIn::Path,
+        })
+        .collect::<Vec<_>>();
+    // Each extension's search takes its own window slot, so a row
+    // whose uncached searches cannot all start within the wait cap is
+    // refused before the first is sent, not midway with its slots spent.
+    let mut cached = Vec::with_capacity(requests.len());
+    for request in &requests {
+        cached.push(
+            provider
+                .transport
+                .cached_code_search(request, context)
+                .await?,
+        );
+    }
+    let sends = cached.iter().filter(|page| page.is_none()).count();
+    if let Some(refusal) = provider.transport.code_search_batch_refusal(sends, context) {
+        return Err(refusal);
+    }
+    for (request, cached) in requests.iter().zip(cached) {
+        let data = match cached {
+            Some(data) => data,
+            None => provider.transport.search_code(request, context).await?,
+        };
+        let reach = SearchReach::new(data.total_count, per_search);
+        page.total += reach.total;
+        page.pages = page.pages.max(reach.pages);
+        page.capped |= reach.capped;
         page.matched += data.total_count;
         page.incomplete |= data.incomplete_results;
         for organization in data.sso_partial_organizations {
@@ -348,9 +364,7 @@ async fn empty_page<C: ConditionalCache>(
     .await?;
     if value.get("hints").is_none() && code_output::path_mode_given_code(query) {
         // Path matching never sees file contents: search them instead.
-        let mut content = serde_json::to_value(query)
-            .map_err(|error| ProviderError::new(ProviderErrorKind::Decode, error.to_string()))?;
-        remove_null_fields(&mut content);
+        let mut content = query_row(query, &[]);
         content["matchIn"] = json!("file");
         content["page"] = json!(1);
         value["next"]["findCode"] = Continuation::new(ToolId::GhSearchCode, content)
@@ -388,9 +402,9 @@ impl crate::tools::output::ToolOutput for Output {
         {
             "Drop extensions/filename/path/language or use fewer keywords; only the default branch is indexed."
         } else if query["keywords"].as_array().is_some_and(|k| k.len() > 1) {
-            "An empty index result is unproven absence: use fewer keywords, or ghCloneRepo the repository and localSearch the clone."
+            "An empty index result is unproven absence: use fewer keywords, or ghGetFileContent a likely file to verify."
         } else {
-            "An empty index result is unproven absence: ghCloneRepo the repository, then localSearch the clone to verify."
+            "An empty index result is unproven absence: ghStructure the repository, then ghGetFileContent likely files to verify."
         }
     }
     fn evidence_kind(&self, _query: &serde_json::Value, _data: &serde_json::Value) -> &'static str {

@@ -244,6 +244,25 @@ describe('project trust: the dialog', () => {
 });
 
 describe('project trust: decisions', () => {
+  it.each([true, false])('rejects unknown arguments without changing a decision (UI: %s)', async (hasUI) => {
+    const cwd = project({ '.codex/hooks.json': MCP });
+    saveDecision(cwd, fingerprint(projectConfigFiles(cwd)), false);
+    const commands = new Subcommands();
+    registerTrustCommand(commands);
+    const command = { ...ctx(cwd, [true], { hasUI }), reload: vi.fn(async () => undefined) };
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    try {
+      for (const args of ['of', 'off extra', 'on']) await commands.get('trust')!.handler(args, command as never);
+      expect(command.ui.notify).toHaveBeenCalledWith('Usage: /octocode trust [off]', 'warning');
+      expect(command.ui.confirm).not.toHaveBeenCalled();
+      expect(command.reload).not.toHaveBeenCalled();
+      expect(projectTrustNow(ctx(cwd))).toBe(false);
+      expect(commands.get('trust')!.complete!('o')).toEqual([{ value: 'off', label: 'off' }]);
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+
   it('re-asks when the files change while the dialog is open, and stores what the user saw', async () => {
     const cwd = project({ '.codex/hooks.json': MCP });
     const commands = new Subcommands();

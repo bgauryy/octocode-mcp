@@ -7,12 +7,26 @@ beta `astTopology` through the built CLI (`packages/octocode/out/octocode.js`). 
 
 ```sh
 node skills-dev/octocode-dev/scripts/dev.mjs build:dev                              # from the repo root, after changing native
-node octocode-local-testing/harness/run-all.mjs          # every suite
-node octocode-local-testing/harness/run-all.mjs grammar,workflows
+node octocode-local-testing/harness/run-all.mjs                 # hermetic quality suites
+OCTOCODE_LIVE=1 node octocode-local-testing/harness/run-all.mjs # + live suites (GitHub, registries, classifier)
+node octocode-local-testing/harness/run-all.mjs grammar,workflows   # only the named suites
 node octocode-local-testing/harness/debug-call.mjs localFetch '{"path":"/abs/file.ts"}'
 ```
 
-`results/<suite>.log|json` holds each run; `results/summary.json` the totals.
+`results/<suite>.log|json` holds each run; `results/summary.json` the totals. run-all prints one
+`PASS <suite>` or `FAIL <suite>` line per suite and a final `PASS run-all` / `FAIL run-all` line,
+and exits non-zero when any suite fails, errors, times out or reports no checks.
+
+## Suites
+
+| Kind | Suites | Runs |
+|---|---|---|
+| Hermetic (default) | `acceptance` (acceptance.test.mjs), `usage-regressions`, `lsp-importers`, `rewrite`, `grammar`, `workflows`, `chain-check`, `lead-replay`, `navigate`, `repo-sweep`, `deps-flows`, `large-files`, `tool-health` | Always. Only local clones and fixtures; run-all gives each a fresh empty `OCTOCODE_HOME` and `GH_CONFIG_DIR`, strips GitHub and classifier credentials, and routes HTTP(S) to a dead proxy (loopback exempt, so `tool-health`'s loopback mock works) |
+| Live | `remote`, `github`, `review-large`, `artifacts`, `clasify` | Only with `OCTOCODE_LIVE=1`, with your own credentials. The same switch enables the GitHub/registry sections of `chain-check` and `lead-replay` |
+| Bench (not correctness) | `perf`, `competitors`, `kpi`, `soak` | Only when named |
+
+The hermetic environment comes from `test-utils/hermetic-env.ts`, the same definition the
+MCP, CLI and config vitest suites run under (`test-utils/external-effects-guard.ts`).
 
 ## Layout
 
@@ -23,8 +37,13 @@ node octocode-local-testing/harness/debug-call.mjs localFetch '{"path":"/abs/fil
 | `harness/usage-regressions.mjs` | Input shapes and failures mined from recorded agent sessions, replayed on MCP and the CLI: batch/brief placement, guessed field names, wrong-tool rows, regex repairs, bounded large reads, root-policy hints, warm LSP |
 | `harness/grammar.mjs` | All 12 Tree-sitter grammars and their extensions on small fixtures |
 | `harness/navigate.mjs` | Agent-style ORIENT → SEARCH → READ → PROVE walk per grammar repo, each hop fed only by copied values; hop/byte budget |
-| `harness/remote.mjs` | GitHub search/read/history, artifactSearch, clasify; every returned `next.*` page and `hints.*` lead must execute |
-| `harness/github.mjs` | GitHub data fidelity against the local clones at the pinned SHA: file bytes/ranges/matchString/byte chunks, code-search precision + verbatim snippets + filters + pagination, tree = `git ls-tree`, commit/compare/PR = `git diff`, history filters, clasify locate/scout over GitHub files |
+| `harness/tool-health.mjs` | Every contract tool over CLI and MCP on tiny fixtures and a loopback GitHub/registry/classifier mock (`harness/tool-health/`): happy path, full `next.*` walk, empty, invalid, CLI/MCP parity. Hermetic, about 35 s (`node octocode-local-testing/harness/tool-health.mjs [tool,...]` or `dev.mjs test:tools`); results in `results/tool-health.json` |
+| `harness/remote.mjs` | Live canary: GitHub search/read/history, artifactSearch, clasify against the real services; every returned `next.*` page and `hints.*` lead must execute (tool-health covers the same shapes against the mock) |
+| `harness/github.mjs` | GitHub data fidelity against the local clones at the pinned SHA: file bytes/ranges/matchString/byte chunks, code-search precision + verbatim snippets + filters + pagination, tree = `git ls-tree`, commit/compare/PR = `git diff` (with patches, `include` selection and pageSize-1 patch paging), history filters, open-PR head SHAs, clasify locate/scout over GitHub files |
+| `harness/review-large.mjs` | A >100-file PR: inventory pages, a late file's patch and its patch windows, against GitHub's REST files API |
+| `harness/lsp-importers.mjs` | CommonJS importer recovery past unrelated comment mentions |
+| `harness/chain-check.mjs` | Contract sensor: per-tool chain steps plus acceptance checks C1-C5 (`harness/acceptance.mjs`, unit-tested by `acceptance.test.mjs`) |
+| `harness/lead-replay.mjs` | Replays every `next.*`/`hints.*` lead of a fixture set and checks it does what its key promises |
 | `harness/artifacts.mjs` | artifactSearch fidelity: 8 registries (npm, PyPI, crates, Maven, NuGet, Go, Packagist, RubyGems) against each registry's own API; `hints.viewRepo` names and opens the same repo |
 | `harness/perf.mjs` | Cache effectiveness: lspSearch page 2 vs page 1, symbols/topology continuation pages and repeated analyses, tokio Rust linking gaps |
 | `harness/clasify.mjs` | clasify locate on 18 files across 12 grammars and 6 huge repos: strict declaration-in-window, `best` ranking, near-tie runner-ups, identifier hints, host-byte savings |

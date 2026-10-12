@@ -39,7 +39,7 @@ fn page(items: Vec<Value>) -> Value {
 /// relative window resolves to an absolute lower bound.
 #[tokio::test]
 async fn typed_date_filters_reach_the_search_query() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/repositories"))
         .and(query_param(
@@ -57,7 +57,7 @@ async fn typed_date_filters_reach_the_search_query() {
     .await;
     assert_eq!(out.data["repositories"][0]["repo"], "r", "{}", out.data);
 
-    let relative = MockServer::start().await;
+    let relative = MockServer::builder().start().await;
     mount_json(
         &relative,
         "/api/v3/search/repositories",
@@ -87,7 +87,7 @@ async fn typed_date_filters_reach_the_search_query() {
 /// drops the qualifier and flags archived rows.
 #[tokio::test]
 async fn default_archived_search_exclusion_offers_no_lead() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/repositories"))
         .and(query_param("q", "x"))
@@ -163,7 +163,7 @@ async fn default_archived_search_exclusion_offers_no_lead() {
 /// says so and leads to them.
 #[tokio::test]
 async fn owner_listing_counts_skipped_archived_repositories() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/orgs/o/repos"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([
@@ -184,7 +184,7 @@ async fn owner_listing_counts_skipped_archived_repositories() {
         out.data
     );
 
-    let clean = MockServer::start().await;
+    let clean = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/orgs/o/repos"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!([repo_item("live", false)])))
@@ -204,7 +204,7 @@ async fn owner_listing_counts_skipped_archived_repositories() {
 /// metadata-update date are `stats` extras.
 #[tokio::test]
 async fn rows_carry_creation_date_as_a_detail_and_counts_as_stats() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/search/repositories",
@@ -243,7 +243,7 @@ async fn rows_carry_creation_date_as_a_detail_and_counts_as_stats() {
 /// owner's own source; other rows carry no `fork` key.
 #[tokio::test]
 async fn owner_listing_marks_forks_only() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let mut fork = repo_item("forked", false);
     fork["fork"] = json!(true);
     Mock::given(method("GET"))
@@ -265,7 +265,7 @@ async fn owner_listing_marks_forks_only() {
 /// `totalItems`, so an org count is never silently 1,000.
 #[tokio::test]
 async fn capped_search_states_the_full_match_count() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/search/repositories",
@@ -303,7 +303,7 @@ async fn capped_search_states_the_full_match_count() {
 /// row with its language and default branch, no search request, no page.
 #[tokio::test]
 async fn owner_and_repo_return_that_repository_without_searching() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/sindresorhus/is",
@@ -340,7 +340,7 @@ async fn owner_and_repo_return_that_repository_without_searching() {
 /// query echo.
 #[tokio::test]
 async fn a_search_row_carries_owner_repo_and_default_branch() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/search/repositories",
@@ -361,12 +361,81 @@ async fn a_search_row_carries_owner_repo_and_default_branch() {
     }
 }
 
+/// GitHub silently drops a `language:` it does not know and returns
+/// unfiltered rows. A page where no row is that language says so when the
+/// rows mix languages, or when they share one and the same search without
+/// the qualifier counts the same; an alias GitHub honors (`js` → JavaScript
+/// rows, a smaller total) does not trip it.
+#[tokio::test]
+async fn an_ignored_language_filter_is_named() {
+    let item = |name: &str, language: &str| {
+        let mut item = repo_item(name, false);
+        item["language"] = json!(language);
+        item
+    };
+    let ignored = MockServer::builder().start().await;
+    mount_json(
+        &ignored,
+        "/api/v3/search/repositories",
+        200,
+        page(vec![item("a", "Python"), item("b", "Rust")]),
+    )
+    .await;
+    let out = run(&ignored, json!({"keywords":["x"],"language":"zz-nolang"})).await;
+    let warnings = out.data["warnings"].to_string();
+    assert!(
+        warnings.contains("language") && warnings.contains("zz-nolang"),
+        "{}",
+        out.data
+    );
+
+    // Ignored, but the unfiltered rows share one language (the live case):
+    // the probe without the qualifier counts the same.
+    let agreeing = MockServer::builder().start().await;
+    mount_json(
+        &agreeing,
+        "/api/v3/search/repositories",
+        200,
+        page(vec![item("a", "TypeScript"), item("b", "TypeScript")]),
+    )
+    .await;
+    let out = run(&agreeing, json!({"keywords":["x"],"language":"zz-nolang"})).await;
+    assert!(
+        out.data["warnings"].to_string().contains("zz-nolang"),
+        "{}",
+        out.data
+    );
+
+    let alias = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/repositories"))
+        .and(wiremock::matchers::query_param_contains("q", "language:"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(page(vec![item("a", "JavaScript"), item("b", "JavaScript")])),
+        )
+        .with_priority(1)
+        .mount(&alias)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/repositories"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                json!({"total_count": 99, "incomplete_results": false, "items": []}),
+            ),
+        )
+        .mount(&alias)
+        .await;
+    let out = run(&alias, json!({"keywords":["x"],"language":"js"})).await;
+    assert!(out.data.get("warnings").is_none(), "{}", out.data);
+}
+
 /// A failure's one repair is a lead, not prose: a page past the search
 /// window leads to the last reachable page; an owner+repo that does not
 /// resolve leads to a search for the repository's name.
 #[tokio::test]
 async fn search_failures_lead_to_their_repair() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/missing",
@@ -415,7 +484,7 @@ async fn search_failures_lead_to_their_repair() {
 /// leads back to page 1.
 #[tokio::test]
 async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/repositories"))
         .respond_with(

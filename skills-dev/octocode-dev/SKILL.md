@@ -46,6 +46,7 @@ Root `package.json` keeps only `build:native:all`, `lint:fix`, `test:quiet`, `co
 | Fast local build (default) | `$DEV build:dev` |
 | Release build (slow) | `$DEV build` |
 | Tests / lint / typecheck | `$DEV test` · `$DEV lint` · `$DEV typecheck` (`:ci` variants skip benchmark) |
+| Every tool end to end (CLI + MCP, hermetic, after `build:dev`) | `$DEV test:tools [tool,...]` |
 | Full repo contract before handoff | `$DEV verify` |
 | Docs links, catalog, config keys | `$DEV docs:verify` |
 | Workspace scripts present / outputs built | `$DEV health:check` · `$DEV check-outputs` |

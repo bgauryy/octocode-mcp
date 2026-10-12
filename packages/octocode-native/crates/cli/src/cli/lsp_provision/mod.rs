@@ -99,8 +99,11 @@ pub fn extract_from_zip(bytes: &[u8], target: &str) -> Option<Vec<u8>> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).ok()?;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i).ok()?;
-        let name = entry.name().to_string();
-        if strip_lead(&name) == normalized_target {
+        // An entry name that does not decode cannot equal the UTF-8 target.
+        let matches = entry
+            .name()
+            .is_ok_and(|name| strip_lead(&name) == normalized_target);
+        if matches {
             let mut out = Vec::new();
             entry.read_to_end(&mut out).ok()?;
             return Some(out);
@@ -796,6 +799,14 @@ mod tests {
         );
         // missing entry
         assert!(extract_from_zip(&archive, "nope").is_none());
+        // leading ./ normalized on the stored entry name
+        let dotted = zip_with(&[("./bin/clangd", payload)]);
+        assert_eq!(
+            extract_from_zip(&dotted, "bin/clangd").as_deref(),
+            Some(payload.as_slice())
+        );
+        // bytes that are not a zip archive
+        assert!(extract_from_zip(b"not a zip archive", "bin/clangd").is_none());
     }
 
     #[test]
@@ -844,58 +855,40 @@ mod tests {
         assert_eq!(again.source, Some("already-present"));
     }
 
+    /// Each refusal fails the outcome and names its reason.
     #[tokio::test(flavor = "current_thread")]
-    async fn provision_refuses_on_checksum_mismatch() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let outcome = provision_server(
-            dir.path(),
-            "rust-analyzer",
-            "linux-x64",
-            ProvisionMode::Auto,
-            tampered,
-        )
-        .await;
-        assert!(!outcome.ok);
-        assert!(
-            outcome
-                .error
-                .expect("error should be set")
-                .contains("Checksum mismatch")
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn provision_off_mode_refuses() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let outcome =
-            provision_server(dir.path(), "clangd", "linux-x64", ProvisionMode::Off, never).await;
-        assert!(!outcome.ok);
-        assert!(
-            outcome
-                .error
-                .expect("error should be set")
-                .contains("Auto-install is off")
-        );
-    }
-
-    #[tokio::test(flavor = "current_thread")]
-    async fn provision_unsupported_platform_refuses() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let outcome = provision_server(
-            dir.path(),
-            "clangd",
-            "linux-arm64",
-            ProvisionMode::Auto,
-            never,
-        )
-        .await;
-        assert!(!outcome.ok);
-        assert!(
-            outcome
-                .error
-                .expect("error should be set")
-                .contains("no linux-arm64 release asset")
-        );
+    async fn provision_refusals_name_their_reason() {
+        type Fetch = fn(&'static str) -> std::future::Ready<Result<Vec<u8>, String>>;
+        let cases: [(&str, &str, ProvisionMode, Fetch, &str); 3] = [
+            (
+                "rust-analyzer",
+                "linux-x64",
+                ProvisionMode::Auto,
+                tampered,
+                "Checksum mismatch",
+            ),
+            (
+                "clangd",
+                "linux-x64",
+                ProvisionMode::Off,
+                never,
+                "Auto-install is off",
+            ),
+            (
+                "clangd",
+                "linux-arm64",
+                ProvisionMode::Auto,
+                never,
+                "no linux-arm64 release asset",
+            ),
+        ];
+        for (name, platform, mode, fetch, reason) in cases {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let outcome = provision_server(dir.path(), name, platform, mode, fetch).await;
+            assert!(!outcome.ok, "{reason}");
+            let error = outcome.error.expect("error should be set");
+            assert!(error.contains(reason), "{reason}: {error}");
+        }
     }
 
     #[test]

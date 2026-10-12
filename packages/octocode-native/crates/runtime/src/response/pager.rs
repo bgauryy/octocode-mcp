@@ -293,7 +293,7 @@ impl ResponsePager {
         if text.len() > self.config.max_rendered_bytes {
             // Past the ceiling, serve whole-row pages (each at most the
             // requested length, else the ceiling) with a `responseScope:
-            // "rows"` continuation instead of failing the call (M9).
+            // "rows"` continuation instead of failing the call.
             // A row larger than a page (rows split arrays, never a string)
             // falls back to concatenable envelope windows instead.
             drop(text);
@@ -1054,7 +1054,7 @@ mod tests {
         ));
     }
 
-    /// M9: rendered text past the byte ceiling is served as row pages with an
+    /// Rendered text past the byte ceiling is served as row pages with an
     /// executable continuation, never a whole-call failure; walking the pages
     /// returns every row exactly once.
     #[test]
@@ -1099,7 +1099,7 @@ mod tests {
         assert_eq!(seen, vec![0, 1, 2, 3, 4, 5]);
     }
 
-    /// M9: one row too large for any row page falls back to envelope
+    /// One row too large for any row page falls back to envelope
     /// windows that concatenate back to the exact envelope JSON.
     #[test]
     fn oversized_single_row_falls_back_to_concatenable_windows() {

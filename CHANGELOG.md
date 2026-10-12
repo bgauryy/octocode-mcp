@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Fixed — tool-review round (2026-10-12)
+- **GitHub code search never queues a call it will then refuse.** A wait the
+  rate-limit window already puts past the cap is refused before queueing, and
+  a row with several `extensions` is refused before its first search when
+  they cannot all start in time (searches the cache answers need no slot).
+  A client-side refusal no longer reports a made-up `rateLimit.remaining: 0`,
+  so anonymous callers are no longer told to log in for it.
+- **`ghSearchRepo` warns when GitHub ignored `language`.** GitHub drops a
+  language it does not know and returns unfiltered rows; a page with no row in
+  the requested language says so when its rows mix languages, or when they
+  share one and one more search without `language` counts the same (an alias
+  GitHub resolved, like `js`, counts fewer and gets no warning).
+- **`lspSearch` names the files its heritage scan could not read**
+  (`partialReasons: heritageUnread`, plus a text-search lead over them); it
+  used to give a bare count.
+- **The warm CLI `lspSearch` server works with any home.** Its socket moved
+  from `<home>/run` to `<temp dir>/octocode-<uid>`, so a long home (a macOS
+  `$TMPDIR` one) no longer skips it silently (every call started cold, ~2.6 s);
+  an unusable socket location is stated on stderr.
+- **Hints fit 120 characters as sent.** The hint check now reads whole source
+  files (a one-line test-module item ended its scan early), and the shortened
+  unknown-login and empty-structural-match hints fit.
+- **The instructions name the `queries[]` envelope** (agents left it out in
+  8 of 111 benchmark calls).
+
 ### Changed — CLI paging is success; exit 6 removed
 - **A result with a next page exits 0**, as the MCP server reports it:
   `pagination.hasMore`, `next.*`, a partial source read and a pending

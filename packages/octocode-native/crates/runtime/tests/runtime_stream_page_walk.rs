@@ -307,7 +307,7 @@ async fn a_default_structure_listing_walk_fits_the_window_and_lists_every_file_o
         "nextPage",
         |envelope| {
             // A `{dir, files}` group names its entries under its
-            // workspace-relative `dir` (SS2/SS4).
+            // workspace-relative `dir`.
             envelope["results"][0]["data"]["files"]
                 .as_array()
                 .into_iter()

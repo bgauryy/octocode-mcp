@@ -41,6 +41,7 @@ type DialogTheme = Parameters<Parameters<ExtensionContext['ui']['custom']>[0]>[1
  * Space or Enter and answer only from their own "Submit selection" row.
  */
 export function showAskDialog(ctx: ExtensionContext, questions: AskQuestion[], signal?: AbortSignal): Promise<AskResult> {
+  if (signal?.aborted) return Promise.resolve({ answers: [], cancelled: true, reason: 'aborted' });
   return ctx.ui.custom<AskResult>((tui, theme, _keybindings, done) => new AskDialog(questions, theme, new Editor(tui, editorTheme(theme)), () => tui.requestRender(), done, signal));
 }
 
@@ -97,6 +98,8 @@ class AskDialog {
   }
 
   set focused(value: boolean) {
+    // The cached frame holds the cursor marker (or not): a focus change redraws.
+    if (this.editor.focused !== value) this.cache = undefined;
     this.editor.focused = value;
   }
 

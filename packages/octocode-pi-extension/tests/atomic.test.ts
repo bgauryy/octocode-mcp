@@ -4,12 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { atomicWriteFile, sha256, sha256File } from '../src/shared/atomic.js';
 import { FileGuard, registerFileTool } from '../src/files/tool.js';
 import { tmp } from './helpers.js';
+import { fakePermission } from './fake-pi.js';
 
 const noTemp = (dir: string) => fs.readdirSync(dir).filter((name) => name.endsWith('.tmp'));
 
 function fileTool(guard = new FileGuard()) {
   let tool: { execute: (...args: unknown[]) => Promise<{ content: Array<{ text: string }> }> } | undefined;
-  registerFileTool({ registerTool: (definition: never) => (tool = definition), on: () => undefined } as never, guard);
+  registerFileTool({ registerTool: (definition: never) => (tool = definition), on: () => undefined } as never, guard, fakePermission());
   return { guard, run: (cwd: string, queries: unknown[]) => tool!.execute('t', { queries }, undefined, undefined, { cwd, hasUI: false }) };
 }
 

@@ -7,6 +7,7 @@ import { inheritCheckpoints, sessionIdOf } from '../src/files/checkpoint-store.j
 import { FileGuard, registerFileTool } from '../src/files/tool.js';
 import { tmp } from './helpers.js';
 import { Subcommands } from '../src/shared/commands.js';
+import { fakePermission } from './fake-pi.js';
 
 
 /** One change through the checkpoint protocol the file tool uses. */
@@ -319,7 +320,7 @@ function host(cwd: string, sessionId = 'session/1', header?: { parentSession?: s
   // These tests are about checkpoints: the agent has read the workspace files it changes (the guard requires it).
   for (const name of fs.readdirSync(cwd)) guard.record(path.join(cwd, name));
   const checkpoints = new Checkpoints();
-  registerFileTool(pi, guard, undefined, checkpoints);
+  registerFileTool(pi, guard, fakePermission(), checkpoints);
   const forgotten: string[] = [];
   registerCheckpoints(pi, checkpoints, (target) => forgotten.push(target), commands);
   const branch: Array<{ id: string; type: string; message: { role: string } }> = [{ id: 'u1', type: 'message', message: { role: 'user' } }];

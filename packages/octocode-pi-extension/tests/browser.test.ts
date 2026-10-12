@@ -1,24 +1,23 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { initTheme, type ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { initTheme, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NO_REPLY, startCdpStub, type CdpHandler, type CdpStub } from './fixtures/cdp-stub.js';
-import { theme } from './fake-pi.js';
+import { theme, fakeCtx, fakePermission } from './fake-pi.js';
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
 vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] })); // public: no network
 
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
-const { formatChanges, formatSnapshot } = await import('../src/browser/snapshot.js');
 const { browserSummary } = await import('../src/browser/render.js');
 const { pressKey, settle, settleAfterLoad, waitForText } = await import('../src/browser/input.js');
 const { openBrowser } = await import('../src/browser/cdp.js');
 
 type Result = { content: Array<{ type: string; text?: string; data?: string }> };
 type Tool = {
-  execute: (id: string, params: Record<string, unknown>) => Promise<Result>;
+  execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: undefined, ctx: ExtensionContext) => Promise<Result>;
   renderCall: (args: Record<string, unknown>, theme: unknown, context: unknown) => { render(width: number): string[] };
   renderResult: (result: Result, options: { expanded: boolean }, theme: unknown, context: unknown) => { render(width: number): string[] };
 };
@@ -78,7 +77,7 @@ async function stub(options: Parameters<typeof startCdpStub>[0] = {}): Promise<C
 }
 
 function register() {
-  const browser = new BrowserTool();
+  const browser = new BrowserTool(fakePermission());
   tools.push(browser);
   let tool: Tool | undefined;
   const handlers = new Map<string, () => Promise<void>>();
@@ -89,7 +88,7 @@ function register() {
     on: (event: string, handler: () => Promise<void>) => handlers.set(event, handler),
   } as unknown as ExtensionAPI;
   registerBrowserTool(pi, browser);
-  const run = (params: Record<string, unknown>) => tool!.execute('id', params);
+  const run = (params: Record<string, unknown>) => tool!.execute('id', params, undefined, undefined, fakeCtx({ cwd: process.cwd(), hasUI: false }));
   const text = async (params: Record<string, unknown>) => (await run(params)).content.map((part) => part.text ?? `[${part.type}]`).join('\n');
   return { browser, tool: tool!, handlers, run, text };
 }
@@ -319,6 +318,26 @@ describe('browser launching its own Chrome', () => {
     session.page.close();
   });
 
+  it('stops a launch the tool call aborted: rejects at once and kills the Chrome once it comes up', async () => {
+    const chrome = await stub();
+    const kill = vi.fn(async () => undefined);
+    let launched!: (value: unknown) => void;
+    launch.mockReturnValue(new Promise((resolve) => (launched = resolve)));
+    const controller = new AbortController();
+    const opening = openBrowser({ OCTOCODE_CHROME_PORT: String(await closedPort()) }, { signal: controller.signal });
+    await vi.waitFor(() => expect(launch).toHaveBeenCalledTimes(1));
+    controller.abort(new Error('Stopped by the user'));
+    await expect(opening).rejects.toThrow('Stopped by the user');
+    launched({ port: chrome.port, kill });
+    await vi.waitFor(() => expect(kill).toHaveBeenCalledTimes(1));
+
+    // The tool passes its call's signal: an aborted call opens nothing.
+    const { browser } = register();
+    vi.stubEnv('OCTOCODE_CHROME_PORT', String(await closedPort()));
+    await expect(browser.session(AbortSignal.abort(new Error('Stopped early')))).rejects.toThrow('Stopped early');
+    expect(launch).toHaveBeenCalledTimes(1);
+  });
+
   it('kills the launched Chrome when its page cannot be reached', async () => {
     const kill = vi.fn(async () => undefined);
     launch.mockResolvedValue({ port: await closedPort(), kill });
@@ -449,43 +468,21 @@ describe('keyboard and waits', () => {
   });
 
   it('waits for text to appear or go, and times out naming it', async () => {
-    let body = 'loading';
-    const page = { evaluate: async () => body as never, untilDialog: <T>(work: Promise<T>) => work };
-    setTimeout(() => (body = 'Ready now'), 30);
-    expect(await waitForText(page, 'Ready', false, 2_000, undefined, 10)).toBeGreaterThanOrEqual(0);
-    expect(await waitForText(page, 'loading', true, 2_000, undefined, 10)).toBe(0);
-    await expect(waitForText(page, 'never', false, 50, undefined, 10)).rejects.toThrow('Timed out after 0s waiting for "never" to appear.');
-  });
-});
-
-describe('formatSnapshot', () => {
-  it('keeps the element list first and fills the rest of 8 KB with page text', () => {
-    const items = Array.from({ length: 1_000 }, (_, index) => `[${index + 1}] button "Action number ${index + 1}"`);
-    const out = formatSnapshot({ title: 'Big', url: 'https://example.com', text: 'word '.repeat(10_000), items });
-    expect(out.length).toBeLessThanOrEqual(8_200);
-    expect(out.indexOf('## Elements')).toBeLessThan(out.indexOf('## Text'));
-    expect(out).toContain('[1] button');
-    expect(out).toMatch(/more elements; click by number still works/);
-    expect(out).toMatch(/more characters cut\]$/);
-    const small = formatSnapshot({ title: 'T', url: 'u', text: 'hello', items: [] });
-    expect(small).toBe('# T\nu\n\n## Elements\n(none)\n\n## Text\nhello');
-  });
-
-  it('names the locale the page rendered for and lists footer elements compactly', () => {
-    const footer = Array.from({ length: 200 }, (_, index) => `[${index + 10}] Footer link ${index}`);
-    const out = formatSnapshot({ title: 'Plans', url: 'https://wix.test/plans', text: '₪ 327 mo', items: ['[1] button "Start"'], footer, locale: 'page lang en · browser en-US · time zone Asia/Jerusalem · currency ₪×41' });
-    expect(out).toMatch(/^# Plans\nhttps:\/\/wix\.test\/plans\nLocale: page lang en · browser en-US · time zone Asia\/Jerusalem · currency ₪×41\n\n## Elements\n\[1\] button "Start"\n\n## Footer \(200\)\n\[10\] Footer link 0 · \[11\] Footer link 1/);
-    expect(out).toMatch(/more characters cut; click by number still works\]\n\n## Text\n₪ 327 mo$/);
-  });
-});
-
-describe('formatChanges', () => {
-  const page = { title: 'Shop', url: 'https://shop.test/', text: 'Cart\nEmpty', items: ['[1] button "Add"', '[2] input "Qty" value="1"'] };
-  it('reports new text, and only the elements that are new, changed or gone (numbers are stable)', () => {
-    expect(formatChanges(page, { ...page, text: 'Cart\n1 item' })).toBe('# Shop\nhttps://shop.test/ (same page)\n\n## Elements\nUnchanged (2).\n\n## New text (1 line gone)\n1 item');
-    const changed = formatChanges(page, { ...page, items: ['[2] input "Qty" value="3"', '[5] button "Checkout"'] });
-    expect(changed).toContain('## Elements (new or changed)\n[2] input "Qty" value="3"\n[5] button "Checkout"\nNo longer shown: [1]\n\n## New text\nNo new text.');
-    expect(formatChanges(page, { ...page, text: `Cart\n${'new line\n'.repeat(1_000)}` })).toMatch(/more characters cut; take a snapshot to see the whole page\]$/);
+    vi.useFakeTimers();
+    try {
+      let body = 'loading';
+      const page = { evaluate: async () => body as never, untilDialog: <T>(work: Promise<T>) => work };
+      setTimeout(() => (body = 'Ready now'), 30);
+      const appeared = waitForText(page, 'Ready', false, 2_000, undefined, 10);
+      await vi.advanceTimersByTimeAsync(40);
+      expect(await appeared).toBe(30);
+      expect(await waitForText(page, 'loading', true, 2_000, undefined, 10)).toBe(0);
+      const never = expect(waitForText(page, 'never', false, 50, undefined, 10)).rejects.toThrow('Timed out after 0s waiting for "never" to appear.');
+      await vi.advanceTimersByTimeAsync(60);
+      await never;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

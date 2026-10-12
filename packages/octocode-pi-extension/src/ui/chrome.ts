@@ -76,8 +76,13 @@ export function spinnerFrames(theme: Theme): string[] {
 
 /** The banner as Pi's header component. `shineFrom` starts the one-time light sweep. */
 export function bannerHeader(tui: Pick<TUI, 'requestRender'>, theme: Theme, shineFrom: number | undefined) {
-  const ramp = themeRamp(theme);
-  const paint: BannerPaint = { fg: (color, text) => theme.fg(color as never, text), ...(ramp ? { ramp } : {}) };
+  // Read from the theme again on invalidate: Pi invalidates components when the theme changes.
+  const painted = (): BannerPaint => {
+    const ramp = themeRamp(theme);
+    return { fg: (color, text) => theme.fg(color as never, text), ...(ramp ? { ramp } : {}) };
+  };
+  let paint = painted();
+  const ramp = paint.ramp;
   const info = { version: packageVersion(), hints: ['/octocode help', `${expandKey()} expand`, `${appKey('app.interrupt', 'escape').replace(/^escape$/, 'esc')} interrupt`, '/agents team'] };
   let timer: ReturnType<typeof setInterval> | undefined;
   const shine = (): number | undefined => {
@@ -107,6 +112,7 @@ export function bannerHeader(tui: Pick<TUI, 'requestRender'>, theme: Theme, shin
     },
     invalidate(): void {
       cached = undefined;
+      paint = painted();
     },
     dispose: stop,
   };

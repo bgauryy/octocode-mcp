@@ -1,231 +1,104 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import {
+  FileContentQuerySchema,
+  LocalFetchContentQuerySchema,
+  LocalSearchQuerySchema,
+} from '@octocodeai/config/schema';
 
-import { LocalFetchContentQuerySchema } from '@octocodeai/config/schema';
-import { LocalSearchQuerySchema } from '@octocodeai/config/schema';
-import { FileContentQuerySchema } from '@octocodeai/config/schema';
-import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/config/schema';
+const brief = { mainGoal: 'test goal', reasoning: 'exercise the schema' };
+const messagesOf = (result: {
+  error?: { issues: { message: string }[] };
+}): string => (result.error?.issues ?? []).map(i => i.message).join('\n');
 
-describe('LocalFetchContentQuerySchema mutual-exclusion', () => {
-  const baseQuery = {
-    mainGoal: 'test goal',
-    reasoning: 'exercise mutex validation',
-    path: 'src/foo.ts',
-  };
+// localFetch and ghGetFileContent share the three read modes (fullContent,
+// matchString, ranges): every case runs against both schemas.
+describe.each([
+  {
+    tool: 'localFetch',
+    schema: LocalFetchContentQuerySchema,
+    target: { path: 'src/foo.ts' },
+  },
+  {
+    tool: 'ghGetFileContent',
+    schema: FileContentQuerySchema,
+    target: { owner: 'o', repo: 'r', path: 'src/foo.ts' },
+  },
+])('$tool read-mode mutual exclusion', ({ schema, target }) => {
+  const parse = (fields: Record<string, unknown>) =>
+    schema.safeParse({ ...brief, ...target, ...fields });
 
-  it.each([{ matchString: 'foo' }, { ranges: ['10-20'] }])(
-    'rejects fullContent=true together with %o',
-    selector => {
-      const result = LocalFetchContentQuerySchema.safeParse({
-        ...baseQuery,
-        fullContent: true,
-        ...selector,
-      });
+  it.each([
+    { mode: 'matchString', fields: { matchString: 'foo' } },
+    { mode: 'ranges', fields: { ranges: ['10-20'] } },
+  ])(
+    'rejects fullContent=true with $mode in one short message naming fullContent',
+    ({ fields }) => {
+      const result = parse({ fullContent: true, ...fields });
       expect(result.success).toBe(false);
-      if (!result.success) {
-        const messages = result.error.issues.map(i => i.message).join('\n');
-        expect(messages).toContain('fullContent');
-      }
-    }
-  );
-
-  it('accepts matchString inside ranges (a region grep)', () => {
-    const result = LocalFetchContentQuerySchema.safeParse({
-      ...baseQuery,
-      matchString: 'foo',
-      ranges: ['10-20'],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts fullContent=true alone', () => {
-    const result = LocalFetchContentQuerySchema.safeParse({
-      ...baseQuery,
-      fullContent: true,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts matchString alone', () => {
-    const result = LocalFetchContentQuerySchema.safeParse({
-      ...baseQuery,
-      matchString: 'foo',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts ranges alone', () => {
-    const result = LocalFetchContentQuerySchema.safeParse({
-      ...baseQuery,
-      ranges: ['10-20'],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts fullContent=false with matchString', () => {
-    const result = LocalFetchContentQuerySchema.safeParse({
-      ...baseQuery,
-      fullContent: false,
-      matchString: 'foo',
-    });
-    expect(result.success).toBe(true);
-  });
-});
-
-describe('FileContentQuerySchema (github) three-mode mutual exclusion', () => {
-  const baseQuery = {
-    mainGoal: 'test goal',
-    reasoning: 'exercise mutex validation',
-    owner: 'o',
-    repo: 'r',
-    path: 'src/foo.ts',
-  };
-
-  it('rejects fullContent=true together with matchString', () => {
-    const result = FileContentQuerySchema.safeParse({
-      ...baseQuery,
-      fullContent: true,
-      matchString: 'foo',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join('\n');
+      const messages = messagesOf(result);
       expect(messages).toContain('fullContent');
       expect(messages.length).toBeLessThanOrEqual(90);
     }
-  });
+  );
 
-  it('rejects fullContent=true together with ranges', () => {
-    const result = FileContentQuerySchema.safeParse({
-      ...baseQuery,
-      fullContent: true,
-      ranges: ['10-20'],
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts matchString inside ranges (a region grep)', () => {
-    const result = FileContentQuerySchema.safeParse({
-      ...baseQuery,
-      matchString: 'foo',
-      ranges: ['10-20'],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts fullContent=true alone', () => {
-    const result = FileContentQuerySchema.safeParse({
-      ...baseQuery,
-      fullContent: true,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts matchString alone', () => {
-    const result = FileContentQuerySchema.safeParse({
-      ...baseQuery,
-      matchString: 'foo',
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts ranges alone', () => {
-    const result = FileContentQuerySchema.safeParse({
-      ...baseQuery,
-      ranges: ['10-20'],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts an inverted range as the same span', () => {
-    const result = FileContentQuerySchema.safeParse({
-      ...baseQuery,
-      ranges: ['20-10'],
-    });
-    expect(result.success).toBe(true);
+  it.each([
+    {
+      mode: 'matchString inside ranges (a region grep)',
+      fields: { matchString: 'foo', ranges: ['10-20'] },
+    },
+    { mode: 'fullContent=true alone', fields: { fullContent: true } },
+    { mode: 'matchString alone', fields: { matchString: 'foo' } },
+    { mode: 'ranges alone', fields: { ranges: ['10-20'] } },
+    {
+      mode: 'fullContent=false with matchString',
+      fields: { fullContent: false, matchString: 'foo' },
+    },
+    {
+      mode: 'an inverted range as the same span',
+      fields: { ranges: ['20-10'] },
+    },
+  ])('accepts $mode', ({ fields }) => {
+    expect(parse(fields).success).toBe(true);
   });
 });
 
 describe('LocalSearchQuerySchema enum contract', () => {
-  const baseQuery = {
-    mainGoal: 'test goal',
-    reasoning: 'exercise enum contract',
-    matchString: 'foo',
-    path: '/repo',
-  };
+  const parse = (fields: Record<string, unknown>) =>
+    LocalSearchQuerySchema.safeParse({
+      ...brief,
+      matchString: 'foo',
+      path: '/repo',
+      ...fields,
+    });
 
-  it('accepts the resultView enum values (paginated / files / filesWithout / count* / matchOnly)', () => {
-    for (const resultView of [
-      'paginated',
-      'files',
-      'filesWithout',
-      'countLines',
-      'countMatches',
-      'matchOnly',
-    ] as const) {
-      expect(
-        LocalSearchQuerySchema.safeParse({ ...baseQuery, resultView }).success
-      ).toBe(true);
-    }
+  it.each([
+    'paginated',
+    'files',
+    'filesWithout',
+    'countLines',
+    'countMatches',
+    'matchOnly',
+  ])('accepts resultView %s', resultView => {
+    expect(parse({ resultView }).success).toBe(true);
   });
 
   it('rejects the removed "content" view: "paginated" is the one name', () => {
-    expect(
-      LocalSearchQuerySchema.safeParse({ ...baseQuery, resultView: 'content' })
-        .success
-    ).toBe(false);
+    expect(parse({ resultView: 'content' }).success).toBe(false);
   });
 
-  it('accepts the regex enum values (rust / literal / pcre2)', () => {
-    for (const regex of ['rust', 'literal', 'pcre2'] as const) {
-      expect(
-        LocalSearchQuerySchema.safeParse({ ...baseQuery, regex }).success
-      ).toBe(true);
-    }
+  it.each(['rust', 'literal', 'pcre2'])('accepts regex %s', regex => {
+    expect(parse({ regex }).success).toBe(true);
   });
 
-  it('rejects unique without resultView:"matchOnly"', () => {
-    const result = LocalSearchQuerySchema.safeParse({
-      ...baseQuery,
-      unique: 'list',
-    });
+  it('rejects unique without resultView:"matchOnly" and names the requirement', () => {
+    const result = parse({ unique: 'list' });
     expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join('\n');
-      expect(messages).toMatch(/requires? resultView:"matchOnly"/);
-    }
+    expect(messagesOf(result)).toMatch(/requires? resultView:"matchOnly"/);
   });
 
   it('accepts unique:"count" with resultView:"matchOnly"', () => {
-    const result = LocalSearchQuerySchema.safeParse({
-      ...baseQuery,
-      resultView: 'matchOnly',
-      unique: 'count',
-    });
-    expect(result.success).toBe(true);
-  });
-});
-
-describe('ArtifactSearch schema', () => {
-  it('accepts an exact packageName with ecosystem type', () => {
-    const result = ArtifactSearchBulkQueryLocalSchema.safeParse({
-      queries: [
-        {
-          mainGoal: 'test goal',
-          reasoning: 'exercise artifact lookup',
-          ecosystem: 'npm',
-          packageName: 'react',
-        },
-      ],
-    });
-    expect(result.success).toBe(true);
-  });
-
-  it('rejects when packageName is missing', () => {
-    const result = ArtifactSearchBulkQueryLocalSchema.safeParse({
-      queries: [
-        { mainGoal: 'test goal', reasoning: 'exercise missing packageName' },
-      ],
-    });
-    expect(result.success).toBe(false);
+    expect(parse({ resultView: 'matchOnly', unique: 'count' }).success).toBe(
+      true
+    );
   });
 });

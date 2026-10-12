@@ -8,13 +8,13 @@ import { fakeOctocode, fakePi } from './fake-pi.js';
 describe('agent context boundaries', () => {
   it('starts children with a fresh identity and browser mode while retaining user settings', () => {
     const inherited = {
-      OCTOCODE_AGENT_ID: 'old', OCTOCODE_PARENT_ID: 'old-parent', OCTOCODE_AGENT_TASK: 'old-task',
+      OCTOCODE_AGENT_ID: 'old', OCTOCODE_PARENT_ID: 'old-parent', OCTOCODE_AGENT_GOAL: 'old-task',
       OCTOCODE_AGENT_COLLABORATE: '1', OCTOCODE_AGENT_SCRATCH: '/old', OCTOCODE_TRUST_ROOT: '/old-trust',
       OCTOCODE_BROWSER_VISIBLE: '1', OCTOCODE_HOOKS: '1', OCTOCODE_MCP: '0', PATH: '/bin',
     };
     const child = subagentProcessEnv(undefined, inherited, { id: 'new' });
     expect(child).toMatchObject({ OCTOCODE_AGENT_ID: 'new', OCTOCODE_SUBAGENT: '1', OCTOCODE_MCP: '0', PATH: '/bin' });
-    for (const key of ['OCTOCODE_PARENT_ID', 'OCTOCODE_AGENT_TASK', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_AGENT_SCRATCH', 'OCTOCODE_TRUST_ROOT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_HOOKS']) {
+    for (const key of ['OCTOCODE_PARENT_ID', 'OCTOCODE_AGENT_GOAL', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_AGENT_SCRATCH', 'OCTOCODE_TRUST_ROOT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_HOOKS']) {
       expect(child).not.toHaveProperty(key);
     }
   });

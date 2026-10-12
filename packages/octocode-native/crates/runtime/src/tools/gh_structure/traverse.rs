@@ -233,10 +233,12 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
         return Ok(walk);
     }
     let mut traversal = Traversal::default();
-    let mut pending = vec![(root.to_owned(), 1usize, true)];
+    // Each pending directory: path, depth, whether it is the requested
+    // root, and its tree SHA when its parent listing named it.
+    let mut pending = vec![(root.to_owned(), 1usize, true, None::<String>)];
     let mut visited = HashSet::new();
     let mut fetches = 0usize;
-    while let Some((path, depth, required)) = pending.pop() {
+    while let Some((path, depth, required, sha)) = pending.pop() {
         if !visited.insert(path.clone()) {
             continue;
         }
@@ -245,7 +247,7 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
             break;
         }
         fetches += 1;
-        let listing = match provider
+        let mut listing = match provider
             .repository_contents(owner, repo, &path, branch, context)
             .await
         {
@@ -256,7 +258,6 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
             }
             Err(error) => return Err(error),
         };
-        traversal.contents_limit |= listing.raw_entry_count >= CONTENTS_LIMIT;
         // The Contents API answers a file path with a single object whose
         // path is the requested path itself; a tree cannot list a file.
         if required
@@ -266,6 +267,20 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
             && entry.kind != "dir"
         {
             return Err(not_a_directory(&path, &entry.kind));
+        }
+        // The Contents API lists 1,000 entries of a directory at most; its
+        // git tree lists them all.
+        if listing.raw_entry_count >= CONTENTS_LIMIT {
+            let whole = if fetches < MAX_DIRECTORY_FETCHES {
+                fetches += 1;
+                whole_directory(provider, &at, &path, sha.as_deref(), context).await?
+            } else {
+                None
+            };
+            match whole {
+                Some(entries) => listing.entries = entries,
+                None => traversal.contents_limit = true,
+            }
         }
         for entry in listing.entries {
             let Some(kind) = entry_kind(&entry) else {
@@ -300,7 +315,7 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
                     continue;
                 }
             }
-            pending.push((child_path, depth + 1, false));
+            pending.push((child_path, depth + 1, false, entry.sha.clone()));
         }
     }
     if traversal.failed_subtrees == 0
@@ -321,6 +336,84 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
             .await;
     }
     Ok(traversal)
+}
+
+/// A directory past the Contents API's entry cap, read whole from its own
+/// (non-recursive) git tree as Contents entries. The root's tree is the
+/// listed commit's; another directory's SHA is the one its parent listing
+/// names, read from the parent when the walk started at it. `None` when the
+/// tree is truncated or unreadable: the cap stays disclosed.
+async fn whole_directory<C: crate::providers::github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    listing: &Listing<'_>,
+    dir: &str,
+    sha: Option<&str>,
+    context: &RequestContext,
+) -> Result<Option<Vec<ContentsEntry>>, ProviderError> {
+    let reference = match sha {
+        Some(sha) => sha.to_owned(),
+        None if dir.is_empty() => listing.branch.to_owned(),
+        None => {
+            let parent = dir.rsplit_once('/').map_or("", |(parent, _)| parent);
+            let siblings = match provider
+                .repository_contents(listing.owner, listing.repo, parent, listing.branch, context)
+                .await
+            {
+                Ok(siblings) => siblings,
+                Err(error) if access_failure(&error) => return Err(error),
+                Err(_) => return Ok(None),
+            };
+            match siblings
+                .entries
+                .into_iter()
+                .find(|entry| entry.path == dir && entry.kind == "dir")
+                .and_then(|entry| entry.sha)
+            {
+                Some(sha) => sha,
+                None => return Ok(None),
+            }
+        }
+    };
+    let tree = match provider
+        .transport
+        .get_tree(
+            &TreeRequest {
+                owner: listing.owner.into(),
+                repo: listing.repo.into(),
+                reference,
+                recursive: false,
+            },
+            context,
+        )
+        .await
+    {
+        Ok(tree) if !tree.truncated => tree,
+        Ok(_) => return Ok(None),
+        Err(error) if access_failure(&error) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    Ok(Some(
+        tree.tree
+            .into_iter()
+            .map(|entry| ContentsEntry {
+                path: if dir.is_empty() {
+                    entry.path.clone()
+                } else {
+                    format!("{dir}/{}", entry.path)
+                },
+                kind: match entry.kind.as_str() {
+                    "blob" => "file".to_owned(),
+                    "tree" => "dir".to_owned(),
+                    "commit" => "submodule".to_owned(),
+                    other => other.to_owned(),
+                },
+                name: entry.path,
+                size: entry.size,
+                sha: entry.sha,
+                git_url: None,
+            })
+            .collect(),
+    ))
 }
 
 /// Keep a complete recursive tree for the cache TTL under its commit.

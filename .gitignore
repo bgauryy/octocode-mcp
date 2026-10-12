@@ -47,8 +47,6 @@ target/
 # publish time, never committed (mirrors the *.node policy above).
 packages/*/npm/*/octocode
 packages/*/npm/*/octocode.exe
-packages/*/npm/*/octocode-regex-worker
-packages/*/npm/*/octocode-regex-worker.exe
 # Benchmark results (local timing data, machine-specific)
 **/bench/results/
 out

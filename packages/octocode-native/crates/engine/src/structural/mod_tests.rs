@@ -1020,111 +1020,74 @@ fn scope_result_paths(options: StructuralSearchFilesOptions) -> Vec<String> {
     paths
 }
 
+/// Each scope option changes which files a kind rule parses. `rule:kind`
+/// has no literal anchor, so every supported .ts is parsed and the option
+/// under test is the only thing that adds or drops a file.
 #[test]
-fn structural_files_honors_exclude_globs() {
-    let root = temp_root("scope_exclude");
-    write_scope_fixture(&root);
-    // rule:kind has no literal anchor, so every supported .ts is parsed —
-    // the exclude glob is the only thing that can drop `excluded.ts`.
-    let paths = scope_result_paths(StructuralSearchFilesOptions {
-        path: root.to_string_lossy().to_string(),
-        rule: Some("rule:\n  kind: call_expression\n".to_owned()),
-        pattern: None,
-        include: None,
-        exclude: Some(vec!["excluded.ts".to_owned()]),
-        exclude_dir: None,
-        hidden: None,
-        no_ignore: None,
-        max_depth: None,
-        max_files: Some(50),
-        skip_files: None,
-        max_file_bytes: None,
-    });
-    assert!(paths.iter().any(|p| p == "match.ts"), "match.ts present");
-    assert!(
-        !paths.iter().any(|p| p == "excluded.ts"),
-        "exclude glob must drop excluded.ts: got {paths:?}"
-    );
-    fs::remove_dir_all(root).expect("cleanup");
-}
-
-#[test]
-fn structural_files_honors_hidden_flag() {
-    let root = temp_root("scope_hidden");
-    write_scope_fixture(&root);
-    // Default (hidden:None) ignores dot-files; Some(true) must include .hidden.ts.
-    let with_hidden = scope_result_paths(StructuralSearchFilesOptions {
-        path: root.to_string_lossy().to_string(),
-        rule: Some("rule:\n  kind: call_expression\n".to_owned()),
-        pattern: None,
-        include: None,
-        exclude: None,
-        exclude_dir: None,
-        hidden: Some(true),
-        no_ignore: None,
-        max_depth: None,
-        max_files: Some(50),
-        skip_files: None,
-        max_file_bytes: None,
-    });
-    assert!(
-        with_hidden.iter().any(|p| p == ".hidden.ts"),
-        "hidden:Some(true) must include .hidden.ts: got {with_hidden:?}"
-    );
-    fs::remove_dir_all(root).expect("cleanup");
-}
-
-#[test]
-fn structural_files_honors_no_ignore_flag() {
-    let root = temp_root("scope_noignore");
-    write_scope_fixture(&root);
-    // .gitignore excludes gitignored.ts; no_ignore:Some(true) must surface it.
-    let with_no_ignore = scope_result_paths(StructuralSearchFilesOptions {
-        path: root.to_string_lossy().to_string(),
-        rule: Some("rule:\n  kind: call_expression\n".to_owned()),
-        pattern: None,
-        include: None,
-        exclude: None,
-        exclude_dir: None,
-        hidden: None,
-        no_ignore: Some(true),
-        max_depth: None,
-        max_files: Some(50),
-        skip_files: None,
-        max_file_bytes: None,
-    });
-    assert!(
-        with_no_ignore.iter().any(|p| p == "gitignored.ts"),
-        "no_ignore:Some(true) must include the .gitignored file: got {with_no_ignore:?}"
-    );
-    fs::remove_dir_all(root).expect("cleanup");
-}
-
-#[test]
-fn structural_files_honors_max_depth() {
-    let root = temp_root("scope_maxdepth");
-    write_scope_fixture(&root);
-    // max_depth:1 = root only; nested/deep.ts must NOT be reached.
-    let paths = scope_result_paths(StructuralSearchFilesOptions {
-        path: root.to_string_lossy().to_string(),
-        rule: Some("rule:\n  kind: call_expression\n".to_owned()),
-        pattern: None,
-        include: None,
-        exclude: None,
-        exclude_dir: None,
-        hidden: None,
-        no_ignore: None,
-        max_depth: Some(1),
-        max_files: Some(50),
-        skip_files: None,
-        max_file_bytes: None,
-    });
-    assert!(paths.iter().any(|p| p == "match.ts"), "root file present");
-    assert!(
-        !paths.iter().any(|p| p == "deep.ts"),
-        "max_depth:1 must not descend into nested/: got {paths:?}"
-    );
-    fs::remove_dir_all(root).expect("cleanup");
+fn structural_files_honor_scope_options() {
+    type Scope = fn(&mut StructuralSearchFilesOptions);
+    let cases: [(&str, Scope, &[&str], &[&str]); 4] = [
+        (
+            "exclude glob drops excluded.ts",
+            |o| o.exclude = Some(vec!["excluded.ts".to_owned()]),
+            &["match.ts"],
+            &["excluded.ts"],
+        ),
+        // Default (hidden:None) ignores dot-files.
+        (
+            "hidden:Some(true) includes .hidden.ts",
+            |o| o.hidden = Some(true),
+            &[".hidden.ts"],
+            &[],
+        ),
+        // .gitignore excludes gitignored.ts.
+        (
+            "no_ignore:Some(true) includes the .gitignored file",
+            |o| o.no_ignore = Some(true),
+            &["gitignored.ts"],
+            &[],
+        ),
+        // max_depth:1 = root only.
+        (
+            "max_depth:1 does not descend into nested/",
+            |o| o.max_depth = Some(1),
+            &["match.ts"],
+            &["deep.ts"],
+        ),
+    ];
+    for (case, scope, present, absent) in cases {
+        let root = temp_root("scope_options");
+        write_scope_fixture(&root);
+        let mut options = StructuralSearchFilesOptions {
+            path: root.to_string_lossy().to_string(),
+            rule: Some("rule:\n  kind: call_expression\n".to_owned()),
+            pattern: None,
+            include: None,
+            exclude: None,
+            exclude_dir: None,
+            hidden: None,
+            no_ignore: None,
+            max_depth: None,
+            max_files: Some(50),
+            skip_files: None,
+            max_file_bytes: None,
+        };
+        scope(&mut options);
+        let paths = scope_result_paths(options);
+        for name in present {
+            assert!(
+                paths.iter().any(|p| p == name),
+                "{case}: {name} present: got {paths:?}"
+            );
+        }
+        for name in absent {
+            assert!(
+                !paths.iter().any(|p| p == name),
+                "{case}: {name} absent: got {paths:?}"
+            );
+        }
+        fs::remove_dir_all(root).expect("cleanup");
+    }
 }
 
 #[test]

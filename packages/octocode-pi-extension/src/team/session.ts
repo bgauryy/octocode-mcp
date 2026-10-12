@@ -1,29 +1,27 @@
 import fs from 'node:fs';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { errorMessage } from '../shared/util.js';
+import { addReply, errorMessage } from '../shared/util.js';
 import { sanitizeTerminalText, storedText } from '../shared/sanitize.js';
-import { dbFailure, deadLetterText, leaseAge, MESSAGE_MAX_CHARS, messageText, newId, outside, resolveLockPath, resolveTarget, USER_SENDER, wakes } from './routing.js';
-import { AGENT_ID_ENV, AGENT_TASK_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
-import { processAlive, terminateSelf } from '../shared/process.js';
-import type { DeadLetter, Lease, LeaseRequest, Member, Message } from './model.js';
+import { dbFailure, interruptRefusal, leaseAge, MESSAGE_MAX_CHARS, outside, resolveLockPath, resolveTarget, USER_SENDER } from './routing.js';
+import { AGENT_ID_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
+import { parentGone, terminateSelf } from '../shared/process.js';
+import type { Lease, LeaseRequest, Member, SendOptions } from './model.js';
+import { Mail, mailIds } from './mail.js';
 import { HeldLeases, leaseIdleMs } from './held.js';
 import { Inbox } from './inbox.js';
 import type { EditLog } from './edits.js';
 import { AgentDbError } from '../agentdb/db.js';
 import { agentDbPath } from '../shared/home.js';
+import { agentName, LINE_MAX, newMember } from './identity.js';
 import { TeamTicker, type TeamView } from './ticker.js';
 
 export type { TeamView } from './ticker.js';
-
-export const MESSAGE_TYPE = 'octocode-agent-message';
+export { MESSAGE_TYPE } from './mail.js';
 export { EXTERNAL_SENDER, MESSAGE_MAX_CHARS, USER_SENDER } from './routing.js';
 /** Refresh the agent's row at least this often so peers can tell it is alive (and its leases stay valid). */
 const HEARTBEAT_MS = 5_000;
 /** Consecutive failed ticks (about 30s) before the agent hears that the team database is unavailable. */
 const FAILED_TICKS_NOTICE = 30;
-const ROLE_SUFFIX = /-[0-9a-f]{6}$/;
-/** Longest one-line task or activity stored for an agent (the panel and `coordinate list` clip further). */
-const LINE_MAX = 200;
 
 /** This process's place in the team: joins, reports what it is doing, holds reservations and delivers messages sent to it. */
 export class Team {
@@ -40,9 +38,16 @@ export class Team {
     },
     // Background reads may prune departed agents (a write): never wait long for another process's lock.
     read: () => (this.db ? this.db.quick(() => this.snapshot()) : this.snapshot()),
+    resumed: (since, now) => {
+      try {
+        this.existing()?.resume(since, now);
+      } catch {
+        // Unusable database: the snapshot says why; nothing to repair.
+      }
+    },
     maxAgeMs: HEARTBEAT_MS,
   });
-  /** A status or task change waits for the next tick; activity, tool counts and usage ride the heartbeat. */
+  /** A status or goal change waits for the next tick; activity, tool counts and usage ride the heartbeat. */
   private statusChanged = false;
   private savedAt = 0;
   /** Why the database cannot be used at all (foreign or newer schema); shown in /agents and the footer. */
@@ -51,10 +56,13 @@ export class Team {
   /** When this agent last worked (or joined): an idle owner's reservations lapse `leaseIdleMs` after it. */
   private activeAt = 0;
   private readonly held = new HeldLeases();
-  /** Ordered, paced delivery with acknowledgement retries. */
   private readonly inbox = new Inbox();
+  private readonly mail: Mail;
   /** Subagents this session started that have finished: id → where their report went, for a later message to them. */
   private readonly finished = new Map<string, string>();
+  /** Resumes a finished subagent that still lingers (set by the subagents domain); its receipt, else undefined. */
+  setResumer(resume: (to: string, text: string, from: string, signal?: AbortSignal) => Promise<string | undefined>): void { this.resumer = resume; }
+  private resumer: ((to: string, text: string, from: string, signal?: AbortSignal) => Promise<string | undefined>) | undefined;
 
   /** Recent completion receipts; active-agent limits cannot bound a long session's history. */
   rememberFinished(id: string, receipt: string): void {
@@ -62,7 +70,10 @@ export class Team {
     this.finished.set(id, receipt);
     if (this.finished.size > 128) this.finished.delete(this.finished.keys().next().value!);
   }
-  constructor(private readonly pi: ExtensionAPI, private readonly env: NodeJS.ProcessEnv = process.env) {}
+  constructor(pi: ExtensionAPI, private readonly env: NodeJS.ProcessEnv = process.env) { this.mail = new Mail(pi); }
+
+  /** Aborted while an interrupt waits for this agent's run to stop (`agent_before_settle` waits end early on it). */
+  get interrupted(): AbortSignal { return this.mail.interrupted; }
 
   get id(): string | undefined {
     return this.me?.id;
@@ -98,29 +109,28 @@ export class Team {
     return this.schemaProblem;
   }
 
-  /** Join (or refresh) as this process. Idempotent; `task` replaces the one-line description. */
-  join(task?: string): Member {
+  /** A name held by no member of the shared database, finished subagent of this session or caller in `inUse` (a subagent not yet in it). */
+  newName(inUse: Iterable<string> = []): string {
+    let live: string[] = [];
+    try {
+      live = this.existing()?.names() ?? [];
+    } catch {
+      // An unusable database holds no names this process can read; avoid the rest.
+    }
+    return agentName([...live, ...this.finished.keys(), ...inUse, ...(this.me ? [this.me.id] : [])]);
+  }
+
+  /** Join (or refresh) as this process. Idempotent; `goal` replaces the one-line goal (validated by the caller, see `goal.ts`). */
+  join(goal?: string): Member {
     const db = this.store(); // throws before the session starts
     const ctx = this.ctx!;
     if (!this.me) {
-      const id = this.env[AGENT_ID_ENV] ?? newId('main');
-      const parentId = this.parentId;
-      const description = storedText(task ?? this.env[AGENT_TASK_ENV], LINE_MAX);
       const now = Date.now();
       this.activeAt = now;
-      this.me = {
-        id,
-        role: id.replace(ROLE_SUFFIX, ''),
-        ...(parentId ? { parentId } : {}),
-        pid: process.pid,
-        status: ctx.isIdle() ? 'idle' : 'working',
-        ...(description ? { task: description } : {}),
-        ...(ctx.model ? { model: storedText(ctx.model.id, LINE_MAX) } : {}), joinedAt: now, updatedAt: now,
-        toolCalls: 0, input: 0, output: 0, cost: 0,
-      };
+      this.me = newMember(this.env, ctx, this.env[AGENT_ID_ENV] ?? this.newName(), goal, now);
       this.ticker.sync();
-    } else if (task !== undefined) {
-      this.me.task = storedText(task, LINE_MAX);
+    } else if (goal !== undefined) {
+      this.me.goal = storedText(goal, LINE_MAX);
     }
     this.flush(db);
     return this.me;
@@ -132,7 +142,8 @@ export class Team {
     this.me = undefined;
     this.ticker.sync();
     this.held.clear();
-    this.inbox.reset();
+    this.inbox.reset(this.db, me?.id);
+    this.mail.reset();
     if (me && this.db) this.db.remove(me.id);
   }
 
@@ -175,12 +186,16 @@ export class Team {
       const db = this.existing();
       return db ? { members: db.list(), traffic: db.recent() } : { members: [], traffic: [] };
     } catch (error) {
-      return { members: [], traffic: [], error: this.schemaProblem ?? `Team database unavailable: ${errorMessage(error)}` };
+      if (this.schemaProblem) return { members: [], traffic: [], error: this.schemaProblem };
+      return { members: [], traffic: [], error: `Team database unavailable: ${errorMessage(error)}`, retrying: true };
     }
   }
 
   /** Queue a message for the agents `to` resolves to; returns who got it and the message id, or an error text. */
-  send(to: string, text: string, options: { from?: string | undefined; replyRequired?: boolean; replyTo?: number } = {}): { sent: string[]; id: number; departed?: string[] } | { error: string } {
+  async send(
+    to: string, text: string, options: SendOptions & { from?: string | undefined; signal?: AbortSignal } = {},
+  ): Promise<{ sent: string[]; id: number; departed?: string[]; resumed?: string } | { error: string }> {
+    options.signal?.throwIfAborted();
     const from = options.from ?? this.me?.id;
     if (!from) return { error: 'Join first: call coordinate with action "join".' };
     if (text.length > MESSAGE_MAX_CHARS) return { error: `Message exceeds ${MESSAGE_MAX_CHARS} characters; send a summary and a file path to the full content. Nothing was sent.` };
@@ -189,13 +204,18 @@ export class Team {
     // A broadcast stays in the sender's session tree; the user's and an API client's in this session's tree.
     const scope = outside(from) ? this.me?.id : from;
     if (to === 'all' && !scope) return { error: 'No agents in this session yet: nothing to broadcast to.' };
-    const targets = resolveTarget(db.list(), from, to, this.parentId, scope);
+    const members = db.list();
+    const targets = resolveTarget(members, from, to, this.parentId, scope);
+    const resumed = typeof targets === 'string' && this.finished.has(to) ? await this.resumer?.(to, text, from, options.signal) : undefined;
+    if (resumed) return { sent: [to], id: 0, resumed };
     if (typeof targets === 'string') return { error: this.finished.has(to) ? `${to} has finished and takes no more messages; ${this.finished.get(to)} To continue its work, start a new agent and give it the context it needs.` : targets };
+    const refused = options.interrupt ? interruptRefusal(members, targets, from, to, scope) : undefined;
+    if (refused) return { error: refused };
     // Replies default to FYI: an answer that asks for an answer makes two agents wake each other forever.
     const replyRequired = options.replyRequired ?? (to !== 'all' && !outside(from) && options.replyTo === undefined);
     // Stored sanitized: every reader (the model, the panel, other processes) gets plain text.
     const reply = options.replyTo !== undefined ? { replyTo: options.replyTo } : {};
-    const { id, departed } = db.send(from, targets.map((target) => target.id), sanitizeTerminalText(text), { replyRequired, wake: outside(from), ...reply });
+    const { id, departed } = db.send(from, targets.map((target) => target.id), sanitizeTerminalText(text), { replyRequired, wake: outside(from), interrupt: options.interrupt === true, ...reply });
     if (id === undefined) return { error: `${departed.join(', ')} left the team; the message was not sent.` };
     const sent = targets.map((target) => target.id).filter((target) => !departed.includes(target));
     return { sent, id, ...(departed.length > 0 ? { departed } : {}) };
@@ -278,19 +298,34 @@ export class Team {
     this.update((me) => void (me.status = 'working'), true);
   }
 
-  /**
-   * The run is over. A headless subagent (print/JSON mode, no UI) gets no further turn and exits next: it leaves now,
-   * releasing its reservations, so a message sent from here on is a dead letter its sender hears about rather than an
-   * FYI acknowledged into a context nobody reads.
-   */
+  /** Delivers held interrupts first; a headless child then leaves because its print/JSON process exits. */
   onAgentSettled(): void {
-    if (this.me && this.env[AGENT_ID_ENV] && this.ctx && !this.ctx.hasUI) {
+    if (this.mail.settled()) return; // An interrupt stopped the run: its message starts the next turn.
+    if (this.me && this.headless()) {
       this.flush();
       this.leave();
       return;
     }
     // The activity line was cleared by src/ui/activity.ts, which owns it.
     this.update((me) => void (me.status = 'idle'), true);
+  }
+
+  /** A subagent without a UI (print/JSON mode): once its run is over it gets no further turn. */
+  private headless(): boolean {
+    return Boolean(this.env[AGENT_ID_ENV] && this.ctx && !this.ctx.hasUI);
+  }
+
+  /** Pi is about to call the model with `messages`: team mail among them is now delivered. */
+  onContext(messages: ReadonlyArray<{ role?: string; customType?: string; details?: unknown }>): void {
+    const me = this.me?.id;
+    const db = this.db;
+    const ids = me && db ? messages.flatMap((message) => mailIds(message, me)) : [];
+    if (!me || !db || ids.length === 0) return;
+    try {
+      db.quick(() => this.inbox.seen(db, me, ids));
+    } catch {
+      // Busy database: the inbox keeps the ids and records them on the next tick.
+    }
   }
 
   /** A top-level tool call started (parallel calls each count; calls a tool makes itself do not). */
@@ -303,13 +338,11 @@ export class Team {
     this.update((me) => void (line ? (me.activity = storedText(line, LINE_MAX)) : delete me.activity));
   }
 
-  /** One reply's usage; `model` wrote it (it changes when the user switches models). */
-  onUsage(usage: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } }, model?: string): void {
+  /** One reply's usage; `model` wrote it (it changes when the user switches models); `unpriced`: that model has no pricing. */
+  onUsage(usage: unknown, model: string | undefined, unpriced: boolean): void {
     this.update((me) => {
       if (model) me.model = storedText(model, LINE_MAX);
-      me.input += (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-      me.output += usage.output ?? 0;
-      me.cost += usage.cost?.total ?? 0;
+      addReply(me, usage, unpriced);
     });
   }
 
@@ -335,64 +368,33 @@ export class Team {
     // A heartbeat stall can let a lease lapse (and a peer take the path): say so once, and refuse edits until re-locked.
     const lost = this.held.lost(db.owned(this.me.id, now));
     const why = idle ? ` after ${Math.round((now - this.activeAt) / 60_000)}m idle` : '';
-    if (lost.length > 0) this.notice(`Your reservation on ${lost.join(', ')} lapsed${why}; lock it again before editing.`);
+    if (lost.length > 0) this.mail.notice(`Your reservation on ${lost.join(', ')} lapsed${why}; lock it again before editing.`);
   }
 
-  /** A team notice for this agent, read at its next step; never starts a turn. False when the session cannot take it. */
-  private notice(text: string): boolean {
-    try {
-      this.pi.sendMessage({ customType: MESSAGE_TYPE, content: text, display: true, details: { from: 'team', text, at: Date.now() } }, { deliverAs: 'steer' });
-      return true;
-    } catch {
-      return false; // The session ended or is not ready.
-    }
-  }
-
-  /** Two-phase delivery: read what is waiting, hand each message to Pi, then record only the ones Pi accepted. */
+  /** Two-phase delivery: hand what is waiting to Pi (the inbox records it once the model sees it), then the heartbeat. */
   private deliverPending(): void {
     if (!this.me || !this.db) return;
-    // A crashed parent's child spends tokens for nobody: Pi's SIGTERM path disposes the session (leaving the team) and exits.
-    // The parent's pid comes from the environment, not the team table: the parent may never have joined it.
+    // A crashed parent's child spends tokens for nobody: Pi's SIGTERM path disposes the session and exits (ARCHITECTURE: Liveness).
     const parentPid = Number(this.env[PARENT_PID_ENV] ?? 0);
-    if (parentPid && !processAlive(parentPid)) return terminateSelf();
+    if (parentPid && parentGone(parentPid)) return terminateSelf();
     const db = this.db;
     try {
       db.quick(() => this.deliverNow(db));
       this.failedTicks = 0;
     } catch (error) {
       // A locked or closed database is retried on the next tick; say so once if it lasts long enough for leases to lapse.
-      if (++this.failedTicks === FAILED_TICKS_NOTICE) this.notice(`Team database unavailable (${errorMessage(error)}): your reservations may lapse and messages wait until it recovers.`);
+      if (++this.failedTicks === FAILED_TICKS_NOTICE) this.mail.notice(`Team database unavailable (${errorMessage(error)}): your reservations may lapse and messages wait until it recovers.`);
     }
   }
 
   private deliverNow(db: TeamStore): void {
     if (!this.me) return;
-    this.inbox.deliver(db, this.me.id, (message) => this.deliver(message));
+    // A settlement send can fail while Pi changes state. An interactive session stays alive to retry held mail.
+    if (!this.headless() && this.ctx?.isIdle()) this.mail.settled();
+    // An idle subagent without a UI has had its last turn: mail waits, and becomes a dead letter when it leaves.
+    if (!(this.headless() && this.ctx?.isIdle())) this.inbox.deliver(db, this.me.id, (batch) => this.mail.deliver(batch, this.parentId, this.ctx));
     if (!this.statusChanged && Date.now() - this.savedAt < HEARTBEAT_MS) return;
     this.flush(db);
-    this.reportDeadLetters(db, this.me.id);
-  }
-
-  /** Tells this agent, once and without waking it, about messages it sent that their recipients left without reading. */
-  private reportDeadLetters(db: TeamStore, id: string): void {
-    const letters = db.deadLetters(id);
-    if (letters.length === 0) return;
-    const told: DeadLetter[] = [];
-    for (const letter of letters) {
-      if (!this.notice(deadLetterText(letter))) break; // Told on a later tick.
-      told.push(letter);
-    }
-    db.markNotified(told);
-  }
-
-  private deliver(message: Message): boolean {
-    try {
-      // steer: read at the next step of a busy agent; only a message that wants action wakes an idle one.
-      this.pi.sendMessage({ customType: MESSAGE_TYPE, content: messageText(message, this.parentId), display: true, details: message }, { triggerTurn: wakes(message), deliverAs: 'steer' });
-      return true;
-    } catch {
-      // The session ended or is not ready: the message stays pending.
-      return false;
-    }
+    this.mail.reportDeadLetters(db, this.me.id);
   }
 }

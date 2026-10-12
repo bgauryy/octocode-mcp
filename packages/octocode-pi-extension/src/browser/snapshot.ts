@@ -8,6 +8,8 @@ import { capChars } from '../shared/util.js';
 const SNAPSHOT_MAX_CHARS = 8_000;
 /** Most of the budget the element list may take, so some page text always shows. */
 const ELEMENTS_MAX_CHARS = 5_000;
+/** Most page text the snapshot script returns, so a huge page never floods memory; `textTotal` says when it cut. */
+const PAGE_TEXT_MAX_CHARS = 200_000;
 
 /**
  * Lists the visible interactive elements in document order, through open shadow roots and same-origin frames, each
@@ -78,7 +80,9 @@ const SNAPSHOT_SCRIPT = `(() => {
   };
   if (document.body) walk(document.body, '');
   if (closedFrames) extra.push('[' + closedFrames + ' cross-origin frame(s) not shown: navigate to the frame URL to use them]');
-  const text = ((document.body ? document.body.innerText : '') + (extra.length ? '\\n\\n' + extra.join('\\n\\n') : '')).replace(/\\n{3,}/g, '\\n\\n').slice(0, 200000);
+  const pageText = ((document.body ? document.body.innerText : '') + (extra.length ? '\\n\\n' + extra.join('\\n\\n') : '')).replace(/\\n{3,}/g, '\\n\\n');
+  const text = pageText.slice(0, ${PAGE_TEXT_MAX_CHARS});
+  const textTotal = pageText.length;
   // Which locale the page rendered for: sites localize prices by IP and browser language, so say what was shown.
   const counts = {};
   for (const match of text.matchAll(/[$€£₪¥₹₩₽₺₴₫฿]|\\b(?:USD|EUR|GBP|ILS|JPY|INR|AUD|CAD|CHF|CNY|BRL|MXN|NIS)\\b/g)) counts[match[0]] = (counts[match[0]] || 0) + 1;
@@ -86,7 +90,7 @@ const SNAPSHOT_SCRIPT = `(() => {
   let timeZone = '';
   try { timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch {}
   const locale = ['page lang ' + (document.documentElement.lang || '?'), 'browser ' + navigator.language, timeZone && 'time zone ' + timeZone, currencies && 'currency ' + currencies].filter(Boolean).join(' · ');
-  return { title: document.title, url: location.href, text, items, footer, locale };
+  return { title: document.title, url: location.href, text, textTotal, items, footer, locale };
 })()`;
 
 /** The last snapshot per session, so an action on the same page reports what changed instead of the whole page. */
@@ -141,6 +145,8 @@ interface SnapshotData {
   title: string;
   url: string;
   text: string;
+  /** Length of the page text before the script cut it to `PAGE_TEXT_MAX_CHARS`; more than `text.length` means it was cut. */
+  textTotal?: number;
   items: string[];
   /** Footer links and controls, `[n] label`: listed compactly after the elements. */
   footer?: string[];
@@ -165,6 +171,7 @@ export function formatSnapshot(data: SnapshotData, max = SNAPSHOT_MAX_CHARS, ele
   const hidden = data.items.length - kept.length;
   const footer = data.footer?.length ? `\n\n## Footer (${data.footer.length})\n${capChars(data.footer.join(' · '), max === Number.MAX_SAFE_INTEGER ? max : FOOTER_MAX_CHARS, 'click by number still works')}` : '';
   const elements = `${kept.join('\n') || '(none)'}${hidden > 0 ? `\n[… ${hidden} more elements; click by number still works]` : ''}${footer}`;
-  const top = `${head}${elements}\n\n## Text\n`;
+  const cut = data.textTotal !== undefined && data.textTotal > data.text.length ? ` (first ${data.text.length} of ${data.textTotal} characters; scroll or wait for a specific text to reach the rest)` : '';
+  const top = `${head}${elements}\n\n## Text${cut}\n`;
   return `${top}${capChars(data.text, Math.max(0, max - top.length))}`;
 }

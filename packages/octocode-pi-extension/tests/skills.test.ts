@@ -55,10 +55,13 @@ describe('skills', () => {
     skill(path.join(root, 'synced', 'docx'), 'docx');
     skill(path.join(root, 'synced', 'deep', 'pptx'), 'pptx');
     fs.writeFileSync(path.join(root, 'loose.md'), '---\nname: loose\ndescription: loose skill\n---\nBody\n');
+    fs.writeFileSync(path.join(root, 'group', 'extra.md'), '---\nname: extra\ndescription: nested loose file\n---\nBody\n');
+    skill(path.join(root, 'ignored'), 'ignored');
+    fs.writeFileSync(path.join(root, '.ignore'), 'ignored/\n');
     fs.writeFileSync(path.join(root, 'notes.txt'), 'not a skill');
     fs.mkdirSync(path.join(root, '.hidden'));
     const dirs = extraSkillDirs(tmp(), home);
-    expect(dirs).toEqual([path.join(root, 'group'), path.join(root, 'local-one'), path.join(root, 'loose.md')]);
+    expect(dirs.sort()).toEqual([path.join(root, 'group', 'nested', 'SKILL.md'), path.join(root, 'local-one', 'SKILL.md'), path.join(root, 'loose.md')]);
     // Pi's own loader over these paths finds the local skills and none of the synced ones.
     const piDist = path.dirname(fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent')));
     const { loadSkills } = (await import(pathToFileURL(path.join(piDist, 'core', 'skills.js')).href)) as { loadSkills: (options: unknown) => { skills: Array<{ name: string }> } };

@@ -9,18 +9,19 @@ import { sanitizeTerminalText } from './sanitize.js';
  * stream, so the text goes to stderr: visible in a terminal, and never mixed into `-p` output or `--mode json` records.
  */
 export function say(ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, text: string, level: 'info' | 'warning' | 'error' = 'info'): void {
-  ctx.ui.notify(text, level);
-  if (!ctx.hasUI) process.stderr.write(`${sanitizeTerminalText(text)}\n`);
+  const safe = sanitizeTerminalText(text);
+  ctx.ui.notify(safe, level);
+  if (!ctx.hasUI) process.stderr.write(`${safe}\n`);
 }
 
 /**
- * The subcommands of the single `/octocode` command. Features add theirs (`api`, `review`, `rewind`);
+ * The subcommands of the single `/octocode` command. Features add theirs (`api`, `permission`, `rewind`);
  * `src/index.ts` registers the one Pi command that routes `/octocode <name> <args>` to them and completes names and
  * their arguments.
  */
 
 export interface Subcommand {
-  /** One line for `/octocode help` and completions, including usage, e.g. `review on|off — ask before file changes`. */
+  /** One line for `/octocode help` and completions, including usage, e.g. `api [on [http]|off] — the external API`. */
   description: string;
   handler(args: string, ctx: ExtensionCommandContext): Promise<void>;
   /** Completions for the text after `<name> `. */
@@ -50,7 +51,8 @@ export class Subcommands {
 
   /** One line per subcommand, for `/octocode help` and a mistyped name. */
   help(): string {
-    return ['Usage: /octocode [subcommand]', '  (none) — status', '  help — this list', ...this.list().map(([, command]) => `  ${command.description}`)].join('\n');
+    const shortcuts = [...this.aliased].sort().map((name) => `/${name}`);
+    return ['Usage: /octocode [subcommand]', '  (none) or status — status', '  help — this list', ...this.list().map(([, command]) => `  ${command.description}`), ...(shortcuts.length ? [`Shortcuts: ${shortcuts.join(', ')}`] : [])].join('\n');
   }
 
   /**
@@ -87,22 +89,23 @@ export class Subcommands {
     this.aliased.add(name);
     pi.registerCommand(name, {
       description: command.description,
-      getArgumentCompletions: (prefix) => command.complete?.(prefix) ?? null,
+      getArgumentCompletions: (prefix) => command.complete?.(prefix.trimStart()) ?? null,
       handler: (args, ctx) => withDialog(() => command.handler(args.trim(), ctx)),
     });
   }
 
   /** Completions for everything typed after `/octocode `: subcommand names first, then that subcommand's arguments. */
   complete(prefix: string): AutocompleteItem[] | null {
-    const space = prefix.indexOf(' ');
+    const line = prefix.trimStart();
+    const space = line.search(/\s/);
     if (space === -1) {
-      const items = [...this.list(), ['help', { description: 'help — list subcommands' }] as const]
-        .filter(([name]) => name.startsWith(prefix))
-        .map(([name, command]) => ({ value: name === 'help' ? name : `${name} `, label: name, description: command.description }));
+      const items = [...this.list(), ['help', { description: 'help — list subcommands' }] as const, ['status', { description: 'status — Octocode status' }] as const]
+        .filter(([name]) => name.startsWith(line))
+        .map(([name, command]) => ({ value: name === 'help' || name === 'status' ? name : `${name} `, label: name, description: command.description }));
       return items.length > 0 ? items : null;
     }
-    const name = prefix.slice(0, space);
-    const rest = prefix.slice(space + 1);
+    const name = line.slice(0, space);
+    const rest = line.slice(space + 1);
     const items = this.entries.get(name)?.complete?.(rest.trimStart());
     return items?.length ? items.map((item) => ({ ...item, value: `${name} ${item.value}` })) : null;
   }

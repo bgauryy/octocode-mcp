@@ -78,7 +78,32 @@ impl GitRunner for RewriteRunner {
                 }
             })
             .collect();
-        self.system.run(&request.with_args(args), control)
+        let request = request.with_args(args);
+        // Hermetic guard: the rewrite must leave no network remote for git.
+        for argument in &request.args {
+            let argument = argument.to_string_lossy();
+            assert!(
+                !["https://", "http://", "ssh://", "git@"]
+                    .iter()
+                    .any(|scheme| argument.starts_with(scheme)),
+                "git would reach the network: {argument}"
+            );
+        }
+        self.system.run(&request, control)
+    }
+}
+
+/// A runner for paths that must refuse before git runs: invoking it fails
+/// the test instead of reaching the network.
+struct UnreachableGit;
+
+impl GitRunner for UnreachableGit {
+    fn run(
+        &self,
+        request: &GitRunRequest<'_>,
+        _control: &GitRunControl<'_>,
+    ) -> Result<GitOutput, CloneError> {
+        panic!("git must not run here: {request:?}")
     }
 }
 
@@ -290,6 +315,14 @@ fn missing_repository_names_the_repository_with_a_recovery_hint() {
         assert!(hint.ends_with('.'), "{hint}");
         assert!(hint.contains("token"), "{hint}");
     }
+    // Beside the hint, a runnable search for the name finds who holds it.
+    let find = &error.next.as_ref().expect("search lead")["findRepository"];
+    assert_eq!(find["tool"], "ghSearchRepo", "{find}");
+    assert_eq!(
+        find["query"]["queries"][0]["keywords"],
+        serde_json::json!(["fixture-repo"]),
+        "{find}"
+    );
     // Errors without recovery serialize exactly as before.
     let plain = CloneError::new("gitFailed", "failed");
     assert_eq!(
@@ -450,7 +483,7 @@ fn denied_cache_home_is_not_created() {
     let cache_home = outside.0.join("home");
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
-    let runner = SystemGit::default();
+    let runner = UnreachableGit;
     let config = CloneConfig::persistent(&cache_home);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
 
@@ -485,7 +518,7 @@ fn withheld_cache_home_is_denied_as_path_policy() {
     let cache_home = root.0.join(".ssh").join("home");
     let policy = root_policy(&root.0);
     let endpoint = api_github_endpoint();
-    let runner = SystemGit::default();
+    let runner = UnreachableGit;
     let config = CloneConfig::persistent(&cache_home);
     let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
 
@@ -1143,14 +1176,17 @@ fn missing_branch_endpoint_git_and_portable_paths_fail_closed() {
     let error = execute_clone(&query(), &context).expect_err("missing git");
     assert_eq!(error.code, "gitUnavailable");
 
-    // Plain http is only a valid API base on loopback; clone still refuses it.
-    let insecure = GitHubEndpoint::new(url::Url::parse("http://127.0.0.1/api/v3").expect("URL"))
+    // Plain http is a valid API base, and clone source, on loopback only.
+    let loopback = GitHubEndpoint::new(url::Url::parse("http://127.0.0.1/api/v3").expect("URL"))
         .expect("provider endpoint");
     assert_eq!(
-        repository_url(&insecure, "owner", "repo")
-            .expect_err("HTTP clone endpoint")
-            .code,
-        "configuration"
+        repository_url(&loopback, "owner", "repo").expect("loopback clone URL"),
+        "http://127.0.0.1/owner/repo.git"
+    );
+    assert!(
+        GitHubEndpoint::new(url::Url::parse("http://ghe.example.com/api/v3").expect("URL"))
+            .is_err(),
+        "non-loopback http is rejected before any clone URL exists"
     );
     let encoded =
         GitHubEndpoint::new(url::Url::parse("https://example.test/prefix/api/v3").expect("URL"))
@@ -1289,8 +1325,19 @@ fn system_git_timeout_and_failure_output_are_bounded_and_redacted() {
         )
         .expect_err("failure fixture");
     assert_eq!(failed.code, "gitFailed");
-    assert!(!failed.message.contains(token));
-    assert!(failed.message.contains("[REDACTED]"));
+    // The child's environment dump names the helper, never the credential:
+    // nothing is left to redact.
+    assert!(!failed.message.contains(token), "{}", failed.message);
+    assert!(
+        failed.message.contains("GIT_ASKPASS="),
+        "{}",
+        failed.message
+    );
+    assert!(
+        !failed.message.contains("Authorization"),
+        "{}",
+        failed.message
+    );
 
     // A git error names no checkout stage under the Octocode home.
     let stage = root
@@ -1391,31 +1438,31 @@ fn concurrent_requests_publish_once_and_validation_fails_closed() {
     );
     assert_eq!(values[0].location.commit_sha, values[1].location.commit_sha);
 
-    for invalid in [
-        GhCloneRepoQuery {
-            owner: "../escape".parse().expect("owner"),
-            ..query()
-        },
-        GhCloneRepoQuery {
-            path: Some(one("../escape")),
-            ..query()
-        },
-    ] {
-        let context = CloneContext {
-            config: &config,
-            endpoint: &endpoint,
-            credential: None,
-            resolved_default_branch: Some("main"),
-            cancellation: &NeverCancel,
-            deadline: Instant::now() + Duration::from_secs(30),
-            path_policy: &policy,
-            git: runner.as_ref(),
-        };
-        assert_eq!(
-            execute_clone(&invalid, &context).expect_err("invalid").code,
-            "invalidInput"
-        );
-    }
+    // A traversal owner never reaches the clone: the contract rejects it.
+    assert!(
+        "../escape"
+            .parse::<crate::contracts::tool_types::GhCloneRepoQueryOwner>()
+            .is_err(),
+        "the contract rejects a traversal owner"
+    );
+    let invalid = GhCloneRepoQuery {
+        path: Some(one("../escape")),
+        ..query()
+    };
+    let context = CloneContext {
+        config: &config,
+        endpoint: &endpoint,
+        credential: None,
+        resolved_default_branch: Some("main"),
+        cancellation: &NeverCancel,
+        deadline: Instant::now() + Duration::from_secs(30),
+        path_policy: &policy,
+        git: runner.as_ref(),
+    };
+    assert_eq!(
+        execute_clone(&invalid, &context).expect_err("invalid").code,
+        "invalidInput"
+    );
 }
 
 #[cfg(unix)]
@@ -1752,6 +1799,7 @@ fn git_failures_are_explained_by_the_ref_answer() {
         code: "gitFailed".into(),
         message: "git clone failed: fatal: Remote branch nope not found".into(),
         hints: vec!["Check network access to the git remote.".into()],
+        next: None,
     };
     let tagged = parse_query(serde_json::json!({
         "owner": "o", "repo": "r", "ref": "nope", "mainGoal": "test", "reasoning": "r"
@@ -1771,6 +1819,13 @@ fn git_failures_are_explained_by_the_ref_answer() {
             assert_eq!(error.code, "notFound", "{error:?}");
             assert!(error.message.contains("\"nope\""), "{error:?}");
             assert!(error.hints[0].contains("ghStructure"), "{error:?}");
+            let refs = &error.next.as_ref().expect("refs lead")["viewRefs"];
+            assert_eq!(refs["tool"], "ghStructure", "{error:?}");
+            assert_eq!(
+                refs["query"]["queries"][0],
+                serde_json::json!({"owner": "o", "repo": "r", "operation": "refs"}),
+                "{error:?}"
+            );
         }
         CloneFailure::Provider(error) => panic!("a missing ref is input: {error:?}"),
     }
@@ -1780,6 +1835,11 @@ fn git_failures_are_explained_by_the_ref_answer() {
         CloneFailure::Clone(error) => {
             assert_eq!(error.code, "notFound");
             assert_eq!(error.message, "Repository not found: o/r");
+            assert_eq!(
+                error.next.as_ref().expect("search lead")["findRepository"]["tool"],
+                "ghSearchRepo",
+                "{error:?}"
+            );
         }
         CloneFailure::Provider(error) => panic!("a missing repository is input: {error:?}"),
     }

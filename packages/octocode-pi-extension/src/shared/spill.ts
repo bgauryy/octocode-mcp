@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, truncateTail } from '@earendil-works/pi-coding-agent';
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatDimensionNote, formatSize, resizeImage, truncateHead, truncateTail } from '@earendil-works/pi-coding-agent';
+import { sha256 } from './atomic.js';
 import { PRIVATE_FILE_MODE, sessionOutputDir } from './home.js';
 import { shortPath } from './format.js';
 import { capOutput, cutText } from './util.js';
@@ -25,6 +26,27 @@ export function saveFullOutput(text: string, label: string): string | undefined 
     const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${Date.now()}-${++written}.txt`);
     fs.writeFileSync(file, text, { flag: 'wx', mode: PRIVATE_FILE_MODE });
     return file;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Saves `content` to `<session folder>/output/<label>-<sha256 prefix>.<extension>`, named by its content, so the same
+ * bytes always land in the same file (a trim planned twice, or after a reload, points at one copy). Returns where it is
+ * and how to check it, as `<path> (sha256 <prefix>, <n> bytes)`, or undefined when it could not be written. Never throws.
+ */
+export function saveContentCopy(content: string | Uint8Array, label: string, extension = 'txt'): string | undefined {
+  try {
+    const hash = sha256(content).slice(0, 16);
+    const bytes = typeof content === 'string' ? Buffer.byteLength(content) : content.byteLength;
+    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${hash}.${extension}`);
+    try {
+      fs.writeFileSync(file, content, { flag: 'wx', mode: PRIVATE_FILE_MODE });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST' || fs.statSync(file).size !== bytes) return undefined;
+    }
+    return `${shortPath(file)} (sha256 ${hash}, ${bytes} bytes)`;
   } catch {
     return undefined;
   }
@@ -92,10 +114,22 @@ export function saveImageFile(base64: string, mimeType: string, label: string): 
   }
 }
 
-/** An image part within `IMAGE_MAX_CHARS` unchanged; a larger one saved whole and replaced by a text note naming the file. */
-export function boundImagePart<T extends { type: 'image'; data: string; mimeType: string }>(part: T, label: string): T | { type: 'text'; text: string } {
-  if (part.data.length <= IMAGE_MAX_CHARS) return part;
+/** Keeps a fitted image visible and saves its original; falls back to a file pointer if Pi cannot resize it. */
+export async function boundImagePart<T extends { type: 'image'; data: string; mimeType: string }>(part: T, label: string): Promise<Array<T | { type: 'text'; text: string }>> {
+  if (part.data.length <= IMAGE_MAX_CHARS) return [part];
   const file = saveImageFile(part.data, part.mimeType, label);
+  try {
+    const resized = await resizeImage(Buffer.from(part.data, 'base64'), part.mimeType, { maxBytes: IMAGE_MAX_CHARS });
+    if (resized && resized.data.length <= IMAGE_MAX_CHARS) {
+      const dimensions = formatDimensionNote(resized);
+      return [
+        { ...part, data: resized.data, mimeType: resized.mimeType },
+        { type: 'text', text: `[Image fitted for context. ${file ? `Original saved to ${file}.` : 'The original could not be saved.'}${dimensions ? ` ${dimensions}` : ''}]` },
+      ];
+    }
+  } catch {
+    // Invalid encodings or an unavailable image worker still leave the original file reachable.
+  }
   const size = formatSize(Math.floor((part.data.length * 3) / 4));
-  return { type: 'text', text: `[${part.mimeType} image of ${size} left out: too large for the context. ${file ? `Saved to ${file}.` : 'It could not be saved.'}]` };
+  return [{ type: 'text', text: `[${part.mimeType} image of ${size} left out: too large for the context. ${file ? `Saved to ${file}.` : 'It could not be saved.'}]` }];
 }

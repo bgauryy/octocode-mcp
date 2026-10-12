@@ -70,17 +70,20 @@ export interface HookVerdict {
   block?: string;
   /** Text the hook adds to the conversation. */
   context?: string;
+  /** Set when a PreToolUse hook answers `permissionDecision: "ask"`: the reason the user is asked with, in every mode. */
+  ask?: string;
 }
 
 /**
  * Claude Code semantics: exit 2 blocks with stderr as the reason; exit 0 may print JSON with `decision: "block"`,
  * `continue: false`, `hookSpecificOutput.permissionDecision: "deny"` or `additionalContext`; plain SessionStart stdout
- * is context. Any other exit is a non-blocking error.
+ * is context. A PreToolUse `permissionDecision: "ask"` asks the user; `"allow"` skips no ask. Any other exit is a
+ * non-blocking error.
  */
 export function interpret(event: HookEvent, run: HookRun): HookVerdict {
   // Hook output is untrusted text: it reaches the model and Pi's tool errors without escape sequences.
-  const { block, context } = verdictOf(event, run);
-  return { ...(block ? { block: sanitizeTerminalText(block) } : {}), ...(context ? { context: sanitizeTerminalText(context) } : {}) };
+  const { block, context, ask } = verdictOf(event, run);
+  return { ...(block ? { block: sanitizeTerminalText(block) } : {}), ...(context ? { context: sanitizeTerminalText(context) } : {}), ...(ask ? { ask: sanitizeTerminalText(ask) } : {}) };
 }
 
 function verdictOf(event: HookEvent, run: HookRun): HookVerdict {
@@ -96,7 +99,8 @@ function verdictOf(event: HookEvent, run: HookRun): HookVerdict {
   const context = typeof specific.additionalContext === 'string' && specific.additionalContext.trim() ? specific.additionalContext.trim() : undefined;
   // For Stop, `continue: false` means "stop for good", the opposite of blocking (which keeps the agent going).
   const blocked = json.decision === 'block' || (event !== 'Stop' && (json.continue === false || specific.permissionDecision === 'deny'));
-  return { ...(blocked ? { block: reason ?? 'Blocked by a hook.' } : {}), ...(context ? { context } : {}) };
+  const asks = !blocked && event === 'PreToolUse' && specific.permissionDecision === 'ask';
+  return { ...(blocked ? { block: reason ?? 'Blocked by a hook.' } : {}), ...(asks ? { ask: reason ?? 'A PreToolUse hook asks you to confirm this call.' } : {}), ...(context ? { context } : {}) };
 }
 
 /** Caps hook context at 16 KB, on a character boundary. */

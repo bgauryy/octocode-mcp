@@ -106,15 +106,18 @@ fn bracket_depth(code: &str) -> i32 {
         .sum()
 }
 
-/// Production text of one source file: its `#[cfg(test)] mod` cut off.
+/// Production text of one source file: its inline `#[cfg(test)] mod x {`
+/// cut off. A one-line `#[cfg(test)] mod x;` item declares a test file and
+/// ends nothing: cutting there hid every literal after it from the sweep.
 fn production(text: &str) -> &str {
     let mut offset = 0;
     let lines: Vec<&str> = text.split_inclusive('\n').collect();
     for (index, line) in lines.iter().enumerate() {
         if line.trim() == "#[cfg(test)]"
-            && lines
-                .get(index + 1)
-                .is_some_and(|next| next.trim_start().starts_with("mod ") || next.contains(" mod "))
+            && lines.get(index + 1).is_some_and(|next| {
+                let next = next.trim();
+                (next.starts_with("mod ") || next.contains(" mod ")) && next.ends_with('{')
+            })
         {
             return &text[..offset];
         }
@@ -230,8 +233,87 @@ fn every_hint_source_fits_the_guidance_budget() {
     }
     assert!(
         over.is_empty(),
-        "hint sources over {MAX_GUIDANCE_CHARS} chars (the runtime no longer clips them):\n{}",
+        "hint sources over {MAX_GUIDANCE_CHARS} chars (the runtime never clips them):\n{}",
         over.join("\n")
+    );
+}
+
+#[test]
+fn no_shared_hint_names_a_cli_only_tool() {
+    let cli_only = ToolId::ALL
+        .into_iter()
+        .filter(|tool| tool.is_cli_only())
+        .collect::<Vec<_>>();
+    assert!(!cli_only.is_empty(), "the contract marks CLI-only tools");
+    let snake = |name: &str| {
+        name.chars().fold(String::new(), |mut out, c| {
+            if c.is_ascii_uppercase() {
+                out.push('_');
+            }
+            out.push(c.to_ascii_lowercase());
+            out
+        })
+    };
+    let named = |hint: &str| {
+        cli_only
+            .iter()
+            .filter(|tool| hint.contains(tool.as_str()))
+            .map(|tool| tool.as_str())
+            .collect::<Vec<_>>()
+    };
+    let mut found = Vec::new();
+    let queries = [
+        json!({}),
+        json!({"keywords": ["a", "b"]}),
+        json!({"path": "src"}),
+        json!({"owner": "o", "repo": "r"}),
+    ];
+    for tool in ToolId::ALL.into_iter().filter(|tool| !tool.is_cli_only()) {
+        for query in &queries {
+            let hint = tool.output().fallback_hint(query);
+            if !named(hint).is_empty() {
+                found.push(format!("{tool:?} fallback: {hint}"));
+            }
+        }
+        for (code, _) in error_codes::ALL {
+            for hint in [
+                super::rows::error_code_hint(tool, code),
+                tool.output().error_hint(code),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if !named(hint).is_empty() {
+                    found.push(format!("{tool:?} {code}: {hint}"));
+                }
+            }
+        }
+    }
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let own_modules = cli_only
+        .iter()
+        .map(|tool| root.join("tools").join(snake(tool.as_str())))
+        .collect::<Vec<_>>();
+    let mut files = Vec::new();
+    rust_sources(&root, &mut files);
+    for file in files
+        .into_iter()
+        .filter(|file| !own_modules.iter().any(|own| file.starts_with(own)))
+    {
+        let text = std::fs::read_to_string(&file).expect("source");
+        for (line, literal) in guidance_literals(&text) {
+            if !named(&literal).is_empty() {
+                found.push(format!(
+                    "{}:{line}: {literal}",
+                    file.strip_prefix(&root).unwrap_or(&file).display()
+                ));
+            }
+        }
+    }
+    assert!(
+        found.is_empty(),
+        "hints every surface shows name a CLI-only tool (MCP cannot run it; the CLI gets an executable lead instead):\n{}",
+        found.join("\n")
     );
 }
 

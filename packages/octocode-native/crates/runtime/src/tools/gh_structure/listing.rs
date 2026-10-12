@@ -279,7 +279,7 @@ fn bare_words<'a>(include: impl IntoIterator<Item = &'a str>) -> Vec<String> {
 
 /// Listing rows grouped by directory. `dir` is repo-relative (the same base
 /// as `path` and `include`), `"."` only for the repository root.
-/// GS3: each listed entry carries its facts in the structureSearch entry
+/// Each listed entry carries its facts in the structureSearch entry
 /// form, `"<name> (<fields>)"` (the last `" ("` opens them): a file its
 /// size in bytes, then the day of its last commit; a folder that day. The
 /// row's `updated` map ([`super::dates::attach`], keyed by bare name) folds
@@ -413,40 +413,37 @@ pub(super) fn attach_continuations(
             offset: 0,
         })
     });
-    let last_page = crate::tools::id::query_limits::gh_structure::PAGE_MAXIMUM;
-    if materialize_resume.is_some_and(|resume| resume.page > last_page)
-        || (has_more && !materialize && current >= last_page)
+    let cursor = |value: &mut Value, field: &str, next: usize| {
+        crate::tools::paging::next_cursor(value, ToolId::GhStructure, None, field, next)
+    };
+    if let Some(resume) = materialize_resume {
+        let page_cursor = cursor(value, "page", resume.page);
+        let offset_cursor = cursor(value, "materializeOffset", resume.offset);
+        if let (Some(next_page), Some(offset)) = (page_cursor, offset_cursor) {
+            let mut next_query = query_row(query, &[]);
+            next_query["page"] = json!(next_page);
+            next_query["pageSize"] = json!(page.per_page);
+            next_query["materialize"] = json!(true);
+            next_query["materializeOffset"] = json!(offset);
+            value["next"]["continueMaterialize"] = continuation(next_query, "exact");
+        }
+        mark_materialize_partial(value);
+    } else if has_more
+        && !materialize
+        && let Some(next_page) = cursor(value, "page", current + 1)
     {
-        value["terminalLimit"] = json!(true);
-        mark_materialize_partial(value);
-    } else if let Some(resume) = materialize_resume {
-        let mut next_query = public_query(query)?;
-        next_query["page"] = json!(resume.page);
-        next_query["pageSize"] = json!(page.per_page);
-        next_query["materialize"] = json!(true);
-        next_query["materializeOffset"] = json!(resume.offset);
-        value["next"]["continueMaterialize"] = continuation(next_query, "exact");
-        mark_materialize_partial(value);
-    } else if has_more && !materialize {
-        let mut next_query = public_query(query)?;
-        next_query["page"] = json!(current + 1);
+        let mut next_query = query_row(query, &[]);
+        next_query["page"] = json!(next_page);
         next_query["pageSize"] = json!(page.per_page);
         value["next"]["nextPage"] = continuation(next_query, "exact");
     }
     if retry_tree {
-        let mut retry = public_query(query)?;
+        let mut retry = query_row(query, &[]);
         retry["page"] = json!(current);
         retry["pageSize"] = json!(page.per_page);
         value["next"]["retry"] = continuation(retry, "exact");
     }
     Ok(())
-}
-
-pub(super) fn public_query(query: &GhStructureQuery) -> Result<Value, ProviderError> {
-    let mut query = serde_json::to_value(query)
-        .map_err(|error| ProviderError::new(ProviderErrorKind::Decode, error.to_string()))?;
-    remove_nulls(&mut query);
-    Ok(query)
 }
 
 pub(super) fn continuation(query: Value, confidence: &'static str) -> Value {
@@ -487,7 +484,7 @@ mod read_lead_tests {
         })
     }
 
-    /// GS4: the read lead lands on source: the file a bare-word `include`
+    /// The read lead lands on source: the file a bare-word `include`
     /// names over its test, and a code entry over README and other files.
     #[test]
     fn the_read_lead_prefers_source_over_tests_and_docs() {

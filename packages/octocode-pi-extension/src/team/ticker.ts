@@ -2,12 +2,16 @@ import fs from 'node:fs';
 import type { Member, Traffic } from './model.js';
 
 const TICK_MS = 1_000;
+/** A tick this long after the previous one means the machine slept (or this process stalled): peers could not heartbeat either. */
+const SUSPEND_GAP_MS = 15_000;
 
 /** What watchers (the agents panel) render: live agents, recent traffic, or why the team is off. */
 export interface TeamView {
   members: Member[];
   traffic: Traffic[];
   error?: string;
+  /** The error is transient (a locked or busy database): the next tick retries. Without it the team is off. */
+  retrying?: boolean;
 }
 
 interface TickerSource {
@@ -21,6 +25,8 @@ interface TickerSource {
   read(): TeamView;
   /** How long an unchanged snapshot may be reused; liveness is time-based, so re-read at this interval anyway. */
   maxAgeMs: number;
+  /** The machine slept (or this process stalled) from `since` to `now`; called before that tick's beat. */
+  resumed(since: number, now: number): void;
 }
 
 /** A cheap change marker for the database file and its WAL: writes by any process move it. */
@@ -43,6 +49,8 @@ export class TeamTicker {
   private cached: TeamView = { members: [], traffic: [] };
   private stamp = '';
   private readAt = 0;
+  /** Wall time of the previous tick while the timer runs; 0 when it is stopped. */
+  private tickedAt = 0;
 
   constructor(private readonly source: TickerSource) {}
 
@@ -66,11 +74,13 @@ export class TeamTicker {
   sync(): void {
     const needed = this.source.joined() || this.watchers.size > 0;
     if (needed && !this.timer) {
+      this.tickedAt = Date.now();
       this.timer = setInterval(() => this.tick(), TICK_MS);
       this.timer.unref();
     } else if (!needed && this.timer) {
       clearInterval(this.timer);
       this.timer = undefined;
+      this.tickedAt = 0;
     }
   }
 
@@ -80,6 +90,10 @@ export class TeamTicker {
   }
 
   private tick(): void {
+    // Wall time jumped past the 1-second cadence: a timer cannot fire while the machine sleeps, so neither could any peer's.
+    const now = Date.now();
+    if (this.tickedAt > 0 && now - this.tickedAt > SUSPEND_GAP_MS) this.source.resumed(this.tickedAt, now);
+    this.tickedAt = now;
     this.source.beat();
     if (this.watchers.size === 0) return;
     this.refresh();

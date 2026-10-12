@@ -5,7 +5,7 @@ use super::{HistoryItemRequest, ItemOperation};
 use crate::tools::gh_shared::commit::commit_pull_request;
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
-use crate::tools::result::Continuation;
+use crate::tools::result::{Continuation, query_row};
 use serde_json::{Map, Value, json};
 
 /// The whole-patch re-read of every patch row a `matchString` view narrowed
@@ -199,11 +199,9 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
             },
         })
     };
-    let mut value = typed()
-        .and_then(|query| serde_json::to_value(query).ok())
-        .unwrap_or_default();
-    remove_key(&mut value, "extras");
-    value
+    typed()
+        .map(|query| query_row(&query, &[]))
+        .unwrap_or_default()
 }
 
 /// `next.*` for a commit or comparison file page (also nested per PR commit

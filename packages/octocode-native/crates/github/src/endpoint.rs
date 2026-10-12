@@ -99,7 +99,8 @@ impl GitHubEndpoint {
     }
 }
 
-fn is_loopback(url: &Url) -> bool {
+/// Whether `url` names a loopback host (localhost, 127.0.0.0/8, ::1).
+pub fn is_loopback(url: &Url) -> bool {
     match url.host() {
         Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
         Some(url::Host::Ipv4(ip)) => ip.is_loopback(),

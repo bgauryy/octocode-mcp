@@ -1,15 +1,16 @@
 //! Transaction journal: write-ahead log, commit, and crash-recovery for applied rewrites.
 use super::{
     FileState, JOURNAL_PREFIX, Journal, JournalFile, JournalPhase, PreparedFile, RewriteError,
-    cancelled, create_private_dir_all, io_error, sha256, transaction_id,
+    cancelled, create_private_dir_all, io_error, read_target, sha256, transaction_id,
 };
+use crate::private_file::BeneathDir;
 use crate::tools::cancel::CancellationCheck;
 use serde_json::{Value, json};
-#[cfg(unix)]
-use std::collections::BTreeSet;
 use std::{
-    fs::{self, OpenOptions},
-    io::Write,
+    collections::BTreeSet,
+    ffi::{OsStr, OsString},
+    fs,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -20,12 +21,26 @@ pub(super) fn persist_journal(path: &Path, journal: &Journal) -> Result<(), Rewr
     Ok(())
 }
 
-fn sync_path(path: &Path) -> Result<(), RewriteError> {
-    OpenOptions::new()
-        .read(true)
-        .open(path)
-        .and_then(|file| file.sync_all())
-        .map_err(io_error)
+/// The entry name of a journal path, for operations relative to its held
+/// directory.
+fn entry(path: &Path) -> Result<OsString, RewriteError> {
+    path.file_name().map(OsStr::to_owned).ok_or_else(|| {
+        RewriteError::new(
+            "transactionFailed",
+            format!("Not a file path: {}", path.display()),
+        )
+    })
+}
+
+/// Each journal file's directory, walked down from `root` without following
+/// a symlink. Every write of a transaction goes through these handles, so a
+/// directory swapped for a link later cannot redirect it.
+fn open_directories(root: &Path, journal: &Journal) -> Vec<io::Result<BeneathDir>> {
+    journal
+        .files
+        .iter()
+        .map(|file| BeneathDir::open(root, file.target.parent().unwrap_or(root)))
+        .collect()
 }
 
 pub(super) fn journal_directory(state_base: &Path, boundary: &Path) -> PathBuf {
@@ -49,12 +64,43 @@ pub(super) fn commit_transaction(
     let journal_path = journal_dir.join(format!("{JOURNAL_PREFIX}{id}.json"));
     let mut journal = plan_journal(boundary, files, &id);
     persist_journal(&journal_path, &journal)?;
-    let result = stage_files(&mut journal, &journal_path, files, cancellation)
-        .and_then(|()| verify_targets(files))
-        .and_then(|()| promote_files(&mut journal, &journal_path, files, cancellation));
+    // Verify before opening the directories, so no stage lands beside a
+    // swapped one, and again after staging, right before the renames.
+    let mut held: Option<Vec<BeneathDir>> = None;
+    let result = (|| {
+        verify_targets(boundary, files)?;
+        let directories = held.insert(
+            open_directories(boundary, &journal)
+                .into_iter()
+                .collect::<io::Result<_>>()
+                .map_err(io_error)?,
+        );
+        stage_files(
+            &mut journal,
+            &journal_path,
+            directories,
+            files,
+            cancellation,
+        )?;
+        verify_targets(boundary, files)?;
+        promote_files(
+            &mut journal,
+            &journal_path,
+            boundary,
+            directories,
+            cancellation,
+        )
+    })();
+    // Settle through the handles the commit wrote through, or walk afresh
+    // when it failed before opening them.
+    let directories = match held {
+        Some(held) => held.into_iter().map(Ok).collect(),
+        None => open_directories(boundary, &journal),
+    };
     match result {
         Ok(()) => {
-            let Settled { errors, warnings } = finalize_committed(&journal_path, &journal);
+            let Settled { errors, warnings } =
+                finalize_committed(&journal_path, &journal, &directories);
             let warnings = errors.into_iter().chain(warnings).collect::<Vec<_>>();
             // Per-file before/after hashes live on the result's `files[]`.
             let mut receipt = json!({"id":id,"committed":true,"files":files.len()});
@@ -67,7 +113,7 @@ pub(super) fn commit_transaction(
             let Settled {
                 errors: recovered,
                 warnings,
-            } = recover_one(&journal_path, &journal);
+            } = recover_one(&journal_path, &journal, &directories);
             Err(RewriteError::new(
                 "transactionFailed",
                 if recovered.is_empty() {
@@ -111,21 +157,25 @@ fn plan_journal(boundary: &Path, files: &[PreparedFile], id: &str) -> Journal {
     }
 }
 
-/// Writes every new content beside its target into an owner-only stage,
-/// synced, then gives the stage the target's permissions.
+/// Writes every new content into an owner-only stage in its target's held
+/// directory, synced, then gives the stage the target's permissions.
 fn stage_files(
     journal: &mut Journal,
     journal_path: &Path,
+    directories: &[BeneathDir],
     files: &[PreparedFile],
     cancellation: &dyn CancellationCheck,
 ) -> Result<(), RewriteError> {
     for (index, file) in files.iter().enumerate() {
         cancellation.check().map_err(cancelled)?;
-        let journal_file = &journal.files[index];
-        let mut stage = create_stage(&journal_file.stage, &file.permissions).map_err(io_error)?;
+        let name = entry(&journal.files[index].stage)?;
+        let mut stage =
+            create_stage(&directories[index], &name, &file.permissions).map_err(io_error)?;
         stage.write_all(&file.after).map_err(io_error)?;
         stage.sync_all().map_err(io_error)?;
-        fs::set_permissions(&journal_file.stage, file.permissions.clone()).map_err(io_error)?;
+        stage
+            .set_permissions(file.permissions.clone())
+            .map_err(io_error)?;
         journal.files[index].state = FileState::Staged;
         persist_journal(journal_path, journal)?;
     }
@@ -135,7 +185,11 @@ fn stage_files(
 
 /// A new, empty stage file, owner-only and no wider than its source before
 /// its first byte.
-fn create_stage(path: &Path, source: &fs::Permissions) -> std::io::Result<fs::File> {
+fn create_stage(
+    directory: &BeneathDir,
+    name: &OsStr,
+    source: &fs::Permissions,
+) -> io::Result<fs::File> {
     #[cfg(unix)]
     let mode = std::os::unix::fs::PermissionsExt::mode(source);
     #[cfg(not(unix))]
@@ -143,17 +197,16 @@ fn create_stage(path: &Path, source: &fs::Permissions) -> std::io::Result<fs::Fi
         let _ = source;
         0o600
     };
-    crate::private_file::create_new(path, mode)
+    directory.create_new(name, mode)
 }
 
-/// Every target is still the regular file the preview hashed.
-fn verify_targets(files: &[PreparedFile]) -> Result<(), RewriteError> {
+/// Every target is still the regular file the preview hashed, reached from
+/// `boundary` without following a symlink.
+fn verify_targets(boundary: &Path, files: &[PreparedFile]) -> Result<(), RewriteError> {
     for file in files {
-        let metadata = fs::symlink_metadata(&file.absolute).map_err(io_error)?;
-        if metadata.file_type().is_symlink()
-            || !metadata.is_file()
-            || sha256(&fs::read(&file.absolute).map_err(io_error)?) != file.before_hash
-        {
+        let unchanged = read_target(boundary, &file.absolute)
+            .is_ok_and(|(bytes, _)| sha256(&bytes) == file.before_hash);
+        if !unchanged {
             return Err(RewriteError::new(
                 "transactionFailed",
                 format!("Target bytes changed: {}", file.absolute.display()),
@@ -163,50 +216,80 @@ fn verify_targets(files: &[PreparedFile]) -> Result<(), RewriteError> {
     Ok(())
 }
 
-/// Backs up each target and renames its stage into place, then syncs the
+/// Backs up each target and renames its stage into place, every rename
+/// relative to the target's held directory, then syncs the files and
 /// directories.
 fn promote_files(
     journal: &mut Journal,
     journal_path: &Path,
-    files: &[PreparedFile],
+    boundary: &Path,
+    directories: &[BeneathDir],
     cancellation: &dyn CancellationCheck,
 ) -> Result<(), RewriteError> {
     journal.phase = JournalPhase::Committing;
     persist_journal(journal_path, journal)?;
-    for index in 0..journal.files.len() {
+    for (index, directory) in directories.iter().enumerate() {
         cancellation.check().map_err(cancelled)?;
-        let journal_file = &journal.files[index];
-        fs::rename(&journal_file.target, &journal_file.backup).map_err(io_error)?;
+        let file = &journal.files[index];
+        let (target, backup, stage) = (
+            entry(&file.target)?,
+            entry(&file.backup)?,
+            entry(&file.stage)?,
+        );
+        // Recovery finds these files by their journal paths, so a directory
+        // moved or swapped for a link since staging fails here, before
+        // anything moves.
+        let parent = file.target.parent().unwrap_or(boundary);
+        if !directory.still_at(boundary, parent).unwrap_or(false) {
+            return Err(RewriteError::new(
+                "transactionFailed",
+                format!(
+                    "A target directory moved or became a symlink during commit: {}",
+                    parent.display()
+                ),
+            ));
+        }
+        directory.rename(&target, &backup).map_err(io_error)?;
         journal.files[index].state = FileState::BackedUp;
         persist_journal(journal_path, journal)?;
-        if sha256(&fs::read(&journal.files[index].backup).map_err(io_error)?)
-            != journal.files[index].before_hash
+        if hash_entry(directory, &backup).map_err(io_error)?.as_deref()
+            != Some(journal.files[index].before_hash.as_str())
         {
             return Err(RewriteError::new(
                 "transactionFailed",
                 "Target changed during commit.",
             ));
         }
-        fs::rename(&journal.files[index].stage, &journal.files[index].target).map_err(io_error)?;
-        sync_path(&journal.files[index].target)?;
+        directory.rename(&stage, &target).map_err(io_error)?;
+        directory
+            .open_file(&target)
+            .and_then(|file| file.sync_all())
+            .map_err(io_error)?;
         journal.files[index].state = FileState::Promoted;
         persist_journal(journal_path, journal)?;
     }
-    // Windows cannot open a directory to sync it; there the renames rest on
-    // the filesystem's own ordering. A failed sync elsewhere fails the
-    // transaction, which recovery rolls back from the backups.
-    #[cfg(not(unix))]
-    let _ = files;
-    #[cfg(unix)]
-    for directory in files
-        .iter()
-        .filter_map(|file| file.absolute.parent())
-        .collect::<BTreeSet<_>>()
-    {
-        sync_path(directory)?;
+    // A failed sync fails the transaction, which recovery rolls back from the
+    // backups.
+    let mut synced = BTreeSet::new();
+    for (file, directory) in journal.files.iter().zip(directories) {
+        if synced.insert(file.target.parent()) {
+            directory.sync().map_err(io_error)?;
+        }
     }
     journal.phase = JournalPhase::Committed;
     persist_journal(journal_path, journal)
+}
+
+/// The hash of the regular file `name` in `directory`; `None` when absent.
+fn hash_entry(directory: &BeneathDir, name: &OsStr) -> io::Result<Option<String>> {
+    let mut file = match directory.open_file(name) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(Some(sha256(&bytes)))
 }
 
 /// Settles every interrupted transaction on `boundary`. `Ok` carries the
@@ -247,10 +330,11 @@ pub(super) fn recover_transactions(
                 errors.push(format!("Invalid transaction journal: {}", path.display()));
                 continue;
             }
+            let directories = open_directories(root, &journal);
             let settled = if journal.phase == JournalPhase::Committed {
-                finalize_committed(&path, &journal)
+                finalize_committed(&path, &journal, &directories)
             } else {
-                recover_one(&path, &journal)
+                recover_one(&path, &journal, &directories)
             };
             errors.extend(settled.errors);
             warnings.extend(settled.warnings);
@@ -339,11 +423,54 @@ fn valid_journal(boundary: &Path, journal: &Journal) -> bool {
         })
 }
 
-fn hash_at(path: &Path) -> Result<Option<String>, String> {
-    match fs::read(path) {
-        Ok(bytes) => Ok(Some(sha256(&bytes))),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error.to_string()),
+/// One journal file's directory during recovery, reached without following
+/// a symlink; `None` when the directory no longer exists, so each of its
+/// entries is absent.
+struct Entries<'a>(Option<&'a BeneathDir>);
+
+impl<'a> Entries<'a> {
+    /// The held or freshly walked directory, `None` when it is gone; `Err`
+    /// names a directory no longer reachable beneath the root, which
+    /// recovery never touches.
+    fn of(directory: &'a io::Result<BeneathDir>, target: &Path) -> Result<Self, String> {
+        match directory {
+            Ok(directory) => Ok(Self(Some(directory))),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Self(None)),
+            Err(error) => Err(format!(
+                "Target directory is no longer reachable beneath the root ({error}): {}",
+                target.display()
+            )),
+        }
+    }
+
+    fn hash(&self, path: &Path) -> Result<Option<String>, String> {
+        let Some(directory) = self.0 else {
+            return Ok(None);
+        };
+        hash_entry(directory, &Self::name(path)?).map_err(|error| error.to_string())
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> Result<(), String> {
+        let directory = self
+            .0
+            .ok_or_else(|| format!("Directory missing: {}", from.display()))?;
+        directory
+            .rename(&Self::name(from)?, &Self::name(to)?)
+            .map_err(|error| error.to_string())
+    }
+
+    /// Removes `path` if present.
+    fn remove(&self, path: &Path) -> Result<(), String> {
+        let Some(directory) = self.0 else {
+            return Ok(());
+        };
+        directory
+            .remove_if_present(&Self::name(path)?)
+            .map_err(|error| error.to_string())
+    }
+
+    fn name(path: &Path) -> Result<OsString, String> {
+        entry(path).map_err(|error| error.message)
     }
 }
 
@@ -355,21 +482,31 @@ pub(super) struct Settled {
     pub(super) warnings: Vec<String>,
 }
 
-fn recover_one(path: &Path, journal: &Journal) -> Settled {
+fn recover_one(path: &Path, journal: &Journal, directories: &[io::Result<BeneathDir>]) -> Settled {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
-    for file in journal.files.iter().rev() {
+    for (file, directory) in journal.files.iter().zip(directories).rev() {
+        let at = match Entries::of(directory, &file.target) {
+            Ok(at) => at,
+            // A Planned/Staged target was never moved: its bytes are intact,
+            // and a stage left in the unreachable directory is named here.
+            Err(unreachable) if matches!(file.state, FileState::Planned | FileState::Staged) => {
+                warnings.push(format!("{unreachable}; left it untouched."));
+                continue;
+            }
+            Err(unreachable) => {
+                errors.push(unreachable);
+                continue;
+            }
+        };
         let result = (|| -> Result<(), String> {
-            let target_hash = hash_at(&file.target)?;
-            let backup_hash = hash_at(&file.backup)?;
+            let target_hash = at.hash(&file.target)?;
+            let backup_hash = at.hash(&file.backup)?;
             if let Some(backup_hash) = backup_hash {
                 if backup_hash != file.before_hash {
                     if target_hash.is_none() {
-                        fs::rename(&file.backup, &file.target)
-                            .map_err(|error| error.to_string())?;
-                        if file.stage.exists() {
-                            fs::remove_file(&file.stage).map_err(|error| error.to_string())?;
-                        }
+                        at.rename(&file.backup, &file.target)?;
+                        at.remove(&file.stage)?;
                         return Ok(());
                     }
                     return Err(format!("Backup hash mismatch: {}", file.target.display()));
@@ -384,12 +521,10 @@ fn recover_one(path: &Path, journal: &Journal) -> Settled {
                     ));
                 }
                 if target_hash.as_deref() == Some(file.before_hash.as_str()) {
-                    fs::remove_file(&file.backup).map_err(|error| error.to_string())?;
+                    at.remove(&file.backup)?;
                 } else {
-                    if file.target.exists() {
-                        fs::remove_file(&file.target).map_err(|error| error.to_string())?;
-                    }
-                    fs::rename(&file.backup, &file.target).map_err(|error| error.to_string())?;
+                    at.remove(&file.target)?;
+                    at.rename(&file.backup, &file.target)?;
                 }
             } else if target_hash.as_deref() != Some(file.before_hash.as_str()) {
                 // The backup rename is persisted (BackedUp) only after it
@@ -406,9 +541,7 @@ fn recover_one(path: &Path, journal: &Journal) -> Settled {
                     file.target.display()
                 ));
             }
-            if file.stage.exists() {
-                fs::remove_file(&file.stage).map_err(|error| error.to_string())?;
-            }
+            at.remove(&file.stage)?;
             Ok(())
         })();
         if let Err(error) = result {
@@ -440,11 +573,24 @@ fn retire(path: &Path, mut errors: Vec<String>) -> Vec<String> {
 /// Removes a committed transaction's stage and backup files. A target edited
 /// after the commit keeps its edit: the commit already happened, so the
 /// mismatch is a warning and the journal still retires.
-fn finalize_committed(path: &Path, journal: &Journal) -> Settled {
+fn finalize_committed(
+    path: &Path,
+    journal: &Journal,
+    directories: &[io::Result<BeneathDir>],
+) -> Settled {
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
-    for file in &journal.files {
-        match hash_at(&file.target) {
+    for (file, directory) in journal.files.iter().zip(directories) {
+        // The commit already happened; artifacts left in a directory no
+        // longer reachable beneath the root are named, not chased.
+        let at = match Entries::of(directory, &file.target) {
+            Ok(at) => at,
+            Err(unreachable) => {
+                warnings.push(format!("{unreachable}; left its stage and backup."));
+                continue;
+            }
+        };
+        match at.hash(&file.target) {
             Ok(Some(hash)) if hash == file.after_hash => {}
             Ok(_) => warnings.push(format!(
                 "Committed target changed after the commit; kept its current bytes: {}",
@@ -456,10 +602,8 @@ fn finalize_committed(path: &Path, journal: &Journal) -> Settled {
             }
         }
         for artifact in [&file.stage, &file.backup] {
-            if artifact.exists()
-                && let Err(error) = fs::remove_file(artifact)
-            {
-                errors.push(error.to_string());
+            if let Err(error) = at.remove(artifact) {
+                errors.push(error);
             }
         }
     }
@@ -499,6 +643,89 @@ mod tests {
         );
     }
 
+    /// A directory swapped for a symlink after the last target check, right
+    /// before the renames, cannot redirect them: promotion fails typed, and
+    /// nothing outside the root is moved, written, or left behind.
+    #[cfg(unix)]
+    #[test]
+    fn a_directory_swapped_for_a_symlink_before_promotion_is_never_written_through() {
+        use crate::tools::cancel::NeverCancel;
+        let dir = tempfile::tempdir().unwrap();
+        let base = fs::canonicalize(dir.path()).unwrap();
+        let (root, outside) = (base.join("root"), base.join("outside"));
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir(&outside).unwrap();
+        let target = root.join("src/a.ts");
+        // Identical bytes outside, so a hash check alone cannot tell them apart.
+        for path in [&target, &outside.join("a.ts")] {
+            fs::write(path, b"old\n").unwrap();
+        }
+        let prepared = PreparedFile {
+            path: "src/a.ts".to_owned(),
+            shown: "src/a.ts".to_owned(),
+            absolute: target.clone(),
+            before_hash: sha256(b"old\n"),
+            after_hash: sha256(b"new\n"),
+            before: b"old\n".to_vec(),
+            after: b"new\n".to_vec(),
+            patch: String::new(),
+            matches: Vec::new(),
+            permissions: fs::metadata(&target).unwrap().permissions(),
+            before_errors: 0,
+            after_facts: None,
+        };
+        let files = [prepared];
+        let journal_path = base.join("state/journal.json");
+        fs::create_dir(base.join("state")).unwrap();
+        let mut journal = plan_journal(&root, &files, "swap");
+        persist_journal(&journal_path, &journal).unwrap();
+        let directories = open_directories(&root, &journal)
+            .into_iter()
+            .collect::<io::Result<Vec<_>>>()
+            .unwrap();
+        stage_files(
+            &mut journal,
+            &journal_path,
+            &directories,
+            &files,
+            &NeverCancel,
+        )
+        .unwrap();
+        verify_targets(&root, &files).unwrap();
+
+        fs::rename(root.join("src"), root.join("src-moved")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("src")).unwrap();
+
+        let promoted = promote_files(
+            &mut journal,
+            &journal_path,
+            &root,
+            &directories,
+            &NeverCancel,
+        );
+        let names = |path: &Path| {
+            let mut names = fs::read_dir(path)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        };
+        assert_eq!(names(&outside), ["a.ts"], "nothing lands outside the root");
+        assert_eq!(fs::read(outside.join("a.ts")).unwrap(), b"old\n");
+        assert_eq!(fs::read(root.join("src-moved/a.ts")).unwrap(), b"old\n");
+        let error = promoted.expect_err("never promote through the link");
+        assert_eq!(error.code, "transactionFailed", "{}", error.message);
+        // Recovery through the held handles drops the stage from the real,
+        // moved directory and retires the journal; outside stays untouched.
+        let directories = directories.into_iter().map(Ok).collect::<Vec<_>>();
+        let settled = recover_one(&journal_path, &journal, &directories);
+        assert!(settled.errors.is_empty(), "{:?}", settled.errors);
+        assert_eq!(names(&root.join("src-moved")), ["a.ts"]);
+        assert_eq!(names(&outside), ["a.ts"]);
+        assert!(!journal_path.exists());
+    }
+
     /// A stage holds the source's new bytes, so before its first byte it is
     /// already no wider than the source and never wider than owner-only.
     #[cfg(unix)]
@@ -506,9 +733,15 @@ mod tests {
     fn a_stage_is_never_wider_than_its_source_before_any_byte() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
+        let held = BeneathDir::open(dir.path(), dir.path()).unwrap();
         for source in [0o600, 0o644, 0o640, 0o400, 0o755] {
-            let path = dir.path().join(format!("stage-{source:o}"));
-            let file = create_stage(&path, &fs::Permissions::from_mode(source)).unwrap();
+            let name = format!("stage-{source:o}");
+            let file = create_stage(
+                &held,
+                OsStr::new(&name),
+                &fs::Permissions::from_mode(source),
+            )
+            .unwrap();
             let staged = file.metadata().unwrap().permissions().mode() & 0o777;
             assert_eq!(file.metadata().unwrap().len(), 0);
             assert_eq!(staged & !source, 0, "source {source:o} staged {staged:o}");

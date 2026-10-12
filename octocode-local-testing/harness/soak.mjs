@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SOAK, not a correctness test: run-all runs it only when named.
 // Soak harness: hunts first-load hangs, crashes, RSS growth and
 // latency drift over a long run of realistic calls. Opt-in (run-all: `soak`).
 //

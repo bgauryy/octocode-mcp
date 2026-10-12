@@ -9,8 +9,11 @@
 //! (parsed) file set, so a configured alias can never fabricate an edge to a
 //! file the scan did not read.
 
-use super::graph::{dirname, join, join_within_root, normalize};
-use crate::{policy::path::PathPolicy, security::ContentSecurity};
+use super::graph::{climb, dirname, join, join_within_root, normalize};
+use crate::{
+    policy::path::{PathPolicy, lexical},
+    security::ContentSecurity,
+};
 use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -273,17 +276,7 @@ impl ResolveContext {
     /// counts when it re-enters the root, and not when it lands elsewhere.
     pub(crate) fn join_relative(&self, dir: &str, spec: &str) -> Option<String> {
         join_within_root(dir, spec).or_else(|| {
-            let mut parts = self.root_names.clone();
-            for component in Path::new(&format!("{dir}/{spec}")).components() {
-                match component {
-                    Component::CurDir => {}
-                    Component::ParentDir => {
-                        parts.pop()?;
-                    }
-                    Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
-                    Component::RootDir | Component::Prefix(_) => return None,
-                }
-            }
+            let parts = climb(self.root_names.clone(), &format!("{dir}/{spec}"))?;
             let inside = parts.strip_prefix(self.root_names.as_slice())?;
             Some(inside.join("/"))
         })
@@ -1107,21 +1100,6 @@ fn resolve_extends(directory: &Path, value: &str) -> Option<PathBuf> {
         .ancestors()
         .take(12)
         .find_map(|ancestor| probe(ancestor.join("node_modules").join(value)))
-}
-
-/// Lexically normalize `..`/`.` without touching the file system.
-fn lexical(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::ParentDir => {
-                out.pop();
-            }
-            Component::CurDir => {}
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
 }
 
 /// Scan-root-relative slash path (`.` for the root); `None` outside it.

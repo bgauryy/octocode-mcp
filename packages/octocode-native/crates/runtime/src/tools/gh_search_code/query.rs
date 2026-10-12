@@ -1,18 +1,7 @@
 //! ghSearchCode query syntax.
 use super::GhSearchCodeQuery;
-use crate::providers::github::{
-    ProviderError, qualifier_value, quote_search_keyword, search_phrase,
-};
-use crate::tools::gh_shared::query::{push, validate_scope};
-
-/// Owner and repository names become `repo:`/`user:` scopes; reject any value
-/// that is not a GitHub name before it can rewrite the scope.
-pub(super) fn validate_code_scope(query: &GhSearchCodeQuery) -> Result<(), ProviderError> {
-    validate_scope(
-        Some(query.owner.as_str()),
-        query.repo.as_deref().map(String::as_str),
-    )
-}
+use crate::providers::github::{qualifier_value, quote_search_keyword, search_phrase};
+use crate::tools::gh_shared::query::push;
 
 /// The search query; `extension` narrows a multi-extension query to one of
 /// them (GitHub ANDs repeated `extension:` qualifiers).
@@ -68,39 +57,54 @@ mod tests {
     use super::*;
     use crate::tools::gh_shared::query::parse;
 
+    /// Rendered qualifiers keep paths as path prefixes and quote what the
+    /// search syntax would otherwise read as operators or separators.
     #[test]
-    fn dotted_directory_path_stays_a_path_prefix() {
-        let q = code(
-            &parse(
-                serde_json::json!({"mainGoal": "test", "reasoning":"test","owner":"o","keywords":["merge"],"path":"types/lodash.merge"}),
-            ),
-            None,
+    fn rendered_qualifiers_keep_paths_and_quote_reserved_text() {
+        // (case, row, present, absent, prefix)
+        type Case = (
+            &'static str,
+            serde_json::Value,
+            &'static [&'static str],
+            &'static [&'static str],
+            &'static str,
         );
-        assert!(q.contains("path:\"types/lodash.merge\""), "{q}");
-        assert!(!q.contains("filename:"), "{q}");
-    }
-
-    #[test]
-    fn qualifier_values_with_whitespace_are_quoted() {
-        let q = code(
-            &parse(
-                serde_json::json!({"mainGoal": "test", "reasoning":"test","owner":"o","keywords":["x"],"path":"my dir/src","filename":"my file.txt"}),
+        let cases: [Case; 3] = [
+            (
+                "dotted directory path stays a path prefix",
+                serde_json::json!({"keywords":["merge"],"path":"types/lodash.merge"}),
+                &["path:\"types/lodash.merge\""],
+                &["filename:"],
+                "",
             ),
-            None,
-        );
-        assert!(q.contains("path:\"my dir/src\""), "{q}");
-        assert!(q.contains("filename:\"my file.txt\""), "{q}");
-    }
-
-    #[test]
-    fn reserved_boolean_keywords_are_quoted() {
-        let q = code(
-            &parse(
-                serde_json::json!({"mainGoal": "test", "reasoning":"test","owner":"o","keywords":["foo","OR","bar","NOT","and"]}),
+            (
+                "qualifier values with whitespace are quoted",
+                serde_json::json!({"keywords":["x"],"path":"my dir/src","filename":"my file.txt"}),
+                &["path:\"my dir/src\"", "filename:\"my file.txt\""],
+                &[],
+                "",
             ),
-            None,
-        );
-        assert!(q.starts_with("foo \"OR\" bar \"NOT\" \"and\""), "{q}");
+            (
+                "reserved boolean keywords are quoted",
+                serde_json::json!({"keywords":["foo","OR","bar","NOT","and"]}),
+                &[],
+                &[],
+                "foo \"OR\" bar \"NOT\" \"and\"",
+            ),
+        ];
+        for (case, mut row, present, absent, prefix) in cases {
+            for (key, value) in [("mainGoal", "test"), ("reasoning", "test"), ("owner", "o")] {
+                row[key] = value.into();
+            }
+            let q = code(&parse(row), None);
+            for text in present {
+                assert!(q.contains(text), "{case}: {q}");
+            }
+            for text in absent {
+                assert!(!q.contains(text), "{case}: {q}");
+            }
+            assert!(q.starts_with(prefix), "{case}: {q}");
+        }
     }
 
     #[test]
@@ -116,27 +120,6 @@ mod tests {
         assert_eq!(
             q, "\"hello NOT\" \"x OR repo:evil/x\" repo:octocat/Hello-World in:file",
             "{q}"
-        );
-    }
-
-    #[test]
-    fn scope_names_that_are_not_github_names_are_rejected() {
-        for (owner, repo) in [("octocat OR is:public", None), ("a", Some("b\" OR x"))] {
-            let mut raw = serde_json::json!({"mainGoal": "test", "reasoning":"test","owner":owner,"keywords":["x"]});
-            if let Some(repo) = repo {
-                raw["repo"] = serde_json::json!(repo);
-            }
-            let error = validate_code_scope(&parse(raw)).expect_err("rejected");
-            assert_eq!(
-                error.kind,
-                crate::providers::github::ProviderErrorKind::Validation
-            );
-        }
-        assert!(
-            validate_code_scope(&parse(
-                serde_json::json!({"mainGoal": "test", "reasoning":"test","owner":"octocat","repo":"Hello-World","keywords":["x"]})
-            ))
-            .is_ok()
         );
     }
 

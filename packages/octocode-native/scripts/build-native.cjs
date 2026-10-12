@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * Builds and stages the native artifacts: the `octocode` and
- * `octocode-regex-worker` binaries plus the runtime addon, in one Cargo
- * invocation.
+ * Builds and stages the native artifacts: the `octocode` binary plus the
+ * runtime addon, in one Cargo invocation.
  *
  * Usage:
  *   build-native.cjs [--release]

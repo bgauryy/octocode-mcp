@@ -1,8 +1,8 @@
 //! Routing (search or REST list) and the GitHub search terms a query runs.
 use super::{GhSearchHistoryQuery, HistoryOperation, HistorySearch};
 use crate::providers::github::{
-    ProviderError, ProviderErrorKind, SearchName, quote_search_keyword, resolve_date_window,
-    validate_qualifier_value, validate_search_name,
+    ProviderError, ProviderErrorKind, quote_search_keyword, resolve_date_window,
+    validate_person_name, validate_qualifier_value,
 };
 
 /// A keyword-less issue listing keeps the REST list order (newest first)
@@ -72,23 +72,17 @@ pub(super) fn required_repo(q: &GhSearchHistoryQuery) -> Result<(&str, &str), Pr
     })
 }
 
-/// Owner/repo become `repo:`/`user:` scopes and person fields become
-/// `author:`-style qualifiers: reject anything that is not a GitHub name
-/// before it can rewrite the search scope.
+/// Person fields become `author:`-style qualifiers: reject anything that is
+/// not a GitHub name before it can rewrite the search scope (the contract
+/// validates owner and repo).
 fn validate_history_scope(q: &HistorySearch) -> Result<(), ProviderError> {
-    if let Some(owner) = q.owner() {
-        validate_search_name("owner", owner, SearchName::Owner)?;
-    }
-    if let Some(repo) = q.repo() {
-        validate_search_name("repo", repo, SearchName::Repository)?;
-    }
     let f = q.filters();
     for (field, value) in [("author", q.author()), ("committer", q.committer())]
         .into_iter()
         .chain(f.people())
     {
         if let Some(value) = value {
-            validate_search_name(field, value, SearchName::Person)?;
+            validate_person_name(field, value)?;
         }
     }
     Ok(())

@@ -41,6 +41,35 @@ describe('CLI presentation embedded by the native binary', () => {
     }
   });
 
+  it('names the fields the query view hides and the call that shows them', () => {
+    const query = (name: string) => (tool(name).views as Json).query as Json;
+    const lsp = query('lspSearch');
+    const byOperation = lsp.operationFields as Record<string, string[]>;
+    expect(byOperation.definition).toContain('rustContext');
+    expect(byOperation.references).toEqual(expect.arrayContaining(['includeDeclaration', 'rustContext']));
+    expect(lsp.select).toBe("octocode schema lspSearch --select operation=<operation> shows that operation's fields");
+    for (const entry of presentation.tools) {
+      const view = query(String(entry.name));
+      const shown = new Set([
+        ...Object.keys(((view.querySchema as Json).properties ?? {}) as Json),
+        ...Object.keys(view.continuationFields as Json),
+      ]);
+      const named = [
+        ...Object.values((view.operationFields ?? {}) as Record<string, string[]>).flat(),
+        ...((view.moreFields ?? []) as string[]),
+      ];
+      for (const field of named) expect(shown.has(field), `${entry.name}.${field}`).toBe(false);
+      // Every accepted field is reachable from the query view: shown, a
+      // continuation field, or named here.
+      const selections = Object.values(entry.selections as Record<string, Json>);
+      const accepted = selections.length
+        ? selections.flatMap(selection => Object.keys(((selection.querySchema as Json).properties ?? {}) as Json))
+        : Object.keys((((entry.views as Json).full as Json).querySchema as Json).properties ?? {});
+      for (const field of accepted.filter(field => field !== 'mainGoal' && field !== 'reasoning'))
+        expect(shown.has(field) || named.includes(field), `${entry.name}.${field} is undiscoverable`).toBe(true);
+    }
+  });
+
   it('pre-renders one selection per operation, keyed operation=VALUE', () => {
     for (const entry of presentation.tools) {
       const operations = Object.keys(operationSchemas(definition(String(entry.name)).inputSchema));

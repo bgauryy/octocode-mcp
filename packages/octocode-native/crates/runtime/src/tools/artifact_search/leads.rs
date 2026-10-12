@@ -3,7 +3,7 @@ use crate::providers::artifact::{
     ArtifactError, ArtifactItem, ArtifactSearchQuery, ArtifactType, github_repo_dir, github_slug,
 };
 use crate::tools::id::ToolId;
-use crate::tools::result::Continuation;
+use crate::tools::result::{Continuation, query_row};
 use serde_json::{Map, Value, json};
 
 /// Labels a row's release source, the one place the label is decided: a
@@ -78,14 +78,10 @@ pub(super) fn source_leads(artifact: &ArtifactItem) -> Map<String, Value> {
 /// The query as a lead copies it: every field the caller set except the
 /// brief and the page cursor.
 fn copied(query: &ArtifactSearchQuery) -> Map<String, Value> {
-    let mut row = match serde_json::to_value(query) {
-        Ok(Value::Object(row)) => row,
+    match query_row(query, &["mainGoal", "reasoning", "page"]) {
+        Value::Object(row) => row,
         _ => Map::new(),
-    };
-    row.retain(|key, value| {
-        !matches!(key.as_str(), "mainGoal" | "reasoning" | "page") && !value.is_null()
-    });
-    row
+    }
 }
 
 /// A failure's one repair lead, when a call fixes it: an unknown exact

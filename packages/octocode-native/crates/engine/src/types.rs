@@ -331,6 +331,8 @@ pub struct GraphFactsScanOptions {
     pub skip_files: Option<u32>,
     pub max_file_bytes: Option<u32>,
     pub language_globs: Option<Vec<GraphLanguageGlob>>,
+    /// Walk dot entries too (`includeHidden`); off by default.
+    pub show_hidden: Option<bool>,
 }
 
 #[derive(Debug, Clone)]

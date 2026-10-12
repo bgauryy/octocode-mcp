@@ -14,6 +14,18 @@ export function processAlive(pid: unknown): boolean {
   }
 }
 
+/** This process's parent when the module loaded. */
+const loadedPpid = process.ppid;
+
+/**
+ * Whether the process that started this one (`parentPid`) is gone: dead, or, when it spawned this process directly,
+ * this process was reparented since it loaded (so a later process that got the parent's pid does not count as it). A
+ * launcher in between can exit while the parent lives: then only the pid is checked. Windows never reparents.
+ */
+export function parentGone(parentPid: number): boolean {
+  return (loadedPpid === parentPid && process.ppid !== loadedPpid) || !processAlive(parentPid);
+}
+
 const startTimes = new Map<number, string | undefined>();
 
 /**
@@ -89,20 +101,61 @@ export function groupAlive(pid: number | undefined): boolean {
 const STOP_POLL_MS = 25;
 
 /**
+ * Pids of every descendant of `pid` (POSIX, one `ps` call), including ones that left its process group: a detached
+ * Chrome or a background bash job leads a group of its own, so a group signal misses it. Empty on Windows (taskkill /T
+ * already walks the tree) or when `ps` fails.
+ */
+export function descendantPids(pid: number | undefined): number[] {
+  if (!pid || process.platform === 'win32') return [];
+  let table: string;
+  try {
+    table = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return [];
+  }
+  const children = new Map<number, number[]>();
+  for (const line of table.split('\n')) {
+    const [child, parent] = line.trim().split(/\s+/).map(Number);
+    if (!child || !parent) continue;
+    children.set(parent, [...(children.get(parent) ?? []), child]);
+  }
+  const found: number[] = [];
+  for (let queue = [pid]; queue.length > 0; ) {
+    const next = queue.flatMap((each) => children.get(each) ?? []).filter((each) => !found.includes(each) && each !== pid);
+    found.push(...next);
+    queue = next;
+  }
+  return found;
+}
+
+/** The tree rooted at `pid`, as taken when the stop began: its group plus every descendant seen then. */
+function treeAlive(pid: number, descendants: readonly number[]): boolean {
+  return groupAlive(pid) || descendants.some((each) => processAlive(each));
+}
+
+/** SIGKILL to the group and to each listed descendant still alive (with its own group, when it leads one). */
+function killRest(pid: number, descendants: readonly number[]): void {
+  if (groupAlive(pid)) signalTree(pid, 'SIGKILL');
+  for (const each of descendants) if (processAlive(each)) signalTree(each, 'SIGKILL');
+}
+
+/**
  * SIGTERM to the tree, then SIGKILL to whatever is left after `graceMs`; resolves once the group is gone (a killed
  * leader stays a zombie until Node reaps it) or another `graceMs` passed. For shutdown, where the unref'd timer of
  * `killTree` would never fire because the process exits first.
  */
 export async function stopTree(pid: number | undefined, graceMs = KILL_GRACE_MS): Promise<void> {
   if (!pid) return;
+  // Taken before the signal: once the root exits, its detached descendants belong to init and no longer show as its.
+  const descendants = descendantPids(pid);
   const settle = async (ms: number): Promise<void> => {
     const deadline = Date.now() + ms;
-    while (groupAlive(pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS));
+    while (treeAlive(pid, descendants) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, STOP_POLL_MS));
   };
   signalTree(pid, 'SIGTERM');
   await settle(graceMs);
-  if (!groupAlive(pid)) return;
-  signalTree(pid, 'SIGKILL');
+  if (!treeAlive(pid, descendants)) return;
+  killRest(pid, descendants);
   await settle(graceMs);
 }
 
@@ -116,15 +169,18 @@ const stopping = new Set<number>();
 
 /**
  * SIGTERM to the tree now and SIGKILL after `graceMs` (an unref'd timer, so it never holds the process open). The
- * SIGKILL goes only when the group still exists then: a tree that closed in time is left alone, and a group id is
- * never reused while any member is alive, so the late signal cannot reach an unrelated process.
+ * SIGKILL goes only to what still exists then: a tree that closed in time is left alone, and a group id is never
+ * reused while any member is alive, so the late signal cannot reach an unrelated process. Descendants that left the
+ * group (a detached Chrome, a background bash job) are listed before the SIGTERM, so the root gets the grace to close
+ * them itself and they are killed with the rest when it does not.
  */
 export function killTree(pid: number | undefined, graceMs = KILL_GRACE_MS): void {
   if (!pid || stopping.has(pid)) return;
   stopping.add(pid);
+  const descendants = descendantPids(pid);
   signalTree(pid, 'SIGTERM');
   setTimeout(() => {
     stopping.delete(pid);
-    if (groupAlive(pid)) signalTree(pid, 'SIGKILL');
+    killRest(pid, descendants);
   }, graceMs).unref();
 }

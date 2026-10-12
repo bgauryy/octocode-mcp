@@ -100,3 +100,19 @@ test('takeSignals owns the forwarded signals until restore', () => {
   assert.deepEqual(process.listeners('SIGHUP'), [previous]);
   process.removeListener('SIGHUP', previous);
 });
+
+test('each platform package ships exactly the staged CLI binary and runtime addon', () => {
+  const { BINARIES, PLATFORMS, executableName } = require('../bin/platform.cjs');
+  assert.deepEqual(BINARIES, ['octocode']);
+  const manifest = json(join(__dirname, '..', 'package.json'));
+  // One bin, named after the unscoped package (`octocode-native`); Yarn keeps it in string form.
+  assert.equal(manifest.bin, './bin/octocode.cjs');
+  for (const [platform, { os }] of Object.entries(PLATFORMS)) {
+    const files = json(join(__dirname, '..', 'npm', platform, 'package.json')).files;
+    assert.deepEqual(
+      [...files].sort(),
+      [...BINARIES.map(name => executableName(name, os)), 'README.md', `octocode-native.${platform}.node`].sort(),
+      platform
+    );
+  }
+});

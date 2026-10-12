@@ -93,6 +93,11 @@ describe('toolHeader', () => {
 describe('resultBlock', () => {
   const body = Array.from({ length: 10 }, (_, index) => `line ${index}`).join('\n');
 
+  it('keeps every line within a width narrower than the body indent', () => {
+    const block = resultBlock(theme, { expanded: true }, { summary: 'page', body: 'first line\nsecond line' });
+    for (const width of [1, 3, 4]) for (const line of block.render(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+  });
+
   it('skips blank lines in the collapsed preview but keeps them when expanded', () => {
     const text = '# Title\n\nSource: x\n\n\npara\nmore';
     expect(rendered(resultBlock(theme, {}, { summary: 'page', body: text }))).toBe('  ⎿  page\n     # Title\n     Source: x\n     para\n     … +4 lines (ctrl+o to expand)');

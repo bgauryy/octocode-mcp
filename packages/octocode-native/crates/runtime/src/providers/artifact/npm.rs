@@ -500,31 +500,35 @@ async fn search(
 ) -> Result<ArtifactProviderPage, ArtifactError> {
     let offset = state.offset.unwrap_or(0);
     let size = query.page_size();
-    let terms = query.terms();
-    let url = endpoint(
-        &format!("{}/-/v1/search", trim_registry(&registry.base)),
-        &[
-            ("text", Some(terms)),
-            ("size", Some(size.to_string())),
-            ("from", (offset > 0).then(|| offset.to_string())),
-        ],
-    )?;
-    let authorization = registry.authorization_for(&url);
-    let response = client
-        .json_with_dns_pin(ArtifactType::Npm, url, false, authorization, dns_pin)
-        .await?
-        .ok_or_else(|| ArtifactError::new("providerError", "npm registry search failed."))?;
-    let data = object_for(&response, ArtifactType::Npm)?;
-    let total_found = total(data.get("total")).ok_or_else(|| {
-        ArtifactError::new(
-            "providerError",
-            "npm registry search omitted a valid total; pagination cannot be determined.",
-        )
-    })?;
-    let objects = data
-        .get("objects")
-        .and_then(Value::as_array)
-        .ok_or_else(|| ArtifactError::new("providerError", "Invalid npm registry search response; expected an object with results and a total."))?;
+    let window = |from: u64, size: usize| {
+        search_window(query, registry, client, dns_pin.clone(), from, size)
+    };
+    let (total_found, objects) = window(offset, size).await?;
+    // npm serves a deep window from an undocumented reach on and answers a
+    // `from` past it with earlier rows instead of an error. The page is its
+    // own rows only when the two rows ending just before it are the row
+    // before its first and its first: a restarted or clamped window fails
+    // that either way.
+    if offset > 0
+        && let Some(first) = objects.first()
+    {
+        let (_, probe) = window(offset - 1, 2).await?;
+        let name = |entry: Option<&Value>| {
+            entry
+                .and_then(|entry| entry.pointer("/package/name"))
+                .cloned()
+        };
+        let first = name(Some(first));
+        if name(probe.first()) == first || name(probe.get(1)) != first {
+            return Ok(ArtifactProviderPage {
+                artifacts: Vec::new(),
+                next_state: None,
+                total: Some(total_found),
+                terminal_limit: Some(unreachable_rows(offset, total_found)),
+                registry: Some(trim_registry(&registry.base)),
+            });
+        }
+    }
     let mut artifacts = Vec::with_capacity(objects.len().min(size));
     for entry in objects.iter().take(size) {
         let package = object_for(
@@ -562,8 +566,8 @@ async fn search(
         artifacts.push(artifact);
     }
     let has_more = offset.saturating_add(artifacts.len() as u64) < total_found;
-    let terminal_limit = (has_more && artifacts.is_empty())
-        .then(|| "npm returned an empty page before its reported total.".to_owned());
+    let terminal_limit =
+        (has_more && artifacts.is_empty()).then(|| unreachable_rows(offset, total_found));
     Ok(ArtifactProviderPage {
         next_state: (has_more && !artifacts.is_empty()).then(|| ArtifactProviderState {
             offset: Some(offset + artifacts.len() as u64),
@@ -574,6 +578,52 @@ async fn search(
         terminal_limit,
         registry: Some(trim_registry(&registry.base)),
     })
+}
+
+/// One npm search window: the registry's total and its result objects.
+async fn search_window(
+    query: &ArtifactSearchQuery,
+    registry: &ResolvedNpmRegistry,
+    client: &RegistryClient<'_>,
+    dns_pin: Option<DnsPin>,
+    from: u64,
+    size: usize,
+) -> Result<(u64, Vec<Value>), ArtifactError> {
+    let url = endpoint(
+        &format!("{}/-/v1/search", trim_registry(&registry.base)),
+        &[
+            ("text", Some(query.terms())),
+            ("size", Some(size.to_string())),
+            ("from", (from > 0).then(|| from.to_string())),
+        ],
+    )?;
+    let authorization = registry.authorization_for(&url);
+    let mut response = client
+        .json_with_dns_pin(ArtifactType::Npm, url, false, authorization, dns_pin)
+        .await?
+        .ok_or_else(|| ArtifactError::new("providerError", "npm registry search failed."))?;
+    let data = object_for(&response, ArtifactType::Npm)?;
+    let total_found = total(data.get("total")).ok_or_else(|| {
+        ArtifactError::new(
+            "providerError",
+            "npm registry search omitted a valid total; pagination cannot be determined.",
+        )
+    })?;
+    match response.get_mut("objects").map(Value::take) {
+        Some(Value::Array(objects)) => Ok((total_found, objects)),
+        _ => Err(ArtifactError::new(
+            "providerError",
+            "Invalid npm registry search response; expected an object with results and a total.",
+        )),
+    }
+}
+
+/// The terminal limit of a page npm does not serve: the rows before it are
+/// the most this search reaches.
+fn unreachable_rows(offset: u64, total: u64) -> String {
+    format!(
+        "npm serves no rows past the first {offset} for this search: at most {offset} of {total} are reachable; narrow the keywords."
+    )
 }
 
 fn registry_url(base: &Url, path: &str) -> Result<Url, ArtifactError> {

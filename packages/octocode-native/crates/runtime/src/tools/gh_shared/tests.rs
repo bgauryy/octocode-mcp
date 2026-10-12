@@ -207,7 +207,7 @@ mod provider_backed {
     /// instead of an empty, partial row with a retry lead.
     #[tokio::test]
     async fn renamed_repository_is_followed_with_every_filter() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("GET"))
             .and(path("/api/v3/search/code"))
             .and(query_param_contains("q", "repo:c/d"))
@@ -263,7 +263,7 @@ mod provider_backed {
     /// result (a retry cannot help) and says why the search is empty.
     #[tokio::test]
     async fn inaccessible_repository_drops_the_incomplete_retry() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         empty_code_search(&server, true).await;
         mount_json(
             &server,
@@ -323,7 +323,7 @@ mod provider_backed {
     /// once, and read the top hit by line range.
     #[tokio::test]
     async fn repo_scoped_hits_list_every_occurrence_with_line_numbers() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_code_search(&server).await;
         mount_ref(&server, "HEAD").await;
         mount_content(
@@ -394,7 +394,7 @@ mod provider_backed {
     /// no hit stays unreachable; a fully shown file gets none.
     #[tokio::test]
     async fn capped_or_clipped_hit_files_carry_a_read_of_every_hit() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_code_search(&server).await;
         mount_ref(&server, "HEAD").await;
         mount_content(
@@ -450,7 +450,7 @@ mod provider_backed {
     /// lowercase hits.
     #[tokio::test]
     async fn hit_reads_match_case_like_the_listing() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_code_search(&server).await;
         mount_ref(&server, "HEAD").await;
         mount_content(&server, "src/handler.py", "def wrap_app(app):\n").await;
@@ -469,7 +469,7 @@ mod provider_backed {
     /// A fully shown hit list needs no extra read.
     #[tokio::test]
     async fn fully_shown_hit_files_get_no_hit_read() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_code_search(&server).await;
         mount_ref(&server, "HEAD").await;
         mount_content(&server, "src/handler.py", "def wrap_app(app):\n").await;
@@ -487,7 +487,7 @@ mod provider_backed {
     /// owner/repo, and fragment offsets stay out of default output.
     #[tokio::test]
     async fn owner_wide_hits_keep_fragments_without_offsets() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_code_search(&server).await;
         Mock::given(method("GET"))
             .and(path("/api/v3/repos/a/b/commits/HEAD"))
@@ -535,7 +535,7 @@ mod provider_backed {
     /// candidates came from the default-branch index.
     #[tokio::test]
     async fn branch_hits_are_verified_at_the_ref_and_labeled() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_code_search(&server).await;
         mount_ref(&server, "dev").await;
         mount_content(&server, "src/handler.py", "def wrap_app(app):\n").await;
@@ -584,7 +584,7 @@ mod provider_backed {
     #[tokio::test]
     async fn a_non_default_ref_discloses_the_index_commit_and_leads_to_the_ref() {
         const HEAD_SHA: &str = "fedcba9876543210fedcba9876543210fedcba98";
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_code_search(&server).await;
         mount_ref(&server, "dev").await;
         Mock::given(method("GET"))
@@ -629,7 +629,7 @@ mod provider_backed {
             "the ref's listing is the first lead: {data}"
         );
 
-        let default_head = MockServer::start().await;
+        let default_head = MockServer::builder().start().await;
         mount_code_search(&default_head).await;
         mount_ref(&default_head, "main").await;
         mount_ref(&default_head, "HEAD").await;
@@ -651,7 +651,7 @@ mod provider_backed {
     /// there would cross the requested scope.
     #[tokio::test]
     async fn a_file_missing_at_the_requested_ref_offers_no_default_branch_read() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         app_rs_hit(&server).await;
         mount_ref(&server, "dev").await;
         mount_json(
@@ -674,14 +674,14 @@ mod provider_backed {
             data.pointer("/next/read").is_none(),
             "no read outside the requested ref: {data}"
         );
-        // GC4: the ref listing searches the moved file's name tree-wide.
+        // The ref listing searches the moved file's name tree-wide.
         let listing = &data["next"]["viewRepo"]["query"]["queries"][0];
         assert_eq!(listing["include"], json!(["app.rs"]), "{data}");
         assert_eq!(listing["ref"], TREE_SHA, "{data}");
         assert!(listing.get("path").is_none(), "{data}");
 
         // The file exists at the ref but no line holds the keyword.
-        let unmatched = MockServer::start().await;
+        let unmatched = MockServer::builder().start().await;
         app_rs_hit(&unmatched).await;
         mount_ref(&unmatched, "dev").await;
         mount_content(&unmatched, "app.rs", "fn renamed() {}\n").await;
@@ -705,7 +705,7 @@ mod provider_backed {
     /// top files: no row is a fragment without line numbers.
     #[tokio::test]
     async fn every_row_of_a_default_branch_page_has_numbered_lines() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let names = ["a", "b", "c", "d", "e", "f", "g"];
         wrap_app_hits(&server, &names).await;
         mount_ref(&server, "HEAD").await;
@@ -743,7 +743,7 @@ mod provider_backed {
     /// text as the ref's.
     #[tokio::test]
     async fn every_row_of_a_ref_page_is_read_at_the_ref() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let names = ["a", "b", "c", "d", "e", "f", "g", "h"];
         wrap_app_hits(&server, &names).await;
         mount_ref(&server, "dev").await;
@@ -797,7 +797,7 @@ mod provider_backed {
     /// without extras, separately from whether another page exists.
     #[tokio::test]
     async fn a_non_empty_incomplete_page_reports_partial_coverage() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_json(
             &server,
             "/api/v3/search/code",
@@ -837,7 +837,7 @@ mod provider_backed {
     /// was requested; otherwise the hint names the scope that came up empty.
     #[tokio::test]
     async fn empty_code_search_names_the_default_branch_index() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         empty_code_search(&server, false).await;
         mount_json(
             &server,
@@ -886,7 +886,7 @@ mod provider_backed {
     /// known to exist gets no root viewTree.
     #[tokio::test]
     async fn empty_code_search_hints_are_cause_specific() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         empty_code_search(&server, false).await;
         for (repo, full_name) in [("a/b", "a/b"), ("a/old", "c/d"), ("c/d", "c/d")] {
             mount_json(
@@ -925,9 +925,16 @@ mod provider_backed {
             )
             .await
             .expect("search");
-        // A root listing cannot show a keyword is absent: no lead.
+        // Beside the clone lead (dropped where clone is unavailable), the
+        // root listing is a route every surface runs.
+        assert_eq!(
+            existing.data["next"]["viewTree"]["query"]["queries"][0],
+            json!({"owner":"a","repo":"b"}),
+            "{}",
+            existing.data
+        );
         assert!(
-            existing.data["next"].get("viewTree").is_none(),
+            existing.data["next"].get("cloneRepo").is_some(),
             "{}",
             existing.data
         );
@@ -961,7 +968,7 @@ mod provider_backed {
     /// not the default branch the index covers.
     #[tokio::test]
     async fn empty_scoped_recovery_keeps_the_requested_branch() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         empty_code_search(&server, false).await;
         for (repo, archived) in [("b", false), ("old", true)] {
             mount_json(&server, format!("/api/v3/repos/a/{repo}"), 200, json!({"default_branch":"main","full_name":format!("a/{repo}"),"archived":archived}),).await;
@@ -996,7 +1003,7 @@ mod provider_backed {
     /// Path matches carry no empty snippet list.
     #[tokio::test]
     async fn path_match_rows_omit_empty_matches() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_json(
             &server,
             "/api/v3/search/code",
@@ -1023,7 +1030,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn picked_rows_keep_the_repository_id() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_json(
             &server,
             "/api/v3/search/repositories",
@@ -1062,7 +1069,7 @@ mod provider_backed {
     /// The top repository leads to its tree; an empty page leads nowhere.
     #[tokio::test]
     async fn top_repository_leads_to_its_tree() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_json(
             &server,
             "/api/v3/search/repositories",
@@ -1073,7 +1080,7 @@ mod provider_backed {
             }),
         )
         .await;
-        let none = MockServer::start().await;
+        let none = MockServer::builder().start().await;
         mount_json(
             &none,
             "/api/v3/search/repositories",
@@ -1115,7 +1122,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn owner_listing_updated_sort_tracks_pushes_and_excludes_archived() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         recently_pushed_org_repos(
             &server,
             json!([repo_item("live", false), repo_item("old", true)]),
@@ -1144,7 +1151,7 @@ mod provider_backed {
     /// default best-match listing asks for the most recently pushed.
     #[tokio::test]
     async fn owner_listing_default_sort_is_recent_activity_not_creation() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         recently_pushed_org_repos(&server, json!([repo_item("live", false)])).await;
         let out = run(
             &server,
@@ -1160,7 +1167,7 @@ mod provider_backed {
     async fn owner_listing_reads_past_archived_pages_and_follows_the_link_cursor() {
         // A full provider page of mostly archived repositories plus a Link
         // next must keep paging instead of ending with a fabricated total.
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let link = |page: usize| {
             format!(
                 "<{}/api/v3/orgs/o/repos?page={page}&per_page=3>; rel=\"next\"",
@@ -1241,7 +1248,7 @@ mod provider_backed {
     /// favor the query, and pagination does not restate next.nextPage.
     #[tokio::test]
     async fn repository_rows_are_compact_and_paging_is_not_duplicated() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let topics = (0..20)
             .map(|n| format!("t{n}"))
             .chain(["http-client".into()])
@@ -1313,7 +1320,7 @@ mod provider_backed {
     /// listing, and reaches GitHub as normalized qualifiers.
     #[tokio::test]
     async fn qualifiers_reach_the_search_query() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("GET"))
             .and(path("/api/v3/search/repositories"))
             .and(query_param(
@@ -1340,7 +1347,7 @@ mod provider_backed {
     /// call, keeping the dir/files row shape.
     #[tokio::test]
     async fn tree_pattern_finds_paths_by_name_at_any_depth() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "main").await;
         let tree = json!([
             {"path":"starlette","type":"tree"},
@@ -1389,7 +1396,7 @@ mod provider_backed {
     /// cannot be proven to belong to the resolved commit.
     #[tokio::test]
     async fn deep_tree_is_fetched_once_at_the_resolved_commit() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "main").await;
         let tree_object = "b".repeat(40);
         Mock::given(method("GET"))
@@ -1444,7 +1451,7 @@ mod provider_backed {
     async fn ignored_directories_hide_their_descendants_from_every_consumer() {
         let expected = json!([{"dir":".","files":["app.rs (3)"]}]);
         // Recursive Git Trees listing.
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "main").await;
         mount_json(
             &server,
@@ -1490,7 +1497,7 @@ mod provider_backed {
         let _ = std::fs::remove_dir_all(local);
 
         // Contents walk (the recursive tree is unavailable).
-        let walked = MockServer::start().await;
+        let walked = MockServer::builder().start().await;
         mount_ref(&walked, "main").await;
         Mock::given(method("GET"))
             .and(wiremock::matchers::path_regex("/git/trees/"))
@@ -1520,7 +1527,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn capped_search_is_terminal_only_on_the_last_reachable_page() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let item = json!({"name":"a.rs","path":"a.rs","sha":"s","html_url":"h",
                 "repository":{"full_name":"o/r","html_url":"h","url":"u"}});
         mount_json(
@@ -1552,7 +1559,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn tree_missing_path_on_existing_branch_does_not_fall_back() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("GET"))
             .and(path("/api/v3/repos/a/b/contents/missing"))
             .and(query_param("ref", TREE_SHA))
@@ -1590,7 +1597,7 @@ mod provider_backed {
     /// never a silent listing of the default branch.
     #[tokio::test]
     async fn tree_missing_branch_is_an_error_not_a_default_branch_listing() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_json(
             &server,
             "/api/v3/repos/a/b/commits/gone",
@@ -1632,7 +1639,7 @@ mod provider_backed {
     /// that same commit even if the branch moves.
     #[tokio::test]
     async fn tree_pins_its_pages_to_the_resolved_commit() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_json(
             &server,
             "/api/v3/repos/a/b",
@@ -1668,7 +1675,7 @@ mod provider_backed {
     /// page carries files, not only folders.
     #[tokio::test]
     async fn deep_tree_pages_carry_files_with_their_folders() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "main").await;
         let mut tree = Vec::new();
         // 10 top-level folders × 3 subfolders × 3 files: 40 folders
@@ -1703,7 +1710,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn tree_on_a_file_path_is_a_clear_error() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "main").await;
         mount_json(
             &server,
@@ -1726,7 +1733,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn materialize_skips_binary_files_with_a_warning() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let sha = "0123456789abcdef0123456789abcdef01234567";
         mount_json(
             &server,
@@ -1791,7 +1798,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn tree_reports_omitted_entries_and_next_page_drops_completed_metadata() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "main").await;
         mount_json(
             &server,
@@ -1831,7 +1838,7 @@ mod provider_backed {
 
     #[tokio::test]
     async fn tree_fallback_walk_stops_at_the_directory_fetch_cap() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "main").await;
         Mock::given(method("GET"))
             .and(wiremock::matchers::path_regex("/git/trees/"))
@@ -1878,7 +1885,7 @@ mod provider_backed {
     /// entry file (outlined) in a wide directory, at the listed commit.
     #[tokio::test]
     async fn a_listing_leads_to_an_outline_read_of_its_entry_file() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let files = (0..12)
                 .map(|n| json!({"name":format!("m{n}.py"),"path":format!("pkg/m{n}.py"),"type":"file","size":4}))
                 .chain(std::iter::once(json!({"name":"__init__.py","path":"pkg/__init__.py","type":"file","size":4})))
@@ -1901,7 +1908,7 @@ mod provider_backed {
     /// A materialized listing points at the listed directory on disk.
     #[tokio::test]
     async fn materialize_leads_into_the_local_copy_of_the_listed_directory() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_listing(
             &server,
             "src",
@@ -1921,7 +1928,7 @@ mod provider_backed {
             .to_owned();
         assert!(local.ends_with("/src"), "{}", out.data);
         assert!(std::path::Path::new(&local).join("lib.rs").exists());
-        // GS4: no lead re-lists the tree this response just returned.
+        // No lead re-lists the tree this response just returned.
         assert!(
             out.data.pointer("/next/exploreClone").is_none(),
             "{}",
@@ -1934,7 +1941,7 @@ mod provider_backed {
     /// repository lookup per repository, not one per call.
     #[tokio::test]
     async fn the_default_branch_is_looked_up_once_per_repository() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_ref(&server, "HEAD").await;
         Mock::given(method("GET"))
             .and(path("/api/v3/repos/a/b"))
@@ -2012,7 +2019,7 @@ mod provider_backed {
     /// The searches share `pageSize`, so the page does not grow with them.
     #[tokio::test]
     async fn several_extensions_share_one_page() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         for (extension, file) in [("ts", "a.ts"), ("js", "b.js")] {
             Mock::given(method("GET"))
                 .and(path("/api/v3/search/code"))
@@ -2052,7 +2059,7 @@ mod provider_backed {
     /// pages carry neither the warning nor its HEAD lookup.
     #[tokio::test]
     async fn the_index_warning_is_stated_on_the_first_ref_page_only() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         mount_json(
             &server,
             "/api/v3/search/code",
@@ -2089,7 +2096,7 @@ mod provider_backed {
     /// the index may lag, so verify the path before concluding absence.
     #[tokio::test]
     async fn an_empty_scoped_search_leads_to_its_structure() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         empty_code_search(&server, false).await;
         mount_json(
             &server,
@@ -2116,7 +2123,7 @@ mod provider_backed {
     /// keywords without filters.
     #[tokio::test]
     async fn repositories_lead_to_the_tree_and_an_empty_search_broadens() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("GET"))
             .and(path("/api/v3/search/repositories"))
             .and(wiremock::matchers::query_param_contains(
@@ -2144,7 +2151,7 @@ mod provider_backed {
         )
         .await
         .expect("search");
-        // GR4: repo-discovery words are not code keywords; the top
+        // Repo-discovery words are not code keywords; the top
         // repository leads to its tree only.
         assert!(out.data["next"].get("searchCode").is_none(), "{}", out.data);
         assert_eq!(

@@ -17,7 +17,7 @@ pub(crate) mod policy;
 mod private_file;
 mod process_status;
 pub mod providers;
-pub mod regex;
+mod regex_repair;
 pub mod response;
 pub mod runtime;
 pub mod security;

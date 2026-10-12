@@ -499,10 +499,16 @@ fn absolutize(path: impl AsRef<Path>) -> PathBuf {
     normalize(&joined)
 }
 
+/// `path` with `\` read as `/`, then folded by [`lexical`].
 fn normalize(path: &Path) -> PathBuf {
+    lexical(Path::new(&path.to_string_lossy().replace('\\', "/")))
+}
+
+/// `.` and `..` folded lexically, without touching the file system; a `..`
+/// above the first component is dropped.
+pub(crate) fn lexical(path: &Path) -> PathBuf {
     let mut result = PathBuf::new();
-    let portable = path.to_string_lossy().replace('\\', "/");
-    for component in Path::new(&portable).components() {
+    for component in path.components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {

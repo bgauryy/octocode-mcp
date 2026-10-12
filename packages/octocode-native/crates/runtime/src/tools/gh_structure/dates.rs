@@ -1,6 +1,7 @@
 //! Freshness of a tree page: each listed entry's last-commit date at the
 //! listed commit, and that commit's own date, as `YYYY-MM-DD`.
 use super::*;
+use crate::tools::paging::push_warnings;
 use std::collections::HashMap;
 
 /// Dates of one listing page.
@@ -127,14 +128,16 @@ pub(super) fn expand(
     let pages = (first_undated / DATED_PER_PAGE + 1)..=end.div_ceil(DATED_PER_PAGE);
     let mut rows = Vec::new();
     for number in pages {
-        let mut row = super::listing::public_query(pinned)?;
+        let mut row = query_row(pinned, &[]);
         row["page"] = json!(number);
         row["pageSize"] = json!(DATED_PER_PAGE);
         rows.push(row);
     }
-    crate::tools::gh_shared::push_warning(
+    push_warnings(
         value,
-        format!("Dates cover the first {DATED_PER_PAGE} entries; {undated} more are undated."),
+        [format!(
+            "Dates cover the first {DATED_PER_PAGE} entries; {undated} more are undated."
+        )],
     );
     value["next"]["expandDates"] =
         crate::tools::result::Continuation::input(ToolId::GhStructure, json!({ "queries": rows }))
@@ -168,7 +171,7 @@ pub(super) fn attach(value: &mut Value, dates: PageDates) {
         value["commitDate"] = json!(commit);
     }
     if let Some(warning) = dates.warning {
-        crate::tools::gh_shared::push_warning(value, warning);
+        push_warnings(value, [warning]);
     }
     if dates.entries.is_empty() {
         return;

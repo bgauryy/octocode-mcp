@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { catastrophicCommand } from '../src/files/bash-guard.js';
+import { catastrophicCommand } from '../src/permission/shell.js';
 
 describe('bash guard command substitutions', () => {
   it('blocks substitutions in unquoted heredoc bodies even when nothing pipes them to a shell', () => {

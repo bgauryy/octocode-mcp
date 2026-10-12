@@ -3,14 +3,15 @@ import { StringEnum } from '@earendil-works/pi-ai';
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 import { Box, Text } from '@earendil-works/pi-tui';
 import { Type } from 'typebox';
-import { firstLine, isRecord, textResult } from '../shared/util.js';
+import { firstLine, isRecord, modelLookup, textResult, unpricedModel } from '../shared/util.js';
 import { storedText } from '../shared/sanitize.js';
 import { formatClock } from '../shared/format.js';
 import { resolveToolPath } from '../shared/home.js';
 import { clip, timingOf, plural, resultBlock, timedTool, toolHeader } from '../shared/render.js';
 import { describeChanges, describeConflicts, describeMembers, mutatedPaths } from './routing.js';
+import { checkGoal, GOAL_DESCRIPTION } from './identity.js';
 import { MESSAGE_MAX_CHARS, MESSAGE_TYPE, type Team } from './session.js';
-import type { Message } from './model.js';
+import type { MailDetails } from './model.js';
 
 const DEFAULT_CHANGES_WINDOW_MIN = 60;
 const DEFAULT_CHANGES_LIMIT = 20;
@@ -20,17 +21,18 @@ type StopAgent = (id: string, by: string) => string | undefined;
 /**
  * Registers the team tools and events; returns the reservation gate for the tool-call pipeline (`index.ts`).
  * `stopAgent` stops a background subagent this session started (wired by `index.ts` from the subagents domain); unset
- * in a subagent, which cannot start any.
+ * in a subagent, which cannot start any. `beforeLeave` runs at session shutdown before this agent leaves the team:
+ * the subagents it stops can still message it and release their reservations while it is a member.
  */
 export function registerCollab(
   pi: ExtensionAPI,
   team: Team,
-  options: { stopAgent?: StopAgent } = {},
+  options: { stopAgent?: StopAgent; beforeLeave?: () => Promise<unknown> } = {},
 ): { reservationGate: (event: ToolCallEvent, ctx: ExtensionContext) => Promise<ToolCallEventResult | undefined> } {
   registerMessageRenderer(pi);
   registerCoordinateTool(pi, team, options.stopAgent);
   registerSendMessageTool(pi, team);
-  registerTeamEvents(pi, team);
+  registerTeamEvents(pi, team, options.beforeLeave);
   // Reservations are enforced where the edit happens, so a model that forgot to check still cannot overwrite a peer.
   // The `file` tool checks each of its queries itself (one held path fails one change, not the whole batch); this covers Pi's own edit and write.
   const reservationGate = async (event: ToolCallEvent, ctx: ExtensionContext): Promise<ToolCallEventResult | undefined> => {
@@ -47,13 +49,18 @@ export function registerCollab(
 function registerMessageRenderer(pi: ExtensionAPI): void {
   // Agent messages are shown in full, collapsed or not: they are short (capped at MESSAGE_MAX_CHARS) and the user reads them.
   pi.registerMessageRenderer(MESSAGE_TYPE, (message, { outputPad }, theme) => {
-    const details = message.details as Partial<Message> | undefined;
-    const from = clip(String(details?.from ?? 'agent'), 60);
-    const kind = details?.replyRequired ? ' · reply requested' : '';
+    const mail = (message.details as Partial<MailDetails> | undefined)?.messages;
     const box = new Box(outputPad ?? 1, 0);
-    box.addChild(new Text(`${theme.fg('accent', '✉')} ${theme.fg('toolTitle', theme.bold(`from ${from}`))} ${theme.fg('dim', `· ${formatClock(details?.at ?? Date.now())}${kind}`)}`, 0, 0));
-    // resultBlock sanitizes the body.
-    box.addChild(resultBlock(theme, { expanded: true }, { summary: '', body: String(details?.text ?? ''), error: false }));
+    // Details are another process's data: anything but a batch shows the text the model got.
+    const entries = Array.isArray(mail) ? mail : [{ from: 'agent', text: typeof message.content === 'string' ? message.content : '', at: Date.now() }];
+    for (const entry of entries) {
+      const sender = entry?.sender;
+      const from = clip(`${String(entry?.from ?? 'agent')}${sender ? ` (${sender.goal ? `${sender.role}: ${sender.goal}` : sender.role})` : ''}`, 100);
+      const kind = entry?.replyRequired ? ' · reply requested' : '';
+      box.addChild(new Text(`${theme.fg('accent', '✉')} ${theme.fg('toolTitle', theme.bold(`from ${from}`))} ${theme.fg('dim', `· ${formatClock(entry?.at ?? Date.now())}${kind}`)}`, 0, 0));
+      // resultBlock sanitizes the body.
+      box.addChild(resultBlock(theme, { expanded: true }, { summary: '', body: String(entry?.text ?? ''), error: false }));
+    }
     return box;
   });
 }
@@ -72,13 +79,13 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
     parameters: Type.Object({
       action: StringEnum(actions, {
         description:
-          'list: live agents, their activity and held paths; join: register or update your task note (subagents join automatically); leave: unregister and release your reservations; ' +
+          'list: live agents, their activity and held paths; join: register or update your goal (subagents join automatically); leave: unregister and release your reservations; ' +
           'lock: reserve paths, all or none; unlock: release the given paths, or all without paths; ' +
           (canStop ? 'stop: end a background subagent you started (id), killing its process tree; its report says it was stopped; ' : '') +
           'changes: files agents changed recently, newest first, with who and when',
       }),
       ...(canStop ? { id: Type.Optional(Type.String({ description: 'stop: id of the background subagent to end' })) } : {}),
-      note: Type.Optional(Type.String({ description: 'join: what you are working on' })),
+      note: Type.Optional(Type.String({ description: `join: your goal. ${GOAL_DESCRIPTION}` })),
       paths: Type.Optional(Type.Array(Type.String(), { maxItems: 32, description: 'lock/unlock: files, or "dir/" for a tree; unlock without paths releases all. changes: only files under these paths' })),
       withinMinutes: Type.Optional(Type.Integer({ minimum: 1, maximum: 1440, description: 'changes: how far back to look (default 60)' })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100, description: 'changes: most files to list (default 20)' })),
@@ -87,7 +94,7 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
     async execute(_id, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
       const now = Date.now();
-      if (params.action === 'join') team.join(params.note ? storedText(firstLine(params.note), 160) : undefined);
+      if (params.action === 'join') team.join(params.note ? checkGoal(params.note) : undefined);
       else if (params.action === 'leave') {
         team.leave();
         return textResult('Left the team.');
@@ -141,6 +148,7 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
     label: 'Send message',
     description:
       'Send steering, a question or evidence to a live agent in this repository, or to every agent in your session tree. Delivery is queued: a busy recipient reads it at its next step, and you are told if it left unread. ' +
+      'To redirect a subagent you started now, set interrupt: its current step stops (a running tool is cancelled) and it continues with your message. ' +
       'A finished subagent cannot receive messages; give it a new `agent` task. A message over the size limit is refused: send a summary and a file path.',
     promptSnippet: 'Message a subagent or teammate',
     promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker, a decision or evidence. Make it self-contained, reply in the existing thread with replyTo, and skip acknowledgements and completion pings (final reports arrive automatically).'],
@@ -149,15 +157,20 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
       message: Type.String({ maxLength: MESSAGE_MAX_CHARS, description: 'Self-contained text; for long results send a file path' }),
       replyRequired: Type.Optional(Type.Boolean({ description: 'true: a question that wakes an idle recipient and asks for an answer; false: an FYI read at its next turn. Default true for direct messages, false for broadcasts and replies' })),
       replyTo: Type.Optional(Type.Integer({ minimum: 1, description: 'Number of the message you answer (send to its sender); answering a question wakes the asker' })),
+      interrupt: Type.Optional(Type.Boolean({ description: 'true: stop the current step of one subagent you started (its running tool is cancelled) and continue it with this message, for a changed plan or wrong direction. Default false: read at its next step' })),
     }),
     async execute(_id, params, signal) {
       signal?.throwIfAborted();
       team.join();
-      const result = team.send(params.to, params.message, {
+      const result = await team.send(params.to, params.message, {
+        ...(signal ? { signal } : {}),
         ...(params.replyRequired !== undefined ? { replyRequired: params.replyRequired } : {}),
         ...(params.replyTo !== undefined ? { replyTo: params.replyTo } : {}),
+        ...(params.interrupt ? { interrupt: true } : {}),
       });
       if ('error' in result) throw new Error(result.error);
+      if (result.resumed) return textResult(result.resumed, { to: result.sent });
+      if (params.interrupt) return textResult(`Interrupting ${result.sent.join(', ')} with message #${result.id}.`, { to: result.sent, id: result.id });
       const departed = result.departed?.length ? ` Not sent to ${result.departed.join(', ')} (left the team).` : '';
       return textResult(`Queued message #${result.id} for ${result.sent.join(', ')}.${departed}`, { to: result.sent, id: result.id, ...(result.departed?.length ? { departed: result.departed } : {}) });
     },
@@ -178,11 +191,20 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
   }));
 }
 
-function registerTeamEvents(pi: ExtensionAPI, team: Team): void {
+function registerTeamEvents(pi: ExtensionAPI, team: Team, beforeLeave?: () => Promise<unknown>): void {
   pi.on('session_start', async (_event, ctx) => team.start(ctx));
-  pi.on('session_shutdown', async () => team.stop());
+  pi.on('session_shutdown', async () => {
+    try {
+      await beforeLeave?.();
+    } finally {
+      team.stop();
+    }
+  });
   pi.on('agent_start', async () => team.onAgentStart());
   pi.on('agent_settled', async () => team.onAgentSettled());
+  // Team mail is delivered when the model is called with it. Pi emits `context` before every model call, whichever way
+  // a message entered the conversation (message_start reaches extensions only for steered and prompted messages).
+  pi.on('context', async (event) => void team.onContext(event.messages as Array<{ role?: string; customType?: string; details?: unknown }>));
   // Who changed which file, for `coordinate changes`: Pi's edit/write by their arguments, `file` by its outcomes (a
   // batch can partly fail). Arguments are only on the start event, so they wait here for the end.
   const pending = new Map<string, string[]>();
@@ -203,7 +225,7 @@ function registerTeamEvents(pi: ExtensionAPI, team: Team): void {
       // A missing record only makes `coordinate changes` less complete.
     }
   });
-  pi.on('message_end', async (event) => {
-    if (event.message.role === 'assistant') team.onUsage(event.message.usage, event.message.model);
+  pi.on('message_end', async (event, ctx) => {
+    if (event.message.role === 'assistant') team.onUsage(event.message.usage, event.message.model, unpricedModel(event.message, modelLookup(ctx)) !== undefined);
   });
 }

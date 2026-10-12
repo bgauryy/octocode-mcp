@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { startCdpStub, type CdpStub } from './fixtures/cdp-stub.js';
+import { fakeCtx, fakePermission } from './fake-pi.js';
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
@@ -11,7 +12,7 @@ vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.21
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
 
 type Result = { content: Array<{ type: string; text?: string; data?: string }> };
-type Tool = { execute: (id: string, params: Record<string, unknown>) => Promise<Result> };
+type Tool = { execute: (id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, onUpdate: undefined, ctx: ExtensionContext) => Promise<Result> };
 
 const stubs: CdpStub[] = [];
 const tools: InstanceType<typeof BrowserTool>[] = [];
@@ -31,12 +32,12 @@ async function stub(options: Parameters<typeof startCdpStub>[0] = {}): Promise<C
 }
 
 function register() {
-  const browser = new BrowserTool();
+  const browser = new BrowserTool(fakePermission());
   tools.push(browser);
   let tool: Tool | undefined;
   const pi = { registerTool: (definition: Tool) => (tool = definition), on: () => undefined } as unknown as ExtensionAPI;
   registerBrowserTool(pi, browser);
-  const run = (params: Record<string, unknown>) => tool!.execute('id', params);
+  const run = (params: Record<string, unknown>) => tool!.execute('id', params, undefined, undefined, fakeCtx({ cwd: process.cwd(), hasUI: false }));
   const text = async (params: Record<string, unknown>) => (await run(params)).content.map((part) => part.text ?? `[${part.type}]`).join('\n');
   return { run, text };
 }
@@ -44,10 +45,10 @@ function register() {
 describe('browser screenshots', () => {
   const BIG = 'A'.repeat(700_000);
   /** Captures answer by what was asked: `sizes` maps a clip scale (or 'full') to the base64 the page returns. */
-  async function shots(sizes: Record<string, string>) {
+  async function shots(sizes: Record<string, string>, origin = { x: 0, y: 0 }) {
     const cdp = await stub({
       handle: (method, params) => {
-        if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { clientWidth: 1280, clientHeight: 800 } };
+        if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { clientWidth: 1280, clientHeight: 800, pageX: origin.x, pageY: origin.y } };
         if (method === 'Page.captureScreenshot') {
           const clip = params['clip'] as { scale: number } | undefined;
           return { data: sizes[clip ? String(clip.scale) : 'full'] ?? 'AAAA' };
@@ -97,6 +98,12 @@ describe('browser screenshots', () => {
     expect(result.content.map((part) => part.type)).toEqual(['text']);
     expect(result.content[0]!.text).toMatch(/^Screenshot too large for the context, not shown \(jpeg, \d+ KB\)\./);
     expect(fs.existsSync(savedPath(result)!)).toBe(true);
+  });
+
+  it('retakes the visible region after horizontal and vertical scrolling', async () => {
+    const { cdp, run } = await shots({ full: BIG, '0.5': 'QUJD' }, { x: 44, y: 1100 });
+    await run({ action: 'screenshot' });
+    expect(captures(cdp)[1]).toMatchObject({ clip: { x: 44, y: 1100, width: 1280, height: 800, scale: 0.5 } });
   });
 });
 

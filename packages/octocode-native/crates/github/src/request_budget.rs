@@ -76,6 +76,13 @@ impl RequestBudget {
         (self.deadline + waited).min(self.wait_until.max(self.deadline))
     }
 
+    /// The latest an admission wait starting now may end: the request time
+    /// left or `cap`, whichever ends later, within `wait_until`.
+    pub fn admission_deadline(&self, cap: Duration) -> Instant {
+        self.effective_deadline()
+            .max(self.wait_until.min(Instant::now() + cap))
+    }
+
     /// Credit `waited` spent on a rate limit, not on the request.
     pub fn credit_wait(&self, waited: Duration) {
         let millis = u64::try_from(waited.as_millis()).unwrap_or(u64::MAX);

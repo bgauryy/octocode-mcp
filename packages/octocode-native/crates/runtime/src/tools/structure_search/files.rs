@@ -115,6 +115,11 @@ struct FilesWalk {
     available: usize,
     total_discovered: usize,
     was_capped: bool,
+    /// Files, directories and file bytes of this window's rows, counted
+    /// before directories with their own group fold into its header.
+    files: usize,
+    dirs: usize,
+    bytes: i64,
     uncovered: super::Uncovered,
     warnings: Vec<String>,
 }
@@ -369,6 +374,13 @@ fn walk_files(
             )
         });
     }
+    let (files, dirs, bytes) = rows.iter().fold((0, 0, 0), |(f, d, b), row| {
+        if row.kind == "directory" {
+            (f, d + 1, b)
+        } else {
+            (f + 1, d, b + row.size)
+        }
+    });
     drop_grouped_dirs(&mut rows);
     Ok(FilesWalk {
         rows,
@@ -376,6 +388,9 @@ fn walk_files(
         available,
         total_discovered: native.total_discovered as usize,
         was_capped: native.was_capped,
+        files,
+        dirs,
+        bytes,
         uncovered: super::Uncovered {
             ignored: ignored.into_inner(),
             withheld: withheld
@@ -503,16 +518,12 @@ fn files_page(
         out["status"] = json!("empty")
     }
     let mut warnings = walk.warnings.clone();
+    warnings.extend(crate::policy::include::parent_glob_warning(
+        &q.include, &q.exclude,
+    ));
     cut.finish(&mut out, q, &mut warnings);
     if page == 1 {
-        let (files, dirs, bytes) = walk.rows.iter().fold((0, 0, 0), |(f, d, b), row| {
-            if row.kind == "directory" {
-                (f, d + 1, b)
-            } else {
-                (f + 1, d, b + row.size)
-            }
-        });
-        let mut summary = json!({"files": files, "dirs": dirs, "bytes": bytes});
+        let mut summary = json!({"files": walk.files, "dirs": walk.dirs, "bytes": walk.bytes});
         if walk.uncovered.ignored > 0 {
             summary["ignored"] = json!(walk.uncovered.ignored);
         }
@@ -520,17 +531,12 @@ fn files_page(
             summary["pruned"] = json!(pruned);
         }
         out["summary"] = summary;
+        super::lead_to_ignored(&mut out, q, &walk.uncovered);
     }
     if page == 1
         && let Some(read) = outline_read(&walk.rows[shown], root)
     {
         out["next"]["read"] = read;
-    }
-    if !early_exit
-        && (scan_cut || walk.total_discovered > total)
-        && let Some(pagination) = out.get_mut("pagination")
-    {
-        pagination["totalFilesFound"] = json!(walk.total_discovered)
     }
     warnings.extend(walk.uncovered.withheld.notice());
     if !warnings.is_empty() {

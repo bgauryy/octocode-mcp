@@ -9,14 +9,11 @@
 // bot-detection self-test page — see docs/launch-stealth.md for more test sites).
 //
 import { writeFileSync } from 'fs';
-import { join, resolve } from 'path';
-import { pathToFileURL } from 'url';
+import { join } from 'path';
 
 const TARGET_URL =
   process.env.STEALTH_CHECK_URL ?? 'https://bot.sannysoft.com/';
-const { verifyStealth } = await import(
-  pathToFileURL(resolve(process.cwd(), '.octocode', 'undercover.mjs')).href
-);
+import { verifyStealth } from '../undercover.mjs';
 
 export async function run(cdp) {
   await cdp.send('Page.enable', {});

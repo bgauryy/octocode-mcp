@@ -22,6 +22,9 @@
 #   local-mcp[-<v>]   Octocode MCP started with the clones' root as cwd and WORKSPACE_ROOT;
 #                     clasify offered when the name contains "clasify"; OCTO_MCP_CMD_<arm> as above
 # Env: RUNNER_MODEL (default claude-sonnet-5-5), RUNNER_MAX_TURNS (default 60).
+#      RUNNER=pi runs the same brief, arm tools and isolation with `pi` instead of `claude -p`
+#      (pi_runner.py; PI_PROVIDER default guy-provider-anthropic-x, RUNNER_TIMEOUT default
+#      1200 s). pi campaigns are not comparable with claude-runner campaigns.
 set -euo pipefail
 
 CAMP="$(mkdir -p "$1" && cd "$1" && pwd)"; ARM="$2"; PASS="$3"; Q="$4"
@@ -114,6 +117,18 @@ export PATH="$HERE/guard:$HERE:$PATH"
 export GHC_LOG="$RUN/ghc.jsonl"   # headroom wrapper's own log (diagnostic only)
 
 cd "$WORK"
+if [ "${RUNNER:-claude}" = pi ]; then
+  printf '%s' "$PROMPT" > "$RUN/prompt.md"
+  set +e
+  python3 "$HERE/pi_runner.py" --run "$RUN" --prompt "$RUN/prompt.md" \
+    --provider "${PI_PROVIDER:-guy-provider-anthropic-x}" --model "${RUNNER_MODEL:-claude-sonnet-5-5}" \
+    --timeout "${RUNNER_TIMEOUT:-1200}" -- "${FLAGS[@]}"
+  STATUS=$?
+  set -e
+  python3 "$HERE/transcript_to_log.py" --format pi --max-turns "${RUNNER_MAX_TURNS:-60}" \
+    --transcript "$RUN/transcript.jsonl" --log "$CAMP/$ID.jsonl" --run-dir "$RUN" --question "$Q" | sed "s/^/$ID /"
+  exit "$STATUS"
+fi
 set +e
 claude -p "$PROMPT" \
   --model "${RUNNER_MODEL:-claude-sonnet-5-5}" \

@@ -85,14 +85,20 @@ const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 describe('session extras', () => {
   it('records only what Pi does not know: live pid, cost, tokens and files changed, keyed by session id', async () => {
     const usage = (total: number, tokens: number) => ({ input: tokens, output: 0, totalTokens: tokens, cost: { total } });
-    const { fire, ctx, start, id } = setup({ entries: [{ type: 'message', id: 'a0', message: { role: 'assistant', usage: usage(0.25, 15) } }] });
+    // A subagent's usage rides its `agent` tool result: it counts, as in the footer.
+    const { fire, ctx, start, id } = setup({ entries: [{ type: 'message', id: 'a0', message: { role: 'assistant', usage: usage(0.25, 15) } }, { type: 'message', id: 't0', message: { role: 'toolResult', usage: usage(1, 100) } }] });
     await start();
-    expect(row(id)).toEqual({ id, branch: null, head: null, cost: 0, tokens: 0, files_changed: 0, pid: process.pid, pid_started: processStartTime(process.pid) ?? null });
+    expect(row(id)).toEqual({ id, branch: null, head: null, cost: 0, tokens: 0, files_changed: 0, pid: process.pid, pid_started: processStartTime(process.pid) ?? null, unpriced: 0 });
     // Totals are read once at start, then each reply adds its usage: agent_end does not rescan the session.
     await fire('message_end', { type: 'message_end', message: { role: 'assistant', usage: usage(0.5, 25) } }, ctx);
     await fire('message_end', { type: 'message_end', message: { role: 'user', usage: usage(9, 9) } }, ctx);
+    await fire('message_end', { type: 'message_end', message: { role: 'toolResult', usage: usage(2, 200) } }, ctx);
     await fire('agent_end', { type: 'agent_end', messages: [] }, ctx);
-    expect(row(id)).toMatchObject({ tokens: 40, cost: 0.75, files_changed: 3 });
+    expect(row(id)).toMatchObject({ tokens: 340, cost: 3.75, files_changed: 3, unpriced: 0 });
+    // A subagent result that ran partly on a model without pricing marks the session.
+    await fire('message_end', { type: 'message_end', message: { role: 'toolResult', usage: usage(0.1, 10), details: { unpriced: true } } }, ctx);
+    await fire('agent_end', { type: 'agent_end', messages: [] }, ctx);
+    expect(row(id)).toMatchObject({ unpriced: 1 });
     await fire('session_shutdown', { type: 'session_shutdown', reason: 'quit' }, ctx);
     expect(row(id)?.pid).toBeNull();
     // A fresh start says nothing.
@@ -118,6 +124,24 @@ describe('session extras', () => {
     run('checkout', '-q', '-b', 'feature');
     await host.fire('agent_end', { type: 'agent_end', messages: [] }, host.ctx);
     await vi.waitFor(() => expect(row('sess-git')?.branch).toBe('feature'));
+  });
+
+  it('records a custom session dir at start, so the sweep lists its sessions; never the default dir', async () => {
+    const savedAgentDir = process.env['PI_CODING_AGENT_DIR'];
+    process.env['PI_CODING_AGENT_DIR'] = tmp();
+    try {
+      const custom = setup({ id: 'sess-custom' });
+      await custom.start();
+      expect(custom.index().sessionDirs()).toEqual([path.dirname(custom.file)]);
+      const plain = setup({ id: 'sess-default' });
+      const defaultDir = path.join(process.env['PI_CODING_AGENT_DIR'], 'sessions', '--project--');
+      Object.assign(plain.ctx.sessionManager, { getSessionDir: () => defaultDir });
+      await plain.start();
+      expect(plain.index().sessionDirs()).toEqual([path.dirname(custom.file)]);
+    } finally {
+      if (savedAgentDir === undefined) delete process.env['PI_CODING_AGENT_DIR'];
+      else process.env['PI_CODING_AGENT_DIR'] = savedAgentDir;
+    }
   });
 
   it('keeps no rows for a subagent and registers only the after-compaction running-work note', async () => {
@@ -315,7 +339,8 @@ describe('/octocode sessions', () => {
     const current = setup({ id: 'cur', name: 'Current work' });
     await current.start();
     const agent = sharedAgentDb();
-    agent.db.prepare("INSERT INTO sessions (id, cost, files_changed, branch) VALUES ('other', 1.5, 2, 'feat/x')").run();
+    agent.db.prepare("INSERT INTO sessions (id, cost, files_changed, branch, unpriced) VALUES ('other', 1.5, 2, 'feat/x', 1)").run();
+    agent.db.prepare("INSERT INTO sessions (id, cost, unpriced) VALUES ('elsewhere', 0, 1)").run();
     piSessions = [
       info('cur', { path: current.file, name: 'Current work', firstMessage: 'hello', messageCount: 0 }),
       info('other', { firstMessage: 'Old task', allMessagesText: 'Old task and more', modified: new Date(Date.now() - 2 * HOUR), messageCount: 4 }),
@@ -332,10 +357,10 @@ describe('/octocode sessions', () => {
     await current.commands.get('sessions')!.handler('', ctx);
     const text = ctx.ui.notes.at(-1)!.message;
     expect(text.split('\n')[1]).toMatch(/^● Current work · moments ago · 0 messages · cur \(current\)$/);
-    expect(text).toMatch(/○ Old task · feat\/x · 2h ago · \$1\.50 · 2 files · 4 messages · other/);
+    expect(text).toMatch(/○ Old task · feat\/x · 2h ago · ≈\$1\.50 \+ n\/a · 2 files · 4 messages · other/);
     expect(text).not.toMatch(/elsewhere/);
     await current.commands.get('sessions')!.handler('all', ctx);
-    expect(ctx.ui.notes.at(-1)!.message).toMatch(/○ Far away · elsewhere · 3h ago/);
+    expect(ctx.ui.notes.at(-1)!.message).toMatch(/○ Far away · elsewhere · 3h ago · cost n\/a/);
     await current.commands.get('sessions')!.handler('MORE', ctx);
     expect(ctx.ui.notes.at(-1)!.message).not.toMatch(/Current work/);
     expect(ctx.ui.notes.at(-1)!.message).toMatch(/Old task/);

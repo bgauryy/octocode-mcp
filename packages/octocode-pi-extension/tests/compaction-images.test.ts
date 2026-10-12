@@ -1,14 +1,17 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { describe, expect, it, vi } from 'vitest';
 import { KEEP_RECENT_IMAGES, KEEP_RECENT_IMAGE_CHARS, REQUEST_PRESSURE_CHARS, contextChars, isRequestTooLarge, planTooLargeRecovery } from '../src/compaction/images.js';
-import { planContextTrims, registerCompaction, trimsDue } from '../src/compaction/register.js';
+import { trimsDue } from '../src/compaction/policy.js';
+import { planContextTrims, registerCompaction } from '../src/compaction/register.js';
 import type { FileGuard } from '../src/files/tool.js';
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
 
 /** A screenshot-sized image (about 450 KB of base64), as the `read` tool returns it. */
 const SHOT = 'A'.repeat(450_000);
-const NOTE = '[image from an earlier tool call omitted]';
+/** A result as Pi projects it once an image-stripping edit applied. */
+const APPLIED = '[image from an earlier tool call omitted; saved at ~/x.png; read that file to see it again]';
+const NOTE = expect.stringMatching(/^\[image from an earlier tool call omitted; saved at \S+\.png \(sha256 [0-9a-f]{16}, \d+ bytes\); read that file to see it again\]$/) as unknown as string;
 
 const shot = (index: number, data = SHOT) => ({
   id: `r${index}`,
@@ -42,7 +45,7 @@ const imagesIn = (content: unknown) => (content as Array<{ type: string }>).filt
 
 function register(percent = 10) {
   const handlers = new Map<string, Handler>();
-  const pi = { on: (name: string, handler: Handler) => void handlers.set(name, handler) } as unknown as ExtensionAPI;
+  const pi = { on: (name: string, handler: Handler) => void handlers.set(name, handler), getSettings: () => ({}) } as unknown as ExtensionAPI;
   const notify = vi.fn();
   registerCompaction(pi, { reset: vi.fn(), forget: vi.fn() } as unknown as FileGuard);
   const ctx = {
@@ -154,13 +157,13 @@ describe('request too large (HTTP 413)', () => {
     expect(await settle()).toBeUndefined();
 
     // Pi applied those edits; the retry still failed: strip the last image too.
-    const projected = entries.map((entry) => (entry.id === 'r0' || entry.id === 'r1' ? { ...entry, message: { ...entry.message, content: [{ type: 'text', text: NOTE }] } } : entry));
+    const projected = entries.map((entry) => (entry.id === 'r0' || entry.id === 'r1' ? { ...entry, message: { ...entry.message, content: [{ type: 'text', text: APPLIED }] } } : entry));
     const second = (await fire('turn_end', turnEnd(projected, failed(), 'fail2'))) as { entries: Array<{ targetId: string }> };
     expect(second.entries.map((edit) => edit.targetId)).toEqual(['fail2', 'r2']);
     expect(await settle()).toEqual({ continue: true });
 
     // No images left: no loop; the user is told to compact.
-    const bare = projected.map((entry) => (entry.id === 'r2' ? { ...entry, message: { ...entry.message, content: [{ type: 'text', text: NOTE }] } } : entry));
+    const bare = projected.map((entry) => (entry.id === 'r2' ? { ...entry, message: { ...entry.message, content: [{ type: 'text', text: APPLIED }] } } : entry));
     expect(await fire('turn_end', turnEnd(bare, failed(), 'fail3'))).toBeUndefined();
     expect(await settle()).toBeUndefined();
     expect(notify).toHaveBeenCalledOnce();

@@ -3,13 +3,9 @@
 
 use super::{analysis::*, types::*};
 use crate::tools::id::ToolId;
-use crate::tools::id::query_limits::ast_topology::{DIAGNOSTIC_PAGE_MAXIMUM, PAGE_MAXIMUM};
 use crate::tools::result::Continuation;
 use serde_json::{Map, Value, json};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
-};
+use std::{collections::BTreeMap, path::Path};
 
 pub(super) fn paginate(items: Vec<Value>, q: &AstTopologyQuery) -> (Vec<Value>, Value) {
     let size = q.page_size().clamp(1, super::topology_max("pageSize")) as usize;
@@ -109,26 +105,19 @@ pub(super) fn add_coverage(
     let size = q
         .diagnostic_page_size()
         .clamp(1, super::topology_max("diagnosticPageSize")) as usize;
-    let pages = usize::max(1, groups.len().div_ceil(size));
+    let total = groups.len();
+    let pages = usize::max(1, total.div_ceil(size));
     let current = (q.diagnostic_page().max(1) as usize).min(pages);
-    let more = current < pages;
     let ds = groups
         .into_iter()
         .skip((current - 1) * size)
         .take(size)
         .collect::<Vec<_>>();
-    let total = b
-        .diagnostics
-        .iter()
-        .map(|d| (&d.code, &d.message))
-        .collect::<BTreeSet<_>>()
-        .len();
     let past_end = q.diagnostic_page() as usize > pages;
     let mut diagnostics_pagination =
         crate::response::pages::PageFacts::counted(current, size, total)
             .out_of_range(past_end)
             .to_value();
-    diagnostics_pagination["hasMore"] = json!(more);
     diagnostics_pagination["resultId"] = json!(id);
     if past_end {
         let warning = format!(
@@ -136,12 +125,7 @@ pub(super) fn add_coverage(
             q.diagnostic_page(),
             current
         );
-        match base.get_mut("warnings") {
-            Some(Value::Array(warnings)) => warnings.push(json!(warning)),
-            _ => {
-                base.insert("warnings".into(), json!([warning]));
-            }
-        }
+        push_warning(base, warning);
     }
     if !ds.is_empty() {
         coverage["diagnostics"] = json!(ds);
@@ -338,11 +322,15 @@ pub(super) fn add_next(
     let more_results = base
         .get("pagination")
         .is_some_and(|pagination| pagination["hasMore"] == true);
-    if more_results && (q.page() as usize) < PAGE_MAXIMUM {
+    let admitted = |field: &str, current: u32| {
+        crate::tools::paging::admitted(ToolId::AstTopology, None, field, current as usize + 1)
+            .and_then(|next| u32::try_from(next).ok())
+    };
+    if more_results && let Some(next_page) = admitted("page", q.page()) {
         // Bind the next result page to this graph snapshot; result pages
         // never re-send diagnostic rows.
         let snapshot = base["pagination"].get("resultId").cloned();
-        let mut page = continuation(q, Some(q.page() + 1), None, snapshot);
+        let mut page = continuation(q, Some(next_page), None, snapshot);
         if let Some(row) = page
             .pointer_mut("/query/queries/0")
             .and_then(Value::as_object_mut)
@@ -367,10 +355,10 @@ pub(super) fn add_next(
         );
     }
     if base["coverage"]["diagnosticPagination"]["hasMore"] == true
-        && (q.diagnostic_page() as usize) < DIAGNOSTIC_PAGE_MAXIMUM
+        && let Some(next_page) = admitted("diagnosticPage", q.diagnostic_page())
     {
         let mut value = clean_query(q);
-        value["diagnosticPage"] = json!(q.diagnostic_page() + 1);
+        value["diagnosticPage"] = json!(next_page);
         value["diagnosticPageSize"] = json!(q.diagnostic_page_size());
         value["diagnosticSnapshot"] = base["coverage"]["diagnosticPagination"]["resultId"].clone();
         next.insert(

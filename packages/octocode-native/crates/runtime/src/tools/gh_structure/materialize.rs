@@ -96,19 +96,18 @@ pub(super) fn expand_depth(
     commit_sha: &str,
     first_unwritten: &str,
 ) -> Result<Value, ProviderError> {
-    let mut next = public_query(&GhStructureQuery {
-        ref_: Some(commit_sha.to_owned()),
-        ..query.clone()
-    })?;
+    let mut next = query_row(
+        &GhStructureQuery {
+            ref_: Some(commit_sha.to_owned()),
+            ..query.clone()
+        },
+        &["page", "materializeOffset"],
+    );
     let deepest = max_listing_depth();
     next["maxDepth"] = json!(deepest);
     next["materialize"] = json!(true);
     if scope.depth >= deepest {
         next["path"] = json!(first_unwritten);
-    }
-    if let Some(fields) = next.as_object_mut() {
-        fields.remove("page");
-        fields.remove("materializeOffset");
     }
     Ok(continuation(next, "exact"))
 }

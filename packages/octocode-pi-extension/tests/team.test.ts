@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { formatDuration, formatTokens, memberStats } from '../src/shared/format.js';
+import { formatDuration, memberStats } from '../src/shared/format.js';
 import { trafficRow, widgetLines } from '../src/team/panel.js';
 import { toolHint } from '../src/shared/util.js';
-import { describeMembers, mutatedPaths, newId, resolveTarget } from '../src/team/routing.js';
+import { describeMembers, mutatedPaths, resolveTarget } from '../src/team/routing.js';
 import { octocodePrompt } from '../src/prompt.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
 import { registerAgentTool } from '../src/subagents/tool.js';
@@ -12,11 +12,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { AGENT_APPLICATION_ID as TEAM_APPLICATION_ID, AGENT_SCHEMA_VERSION as TEAM_SCHEMA_VERSION, AgentDbError as TeamSchemaError } from '../src/agentdb/db.js';
 import type { Member } from '../src/team/model.js';
 import { LEASE_MS, pathKey, TEAM_WORKSPACE_ENV, TeamStore } from '../src/team/store.js';
-import { theme } from './fake-pi.js';
+import { theme, fakePermission } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
 const member = (id: string, extra: Partial<Member> = {}): Member => ({
-  id, role: id.replace(/-[0-9a-f]{6}$/, ''), pid: process.pid, status: 'idle', joinedAt: 1_000, updatedAt: Date.now(), toolCalls: 0, input: 0, output: 0, cost: 0, ...extra,
+  id, role: id.replace(/-[0-9a-f]{6}$/, ''), pid: process.pid, status: 'idle', joinedAt: 1_000, updatedAt: Date.now(), toolCalls: 0, input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false, ...extra,
 });
 
 const repo = () => {
@@ -89,18 +89,6 @@ describe('team database', () => {
     expect(store.recent()[0]).toMatchObject({ id: partial.id, to: ['b-0002'], state: 'queued' });
   });
 
-  it('keeps a message pending until the recipient acknowledges it (two-phase delivery)', () => {
-    const store = open(repo(), path.join(tmp(), 'team.sqlite'));
-    store.save(member('a-0001'));
-    const id = sent(store.send('main-aaaaaa', ['a-0001'], 'hi', { replyRequired: false }));
-    expect(store.pending('a-0001').map((m) => m.id)).toEqual([id]);
-    // Read but not acknowledged (the injection failed): still pending.
-    expect(store.pending('a-0001').map((m) => m.id)).toEqual([id]);
-    store.ack('a-0001', [id]);
-    expect(store.pending('a-0001')).toEqual([]);
-    expect(store.recent()[0]!.state).toBe('delivered');
-  });
-
   it('reports leases that lapsed before renewal and drops them', () => {
     const store = open(repo(), path.join(tmp(), 'team.sqlite'));
     const now = Date.now();
@@ -140,7 +128,6 @@ describe('team database', () => {
     expect(pathKey('/w', '/w/Src/A.ts')).toBe('/src/a.ts');
     expect(pathKey('/w', 'src/./a.ts')).toBe('/src/a.ts');
     expect(pathKey('/w', '.')).toBe('');
-    expect(newId('main')).toMatch(/^main-[0-9a-f]{6}$/);
   });
 
   it('resolves ids, unique roles, parent and all', () => {
@@ -156,8 +143,8 @@ describe('team database', () => {
   });
 
   it('passes identity to a child', () => {
-    const env = subagentProcessEnv(undefined, {}, { id: 'general-1234', parentId: 'main-aaaaaa', task: 'Find X' });
-    expect(env).toMatchObject({ OCTOCODE_AGENT_ID: 'general-1234', OCTOCODE_PARENT_ID: 'main-aaaaaa', OCTOCODE_AGENT_TASK: 'Find X' });
+    const env = subagentProcessEnv(undefined, {}, { id: 'general-1234', parentId: 'main-aaaaaa', goal: 'Find X' });
+    expect(env).toMatchObject({ OCTOCODE_AGENT_ID: 'general-1234', OCTOCODE_PARENT_ID: 'main-aaaaaa', OCTOCODE_AGENT_GOAL: 'Find X' });
   });
 });
 
@@ -189,12 +176,10 @@ describe('message feed', () => {
 
 describe('agents view', () => {
   it('formats compact numbers and durations', () => {
-    expect(formatTokens(950)).toBe('950');
-    expect(formatTokens(12_400)).toBe('12.4k');
-    expect(formatTokens(250_000)).toBe('250k');
     expect(formatDuration(45_000)).toBe('45s');
     expect(formatDuration(134_000)).toBe('2m14s');
-    expect(memberStats(member('a-0000', { toolCalls: 7, input: 12_000, output: 3_000, cost: 0.024 }))).toBe('7 tool calls · ↑12k ↓3k $0.02');
+    expect(memberStats(member('a-0000', { toolCalls: 7, input: 12_000, cacheRead: 3_000, output: 3_000, cost: 0.024 }))).toBe('7 tool calls · ↑12k (25% cached) ↓3k · ≈$0.02');
+    expect(memberStats(member('a-0000'))).toBe('0 tool calls');
   });
 
   it('shows only this session\'s subagents as a tree, never yourself, and nothing when alone', () => {
@@ -206,20 +191,20 @@ describe('agents view', () => {
     expect(lines.join('\n')).not.toMatch(/main-cccccc|c-0003/);
     expect(lines[1]).toContain('a-0001');
     expect(lines[2]).toContain('└ b-0002');
-    expect(lines[2]).toMatch(/working\s+1m\s/);
+    expect(lines[2]).toMatch(/working\s+·\s+1m\s/);
     expect(lines[2]).toContain('→ localSearch foo');
-    expect(widgetLines([member('a-0001', { parentId: 'main-aaaaaa', status: 'working', task: 'Find where tools register', activity: 'localSearch x' })], 'main-aaaaaa', now, theme, 200)[1]).toMatch(/localSearch x$/);
+    expect(widgetLines([member('a-0001', { parentId: 'main-aaaaaa', status: 'working', goal: 'Find where tools register', activity: 'localSearch x' })], 'main-aaaaaa', now, theme, 200)[1]).toMatch(/localSearch x$/);
     expect(widgetLines(list, undefined, now, theme, 200)).toEqual([]);
     expect(lines.join('\n')).not.toContain('main-aaaaaa');
     expect(widgetLines([member('main-aaaaaa')], 'main-aaaaaa', now, theme, 80)).toEqual([]);
   });
 
   it('describes members with join and last-seen times', () => {
-    const text = describeMembers([member('main-aaaaaa', { joinedAt: 0, updatedAt: 58_000, task: 'ship it' })], 'main-aaaaaa', 60_000);
-    expect(text).toContain('main-aaaaaa (you) · idle');
-    expect(text).toMatch(/seen 2s ago[\s\S]*ship it/);
+    const text = describeMembers([member('main-aaaaaa', { joinedAt: 0, updatedAt: 58_000, goal: 'ship it' })], 'main-aaaaaa', 60_000);
+    expect(text).toContain('main-aaaaaa (you) · main · idle');
+    expect(text).toMatch(/goal: ship it[\s\S]*seen 2s ago/);
     expect(describeMembers([], undefined)).toMatch(/No agents/);
-    expect(describeMembers([member('main-bbbbbb', { joinedAt: 0, updatedAt: 0, task: 'fix\u001b[2Jit\u{e0041}' })], undefined, 0)).toContain('  fixit');
+    expect(describeMembers([member('main-bbbbbb', { joinedAt: 0, updatedAt: 0, goal: 'fix\u001b[2Jit\u{e0041}' })], undefined, 0)).toContain('  goal: fixit');
   });
 });
 
@@ -227,7 +212,7 @@ describe('collaboration prompt', () => {
   it('assigns parent handoff ownership and routes child blockers to the parent', () => {
     expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: true })).toContain('You own user communication, missing approvals, review and integration');
     const tools: Array<{ parameters: { properties: Record<string, { description?: string }> } }> = [];
-    registerAgentTool({ registerTool: (tool: never) => tools.push(tool), registerCommand: () => undefined, registerMessageRenderer: () => undefined, on: () => undefined } as never, () => new Map(), { view: { members: [], traffic: [] }, members: () => [] } as never);
+    registerAgentTool({ registerTool: (tool: never) => tools.push(tool), registerCommand: () => undefined, registerMessageRenderer: () => undefined, on: () => undefined } as never, () => new Map(), { view: { members: [], traffic: [] }, members: () => [], setResumer: () => undefined } as never, fakePermission());
     expect(tools[0]!.parameters.properties['collaborate']?.description).toMatch(/subagents on one goal teammates that coordinate directly/);
     // A child names its parent generically: its own id and parent arrive in its task.
     expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: false, collaborate: true })).toMatch(/your parent[^]*sendMessage/);
@@ -237,12 +222,12 @@ describe('collaboration prompt', () => {
 describe('Team', () => {
   it('injects a parent message into a running child, tracks the reply and enforces reservations', async () => {
     const { vi } = await import('vitest');
-    const { Team } = await import('../src/team/session.js');
+    const { MESSAGE_TYPE, Team } = await import('../src/team/session.js');
     vi.useFakeTimers();
     const cwd = repo();
     const env = { OCTOCODE_AGENT_DB: path.join(tmp(), 'team.sqlite') };
     const ctx = { cwd, isIdle: () => false } as never;
-    const inbox = () => [] as Array<{ message: { content: string }; options: unknown }>;
+    const inbox = () => [] as Array<{ message: { content: string; details?: unknown }; options: unknown }>;
     const [mainLog, childLog] = [inbox(), inbox()];
     const fakePi = (log: ReturnType<typeof inbox>) => ({ sendMessage: (message: { content: string }, options: unknown) => log.push({ message, options }) }) as never;
     try {
@@ -250,18 +235,19 @@ describe('Team', () => {
       main.start(ctx);
       expect(main.members()).toEqual([]);
       const parent = main.join('coordinating');
-      const child = new Team(fakePi(childLog), { ...env, OCTOCODE_AGENT_ID: 'researcher-1234', OCTOCODE_PARENT_ID: parent.id, OCTOCODE_AGENT_TASK: 'Find X' });
+      const child = new Team(fakePi(childLog), { ...env, OCTOCODE_AGENT_ID: 'researcher-1234', OCTOCODE_PARENT_ID: parent.id, OCTOCODE_AGENT_GOAL: 'Find X' });
       child.start(ctx);
       child.onToolStart();
       child.setActivity('Running localSearch foo');
-      child.onUsage({ input: 60, cacheRead: 30, cacheWrite: 10, output: 20, cost: { total: 0.01 } });
+      child.onUsage({ input: 60, cacheRead: 30, cacheWrite: 10, output: 20, cost: { total: 0.01 } }, 'anthropic/claude-haiku-4-5', false);
+      child.onUsage({ input: 5, output: 1, cost: { total: 0 } }, 'local/llama', true);
       // Activity, tool counts and usage are written with the 5-second heartbeat, not on every tick.
       vi.advanceTimersByTime(1_000);
       expect(main.members().find((m) => m.id === 'researcher-1234')).toMatchObject({ toolCalls: 0 });
       vi.advanceTimersByTime(4_000);
-      expect(main.members().find((m) => m.id === 'researcher-1234')).toMatchObject({ status: 'working', task: 'Find X', activity: 'Running localSearch foo', toolCalls: 1, input: 100, output: 20, parentId: parent.id });
+      expect(main.members().find((m) => m.id === 'researcher-1234')).toMatchObject({ status: 'working', goal: 'Find X', activity: 'Running localSearch foo', toolCalls: 1, input: 105, cacheRead: 30, output: 21, cost: 0.01, unpriced: true, model: 'local/llama', parentId: parent.id });
 
-      const asked = main.send('researcher-1234', 'also check tests');
+      const asked = (await main.send('researcher-1234', 'also check tests'));
       expect(asked).toMatchObject({ sent: ['researcher-1234'] });
       vi.advanceTimersByTime(1_000);
       expect(childLog).toHaveLength(1);
@@ -270,15 +256,17 @@ describe('Team', () => {
       expect(content).toContain('also check tests');
       expect(content).toContain(`replyTo ${(asked as { id: number }).id}`);
       expect(childLog[0]!.options).toEqual({ triggerTurn: true, deliverAs: 'steer' });
+      // Awaiting a reply once Pi puts it in front of the child's model.
+      child.onContext([{ role: 'custom', customType: MESSAGE_TYPE, details: childLog[0]!.message.details }]);
       expect(main.members().find((m) => m.id === 'researcher-1234')?.pending).toBe(1);
 
       // Reject oversized instructions rather than deliver an incomplete request.
-      expect(main.send('researcher-1234', 'q'.repeat(9_000), { replyRequired: false })).toHaveProperty('error', expect.stringContaining('file path'));
+      expect((await main.send('researcher-1234', 'q'.repeat(9_000), { replyRequired: false }))).toHaveProperty('error', expect.stringContaining('file path'));
       vi.advanceTimersByTime(1_000);
       expect(childLog).toHaveLength(1);
 
       // A reply defaults to FYI, so it never asks the asker to answer again (no ping-pong of woken agents).
-      child.send('parent', 'found it', { replyTo: (asked as { id: number }).id });
+      (await child.send('parent', 'found it', { replyTo: (asked as { id: number }).id }));
       vi.advanceTimersByTime(1_000);
       expect(mainLog[0]!.message.content).toContain('agent researcher-1234');
       expect(mainLog[0]!.message.content).toContain('FYI: no reply needed');
@@ -301,8 +289,8 @@ describe('Team', () => {
       main.unlock();
       expect(child.blockedBy(path.join(cwd, 'src', 'a.ts'))).toBeUndefined();
 
-      expect(main.send('ghost', 'hi')).toHaveProperty('error');
-      expect(main.send('researcher-1234', 'from the user', { from: 'user', replyRequired: false })).toMatchObject({ sent: ['researcher-1234'] });
+      expect((await main.send('ghost', 'hi'))).toHaveProperty('error');
+      expect((await main.send('researcher-1234', 'from the user', { from: 'user', replyRequired: false }))).toMatchObject({ sent: ['researcher-1234'] });
       child.stop();
       expect(main.members().map((m) => m.id)).toEqual([parent.id]);
       main.stop();
@@ -423,7 +411,7 @@ describe('Team safety', () => {
       const guard = new FileGuard();
       guard.reservedBy = (target) => main.reservation(target, target);
       let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
-      registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard);
+      registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard, fakePermission());
       await expect(tool!.execute('c', { queries: [{ reasoning: 'r', type: 'edit', path: 'a.ts', edits: [{ oldText: 'one', newText: 'two' }] }] }, undefined, undefined, { cwd, hasUI: false })).rejects.toThrow(/Team database unavailable \(database is locked\)/);
       expect(fs.readFileSync(file, 'utf8')).toBe('one');
     } finally {
@@ -445,7 +433,7 @@ describe('Team safety', () => {
       guard.reservedBy = (file) => team.reservation(file, file);
       guard.record(target);
       let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
-      registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard);
+      registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard, fakePermission());
       return tool!.execute('c', { queries: [{ reasoning: 'r', type: 'edit', path: 'a.ts', edits: [{ oldText: from, newText: to }] }] }, undefined, undefined, { cwd, hasUI: false });
     };
     // A foreign database: the schema error must not block a session that never collaborated.
@@ -564,20 +552,20 @@ describe('Team safety', () => {
     try {
       child.start(ctx);
       fail(true);
-      child.send(main.id!, 'first', { replyRequired: false });
-      child.send(main.id!, 'second', { replyRequired: false });
+      (await child.send(main.id!, 'first', { replyRequired: false }));
+      (await child.send(main.id!, 'second', { replyRequired: false }));
       vi.advanceTimersByTime(1_000);
       expect(log.filter((entry) => entry.message.content.includes('first'))).toHaveLength(0);
       fail(false);
       vi.advanceTimersByTime(1_000);
       vi.advanceTimersByTime(1_000);
+      // One batch, in order, injected once.
       const bodies = log.map((entry) => entry.message.content).filter((text) => /first|second/.test(text));
-      expect(bodies).toHaveLength(2);
-      expect(bodies[0]).toContain('first');
-      expect(bodies[1]).toContain('second');
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]!.indexOf('first')).toBeLessThan(bodies[0]!.indexOf('second'));
       // The recipient left: a later message is refused, not queued forever.
       child.stop();
-      expect(main.send('researcher-1234', 'hello?')).toHaveProperty('error');
+      expect((await main.send('researcher-1234', 'hello?'))).toHaveProperty('error');
     } finally {
       child.stop();
       main.stop();

@@ -364,6 +364,10 @@ pub enum PartialReason {
     FullContentSource,
     #[serde(rename = "security-selected-view-size-limit")]
     SecuritySelectedView,
+    /// A regex scan stopped at its in-process match limit: the selection is a
+    /// prefix of the matches.
+    #[serde(rename = "regex-match-limit")]
+    RegexMatchLimit,
 }
 
 /// A declaration a `block:true` read widened a hit to: its name, name line
@@ -691,9 +695,10 @@ pub struct PathFailure {
     pub sparse_checkout: bool,
     /// The path is a directory, not a file.
     pub directory: bool,
-    /// A missing path's closest existing ancestor directory, named as the
-    /// policy displays it.
-    pub nearest_dir: Option<String>,
+    /// Where a missing file's listing searches: the workspace root (`.`)
+    /// for a path inside it, else the allowed root that holds the path,
+    /// else its closest admitted ancestor directory.
+    pub search_root: Option<String>,
 }
 pub trait PathAccess {
     fn validate_read(&self, path: &Path) -> Result<ValidatedRead, PathFailure>;
@@ -810,12 +815,33 @@ impl PathAccess for crate::policy::path::PathPolicy {
                     sparse_checkout: missing && in_sparse_checkout(&resolved),
                     directory: error.code == crate::policy::PolicyErrorCode::NotRegular
                         && resolved.is_dir(),
-                    nearest_dir: missing
-                        .then(|| self.nearest_existing_dir(&path.to_string_lossy()))
+                    search_root: missing
+                        .then(|| missing_search_root(self, path, &resolved))
                         .flatten(),
                 }
             })
     }
+}
+
+/// The admitted directory a missing file's listing searches from: the
+/// workspace root, or the most specific allowed root holding `resolved`,
+/// so a file moved to another tree is found; the closest admitted ancestor
+/// when no root holds it.
+fn missing_search_root(
+    policy: &crate::policy::path::PathPolicy,
+    requested: &Path,
+    resolved: &Path,
+) -> Option<String> {
+    if policy.workspace_relative(resolved).is_some() {
+        return Some(".".to_owned());
+    }
+    policy
+        .allowed_roots()
+        .into_iter()
+        .filter(|root| resolved.starts_with(root) && root.is_dir())
+        .max_by_key(|root| root.components().count())
+        .map(|root| root.to_string_lossy().into_owned())
+        .or_else(|| policy.nearest_existing_dir(&requested.to_string_lossy()))
 }
 
 /// Whether `path` lies in a git worktree with sparse checkout enabled (as a

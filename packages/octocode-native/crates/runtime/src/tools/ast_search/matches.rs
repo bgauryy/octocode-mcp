@@ -1103,7 +1103,7 @@ fn render_match_page(
                 " {subject} were skipped as {} ({}); the lead includes them.",
                 skipped.labels, skipped.because
             ));
-            out["next"]["includeIgnored"] = skipped.lead;
+            out["next"]["includeSkipped"] = skipped.lead;
         }
         out["hints"] = json!([hint]);
         // The grammars the scope does hold, each a query that runs.
@@ -1130,7 +1130,7 @@ fn render_match_page(
                 "{subject} were skipped as {} ({}); the lead includes them.",
                 skipped.labels, skipped.because
             ));
-            out["next"]["includeIgnored"] = skipped.lead;
+            out["next"]["includeSkipped"] = skipped.lead;
         }
         out["hints"] = json!(hints);
     }
@@ -1246,12 +1246,16 @@ fn attach_match_continuations(
         }
         expand
     });
-    if (truncated && !more && expand_scan.is_none())
-        || (more && page >= limits::PAGE_MAXIMUM)
-        || (has_more_matches && match_page >= limits::MATCH_PAGE_MAXIMUM)
-    {
+    if truncated && !more && expand_scan.is_none() {
         out["terminalLimit"] = json!(true);
     }
+    let cursor = |out: &mut Value, field: &str, next: usize| {
+        crate::tools::paging::next_cursor(out, ToolId::AstSearch, Some("match"), field, next)
+    };
+    let next_page = more.then(|| cursor(out, "page", page + 1)).flatten();
+    let next_match_page = has_more_matches
+        .then(|| cursor(out, "matchPage", match_page + 1))
+        .flatten();
     let pinned = scope
         .inferred
         .as_ref()
@@ -1263,12 +1267,12 @@ fn attach_match_continuations(
         }
         continuation_with(q, merged, snapshot)
     };
-    if more && page < limits::PAGE_MAXIMUM {
+    if let Some(next_page) = next_page {
         // A new file page restarts per-file match pagination.
-        out["next"] = json!({"nextPage":with(json!({"page":page + 1,"matchPage":1}))})
+        out["next"] = json!({"nextPage":with(json!({"page":next_page,"matchPage":1}))})
     }
-    if has_more_matches && match_page < limits::MATCH_PAGE_MAXIMUM {
-        out["next"]["nextMatchPage"] = with(json!({"matchPage":match_page+1}));
+    if let Some(next_match_page) = next_match_page {
+        out["next"]["nextMatchPage"] = with(json!({"matchPage":next_match_page}));
     }
     if let Some(expand) = expand_scan.filter(|_| !more) {
         out["next"]["expandScan"] = with(expand);

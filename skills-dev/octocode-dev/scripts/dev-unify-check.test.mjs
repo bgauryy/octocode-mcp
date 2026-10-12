@@ -44,3 +44,18 @@ test('cargo tree fallback: a shared package whose test feature set the build nev
   const missing = parseTree('tokio-util v0.7.1|codec,default\n');
   assert.deepEqual(diffTrees(build, missing, exempt).root.map(row => [row.package, row.features]), [['tokio-util', ['codec', 'default']]]);
 });
+
+test('unit graphs: the same crate at another version is a different package, never drift', () => {
+  const at = (version, features) => ({ ...unit('base64', features), pkg_id: `registry+https://github.com/rust-lang/crates.io-index#base64@${version}` });
+  const build = { units: [at('0.23.0', ['alloc', 'default', 'std'])] };
+  assert.deepEqual(diffUnitGraphs(build, { units: [at('0.22.1', ['alloc', 'std'])] }).root, []);
+  assert.deepEqual(diffUnitGraphs(build, { units: [at('0.23.0', ['alloc'])] }).root.map(row => row.package), ['base64']);
+});
+
+test('cargo tree fallback: the same crate at another version is a different package, never drift', () => {
+  const build = parseTree('base64 v0.23.0|alloc,default,std\n');
+  const test = parseTree('base64 v0.22.1|alloc,std\n');
+  assert.deepEqual(diffTrees(build, test, new Map()).root, []);
+  const drift = parseTree('base64 v0.23.0|alloc\n');
+  assert.deepEqual(diffTrees(build, drift, new Map()).root.map(row => [row.package, row.features]), [['base64', ['alloc']]]);
+});

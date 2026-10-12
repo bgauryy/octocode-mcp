@@ -162,20 +162,27 @@ pub fn execute_syntax(
             .to_value();
     let mut out = json!({"operation":"syntaxTree","path":display_path,"nodes":nodes,"returnedBytes":node_bytes,"snapshot":snapshot,"isPartial":!complete,
         "pagination":pagination});
-    if more {
-        out["pagination"]["nextPage"] = json!(page + 1);
-    }
     if !diagnostics.is_empty() {
         out["diagnostics"] = json!(diagnostics);
     }
     if more {
-        let mut nq = serde_json::to_value(q).unwrap_or_default();
-        if let Some(map) = nq.as_object_mut() {
-            map.retain(|_, value| !value.is_null());
+        let next_page = crate::tools::paging::next_cursor(
+            &mut out,
+            ToolId::AstSearch,
+            Some("syntaxTree"),
+            "page",
+            usize_of(page) + 1,
+        );
+        if let Some(next_page) = next_page {
+            out["pagination"]["nextPage"] = json!(next_page);
+            let mut nq = serde_json::to_value(q).unwrap_or_default();
+            if let Some(map) = nq.as_object_mut() {
+                map.retain(|_, value| !value.is_null());
+            }
+            nq["snapshot"] = json!(snapshot);
+            nq["page"] = json!(next_page);
+            out["next"] = json!({"nextPage":crate::tools::result::Continuation::new(ToolId::AstSearch, nq).confidence("exact").build()})
         }
-        nq["snapshot"] = json!(snapshot);
-        nq["page"] = json!(page + 1);
-        out["next"] = json!({"nextPage":crate::tools::result::Continuation::new(ToolId::AstSearch, nq).confidence("exact").build()})
     } else if r.status == "partial" {
         out["terminalLimit"] = json!(true)
     }

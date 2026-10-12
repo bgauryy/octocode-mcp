@@ -16,8 +16,8 @@ use super::{HistoryItemRequest, ItemOperation, fetch, validation};
 use crate::providers::github::{GitHubTransport, ProviderError, RequestContext};
 use crate::tools::gh_shared::commit::{commit_date, utc_date};
 use crate::tools::gh_shared::ensure_next;
-use crate::tools::gh_shared::push_warning;
 use crate::tools::id::ToolId;
+use crate::tools::paging::push_warnings;
 use crate::tools::result::{Continuation, remove_nulls};
 use serde_json::{Value, json};
 
@@ -91,7 +91,7 @@ pub(super) async fn commit(
     // the row says so and its leads show.
     let scope_removed_all = unmatched.is_some();
     if let Some(warning) = unmatched {
-        push_warning(&mut out, warning);
+        push_warnings(&mut out, [warning]);
     }
     let (files, mut page) = paginate_window(
         scoped,
@@ -150,7 +150,7 @@ pub(super) async fn commit(
     if query.include_diff()
         && let Some(warning) = clamp_warning(query)
     {
-        push_warning(&mut out, warning);
+        push_warnings(&mut out, [warning]);
     }
     attach_diff_continuations(
         &mut out,
@@ -168,7 +168,10 @@ pub(super) async fn commit(
         out["status"] = json!("empty");
     }
     if match_removed_all && let Some(needle) = query.match_string() {
-        push_warning(&mut out, match_removed_all_warning(needle, listed_on_page));
+        push_warnings(
+            &mut out,
+            [match_removed_all_warning(needle, listed_on_page)],
+        );
         let mut unfiltered = commit_query(query, &sha, false);
         remove_key(&mut unfiltered, "matchString");
         leads.push((
@@ -180,15 +183,7 @@ pub(super) async fn commit(
     }
     let pull_request = commit_pull_request_lead(message, &sha, query);
     if patches && message.trim_end() != headline {
-        leads.push((
-            "readCommit",
-            Continuation::new(
-                ToolId::GhGetHistoryItem,
-                json!({"operation":"commit","owner":query.owner(),"repo":query.repo(),"ref":sha}),
-            )
-            .confidence("exact")
-            .build(),
-        ));
+        leads.push(("readCommit", read_commit_lead(query, &sha)));
     }
     // A pull request the commit names is the route to its discussion, ahead
     // of the diff's side reads; a search by SHA is only a guess, so it
@@ -230,6 +225,16 @@ fn file_rows(files: Vec<Value>, query: &HistoryItemRequest) -> (Value, Option<us
     // The narrowed-view marker is internal to the pull-request lead.
     super::patch_hop::take_reshaped_paths(Some(&mut rows), false);
     (rows, cursor)
+}
+
+/// The read of one commit at its default sections.
+fn read_commit_lead(query: &HistoryItemRequest, sha: &str) -> Value {
+    Continuation::new(
+        ToolId::GhGetHistoryItem,
+        json!({"operation":"commit","owner":query.owner(),"repo":query.repo(),"ref":sha}),
+    )
+    .confidence("exact")
+    .build()
 }
 
 /// Put `leads` ahead of the row's other leads, in order (pages keep their
@@ -304,7 +309,6 @@ pub(super) async fn compare(
         .get("files")
         .and_then(Value::as_array)
         .is_some_and(|files| files.len() >= COMPARE_FILE_LIMIT);
-    // `aheadBy` counts the range's commits; the status follows from it and
     let mut out = json!({"baseSha":base_sha,"headSha":head_sha,
         "aheadBy":usize_at(&raw,"/ahead_by"),"behindBy":usize_at(&raw,"/behind_by"),
         "isPartial":(more || (wants_files && file_limit)).then_some(true)});
@@ -320,6 +324,17 @@ pub(super) async fn compare(
     if wants_files {
         (cursors, side_reads) = attach_file_page(&mut out, &raw, query, window, file_limit)?;
     }
+    // An identical range (the head is the base, or behind it) changes
+    // nothing: an empty answer, as a commit or PR with nothing in scope is.
+    if total == 0
+        && usize_at(&raw, "/ahead_by") == 0
+        && raw
+            .get("files")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+    {
+        out["status"] = json!("empty");
+    }
     let commits = wants_commits.then(|| {
         attach_commit_page(
             &mut out,
@@ -333,7 +348,18 @@ pub(super) async fn compare(
             },
         )
     });
-    cursors.commit_page = more.then(|| u64::try_from(page + 1).unwrap_or(u64::MAX));
+    cursors.commit_page = more
+        .then(|| {
+            crate::tools::paging::next_cursor(
+                &mut out,
+                crate::tools::id::ToolId::GhGetHistoryItem,
+                None,
+                "page",
+                page + 1,
+            )
+        })
+        .flatten()
+        .map(|next| u64::try_from(next).unwrap_or(u64::MAX));
     // Continuations read the same two commits.
     let pinned = query.with_compare_refs(&base_sha, &head_sha)?;
     attach_diff_continuations(
@@ -449,14 +475,7 @@ fn attach_commit_page(
             message.lines().nth(1).is_some()
         })
         .and_then(|v| str_at(v, "/sha"))
-        .map(|sha| {
-            Continuation::new(
-                ToolId::GhGetHistoryItem,
-                json!({"operation":"commit","owner":query.owner(),"repo":query.repo(),"ref":sha}),
-            )
-            .confidence("exact")
-            .build()
-        });
+        .map(|sha| read_commit_lead(query, sha));
     out["commits"] = json!(
         commits
             .into_iter()
@@ -554,10 +573,10 @@ fn attach_file_page(
     super::window::lift_page_limits(out, &mut file_page);
     out["filePagination"] = file_page;
     if include_diff && let Some(warning) = clamp_warning(query) {
-        push_warning(out, warning);
+        push_warnings(out, [warning]);
     }
     if let Some(warning) = unmatched {
-        push_warning(out, warning);
+        push_warnings(out, [warning]);
         // A scope that left none of a complete file list is an empty answer,
         // as it is on a commit; a capped list may hide the scope's files.
         if !file_limit {
@@ -612,11 +631,11 @@ fn capped_file_leads(
         } else {
             format!("changes to {}", query.file_scope.join(", "))
         };
-        push_warning(
+        push_warnings(
             out,
-            format!(
+            [format!(
                 "GitHub lists at most {COMPARE_FILE_LIMIT} changed files, so {hidden} may be missing."
-            ),
+            )],
         );
         leads.extend(capped_files_reach(query, out, commits));
     }

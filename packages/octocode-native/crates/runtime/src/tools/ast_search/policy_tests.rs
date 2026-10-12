@@ -32,16 +32,9 @@ fn lean_row(row: &serde_json::Value) -> (u64, Option<u64>, &str) {
     )
 }
 
-/// The declaration names of an outline row (an entry string, or a container
-/// and its nested members), in source order.
+/// The declaration names of an outline row (a declaration object and its
+/// nested members), in source order.
 fn outline_row_names(row: &serde_json::Value) -> Vec<&str> {
-    if let Some(text) = row.as_str() {
-        assert!(
-            crate::tools::symbol_outline::parse_entry(text).is_some(),
-            "outline entry: {text}"
-        );
-        return vec![&text[..text.rfind(" (").expect("entry fields")]];
-    }
     let mut names = vec![row["symbolName"].as_str().expect("declaration row")];
     for member in row["members"].as_array().into_iter().flatten() {
         names.extend(outline_row_names(member));
@@ -1191,6 +1184,82 @@ fn single_file_symbols_are_compact_and_path_free() {
     );
 }
 
+/// Every symbols row is an object (a class with members, and a file
+/// of member-less declarations alike); `pagination.totalItems` counts the
+/// top-level rows, and pages by `pageSize` reach each top-level row once
+/// with its members.
+#[test]
+fn symbols_rows_are_objects_and_pages_count_top_level_rows() {
+    fn all_objects(rows: &serde_json::Value) -> bool {
+        rows.as_array().expect("rows").iter().all(|row| {
+            row.is_object()
+                && row["symbolName"].is_string()
+                && row["line"].is_u64()
+                && row.get("members").is_none_or(all_objects)
+        })
+    }
+    let root = Fixture::new();
+    let class = root.0.join("service.ts");
+    std::fs::write(
+        &class,
+        "export class Service {\n  setParent() {}\n  dispose() {}\n}\nexport function boot() {}\nexport class Empty {}\n",
+    )
+    .expect("class");
+    let plain = root.0.join("plain.ts");
+    std::fs::write(
+        &plain,
+        "export function one() {}\nexport function two() {}\nexport const three = 3;\n",
+    )
+    .expect("plain");
+    for (source, top_level, all) in [(&class, 3, 5), (&plain, 3, 3)] {
+        let out = run(
+            &root.0,
+            json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source}),
+        )
+        .expect("symbols");
+        assert!(all_objects(&out["symbols"]), "{out}");
+        let rows = out["symbols"].as_array().expect("rows");
+        assert_eq!(rows.len(), top_level, "{out}");
+        assert_eq!(out["pagination"]["totalItems"], top_level, "{out}");
+        assert_eq!(outline_names(&out["symbols"]).len(), all, "{out}");
+        // Pages of one top-level row each reach every row once, members
+        // with their parent.
+        let mut query = json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"pageSize":1});
+        let mut paged = Vec::new();
+        loop {
+            let page = run(&root.0, query.clone()).expect("page");
+            assert_eq!(page["pagination"]["totalItems"], top_level, "{page}");
+            assert!(all_objects(&page["symbols"]), "{page}");
+            assert_eq!(page["symbols"].as_array().map(Vec::len), Some(1), "{page}");
+            paged.extend(page["symbols"].as_array().expect("rows").iter().cloned());
+            match page["next"]["nextPage"]["query"]["queries"].get(0) {
+                Some(next) => query = next.clone(),
+                None => break,
+            }
+        }
+        assert_eq!(json!(paged), out["symbols"], "{source:?}");
+    }
+    // A directory outline groups the same object rows under each file and
+    // counts each file's top-level rows.
+    let out = run(
+        &root.0,
+        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0}),
+    )
+    .expect("directory symbols");
+    let files = out["files"].as_array().expect("files");
+    assert!(
+        files.iter().all(|file| all_objects(&file["symbols"])),
+        "{out}"
+    );
+    let rows: usize = files
+        .iter()
+        .map(|file| file["symbols"].as_array().map_or(0, Vec::len))
+        .sum();
+    assert_eq!(out["pagination"]["totalItems"], rows, "{out}");
+    crate::contracts::validate_output("astSearch", &json!({"results":[{"index":0,"data":out}]}))
+        .expect("object rows satisfy the output contract");
+}
+
 #[test]
 fn cached_symbol_pages_still_check_content_and_path_policy() {
     let root = Fixture::new();
@@ -1278,7 +1347,9 @@ fn symbols_outline_places_twin_members_and_columns_only_when_ambiguous() {
         ]),
         "{out}"
     );
-    // A page that starts below the parent names it with its line.
+    // Pages count top-level rows (struct A, two impl A, two x): page 2 of
+    // 4 holds the last `x`, and no member is cut from its parent.
+    assert_eq!(out["pagination"]["totalItems"], 5, "{out}");
     let second = run(
         &root.0,
         json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":source,"pageSize":4,"page":2,
@@ -1288,8 +1359,8 @@ fn symbols_outline_places_twin_members_and_columns_only_when_ambiguous() {
     assert_eq!(
         crate::tools::symbol_outline::outline_rows(&crate::tools::symbol_outline::flatten_members(
             second["symbols"].as_array().expect("rows")
-        ))[0],
-        "6 method two (in A@5)",
+        )),
+        [json!("8 function x col 14")],
         "{second}"
     );
 }
@@ -1811,7 +1882,7 @@ fn macro_rules_template_bodies_are_listed() {
     assert_eq!(lines, [3, 7], "{out}");
 }
 
-/// AS5: the rule-file object `{rule: …}` matches like the YAML rule file
+/// The rule-file object `{rule: …}` matches like the YAML rule file
 /// (`rule:` wrapper) and like the bare rule.
 #[test]
 fn rule_config_object_matches_like_yaml_rule_file() {
@@ -2140,9 +2211,43 @@ fn directory_match_over_a_grammar_family_infers_the_family() {
     assert_eq!(out["matchCount"], 2, "{out}");
 }
 
-/// Parse-recovery notes stay on files that list a declaration; the other
-/// files share one entry per message with every path, and a text search
-/// completes the name lookup the recovered parses may have missed.
+/// A parse-recovery note repeated by several files that list declarations
+/// is one counted entry naming every file, not one entry per file.
+#[test]
+fn symbols_count_one_recovery_note_across_files_that_list_declarations() {
+    let root = Fixture::new();
+    for index in 1..=3 {
+        std::fs::write(
+            root.0.join(format!("f{index}.rs")),
+            format!("fn foo_{index}() {{}}\nfn caller() {{ foo_{index}(; }}\n"),
+        )
+        .expect("broken");
+    }
+    let out = run(
+        &root.0,
+        json!({"operation":"symbols","path":root.0,"symbolName":"foo_","pageSize":1}),
+    )
+    .expect("symbols");
+    let diagnostics = out["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(diagnostics.len(), 1, "{out}");
+    let message = diagnostics[0]["message"].as_str().expect("message");
+    assert!(message.starts_with("tree-sitter recovered"), "{out}");
+    assert!(message.ends_with("(3 files)"), "{out}");
+    let mut files = diagnostics[0]["files"]
+        .as_array()
+        .expect("files")
+        .iter()
+        .filter_map(|file| file["path"].as_str())
+        .map(|path| path.rsplit('/').next().unwrap_or(path).to_owned())
+        .collect::<Vec<_>>();
+    files.sort();
+    assert_eq!(files, ["f1.rs", "f2.rs", "f3.rs"], "{out}");
+    assert_eq!(out["partialReasons"], json!(["parseRecovered"]), "{out}");
+}
+
+/// Files whose parse-recovery notes share a message share one counted
+/// entry with every path, and a text search completes the name lookup the
+/// recovered parses may have missed.
 #[test]
 fn symbols_group_recovery_notes_of_files_without_a_listed_declaration() {
     let root = Fixture::new();
@@ -2227,7 +2332,43 @@ fn recovered_notes_only_for_files_whose_errors_spell_the_name() {
     assert_eq!(out["isPartial"], false, "{out}");
 }
 
-/// AS4: an empty symbols search says what it searched (the name and the
+/// A name-filtered outline that lists a declaration from a recovered parse
+/// cites a partial inventory: the file keeps its note and the page is
+/// partial, wherever the syntax error sits. Recovered files that list
+/// nothing and whose errors do not spell the name stay out.
+#[test]
+fn a_recovered_file_that_lists_the_named_declaration_keeps_its_note() {
+    let root = Fixture::new();
+    for index in 1..=3 {
+        std::fs::write(
+            root.0.join(format!("f{index}.rs")),
+            format!("pub fn helper{index}() {{}}\nfn broken( {{\n"),
+        )
+        .expect("broken");
+    }
+    let out = run(
+        &root.0,
+        json!({"operation":"symbols","path":root.0,"symbolName":"helper2"}),
+    )
+    .expect("symbols");
+    assert_eq!(
+        outline_names(&out["files"][0]["symbols"]),
+        ["helper2"],
+        "{out}"
+    );
+    let diagnostics = out["diagnostics"].as_array().expect("diagnostics");
+    assert_eq!(diagnostics.len(), 1, "{out}");
+    let noted = diagnostics[0].to_string();
+    assert!(noted.contains("f2.rs"), "{out}");
+    assert!(
+        !noted.contains("f1.rs") && !noted.contains("f3.rs"),
+        "{out}"
+    );
+    assert_eq!(out["isPartial"], true, "{out}");
+    assert_eq!(out["partialReasons"], json!(["parseRecovered"]), "{out}");
+}
+
+/// An empty symbols search says what it searched (the name and the
 /// file count) and leads to the name's text.
 #[test]
 fn empty_symbols_hint_names_file_count_and_text_lead() {
@@ -2269,7 +2410,7 @@ fn empty_symbols_hint_names_file_count_and_text_lead() {
     assert!(outline["next"].get("findText").is_none(), "{outline}");
 }
 
-/// AS4: an empty match counts the files it parsed and leads to the syntax
+/// An empty match counts the files it parsed and leads to the syntax
 /// tree of the first, where the pattern's node shape can be compared.
 #[test]
 fn empty_match_hint_leads_to_syntax_tree() {
@@ -2300,9 +2441,8 @@ fn empty_match_hint_leads_to_syntax_tree() {
     crate::contracts::validate_query("astSearch", row.clone()).expect("a valid syntaxTree row");
 }
 
-/// AS5 (native half): a wrapped rule document `rule:\n  …` matches like the
-/// bare rule. The object form `{rule:{…}}` serializes to the same document,
-/// so it runs unchanged once core declares it (core request AS5).
+/// A wrapped rule document given as text, here the JSON spelling of
+/// `{rule:{…}}` (valid YAML), matches like the bare rule.
 #[test]
 fn wrapped_rule_document_matches_like_the_bare_rule() {
     let root = Fixture::new();
@@ -2323,7 +2463,7 @@ fn wrapped_rule_document_matches_like_the_bare_rule() {
     );
 }
 
-/// repo-sweep (redis module.c): a one-line `typedef struct X X;` declares
+/// A one-line `typedef struct X X;` declares
 /// `type X` and `struct X` on one name line. The struct is the typedef's
 /// sibling, never its own parent's member, and no row is dropped. A
 /// multi-line `typedef struct Y {…} Y;` keeps its struct nested (different
@@ -2426,7 +2566,7 @@ fn ast_rows(pages: &[serde_json::Value]) -> Vec<String> {
         .collect()
 }
 
-/// D-2: `next.expandScan` resumes after the files its window evaluated, so
+/// `next.expandScan` resumes after the files its window evaluated, so
 /// the chain of pages and widened scans lists every match and declaration
 /// exactly once, under each sort.
 #[test]
@@ -2466,8 +2606,8 @@ fn expanded_scans_reach_every_file_exactly_once() {
 }
 
 /// The happy-path rows carry exactly what the next hop takes: a file
-/// outline names its file once and each declaration as
-/// `name (line-endLine, kind…)`; a directory outline groups under each
+/// outline names its file once and each declaration as an object
+/// `{symbolName, kind, line, endLine}`; a directory outline groups under each
 /// file's `path` without restating the queried directory; a match row is
 /// `{line, endLine?, value}` (no `endLine` on a single-line match).
 #[test]
@@ -2487,8 +2627,17 @@ fn happy_path_rows_carry_the_next_hop_anchors() {
     )
     .expect("file outline");
     assert_eq!(outline["path"], "lib.rs", "{outline}");
-    let entry = outline["symbols"][0].as_str().expect("entry string");
-    assert!(entry.starts_with("alpha (1-3, function"), "{outline}");
+    let row = &outline["symbols"][0];
+    assert_eq!(
+        (
+            &row["symbolName"],
+            &row["line"],
+            &row["endLine"],
+            &row["kind"]
+        ),
+        (&json!("alpha"), &json!(1), &json!(3), &json!("function")),
+        "{outline}"
+    );
 
     let directory = run(
         &root.0,
@@ -2627,7 +2776,7 @@ fn an_empty_match_over_ignored_and_hidden_files_leads_to_them() {
         let empty = run(&root.0, request.clone()).expect("empty match");
         assert!(empty["files"].is_null(), "{dir}: {empty}");
         assert!(empty["next"].get("repair").is_none(), "{dir}: {empty}");
-        let lead = &empty["next"]["includeIgnored"];
+        let lead = &empty["next"]["includeSkipped"];
         assert_eq!(lead["tool"], "astSearch", "{dir}: {empty}");
         let retry = &lead["query"]["queries"][0];
         assert_eq!(retry[flag], true, "{dir}: {empty}");
@@ -2665,7 +2814,7 @@ fn symbols_disclose_default_excluded_directories() {
     .expect("symbols");
     let warnings = out["warnings"].to_string();
     assert!(warnings.contains("node_modules/"), "{out}");
-    let lead = &out["next"]["includeIgnored"];
+    let lead = &out["next"]["includeSkipped"];
     assert_eq!(lead["tool"], "astSearch", "{out}");
     let query = &lead["query"]["queries"][0];
     assert_eq!(query["defaultExcludes"], false, "{out}");
@@ -2699,7 +2848,7 @@ fn an_empty_match_beside_parsed_files_names_the_ignored_ones() {
         hints.contains("ignored") && hints.contains("gen/"),
         "{hints}"
     );
-    let retry = &empty["next"]["includeIgnored"]["query"]["queries"][0];
+    let retry = &empty["next"]["includeSkipped"]["query"]["queries"][0];
     assert_eq!(retry["includeIgnored"], true, "{empty}");
     let found = run(&root.0, retry.clone()).expect("lead runs");
     assert_eq!(found["matchCount"], 1, "{found}");

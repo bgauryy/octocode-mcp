@@ -67,7 +67,10 @@ pub(crate) fn analyze(
         }
     }
     let results_digest = crate::digest::json_sha256(&items);
-    let answer_empty = answer_is_empty(&items);
+    // A suppressed verdict (no entrypoint resolved) proves nothing either
+    // way: a partial answer that names why, never an empty one.
+    let suppressed = summary["suppressed"] == true;
+    let answer_empty = !suppressed && answer_is_empty(&items);
     let (page, pagination) = paginate(items, q);
     base.insert("nodes".into(), Value::Array(page));
     base.insert("pagination".into(), pagination);
@@ -80,6 +83,9 @@ pub(crate) fn analyze(
     }
     let coverage_state = add_coverage(&mut base, b, q, &results_digest);
     let result_page_limit = mark_scope_cuts(&mut base, cuts, q, coverage_state.changed);
+    if suppressed {
+        mark_partial(&mut base, "entrypointsUnresolved");
+    }
     // A diagnostic page reached from a lead (it carries the snapshot) shows
     // the diagnostics only: its results were delivered by the offering page.
     let diagnostics_only = q.diagnostic_rows_requested() && q.diagnostic_snapshot().is_some();
@@ -113,6 +119,8 @@ pub(crate) fn analyze(
     }
     let result_state = if diagnostics_only {
         "complete"
+    } else if suppressed {
+        "entrypoints-unresolved"
     } else if result_page_limit {
         "truncated"
     } else if base["pagination"]["hasMore"] == true {
@@ -224,12 +232,15 @@ pub(super) fn mark_scope_cuts(
     snapshot_changed: bool,
 ) -> bool {
     let mut reasons = cuts.reasons();
-    let result_page_limit = !snapshot_changed
-        && base["pagination"]["hasMore"] == true
-        && q.page() as usize >= PAGE_MAXIMUM;
+    let past = |field: &str, current: u32| {
+        crate::tools::paging::admitted(ToolId::AstTopology, None, field, current as usize + 1)
+            .is_none()
+    };
+    let result_page_limit =
+        !snapshot_changed && base["pagination"]["hasMore"] == true && past("page", q.page());
     let diagnostic_page_limit = !snapshot_changed
         && base["coverage"]["diagnosticPagination"]["hasMore"] == true
-        && q.diagnostic_page() as usize >= DIAGNOSTIC_PAGE_MAXIMUM;
+        && past("diagnosticPage", q.diagnostic_page());
     if result_page_limit {
         reasons.push("pageLimit");
         push_warning(base, page_ceiling_warning("result", PAGE_MAXIMUM));
@@ -252,6 +263,21 @@ pub(super) fn mark_scope_cuts(
         base.insert("terminalLimit".into(), json!(true));
     }
     result_page_limit
+}
+
+/// Mark the row partial for `reason`, after any scope-cut reasons.
+fn mark_partial(base: &mut Map<String, Value>, reason: &str) {
+    base.insert("isPartial".into(), json!(true));
+    match base
+        .entry("partialReasons")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+    {
+        Some(reasons) => reasons.push(json!(reason)),
+        None => {
+            base.insert("partialReasons".into(), json!([reason]));
+        }
+    }
 }
 
 /// Append one line to the row's `warnings`.

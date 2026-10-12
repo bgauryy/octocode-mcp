@@ -624,6 +624,41 @@ async fn matrix_is_resource_major_without_agent_telemetry_or_duplicate_text() {
     runtime.close().await;
 }
 
+/// `extras: ["stats"]` alone (the compact output) adds provider usage per
+/// query and per page, and every field it adds is declared by the output
+/// contract.
+#[tokio::test]
+async fn stats_usage_is_declared_on_the_compact_output() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "model":"provider-resolved",
+            "answers":{
+                "answer_0":{"type":"noul","noul":0.9},
+                "answer_1":{"type":"score","score":0.75,"confidence":0.8,"probabilities":{"0":0.25,"1":0.75},"legend":{"0":"low","1":{"label":"high"}}}
+            },
+            "usage":{"input_tokens":12,"output_tokens":3}
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = provider_runtime(&workspace, &server);
+    let mut matrix = query();
+    matrix["extras"] = json!(["stats"]);
+    let outcome = runtime
+        .execute("stats".into(), "clasify".into(), call(matrix))
+        .await
+        .unwrap();
+    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
+        .expect("stats output contract");
+    let usage = &outcome.structured_content["queries"][0]["usage"];
+    assert_eq!(usage["calls"], 1, "{}", outcome.structured_content);
+    assert_eq!(usage["inputTokens"], 12, "{}", outcome.structured_content);
+    runtime.close().await;
+}
+
 #[tokio::test]
 async fn independent_resource_assessments_are_dispatched_concurrently() {
     let server = MockServer::builder().start().await;

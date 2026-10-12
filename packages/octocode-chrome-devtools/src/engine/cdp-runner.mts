@@ -16,7 +16,9 @@ propagateOctocodeEnv({ cwd: process.cwd(), trusted: true });
 
 function octocodeOutputBase() {
   const workspace = resolve(process.cwd(), '.octocode');
-  mkdirSync(workspace, { recursive: true, mode: 0o700 });
+  // Under the sandbox the folder exists and its root is not writable (only tmp/chrome-devtools below it is).
+  if (!existsSync(workspace))
+    mkdirSync(workspace, { recursive: true, mode: 0o700 });
   return workspace;
 }
 

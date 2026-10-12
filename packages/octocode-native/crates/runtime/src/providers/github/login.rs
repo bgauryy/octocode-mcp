@@ -940,7 +940,7 @@ mod tests {
         assert!(!is_refresh_token_expired(&stored(None, Some("r"))));
     }
 
-    /// D-20: a negative UTC offset is a valid RFC 3339 expiry, not an
+    /// A negative UTC offset is a valid RFC 3339 expiry, not an
     /// unparsable (and so expired) one.
     #[test]
     fn expiry_honors_negative_and_positive_offsets() {
@@ -962,7 +962,7 @@ mod tests {
 
     #[tokio::test]
     async fn refresh_posts_to_web_origin_and_keeps_username() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .and(path("/login/oauth/access_token"))
             .and(body_string_contains("grant_type=refresh_token"))
@@ -1009,7 +1009,7 @@ mod tests {
         // leave exactly one refresh POST.
         let runtime = tokio::runtime::Runtime::new().expect("runtime");
         let server = runtime.block_on(async {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             Mock::given(method("POST"))
                 .and(path("/login/oauth/access_token"))
                 .and(body_string_contains("refresh_token=r1"))
@@ -1082,7 +1082,7 @@ mod tests {
 
     #[tokio::test]
     async fn forced_refresh_reuses_a_rotation_made_while_waiting() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         forbid_posts(&server).await;
         let dir = tempfile::tempdir().expect("tempdir");
         let mut rotated = expired_stored("r2");
@@ -1116,7 +1116,7 @@ mod tests {
     async fn oauth_calls_do_not_replay_bodies_across_redirects() {
         // A 307/308 from the token endpoint must not re-post the
         // refresh token or device code to another origin.
-        let other = MockServer::start().await;
+        let other = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "gho_stolen", "device_code": "d", "user_code": "u",
@@ -1125,7 +1125,7 @@ mod tests {
             .expect(0)
             .mount(&other)
             .await;
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         for (route, status) in [
             ("/login/oauth/access_token", 307_u16),
             ("/login/device/code", 308),

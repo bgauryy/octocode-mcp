@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// BENCHMARK, not a correctness test: run-all runs it only when named.
 // KPI: bytes per answer and lead share against the rg/gh shell recipes.
 // Exits 1 when a regression gate fails (see the gates at the end).
 //

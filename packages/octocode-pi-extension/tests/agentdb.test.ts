@@ -174,7 +174,7 @@ describe('openAgentDb', () => {
   });
 });
 
-describe('transactions and schema upgrades', () => {
+describe('transactions', () => {
   it('rethrows the original error when SQLite already rolled the transaction back', () => {
     const agent = openAgentDb(path.join(tmp(), 'rb.db'));
     try {
@@ -188,20 +188,6 @@ describe('transactions and schema upgrades', () => {
       expect(agent.db.prepare('SELECT key FROM meta').all()).toEqual([{ key: 'k' }]);
     } finally {
       agent.close();
-    }
-  });
-
-  it('adds the session start-time column to a version 1 database and keeps its rows', () => {
-    const file = path.join(tmp(), 'v1.db');
-    const first = openAgentDb(file);
-    first.db.exec("INSERT INTO sessions (id, pid) VALUES ('old', 42); ALTER TABLE sessions DROP COLUMN pid_started; PRAGMA user_version=1;");
-    first.close();
-    const again = openAgentDb(file);
-    try {
-      expect(again.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: AGENT_SCHEMA_VERSION });
-      expect(again.db.prepare("SELECT id, pid, pid_started FROM sessions WHERE id = 'old'").get()).toEqual({ id: 'old', pid: 42, pid_started: null });
-    } finally {
-      again.close();
     }
   });
 });

@@ -303,8 +303,27 @@ pub(super) fn empty(
     // A workspaceRoot-only query has no file: the row names none.
     if let Some(path) = query.path() {
         row["path"] = json!(path);
+        if category == "noLocations"
+            && path.ends_with(".rs")
+            && !runs_build_scripts(query)
+            && let Some(hints) = row["hints"].as_array_mut()
+        {
+            hints.push(json!(BUILD_SCRIPT_TIP));
+        }
     }
     row
+}
+
+/// rust-analyzer runs without build scripts by default, so a name a build
+/// script generates (`include!(concat!(env!("OUT_DIR"), …))`) has no
+/// location until they run.
+const BUILD_SCRIPT_TIP: &str = "A name a build script generates (include! of OUT_DIR) resolves only with rustContext {buildScripts:true}.";
+
+/// Whether the request already runs build scripts (`rustContext.buildScripts`).
+fn runs_build_scripts(query: &LspSearchQuery) -> bool {
+    query
+        .rust_context()
+        .is_some_and(|context| context["buildScripts"] == true)
 }
 
 pub(super) fn query_value(query: &LspSearchQuery) -> Value {
@@ -316,46 +335,6 @@ pub(super) fn continuation(query: Value) -> Value {
     crate::tools::result::Continuation::new(ToolId::LspSearch, query)
         .confidence("exact")
         .build()
-}
-
-/// Mark a row partial with `reason` and warnings, without a continuation
-/// (the caller attaches its own `next.*`).
-/// Append one line to the row's `warnings`; a non-object row is left alone.
-pub(super) fn push_warning(row: &mut Value, warning: String) {
-    let Some(object) = row.as_object_mut() else {
-        return;
-    };
-    if let Some(existing) = object
-        .entry("warnings")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-    {
-        existing.push(json!(warning));
-    }
-}
-
-pub(super) fn push_reason(row: &mut Value, reason: &str, warnings: &[String]) {
-    let Some(object) = row.as_object_mut() else {
-        return;
-    };
-    object.insert("isPartial".into(), json!(true));
-    if let Some(reasons) = object
-        .entry("partialReasons")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-    {
-        reasons.push(json!(reason));
-    }
-    if warnings.is_empty() {
-        return;
-    }
-    if let Some(existing) = object
-        .entry("warnings")
-        .or_insert_with(|| json!([]))
-        .as_array_mut()
-    {
-        existing.extend(warnings.iter().map(|warning| json!(warning)));
-    }
 }
 
 /// Name the row's coverage state where the row reports coverage details
@@ -402,18 +381,8 @@ pub(super) fn mark_partial(
     if !row.is_object() {
         return;
     }
-    push_reason(row, reason, warnings);
+    crate::tools::paging::mark_partial(row, reason, warnings);
     row["next"]["retry"] = continuation(query_value(query));
-}
-
-/// Flag a row as incomplete for a cap that retrying cannot lift: a typed
-/// terminal limit (no `next.retry`).
-pub(super) fn mark_terminal_limit(row: &mut Value, reason: &str, warnings: &[String]) {
-    if !row.is_object() {
-        return;
-    }
-    push_reason(row, reason, warnings);
-    row["terminalLimit"] = json!(true);
 }
 
 pub(super) fn with_next(query: &LspSearchQuery, mut value: Value) -> Value {
@@ -422,26 +391,33 @@ pub(super) fn with_next(query: &LspSearchQuery, mut value: Value) -> Value {
         .and_then(Value::as_bool)
         == Some(true)
     {
-        let mut next_query = query_value(query);
-        if let Some(object) = next_query.as_object_mut() {
-            object.insert(
-                "page".into(),
-                json!(
-                    value
-                        .pointer("/pagination/nextPage")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(2)
-                ),
-            );
-            if let Some(snapshot) = value.get("snapshot").and_then(Value::as_str).or_else(|| {
-                value
-                    .pointer("/pagination/snapshot")
-                    .and_then(Value::as_str)
-            }) {
-                object.insert("snapshot".into(), json!(snapshot));
+        let next_page = value
+            .pointer("/pagination/nextPage")
+            .and_then(Value::as_u64)
+            .and_then(|page| usize::try_from(page).ok())
+            .unwrap_or(2);
+        if let Some(page) = crate::tools::paging::next_cursor(
+            &mut value,
+            ToolId::LspSearch,
+            None,
+            "page",
+            next_page,
+        ) {
+            let mut next_query = query_value(query);
+            if let Some(object) = next_query.as_object_mut() {
+                object.insert("page".into(), json!(page));
+                if let Some(snapshot) =
+                    value.get("snapshot").and_then(Value::as_str).or_else(|| {
+                        value
+                            .pointer("/pagination/snapshot")
+                            .and_then(Value::as_str)
+                    })
+                {
+                    object.insert("snapshot".into(), json!(snapshot));
+                }
             }
+            value["next"]["nextPage"] = continuation(next_query);
         }
-        value["next"]["nextPage"] = continuation(next_query);
         // The continuation states the next page and the snapshot; `pageSize`
         // stays a page fact, so every page has one key set.
         if let Some(pagination) = value.get_mut("pagination").and_then(Value::as_object_mut) {
@@ -705,7 +681,7 @@ pub(super) const FILE_LEVEL_REASONS: [&str; 5] = [
 /// window of candidates.
 const CAPPED_REASONS: [&str; 1] = ["aliasScanCapped"];
 /// At most this many text-only files are listed as one bulk lead.
-const LISTED_TEXT_FILES: usize = 5;
+pub(super) const LISTED_TEXT_FILES: usize = 5;
 
 /// Mark an incoming-direction row partial: coverage reason, a warning, and
 /// (when the query names its symbol) a lexical `findText` lead over the
@@ -740,7 +716,7 @@ pub(super) fn flag_partial(
     match name {
         // Partial only with an executable recovery.
         Some(name) => {
-            push_reason(row, reason, &warnings);
+            crate::tools::paging::mark_partial(row, reason, &warnings);
             row["next"]["findText"] = text_search_lead(name, scope, text_only.as_deref());
             if CAPPED_REASONS.contains(&reason) {
                 // A fixed per-request cap: no page or retry reaches the
@@ -750,11 +726,7 @@ pub(super) fn flag_partial(
         }
         // A position anchor has no name to search for: coverage reason and
         // warning only.
-        None => match row.get_mut("warnings").and_then(Value::as_array_mut) {
-            Some(existing) => existing.extend(warnings.into_iter().map(Value::from)),
-            None if !warnings.is_empty() => row["warnings"] = json!(warnings),
-            None => {}
-        },
+        None => crate::tools::paging::push_warnings(row, warnings),
     }
 }
 
@@ -778,11 +750,29 @@ pub(super) fn flagged_with(row: &Value, reasons: &[&str]) -> bool {
 /// the files).
 pub(super) const TEXT_CHECK: &str = "a localSearch of the name";
 
-/// The lexical lead: one row per text-only file when there are a few,
+/// [`text_search_lead`] over files ignore rules keep out of the lexical
+/// scans: each row lifts them with `includeIgnored`.
+pub(super) fn ignored_text_lead(
+    name: &str,
+    scope: &super::scope::Scope,
+    files: &[String],
+) -> Value {
+    let mut lead = text_search_lead(name, scope, Some(files));
+    for row in lead["query"]["queries"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+    {
+        row["includeIgnored"] = json!(true);
+    }
+    lead
+}
+
+/// The lexical lead: one row per listed file when there are a few,
 /// otherwise the whole scope with the language family's globs. The
 /// word-bounded pattern is a `rust` regex: an unset `regex` would search its
 /// `\b` spelling as literal text.
-fn text_search_lead(
+pub(super) fn text_search_lead(
     name: &str,
     scope: &super::scope::Scope,
     text_only: Option<&[String]>,

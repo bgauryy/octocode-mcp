@@ -166,7 +166,8 @@ class Lines implements Component {
       }
       const indent = row.indent ?? '';
       const wrapped = wrapTextWithAnsi(row.text, Math.max(1, width - visibleWidth(indent)));
-      for (const line of wrapped.length > 0 ? wrapped : ['']) out.push(`${indent}${line}`);
+      // A width narrower than the indent still gets lines that fit: the indent and text are clipped together.
+      for (const line of wrapped.length > 0 ? wrapped : ['']) out.push(truncateToWidth(`${indent}${line}`, width, '…'));
     }
     return out;
   }

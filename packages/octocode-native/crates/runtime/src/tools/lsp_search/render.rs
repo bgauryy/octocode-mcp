@@ -190,25 +190,30 @@ pub(super) struct PageCut<'a> {
 /// `next`. A page past the end is empty, terminal and flagged `outOfRange`,
 /// never clamped to the last page, which would repeat rows the caller has.
 pub(super) fn paginate(items: &[Value], page: u32, cut: &PageCut<'_>) -> (Vec<Value>, Value) {
+    let (range, pagination) = page_window(page, cut);
+    (items[range].to_vec(), pagination)
+}
+
+/// The item range of one page over the `cut.sizes` items, with its
+/// pagination (see [`paginate`]).
+pub(super) fn page_window(page: u32, cut: &PageCut<'_>) -> (std::ops::Range<usize>, Value) {
     use crate::response::pages::PageFacts;
     use crate::tools::page_windows::Paging;
+    let total = cut.sizes.len();
     let page = (page.max(1)) as usize;
     let paging = Paging::of(cut.page_size.map(|size| size as usize), cut.budget);
     let windows = paging.windows(cut.sizes);
-    let range = windows
-        .get(page - 1)
-        .cloned()
-        .unwrap_or(items.len()..items.len());
+    let range = windows.get(page - 1).cloned().unwrap_or(total..total);
     let more = page < windows.len();
     let facts = match paging {
-        Paging::Count(size) => PageFacts::counted(page, size, items.len()),
-        Paging::Chars(_) => PageFacts::sized(page, windows.len(), items.len(), more),
+        Paging::Count(size) => PageFacts::counted(page, size, total),
+        Paging::Chars(_) => PageFacts::sized(page, windows.len(), total, more),
     };
     let mut pagination = facts.out_of_range(page > windows.len().max(1)).to_value();
     if more {
         pagination["nextPage"] = json!(page + 1);
     }
-    (items[range].to_vec(), pagination)
+    (range, pagination)
 }
 
 /// Characters each row costs a page when it prints as its own JSON.

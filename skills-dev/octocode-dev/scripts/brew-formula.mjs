@@ -81,18 +81,14 @@ ${arch('linux', 'intel')}
   end
 
   def install
-    # The CLI runs octocode-regex-worker from its own directory; keep both
-    # private in libexec and expose only the CLI.
-    libexec.install "octocode", "octocode-regex-worker"
-    bin.write_exec_script libexec/"octocode"
+    bin.install "octocode"
   end
 
   test do
     assert_match "octocode #{version}", shell_output("#{bin}/octocode --version")
     (testpath/"notes.txt").write "alpha\\nneedle beta\\n"
-    # A lookbehind runs in octocode-regex-worker, which must sit beside the CLI.
-    query = '{"path":"notes.txt","matchString":"(?<=needle )beta","regex":"rust"}'
-    assert_match '"matchedLines":[2]', shell_output("#{bin}/octocode localFetch '#{query}'")
+    query = '{"path":"notes.txt","matchString":"needle b[a-z]+","regex":"rust"}'
+    assert_match '"line":2,"value":"needle beta"', shell_output("#{bin}/octocode localSearch '#{query}'")
   end
 end
 `;

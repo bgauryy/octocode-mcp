@@ -15,10 +15,7 @@
     "url": "https://github.com/bgauryy/octocode.git",
     "directory": "packages/octocode-native"
   },
-  "bin": {
-    "octocode-native": "./bin/octocode.cjs",
-    "octocode-regex-worker": "./bin/octocode-regex-worker.cjs"
-  },
+  "bin": "./bin/octocode.cjs",
   "exports": {
     ".": {
       "types": "./js/runtime.d.ts",
@@ -32,7 +29,6 @@
     },
     "./bin/octocode.cjs": "./bin/octocode.cjs",
     "./bin/launch-native.cjs": "./bin/launch-native.cjs",
-    "./bin/octocode-regex-worker.cjs": "./bin/octocode-regex-worker.cjs",
     "./bin/resolve-binary.cjs": "./bin/resolve-binary.cjs",
     "./package.json": "./package.json"
   },
@@ -66,7 +62,7 @@
     "build:target": "node scripts/build-native.cjs --release --target",
     "build:all": "yarn clean:binaries && node scripts/build-native.cjs --release --all",
     "clean": "cargo clean && yarn clean:binaries",
-    "clean:binaries": "find npm -type f \\( -name 'octocode' -o -name 'octocode.exe' -o -name 'octocode-regex-worker' -o -name 'octocode-regex-worker.exe' -o -name '*.node' \\) -delete && rm -f octocode-native.*.node",
+    "clean:binaries": "find npm -type f \\( -name 'octocode' -o -name 'octocode.exe' -o -name '*.node' \\) -delete && rm -f octocode-native.*.node",
     "clean:cache": "cargo clean --workspace --profile dev",
     "test": "yarn test:scripts && vitest run && yarn test:rust",
     "test:node": "vitest run",

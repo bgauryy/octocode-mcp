@@ -293,6 +293,20 @@ impl GitHubTransport {
         Ok(super::CachePartition(hex::encode(digest.finalize())))
     }
 
+    /// Refuse a row's `searches` code searches before the first is sent when
+    /// they cannot all start within the rate-limit cap and the request's
+    /// deadline (the wait bound `execute` applies to each).
+    pub fn code_search_batch_refusal(
+        &self,
+        searches: usize,
+        context: &RequestContext,
+    ) -> Option<ProviderError> {
+        let cap = self.retry.max_rate_limit_wait;
+        let deadline = context.budget.admission_deadline(cap);
+        self.key_state(context.resolved_credential())
+            .code_search_batch_refusal(searches, self.budget.config(), cap, deadline)
+    }
+
     /// Code searches the request credential's window still has room for.
     pub fn code_search_room(&self, context: &RequestContext) -> usize {
         self.key_state(context.resolved_credential())
@@ -454,10 +468,7 @@ impl GitHubTransport {
             // `cap`, whichever ends later, within the call's own deadline;
             // the time they take is credited back to the request budget.
             let queued = Instant::now();
-            let wait_deadline = context
-                .budget
-                .effective_deadline()
-                .max(context.budget.wait_until.min(queued + cap));
+            let wait_deadline = context.budget.admission_deadline(cap);
             state
                 .wait_unblocked(
                     resource.bucket(),
@@ -688,10 +699,10 @@ impl GitHubTransport {
     }
 }
 
-/// Upper bound for one 5xx/network backoff sleep.
 /// The User-Agent every GitHub request (API and OAuth) sends.
 pub const HTTP_USER_AGENT: &str = "octocode-native";
 
+/// Upper bound for one 5xx/network backoff sleep.
 const MAX_BACKOFF: Duration = Duration::from_secs(8);
 
 enum Failure {

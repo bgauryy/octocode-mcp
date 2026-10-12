@@ -10,6 +10,7 @@ use crate::providers::github::{
 };
 use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
+use crate::tools::paging::push_warnings;
 use crate::tools::result::{Continuation, remove_nulls};
 use octocode_github::MAX_PER_PAGE;
 use serde_json::{Map, Value, json};
@@ -382,9 +383,9 @@ fn mark_bounded_closing(out: &mut Value, listed: usize, total: u64, first_window
     reasons.push(json!("closingReferenceLimit"));
     out["partialReasons"] = Value::Array(reasons);
     // Appended: a bot-comment warning on the same page stays.
-    crate::tools::gh_shared::push_warning(
+    push_warnings(
         out,
-        if first_window {
+        [if first_window {
             format!(
                 "closedBy lists {listed} of {total} linked pull requests; the first is a candidate, not the complete fix set."
             )
@@ -392,7 +393,7 @@ fn mark_bounded_closing(out: &mut Value, listed: usize, total: u64, first_window
             format!(
                 "The first window's closedBy lists {listed} of {total} linked pull requests; the rest are not listed."
             )
-        },
+        }],
     );
 }
 

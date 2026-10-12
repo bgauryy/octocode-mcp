@@ -65,6 +65,27 @@ fn css_source(blocks: usize) -> String {
     out
 }
 
+/// A markdown document mixing headings, wrapped paragraphs, lists, tables and
+/// code fences; `paragraph_lines` sets how long each wrapped paragraph runs
+/// without a blank line, the shape that joins lines into one paragraph.
+fn markdown_source(sections: usize, paragraph_lines: usize) -> String {
+    let mut out = String::from("# Project guide\n\n");
+    for i in 0..sections {
+        out.push_str(&format!("## Section {i}\n\n"));
+        for line in 0..paragraph_lines {
+            out.push_str(&format!(
+                "Line {line} of section {i} explains the `option_{i}` setting :rocket: in prose.\n"
+            ));
+        }
+        out.push_str(&format!(
+            "\n- item one for {i}\n- item two for {i}\n\n\
+             | key | value |\n|---|---|\n| retries | {i} |\n\n\
+             ```rust\nfn section_{i}() {{}}\n```\n\n---\n\n"
+        ));
+    }
+    out
+}
+
 fn bench_minify_js(c: &mut Criterion) {
     let mut group = c.benchmark_group("minify_content_view_js");
     for &blocks in &[6_usize, 40, 160] {
@@ -107,5 +128,31 @@ fn bench_minify_css(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_minify_js, bench_minify_css);
+fn bench_minify_markdown(c: &mut Criterion) {
+    let mut group = c.benchmark_group("minify_content_view_markdown");
+    for &(sections, paragraph_lines) in &[(20_usize, 4_usize), (4, 400)] {
+        let source = markdown_source(sections, paragraph_lines);
+        group.throughput(Throughput::Bytes(source.len() as u64));
+        group.bench_with_input(
+            BenchmarkId::from_parameter(format!("{}B", source.len())),
+            &source,
+            |b, source| {
+                b.iter(|| {
+                    black_box(apply_content_view_minification(
+                        black_box(source.as_str()),
+                        black_box("guide.md"),
+                    ))
+                });
+            },
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_minify_js,
+    bench_minify_css,
+    bench_minify_markdown
+);
 criterion_main!(benches);

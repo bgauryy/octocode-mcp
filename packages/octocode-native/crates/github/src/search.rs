@@ -143,6 +143,36 @@ impl GitHubTransport {
         request: &CodeSearchRequest,
         context: &RequestContext,
     ) -> Result<CodeSearchPage, ProviderError> {
+        let (mut page, withheld) = self
+            .cached_search(
+                "github-code-search",
+                self.code_search_spec(request)?,
+                context,
+                "invalid GitHub code search response",
+                |page: &CodeSearchPage| !page.incomplete_results,
+            )
+            .await?;
+        page.sso_partial_organizations = withheld;
+        Ok(page)
+    }
+
+    /// The cached page `search_code` would return for `request`, without
+    /// sending: a caller planning several searches counts window slots only
+    /// for the ones the cache cannot answer.
+    pub async fn cached_code_search(
+        &self,
+        request: &CodeSearchRequest,
+        context: &RequestContext,
+    ) -> Result<Option<CodeSearchPage>, ProviderError> {
+        self.cached_page(
+            "github-code-search",
+            &self.code_search_spec(request)?,
+            context,
+        )
+        .await
+    }
+
+    fn code_search_spec(&self, request: &CodeSearchRequest) -> Result<RequestSpec, ProviderError> {
         let mut url = self.endpoint().rest(&["search", "code"])?;
         url.query_pairs_mut()
             .append_pair("q", &request.query)
@@ -157,17 +187,7 @@ impl GitHubTransport {
                 "application/vnd.github+json"
             }),
         );
-        let (mut page, withheld) = self
-            .cached_search(
-                "github-code-search",
-                spec,
-                context,
-                "invalid GitHub code search response",
-                |page: &CodeSearchPage| !page.incomplete_results,
-            )
-            .await?;
-        page.sso_partial_organizations = withheld;
-        Ok(page)
+        Ok(spec)
     }
     pub async fn search_repositories(
         &self,
@@ -217,23 +237,10 @@ impl GitHubTransport {
         invalid: &'static str,
         complete: impl Fn(&T) -> bool,
     ) -> Result<(T, Vec<u64>), ProviderError> {
-        // The partition carries the endpoint and credential.
-        let partition = self.cache_partition(context, None)?;
-        let key = {
-            use sha2::{Digest, Sha256};
-            let mut digest = Sha256::new();
-            digest.update(spec.url.as_str().as_bytes());
-            digest.update([0]);
-            if let Some(accept) = spec.headers.get(reqwest::header::ACCEPT) {
-                digest.update(accept.as_bytes());
-            }
-            format!("{namespace}:{}", hex::encode(digest.finalize()))
-        };
-        if let Some(cached) = self.cache.get(&partition, &key).await
-            && let Ok(page) = serde_json::from_slice::<T>(&cached.bytes)
-        {
+        if let Some(page) = self.cached_page(namespace, &spec, context).await? {
             return Ok((page, Vec::new()));
         }
+        let (partition, key) = self.search_cache_slot(namespace, &spec, context)?;
         let response = self
             .execute(spec, context)
             .await
@@ -258,6 +265,44 @@ impl GitHubTransport {
         }
         Ok((page, withheld))
     }
+
+    /// A stored search page for `spec`, when the store still holds one.
+    async fn cached_page<T: for<'de> Deserialize<'de>>(
+        &self,
+        namespace: &str,
+        spec: &RequestSpec,
+        context: &RequestContext,
+    ) -> Result<Option<T>, ProviderError> {
+        let (partition, key) = self.search_cache_slot(namespace, spec, context)?;
+        Ok(self
+            .cache
+            .get(&partition, &key)
+            .await
+            .and_then(|cached| serde_json::from_slice::<T>(&cached.bytes).ok()))
+    }
+
+    /// The store slot of a search: the partition carries the endpoint and
+    /// credential, the key the URL and `Accept`.
+    fn search_cache_slot(
+        &self,
+        namespace: &str,
+        spec: &RequestSpec,
+        context: &RequestContext,
+    ) -> Result<(super::CachePartition, String), ProviderError> {
+        use sha2::{Digest, Sha256};
+        let partition = self.cache_partition(context, None)?;
+        let mut digest = Sha256::new();
+        digest.update(spec.url.as_str().as_bytes());
+        digest.update([0]);
+        if let Some(accept) = spec.headers.get(reqwest::header::ACCEPT) {
+            digest.update(accept.as_bytes());
+        }
+        Ok((
+            partition,
+            format!("{namespace}:{}", hex::encode(digest.finalize())),
+        ))
+    }
+
     /// List an owner's repositories. `sort` is a list-API sort key
     /// (`created`, `updated`, `pushed`, `full_name`); when set, results are
     /// ordered descending (newest first) like the search API's date sorts.

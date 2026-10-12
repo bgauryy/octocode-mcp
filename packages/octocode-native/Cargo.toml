@@ -46,10 +46,10 @@ tokio-util = { version = "0.7", default-features = false }
 futures-util = "0.3"
 bytes = "1"
 base64 = "0.23"
-getrandom = "0.3"
+getrandom = "0.4"
 secrecy = "0.10"
 flate2 = "1"
-toml = { version = "0.9", features = ["preserve_order"] }
+toml = { version = "1", features = ["preserve_order"] }
 regress = "0.12"
 ignore = "0.4"
 globset = "0.4"

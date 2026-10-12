@@ -1,5 +1,6 @@
 // Shared accessibility-tree ref collection (page-snapshot, dom-operations diff, annotated screenshots).
-// Library: imported from .octocode/ax-snapshot.mjs (cdp-sandbox stages it); never run as a CLI.
+// Library: checks import it relatively; task scripts import .octocode/tmp/chrome-devtools/helpers/ax-snapshot.mjs
+// (cdp-sandbox stages it there); never run as a CLI.
 
 export const INTERACTIVE_ROLES = new Set([
   'button',

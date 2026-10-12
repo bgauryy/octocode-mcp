@@ -54,8 +54,8 @@ Removed direct dependencies: `ast-grep-language`, `grep`, `lightningcss`, `cross
 Runtime credential discovery, configuration, and platform keyrings remain in
 `octocode-native`.
 
-`octocode-cli` owns `clap` for argument parsing, `regress` for the isolated regex
-worker, and `flate2`/`zip` for managed LSP installation. It calls runtime and engine
+`octocode-cli` owns `clap` for argument parsing and `flate2`/`zip` for managed LSP
+installation. It calls runtime and engine
 libraries directly. `octocode-runtime-napi` owns `napi`, `napi-derive`, and
 `napi-build` for the runtime addon; neither the runtime library nor the engine
 has an N-API dependency.

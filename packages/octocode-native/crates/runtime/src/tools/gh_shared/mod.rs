@@ -12,7 +12,8 @@ use crate::providers::github::{
     RequestContext,
 };
 use crate::tools::id::ToolId;
-use crate::tools::result::{Continuation, remove_null_fields};
+use crate::tools::paging::push_warnings;
+use crate::tools::result::{Continuation, query_row};
 use serde_json::{Value, json};
 
 /// Hints are rendered whole only up to the response guidance limit (120
@@ -25,7 +26,7 @@ pub(crate) const SSO_AUTHORIZATION_HINT: &str =
     "Authorize this token for the organization (SAML SSO) at the row's ssoUrl, then retry.";
 
 /// A search qualifier named a login GitHub cannot resolve.
-pub(crate) const USER_QUALIFIER_HINT: &str = "A login in author, committer, assignee, mentions, commenter, reviewed-by or review-requested does not resolve: fix its spelling or drop the qualifier. ghSearchRepo with owner set to the login confirms it exists.";
+pub(crate) const USER_QUALIFIER_HINT: &str = "A login in a user qualifier (author, assignee, reviewed-by, …) does not resolve: fix its spelling or drop it.";
 
 /// A repository that did not resolve: GitHub answers a private repository
 /// the token cannot see exactly like a missing one (the error says so); the
@@ -175,6 +176,14 @@ pub(crate) fn ref_recovery(owner: &str, repo: &str) -> Value {
     .build()
 }
 
+/// A repository that did not resolve: a search for its name names the
+/// owner that holds it.
+pub(crate) fn repository_search(repo: &str) -> Value {
+    Continuation::new(ToolId::GhSearchRepo, json!({"keywords": [repo]}))
+        .confidence("medium")
+        .build()
+}
+
 /// A missing ref's failure gets the runnable refs listing (the lead is the
 /// fix: no hint beside it); any other failure is returned unchanged.
 pub(crate) fn with_ref_recovery(mut failure: GhFailure, owner: &str, repo: &str) -> GhFailure {
@@ -268,6 +277,33 @@ pub(crate) fn renamed_warning(owner: &str, repo: &str, to: &(String, String)) ->
 /// Results GitHub search reaches for one query, however many match.
 pub(crate) const SEARCH_RESULT_CAP: usize = 1000;
 
+/// What one search's match count reaches through GitHub's 1,000-result
+/// window at `per` rows a page.
+#[derive(Clone, Copy)]
+pub(crate) struct SearchReach {
+    /// Reachable results.
+    pub(crate) total: usize,
+    pub(crate) pages: usize,
+    /// More results matched than the window reaches.
+    pub(crate) capped: bool,
+}
+
+impl SearchReach {
+    pub(crate) fn new(matched: usize, per: usize) -> Self {
+        let total = matched.min(SEARCH_RESULT_CAP);
+        Self {
+            total,
+            pages: total.div_ceil(per.max(1)),
+            capped: matched > SEARCH_RESULT_CAP,
+        }
+    }
+
+    /// Whether page `current` lies past the last page of a non-empty search.
+    pub(crate) fn past_last(&self, current: usize) -> bool {
+        self.total > 0 && current > self.pages
+    }
+}
+
 /// A search page past GitHub's 1,000-result window cannot be read.
 pub(crate) fn reject_window(page: usize, per: usize) -> Result<(), ProviderError> {
     if (page - 1).saturating_mul(per) >= SEARCH_RESULT_CAP {
@@ -294,20 +330,12 @@ pub(crate) fn with_search_repair(
     repo: Option<&str>,
 ) -> GhFailure {
     let (name, lead) = if failure.error.reason == Some(ProviderErrorReason::SearchWindowExceeded) {
-        let mut last = serde_json::to_value(query).unwrap_or_default();
-        remove_null_fields(&mut last);
-        last["page"] = json!(SEARCH_RESULT_CAP.div_ceil(per.max(1)));
         (
             "repair",
-            Continuation::new(tool, last).confidence("exact").build(),
+            page_replay(tool, query, SEARCH_RESULT_CAP.div_ceil(per.max(1))),
         )
     } else if let Some(repo) = repo.filter(|_| repository_not_found(&failure.error)) {
-        (
-            "findRepository",
-            Continuation::new(ToolId::GhSearchRepo, json!({"keywords": [repo]}))
-                .confidence("medium")
-                .build(),
-        )
+        ("findRepository", repository_search(repo))
     } else {
         return failure;
     };
@@ -331,14 +359,69 @@ pub(crate) fn add_next(
     if !has_more {
         return;
     }
-    if page >= crate::contracts::query_schema_max(tool, None, "page") {
-        value["terminalLimit"] = json!(true);
+    let Some(next_page) = crate::tools::paging::next_cursor(value, tool, None, "page", page + 1)
+    else {
         return;
+    };
+    value["next"] = json!({"nextPage": page_replay(tool, query, next_page)});
+}
+
+/// The same query at `page`: an exact replay.
+fn page_replay(tool: ToolId, query: &impl serde::Serialize, page: usize) -> Value {
+    let mut row = query_row(query, &[]);
+    row["page"] = json!(page);
+    Continuation::new(tool, row).confidence("exact").build()
+}
+
+/// `row` without `keys`.
+pub(crate) fn without(row: &Value, keys: &[&str]) -> Value {
+    let mut variant = row.clone();
+    if let Some(object) = variant.as_object_mut() {
+        for key in keys {
+            object.remove(*key);
+        }
     }
-    let mut next = serde_json::to_value(query).unwrap_or_default();
-    remove_null_fields(&mut next);
-    next["page"] = json!(page + 1);
-    value["next"] = json!({"nextPage": Continuation::new(tool, next).confidence("exact").build()});
+    variant
+}
+
+/// `row` once per keyword with that keyword dropped, the last first (the
+/// first usually names the subject); none for fewer than two keywords.
+pub(crate) fn drop_each_keyword(row: &Value) -> Vec<Value> {
+    let keywords = row["keywords"].as_array().map_or(&[][..], Vec::as_slice);
+    if keywords.len() < 2 {
+        return Vec::new();
+    }
+    (0..keywords.len())
+        .rev()
+        .map(|dropped| {
+            let mut variant = row.clone();
+            variant["keywords"] = keywords
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != dropped)
+                .map(|(_, keyword)| keyword.clone())
+                .collect();
+            variant
+        })
+        .collect()
+}
+
+/// An empty search's broader `variants` as one low-confidence batch lead,
+/// so the variant that returns rows names what emptied the search. A
+/// variant the tool would reject is skipped, and at most `limit` are kept.
+pub(crate) fn broaden_lead(tool: ToolId, variants: Vec<Value>, limit: usize) -> Option<Value> {
+    let variants = variants
+        .into_iter()
+        .filter(|variant| {
+            crate::contracts::validate(tool.as_str(), json!({ "queries": [variant] })).is_ok()
+        })
+        .take(limit)
+        .collect::<Vec<_>>();
+    (!variants.is_empty()).then(|| {
+        Continuation::input(tool, json!({ "queries": variants }))
+            .confidence("low")
+            .build()
+    })
 }
 
 /// Provider-side incompleteness of a search page: the 1,000-result cap and
@@ -362,11 +445,11 @@ pub(crate) fn apply_partial(
         // The match count is this call's fact; that search stops at 1,000
         // is the cap reason (`providerResultCap`), not a per-call note.
         if page == 1 {
-            push_warning(
+            push_warnings(
                 value,
-                format!(
+                [format!(
                     "GitHub matched {matched} {subject} results; the first {SEARCH_RESULT_CAP} are reachable."
-                ),
+                )],
             );
         }
         reasons.push("providerResultCap");
@@ -378,10 +461,7 @@ pub(crate) fn apply_partial(
     }
     if incomplete {
         reasons.push("providerIncompleteResults");
-        let mut retry = serde_json::to_value(query).unwrap_or_default();
-        remove_null_fields(&mut retry);
-        retry["page"] = json!(page);
-        value["next"]["retry"] = Continuation::new(tool, retry).confidence("exact").build();
+        value["next"]["retry"] = page_replay(tool, query, page);
     }
     if !reasons.is_empty() {
         value["isPartial"] = json!(true);
@@ -592,14 +672,6 @@ pub(crate) fn ensure_next(value: &mut Value) {
     }
 }
 
-/// Appends one per-call warning to a row's `warnings`.
-pub(crate) fn push_warning(value: &mut Value, warning: String) {
-    match value.get_mut("warnings").and_then(Value::as_array_mut) {
-        Some(warnings) => warnings.push(json!(warning)),
-        None => value["warnings"] = json!([warning]),
-    }
-}
-
 /// Puts one per-call warning first in a row's `warnings` (a rename the
 /// rest of the row's warnings follow from).
 pub(crate) fn push_warning_front(value: &mut Value, warning: String) {
@@ -639,6 +711,6 @@ fn warn_absent_fields(value: &mut Value, rows: &str, fields: &[String]) {
         .filter(|key| !listed.iter().any(|row| row.get(*key).is_some()))
         .collect::<Vec<_>>();
     if !absent.is_empty() {
-        push_warning(value, format!("No row has {}.", absent.join(", ")));
+        push_warnings(value, [format!("No row has {}.", absent.join(", "))]);
     }
 }

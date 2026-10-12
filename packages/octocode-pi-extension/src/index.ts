@@ -2,16 +2,19 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from '@earendil-wo
 import { registerApi } from './api/register.js';
 import { registerAskUser } from './ask/tool.js';
 import { elisionGate, registerCompaction } from './compaction/register.js';
-import { bashSafetyGate, catastrophicCommand } from './files/bash-guard.js';
 import { registerBashTool } from './files/bash.js';
 import { Checkpoints } from './files/checkpoint.js';
 import { registerCheckpoints } from './files/checkpoint-command.js';
-import { REVIEW_ENV, registerReviewCommand, type ReviewMode } from './files/review.js';
 import { registerHooks, registerHooksCommand } from './hooks/register.js';
 import { FileGuard, registerFileTool } from './files/tool.js';
 import { registerMcpCommand } from './mcp/command.js';
 import { registerOctocodeMcp } from './mcp/octocode.js';
 import { envFlag, SUBAGENT_ENV } from './shared/env.js';
+import { Permission } from './permission/ask.js';
+import { registerPermissionCommand } from './permission/command.js';
+import { permissionGate, type GateVerdict } from './permission/gate.js';
+import { createProvenance } from './permission/provenance.js';
+import { catastrophicCommand, shellSafetyGate } from './permission/shell.js';
 import { Subcommands } from './shared/commands.js';
 import { projectTrust, registerTrustCommand } from './shared/trust.js';
 import { errorMessage, firstLine, settleWithin } from './shared/util.js';
@@ -24,7 +27,8 @@ import { registerBacklog } from './backlog/index.js';
 import { registerMemory } from './memory/register.js';
 import { setCurrentSession } from './shared/home.js';
 import { loadProfiles, type AgentProfile } from './subagents/profiles.js';
-import { maxSubagents, registerAgentTool, type AgentControl } from './subagents/tool.js';
+import { maxSubagents } from './subagents/claim.js';
+import { registerAgentTool, type AgentControl } from './subagents/tool.js';
 import { EXTERNAL_SENDER, MESSAGE_MAX_CHARS, Team } from './team/session.js';
 import { registerCollab } from './team/tools.js';
 import { registerTurnSetup } from './turn.js';
@@ -41,11 +45,11 @@ import { registerWebTool } from './web/web.js';
  * MCP client), subagents, web and browser tools, askUser and a focused prompt.
  *
  * Cross-cutting runtime policy is composed here, once, in an order that reads top to bottom: the `tool_call` gate
- * pipeline (also applied to the user's `!cmd` runs), the hold that keeps a headless run open for its background work,
+ * pipeline (hard refusals, hooks, then the permission mode; the hard ones also apply to the user's `!cmd` runs), the hold that keeps a headless run open for its background work,
  * and the confirmation before a session switch stops that work. Domains supply the pieces (a gate, a `settle()`, a
  * count); none registers its own handler for these events.
  *
- * Every user command is a subcommand of `/octocode` (`agents`, `hooks`, `api`, `review`, `rewind`, `jobs`, …) and is
+ * Every user command is a subcommand of `/octocode` (`agents`, `hooks`, `api`, `permission`, `rewind`, `jobs`, …) and is
  * listed by `/octocode help`. The frequent ones also get a top-level shortcut, all aliased here from `SHORTCUTS` (only
  * those registered in this mode); `/mcp` is Pi's built-in MCP for the user's own servers, `/octocode mcp` the Octocode one.
  */
@@ -65,16 +69,24 @@ export default function octocode(pi: ExtensionAPI): void {
   let profiles = new Map<string, AgentProfile>();
   const octocodeMcp = registerOctocodeMcp(pi, packageVersion());
   registerMcpCommand(commands, octocodeMcp);
+  // One permission state per session: the mode, its grants, and the provenance tripwire's index.
+  const permission = new Permission({ pi, isSubagent });
+  const annotations = (name: string) => pi.getAllTools().find((tool) => tool.name === name)?.annotations;
+  const provenance = createProvenance({ annotations });
 
   pi.on('session_start', async (_event, ctx) => {
     // Before anything writes output: spilled results, bash logs and checkpoints go to this session's folder.
     setCurrentSession(ctx.sessionManager.getSessionId());
+    // Every start (resume and fork included) re-applies the start mode, so `full` never comes back silently.
+    permission.start(ctx);
+    provenance.clear();
   });
+  // Every result, nested codemode calls included, before any later call can repeat its text.
+  pi.on('tool_result', async (event, ctx) => provenance.record(event, ctx));
 
   guard.reservedBy = (file) => team.reservation(file, file);
-  const review: ReviewMode = { on: envFlag(process.env, REVIEW_ENV) };
   const checkpoints = new Checkpoints();
-  registerFileTool(pi, guard, isSubagent ? undefined : review, checkpoints);
+  registerFileTool(pi, guard, permission, checkpoints);
   // Pi's bash with a foreground deadline and background jobs.
   const jobs = registerBashTool(pi, commands);
   let agents: AgentControl | undefined;
@@ -92,16 +104,16 @@ export default function octocode(pi: ExtensionAPI): void {
   registerCheckpoints(pi, checkpoints, (file) => guard.forget(file), commands);
   registerSessions(pi, { commands, isSubagent, filesChanged: () => new Set(checkpoints.list().map((entry) => entry.path)).size });
   registerBacklog(pi, { commands, isSubagent, agentId: () => team.id });
-  registerMemory(pi, { commands, isSubagent });
+  registerMemory(pi, { commands, isSubagent, permission });
   const skillCount = () => pi.getCommands().filter((command) => command.source === 'skill').length;
   registerWebTool(pi);
-  registerBrowserTool(pi, new BrowserTool());
-  const collab = registerCollab(pi, team, { stopAgent: isSubagent ? undefined : (id, by) => agents?.stop(id, by) });
+  registerBrowserTool(pi, new BrowserTool(permission));
+  const collab = registerCollab(pi, team, { stopAgent: isSubagent ? undefined : (id, by) => agents?.stop(id, by), beforeLeave: async () => agents?.stopAll() });
   if (!isSubagent) {
-    registerReviewCommand(pi, commands, review);
+    registerPermissionCommand(pi, commands, permission, () => provenance.size());
     registerTrustCommand(commands);
     registerAskUser(pi);
-    agents = registerAgentTool(pi, () => profiles, team);
+    agents = registerAgentTool(pi, () => profiles, team, permission);
     commands.add('agents', agents.command);
   }
   registerSkills(pi);
@@ -133,17 +145,27 @@ export default function octocode(pi: ExtensionAPI): void {
     await api?.start(ctx);
   });
 
-  // The tool-call pipeline, cheapest and most certain first; the first block wins. User hooks run last: they spawn
-  // processes, so only for calls the built-in gates let through. Pi runs no call of a batch before every call's checks
-  // ended, so their time is shown: live on the working line, then in the row (`timed` reads `recordCheck`).
-  const gates = [elisionGate, collab.reservationGate, bashSafetyGate, hooks.preToolUse];
+  // The tool-call pipeline, cheapest and most certain first; the first block wins. Hard refusals come first and are
+  // never asked; user hooks spawn processes, so they run only for calls the built-in gates let through; the permission
+  // gate asks last (a hook's `ask` is handed to it), so the user is never asked about a call a hook would deny. Pi runs
+  // no call of a batch before every call's checks ended, so their time is shown: live on the working line, then in the
+  // row (`timed` reads `recordCheck`).
+  const gates: Array<(event: ToolCallEvent, ctx: ExtensionContext, prior?: GateVerdict) => Promise<GateVerdict | undefined>> = [
+    elisionGate,
+    collab.reservationGate,
+    shellSafetyGate,
+    hooks.preToolUse,
+    permissionGate({ permission, provenance, annotations }),
+  ];
   pi.on('tool_call', async (event, ctx) => {
     const started = Date.now();
     activity.checking(event.toolCallId, true);
     try {
+      let prior: GateVerdict | undefined;
       for (const gate of gates) {
-        const verdict = await gate(event, ctx);
+        const verdict = await gate(event, ctx, prior);
         if (verdict?.block) return verdict;
+        if (verdict?.ask) prior = { ask: verdict.ask };
       }
       return undefined;
     } finally {
@@ -162,7 +184,8 @@ export default function octocode(pi: ExtensionAPI): void {
     },
     async (command: string, ctx: ExtensionContext) => {
       const call = { type: 'tool_call', toolCallId: 'user-bash', toolName: 'bash', input: { command } } as ToolCallEvent;
-      return (await hooks.preToolUse(call, ctx))?.reason;
+      const verdict = await hooks.preToolUse(call, ctx);
+      return verdict?.reason ?? verdict?.ask;
     },
   ];
   pi.on('user_bash', async (event, ctx) => {
@@ -180,7 +203,9 @@ export default function octocode(pi: ExtensionAPI): void {
   // session goes on; an aborted or failed run has no turn to hand the reports to.
   pi.on('agent_before_settle', async (event, ctx) => {
     if (ctx.hasUI || event.outcome !== 'completed') return undefined;
-    await settleWithin(Promise.all([jobs.settle(), agents?.settle()]), BACKGROUND_SETTLE_MS, ctx.signal);
+    // ctx.signal is unset once the model's run is over; an interrupt for this agent ends the wait too.
+    const stop = ctx.signal ? AbortSignal.any([ctx.signal, team.interrupted]) : team.interrupted;
+    await settleWithin(Promise.all([jobs.settle(), agents?.settle()]), BACKGROUND_SETTLE_MS, stop);
     return undefined;
   });
 

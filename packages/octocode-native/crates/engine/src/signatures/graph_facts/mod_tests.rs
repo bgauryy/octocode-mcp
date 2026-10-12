@@ -1186,3 +1186,26 @@ fn graph_fact_notes_classify_by_kind() {
         None
     );
 }
+
+/// Only plain `pub` exports a Rust item; a restricted visibility keeps it
+/// inside the crate.
+#[test]
+fn rust_restricted_visibility_is_not_exported() {
+    let src = "pub fn open() {}\npub(crate) fn krate() {}\npub(super) fn parent() {}\npub(self) fn own() {}\npub(in crate::a) fn scoped() {}\nfn private() {}\npub\nfn split() {}\n";
+    let graph = facts(src, "vis.rs");
+    let exported = |name: &str| {
+        graph["declarations"]
+            .as_array()
+            .expect("declarations")
+            .iter()
+            .find(|decl| decl["name"] == name)
+            .unwrap_or_else(|| panic!("{name}: {graph}"))
+            .get("exported")
+            == Some(&Value::Bool(true))
+    };
+    assert!(exported("open"));
+    assert!(exported("split"));
+    for name in ["krate", "parent", "own", "scoped", "private"] {
+        assert!(!exported(name), "{name}");
+    }
+}

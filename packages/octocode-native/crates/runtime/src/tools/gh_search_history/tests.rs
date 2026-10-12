@@ -74,7 +74,7 @@ fn canonical_issue_qualifier_order() {
             .ends_with("archived:true")
     );
 }
-/// SH4: `linked:pr` (issues with a linked PR) and `linked:issue` reach the
+/// The `linked:pr` (issues with a linked PR) and `linked:issue` reach the
 /// search query on issues and pull requests.
 #[test]
 fn linked_qualifier_reaches_the_search_query() {
@@ -487,7 +487,7 @@ fn empty_history_rows_are_marked_empty() {
 async fn cap_is_terminal_only_after_the_last_reachable_page() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/search/issues",
@@ -547,7 +547,7 @@ async fn cap_is_terminal_only_after_the_last_reachable_page() {
 async fn search_of_a_missing_repository_is_not_found() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let unsearchable = json!({
         "message": "Validation Failed",
         "errors": [{"message": "The listed users and repositories cannot be searched either because the resources do not exist or you do not have permission to view them.",
@@ -578,7 +578,7 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
     use crate::providers::github::ProviderErrorReason;
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/search/issues",
@@ -615,7 +615,7 @@ async fn search_naming_a_missing_user_is_not_a_missing_repository() {
     );
     let hint = hint.expect("a hint");
     assert!(
-        hint.contains("author") && hint.contains("ghSearchRepo"),
+        hint.contains("author") && hint.contains("spelling"),
         "{hint}"
     );
     let lead = failure
@@ -657,7 +657,7 @@ async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failur
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/users/ghost"))
         .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message": "Not Found"})))
@@ -729,7 +729,7 @@ async fn commit_search_naming_a_missing_user_fails_before_the_search() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/users/ghost"))
         .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message": "Not Found"})))
@@ -779,7 +779,7 @@ async fn commit_search_naming_a_missing_user_fails_before_the_search() {
                 && !message.contains("Repository"),
             "{message}"
         );
-        assert!(hint.expect("a hint").contains("ghSearchRepo"));
+        assert!(hint.expect("a hint").contains("spelling"));
         let lead = failure
             .next
             .expect("a lead")
@@ -799,7 +799,7 @@ async fn commit_search_confirms_each_named_login_once_and_only_then() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/users/Dev"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"login": "dev"})))
@@ -848,7 +848,7 @@ async fn commit_search_confirms_each_named_login_once_and_only_then() {
 async fn commit_search_read_targets_the_first_sha_without_a_candidate_list() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let commit = |sha: &str| {
         json!({"sha": sha, "commit": {"message": format!("Fix {sha}\n\nWhy: the body names the cache"),
             "author": {"name": "Dev", "date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}})
@@ -893,7 +893,7 @@ async fn commit_search_read_targets_the_first_sha_without_a_candidate_list() {
 async fn commit_listing_rows_are_typed_commits() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/r/commits",
@@ -941,7 +941,7 @@ async fn plain_issue_listing_pages_issue_search_without_pr_gaps() {
     };
 
     let issue = |n: u64| json!({"number": n, "title": format!("issue {n}"), "state": "open", "user": {"login": "dev"}});
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/issues"))
         .and(query_param("q", "is:issue repo:o/full"))
@@ -1086,7 +1086,7 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
         matchers::{method, path, query_param},
     };
     let row = json!({"number": 7, "title": "Fix", "state": "open", "user": {"login": "dev"}});
-    let found = MockServer::start().await;
+    let found = MockServer::builder().start().await;
     mount_json(
         &found,
         "/api/v3/search/issues",
@@ -1112,7 +1112,7 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
         .expect("search");
     assert_eq!(data["pullRequests"][0]["number"], 7, "{data}");
 
-    let renamed = MockServer::start().await;
+    let renamed = MockServer::builder().start().await;
     for (scope, items) in [("old/r", json!([])), ("new/r", json!([row]))] {
         Mock::given(method("GET"))
             .and(path("/api/v3/search/issues"))
@@ -1254,7 +1254,7 @@ fn branch_and_label_filters_come_from_qualifiers() {
     }
 }
 
-/// SH1: a commit row whose headline ends in `(#N)` names the PR; only the
+/// A commit row whose headline ends in `(#N)` names the PR; only the
 /// trailing suffix counts (a revert names the reverting PR).
 #[test]
 fn a_squash_headline_names_its_pull_request_once() {
@@ -1282,7 +1282,7 @@ fn a_squash_headline_names_its_pull_request_once() {
     }
 }
 
-/// SH2: issue rows carry the discussion size like PR rows; zero stays out.
+/// Issue rows carry the discussion size like PR rows; zero stays out.
 #[test]
 fn issue_rows_carry_a_non_zero_comment_count() {
     let issue = |comments: u64| {
@@ -1295,7 +1295,7 @@ fn issue_rows_carry_a_non_zero_comment_count() {
     assert!(issue(0).get("commentsCount").is_none());
 }
 
-/// SH5: an empty search with several keywords offers one drop-one variant
+/// An empty search with several keywords offers one drop-one variant
 /// per keyword (at most 5, the last keyword dropped first) instead of
 /// dropping them all.
 #[test]
@@ -1333,7 +1333,7 @@ fn empty_multi_keyword_search_broadens_one_keyword_at_a_time() {
     assert_eq!(seven[4]["keywords"], json!(["a", "b", "d", "e", "f", "g"]));
 }
 
-/// SH6: the PR read of a relevance-ordered search targets row 0 (the best
+/// The PR read of a relevance-ordered search targets row 0 (the best
 /// match), not the first merged row; a sorted page keeps merged-first.
 #[test]
 fn pull_request_read_targets_the_best_match_unless_sorted() {
@@ -1361,14 +1361,14 @@ fn pull_request_read_targets_the_best_match_unless_sorted() {
     );
 }
 
-/// SH1 + SH6: a path commit listing leads to the first `(#N)` row's PR
+/// A path commit listing leads to the first `(#N)` row's PR
 /// scoped to that path, and the envelope neither echoes owner/repo nor
 /// restates totalPages.
 #[tokio::test]
 async fn commit_listing_leads_to_the_squash_pull_request() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let commit = |sha: &str, message: &str| {
         json!({"sha": sha, "commit": {"message": message,
             "author": {"name": "Dev", "date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}})
@@ -1427,7 +1427,7 @@ async fn a_commit_list_page_with_more_says_why_it_has_no_total() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let commit = |sha: &str| {
         json!({"sha": sha, "commit": {"message": "Fix cache",
             "author": {"name": "Dev", "date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}})
@@ -1460,7 +1460,7 @@ async fn a_commit_list_page_with_more_says_why_it_has_no_total() {
     );
 }
 
-/// SH3: a resolved window is one range value: both bounds `a..b`, one bound
+/// A resolved window is one range value: both bounds `a..b`, one bound
 /// `>=a` / `<=b` (commit `committer-date:` and PR/issue `created:` alike).
 #[test]
 fn date_windows_render_as_one_search_range() {
@@ -1551,7 +1551,7 @@ fn fields_reach_the_query_without_changing_the_search() {
 async fn fields_project_listed_commits_end_to_end() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/r/commits",
@@ -1618,7 +1618,7 @@ fn rows_filtered_on_the_created_window_keep_created_at() {
 async fn an_absent_picked_key_is_named_once() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/r/commits",
@@ -1651,7 +1651,7 @@ async fn an_absent_picked_key_is_named_once() {
 async fn picked_keys_survive_the_implied_drop() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/search/issues",
@@ -1692,7 +1692,7 @@ async fn since_until_reach_the_request_of_every_operation() {
         matchers::{method, path, query_param, query_param_contains},
     };
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let empty = json!({"total_count": 0, "incomplete_results": false, "items": []});
     for (route, scope) in [
         ("/api/v3/search/issues", "is:pr repo:o/r"),
@@ -1761,7 +1761,7 @@ async fn since_until_reach_the_request_of_every_operation() {
 async fn happy_path_rows_carry_the_next_hop_anchors() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/r/pulls",
@@ -1873,7 +1873,7 @@ async fn commit_listing_page_two_is_the_providers_next_page() {
         matchers::{method, path, query_param},
     };
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let commit = |sha: &str| json!({"sha": sha, "commit": {"message": sha, "author": {"date": "2026-09-01T00:00:00Z"}}});
     for (page, shas, link) in [
         (
@@ -1966,7 +1966,7 @@ fn cross_repository_rows_name_owner_and_repo() {
 async fn a_missing_listing_scope_names_its_repair() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/repos/o/r/commits",
@@ -2007,7 +2007,7 @@ async fn a_missing_listing_scope_names_its_repair() {
 async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
     use wiremock::MockServer;
 
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     mount_json(
         &server,
         "/api/v3/search/issues",
@@ -2041,5 +2041,51 @@ async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
         assert_eq!(data[rows_key], json!([]), "{data}");
         assert!(data["next"].get("broadenSearch").is_none(), "{data}");
         assert!(data.get("warnings").is_none(), "no rename lookup: {data}");
+    }
+}
+
+/// `totalPages` appears only beside an exact total: an uncapped search
+/// count states it; a count past GitHub's 1,000-result window states the
+/// reachable `totalItems` and `partialReasons:["providerResultCap"]`, no
+/// page count.
+#[tokio::test]
+async fn total_pages_appear_only_beside_an_exact_total() {
+    use wiremock::MockServer;
+    for (total_count, total_pages) in [(30, Some(3)), (5_000, None)] {
+        let server = MockServer::builder().start().await;
+        let items = (1..=10)
+            .map(|number| {
+                json!({"number": number, "title": "t", "state": "open",
+                "pull_request": {"merged_at": null}})
+            })
+            .collect::<Vec<_>>();
+        mount_json(
+            &server,
+            "/api/v3/search/issues",
+            200,
+            json!({"total_count": total_count, "incomplete_results": false, "items": items}),
+        )
+        .await;
+        let transport = transport(&server);
+        let query =
+            serde_json::from_value(json!({"operation":"pullRequest","owner":"o","repo":"r",
+            "keywords":["x"],"pageSize":10}))
+            .expect("query");
+        let data = execute(&transport, &query, &context(), &Passthrough)
+            .await
+            .expect("pull request search");
+        assert_eq!(
+            data["pagination"].get("totalPages").and_then(Value::as_u64),
+            total_pages,
+            "{data}"
+        );
+        if total_pages.is_none() {
+            assert_eq!(data["pagination"]["totalItems"], 1000, "{data}");
+            assert_eq!(
+                data["partialReasons"],
+                json!(["providerResultCap"]),
+                "{data}"
+            );
+        }
     }
 }

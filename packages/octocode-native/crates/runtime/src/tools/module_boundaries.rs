@@ -37,6 +37,10 @@ const SHARED_MODULES: &[(&str, &str)] = &[
     ("output", "output channel shaping"),
     ("page_memo", "page memoization"),
     ("page_windows", "page window sizing"),
+    (
+        "paging",
+        "contract-bounded continuation cursors and the terminal-limit writer",
+    ),
     ("result", "result, error and continuation types"),
     (
         "root_read",

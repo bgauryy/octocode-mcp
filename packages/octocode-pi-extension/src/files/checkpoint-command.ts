@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { sessionDir } from '../shared/home.js';
-import { wordCompletions, type Subcommands } from '../shared/commands.js';
+import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { withDialog } from '../shared/locks.js';
 import { plural } from '../shared/render.js';
 import { inheritCheckpoints, sessionIdOf } from './checkpoint-store.js';
@@ -89,7 +89,7 @@ export function registerCheckpoints(pi: ExtensionAPI, checkpoints: Checkpoints, 
     const result = await checkpoints.rewind(turns);
     relabel(ctx, anchors);
     for (const file of result.restored) forget(file);
-    ctx.ui.notify(describe(result, ctx.cwd, turns.length), result.skipped.length ? 'warning' : 'info');
+    say(ctx, describe(result, ctx.cwd, turns.length), result.skipped.length ? 'warning' : 'info');
     return result;
   };
 
@@ -97,11 +97,13 @@ export function registerCheckpoints(pi: ExtensionAPI, checkpoints: Checkpoints, 
     description: 'rewind [turns] — undo file changes of the last N turns on this branch (default 1); files changed since are left alone',
     complete: (prefix) => wordCompletions(['1', '2', '3'], prefix),
     handler: async (args, ctx) => {
-      const count = Math.max(1, Number.parseInt(args.trim(), 10) || 1);
+      const value = args.trim();
+      const count = value === '' ? 1 : Number(value);
+      if ((value !== '' && !/^\d+$/.test(value)) || !Number.isSafeInteger(count) || count < 1) return say(ctx, 'Usage: /octocode rewind [turns] (positive integer)', 'warning');
       // Only this branch's turns: after a /tree move, turns on the branch left behind are not this conversation's.
       const turns = checkpoints.turnsOn(branchIds(ctx)).slice(0, count);
       if (turns.length === 0) {
-        ctx.ui.notify('No file changes to rewind on this branch.', 'info');
+        say(ctx, 'No file changes to rewind on this branch.');
         return;
       }
       const result = await apply(turns, ctx);

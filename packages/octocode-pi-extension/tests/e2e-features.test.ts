@@ -157,7 +157,7 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
     await session.prompt('/hooks');
     expect(note(/^Hooks: /)).toMatch(/Hook files[\s\S]*settings\.json/);
     await session.prompt('/octocode help');
-    expect(note(/^Usage: \/octocode/)).toMatch(/api \[on[\s\S]*review on\|off[\s\S]*rewind/);
+    expect(note(/^Usage: \/octocode/)).toMatch(/api \[on[\s\S]*permission \[manual\|workspace\|full[\s\S]*rewind/);
     expect(note(/^Usage: \/octocode/)).not.toMatch(/cua/);
     // /agents is a shortcut for /octocode agents, listed with the rest.
     expect(note(/^Usage: \/octocode/)).toMatch(/agents/);
@@ -166,9 +166,17 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
       await session.prompt(command);
       expect(ui.notes.length).toBeGreaterThan(before);
     }
-    await session.prompt('/octocode review on');
-    await session.prompt('/octocode review off');
-    expect(ui.notes.some((entry) => /review/i.test(entry.message))).toBe(true);
+    // A mode change reaches the model as one hidden message, never through the cached system prompt.
+    const prompt = session.systemPrompt;
+    await session.prompt('/octocode permission manual');
+    expect(session.systemPrompt).toBe(prompt);
+    await session.prompt('/octocode permission');
+    expect(note(/^Permission mode: manual —/)).toMatch(/not a sandbox/);
+    await session.prompt('/octocode permission workspace');
+    const notes = session.sessionManager.getEntries().filter((entry) => entry.type === 'custom_message' && entry.customType === 'octocode-permission');
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes.every((entry) => entry.type === 'custom_message' && entry.display === false)).toBe(true);
+    expect(session.systemPrompt).toBe(prompt);
   });
 
   it('guards bash: dangerous commands and hook-blocked commands are refused, hooks annotate results', async () => {
@@ -249,7 +257,7 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
   });
 
   it('runs a subagent and an isolated subagent whose changes /agents merge brings in', async () => {
-    const t = await run('delegate', [calls(fauxToolCall('agent', { task: 'report facts', profile: 'researcher' }), fauxToolCall('agent', { task: 'edit in a worktree', isolate: true })), say('done')]);
+    const t = await run('delegate', [calls(fauxToolCall('agent', { goal: 'check things', task: 'report facts', profile: 'researcher' }), fauxToolCall('agent', { goal: 'check things', task: 'edit in a worktree', isolate: true })), say('done')]);
     const [plain, isolated] = t.at(-1)!.results;
     expect(plain!.text).toMatch(/report \{/);
     expect(plain!.text).toMatch(/"subagent":"1"/);
@@ -261,7 +269,7 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
   }, 60_000);
 
   it('bounds a long child report through the real Pi tool flow and preserves it on disk', async () => {
-    const t = await run('long delegation', [calls(fauxToolCall('agent', { task: 'long report', profile: 'researcher' })), say('done')]);
+    const t = await run('long delegation', [calls(fauxToolCall('agent', { goal: 'check things', task: 'long report', profile: 'researcher' })), say('done')]);
     const result = t.at(-1)!.results[0]!;
     expect(result.isError).toBe(false);
     expect(Buffer.byteLength(result.text)).toBeLessThan(9 * 1024);
@@ -270,7 +278,7 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
   }, 60_000);
 
   it('runs background subagents: answers arrive as messages and /agents kill stops one', async () => {
-    const t = await run('background', [calls(fauxToolCall('agent', { task: 'report later', background: true }), fauxToolCall('agent', { task: 'slow job', background: true })), say('waiting'), say('got it'), say('ok'), say('ok')]);
+    const t = await run('background', [calls(fauxToolCall('agent', { goal: 'check things', task: 'report later', background: true }), fauxToolCall('agent', { goal: 'check things', task: 'slow job', background: true })), say('waiting'), say('got it'), say('ok'), say('ok')]);
     const [later, slow] = t[1]!.results;
     expect(later!.text).toMatch(/background/i);
     const slowId = /\b(\S+-\w{4})\b/.exec(slow!.text)?.[1] ?? '';

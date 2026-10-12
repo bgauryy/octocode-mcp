@@ -6,6 +6,7 @@
     "lib": ["ES2022"],
     "types": ["node"],
     "outDir": "./out",
+    "rootDir": "../..",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

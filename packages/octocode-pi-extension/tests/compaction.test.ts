@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { KEEP_RECENT_MIN, KEEP_RECENT_RESULTS, TRIM_STEP, addFileToolOps, planContextTrims, registerCompaction } from '../src/compaction/register.js';
 
+/** A shrunk argument without the (machine-dependent) path of the file that holds the call's full arguments. */
+const withoutPath = (text: string) => text.replace(/; its full arguments are saved at \S+ \(sha256 [0-9a-f]{16}, \d+ bytes\)\]$/, ']');
+
 describe('compaction', () => {
   const entry = (index: number, size: number) => ({
     id: `e${index}`,
@@ -36,7 +39,8 @@ describe('compaction', () => {
     expect(parts[0]).toEqual({ type: 'thinking', thinking: 'plan' });
     const query = (parts[1]!['arguments'] as { queries: Array<Record<string, string>> }).queries[0]!;
     expect(query['path']).toBe('f0.ts');
-    expect(query['content']!.length).toBeLessThan(300);
+    expect(query['content']).toMatch(/; its full arguments are saved at \S+\.json \(sha256 [0-9a-f]{16}, \d+ bytes\)\]$/);
+    expect(withoutPath(query['content']!).length).toBeLessThan(300);
     expect(query['content']).toMatch(/earlier, successful call omitted/);
     // Idempotent: once applied, the shrunk calls are not proposed again.
     const replaced = (id: string) => edits.find((edit) => edit.targetId === id)?.replacement as { content: unknown[] } | undefined;
@@ -130,8 +134,8 @@ describe('compaction', () => {
     // Successful file writes are shrunk to a head plus a note, keeping their structure; failed ones stay whole.
     const write = (id: string) => (entries.find((candidate) => candidate.id === id)!.message['content'] as Array<{ arguments: { queries: Array<{ type: string; path: string; content: string }> } }>)[0]!.arguments.queries[0]!;
     expect(write('a0')).toMatchObject({ type: 'write', path: 'f0.ts' });
-    expect(write('a0').content.length).toBeLessThan(400);
-    expect(write('a0').content).toMatch(/omitted\]$/);
+    expect(withoutPath(write('a0').content).length).toBeLessThan(400);
+    expect(write('a0').content).toMatch(/omitted; its full arguments are saved at \S+ \(sha256 [0-9a-f]{16}, \d+ bytes\)\]$/);
     expect(write('a39').content).toBe(body); // turn 39 is a file write whose result failed (39 % 17 === 5)
     // The context stays far below the untrimmed size (120 turns x 36k characters).
     expect(JSON.stringify(entries).length).toBeLessThan(120 * 36_000 * 0.3);
@@ -167,7 +171,9 @@ describe('compaction', () => {
       id: `i${index}`,
       message: { role: 'toolResult', content: [{ type: 'image', data: 'AA', mimeType: 'image/png' }] },
     }));
-    expect((planContextTrims(images)[0]!.replacement as { content: unknown }).content).toEqual([{ type: 'text', text: '[image from an earlier tool call omitted]' }]);
+    expect((planContextTrims(images)[0]!.replacement as { content: unknown }).content).toEqual([
+      { type: 'text', text: expect.stringMatching(/^\[image from an earlier tool call omitted; saved at \S+\.png \(sha256 [0-9a-f]{16}, \d+ bytes\); read that file to see it again\]$/) },
+    ]);
   });
 });
 

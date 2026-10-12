@@ -1,6 +1,6 @@
 use super::extraction::{extract, line_count};
 use super::pagination::{
-    continuation, page_within, result_counts, sanitize_byte_page, sanitize_line_page,
+    SourceLines, continuation, page_within, result_counts, sanitize_byte_page, sanitize_line_page,
 };
 use super::types::*;
 use super::validation::{decode_text, is_binary};
@@ -188,9 +188,9 @@ fn not_a_file(q: &LocalFetchQuery) -> LocalFetchResult {
 }
 
 /// A missing file's listing by its stem (the name without its
-/// extension) under its closest existing directory: a moved file or a
-/// changed extension shows at any depth.
-fn missing_file_listing(q: &LocalFetchQuery, nearest: &str) -> Option<serde_json::Value> {
+/// extension) from `root` (see [`PathFailure::search_root`]): a moved file
+/// or a changed extension shows at any depth.
+fn missing_file_listing(q: &LocalFetchQuery, root: &str) -> Option<serde_json::Value> {
     let name = Path::new(q.path.as_str()).file_name()?.to_string_lossy();
     // `stem.*`: the same name under any extension (a file moved from `.rs`
     // to `.ts` is still found), never every name merely containing the stem.
@@ -202,7 +202,7 @@ fn missing_file_listing(q: &LocalFetchQuery, nearest: &str) -> Option<serde_json
     (!include.is_empty()).then(|| {
         crate::tools::result::Continuation::new(
             ToolId::StructureSearch,
-            serde_json::json!({"operation": "files", "path": nearest, "include": [include]}),
+            serde_json::json!({"operation": "files", "path": root, "include": [include]}),
         )
         .build()
     })
@@ -251,9 +251,9 @@ fn path_failure(q: &LocalFetchQuery, failure: PathFailure) -> LocalFetchResult {
     result.resource_missing = failure.resource_missing;
     if failure.resource_missing
         && let Some(listing) = failure
-            .nearest_dir
+            .search_root
             .as_deref()
-            .and_then(|nearest| missing_file_listing(q, nearest))
+            .and_then(|root| missing_file_listing(q, root))
     {
         result.next = Some(NextCalls {
             find_file: Some(listing),
@@ -341,6 +341,11 @@ pub fn process_fetched_content(
         .first_page_bytes
         .filter(|_| (q.match_string.is_some() || q.has_ranges()) && q.offset().is_none())
         .unwrap_or(super::pagination::LINE_PAGE_BYTES);
+    // A transformed whole-file view pages in raw source lines (the unit of
+    // `totalLines`, the gutter and `ranges`); an outline pages its own lines.
+    let source_lines = (view.mode == MinifyMode::Standard && ext.source_lines.is_none())
+        .then(|| SourceLines::of_gutter(&view.text, source.total_lines))
+        .flatten();
     let scanned = match scan_page(
         q,
         page_q,
@@ -350,6 +355,7 @@ pub fn process_fetched_content(
         security,
         &source,
         ext.start,
+        source_lines.as_ref(),
     ) {
         Ok(scanned) => scanned,
         Err(result) => return *result,
@@ -420,11 +426,13 @@ pub fn process_fetched_content(
         is_partial: ((next.as_ref().is_some_and(NextCalls::leaves_more) && !out_of_range)
             || ext.match_limited)
             .then_some(true),
-        partial_reasons: if view_limited {
-            vec![PartialReason::FullContent]
-        } else {
-            vec![]
-        },
+        partial_reasons: [
+            (view_limited, PartialReason::FullContent),
+            (ext.match_limited, PartialReason::RegexMatchLimit),
+        ]
+        .into_iter()
+        .filter_map(|(applies, reason)| applies.then_some(reason))
+        .collect(),
         out_of_range,
         next,
         ..LocalFetchResult::blank("success")
@@ -717,6 +725,7 @@ fn scan_page(
     security: &impl ContentScan,
     source: &Source,
     first_line: Option<usize>,
+    source_lines: Option<&SourceLines>,
 ) -> Result<ScannedPage, Box<LocalFetchResult>> {
     let pagination_error = |e| {
         Box::new(LocalFetchResult::error(
@@ -726,13 +735,14 @@ fn scan_page(
         ))
     };
     if q.full_content != Some(true) {
-        let windowed =
-            match page_within(selected, page_q, line_page_bytes).map_err(pagination_error)? {
-                raw if raw.pagination.unit == WindowUnit::Lines => {
-                    sanitize_line_page(selected, raw, source_path, security).unwrap_or(None)
-                }
-                raw => sanitize_byte_page(selected, raw, source_path, security).unwrap_or(None),
-            };
+        let windowed = match page_within(selected, page_q, line_page_bytes, source_lines)
+            .map_err(pagination_error)?
+        {
+            raw if raw.pagination.unit == WindowUnit::Lines => {
+                sanitize_line_page(selected, raw, source_path, security).unwrap_or(None)
+            }
+            raw => sanitize_byte_page(selected, raw, source_path, security).unwrap_or(None),
+        };
         // Page sanitizers keep line counts, so a redacted page still maps
         // onto source lines.
         if let Some((page, redacted)) = windowed {
@@ -758,9 +768,15 @@ fn scan_page(
             )));
         }
     };
-    let page = page_within(&safe, page_q, line_page_bytes).map_err(pagination_error)?;
     // A whole-view scan maps onto source lines only when it kept the count.
     let lines_kept = safe == selected || line_count(&safe) == line_count(selected);
+    let page = page_within(
+        &safe,
+        page_q,
+        line_page_bytes,
+        source_lines.filter(|_| lines_kept),
+    )
+    .map_err(pagination_error)?;
     Ok(ScannedPage {
         page,
         redacted: safe != selected,
@@ -905,9 +921,13 @@ fn read_scope_warnings(
     if let Some(pages) = long_line_pages(q, pg) {
         warnings.push(long_line_warning(pages));
     } else if head && pg.pagination.has_more {
+        // A line page states its source span; a byte fallback its view lines.
+        let shown = match pg.pagination.unit {
+            WindowUnit::Lines => pg.pagination.offset + pg.pagination.length,
+            WindowUnit::Bytes => pg.view_lines.1,
+        };
         warnings.push(format!(
-            "Large file ({total_lines} lines) read without an anchor: returned its first {} lines.",
-            pg.view_lines.1
+            "Large file ({total_lines} lines) read without an anchor: returned its first {shown} lines."
         ));
     }
 }
@@ -1078,6 +1098,44 @@ fn system_time_iso(t: std::time::SystemTime) -> Option<String> {
     Some(crate::civil_date::iso8601_millis(
         i64::try_from(elapsed.as_millis()).ok()?,
     ))
+}
+
+/// Why a matchString can miss text that is visibly in the file: it ran on
+/// the redacted text, whose secrets are placeholders.
+const REDACTED_MATCH_HINT: &str = "No visible line matches; this file's secrets were redacted to [REDACTED…] placeholders before matching.";
+
+/// The per-call facts of a matchString that selected no line: redaction
+/// (the text may sit behind a placeholder) and a literal `|` (read as
+/// alternation by most agents; it is not one). The leads beside the row
+/// (`ignoreCase`, `findText`) are its next steps.
+pub(crate) fn no_match_hints(q: &LocalFetchQuery, redacted: bool) -> Vec<String> {
+    let mut hints = Vec::new();
+    if redacted {
+        hints.push(REDACTED_MATCH_HINT.to_owned());
+    }
+    if !q.is_regex()
+        && q.match_strings()
+            .iter()
+            .any(|pattern| pattern.contains('|'))
+    {
+        hints.push("`|` in matchString matched literally, not as alternation.".to_owned());
+    }
+    hints
+}
+
+/// Lines the same read selects when every pattern matches case-insensitively;
+/// 0 when the patterns do not compile that way either.
+pub(crate) fn insensitive_match_count(
+    q: &LocalFetchQuery,
+    text: &str,
+    regex: &impl RegexMatch,
+) -> usize {
+    let mut insensitive = q.clone();
+    insensitive.case_mode = Some(ReadCaseMode::Insensitive);
+    super::extraction::extract(&insensitive, text, regex)
+        .ok()
+        .and_then(|extraction| extraction.count)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -1494,44 +1552,6 @@ mod source_size_tests {
             "innocent base64 was wrongly redacted: {content}"
         );
     }
-}
-
-/// Why a matchString can miss text that is visibly in the file: it ran on
-/// the redacted text, whose secrets are placeholders.
-const REDACTED_MATCH_HINT: &str = "No visible line matches; this file's secrets were redacted to [REDACTED…] placeholders before matching.";
-
-/// The per-call facts of a matchString that selected no line: redaction
-/// (the text may sit behind a placeholder) and a literal `|` (read as
-/// alternation by most agents; it is not one). The leads beside the row
-/// (`ignoreCase`, `findText`) are its next steps.
-pub(crate) fn no_match_hints(q: &LocalFetchQuery, redacted: bool) -> Vec<String> {
-    let mut hints = Vec::new();
-    if redacted {
-        hints.push(REDACTED_MATCH_HINT.to_owned());
-    }
-    if !q.is_regex()
-        && q.match_strings()
-            .iter()
-            .any(|pattern| pattern.contains('|'))
-    {
-        hints.push("`|` in matchString matched literally, not as alternation.".to_owned());
-    }
-    hints
-}
-
-/// Lines the same read selects when every pattern matches case-insensitively;
-/// 0 when the patterns do not compile that way either.
-pub(crate) fn insensitive_match_count(
-    q: &LocalFetchQuery,
-    text: &str,
-    regex: &impl RegexMatch,
-) -> usize {
-    let mut insensitive = q.clone();
-    insensitive.case_mode = Some(ReadCaseMode::Insensitive);
-    super::extraction::extract(&insensitive, text, regex)
-        .ok()
-        .and_then(|extraction| extraction.count)
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

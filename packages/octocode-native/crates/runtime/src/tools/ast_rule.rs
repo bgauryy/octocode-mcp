@@ -27,9 +27,14 @@ pub(crate) const INVALID_PATTERN: &str = "invalidPattern";
 pub(crate) const INVALID_PATTERN_HINT: &str = "Make the pattern one complete, parseable node, or inspect its shape with astSearch operation:\"syntaxTree\".";
 
 /// Why a pattern that parsed can still match nothing, in both tools.
-pub(crate) const PATTERN_SHAPE_HINT: &str = "Patterns match whole nodes (modifiers, return types); astSearch operation:\"syntaxTree\" shows the shape, or use a rule.";
-/// Where to look when a rule matches nothing, in both tools.
-pub(crate) const RULE_SHAPE_HINT: &str = "A rule matches nodes by kind, pattern and relations; astSearch operation:\"syntaxTree\" shows the node kinds.";
+/// [`empty_match_hint`] composes it after a scanned-files count; the whole
+/// hint stays within [`crate::response::rows::MAX_GUIDANCE_CHARS`] (120).
+pub(crate) const PATTERN_SHAPE_HINT: &str =
+    "Patterns match whole nodes; astSearch operation:\"syntaxTree\" shows the shape.";
+/// Where to look when a rule matches nothing, in both tools; composed like
+/// [`PATTERN_SHAPE_HINT`].
+pub(crate) const RULE_SHAPE_HINT: &str =
+    "Rules match by kind and relation; astSearch operation:\"syntaxTree\" shows kinds.";
 
 /// What an empty structural answer covered (the files read, in which
 /// grammar) and why a pattern or rule that compiled can still match nothing,
@@ -283,4 +288,21 @@ pub(crate) fn has_extension_in(path: &std::path::Path, extensions: &BTreeSet<Str
         true,
         "",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    /// The composed hint fits the guidance limit at its widest: a five-digit
+    /// count and the longest grammar name.
+    #[test]
+    fn the_widest_empty_match_hint_fits_the_guidance_limit() {
+        for pattern in [true, false] {
+            let hint = super::empty_match_hint(99_999, Some("objective-cpp"), pattern);
+            assert!(
+                hint.chars().count() <= crate::response::rows::MAX_GUIDANCE_CHARS,
+                "{} chars: {hint}",
+                hint.chars().count()
+            );
+        }
+    }
 }

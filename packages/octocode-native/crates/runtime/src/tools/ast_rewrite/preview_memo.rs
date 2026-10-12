@@ -48,17 +48,19 @@ pub(super) fn store(
 
 /// The prepared preview for `key` when it was pinned by `snapshot`, is
 /// fresh, and every file it rewrites is still `permitted` and still holds the
-/// exact bytes it was prepared from (its pre-image hash).
+/// exact bytes it was prepared from (its pre-image hash), reached from
+/// `boundary` without following a symlink.
 pub(super) fn reuse(
     key: &str,
     snapshot: &str,
+    boundary: &std::path::Path,
     permitted: impl Fn(&std::path::Path) -> bool,
 ) -> Option<Arc<Prepared>> {
     let entry = MEMO.get(key, snapshot, Arc::clone)?;
     let unchanged = entry.files.iter().all(|file| {
         permitted(&file.absolute)
-            && std::fs::read(&file.absolute)
-                .is_ok_and(|bytes| crate::digest::sha256(&bytes) == file.before_hash)
+            && super::read_target(boundary, &file.absolute)
+                .is_ok_and(|(bytes, _)| crate::digest::sha256(&bytes) == file.before_hash)
     });
     unchanged.then_some(entry)
 }

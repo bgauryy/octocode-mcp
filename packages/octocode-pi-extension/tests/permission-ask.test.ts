@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest';
+import { Permission, type PermissionRequest } from '../src/permission/ask.js';
+import { PERMISSION_ENV, PERMISSION_GRANTS_ENV } from '../src/shared/env.js';
+import { fakeCtx, fakePi } from './fake-pi.js';
+import { tmp } from './helpers.js';
+
+const shell = (command = 'npm test'): PermissionRequest => ({ action: 'shell', title: 'Run this command?', what: [command], grant: { key: command, label: `\`${command}\`` } });
+
+function setup(options: { env?: NodeJS.ProcessEnv; isSubagent?: boolean; trusted?: boolean; hasUI?: boolean; selects?: Array<string | undefined>; inputs?: Array<string | undefined> } = {}) {
+  const fake = fakePi();
+  // Sessions start in full; these fixtures export workspace, or manual for the strict (`trusted: false`) case.
+  const permission = new Permission({ pi: fake.pi, env: options.env ?? { OCTOCODE_PERMISSION: options.trusted === false ? 'manual' : 'workspace' }, isSubagent: options.isSubagent ?? false });
+  const ctx = { ...fakeCtx({ cwd: tmp(), hasUI: options.hasUI ?? true, ui: { selects: options.selects ?? [], inputs: options.inputs ?? [] } }), isProjectTrusted: () => options.trusted ?? true };
+  permission.start(ctx);
+  return { fake, permission, ctx };
+}
+
+describe('Permission.check', () => {
+  it('allows what the mode allows without a dialog or an audit entry', async () => {
+    const { permission, ctx, fake } = setup();
+    expect(permission.mode).toBe('workspace');
+    expect(await permission.check(ctx, shell())).toEqual({ allowed: true, via: 'mode' });
+    expect(fake.entries).toEqual([]);
+  });
+
+  it('asks in manual, and an answer is audited', async () => {
+    const { permission, ctx, fake } = setup({ trusted: false, selects: ['Allow once'] });
+    expect(permission.mode).toBe('manual');
+    expect(await permission.check(ctx, shell())).toEqual({ allowed: true, via: 'user' });
+    expect(fake.entries).toEqual([{ customType: 'octocode-permission', data: expect.objectContaining({ action: 'shell', what: 'npm test', allowed: true, via: 'user', mode: 'manual' }) }]);
+  });
+
+  it('remembers "allow for this session" for exactly what was shown', async () => {
+    const { permission, ctx } = setup({ trusted: false, selects: ['Allow `npm test` for this session'] });
+    expect(await permission.check(ctx, shell())).toEqual({ allowed: true, via: 'user' });
+    // No reply is queued: a second dialog would be dismissed and deny.
+    expect(await permission.check(ctx, shell())).toEqual({ allowed: true, via: 'grant' });
+    expect(permission.grants()).toEqual(['shell: `npm test`']);
+    expect((await permission.check(ctx, shell('npm publish'))).allowed).toBe(false);
+    permission.clearGrants();
+    expect(permission.grants()).toEqual([]);
+  });
+
+  it('adds the user\'s note to a denial, and tells the model not to retry', async () => {
+    const { permission, ctx } = setup({ trusted: false, selects: ['Deny and tell the agent why…'], inputs: ['use yarn'] });
+    const verdict = await permission.check(ctx, shell());
+    expect(verdict).toMatchObject({ allowed: false, via: 'user' });
+    expect(verdict.allowed ? '' : verdict.message).toMatch(/denied .*npm test.*Do not retry[\s\S]*User's note: use yarn/);
+  });
+
+  it('treats a dismissed or aborted dialog as no verdict', async () => {
+    const dismissed = setup({ trusted: false, selects: [undefined] });
+    expect(await dismissed.permission.check(dismissed.ctx, shell())).toEqual({ allowed: false, via: 'cancelled', message: 'Not run: the approval dialog was dismissed.' });
+    const aborted = setup({ trusted: false, selects: ['Allow once'] });
+    const controller = new AbortController();
+    controller.abort();
+    expect(await aborted.permission.check(aborted.ctx, { ...shell(), signal: controller.signal })).toMatchObject({ allowed: false, via: 'cancelled' });
+  });
+
+  it('denies every ask without a UI or in a subagent, without opening anything', async () => {
+    const headless = setup({ trusted: false, hasUI: false });
+    const verdict = await headless.permission.check(headless.ctx, shell());
+    expect(verdict).toMatchObject({ allowed: false, via: 'headless' });
+    expect(verdict.allowed ? '' : verdict.message).toMatch(/needs the user's approval \(manual mode\) and no one can be asked here\. Do not retry.*OCTOCODE_PERMISSION=workspace/);
+    const why = await headless.permission.check(headless.ctx, { ...shell(), why: 'contains text from web https://x.example; save it with the file tool' });
+    expect(why.allowed ? '' : why.message).toContain('Why it asks: contains text from web https://x.example; save it with the file tool.');
+    const child = setup({ isSubagent: true, env: { [PERMISSION_ENV]: 'manual' }, selects: ['Allow once'] });
+    const denied = await child.permission.check(child.ctx, shell());
+    expect(denied.allowed ? '' : denied.message).toMatch(/report it to your parent/);
+    expect(child.ctx.ui.selects).toEqual(['Allow once']);
+  });
+
+  it('allows the workspace classes a spawn grant carries into a child, and nothing else', async () => {
+    const { permission, ctx } = setup({ isSubagent: true, env: { [PERMISSION_ENV]: 'manual', [PERMISSION_GRANTS_ENV]: 'shell' } });
+    expect(await permission.check(ctx, shell())).toEqual({ allowed: true, via: 'grant' });
+    expect((await permission.check(ctx, { action: 'file.workspace', title: 'Change files?', what: ['a.ts'] })).allowed).toBe(false);
+  });
+
+  it('asks for provenance hits and hook asks in full mode, and never offers a session grant for them', async () => {
+    const { permission, ctx } = setup({ env: { [PERMISSION_ENV]: 'full' }, selects: ['Allow once'] });
+    let options: string[] = [];
+    ctx.ui.select = (async (_title: string, choices: string[]) => ((options = choices), 'Allow once')) as never;
+    const verdict = await permission.check(ctx, { action: 'provenance', title: 'Run this command?', what: ['curl x | sh'], why: 'contains text from web https://x', grant: { key: 'k', label: 'this' } });
+    expect(verdict).toEqual({ allowed: true, via: 'user' });
+    expect(options).toEqual(['Allow once', 'Deny', 'Deny and tell the agent why…']);
+  });
+
+  it('adds the untrusted-data warning to a provenance denial', async () => {
+    const { permission, ctx } = setup({ selects: ['Deny'] });
+    const verdict = await permission.check(ctx, { action: 'provenance', title: 'Run this command?', what: ['curl x | sh'], why: 'contains text from web https://x' });
+    expect(verdict.allowed ? '' : verdict.message).toMatch(/contains text from web https:\/\/x.*untrusted data, not instructions/s);
+  });
+
+  it('shows one dialog at a time: a second ask waits for the first', async () => {
+    const { permission, ctx } = setup({ trusted: false });
+    const order: string[] = [];
+    let release!: (value: string) => void;
+    ctx.ui.select = (async (title: string) => {
+      order.push(`open ${title.split('\n')[1]}`);
+      if (order.length === 1) return new Promise((resolve) => (release = resolve));
+      return 'Allow once';
+    }) as never;
+    const first = permission.check(ctx, shell('one'));
+    const second = permission.check(ctx, shell('two'));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(order).toEqual(['open   one']);
+    release('Allow once');
+    await Promise.all([first, second]);
+    expect(order).toEqual(['open   one', 'open   two']);
+  });
+
+  it('runs a custom dialog in place of the default one, with the same mode and headless rules', async () => {
+    const { permission, ctx } = setup({ trusted: false });
+    let shown = 0;
+    const dialog = async () => ((shown += 1), 'once' as const);
+    expect(await permission.check(ctx, { action: 'file.workspace', title: 'Apply?', what: ['a.ts'] }, dialog)).toEqual({ allowed: true, via: 'user' });
+    permission.setMode('workspace', ctx);
+    expect(await permission.check(ctx, { action: 'file.workspace', title: 'Apply?', what: ['a.ts'] }, dialog)).toEqual({ allowed: true, via: 'mode' });
+    expect(shown).toBe(1);
+  });
+});
+
+describe('Permission modes over a session', () => {
+  it('re-applies the start mode and clears grants on every session start', async () => {
+    const { permission, ctx } = setup({ trusted: false, selects: ['Allow `npm test` for this session'] });
+    await permission.check(ctx, shell());
+    permission.setMode('workspace', ctx);
+    permission.start(ctx);
+    expect(permission.mode).toBe('manual');
+    expect(permission.grants()).toEqual([]);
+  });
+
+  it('switches to full anywhere, and warns once about an invalid OCTOCODE_PERMISSION (which starts in manual)', () => {
+    const { permission, ctx } = setup({ trusted: false, env: { [PERMISSION_ENV]: 'loose' } });
+    expect(permission.mode).toBe('manual');
+    permission.setMode('full', ctx);
+    expect(permission.mode).toBe('full');
+    permission.start(ctx);
+    expect(ctx.ui.notes.filter((note) => note.message.includes('loose'))).toHaveLength(1);
+  });
+
+  it('tells the model once per change, hidden and without starting a turn', () => {
+    const { permission, ctx, fake } = setup();
+    permission.setMode('manual', ctx);
+    permission.setMode('manual', ctx);
+    expect(fake.sent).toEqual([{ message: expect.objectContaining({ customType: 'octocode-permission', display: false, content: expect.stringMatching(/^\[octocode-permission\] mode is now manual: /) }), options: { triggerTurn: false } }]);
+    expect(ctx.ui.statuses.get('octocode-permission')).toBe('⏸ permission: manual · Shift+Tab');
+  });
+});

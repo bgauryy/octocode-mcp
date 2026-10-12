@@ -24,7 +24,7 @@ export async function screenshot(page: BrowserSession['page'], format: 'jpeg' | 
   }
   const view = await viewport(page, signal);
   for (const retake of view ? RETAKES : []) {
-    const data = await capture({ format: 'jpeg', quality: retake.quality, clip: { x: 0, y: 0, width: view!.width, height: view!.height, scale: retake.scale } });
+    const data = await capture({ format: 'jpeg', quality: retake.quality, clip: { ...view!, scale: retake.scale } });
     if (data.length > IMAGE_MAX_CHARS) continue;
     const text = `Screenshot of the visible page, retaken smaller to fit (jpeg at ${retake.scale}x scale, ${kb(data)}).${saved}`;
     return { content: [{ type: 'image', data, mimeType: 'image/jpeg' }, { type: 'text', text }], details: undefined };
@@ -37,9 +37,9 @@ function kb(data: string): string {
   return `${Math.max(1, Math.round(Buffer.byteLength(data, 'base64') / 1024))} KB`;
 }
 
-/** The visible page's size in CSS pixels, or undefined when Chrome does not report it. */
-async function viewport(page: BrowserSession['page'], signal: AbortSignal | undefined): Promise<{ width: number; height: number } | undefined> {
-  const metrics = await page.send<{ cssVisualViewport?: { clientWidth?: number; clientHeight?: number } }>('Page.getLayoutMetrics', {}, signal).catch(() => undefined);
-  const { clientWidth: width, clientHeight: height } = metrics?.cssVisualViewport ?? {};
-  return width && height ? { width, height } : undefined;
+/** The visible viewport's document origin and size in CSS pixels, or undefined when Chrome does not report it. */
+async function viewport(page: BrowserSession['page'], signal: AbortSignal | undefined): Promise<{ x: number; y: number; width: number; height: number } | undefined> {
+  const metrics = await page.send<{ cssVisualViewport?: { clientWidth?: number; clientHeight?: number; pageX?: number; pageY?: number } }>('Page.getLayoutMetrics', {}, signal).catch(() => undefined);
+  const { clientWidth: width, clientHeight: height, pageX = 0, pageY = 0 } = metrics?.cssVisualViewport ?? {};
+  return width && height ? { x: pageX, y: pageY, width, height } : undefined;
 }

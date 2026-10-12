@@ -10,6 +10,7 @@ Each campaign's runs and judgments live in [runs/](runs/), one JSON per campaign
 
 | Campaign | Arms | Report |
 |---|---|---|
+| pi-local-vs-published-164221 (Oct 12) | Octocode local 20.x vs published 19.1.0 vs gh lean, pi runner Sonnet 5.5, codex gpt-5.5 judge, 30 × 1 (not comparable with claude-runner campaigns) | [pi-local-vs-published-164221-2026-10-12.md](pi-local-vs-published-164221-2026-10-12.md) |
 | lean-vs-mcp-114934 (Oct 9) | Octocode v20 MCP vs gh lean, Sonnet 5.5, 30 × 1 | Correctness tied, gh-lean 0.71× characters, time tied ([data](runs/lean-vs-mcp-114934-2026-10-09.json)) |
 | mcp-clasify-ab-111154 (Oct 9) | Octocode v20 MCP, clasify on vs off, Sonnet 5.5, 30 × 1 | [mcp-clasify-ab-111154-2026-10-09.md](mcp-clasify-ab-111154-2026-10-09.md) |
 

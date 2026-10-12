@@ -434,7 +434,7 @@ mod tests {
         pattern[start..end].split('|').map(str::to_owned).collect()
     }
 
-    /// SH4 drift: native `QUALIFIER_KEYS` is the contract's key list, per
+    /// Native `QUALIFIER_KEYS` is the contract's key list, per
     /// operation (commit people filters are qualifiers too).
     #[test]
     fn native_qualifier_keys_match_the_contract() {

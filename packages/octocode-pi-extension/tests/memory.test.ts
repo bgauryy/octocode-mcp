@@ -9,7 +9,7 @@ import { ftsQuery, jaccard, normalizeTitle, parseMemoryId, terms } from '../src/
 import { memoryStore, registerMemory } from '../src/memory/register.js';
 import { MemoryError, MemoryStore, memoryLine, type MemoryInput } from '../src/memory/store.js';
 import { Subcommands } from '../src/shared/commands.js';
-import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
+import { fakeCtx, fakePi, rendered, theme, fakePermission } from './fake-pi.js';
 
 let root: string;
 let cwd: string;
@@ -256,7 +256,7 @@ describe('memory tool', () => {
   const setup = (isSubagent = false) => {
     const fake = fakePi();
     const commands = new Subcommands();
-    registerMemory(fake.pi, { commands, isSubagent });
+    registerMemory(fake.pi, { commands, isSubagent, permission: fakePermission() });
     return { ...fake, subcommands: commands, tool: fake.tools.get('memory') };
   };
   const run = (tool: any, params: Record<string, unknown>, ctx = ctxFor().ctx) => tool.execute('call', params, undefined, undefined, ctx);
@@ -271,32 +271,32 @@ describe('memory tool', () => {
     expect(text(await run(tool, { op: 'search', query: 'nothing here' }))).toBe('No memory matches.');
     expect(text(await run(tool, { op: 'get', id: 'M1' }))).toContain('keywords: compile bundle');
     expect(text(await run(tool, { op: 'list' }))).toContain('M1');
-    expect(text(await run(tool, { op: 'set', id: 'M1', pinned: true }, ctxFor({ confirms: [true] }).ctx))).toMatch(/^Updated M1 \(project, procedure, pinned\)/);
-    await run(tool, { op: 'set', title: 'Second memory', scope: 'global' }, ctxFor({ hasUI: false }).ctx);
+    expect(text(await run(tool, { op: 'set', id: 'M1', pinned: true }, ctxFor({ selects: ['Allow once'] }).ctx))).toMatch(/^Updated M1 \(project, procedure, pinned\)/);
+    await run(tool, { op: 'set', title: 'Second memory', scope: 'global' }, ctxFor({ selects: ['Allow once'] }).ctx);
     expect(text(await run(tool, { op: 'list', limit: 1 }))).toContain('1 more; search, or raise limit');
-    expect(text(await run(tool, { op: 'delete', id: 'm1' }))).toMatch(/^Deleted M1/);
+    expect(text(await run(tool, { op: 'delete', id: 'm1' }, ctxFor({ selects: ['Allow once'] }).ctx))).toMatch(/^Deleted M1/);
     await expect(run(tool, { op: 'get', id: 'M1' })).rejects.toThrow(/No memory M1/);
     await expect(run(tool, { op: 'get', id: 'B1' })).rejects.toThrow(/not a memory id/);
     await expect(run(tool, { op: 'get' })).rejects.toThrow(/needs id/);
     await expect(run(tool, { op: 'search' })).rejects.toThrow(/needs query/);
     await expect(run(tool, { op: 'set', title: 'x', scope: 'all' })).rejects.toThrow(/project or global/);
     await expect(run(tool, { op: 'set', title: 'Key', body: `sk-${'a'.repeat(40)}` })).rejects.toThrow(/secret/);
-    await expect(run(tool, { op: 'set', title: 'second MEMORY', scope: 'global' }, ctxFor({ hasUI: false }).ctx)).rejects.toThrow(/Similar memory M2/);
+    await expect(run(tool, { op: 'set', title: 'second MEMORY', scope: 'global' }, ctxFor({ selects: ['Allow once'] }).ctx)).rejects.toThrow(/Similar memory M2/);
   });
 
   it('asks before saving a global or pinned memory, and never in an untrusted project', async () => {
     const { tool } = setup();
     // The user sees the body that will be injected, and a save the store would refuse is never offered.
     const asked: string[] = [];
-    const seen = ctxFor({ confirms: [false] }).ctx;
-    Object.assign(seen.ui, { confirm: async (title: string, message: string) => (asked.push(`${title}\n${message}`), false) });
-    await expect(run(tool, { op: 'set', title: 'Shown', body: 'Line one\nLine two', pinned: true }, seen)).rejects.toThrow(/declined/);
-    expect(asked[0]).toContain('Save pinned memory?\nShown\n\nLine one\nLine two');
+    const seen = ctxFor().ctx;
+    Object.assign(seen.ui, { select: async (title: string) => (asked.push(title), 'Deny') });
+    await expect(run(tool, { op: 'set', title: 'Shown', body: 'Line one\nLine two', pinned: true }, seen)).rejects.toThrow(/denied/);
+    expect(asked[0]).toContain('Save pinned memory?\n  Shown\n  Line one\n  Line two\n  It will be shown to every session here.');
     await expect(run(tool, { op: 'set', title: 'Key', body: `sk-${'a'.repeat(40)}`, pinned: true }, seen)).rejects.toThrow(/secret/);
     await expect(run(tool, { op: 'set', body: 'no title', pinned: true }, seen)).rejects.toThrow(/needs a title/);
     expect(asked).toHaveLength(1);
-    await expect(run(tool, { op: 'set', title: 'Global one', scope: 'global' }, ctxFor({ confirms: [false] }).ctx)).rejects.toThrow(/declined/);
-    expect(text(await run(tool, { op: 'set', title: 'Global one', scope: 'global' }, ctxFor({ confirms: [true] }).ctx))).toMatch(/^Saved M1 \(global/);
+    await expect(run(tool, { op: 'set', title: 'Global one', scope: 'global' }, ctxFor({ selects: ['Deny'] }).ctx)).rejects.toThrow(/denied/);
+    expect(text(await run(tool, { op: 'set', title: 'Global one', scope: 'global' }, ctxFor({ selects: ['Allow once'] }).ctx))).toMatch(/^Saved M1 \(global/);
     expect(text(await run(tool, { op: 'set', title: 'Project one' }))).toMatch(/^Saved M2 \(project/);
     fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
     fs.writeFileSync(path.join(cwd, '.claude', 'settings.json'), '{"hooks":{}}');
@@ -363,7 +363,7 @@ describe('memory tool', () => {
 describe('memory auto-injection', () => {
   const setup = (isSubagent = false) => {
     const fake = fakePi();
-    registerMemory(fake.pi, { commands: new Subcommands(), isSubagent });
+    registerMemory(fake.pi, { commands: new Subcommands(), isSubagent, permission: fakePermission() });
     return fake;
   };
   const seed = () => {
@@ -430,7 +430,7 @@ describe('/octocode memory', () => {
   const setup = () => {
     const fake = fakePi();
     const commands = new Subcommands();
-    registerMemory(fake.pi, { commands, isSubagent: false });
+    registerMemory(fake.pi, { commands, isSubagent: false, permission: fakePermission() });
     const command = commands.get('memory')!;
     return { command, commands };
   };

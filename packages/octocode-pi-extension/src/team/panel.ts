@@ -1,6 +1,6 @@
 import type { ExtensionContext, Theme } from '@earendil-works/pi-coding-agent';
 import { truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui';
-import { formatDuration } from '../shared/format.js';
+import { formatCost, formatDuration, formatTokenUsage } from '../shared/format.js';
 import { clip, statusColor } from '../shared/render.js';
 import type { Team } from './session.js';
 import type { Member, Traffic } from './model.js';
@@ -21,10 +21,16 @@ const UNRESPONSIVE_MS = 15_000;
 const MODEL_MAX = 28;
 
 type Cell = { text: string; color: Parameters<Theme['fg']>[0]; right?: boolean };
-/** Optional columns, dropped left to right when the terminal is too narrow; name, state and activity always stay. */
-const OPTIONAL = ['cost', 'tools', 'flags', 'age', 'model'] as const;
-type Column = 'glyph' | 'name' | 'state' | (typeof OPTIONAL)[number];
-const ORDER: Column[] = ['glyph', 'name', 'model', 'state', 'age', 'tools', 'cost', 'flags'];
+/**
+ * Optional columns, dropped left to right when the terminal is too narrow (tokens first); name, goal, state and activity
+ * always stay.
+ */
+const OPTIONAL = ['tokens', 'cost', 'tools', 'flags', 'age', 'model', 'role'] as const;
+type Column = 'glyph' | 'name' | 'goal' | 'state' | (typeof OPTIONAL)[number];
+const ORDER: Column[] = ['glyph', 'name', 'role', 'goal', 'model', 'state', 'age', 'tools', 'tokens', 'cost', 'flags'];
+const SEPARATOR = ' · ';
+/** A stored goal is at most 40 characters (`goal.ts`); rows written by other versions may hold more. */
+const GOAL_MAX = 48;
 
 /** `anthropic/claude-opus-4-5` → `claude-opus-4-5`: the provider adds width, not meaning, in a one-line row. */
 export const modelLabel = (model: string | undefined) => safe(model?.slice(model.lastIndexOf('/') + 1), MODEL_MAX);
@@ -32,8 +38,8 @@ export const modelLabel = (model: string | undefined) => safe(model?.slice(model
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 /**
- * One agent's cells. The row says who it is, which model it runs, its state, and what it does right now; the task it
- * was given (a long prompt) stays in `coordinate list`, and raw token counters (cumulative re-sent context) stay out.
+ * One agent's cells. The row says who it is (name and role), what it is for (goal), which model it runs, its state,
+ * and what it does right now; its tokens (with the cached share) and estimated cost when the width allows.
  */
 function cells(member: Member, depth: number, now: number): Record<Column, Cell> & { detail: string } {
   const working = member.status === 'working';
@@ -42,11 +48,14 @@ function cells(member: Member, depth: number, now: number): Record<Column, Cell>
   return {
     glyph: { text: working ? '●' : '○', color: working ? 'accent' : 'dim' },
     name: { text: `${depth > 0 ? `${'  '.repeat(depth - 1)} └ ` : ''}${safe(member.id, 64)}`, color: working ? 'text' : 'muted' },
+    role: { text: safe(member.role, 24), color: 'muted' },
+    goal: { text: safe(member.goal, GOAL_MAX), color: working ? 'text' : 'muted' },
     model: { text: modelLabel(member.model), color: 'muted' },
     state: { text: working ? 'working' : 'idle', color: working ? 'accent' : 'dim' },
     age: { text: formatDuration(now - member.joinedAt), color: 'dim', right: true },
     tools: { text: plural(member.toolCalls, 'tool'), color: 'dim', right: true },
-    cost: { text: member.cost > 0 ? `$${member.cost.toFixed(2)}` : '', color: 'dim', right: true },
+    tokens: { text: formatTokenUsage(member), color: 'dim', right: true },
+    cost: { text: formatCost(member), color: 'dim', right: true },
     flags: { text: flags, color: member.pending ? 'warning' : 'dim' },
     detail,
   };
@@ -58,14 +67,16 @@ function memberRows(tree: Array<{ member: Member; depth: number }>, now: number,
   const widthOf = (column: Column) => Math.max(...rows.map((row) => visibleWidth(row[column].text)));
   let columns = ORDER.filter((column) => widthOf(column) > 0);
   // Keep at least 20 columns for the activity: drop optional columns until it fits.
-  const used = () => 1 + columns.reduce((sum, column) => sum + widthOf(column) + (column === 'glyph' ? 1 : 2), 0);
+  const used = () => 1 + columns.reduce((sum, column) => sum + widthOf(column) + (column === 'glyph' ? 1 : SEPARATOR.length), 0);
   for (const column of OPTIONAL) if (used() + 20 > width) columns = columns.filter((kept) => kept !== column);
   return rows.map((row) => {
-    const parts = columns.map((column, index) => {
+    // Trailing empty cells (no cost yet, nothing waiting) leave no dangling separator.
+    const last = columns.reduce((found, column, index) => (row[column].text !== '' ? index : found), -1);
+    const parts = columns.slice(0, last + 1).map((column, index) => {
       const cell = row[column];
       const pad = ' '.repeat(widthOf(column) - visibleWidth(cell.text));
       const text = theme.fg(cell.color, cell.text);
-      return (cell.right ? pad + text : text + pad) + (index === columns.length - 1 ? '' : column === 'glyph' ? ' ' : '  ');
+      return (cell.right ? pad + text : text + pad) + (index === last ? '' : column === 'glyph' ? ' ' : theme.fg('dim', SEPARATOR));
     });
     const detail = row.detail ? `  ${theme.fg('muted', row.detail)}` : '';
     return truncateToWidth(` ${parts.join('')}${detail}`.trimEnd(), Math.max(1, width), '…');
@@ -141,12 +152,12 @@ export function widgetLines(members: Member[], selfId: string | undefined, now: 
   const tree = treeOrder(others, selfId);
   const shown = tree.slice(0, MAX_ROWS);
   const busy = others.filter((member) => member.status === 'working').length;
-  const cost = others.reduce((total, member) => total + member.cost, 0);
+  const cost = formatCost({ cost: others.reduce((total, member) => total + member.cost, 0), unpriced: others.some((member) => member.unpriced) });
   const idle = others.length - busy;
-  const summary = [...(busy ? [`${busy} working`] : []), ...(idle ? [`${idle} idle`] : []), ...(cost > 0 ? [`$${cost.toFixed(2)}`] : [])].join(' · ');
+  const summary = [...(busy ? [`${busy} working`] : []), ...(idle ? [`${idle} idle`] : []), ...(cost ? [cost] : [])].join(' · ');
   const head = truncateToWidth(` ${theme.fg('toolTitle', theme.bold('agents'))}  ${theme.fg('muted', summary)}`, Math.max(1, width), '…');
   const more = tree.length - shown.length;
-  return [head, ...memberRows(shown, now, theme, width), ...(more > 0 ? [theme.fg('muted', ` +${more} more`)] : []), ...ownTraffic(traffic, others, selfId).slice(0, TRAFFIC_ROWS).map((message) => trafficRow(message, now, theme, width))];
+  return [head, ...memberRows(shown, now, theme, width), ...(more > 0 ? [truncateToWidth(theme.fg('muted', ` +${more} more`), Math.max(1, width), '…')] : []), ...ownTraffic(traffic, others, selfId).slice(0, TRAFFIC_ROWS).map((message) => trafficRow(message, now, theme, width))];
 }
 
 /**
@@ -174,7 +185,7 @@ export class AgentsView {
   stop(ctx?: ExtensionContext): void {
     this.unwatch?.();
     this.unwatch = undefined;
-    if (ctx && this.shown) this.clear(ctx);
+    if (ctx && (this.shown || this.status !== undefined)) this.clear(ctx);
     this.render = undefined;
     this.members = [];
     this.traffic = [];
@@ -199,16 +210,16 @@ export class AgentsView {
 
   private paint(ctx: ExtensionContext): void {
     try {
-      const { members, traffic, error } = this.team.view;
+      const { members, traffic, error, retrying } = this.team.view;
       this.members = members;
       this.traffic = traffic;
       const self = this.team.id;
       // The same liveness filter as widgetLines: a widget with no rows is never mounted.
       const visible = descendants(liveMembers(this.members, Date.now()), self).length > 0;
       if (error) {
-        // A foreign or newer database: the team is off for this session, and the footer says why.
-        this.shown = true;
-        this.setStatus(ctx, statusColor(ctx, 'error', `team off: ${safe(error, 80)}`));
+        // A foreign or newer database turns the team off for this session; a locked one is retried on the next tick.
+        // Either way the widget keeps its state, and mounts once a read succeeds.
+        this.setStatus(ctx, retrying ? statusColor(ctx, 'warning', `team retrying: ${safe(error, 80)}`) : statusColor(ctx, 'error', `team off: ${safe(error, 80)}`));
         return;
       }
       this.setStatus(ctx, undefined);

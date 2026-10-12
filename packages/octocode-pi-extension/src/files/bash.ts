@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createBashToolDefinition, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { wordCompletions, type Subcommands } from '../shared/commands.js';
+import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { envInt } from '../shared/env.js';
 import { PRIVATE_FILE_MODE, moveFile } from '../shared/home.js';
 import { formatDuration, shortPath } from '../shared/format.js';
@@ -117,10 +117,10 @@ export function registerBashTool(
     description: 'jobs [kill <id>] — list or stop background bash jobs',
     handler: async (args, ctx) => {
       const [sub = '', id = ''] = args.split(/\s+/);
-      if (!sub) return ctx.ui.notify(jobs.describe(), 'info');
-      if (sub !== 'kill') return ctx.ui.notify('Usage: /octocode jobs [kill <id>]', 'warning');
-      if (!jobs.stop(id, 'user')) return ctx.ui.notify(`No background bash job "${id}".\n${jobs.describe()}`, 'warning');
-      ctx.ui.notify(`Stopping ${id}…`, 'info');
+      if (!sub) return say(ctx, jobs.describe(), 'info');
+      if (sub !== 'kill') return say(ctx, 'Usage: /octocode jobs [kill <id>]', 'warning');
+      if (!jobs.stop(id, 'user')) return say(ctx, `No background bash job "${id}".\n${jobs.describe()}`, 'warning');
+      say(ctx, `Stopping ${id}…`, 'info');
     },
     complete: (prefix) => {
       if (!prefix.startsWith('kill ')) return wordCompletions([['kill', 'kill <id> — stop a background job']], prefix)?.map((item) => ({ ...item, value: 'kill ' })) ?? null;

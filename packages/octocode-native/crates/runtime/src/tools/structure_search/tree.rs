@@ -229,9 +229,9 @@ fn walk_tree(
     requested: usize,
 ) -> Result<TreeWalk, ToolError> {
     // Leave out what localSearch leaves out: `.gitignore`d entries (unless
-    // includeIgnored) and paths the sensitive-file policy denies. Denied entries
-    // the listing would otherwise show are counted and reported, never
-    // silently dropped.
+    // includeIgnored) and paths the path policy denies (sensitive names, and
+    // symlinks out of the allowed roots). Denied entries the listing would
+    // otherwise show are counted and reported, never silently dropped.
     let gitignore = (!q.include_ignored.unwrap_or(false))
         .then(|| crate::policy::gitignore::GitignoreFilter::new(root));
     let show_hidden = q.include_hidden.unwrap_or(false);
@@ -273,11 +273,7 @@ fn walk_tree(
                 return Ok(false);
             }
             let allowed = super::allow_discovery(path, file_type, &discovery, cancel)?;
-            if !allowed
-                && (show_hidden || !dot)
-                && crate::policy::discovery::is_sensitive_path(path)
-                && probe.could_list(path)
-            {
+            if !allowed && (show_hidden || !dot) && probe.could_list(path) {
                 withheld
                     .lock()
                     .unwrap_or_else(|error| error.into_inner())
@@ -345,7 +341,13 @@ fn tree_rows(
                     dirs += 1;
                     "directory"
                 }
-                "symlink" => "symlink",
+                // A symlink counts as a non-directory entry, as `files` counts
+                // it; its size is the link's own.
+                "symlink" => {
+                    files += 1;
+                    bytes += entry.size.unwrap_or(0);
+                    "symlink"
+                }
                 _ => {
                     files += 1;
                     let size = entry.size.unwrap_or(0);
@@ -479,6 +481,7 @@ fn tree_page(
         // an unfiltered outline names their count in the summary.
         let report_hidden = walk.uncovered.hidden > 0 && total > 0 && q.filtered();
         out["summary"] = summary(walk);
+        super::lead_to_ignored(&mut out, q, &walk.uncovered);
         if report_hidden {
             out["next"]["includeHidden"] =
                 super::continuation(q, json!({"includeHidden":true,"page":1,"snapshot":null}));
@@ -499,6 +502,9 @@ fn tree_page(
         out["pagination"] = facts.to_value();
     }
     let mut warnings = walk.warnings.clone();
+    warnings.extend(crate::policy::include::parent_glob_warning(
+        &q.include, &q.exclude,
+    ));
     cut.finish(&mut out, q, &mut warnings);
     warnings.extend(walk.uncovered.withheld.notice());
     if !warnings.is_empty() {

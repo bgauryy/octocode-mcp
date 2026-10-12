@@ -899,7 +899,7 @@ mod tests {
                 json!({"type":"score","score":0.75,"confidence":0.8,"probabilities":{"0":0.25,"1":0.75},"legend":{"0":{"path":"/literal/criterion"},"1":"Good"}}),
             ),
         ] {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             let state = json!({"context":"HIDDEN_BODY"});
             let mut supplied = answer.clone();
             supplied["content"] = json!("HIDDEN_BODY");
@@ -936,7 +936,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_and_cancelled_requests_never_reach_provider() {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(500))
             .expect(0)
@@ -971,7 +971,7 @@ mod tests {
             json!({"answer":{"type":"choice"}}),
             json!({"wrong":{"type":"noul","noul":0.8}}),
         ] {
-            let server = MockServer::start().await;
+            let server = MockServer::builder().start().await;
             Mock::given(method("POST")).respond_with(ResponseTemplate::new(200).set_body_json(json!({"model":"m","answers":answer,"usage":{"input_tokens":1,"output_tokens":1}}))).expect(1).mount(&server).await;
             assert_eq!(
                 judge(

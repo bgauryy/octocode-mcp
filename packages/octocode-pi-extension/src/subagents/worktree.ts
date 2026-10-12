@@ -194,11 +194,18 @@ export async function mergeAgent(cwd: string, agentId: string): Promise<{ ok: bo
   const repo = repoRoot(cwd);
   const ref = `${REF_PREFIX}${agentId}`;
   if (!(await quiet(git(repo, ['rev-parse', '--verify', '--quiet', ref])))) return { ok: false, text: `No isolated changes for ${agentId} (${ref} does not exist).` };
+  if (await quiet(git(repo, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']))) {
+    return { ok: false, text: `A merge is already in progress. Finish or abort it before merging ${ref}; your resolution and the agent ref are kept.` };
+  }
   try {
     await git(repo, [...NO_HOOKS, 'merge', '--no-ff', '--no-edit', ref]);
   } catch (error) {
     const conflicts = (await quiet(git(repo, ['diff', '--name-only', '--diff-filter=U']))) ?? '';
-    if (await quiet(git(repo, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']))) await quiet(git(repo, ['merge', '--abort']));
+    if (await quiet(git(repo, ['rev-parse', '--verify', '--quiet', 'MERGE_HEAD']))) {
+      if ((await quiet(git(repo, ['merge', '--abort']))) === undefined) {
+        return { ok: false, text: `Merging ${ref} failed and could not be aborted. The merge is still in progress; inspect git status before continuing. ${ref} is kept.\n${errorMessage(error)}` };
+      }
+    }
     if (conflicts) return { ok: false, text: `Merging ${ref} conflicts in:\n${conflicts}\nThe merge was aborted and the tree is unchanged; ${ref} is kept.` };
     return { ok: false, text: `Merging ${ref} failed: ${errorMessage(error)}` };
   }
@@ -238,17 +245,29 @@ function releaseDeadClaims(dir: string): void {
 /**
  * Removes worktrees of this repository whose owning Pi processes (parent and subagent) are all gone. Their changes are
  * first committed to the agent's ref; a worktree whose changes cannot be saved is kept and reported, so a crash never
- * loses an isolated subagent's work.
+ * loses an isolated subagent's work. A call while a prune of the same repository runs in this process joins it: two
+ * would only contend for git's index lock (other processes are kept apart by the rename claim).
  */
-export async function pruneWorktrees(cwd: string, home = octocodeHome()): Promise<PruneReport> {
-  const report: PruneReport = { saved: [], kept: [] };
+export function pruneWorktrees(cwd: string, home = octocodeHome()): Promise<PruneReport> {
   let repo: string;
   try {
     repo = repoRoot(cwd);
   } catch {
-    return report;
+    return Promise.resolve({ saved: [], kept: [] });
   }
   const dir = worktreesDir(repo, home);
+  const running = pruning.get(dir);
+  if (running) return running;
+  const prune = pruneDir(repo, dir).finally(() => pruning.delete(dir));
+  pruning.set(dir, prune);
+  return prune;
+}
+
+/** Prunes in flight in this process, by worktrees folder. */
+const pruning = new Map<string, Promise<PruneReport>>();
+
+async function pruneDir(repo: string, dir: string): Promise<PruneReport> {
+  const report: PruneReport = { saved: [], kept: [] };
   if (!fs.existsSync(dir)) return report;
   releaseDeadClaims(dir);
   for (const entry of fs.readdirSync(dir)) {

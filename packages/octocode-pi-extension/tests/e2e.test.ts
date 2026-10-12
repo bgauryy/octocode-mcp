@@ -11,7 +11,7 @@ const ENTRY = path.join(HERE, '..', process.env['OCTOCODE_E2E_ENTRY'] === 'dist'
 const octocode = (await import(ENTRY)).default as ExtensionFactory;
 
 // Hermetic: a run from inside a Pi subagent inherits its identity and settings, which change the prompt, tools and limits.
-for (const key of ['OCTOCODE_SUBAGENT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_PARENT_ID', 'OCTOCODE_AGENT_ID', 'OCTOCODE_AGENT_TASK', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_SUBAGENT_COLLABORATE', 'OCTOCODE_MAX_SUBAGENTS', 'OCTOCODE_DIRECT_TOOLS', 'OCTOCODE_HOME', 'OCTOCODE_AGENT_DB', 'OCTOCODE_MEMORY_AUTO', 'OCTOCODE_MCP_WAIT_SECONDS']) {
+for (const key of ['OCTOCODE_SUBAGENT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_PARENT_ID', 'OCTOCODE_AGENT_ID', 'OCTOCODE_AGENT_GOAL', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_SUBAGENT_COLLABORATE', 'OCTOCODE_MAX_SUBAGENTS', 'OCTOCODE_DIRECT_TOOLS', 'OCTOCODE_HOME', 'OCTOCODE_AGENT_DB', 'OCTOCODE_MEMORY_AUTO', 'OCTOCODE_MCP_WAIT_SECONDS']) {
   delete process.env[key];
 }
 
@@ -52,10 +52,15 @@ async function startSession(mcpServers: Record<string, unknown>, options: { tool
   const agentDir = path.join(root, 'agent');
   fs.mkdirSync(agentDir, { recursive: true });
   if (options.agentSettings) fs.writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify(options.agentSettings));
+  // The user trusted this project with Pi's /trust.
+  fs.writeFileSync(path.join(agentDir, 'trust.json'), JSON.stringify({ [fs.realpathSync(root)]: true }));
   const originalHome = process.env['HOME'];
   const originalAgentDir = process.env['PI_CODING_AGENT_DIR'];
+  const originalPermission = process.env['OCTOCODE_PERMISSION'];
   process.env['HOME'] = home; // keep the developer's own config out of the test
   process.env['PI_CODING_AGENT_DIR'] = agentDir; // and their Pi settings
+  // Sessions start in manual, and a headless one denies every ask: this user exported workspace.
+  process.env['OCTOCODE_PERMISSION'] = 'workspace';
   // Pi's built-in MCP reads the user-level mcp.json; an `octocode` entry there overrides Octocode's registration.
   fs.writeFileSync(path.join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers }));
   const turns: Turn[] = [];
@@ -109,6 +114,8 @@ async function startSession(mcpServers: Record<string, unknown>, options: { tool
     process.env['HOME'] = originalHome;
     if (originalAgentDir === undefined) delete process.env['PI_CODING_AGENT_DIR'];
     else process.env['PI_CODING_AGENT_DIR'] = originalAgentDir;
+    if (originalPermission === undefined) delete process.env['OCTOCODE_PERMISSION'];
+    else process.env['OCTOCODE_PERMISSION'] = originalPermission;
     fs.rmSync(root, { recursive: true, force: true });
   };
   return { cwd, session, faux, run, dispose };

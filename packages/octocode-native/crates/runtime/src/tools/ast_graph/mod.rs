@@ -40,7 +40,7 @@ impl crate::tools::output::ToolOutput for Output {
                 "No import cycle in the scanned files; coverage.imports counts the imports a cycle could pass through unlinked."
             }
             Some("deadCode") => {
-                "No dead export found; without resolved entrypoints the verdict is suppressed: pass entrypoints."
+                "No dead export found from the resolved entrypoints; pass entrypoints to add roots."
             }
             Some("reachability") => {
                 "No files to classify: check that path covers the code and read coverage.diagnostics."

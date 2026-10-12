@@ -22,11 +22,11 @@ export const OCTOCODE_SERVER = 'octocode';
 export const OCTOCODE_TOOL_PREFIX = `mcp__${OCTOCODE_SERVER}__`;
 
 /**
- * The octocode-mcp release this extension runs: the newest (`latest`). The package.json dependency is `latest` too, so
- * installing or updating the extension fetches the newest server; in this monorepo `dev setup` resolves it to the
- * workspace build (`packages/octocode-mcp`).
+ * The octocode-mcp releases this extension runs: 20.2.0 or a later 20.x, the first with the tool contract it expects.
+ * The package.json dependency has the same range, so installing or updating the extension fetches the newest
+ * compatible server; in this monorepo `dev setup` resolves it to the workspace build (`packages/octocode-mcp`).
  */
-export const OCTOCODE_MCP_SPEC = 'octocode-mcp@latest';
+export const OCTOCODE_MCP_SPEC = 'octocode-mcp@^20.2.0';
 
 /** Whether `name` is an Octocode MCP tool. */
 export const isOctocodeTool = (name: string): boolean => name.startsWith(OCTOCODE_TOOL_PREFIX);

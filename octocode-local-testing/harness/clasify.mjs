@@ -6,8 +6,9 @@
 // candidate mapping, next.clasify, hints.read, errors) run in `scoutFlows`;
 // OCTOCODE_CLASIFY_ONLY=scout runs only them.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { REPOS, checks, collect, rowData, startServer, writeResults } from './mcp-client.mjs';
+import { REPOS, checks, collect, nextHints, rowData, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('clasify');
 const client = await startServer();
@@ -475,6 +476,42 @@ await scoutFlows();
     if (typeof p === 'number' && (c.yes ? p >= 0.8 : p <= 0.2)) correct += 1;
   });
   check(`judge: ${correct}/${cases.length} held snippets answered decisively and correctly`, correct === cases.length, out.text.slice(0, 200));
+}
+
+// Walk coverage (was clasify-locate.mjs): a small maxChars budget splits one
+// generated 429-line file into pages; the next.clasify walk must cover every
+// line exactly once, in order, and terminate, and a hints.read must show the
+// one deciding line.
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-clasify-walk-'));
+  const file = path.join(dir, 'retry-guide.md');
+  try {
+    const lines = Array.from({ length: 429 }, (_, i) => `Line ${i + 1}: operational documentation filler explaining ordinary housekeeping and source ownership.`);
+    lines[172] = 'Retry only after a transient upstream timeout; stop retrying after three attempts.';
+    fs.writeFileSync(file, lines.join('\n') + '\n');
+    const pages = [];
+    const reads = [];
+    let e = await raw('clasify', { queries: [{ mainGoal: 'Locate the rule that limits retry attempts.', reasoning: 'Read deciding source after the semantic scout identifies it.',
+      resources: [{ id: 'guide', tool: 'localFetch', query: { path: file, fullContent: true }, maxChars: 10000 }],
+      questions: [{ id: 'stop', type: 'locate', ask: 'When must a retry stop?' }], extras: ['details', 'stats'] }] });
+    const selfContinuation = entry => nextHints(entry.sc).find(h => h.tool === 'clasify' && h.path.endsWith('.clasify'));
+    for (let i = 0; i < 10; i++) {
+      pages.push(e);
+      for (const h of nextHints(e.sc).filter(x => x.path.endsWith('.hints.read'))) reads.push(await follow(h));
+      const h = selfContinuation(e);
+      if (!h) break;
+      e = await follow(h);
+    }
+    const scopes = pages.flatMap(p => (p.sc?.queries ?? []).flatMap(q => (q.resources ?? []).flatMap(r => (r.pages ?? []).map(pg => pg.scope).filter(Boolean))));
+    const gapFree = scopes.length > 1 && scopes[0].startLine === 1 && scopes.at(-1).endLine === 429 && scopes.every((s, i) => s.totalLines === 429 && (!i || s.startLine === scopes[i - 1].endLine + 1));
+    check('walk: every page and read succeeds', pages.every(x => !x.isError && !x.rowErrors) && reads.every(x => !x.isError && !x.rowErrors), pages.concat(reads).filter(x => x.isError || x.rowErrors).map(x => x.text.slice(0, 80)).join(' | '));
+    check('walk: next.clasify terminates', !selfContinuation(pages.at(-1)), `${pages.length} calls`);
+    check('walk: page scopes cover lines 1-429 in order without gaps', gapFree, JSON.stringify(scopes.map(s => [s.startLine, s.endLine])));
+    check('walk: a hints.read shows the deciding line', reads.some(x => x.text.includes('stop retrying after three attempts')), `${reads.length} reads`);
+  } finally {
+    fs.unlinkSync(file);
+    fs.rmdirSync(dir);
+  }
 }
 
 // Errors: missing and binary files stay unresolved, never "no".

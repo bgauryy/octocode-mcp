@@ -999,11 +999,11 @@ fn annotate(
         );
     }
     if let Some(reason) = &session.fell_back_from {
-        failure::push_warning(
+        crate::tools::paging::push_warnings(
             result,
-            format!(
+            [format!(
                 "The native TypeScript server (tsgo) did not start ({reason}); typescript-language-server (tsserver) answered."
-            ),
+            )],
         );
     }
     let language_id = target.config.language_id.as_deref();

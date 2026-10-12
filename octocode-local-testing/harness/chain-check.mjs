@@ -7,7 +7,8 @@
 //   node harness/chain-check.mjs                    # live, markdown to stdout
 //   node harness/chain-check.mjs --json             # JSON to stdout
 //   node harness/chain-check.mjs --write=baseline   # <out>/chain-check-baseline.{md,json}
-//   flags: --tools=localSearch,astSearch --no-live --no-github --clasify (paid) --pages=12
+//   flags: --tools=localSearch,astSearch --no-live --clasify (paid) --pages=12
+//   GitHub and registry samples run only with OCTOCODE_LIVE=1 (otherwise skipped)
 //          --out=<dir> (default .octocode/evals/<date>-chain)
 //          --strict=C2,C4 (Acceptance checks that FAIL, default C3,C5; the rest REPORT)
 //
@@ -25,7 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { startServer, cliEntry, ROOT } from './mcp-client.mjs';
+import { startServer, cliEntry, ROOT, LIVE as LIVE_SERVICES } from './mcp-client.mjs';
 import { schemaErrors, verboseFields, loadVerboseRules, isPageName, hintEntries } from './sensors.mjs';
 import { CHECKS, CLASIFY_SURFACE_BUDGET, checkChainFit, checkRowContract, descriptionLint, rowFieldNames, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
 
@@ -40,7 +41,7 @@ const argv = process.argv.slice(2);
 const flag = name => argv.includes(`--${name}`);
 const opt = name => argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const LIVE = !flag('no-live');
-const GITHUB = LIVE && !flag('no-github');
+const GITHUB = LIVE && LIVE_SERVICES;
 const PAID = flag('clasify');
 const LOCAL_PAGES = Number(opt('pages') ?? 12);
 const REMOTE_PAGES = 3;
@@ -482,7 +483,7 @@ async function liveChecks(tools, contract, tasks) {
     const res = { acceptance: { C1: [], C2: [], C3: [], C4: [] }, output: { ok: true, reasons: [], verbose: {}, paginationKeys: [], dates: [] }, communicate: { ok: true, reasons: [], pages: 0, pagesWithNext: 0, missingMore: [], terminal: 0, staleTerminal: [], hintsMax: 0, withheld: [], replays: [], natural: null, naturalBySample: [] }, samples: [] };
     const remoteTool = remote.has(tool) || tool === 'artifactSearch' || tool === 'ghCloneRepo';
     if (tool === 'clasify' && !PAID) { res.skipped = 'clasify is paid (pass --clasify)'; out[tool] = res; continue; }
-    if (remoteTool && !GITHUB) { res.skipped = 'GitHub disabled (--no-github)'; out[tool] = res; continue; }
+    if (remoteTool && !GITHUB) { res.skipped = 'GitHub and registries are live (set OCTOCODE_LIVE=1)'; out[tool] = res; continue; }
     const calls = sampleCalls(tool, tasks);
     if (!calls.length) { res.skipped = 'no sample'; out[tool] = res; continue; }
     const leadsSeen = new Map();

@@ -5,7 +5,6 @@ use crate::policy::prune::DefaultsFlag;
 use crate::policy::prune::PruneMode;
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
-use crate::tools::id::query_limits::local_search::{MATCH_PAGE_MAXIMUM, PAGE_MAXIMUM};
 use crate::tools::result::ToolError;
 use octocode_engine::{portable::search_text_cancellable, types::TextSearchOptions};
 use serde_json::json;
@@ -145,7 +144,7 @@ pub fn execute_local_search(
     warnings.extend(keys_note);
     warnings.extend(enclosing_note);
     let capped = stats.capped.unwrap_or(false);
-    let (status, terminal_limit) = settle(
+    let (status, settled_terminal) = settle(
         query,
         &layout,
         empty,
@@ -168,7 +167,7 @@ pub fn execute_local_search(
         symbol,
         scanned: &scanned_stats,
         skipped: &skipped,
-        complete: !capped && !coverage.gap(),
+        walk_complete: !coverage.walk_cut,
         empty,
     }
     .add_leads(
@@ -182,6 +181,9 @@ pub fn execute_local_search(
     if skipped_match {
         coverage.skipped_paths_hold_matches(&mut hints);
     }
+    // A retry over the skipped paths reaches the match, so no limit ends
+    // this answer.
+    let terminal_limit = settled_terminal && !skipped_match;
     // Files past the collection cap are on no page: every page says so and
     // leads to the scope's tree to split the search.
     let uncollected = uncollected_warning(&stats, total_files);
@@ -330,8 +332,17 @@ pub(super) fn settle(
         coverage_gap,
         next_missing,
     );
-    let at_ceiling = (has_more && page as usize >= PAGE_MAXIMUM)
-        || (leftover_matches && query.match_page().max(1) as usize >= MATCH_PAGE_MAXIMUM);
+    let past = |field: &str, current: u32| {
+        crate::tools::paging::admitted(
+            crate::tools::id::ToolId::LocalSearch,
+            None,
+            field,
+            current as usize + 1,
+        )
+        .is_none()
+    };
+    let at_ceiling = (has_more && past("page", page))
+        || (leftover_matches && past("matchPage", query.match_page().max(1)));
     (status, terminal || at_ceiling)
 }
 

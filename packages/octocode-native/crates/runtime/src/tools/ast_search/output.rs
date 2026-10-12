@@ -109,7 +109,7 @@ mod tests {
         let pattern = json!({"operation": "match", "pattern": "const $A = $B"});
         let hint = ToolId::AstSearch.output().fallback_hint(&pattern);
         assert!(hint.contains("whole nodes"), "{hint}");
-        assert!(hint.contains("return types"), "{hint}");
+        assert!(hint.contains("syntaxTree"), "{hint}");
         let rule = json!({"operation": "match", "rule": "id: x"});
         assert_eq!(
             ToolId::AstSearch.output().fallback_hint(&rule),

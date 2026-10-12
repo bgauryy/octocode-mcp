@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import type { Usage } from '@earendil-works/pi-ai';
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from '@earendil-works/pi-coding-agent';
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { redactSecrets } from './sanitize.js';
 
 /** node:sqlite prints an ExperimentalWarning on some Node versions; that would land in the terminal UI. */
@@ -115,7 +115,7 @@ export async function withTimeout<T>(work: Promise<T>, ms: number, label: string
  * The placeholders Octocode leaves where it trimmed text the model later sees again: trimmed call arguments and
  * tool results (compaction) and `capChars` cuts. A model that copies one into a file writes a hole, not content.
  */
-const ELISION_MARKER = /\[(?:… ?)?\d+ more characters (?:of this earlier, successful call omitted|from this earlier tool result were trimmed[^\]\n]*|cut[^\]\n]*)\]/g;
+const ELISION_MARKER = /\[(?:… ?)?\d+ more characters (?:of this earlier, successful call omitted[^\]\n]*|from this earlier tool result were trimmed[^\]\n]*|cut[^\]\n]*)\]/g;
 
 export function elisionMarkers(text: string): string[] {
   return text.match(ELISION_MARKER) ?? [];
@@ -181,10 +181,11 @@ export function emptyUsage(): Usage {
   return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 }
 
+const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+
 /** Add a model response's usage into `total`. Anything that is not a number counts as zero. */
 export function addUsage(total: Usage, usage: unknown): void {
   if (!isRecord(usage)) return;
-  const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
   total.input += num(usage['input']);
   total.output += num(usage['output']);
   total.cacheRead += num(usage['cacheRead']);
@@ -196,4 +197,60 @@ export function addUsage(total: Usage, usage: unknown): void {
   total.cost.cacheRead += num(cost['cacheRead']);
   total.cost.cacheWrite += num(cost['cacheWrite']);
   total.cost.total += num(cost['total']);
+}
+
+/**
+ * Usage as the displays show it (footer, agents panel, `coordinate list`, subagent rows): `input` is every prompt token
+ * (uncached input, cache reads and writes), `cacheRead` the part of it read from cache, `cost` the sum of Pi's per-reply
+ * estimate, and `unpriced` whether any reply came from a model without pricing (its tokens are missing from `cost`).
+ */
+export interface UsageTotals {
+  input: number;
+  cacheRead: number;
+  output: number;
+  cost: number;
+  unpriced: boolean;
+}
+
+export const emptyTotals = (): UsageTotals => ({ input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false });
+
+/** Messages whose usage is spend: model replies, and tool results that report a subagent's (its `agent` result). */
+export const carriesUsage = (role: string | undefined): boolean => role === 'assistant' || role === 'toolResult';
+
+/** Adds one reply's usage (anything that is not a number counts as zero); `unpriced` from `unpricedModel`. */
+export function addReply(totals: UsageTotals, usage: unknown, unpriced: boolean): void {
+  if (!isRecord(usage)) return;
+  totals.input += num(usage['input']) + num(usage['cacheRead']) + num(usage['cacheWrite']);
+  totals.cacheRead += num(usage['cacheRead']);
+  totals.output += num(usage['output']);
+  totals.cost += num(isRecord(usage['cost']) ? usage['cost']['total'] : undefined);
+  if (unpriced) totals.unpriced = true;
+}
+
+/** A model's registry rates by provider and id (`ctx.modelRegistry.find`); undefined when the registry does not know it. */
+export type ModelLookup = (provider: string, id: string) => { cost?: { input: number; output: number; cacheRead: number; cacheWrite: number } } | undefined;
+
+export const modelLookup = (ctx: Pick<ExtensionContext, 'modelRegistry'>): ModelLookup => (provider, id) => ctx.modelRegistry?.find(provider, id);
+
+/**
+ * The `provider/model` of a reply (an assistant message, or a tool result carrying a subagent's usage) that spent tokens
+ * on a model without pricing, else undefined. Pi gives a model with no `cost` in models.json all-zero rates, so its usage
+ * silently costs $0: free local models, or a model nobody priced. A model the registry does not know (or a reply that does
+ * not name one) is judged by the reply's own cost.
+ */
+export function unpricedModel(message: unknown, find?: ModelLookup): string | undefined {
+  if (!isRecord(message) || !isRecord(message['usage'])) return undefined;
+  const usage = message['usage'];
+  if (num(usage['input']) + num(usage['output']) + num(usage['cacheRead']) + num(usage['cacheWrite']) === 0) return undefined;
+  // A subagent's `agent` result names no model; its run already judged every reply (partly priced is still unpriced).
+  const details = isRecord(message['details']) ? message['details'] : undefined;
+  if (typeof details?.['unpriced'] === 'boolean' && typeof message['model'] !== 'string') {
+    return details['unpriced'] ? (typeof details['model'] === 'string' ? details['model'] : 'a subagent model') : undefined;
+  }
+  const provider = typeof message['provider'] === 'string' ? message['provider'] : undefined;
+  const model = typeof message['model'] === 'string' ? message['model'] : undefined;
+  const rates = provider && model ? find?.(provider, model)?.cost : undefined;
+  const free = rates ? rates.input === 0 && rates.output === 0 && rates.cacheRead === 0 && rates.cacheWrite === 0 : num(isRecord(usage['cost']) ? usage['cost']['total'] : undefined) === 0;
+  if (!free) return undefined;
+  return model ? (provider ? `${provider}/${model}` : model) : 'unknown model';
 }

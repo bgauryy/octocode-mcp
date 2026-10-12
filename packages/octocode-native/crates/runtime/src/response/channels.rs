@@ -715,7 +715,7 @@ mod tests {
         assert_eq!(structured, once, "idempotent");
     }
 
-    /// SH5: `broadenSearch` rows are alternatives (drop-one-keyword
+    /// `broadenSearch` rows are alternatives (drop-one-keyword
     /// variants), not other rows already shown: the lead keeps them all.
     #[test]
     fn a_broaden_search_lead_keeps_every_alternative_row() {

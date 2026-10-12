@@ -568,7 +568,7 @@ mod npm_auth_tests {
 
     /// Loopback npm registry recording each request's Authorization header.
     async fn registry() -> (u16, wiremock::MockServer) {
-        let server = wiremock::MockServer::start().await;
+        let server = wiremock::MockServer::builder().start().await;
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .respond_with(
                 wiremock::ResponseTemplate::new(200)
@@ -624,7 +624,7 @@ mod npm_auth_tests {
     /// an empty discovery.
     #[tokio::test]
     async fn missing_exact_package_is_not_found() {
-        let server = wiremock::MockServer::start().await;
+        let server = wiremock::MockServer::builder().start().await;
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .respond_with(wiremock::ResponseTemplate::new(404))
             .mount(&server)
@@ -650,7 +650,7 @@ mod npm_auth_tests {
     #[tokio::test]
     async fn exact_lookup_offers_one_release_lead_at_the_package_directory() {
         let sha = "4b0051f400219f8d8855f9a5433c6df35f15a639";
-        let server = wiremock::MockServer::start().await;
+        let server = wiremock::MockServer::builder().start().await;
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
                 "name": "audit-package", "version": "1.31.0", "gitHead": sha,
@@ -731,7 +731,7 @@ mod npm_auth_tests {
     #[tokio::test]
     async fn an_npm_git_head_missing_upstream_is_no_release_lead() {
         let sha = "2bd066d87f5bafd315be9f40889d0a60b9e58e0b";
-        let server = wiremock::MockServer::start().await;
+        let server = wiremock::MockServer::builder().start().await;
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
                 "name": "typescript", "version": "7.0.2", "gitHead": sha,
@@ -779,18 +779,95 @@ mod npm_auth_tests {
         }
     }
 
+    /// An npm search window: rows `p{n}` from `from` (or from 0 once `from`
+    /// passes `reachable`, as npm silently restarts a deep window), `size`
+    /// rows at most, out of `total`.
+    struct NpmWindow {
+        total: u64,
+        reachable: u64,
+    }
+
+    impl wiremock::Respond for NpmWindow {
+        fn respond(&self, request: &wiremock::Request) -> wiremock::ResponseTemplate {
+            let param = |name: &str| {
+                request
+                    .url
+                    .query_pairs()
+                    .find(|(key, _)| key == name)
+                    .and_then(|(_, value)| value.parse::<u64>().ok())
+            };
+            let from = param("from").unwrap_or(0);
+            let from = if from > self.reachable { 0 } else { from };
+            let end = (from + param("size").unwrap_or(20)).min(self.total);
+            let objects: Vec<Value> = (from..end)
+                .map(|n| json!({"package": {"name": format!("p{n}"), "version": "1.0.0"}}))
+                .collect();
+            wiremock::ResponseTemplate::new(200)
+                .set_body_json(json!({"objects": objects, "total": self.total}))
+        }
+    }
+
+    async fn npm_window(total: u64, reachable: u64) -> wiremock::MockServer {
+        let server = wiremock::MockServer::builder().start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(NpmWindow { total, reachable })
+            .mount(&server)
+            .await;
+        server
+    }
+
+    fn npm_page(server: &wiremock::MockServer, page: u64, page_size: u64) -> ArtifactSearchQuery {
+        typed(&json!({
+            "ecosystem": "npm",
+            "keywords": ["x"],
+            "pageSize": page_size,
+            "page": page,
+            "registryUrl": format!("http://127.0.0.1:{}", server.address().port()),
+        }))
+    }
+
+    /// npm restarts a window whose `from` passes its undocumented reach,
+    /// serving earlier rows as if they were the page. A page of repeated
+    /// rows lists none of them: it keeps the registry's total and states
+    /// how many rows are reachable, with no next page.
+    #[tokio::test]
+    async fn a_repeated_npm_window_is_a_terminal_limit_with_the_reachable_count() {
+        let server = npm_window(100_000, 50).await;
+        let deadline = Instant::now() + std::time::Duration::from_secs(300);
+        // Pages inside the reach are their own rows and continue.
+        for page in [1, 3, 6] {
+            let data = execute(npm_page(&server, page, 10), call(deadline, true))
+                .await
+                .expect("discovery succeeds");
+            let first = (page - 1) * 10;
+            assert_eq!(data["artifacts"][0]["name"], format!("p{first}"), "{data}");
+            assert!(data["next"]["nextPage"].is_object(), "{data}");
+            assert!(data.get("terminalLimit").is_none(), "{data}");
+        }
+        // Past the reach, the window repeats from the first row.
+        let data = execute(npm_page(&server, 7, 10), call(deadline, true))
+            .await
+            .expect("discovery succeeds");
+        assert_eq!(data["artifacts"], json!([]), "{data}");
+        assert_eq!(data["terminalLimit"], true, "{data}");
+        assert_eq!(data["pagination"]["totalItems"], 100_000, "{data}");
+        assert!(data["next"].get("nextPage").is_none(), "{data}");
+        let reason = data["partialReasons"][0].as_str().unwrap_or_default();
+        assert!(reason.contains("at most 60 of 100000"), "{data}");
+        // The boundary page: its probe is still honored, the page is not.
+        let server = npm_window(100_000, 59).await;
+        let data = execute(npm_page(&server, 7, 10), call(deadline, true))
+            .await
+            .expect("discovery succeeds");
+        assert_eq!(data["artifacts"], json!([]), "{data}");
+        assert_eq!(data["terminalLimit"], true, "{data}");
+    }
+
     /// The last page the contract accepts offers no next page: it states
     /// the terminal limit instead of a lead the tool would reject.
     #[tokio::test]
     async fn the_last_requestable_page_states_a_terminal_limit_not_a_next_page() {
-        let server = wiremock::MockServer::start().await;
-        wiremock::Mock::given(wiremock::matchers::method("GET"))
-            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
-                "objects": [{"package": {"name": "a", "version": "1.0.0"}}],
-                "total": 100_000
-            })))
-            .mount(&server)
-            .await;
+        let server = npm_window(100_000, 100_000).await;
         let query = json!({
             "ecosystem": "npm",
             "keywords": ["x"],
@@ -816,7 +893,7 @@ mod npm_auth_tests {
     /// exist and the registry's total.
     #[tokio::test]
     async fn discovery_pagination_states_more_and_the_total_only() {
-        let server = wiremock::MockServer::start().await;
+        let server = wiremock::MockServer::builder().start().await;
         wiremock::Mock::given(wiremock::matchers::method("GET"))
             .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
                 "objects": [{"package": {"name": "a", "version": "1.0.0"}},

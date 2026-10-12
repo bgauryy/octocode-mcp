@@ -7,11 +7,17 @@
 /// other entry is a glob as written, with a leading `./` dropped.
 pub fn include_glob(pattern: &str) -> String {
     let pattern = pattern.trim().trim_start_matches("./");
-    if pattern.contains(['/', '*', '?', '[', '{']) {
-        pattern.to_owned()
-    } else {
+    if is_bare_word(pattern) {
         format!("*{pattern}*")
+    } else {
+        pattern.to_owned()
     }
+}
+
+const GLOB_META: [char; 4] = ['*', '?', '[', '{'];
+
+fn is_bare_word(pattern: &str) -> bool {
+    !pattern.contains('/') && !pattern.contains(GLOB_META)
 }
 
 /// Every `include` entry as a glob. A path without glob metacharacters
@@ -25,10 +31,10 @@ pub fn include_globs(patterns: &[String]) -> Vec<String> {
         .flat_map(|pattern| {
             let trimmed = pattern.trim().trim_start_matches("./");
             let glob = include_glob(pattern);
-            let under = if !trimmed.contains(['/', '*', '?', '[', '{']) {
+            let under = if is_bare_word(trimmed) {
                 Some(format!("**/{glob}/**"))
             } else {
-                let plain_path = glob.contains('/') && !glob.contains(['*', '?', '[', '{']);
+                let plain_path = glob.contains('/') && !glob.contains(GLOB_META);
                 plain_path.then(|| format!("{}/**", glob.trim_end_matches('/')))
             };
             std::iter::once(glob).chain(under)
@@ -36,9 +42,42 @@ pub fn include_globs(patterns: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Whether a glob has a `..` segment. Globs match paths under the listed or
+/// searched `path`, so such a glob never matches anything there.
+pub fn reaches_above(glob: &str) -> bool {
+    glob.split(['/', '\\']).any(|segment| segment == "..")
+}
+
+/// The warning for the first include or exclude glob that reaches above
+/// `path` (see [`reaches_above`]): why it never matches, and the repair.
+pub fn parent_glob_warning(include: &[String], exclude: &[String]) -> Option<String> {
+    let glob = include
+        .iter()
+        .chain(exclude)
+        .find(|glob| reaches_above(glob))?;
+    Some(format!(
+        "Glob `{glob}` never matches: globs match paths under `path`, and a `..` segment reaches above it; widen `path` instead."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_glob_with_a_parent_segment_is_found() {
+        let include = ["*.rs".to_owned()];
+        let exclude = ["../src/*.ts", "a/../b"].map(str::to_owned);
+        let warning = parent_glob_warning(&include, &exclude).expect("warning");
+        assert!(
+            warning.starts_with("Glob `../src/*.ts` never matches"),
+            "{warning}"
+        );
+        assert!(reaches_above("a\\..\\b"));
+        assert!(!reaches_above("..rc"));
+        assert!(!reaches_above("src/..x/*.rs"));
+        assert_eq!(parent_glob_warning(&["*.md".to_owned()], &[]), None);
+    }
 
     #[test]
     fn a_bare_word_matches_names_containing_it_and_globs_stay() {

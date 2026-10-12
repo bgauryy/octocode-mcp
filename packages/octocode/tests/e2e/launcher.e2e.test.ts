@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { allowLocalExecutables } from '../../../../test-utils/external-effects-guard.js';
 
 // End-to-end: the BUILT launcher against the REAL packaged native binary —
 // the exact path `npx octocode` takes. Everything else in this suite mocks
@@ -37,6 +38,7 @@ function nativeBinary(): string | null {
 }
 
 const binary = nativeBinary();
+if (binary) allowLocalExecutables(binary);
 const ready = existsSync(launcher) && binary !== null;
 
 function runLauncher(args: string[], env: NodeJS.ProcessEnv = {}) {

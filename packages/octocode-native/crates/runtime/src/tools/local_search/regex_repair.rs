@@ -1,7 +1,7 @@
 //! Pattern validation and runnable repairs for an invalid regex.
 
 use super::types::*;
-use crate::regex::repair::{close_unclosed_group, only_pcre2_compiles, repair_alternation};
+use crate::regex_repair::{close_unclosed_group, only_pcre2_compiles, repair_alternation};
 use crate::tools::id::ToolId;
 use crate::tools::result::Continuation;
 use crate::tools::result::ToolError;
@@ -192,7 +192,7 @@ mod repair_tests {
         );
     }
 
-    /// Q17: a `\n` in a line-by-line search names the one fact and
+    /// A `\n` in a line-by-line search names the one fact and
     /// repairs to `multiline:"on"`, with no generic advice.
     #[test]
     fn a_line_break_pattern_repairs_to_multiline() {

@@ -36,6 +36,45 @@ export const NOTIFY_METHOD_ENV = 'OCTOCODE_NOTIFY_METHOD';
 /** `0` turns the extra skill directories off everywhere. */
 export const EXTRA_SKILLS_ENV = 'OCTOCODE_EXTRA_SKILLS';
 
+/** `manual`, `workspace` or `full`: the permission mode a session starts in (unset: by project trust). Owned by the parent in a subagent. */
+export const PERMISSION_ENV = 'OCTOCODE_PERMISSION';
+
+/** Set by the parent in a subagent: the action classes its `agent` spawn was allowed (comma-separated). */
+export const PERMISSION_GRANTS_ENV = 'OCTOCODE_PERMISSION_GRANTS';
+
+/**
+ * Pi's prompt-cache retention for session requests (read by pi-ai at each request and by Pi's cache warmer): `long` asks
+ * Anthropic for a 1-hour cache entry, anything else is short (5 minutes). A value the user exported always wins.
+ */
+export const CACHE_RETENTION_ENV = 'PI_CACHE_RETENTION';
+
+/** The retention Octocode set in this process, kept on `globalThis` so a `/reload` (a fresh module) still tells it from a user's. */
+const CHOSEN_RETENTION = Symbol.for('octocode.cacheRetentionChosen');
+const chosenStore = globalThis as Record<symbol, string | undefined>;
+
+/** The retention the user exported, not one Octocode chose for this process; undefined when unset. */
+function userCacheRetention(env: NodeJS.ProcessEnv): string | undefined {
+  const value = env[CACHE_RETENTION_ENV];
+  return value === undefined || value === chosenStore[CHOSEN_RETENTION] ? undefined : value;
+}
+
+/**
+ * Sets the retention of this session's requests, before its first one, unless the user chose one: `long` for an
+ * interactive session (its user idles between prompts longer than a 5-minute entry lives; a 1-hour write costs 2× input
+ * instead of 1.25×), `short` for a headless run, which sends its requests back to back.
+ */
+export function chooseSessionCacheRetention(interactive: boolean, env: NodeJS.ProcessEnv = process.env): void {
+  if (userCacheRetention(env) !== undefined) return;
+  const value = interactive ? 'long' : 'short';
+  env[CACHE_RETENTION_ENV] = value;
+  chosenStore[CHOSEN_RETENTION] = value;
+}
+
+/** A subagent's retention: the user's exported value, else `short` (a child runs briefly and back to back). */
+export function childCacheRetention(env: NodeJS.ProcessEnv = process.env): string {
+  return userCacheRetention(env) ?? 'short';
+}
+
 const TRUE = /^(1|true|on|yes)$/i;
 const FALSE = /^(0|false|off|no)$/i;
 
@@ -45,6 +84,17 @@ export function envFlag(env: NodeJS.ProcessEnv, name: string, fallback = false):
   if (TRUE.test(value)) return true;
   if (FALSE.test(value)) return false;
   return fallback;
+}
+
+/**
+ * One of `choices` from the environment (any case, surrounding space ignored): `{ value }`, `{ invalid }` with the raw
+ * text when it is none of them, or undefined when unset or empty.
+ */
+export function envChoice<T extends string>(env: NodeJS.ProcessEnv, name: string, choices: readonly T[]): { value: T } | { invalid: string } | undefined {
+  const raw = env[name]?.trim() ?? '';
+  if (raw === '') return undefined;
+  const value = choices.find((choice) => choice === raw.toLowerCase());
+  return value ? { value } : { invalid: raw };
 }
 
 /** A whole number from the environment, clamped to `[min, max]`; unset or not an integer → `fallback`. */

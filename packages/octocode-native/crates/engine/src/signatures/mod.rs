@@ -475,28 +475,57 @@ export function useEffect(
     }
 
     // ── tree-sitter languages ─────────────────────────────────────────────────
+    /// Each tree-sitter skeleton keeps declarations and drops bodies.
     #[test]
-    fn typescript_skeleton_keeps_signatures_drops_bodies() {
-        let src = "\nexport function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport class Calc {\n  value: number = 0;\n  multiply(x: number): number {\n    return this.value * x;\n  }\n}\n";
-        let s = extract(src, "calc.ts").expect("TS must extract");
-        assert!(s.contains("add"), "function preserved");
-        assert!(s.contains("Calc"), "class preserved");
-        assert!(s.contains("value"), "field preserved");
-        assert!(s.contains("multiply"), "method sig preserved");
-        assert!(!s.contains("return a + b"), "body dropped");
-        assert!(!s.contains("this.value * x"), "body dropped");
-    }
-
-    #[test]
-    fn python_skeleton_keeps_imports_classes_and_defs() {
-        let src = "\nimport os\n\nclass Foo:\n    name: str\n\n    def bar(self, x: int) -> str:\n        return str(x)\n\ndef top_level():\n    pass\n";
-        let s = extract(src, "foo.py").expect("python must extract");
-        assert!(s.contains("import os"), "must keep import");
-        assert!(s.contains("class Foo"), "must keep class");
-        assert!(s.contains("def bar"), "must keep method sig");
-        assert!(s.contains("def top_level"), "must keep top-level def");
-        assert!(!s.contains("return str"), "body dropped");
-        assert!(!s.contains("pass"), "body dropped");
+    fn tree_sitter_skeletons_keep_signatures_and_drop_bodies() {
+        let cases: [(&str, &str, &[&str], &[&str]); 6] = [
+            (
+                "calc.ts",
+                "\nexport function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport class Calc {\n  value: number = 0;\n  multiply(x: number): number {\n    return this.value * x;\n  }\n}\n",
+                // function, class, field, method signature
+                &["add", "Calc", "value", "multiply"],
+                &["return a + b", "this.value * x"],
+            ),
+            (
+                "foo.py",
+                "\nimport os\n\nclass Foo:\n    name: str\n\n    def bar(self, x: int) -> str:\n        return str(x)\n\ndef top_level():\n    pass\n",
+                &["import os", "class Foo", "def bar", "def top_level"],
+                &["return str", "pass"],
+            ),
+            (
+                "geo.rs",
+                "\npub fn greet(name: &str) -> String {\n    format!(\"Hello, {}\", name)\n}\n\npub struct Point { x: f64, y: f64 }\n\nimpl Point {\n    pub fn distance(&self, other: &Point) -> f64 {\n        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()\n    }\n}\n",
+                &["greet"],
+                &["format!"],
+            ),
+            (
+                "main.go",
+                "\npackage main\n\nimport \"fmt\"\n\nfunc Add(a, b int) int {\n    return a + b\n}\n\ntype Server struct {\n    Port int\n}\n\nfunc (s *Server) Start() error {\n    fmt.Println(\"starting\")\n    return nil\n}\n",
+                &["Add"],
+                &["Println"],
+            ),
+            (
+                "Calculator.java",
+                "\npublic class Calculator {\n    private int value;\n\n    public Calculator(int initial) {\n        this.value = initial;\n    }\n\n    public int add(int x) {\n        return value + x;\n    }\n}\n",
+                &["Calculator", "add"],
+                &["return value"],
+            ),
+            (
+                "math.c",
+                "\n#include <stdio.h>\n\nint add(int a, int b) {\n    return a + b;\n}\n\nvoid greet(const char *name) {\n    printf(\"Hello, %s\\n\", name);\n}\n",
+                &["add"],
+                &["printf"],
+            ),
+        ];
+        for (file, src, kept, dropped) in cases {
+            let s = extract(src, file).unwrap_or_else(|| panic!("{file} must extract"));
+            for text in kept {
+                assert!(s.contains(text), "{file}: {text} preserved: '{s}'");
+            }
+            for text in dropped {
+                assert!(!s.contains(text), "{file}: body {text} dropped: '{s}'");
+            }
+        }
     }
 
     #[test]
@@ -512,38 +541,6 @@ export function useEffect(
             !s.contains("return 2"),
             "multi-line body must still drop: '{s}'"
         );
-    }
-
-    #[test]
-    fn rust_skeleton_drops_fn_bodies() {
-        let src = "\npub fn greet(name: &str) -> String {\n    format!(\"Hello, {}\", name)\n}\n\npub struct Point { x: f64, y: f64 }\n\nimpl Point {\n    pub fn distance(&self, other: &Point) -> f64 {\n        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()\n    }\n}\n";
-        let s = extract(src, "geo.rs").expect("rust must extract");
-        assert!(s.contains("greet"));
-        assert!(!s.contains("format!"), "body dropped");
-    }
-
-    #[test]
-    fn go_skeleton_drops_fn_bodies() {
-        let src = "\npackage main\n\nimport \"fmt\"\n\nfunc Add(a, b int) int {\n    return a + b\n}\n\ntype Server struct {\n    Port int\n}\n\nfunc (s *Server) Start() error {\n    fmt.Println(\"starting\")\n    return nil\n}\n";
-        let s = extract(src, "main.go").expect("go must extract");
-        assert!(s.contains("Add") || s.contains("func"));
-        assert!(!s.contains("Println"), "body dropped");
-    }
-
-    #[test]
-    fn java_skeleton_drops_method_bodies() {
-        let src = "\npublic class Calculator {\n    private int value;\n\n    public Calculator(int initial) {\n        this.value = initial;\n    }\n\n    public int add(int x) {\n        return value + x;\n    }\n}\n";
-        let s = extract(src, "Calculator.java").expect("java must extract");
-        assert!(s.contains("Calculator") || s.contains("add"));
-        assert!(!s.contains("return value"), "body dropped");
-    }
-
-    #[test]
-    fn c_skeleton_drops_fn_bodies() {
-        let src = "\n#include <stdio.h>\n\nint add(int a, int b) {\n    return a + b;\n}\n\nvoid greet(const char *name) {\n    printf(\"Hello, %s\\n\", name);\n}\n";
-        let s = extract(src, "math.c").expect("c must extract");
-        assert!(s.contains("add") || s.contains("int"));
-        assert!(!s.contains("printf"), "body dropped");
     }
 
     // Data / config / unsupported prose have no signature grammar.

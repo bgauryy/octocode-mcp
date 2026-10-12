@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { getAgentDir, hasTrustRequiringProjectResources, ProjectTrustStore, type ExtensionCommandContext, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { atomicWriteFileSync, sha256 } from './atomic.js';
-import type { Subcommands } from './commands.js';
+import { say, wordCompletions, type Subcommands } from './commands.js';
 import { sanitizeTerminalText } from './sanitize.js';
 import { globalPaths, projectAgentDirs, projectHookFiles, projectSkillDirs, workspacePaths } from './home.js';
 import { isRecord, parseJson } from './util.js';
@@ -169,6 +169,15 @@ function trustState(ctx: Pick<ProjectContext, 'cwd' | 'isProjectTrusted'>, home?
   return state;
 }
 
+/**
+ * This process is an isolated subagent working in a linked worktree of the repository at `OCTOCODE_TRUST_ROOT`, which
+ * its parent sets only when it trusts that repository: the parent's trust covers the worktree, a path Pi never saw.
+ */
+export function inheritsTrust(cwd: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const root = env[TRUST_ROOT_ENV];
+  return Boolean(root && path.isAbsolute(root) && envFlag(env, SUBAGENT_ENV) && isWorktreeOf(storeKey(cwd), realPath(root)));
+}
+
 function computeTrust(cwd: string, files: string[], sha: string, trusted: boolean, decided: boolean, home?: string): boolean | undefined {
   // An isolated subagent works in a worktree of its parent's repository: it follows the decision stored for that
   // repository, and only for the same files (no one can be asked in a subagent, so anything else stays closed).
@@ -176,7 +185,7 @@ function computeTrust(cwd: string, files: string[], sha: string, trusted: boolea
   if (inherited && path.isAbsolute(inherited)) {
     const parent = realPath(inherited);
     const root = storeKey(cwd);
-    if (!envFlag(process.env, SUBAGENT_ENV) || !isWorktreeOf(root, parent)) return files.length === 0;
+    if (!inheritsTrust(cwd)) return files.length === 0;
     const stored = readStore(home)[parent];
     return files.length === 0 || (stored?.trusted === true && stored.sha === fingerprint(files, (file) => path.join(parent, path.relative(root, file))));
   }
@@ -277,27 +286,30 @@ export function saveDecision(cwd: string, sha: string, trusted: boolean, home?: 
 export function registerTrustCommand(commands: Subcommands, home?: string): void {
   commands.add('trust', {
     description: 'trust [off] — load (or stop loading) this project\'s hooks, agents and skills',
+    complete: (prefix) => wordCompletions(['off'], prefix),
     handler: async (args, ctx: ExtensionCommandContext) => {
+      const action = args.trim();
+      if (action !== '' && action !== 'off') return say(ctx, 'Usage: /octocode trust [off]', 'warning');
       let files = projectConfigFiles(ctx.cwd);
-      if (files.length === 0) return ctx.ui.notify('This project has no hook, agent or skill config to trust.', 'info');
-      const off = args.trim() === 'off';
-      if (!off && !ctx.isProjectTrusted()) return ctx.ui.notify('Pi does not trust this project; run /trust first.', 'warning');
+      if (files.length === 0) return say(ctx, 'This project has no hook, agent or skill config to trust.');
+      const off = action === 'off';
+      if (!off && !ctx.isProjectTrusted()) return say(ctx, 'Pi does not trust this project; run /trust first.', 'warning');
       // The decision covers exactly what was shown: fingerprinted before the dialog and re-checked after it.
       let sha = fingerprint(files);
       let details = describeProjectConfig(ctx.cwd, files);
       for (let attempt = 1; !off && ctx.hasUI; attempt++) {
         const yes = await ctx.ui.confirm('Trust this project\'s config?', `${details}\n\nLoad and run these? You'll be asked again if they change.`);
-        if (!yes) return ctx.ui.notify('Project config stays unloaded.', 'info');
+        if (!yes) return say(ctx, 'Project config stays unloaded.');
         files = projectConfigFiles(ctx.cwd);
         const now = fingerprint(files);
         if (now === sha) break;
-        if (attempt >= MAX_TRUST_ASKS) return ctx.ui.notify('Project config kept changing while you reviewed it; it stays unloaded. Run /octocode trust again.', 'warning');
-        ctx.ui.notify('Project config changed while you reviewed it; review it again.', 'warning');
+        if (attempt >= MAX_TRUST_ASKS) return say(ctx, 'Project config kept changing while you reviewed it; it stays unloaded. Run /octocode trust again.', 'warning');
+        say(ctx, 'Project config changed while you reviewed it; review it again.', 'warning');
         sha = now;
         details = describeProjectConfig(ctx.cwd, files);
       }
       saveDecision(ctx.cwd, sha, !off, home);
-      ctx.ui.notify(`${off ? 'Distrusted' : 'Trusted'} ${files.length} project files. Reloading…`, 'info');
+      say(ctx, `${off ? 'Distrusted' : 'Trusted'} ${files.length} project files. Reloading…`);
       await ctx.reload();
     },
   });

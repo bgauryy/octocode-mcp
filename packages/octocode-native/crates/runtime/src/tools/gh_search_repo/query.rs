@@ -1,11 +1,7 @@
 //! ghSearchRepo query syntax.
 use super::GhSearchRepoQuery;
-use crate::providers::github::{ProviderError, quote_search_keyword};
-use crate::tools::gh_shared::query::{push, push_qualifiers, range_value, validate_scope};
-
-pub(super) fn validate_repo_scope(query: &GhSearchRepoQuery) -> Result<(), ProviderError> {
-    validate_scope(query.owner.as_deref().map(String::as_str), None)
-}
+use crate::providers::github::quote_search_keyword;
+use crate::tools::gh_shared::query::{push, push_qualifiers, range_value};
 
 pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
     let GhSearchRepoQuery {

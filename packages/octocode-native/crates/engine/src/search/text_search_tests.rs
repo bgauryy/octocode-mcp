@@ -189,45 +189,162 @@ fn column_is_utf16_offset_on_multibyte_line() {
     assert_eq!(r.files[0].matches[0].column, 7);
 }
 
+/// One matcher option changes which lines (or submatches) count in one file.
 #[test]
-fn smart_case_default_is_case_insensitive_for_lowercase() {
-    let t = TmpDir::new();
-    t.write("a.txt", "Hello\nhello\n");
-    let r = search(opts(t.path(), "hello")).expect("ok");
-    assert_eq!(r.files[0].match_count, 2);
+fn matcher_options_decide_the_match_count() {
+    type Configure = fn(&mut TextSearchOptions);
+    // (case, content, pattern, option, match_count, first match (line, value), stats.match_count)
+    type Case = (
+        &'static str,
+        &'static str,
+        &'static str,
+        Configure,
+        u32,
+        Option<(u32, &'static str)>,
+        Option<u32>,
+    );
+    let cases: [Case; 7] = [
+        (
+            "smart case default is case-insensitive for lowercase",
+            "Hello\nhello\n",
+            "hello",
+            |_| {},
+            2,
+            None,
+            None,
+        ),
+        (
+            "case_sensitive is exact",
+            "Hello\nhello\n",
+            "hello",
+            |o| o.case_sensitive = Some(true),
+            1,
+            None,
+            None,
+        ),
+        // Literal "a.b" matches only line 1, not "axb".
+        (
+            "fixed_string treats the pattern literally",
+            "a.b\naxb\n",
+            "a.b",
+            |o| o.fixed_string = Some(true),
+            1,
+            Some((1, "a.b")),
+            None,
+        ),
+        (
+            "perl_regex supports lookahead",
+            "foobar\nfoobaz\n",
+            "foo(?=bar)",
+            |o| o.perl_regex = Some(true),
+            1,
+            Some((1, "foobar")),
+            None,
+        ),
+        (
+            "whole_word requires a word boundary",
+            "foo\nfoobar\n",
+            "foo",
+            |o| o.whole_word = Some(true),
+            1,
+            Some((1, "foo")),
+            None,
+        ),
+        (
+            "count_matches_per_file counts submatches",
+            "x x x\nx\n",
+            "x",
+            |o| o.count_matches_per_file = Some(true),
+            4,
+            None,
+            Some(4),
+        ),
+        (
+            "count_lines_per_file counts matched lines",
+            "x x x\nx\nnope\n",
+            "x",
+            |o| o.count_lines_per_file = Some(true),
+            2,
+            None,
+            None,
+        ),
+    ];
+    for (case, content, pattern, configure, match_count, first, stats_count) in cases {
+        let t = TmpDir::new();
+        t.write("a.txt", content);
+        let mut o = opts(t.path(), pattern);
+        configure(&mut o);
+        let r = search(o).expect(case);
+        assert_eq!(r.files[0].match_count, match_count, "{case}");
+        if let Some((line, value)) = first {
+            assert_eq!(r.files[0].matches[0].line, line, "{case}");
+            assert_eq!(r.files[0].matches[0].value, value, "{case}");
+        }
+        if let Some(count) = stats_count {
+            assert_eq!(r.stats.match_count, Some(count), "{case}");
+        }
+    }
 }
 
+/// One file-selection option decides which files are listed, in order.
 #[test]
-fn case_sensitive_flag_is_exact() {
-    let t = TmpDir::new();
-    t.write("a.txt", "Hello\nhello\n");
-    let mut o = opts(t.path(), "hello");
-    o.case_sensitive = Some(true);
-    let r = search(o).expect("ok");
-    assert_eq!(r.files[0].match_count, 1);
-}
-
-#[test]
-fn fixed_string_treats_pattern_literally() {
-    let t = TmpDir::new();
-    t.write("a.txt", "a.b\naxb\n");
-    let mut o = opts(t.path(), "a.b");
-    o.fixed_string = Some(true);
-    let r = search(o).expect("ok");
-    // Literal "a.b" matches only line 1, not "axb".
-    assert_eq!(r.files[0].match_count, 1);
-    assert_eq!(r.files[0].matches[0].value, "a.b");
-}
-
-#[test]
-fn perl_regex_supports_lookahead() {
-    let t = TmpDir::new();
-    t.write("a.txt", "foobar\nfoobaz\n");
-    let mut o = opts(t.path(), "foo(?=bar)");
-    o.perl_regex = Some(true);
-    let r = search(o).expect("ok");
-    assert_eq!(r.files[0].match_count, 1);
-    assert_eq!(r.files[0].matches[0].line, 1);
+fn file_selection_options_decide_the_listed_files() {
+    type Configure = fn(&mut TextSearchOptions);
+    // (case, files, pattern, option, listed path suffixes in order)
+    type Case = (
+        &'static str,
+        &'static [(&'static str, &'static str)],
+        &'static str,
+        Configure,
+        &'static [&'static str],
+    );
+    let cases: [Case; 4] = [
+        (
+            "files_without_match inverts the file set",
+            &[("a.txt", "needle\n"), ("b.txt", "haystack\n")],
+            "needle",
+            |o| o.files_without_match = Some(true),
+            &["b.txt"],
+        ),
+        (
+            "lang_type filters by extension",
+            &[("a.ts", "target\n"), ("b.py", "target\n")],
+            "target",
+            |o| o.lang_type = Some("ts".to_owned()),
+            &["a.ts"],
+        ),
+        (
+            "include glob restricts files",
+            &[("a.ts", "target\n"), ("b.js", "target\n")],
+            "target",
+            |o| o.include = Some(vec!["*.ts".to_owned()]),
+            &["a.ts"],
+        ),
+        (
+            "sort_reverse flips the order",
+            &[("a.txt", "m\n"), ("z.txt", "m\n")],
+            "m",
+            |o| o.sort_reverse = Some(true),
+            &["z.txt", "a.txt"],
+        ),
+    ];
+    for (case, files, pattern, configure, listed) in cases {
+        let t = TmpDir::new();
+        for (name, content) in files {
+            t.write(name, content);
+        }
+        let mut o = opts(t.path(), pattern);
+        configure(&mut o);
+        let r = search(o).expect(case);
+        assert_eq!(r.files.len(), listed.len(), "{case}");
+        for (file, suffix) in r.files.iter().zip(listed) {
+            assert!(
+                file.path.ends_with(suffix),
+                "{case}: {} vs {suffix}",
+                file.path
+            );
+        }
+    }
 }
 
 #[test]
@@ -275,18 +392,6 @@ fn files_only_lists_paths_without_snippets() {
     assert!(r.stats.bytes_searched.unwrap_or_default() > 0);
 }
 
-#[test]
-fn files_without_match_inverts_file_set() {
-    let t = TmpDir::new();
-    t.write("a.txt", "needle\n");
-    t.write("b.txt", "haystack\n");
-    let mut o = opts(t.path(), "needle");
-    o.files_without_match = Some(true);
-    let r = search(o).expect("ok");
-    assert_eq!(r.files.len(), 1);
-    assert!(r.files[0].path.ends_with("b.txt"));
-}
-
 /// `invertMatch` selects non-matching *lines*, so the path views
 /// follow lines: `files` lists files with at least one non-matching line, and
 /// `filesWithout` lists files whose every line matches. Files that merely
@@ -319,27 +424,6 @@ fn invert_match_path_views_follow_rg_line_semantics() {
     };
     assert_eq!(listed(true), ["mixed.txt", "none.txt"]);
     assert_eq!(listed(false), ["all.txt"]);
-}
-
-#[test]
-fn count_matches_counts_submatches_per_file() {
-    let t = TmpDir::new();
-    t.write("a.txt", "x x x\nx\n");
-    let mut o = opts(t.path(), "x");
-    o.count_matches_per_file = Some(true);
-    let r = search(o).expect("ok");
-    assert_eq!(r.files[0].match_count, 4);
-    assert_eq!(r.stats.match_count, Some(4));
-}
-
-#[test]
-fn count_lines_counts_matched_lines_per_file() {
-    let t = TmpDir::new();
-    t.write("a.txt", "x x x\nx\nnope\n");
-    let mut o = opts(t.path(), "x");
-    o.count_lines_per_file = Some(true);
-    let r = search(o).expect("ok");
-    assert_eq!(r.files[0].match_count, 2);
 }
 
 #[test]
@@ -378,30 +462,6 @@ fn context_lines_are_assembled_into_snippet() {
         v.contains("before") && v.contains("match") && v.contains("after"),
         "{v}"
     );
-}
-
-#[test]
-fn lang_type_filters_by_extension() {
-    let t = TmpDir::new();
-    t.write("a.ts", "target\n");
-    t.write("b.py", "target\n");
-    let mut o = opts(t.path(), "target");
-    o.lang_type = Some("ts".to_owned());
-    let r = search(o).expect("ok");
-    assert_eq!(r.files.len(), 1);
-    assert!(r.files[0].path.ends_with("a.ts"));
-}
-
-#[test]
-fn include_glob_restricts_files() {
-    let t = TmpDir::new();
-    t.write("a.ts", "target\n");
-    t.write("b.js", "target\n");
-    let mut o = opts(t.path(), "target");
-    o.include = Some(vec!["*.ts".to_owned()]);
-    let r = search(o).expect("ok");
-    assert_eq!(r.files.len(), 1);
-    assert!(r.files[0].path.ends_with("a.ts"));
 }
 
 #[test]
@@ -629,18 +689,6 @@ fn explicit_traversal_sort_bypasses_post_collection_sorting() {
 }
 
 #[test]
-fn sort_reverse_flips_order() {
-    let t = TmpDir::new();
-    t.write("a.txt", "m\n");
-    t.write("z.txt", "m\n");
-    let mut o = opts(t.path(), "m");
-    o.sort_reverse = Some(true);
-    let r = search(o).expect("ok");
-    assert!(r.files[0].path.ends_with("z.txt"));
-    assert!(r.files[1].path.ends_with("a.txt"));
-}
-
-#[test]
 fn respects_gitignore_by_default_and_no_ignore_overrides() {
     let t = TmpDir::new();
     // The `ignore` crate only applies .gitignore inside a git repo
@@ -658,17 +706,6 @@ fn respects_gitignore_by_default_and_no_ignore_overrides() {
     o.no_ignore = Some(true);
     let r2 = search(o).expect("ok");
     assert_eq!(r2.files.len(), 2, "--no-ignore searches the ignored file");
-}
-
-#[test]
-fn whole_word_requires_word_boundary() {
-    let t = TmpDir::new();
-    t.write("a.txt", "foo\nfoobar\n");
-    let mut o = opts(t.path(), "foo");
-    o.whole_word = Some(true);
-    let r = search(o).expect("ok");
-    assert_eq!(r.files[0].match_count, 1);
-    assert_eq!(r.files[0].matches[0].line, 1);
 }
 
 #[test]

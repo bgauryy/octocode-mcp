@@ -776,7 +776,7 @@ mod tests {
         assert_eq!((first, last, best), (4, 4, 4));
     }
 
-    /// GC3: with no line holding every keyword, the read anchors on the
+    /// With no line holding every keyword, the read anchors on the
     /// smallest window that holds them all, preferring one a declaration
     /// opens, not on the best single-keyword hit elsewhere in the file.
     #[test]

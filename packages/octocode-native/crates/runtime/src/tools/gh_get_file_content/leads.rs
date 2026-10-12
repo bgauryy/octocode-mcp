@@ -4,7 +4,9 @@
 use serde_json::{Value, json};
 
 use super::GhGetFileContentQuery;
+use crate::tools::id::ToolId;
 use crate::tools::local_fetch::{LocalFetchQuery, MinifyMode, RegexMatch};
+use crate::tools::result::{Continuation, query_row};
 
 /// Lines from which a missed literal is located semantically (clasify)
 /// rather than searched for again: the size where the clasify gate starts.
@@ -41,13 +43,13 @@ pub(super) fn empty_match_lead(
             .collect();
         let resource = json!({
             "id": "file",
-            "tool": crate::tools::id::ToolId::GhGetFileContent.as_str(),
+            "tool": ToolId::GhGetFileContent.as_str(),
             "query": {"owner": query.owner.as_str(), "repo": query.repo.as_str(), "path": query.path.as_str(), "ref": sha},
         });
         return Some((
             "clasify",
-            crate::tools::result::Continuation::new(
-                crate::tools::id::ToolId::Clasify,
+            Continuation::new(
+                ToolId::Clasify,
                 json!({
                     "mainGoal": goal,
                     "resources": [resource],
@@ -63,8 +65,8 @@ pub(super) fn empty_match_lead(
     }
     Some((
         "findCode",
-        crate::tools::result::Continuation::new(
-            crate::tools::id::ToolId::GhSearchCode,
+        Continuation::new(
+            ToolId::GhSearchCode,
             json!({"owner": query.owner.as_str(), "repo": query.repo.as_str(), "keywords": [first]}),
         )
         .confidence("medium")
@@ -88,10 +90,41 @@ pub(super) fn ignore_case_lead(
     let mut row = query.clone();
     row.case_mode = Some(crate::contracts::tool_types::ReadCaseMode::Insensitive);
     row.ref_ = Some(acquired.resolved_ref.clone());
-    let mut row = serde_json::to_value(row).ok()?;
-    crate::tools::result::remove_null_fields(&mut row);
     Some(
-        crate::tools::result::Continuation::new(crate::tools::id::ToolId::GhGetFileContent, row)
+        Continuation::new(ToolId::GhGetFileContent, query_row(&row, &[]))
+            .confidence("high")
+            .build(),
+    )
+}
+
+/// The runnable repair of a `ranges` read whose every range starts past the
+/// file end: the same read of the file's last window, as wide as the widest
+/// requested range, at the read commit. `None` when any range reaches into
+/// the file (that read is served, clamped) or the file has no line.
+pub(super) fn last_window_repair(
+    query: &GhGetFileContentQuery,
+    local: &LocalFetchQuery,
+    total_lines: usize,
+    sha: &str,
+) -> Option<Value> {
+    let requested = local.line_ranges();
+    if total_lines == 0
+        || requested.is_empty()
+        || requested.iter().any(|range| range.start <= total_lines)
+    {
+        return None;
+    }
+    let width = requested
+        .iter()
+        .map(|range| range.end.saturating_sub(range.start) + 1)
+        .max()?;
+    let start = total_lines.saturating_sub(width - 1).max(1);
+    let mut row = query.clone();
+    row.ref_ = Some(sha.to_owned());
+    let mut row = query_row(&row, &[]);
+    row["ranges"] = json!([format!("{start}-{total_lines}")]);
+    Some(
+        Continuation::new(ToolId::GhGetFileContent, row)
             .confidence("high")
             .build(),
     )
@@ -110,9 +143,7 @@ pub(super) fn rewrite_continuations(
     // to another local tool (the miss's `findText` localSearch of the
     // file's directory) has no GitHub form here and is dropped; the GitHub
     // miss adds its own repository-level lead.
-    object.retain(|_, continuation| {
-        continuation["tool"] == crate::tools::id::ToolId::LocalFetch.as_str()
-    });
+    object.retain(|_, continuation| continuation["tool"] == ToolId::LocalFetch.as_str());
     for continuation in object.values_mut() {
         let Some(Value::Object(mut query)) =
             crate::tools::result::continuation_row(continuation).cloned()
@@ -141,10 +172,7 @@ pub(super) fn rewrite_continuations(
         if let Some(force) = source.force_refresh {
             query.insert("forceRefresh".into(), Value::Bool(force));
         }
-        let mut call = crate::tools::result::Continuation::new(
-            crate::tools::id::ToolId::GhGetFileContent,
-            Value::Object(query),
-        );
+        let mut call = Continuation::new(ToolId::GhGetFileContent, Value::Object(query));
         if let Some(confidence) = continuation["confidence"].as_str() {
             call = call.confidence(confidence);
         }
@@ -155,12 +183,7 @@ pub(super) fn rewrite_continuations(
 
 /// The view a read gets when it names no `minify` (contract default).
 pub(super) fn default_minify() -> MinifyMode {
-    crate::contracts::query_schema_value(
-        crate::tools::id::ToolId::GhGetFileContent,
-        None,
-        "minify",
-        "default",
-    )
-    .and_then(|value| serde_json::from_value(value.clone()).ok())
-    .unwrap_or(MinifyMode::None)
+    crate::contracts::query_schema_value(ToolId::GhGetFileContent, None, "minify", "default")
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .unwrap_or(MinifyMode::None)
 }

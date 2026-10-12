@@ -14,10 +14,6 @@ description = "Command-line hosts for the Octocode runtime"
 name = "octocode"
 path = "src/main.rs"
 
-[[bin]]
-name = "octocode-regex-worker"
-path = "src/bin/regex_worker.rs"
-
 [[test]]
 name = "integration"
 path = "tests/main.rs"
@@ -32,17 +28,13 @@ serde_yaml_ng = { workspace = true }
 futures-util = { workspace = true }
 tokio-util = { workspace = true }
 url = { workspace = true }
-regress = { workspace = true }
 flate2 = { workspace = true }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 reqwest = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net", "io-util", "time"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_Security"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

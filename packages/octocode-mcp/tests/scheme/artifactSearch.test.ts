@@ -71,13 +71,15 @@ describe('artifactSearch schema', () => {
     });
   });
 
-  it('rejects missing or aggregate ecosystem types', () => {
-    for (const query of [
-      { packageName: 'react' },
-      { ecosystem: 'all', keywords: ['http'] },
-    ]) {
-      expect(() => parsedQuery(query)).toThrow();
-    }
+  it.each([
+    { name: 'a missing ecosystem', query: { packageName: 'react' } },
+    {
+      name: 'the aggregate "all" ecosystem',
+      query: { ecosystem: 'all', keywords: ['http'] },
+    },
+    { name: 'neither ecosystem nor packageName', query: {} },
+  ])('rejects $name', ({ query }) => {
+    expect(() => parsedQuery(query)).toThrow();
   });
 
   it('rejects unsupported PyPI keyword discovery at the schema', () => {

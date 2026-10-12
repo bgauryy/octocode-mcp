@@ -1,5 +1,16 @@
 import { afterAll, describe, expect, it } from 'vitest';
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { loadNativeBinding } from '../../src/native/index.js';
+
+// clasify registers only with a classification key. Validation rejects every
+// case before provider access, so a fake key in the hermetic home
+// (test-utils/external-effects-guard.ts) and a dead loopback provider host keep
+// it hermetic.
+writeFileSync(
+  join(process.env.OCTOCODE_HOME!, '.env'),
+  'OCTOCODE_CLASSIFICATION_API=validation-parity-fake-key\nOCTOCODE_CLASSIFICATION_API_HOST=http://127.0.0.1:9\n'
+);
 
 // One case list, two surfaces of the real addon: the MCP error text and the
 // CLI error details must give the same repair guidance, because native is the

@@ -59,6 +59,7 @@ export class OctocodeServer {
   private reported = false;
   /** Bumped by every close, so a connect that finishes after one discards itself. */
   private generation = 0;
+  private listRevision = 0;
 
   constructor(private readonly options: ServerOptions) {}
 
@@ -172,10 +173,18 @@ export class OctocodeServer {
     const client = new McpClient({ ...this.options.clientInfo, requestTimeoutMs: timeoutMs });
     this.starting = client;
     client.onClose(() => this.lost(client, transport));
-    client.onNotification('notifications/tools/list_changed', () => void this.relist(client));
+    let listChangedDuringConnect = false;
+    client.onNotification('notifications/tools/list_changed', () => {
+      if (this.starting === client) listChangedDuringConnect = true;
+      else if (this.client === client) void this.relist(client);
+    });
     try {
       const init = await client.connect(transport);
       const tools = await client.listTools({ timeoutMs });
+      if (generation !== this.generation) {
+        await client.close();
+        return false;
+      }
       this.starting = undefined;
       this.client = client;
       this.transport = transport;
@@ -186,6 +195,7 @@ export class OctocodeServer {
       this.retries = 1;
       this.reported = false;
       this.options.onTools(tools, init.instructions);
+      if (listChangedDuringConnect) await this.relist(client);
       return true;
     } catch (error) {
       await Promise.allSettled([client.close()]);
@@ -204,8 +214,10 @@ export class OctocodeServer {
 
   /** The server's tool list changed: list again and hand the new set on. */
   private async relist(client: McpClient): Promise<void> {
+    const revision = ++this.listRevision;
     try {
       const tools = await client.listTools({ timeoutMs: this.options.requestTimeoutMs ?? REQUEST_TIMEOUT_MS });
+      if (client !== this.client || revision !== this.listRevision) return;
       this.tools = tools;
       this.options.onTools(tools, client.instructions);
     } catch {

@@ -1,3 +1,4 @@
+// BENCHMARK, not a correctness test: run-all runs it only when named.
 // Cache effectiveness on real repos. lspSearch continuation pages reuse the
 // server answers for an unchanged anchor (checked). Symbols/topology pages
 // re-read every file so edits are detected; their timings are reported (the

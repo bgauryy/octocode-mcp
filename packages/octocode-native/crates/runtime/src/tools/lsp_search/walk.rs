@@ -11,9 +11,7 @@
 //! capped in code; each level's requests run concurrently under a small
 //! bound; per-node failures are collected as data.
 
-use super::failure::{
-    LspFailure, continuation, mark_partial, mark_terminal_limit, push_reason, push_warning,
-};
+use super::failure::{LspFailure, continuation, mark_partial};
 use super::importers::{
     Importers, WindowRequest, callers_from_references, enclosing_callable, flatten_symbols,
     verified_anchors,
@@ -1226,7 +1224,7 @@ pub(super) fn mark_truncation(
     match queries {
         Some(queries) => {
             for (reason, warning) in limits {
-                push_reason(row, reason, &[warning]);
+                crate::tools::paging::mark_partial(row, reason, &[warning]);
             }
             // One flat continuation per parent, so the whole frontier is
             // executable: `continueWalk`, `continueWalk2`, ….
@@ -1240,7 +1238,7 @@ pub(super) fn mark_truncation(
         }
         None => {
             for (reason, warning) in limits {
-                mark_terminal_limit(row, reason, &[warning]);
+                crate::tools::paging::terminal_limit(row, reason, &[warning]);
             }
         }
     }
@@ -1620,7 +1618,7 @@ pub(super) async fn hierarchy(
     };
     compact_calls(&mut row, &items, paths);
     if let Some(note) = class_uses_warning(query.operation().as_str(), &roots) {
-        push_warning(&mut row, note);
+        crate::tools::paging::push_warnings(&mut row, [note]);
     }
     mark_partial_expansion(&mut row, query, &failures);
     // Every walked direction is marked together: marking them one after

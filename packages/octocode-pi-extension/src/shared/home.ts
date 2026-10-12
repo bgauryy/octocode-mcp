@@ -85,6 +85,16 @@ export function resolveReadToolPath(cwd: string, raw: string): string {
 }
 
 /**
+ * The file a Pi `read` call showed the model (any range: Pi's own guard semantics); none for every other tool. For the
+ * `file` tool's guard, compaction (which forgets a read once its result is trimmed) and report-read tracking. MCP
+ * tools are the server's own contract (Octocode's `localFetch` pages and minifies by its own rules), so the extension
+ * does not parse their inputs or results.
+ */
+export function readPaths(toolName: string, input: Record<string, unknown>, cwd: string): string[] {
+  return toolName === 'read' && typeof input['path'] === 'string' ? [resolveReadToolPath(cwd, input['path'])] : [];
+}
+
+/**
  * `<workspace>/.octocode/tmp/<name>`: where agents hand results to each other as files, so a long result is read on
  * demand instead of riding in a model's context. The `tmp` folder ignores itself (`.gitignore` of `*`), so nothing in
  * it is committed, in this repository or any other. Created on first use.
@@ -98,11 +108,11 @@ export function workspaceScratchDir(workspace: string, name: string): string {
   return dir;
 }
 
-/** Removes entries of `dir` not modified for `maxAgeMs`, except those named in `keep`. Never throws. */
-export function sweepStaleOutputs(dir: string, maxAgeMs: number, keep: ReadonlySet<string> = new Set(), now = Date.now()): void {
+/** Removes entries of `dir` not modified for `maxAgeMs`, except those named in `keep`, with non-blocking calls. Never rejects. */
+export async function sweepStaleOutputs(dir: string, maxAgeMs: number, keep: ReadonlySet<string> = new Set(), now = Date.now()): Promise<void> {
   let names: string[];
   try {
-    names = fs.readdirSync(dir);
+    names = await fs.promises.readdir(dir);
   } catch {
     return;
   }
@@ -110,7 +120,7 @@ export function sweepStaleOutputs(dir: string, maxAgeMs: number, keep: ReadonlyS
     if (keep.has(name)) continue;
     const file = path.join(dir, name);
     try {
-      if (now - fs.statSync(file).mtimeMs > maxAgeMs) fs.rmSync(file, { recursive: true, force: true });
+      if (now - (await fs.promises.stat(file)).mtimeMs > maxAgeMs) await fs.promises.rm(file, { recursive: true, force: true });
     } catch {
       // Removed meanwhile, or not ours to remove.
     }
@@ -299,20 +309,38 @@ const repoCache = new Map<string, RepoKey>();
 
 /**
  * `file` with symlinks resolved, so one file reached through two paths has one name: the realpath of its deepest
- * existing ancestor joined with the rest (the file itself may not exist yet).
+ * existing ancestor joined with the rest (the file itself may not exist yet). A dangling symlink on the way is followed
+ * to its target, so a write through it is placed where it would land; a symlink loop stops after 40 hops.
  */
-export function canonicalPath(file: string): string {
+export function canonicalPath(file: string, hops = 40): string {
   const absolute = path.resolve(file);
   const rest: string[] = [];
   for (let dir = absolute; ; dir = path.dirname(dir)) {
     try {
       return path.join(fs.realpathSync.native(dir), ...rest.reverse());
     } catch {
+      const target = hops > 0 ? linkTarget(dir) : undefined;
+      if (target !== undefined) return canonicalPath(path.join(path.resolve(path.dirname(dir), target), ...rest.reverse()), hops - 1);
       const parent = path.dirname(dir);
       if (parent === dir) return absolute;
       rest.push(path.basename(dir));
     }
   }
+}
+
+/** Where the symlink `file` points (as written in the link), or undefined when it is not a symlink. */
+function linkTarget(file: string): string | undefined {
+  try {
+    return fs.lstatSync(file).isSymbolicLink() ? fs.readlinkSync(file) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether `file` is `dir` or under it (both already resolved; no symlinks are followed here). */
+export function isWithin(file: string, dir: string): boolean {
+  const relative = path.relative(dir, file);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 /**

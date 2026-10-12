@@ -4,7 +4,7 @@
 
 use super::LspSearchQuery;
 use super::cancellable;
-use super::failure::{LspFailure, empty, mark_diagnostics_unpublished, mark_partial, push_warning};
+use super::failure::{LspFailure, empty, mark_diagnostics_unpublished, mark_partial};
 use super::heritage;
 use super::importers::{self, Importers, WindowRequest};
 use super::locations::{
@@ -37,20 +37,45 @@ const SCAN_SOURCE: &str = "native-graph-facts";
 /// did not answer.
 const SERVER_UNANSWERED: &str = "serverUnanswered";
 
+/// Partial reason of a heritage-scan answer missing the files it could not
+/// read.
+const HERITAGE_UNREAD: &str = "heritageUnread";
+
 /// How `textDocument/implementation` was answered.
 enum Implemented {
     Server(Vec<octocode_engine::lsp::types::JsCodeSnippet>),
-    /// The heritage scan, with the note that labels it.
+    /// The heritage scan, with the note that labels it and the files it
+    /// could not read.
     Scan {
         found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
         note: String,
+        unread: Vec<String>,
     },
 }
 
 /// Flag a heritage-scan row incomplete: its note states what it is, and the
-/// retry asks the server again.
-fn mark_scan_answer(row: &mut Value, query: &LspSearchQuery, note: String) {
+/// retry asks the server again. Files the scan could not read are named,
+/// with a text search over them, so the gap can be followed.
+fn mark_scan_answer(
+    row: &mut Value,
+    query: &LspSearchQuery,
+    scope: &Scope,
+    note: String,
+    unread: &[String],
+) {
     mark_partial(row, query, SERVER_UNANSWERED, &[note]);
+    if unread.is_empty() || !row.is_object() {
+        return;
+    }
+    mark_partial(
+        row,
+        query,
+        HERITAGE_UNREAD,
+        &[heritage::describe_unread(unread)],
+    );
+    if let Some(base) = query.symbol_name() {
+        row["next"]["findText"] = super::failure::text_search_lead(base, scope, Some(unread));
+    }
 }
 
 /// Everything one operation needs, borrowed from `execute`.
@@ -308,7 +333,7 @@ impl Operation<'_, '_> {
     async fn type_hierarchy_without_server_support(self) -> Result<Value, LspFailure> {
         let query = self.query;
         let kind = query.operation();
-        let (found, source, note) = if kind == "subtypes" {
+        let (found, source, note, unread) = if kind == "subtypes" {
             // An implementation answer includes the queried declaration:
             // that is the type itself, not one of its subtypes.
             let anchor = super::scope::canonical(self.path);
@@ -321,11 +346,17 @@ impl Operation<'_, '_> {
                     found.into_iter().filter(|snippet| !own(snippet)).collect(),
                     "implementation",
                     heritage::describe_implementation(),
+                    Vec::new(),
                 ),
-                Implemented::Scan { found, note } => (
+                Implemented::Scan {
+                    found,
+                    note,
+                    unread,
+                } => (
                     found.into_iter().filter(|snippet| !own(snippet)).collect(),
                     SCAN_SOURCE,
                     note,
+                    unread,
                 ),
             }
         } else {
@@ -351,18 +382,19 @@ impl Operation<'_, '_> {
                     .await?,
                 );
             }
-            (found, "heritage", heritage::describe(&bases))
+            (found, "heritage", heritage::describe(&bases), Vec::new())
         };
         let provider = heritage::fallback_provider(&kind).unwrap_or_default();
-        self.scope.answer(
+        let scope = self.scope;
+        scope.answer(
             std::iter::once(self.path).chain(found.iter().map(|snippet| snippet.uri.as_str())),
         );
         let mut row = self.locations(&kind, provider, found).await;
         row["lsp"]["source"] = json!(source);
         if source == SCAN_SOURCE {
-            mark_scan_answer(&mut row, query, note);
+            mark_scan_answer(&mut row, query, scope, note, &unread);
         } else {
-            push_warning(&mut row, note);
+            crate::tools::paging::push_warnings(&mut row, [note]);
         }
         Ok(row)
     }
@@ -382,19 +414,24 @@ impl Operation<'_, '_> {
         let scannable = query.symbol_name().is_some_and(|name| {
             heritage::anchors_type_declaration(&content, self.path, self.line, name)
         });
-        let (found, note) = match self.implemented(scannable).await? {
+        let (found, scanned) = match self.implemented(scannable).await? {
             Implemented::Server(found) => (found, None),
-            Implemented::Scan { found, note } => (found, Some(note)),
+            Implemented::Scan {
+                found,
+                note,
+                unread,
+            } => (found, Some((note, unread))),
         };
-        self.scope.answer(
+        let scope = self.scope;
+        scope.answer(
             std::iter::once(self.path).chain(found.iter().map(|snippet| snippet.uri.as_str())),
         );
         let mut row = self
             .locations("implementation", "implementationProvider", found)
             .await;
-        if let Some(note) = note {
+        if let Some((note, unread)) = scanned {
             row["lsp"]["source"] = json!(SCAN_SOURCE);
-            mark_scan_answer(&mut row, query, note);
+            mark_scan_answer(&mut row, query, scope, note, &unread);
         }
         Ok(row)
     }
@@ -432,10 +469,10 @@ impl Operation<'_, '_> {
                         &failure,
                         &scan.base,
                         scan.files,
-                        scan.unread,
                         &self.query.operation(),
                     ),
                     found: scan.found,
+                    unread: scan.unread,
                 }),
                 None => Err(failure),
             },
@@ -680,11 +717,7 @@ impl Operation<'_, '_> {
         // Success rows drop `hints` (response hint policy), so this note is a
         // warning: it explains results, it is not a recovery step.
         if disabled_macro_diagnostics(&row["matches"]) {
-            let note = json!(RUST_MACRO_NOTE);
-            match row["warnings"].as_array_mut() {
-                Some(warnings) => warnings.push(note),
-                None => row["warnings"] = json!([note]),
-            }
+            crate::tools::paging::push_warnings(&mut row, [RUST_MACRO_NOTE.to_owned()]);
         }
         Ok(row)
     }
@@ -830,6 +863,37 @@ fn binding_rank(kind: &str) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::{binding_rank, match_tier, rank_workspace_symbols};
+
+    /// A heritage answer missing files it could not read says which,
+    /// stays partial for them, and leads to a text search over exactly them.
+    #[test]
+    fn a_scan_answer_names_its_unread_files_and_leads_to_them() {
+        let query: super::LspSearchQuery = serde_json::from_value(serde_json::json!({
+            "path": "/r/a.ts", "symbolName": "Base", "line": 1, "operation": "subtypes"
+        }))
+        .expect("query");
+        let scope = super::Scope::new("/r".into(), Vec::new());
+        let unread = vec!["/r/big.ts".to_owned()];
+        let mut row = serde_json::json!({});
+        super::mark_scan_answer(&mut row, &query, &scope, "scan note".into(), &unread);
+        assert_eq!(
+            row["partialReasons"],
+            serde_json::json!(["serverUnanswered", "heritageUnread"])
+        );
+        let warnings = row["warnings"].to_string();
+        assert!(warnings.contains("/r/big.ts"), "{warnings}");
+        let lead = &row["next"]["findText"];
+        assert_eq!(lead["tool"], "localSearch", "{row}");
+        assert_eq!(lead["query"]["queries"][0]["path"], "/r/big.ts", "{row}");
+
+        let mut complete = serde_json::json!({});
+        super::mark_scan_answer(&mut complete, &query, &scope, "scan note".into(), &[]);
+        assert_eq!(
+            complete["partialReasons"],
+            serde_json::json!(["serverUnanswered"])
+        );
+        assert!(complete["next"]["findText"].is_null());
+    }
 
     /// The published rows (`symbolName`, not the server's `name`) rank
     /// the exact name ahead of rust-analyzer's alphabetical fuzzy matches.

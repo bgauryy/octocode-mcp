@@ -1,27 +1,17 @@
 //! Declaration rows for astSearch `symbols` and lspSearch `documentSymbols`.
 //!
-//! Structured content carries the outline in source order. A
-//! declaration without members is one entry string, the structureSearch
-//! entry grammar:
-//!
-//! ```text
-//! <symbolName> (<line>[-<endLine>][, <kind>][, doc <docStartLine>][, exported][, <key>=<value>]…)
-//! ```
-//!
-//! The last ` (` opens the fields, so a name may hold ` (` or `, `. The
-//! first number is the lspSearch `line`; `line`-`endLine` is a localFetch
-//! range. `<key>=<value>` carries every other fact (`exportedAs`,
-//! `startLine`, `column`, `parent`, `parentLine`): a value stays bare when it
-//! is a plain word run, else it is JSON (with ` (` escaped so the last ` (`
-//! still opens the fields). A declaration with members stays an object
-//! (`symbolName`, `kind`, `line`, …) whose `members` nest every declaration
-//! listed after it inside it (so they name no `parent`/`parentLine`); `kind`
-//! or `exported: true` shared by every one of 2+ members is stated once in
-//! its `shared`. A member whose parent is not on the page (a filter or page
-//! boundary) stays top level with `parent` (+ `parentLine` when the name is
-//! ambiguous). [`parse_entry`] reads an entry back to its fields;
-//! [`flatten_members`] restores the flat rows. The YAML text channel prints
-//! the same rows as a compact outline, one line per declaration:
+//! Structured content carries the outline in source order, one object per
+//! declaration (`symbolName`, `kind`, `line`, `endLine`, …). A declaration
+//! with members nests every declaration listed after it inside it under
+//! `members` (so they name no `parent`/`parentLine`); `kind` or
+//! `exported: true` shared by every one of 2+ members is stated once in its
+//! `shared`. A member whose parent is not in the rows (a filter dropped it)
+//! stays top level with `parent` (+ `parentLine` when the name is
+//! ambiguous). Pages count top-level rows: [`top_level_spans`] splits flat
+//! rows into one span per top-level row, so a page never cuts a member from
+//! its parent. [`flatten_members`] restores the flat rows. The YAML text
+//! channel prints the same rows as a compact outline, one line per
+//! declaration:
 //!
 //! ```text
 //! 500-506 interface CompilerHostLikeForCache +
@@ -43,34 +33,18 @@ use serde_json::Value;
 
 const LEGEND: &str = "line[-endLine] kind name, + exported, indented = member, doc = comment above, \"; \" joins same-kind siblings, a-b,c-d = one name's blocks";
 
-/// Outline rows: entry strings, or declaration objects carrying
-/// `symbolName`, `kind` and `line`.
+/// Outline rows: declaration objects carrying `symbolName`, `kind` and
+/// `line`.
 fn is_declarations(value: Option<&Value>) -> bool {
     value.and_then(Value::as_array).is_some_and(|rows| {
         !rows.is_empty()
-            && rows.iter().all(|row| match row {
-                Value::String(text) => parse_entry(text).is_some(),
-                _ => {
-                    row.get("symbolName").is_some()
-                        && row.get("kind").is_some()
-                        && row.get("line").is_some()
-                }
+            && rows.iter().all(|row| {
+                row.get("symbolName").is_some()
+                    && row.get("kind").is_some()
+                    && row.get("line").is_some()
             })
     })
 }
-
-/// The keys an entry states in its fixed fields (or that only a container
-/// has); every other key follows as `key=value`.
-const ENTRY_FIXED: [&str; 8] = [
-    "symbolName",
-    "kind",
-    "line",
-    "endLine",
-    "docStartLine",
-    "exported",
-    "members",
-    "shared",
-];
 
 /// Public key order of a declaration (see [`declaration_rows`]).
 const DECLARATION_ORDER: [&str; 11] = [
@@ -87,198 +61,13 @@ const DECLARATION_ORDER: [&str; 11] = [
     "parentLine",
 ];
 
-/// The entry string of a declaration without members (see the module docs),
-/// or `None` when it has no `symbolName` or `line`.
-pub(crate) fn entry(fields: &serde_json::Map<String, Value>) -> Option<String> {
-    let name = fields.get("symbolName")?.as_str()?;
-    let line = fields.get("line")?.as_u64()?;
-    let mut parts = vec![match fields.get("endLine").and_then(Value::as_u64) {
-        Some(end) => format!("{line}-{end}"),
-        None => line.to_string(),
-    }];
-    if let Some(kind) = fields
-        .get("kind")
-        .and_then(Value::as_str)
-        .filter(|kind| !kind.is_empty())
-    {
-        parts.push(kind.to_owned());
-    }
-    if let Some(doc) = fields.get("docStartLine").and_then(Value::as_u64) {
-        parts.push(format!("doc {doc}"));
-    }
-    if fields.get("exported").and_then(Value::as_bool) == Some(true) {
-        parts.push("exported".to_owned());
-    }
-    for (key, value) in fields {
-        if !ENTRY_FIXED.contains(&key.as_str()) {
-            parts.push(format!("{key}={}", entry_value(value)));
-        }
-    }
-    Some(format!("{name} ({})", parts.join(", ")))
-}
-
-/// A `key=value` value: bare when it is a run of plain words that reads back
-/// as the same string, else JSON with ` (` escaped (`\u0028`), so the last
-/// ` (` of an entry always opens its fields.
-fn entry_value(value: &Value) -> String {
-    if let Some(text) = value.as_str()
-        && is_bare(text)
-    {
-        return text.to_owned();
-    }
-    serde_json::to_string(value)
-        .unwrap_or_default()
-        .replace(" (", " \\u0028")
-}
-
-fn is_bare(text: &str) -> bool {
-    let digits = text.strip_prefix('-').unwrap_or(text);
-    let typed = (!digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
-        || text.starts_with(['[', '{'])
-        || text == "true"
-        || text == "false";
-    !typed
-        && !text.is_empty()
-        && text.split(' ').all(|word| {
-            !word.is_empty()
-                && word
-                    .chars()
-                    .all(|c| !c.is_whitespace() && !matches!(c, ',' | '(' | ')' | '"' | '='))
-        })
-}
-
-/// The value of a `key=value` field (see [`entry_value`]).
-fn parse_value(text: &str) -> Option<Value> {
-    let digits = text.strip_prefix('-').unwrap_or(text);
-    if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
-        return serde_json::from_str(text).ok();
-    }
-    if text.starts_with(['"', '[', '{']) || text == "true" || text == "false" {
-        return serde_json::from_str(text).ok();
-    }
-    (!text.is_empty()).then(|| Value::String(text.to_owned()))
-}
-
-/// Split entry fields on `, ` outside JSON strings.
-fn split_fields(text: &str) -> Vec<&str> {
-    let mut fields = Vec::new();
-    let (mut start, mut quoted, mut escaped) = (0, false, false);
-    let bytes = text.as_bytes();
-    let mut index = 0;
-    while index < bytes.len() {
-        let byte = bytes[index];
-        if quoted {
-            if escaped {
-                escaped = false;
-            } else if byte == b'\\' {
-                escaped = true;
-            } else if byte == b'"' {
-                quoted = false;
-            }
-        } else if byte == b'"' {
-            quoted = true;
-        } else if byte == b',' && bytes.get(index + 1) == Some(&b' ') {
-            fields.push(&text[start..index]);
-            index += 2;
-            start = index;
-            continue;
-        }
-        index += 1;
-    }
-    fields.push(&text[start..]);
-    fields
-}
-
-fn parse_number(text: &str) -> Option<u64> {
-    (!text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
-        .then(|| text.parse().ok())
-        .flatten()
-}
-
-/// The fields of an entry string (see [`entry`]) in public key order, or
-/// `None` when `text` is not an entry.
-pub(crate) fn parse_entry(text: &str) -> Option<serde_json::Map<String, Value>> {
-    let open = text.rfind(" (")?;
-    let name = &text[..open];
-    let inner = text[open + 2..].strip_suffix(')')?;
-    if name.is_empty() {
-        return None;
-    }
-    let fields = split_fields(inner);
-    let (range, rest) = fields.split_first()?;
-    let (line, end) = match range.split_once('-') {
-        Some((line, end)) => (parse_number(line)?, Some(parse_number(end)?)),
-        None => (parse_number(range)?, None),
-    };
-    let mut found = serde_json::Map::new();
-    found.insert("symbolName".into(), Value::String(name.to_owned()));
-    found.insert("line".into(), line.into());
-    if let Some(end) = end {
-        found.insert("endLine".into(), end.into());
-    }
-    for field in rest {
-        if *field == "exported" {
-            found.insert("exported".into(), Value::Bool(true));
-        } else if let Some(doc) = field.strip_prefix("doc ").and_then(parse_number) {
-            found.insert("docStartLine".into(), doc.into());
-        } else if let Some((key, value)) = field.split_once('=').filter(|(key, _)| {
-            !key.is_empty() && key.bytes().all(|b| b.is_ascii_alphabetic() || b == b'_')
-        }) {
-            found.insert(key.to_owned(), parse_value(value)?);
-        } else if !field.is_empty() && !found.contains_key("kind") {
-            found.insert("kind".into(), Value::String((*field).to_owned()));
-        } else {
-            return None;
-        }
-    }
-    let mut ordered = serde_json::Map::new();
-    for key in DECLARATION_ORDER {
-        if let Some(value) = found.shift_remove(key) {
-            ordered.insert(key.into(), value);
-        }
-    }
-    ordered.extend(found);
-    Some(ordered)
-}
-
-/// The declaration fields of an outline row: an object's own fields, or an
-/// entry string's parsed ones.
-pub(crate) fn declaration(
-    row: &Value,
-) -> Option<std::borrow::Cow<'_, serde_json::Map<String, Value>>> {
-    match row {
-        Value::Object(fields) => Some(std::borrow::Cow::Borrowed(fields)),
-        Value::String(text) => parse_entry(text).map(std::borrow::Cow::Owned),
-        _ => None,
-    }
-}
-
-/// A declaration without members as its entry string; a container keeps its
-/// object with its members converted.
-fn into_entries(row: Value) -> Value {
-    let Value::Object(mut fields) = row else {
-        return row;
-    };
-    match fields.shift_remove("members") {
-        Some(Value::Array(members)) if !members.is_empty() => {
-            fields.insert(
-                "members".into(),
-                Value::Array(members.into_iter().map(into_entries).collect()),
-            );
-            Value::Object(fields)
-        }
-        _ => entry(&fields).map_or(Value::Object(fields), Value::String),
-    }
-}
-
 /// Member fields a parent states once in `shared` when every one of its
 /// 2+ members has the same value.
 const MEMBER_SHARED: [&str; 2] = ["kind", "exported"];
 
 /// Public outline rows from flat internal ones (`name`, `character`,
 /// `parent`, `parentLine`): `symbolName` and `column`, keys in one order,
-/// each member nested in its parent's `members`, and every declaration
-/// without members as its entry string (see the module docs).
+/// each member nested in its parent's `members` (see the module docs).
 pub(crate) fn declaration_rows(rows: &[Value]) -> Vec<Value> {
     let public: Vec<Value> = rows
         .iter()
@@ -305,7 +94,67 @@ pub(crate) fn declaration_rows(rows: &[Value]) -> Vec<Value> {
             Value::Object(public)
         })
         .collect();
-    nest_members(public).into_iter().map(into_entries).collect()
+    nest_members(public)
+}
+
+/// The enclosing row of each flat row: the nearest preceding ancestor it
+/// names (`parent`, and `parentLine` when given; the name is `symbolName`
+/// or an internal row's `name`), or `None` for a top-level row. A row of
+/// another file (`path`) than the row before it starts over.
+fn enclosing_rows(rows: &[Value]) -> Vec<Option<usize>> {
+    let name = |row: &Value| {
+        row.get("symbolName")
+            .or_else(|| row.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    let mut enclosing = Vec::with_capacity(rows.len());
+    // Ancestor chain of the current row, as row indices.
+    let mut stack: Vec<usize> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        if index > 0 && row.get("path") != rows[index - 1].get("path") {
+            stack.clear();
+        }
+        let parent = row.get("parent").and_then(Value::as_str);
+        let parent_line = row.get("parentLine").and_then(Value::as_u64);
+        let found = parent.and_then(|parent| {
+            stack.iter().rposition(|&ancestor| {
+                let ancestor = &rows[ancestor];
+                name(ancestor).as_deref() == Some(parent)
+                    && parent_line
+                        .is_none_or(|expected| ancestor["line"].as_u64() == Some(expected))
+            })
+        });
+        match found {
+            Some(position) => {
+                stack.truncate(position + 1);
+                enclosing.push(Some(stack[position]));
+            }
+            None => {
+                stack.clear();
+                enclosing.push(None);
+            }
+        }
+        stack.push(index);
+    }
+    enclosing
+}
+
+/// One range of flat rows per top-level row: the row and every row nested
+/// under it (see [`declaration_rows`]). The spans tile `rows` in order, so
+/// pages over them reach each declaration once and never cut a member from
+/// its parent.
+pub(crate) fn top_level_spans(rows: &[Value]) -> Vec<std::ops::Range<usize>> {
+    let roots: Vec<usize> = enclosing_rows(rows)
+        .iter()
+        .enumerate()
+        .filter_map(|(index, parent)| parent.is_none().then_some(index))
+        .collect();
+    roots
+        .iter()
+        .enumerate()
+        .map(|(position, &start)| start..roots.get(position + 1).copied().unwrap_or(rows.len()))
+        .collect()
 }
 
 /// Nest each flat row under the nearest preceding ancestor it names
@@ -315,32 +164,13 @@ fn nest_members(rows: Vec<Value>) -> Vec<Value> {
     let mut members: Vec<Vec<usize>> = vec![Vec::new(); rows.len()];
     let mut roots = Vec::new();
     let mut nested = vec![false; rows.len()];
-    // Ancestor chain of the current row, as row indices.
-    let mut stack: Vec<usize> = Vec::new();
-    for (index, row) in rows.iter().enumerate() {
-        let parent = row.get("parent").and_then(Value::as_str);
-        let parent_line = row.get("parentLine").and_then(Value::as_u64);
-        let found = parent.and_then(|parent| {
-            stack.iter().rposition(|&ancestor| {
-                let ancestor = &rows[ancestor];
-                ancestor.get("symbolName").and_then(Value::as_str) == Some(parent)
-                    && parent_line
-                        .is_none_or(|expected| ancestor["line"].as_u64() == Some(expected))
-            })
-        });
-        match found {
-            Some(position) => {
-                stack.truncate(position + 1);
-                members[stack[position]].push(index);
+    for (index, parent) in enclosing_rows(&rows).into_iter().enumerate() {
+        match parent {
+            Some(parent) => {
+                members[parent].push(index);
                 nested[index] = true;
             }
-            None => {
-                stack.clear();
-                roots.push(index);
-            }
-        }
-        if row.is_object() {
-            stack.push(index);
+            None => roots.push(index),
         }
     }
     let mut slots: Vec<Option<Value>> = rows.into_iter().map(Some).collect();
@@ -393,18 +223,16 @@ fn build_node(index: usize, slots: &mut [Option<Value>], members: &[Vec<usize>])
     node
 }
 
-/// Flat declaration objects for outline rows: each entry string parsed,
-/// each member following its parent with `parent` and `parentLine`
-/// restored, and the parent's `shared` fields filled in. The inverse of
-/// [`declaration_rows`].
+/// Flat declaration objects for outline rows: each member following its
+/// parent with `parent` and `parentLine` restored, and the parent's
+/// `shared` fields filled in. The inverse of [`declaration_rows`].
 pub(crate) fn flatten_members(rows: &[Value]) -> Vec<Value> {
     fn walk(rows: &[Value], parent: Option<(&Value, &Value)>, out: &mut Vec<Value>) {
         for row in rows {
-            let Some(fields) = declaration(row) else {
+            let Some(fields) = row.as_object() else {
                 out.push(row.clone());
                 continue;
             };
-            let fields = fields.as_ref();
             let mut flat = fields.clone();
             let members = flat.shift_remove("members");
             let shared = flat.shift_remove("shared");
@@ -413,19 +241,9 @@ pub(crate) fn flatten_members(rows: &[Value]) -> Vec<Value> {
                 flat.insert("parentLine".into(), line.clone());
             }
             out.push(Value::Object(flat));
-            let Some(Value::Array(members)) = members else {
+            let Some(Value::Array(mut members)) = members else {
                 continue;
             };
-            // Entry members become objects so `shared` fills them.
-            let mut members: Vec<Value> = members
-                .iter()
-                .map(|member| {
-                    declaration(member).map_or_else(
-                        || member.clone(),
-                        |fields| Value::Object(fields.into_owned()),
-                    )
-                })
-                .collect();
             if let Some(Value::Object(shared)) = &shared {
                 for member in &mut members {
                     if let Some(member) = member.as_object_mut() {
@@ -825,14 +643,13 @@ mod tests {
                 json!("600 method orphan (in Gone@7)")
             ]
         );
-        // Structured rows are outline rows (a container object, entry
-        // strings); the text channel prints them as these outline lines
-        // under the header.
+        // Structured rows are declaration objects; the text channel prints
+        // them as these outline lines under the header.
         let public = declaration_rows(&objects);
         assert_eq!(public[0]["symbolName"], "Host", "{public:?}");
         assert_eq!(
             public[1],
-            json!("orphan (600, method, parent=Gone, parentLine=7)")
+            json!({"symbolName":"orphan","kind":"method","line":600,"parent":"Gone","parentLine":7})
         );
         let mut response = json!({"results":[{"index":0,"data":{"path":"a.ts","symbols":public}}]});
         assert_eq!(
@@ -850,7 +667,7 @@ mod tests {
     /// Members nest under the parent row they follow: no member repeats
     /// `parent`/`parentLine`, a kind or `exported` every member shares is
     /// stated once, a member whose parent is off the page stays top level
-    /// naming it, and a declaration without members is an entry string.
+    /// naming it, and a declaration without members is a plain object.
     /// Flattening restores every flat fact.
     #[test]
     fn declaration_rows_nest_members_under_their_parent() {
@@ -870,13 +687,13 @@ mod tests {
                 {"symbolName":"Server","kind":"impl","line":109,"endLine":891,
                  "shared":{"kind":"method","exported":true},
                  "members":[
-                    "connect (194-204, doc 164)",
+                    {"symbolName":"connect","line":194,"endLine":204,"docStartLine":164},
                     {"symbolName":"ready","line":307,"endLine":310,
-                     "members":["inner (308, function)"]}
+                     "members":[{"symbolName":"inner","kind":"function","line":308}]}
                  ]},
                 {"symbolName":"Client","kind":"impl","line":984,"endLine":990,
-                 "members":["open (985-989, method)"]},
-                "orphan (2000, method, parent=Gone, parentLine=7)"
+                 "members":[{"symbolName":"open","kind":"method","line":985,"endLine":989}]},
+                {"symbolName":"orphan","kind":"method","line":2000,"parent":"Gone","parentLine":7}
             ])
         );
         let restored = flatten_members(&rows);
@@ -1008,12 +825,63 @@ mod tests {
             .collect()
     }
 
-    /// Round trip: every entry string parses back to its declaration's
-    /// facts (name, kind, line, endLine, doc, exported, every `key=value`),
-    /// in source order, for names holding ` (` or `, ` and values that need
-    /// JSON (spaces, commas, parens, number-like or bracketed names).
+    /// Every outline row and every nested member is an object, whatever
+    /// facts it carries: a member-less declaration is never a string.
     #[test]
-    fn entries_round_trip_every_fact_including_awkward_names() {
+    fn every_row_and_member_is_an_object() {
+        fn all_objects(rows: &[Value]) -> bool {
+            rows.iter().all(|row| {
+                row.is_object()
+                    && row
+                        .get("members")
+                        .and_then(Value::as_array)
+                        .is_none_or(|members| all_objects(members))
+            })
+        }
+        let flat = [
+            json!({"name":"lone","kind":"function","line":1}),
+            json!({"name":"Host","kind":"class","line":3,"endLine":9}),
+            json!({"name":"get","kind":"method","line":4,"parent":"Host"}),
+            json!({"name":"orphan","kind":"method","line":20,"parent":"Gone"}),
+        ];
+        let rows = declaration_rows(&flat);
+        assert!(all_objects(&rows), "{rows:?}");
+        assert_eq!(
+            rows[0],
+            json!({"symbolName":"lone","kind":"function","line":1})
+        );
+        assert!(!is_declarations(Some(&json!(["a (3-5, function)"]))));
+        assert!(is_declarations(Some(
+            &json!([{"symbolName":"a","kind":"function","line":3}])
+        )));
+    }
+
+    /// One span per top-level row: a container's span holds its members,
+    /// an orphan (its parent filtered out) is its own row, and a new file
+    /// starts a new row even when a name repeats across files.
+    #[test]
+    fn top_level_spans_cover_each_tree_once_and_split_files() {
+        let flat = [
+            json!({"name":"Host","kind":"class","line":3,"endLine":9,"path":"a.ts"}),
+            json!({"name":"get","kind":"method","line":4,"parent":"Host","path":"a.ts"}),
+            json!({"name":"inner","kind":"function","line":5,"parent":"get","path":"a.ts"}),
+            json!({"name":"orphan","kind":"method","line":20,"parent":"Gone","path":"a.ts"}),
+            json!({"name":"Host","kind":"class","line":1,"endLine":4,"path":"a.ts"}),
+            json!({"name":"set","kind":"method","line":2,"parent":"Host","path":"b.ts"}),
+        ];
+        assert_eq!(top_level_spans(&flat), vec![0..3, 3..4, 4..5, 5..6]);
+        // The spans tile the rows, so pages over spans reach each row once.
+        let without_paths: Vec<Value> = flat[..4].to_vec();
+        let spans = top_level_spans(&without_paths);
+        assert_eq!(spans.len(), declaration_rows(&without_paths).len());
+        assert!(top_level_spans(&[]).is_empty());
+    }
+
+    /// Round trip: every object row flattens back to its declaration's
+    /// facts, in source order, for awkward names and values, also after a
+    /// JSON round trip (the wire).
+    #[test]
+    fn object_rows_round_trip_every_fact_including_awkward_names() {
         let flat = [
             json!({"name":"operator()","kind":"method","line":3,"endLine":5,"exported":true}),
             json!({"name":"From<(A, B)> for X","kind":"impl","line":7,"endLine":20,"exported":true}),
@@ -1022,108 +890,21 @@ mod tests {
             json!({"name":"into (x)","kind":"function","line":11,"exported":true,"exportedAs":["a","b c","d (e)"],
                 "character":4,"parent":"From<(A, B)> for X","parentLine":7}),
             json!({"name":"orphan","kind":"method","line":30,"parent":"Outer, Inc","parentLine":2}),
-            json!({"name":"paren","kind":"method","line":31,"parent":"into (x)","parentLine":11}),
-            json!({"name":"numeric","kind":"method","line":32,"parent":"123"}),
             json!({"name":"slice","kind":"method","line":33,"parent":"Foo for [T]","startLine":32}),
-            json!({"name":"truthy","line":34,"parent":"true"}),
             json!({"name":"a, b","kind":"field","line":35}),
         ];
         let rows = declaration_rows(&flat);
-        // Exact entry grammar (matches the A/B converter).
-        assert_eq!(rows[0], json!("operator() (3-5, method, exported)"));
-        assert_eq!(
-            rows[1]["members"][1],
-            json!(r#"into (x) (11, exportedAs=["a","b c","d \u0028e)"], column=4)"#),
-            "{rows:?}"
-        );
         assert_eq!(
             rows[1]["shared"],
             json!({"kind":"function","exported":true})
         );
-        assert_eq!(rows[1]["members"][0], json!("from (8-10, doc 7)"));
         assert_eq!(
-            rows[2],
-            json!(r#"orphan (30, method, parent="Outer, Inc", parentLine=2)"#)
+            rows[1]["members"][1],
+            json!({"symbolName":"into (x)","line":11,"exportedAs":["a","b c","d (e)"],"column":4})
         );
-        assert_eq!(
-            rows[3],
-            json!(r#"paren (31, method, parent="into \u0028x)", parentLine=11)"#)
-        );
-        assert_eq!(rows[4], json!(r#"numeric (32, method, parent="123")"#));
-        assert_eq!(
-            rows[5],
-            json!(r#"slice (33, method, startLine=32, parent=Foo for [T])"#)
-        );
-        assert_eq!(rows[6], json!(r#"truthy (34, parent="true")"#));
-        assert_eq!(rows[7], json!("a, b (35, field)"));
-        // Every fact comes back, in source order.
         assert_eq!(facts(&flatten_members(&rows)), facts(&flat));
-        // A JSON round trip (the wire) changes nothing.
         let wire: Vec<Value> =
             serde_json::from_str(&serde_json::to_string(&rows).expect("json")).expect("parse");
         assert_eq!(facts(&flatten_members(&wire)), facts(&flat));
-        // Each entry string parses on its own to the same fields.
-        let parsed =
-            parse_entry("into (x) (11, function, doc 9, exported, column=4)").expect("entry");
-        assert_eq!(
-            Value::Object(parsed),
-            json!({"symbolName":"into (x)","kind":"function","line":11,"exported":true,"docStartLine":9,"column":4})
-        );
-    }
-
-    /// Strings that are not entries are rejected, and a corrupted entry
-    /// reads back a different fact (the round trip detects it).
-    #[test]
-    fn non_entries_are_rejected_and_corruption_is_visible() {
-        for text in [
-            "run",
-            "run ()",
-            "run (x)",
-            "run (1-)",
-            " (1)",
-            "run (1, function",
-            "run (1, function, method)",
-            "run (1, key=\"open)",
-            "12\tlet a = 1;",
-        ] {
-            assert!(parse_entry(text).is_none(), "{text}");
-        }
-        let rows = declaration_rows(&[json!({"name":"a","kind":"function","line":3,"endLine":5})]);
-        let corrupted = json!([rows[0].as_str().expect("entry").replace("3-5", "3-6")]);
-        assert_ne!(
-            flatten_members(corrupted.as_array().expect("rows"))[0]["endLine"],
-            json!(5)
-        );
-        assert!(!is_declarations(Some(&json!(["12\tlet a = 1;"]))));
-        assert!(is_declarations(Some(&json!(["a (3-5, function)"]))));
-    }
-
-    /// Entry strings cost at most 70% of the object rows' bytes on a large Rust outline
-    /// and keeps every declaration.
-    #[test]
-    fn entries_cut_the_bytes_of_object_rows() {
-        let mut flat = Vec::new();
-        for (type_index, name) in ["NamedPipeServer", "NamedPipeClient"].iter().enumerate() {
-            let base = 100 + type_index as u64 * 900;
-            flat.push(json!({"name":name,"kind":"struct","line":base,"endLine":base + 2,"exported":true,"docStartLine":base - 60}));
-            flat.push(json!({"name":name,"kind":"impl","line":base + 4,"endLine":base + 790}));
-            for method in 0..20u64 {
-                let line = base + 25 + method * 35;
-                flat.push(json!({"name":format!("method_{method}"),"kind":"method","line":line,"endLine":line + 4,
-                    "exported":true,"docStartLine":line - 20,"parent":name,"parentLine":base + 4}));
-            }
-        }
-        let rows = declaration_rows(&flat);
-        // The object shape: every declaration an object.
-        let objects: Vec<Value> = flatten_members(&rows);
-        let x1 = serde_json::to_string(&nest_members(objects))
-            .expect("json")
-            .len();
-        let p1 = serde_json::to_string(&rows).expect("json").len();
-        assert!(
-            p1 * 100 <= x1 * 70,
-            "entry strings {p1} B vs objects {x1} B"
-        );
-        assert_eq!(facts(&flatten_members(&rows)), facts(&flat));
     }
 }

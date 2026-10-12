@@ -80,42 +80,22 @@ pub fn qualifier_value(value: &str) -> String {
     }
 }
 
-/// Which names a search scope accepts.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum SearchName {
-    /// Account or organization login (`owner`, `user:`).
-    Owner,
-    /// Repository name.
-    Repository,
-    /// Person qualifier (`author:`, `assignee:`…): a login, `app/name`,
-    /// `name[bot]`, or a commit email.
-    Person,
-}
-
-/// Reject a scope name that GitHub could not hold and that would change the
-/// search syntax (spaces, quotes, colons, parentheses, operators).
-pub fn validate_search_name(
-    field: &str,
-    value: &str,
-    kind: SearchName,
-) -> Result<(), ProviderError> {
+/// Reject a person qualifier value (`author:`, `assignee:`…: a login,
+/// `app/name`, `name[bot]`, or a commit email) that GitHub could not hold
+/// and that would change the search syntax (spaces, quotes, colons,
+/// parentheses, operators). Owner and repository names are validated by the
+/// tool contract at admission.
+pub fn validate_person_name(field: &str, value: &str) -> Result<(), ProviderError> {
     let allowed = |c: char| {
-        c.is_ascii_alphanumeric()
-            || matches!(c, '-' | '_' | '.')
-            || (kind == SearchName::Person && matches!(c, '[' | ']' | '/' | '@' | '+'))
+        c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '[' | ']' | '/' | '@' | '+')
     };
     if !value.is_empty() && value.chars().all(allowed) && !value.starts_with('-') {
         return Ok(());
     }
-    let what = match kind {
-        SearchName::Owner => "a GitHub account or organization login",
-        SearchName::Repository => "a repository name",
-        SearchName::Person => "a GitHub login or email",
-    };
     Err(ProviderError::new(
         ProviderErrorKind::Validation,
         format!(
-            "{field}: \"{value}\" is not {what}; spaces, quotes, colons, and search operators are not allowed"
+            "{field}: \"{value}\" is not a GitHub login or email; spaces, quotes, colons, and search operators are not allowed"
         ),
     ))
 }
@@ -166,26 +146,19 @@ mod tests {
     }
 
     #[test]
-    fn scope_names_reject_syntax() {
+    fn person_names_reject_syntax() {
         for bad in ["octocat OR is:public", "a:b", "a\"b", "", "-x", "a b"] {
-            assert!(
-                validate_search_name("owner", bad, SearchName::Owner).is_err(),
-                "{bad}"
-            );
+            assert!(validate_person_name("author", bad).is_err(), "{bad}");
         }
-        for good in ["octocat", "my-org", "Hello-World", "repo.js", "under_score"] {
-            assert!(
-                validate_search_name("owner", good, SearchName::Owner).is_ok(),
-                "{good}"
-            );
+        for good in [
+            "octocat",
+            "under_score",
+            "dependabot[bot]",
+            "app/dependabot",
+            "dev+x@example.com",
+        ] {
+            assert!(validate_person_name("author", good).is_ok(), "{good}");
         }
-        for good in ["dependabot[bot]", "app/dependabot", "dev+x@example.com"] {
-            assert!(
-                validate_search_name("author", good, SearchName::Person).is_ok(),
-                "{good}"
-            );
-        }
-        assert!(validate_search_name("author", "a b", SearchName::Person).is_err());
         assert!(validate_qualifier_value("created", ">2026-01-01").is_ok());
         assert!(validate_qualifier_value("created", "x OR y").is_err());
     }

@@ -217,6 +217,9 @@ fn required_guidance(tool_name: &str, issue: &ValidationIssue) -> Option<&'stati
         ("astRewrite", "fix") => "rule takes fix; pattern takes rewrite.",
         ("localFetch", "path") => "Set path to a local file.",
         ("ghGetFileContent", "path") => "Set path to a repository-relative file.",
+        ("astTopology", "source") => {
+            "Set source to the file whose dependents to list; structureSearch finds its path."
+        }
         _ => return None,
     })
 }
@@ -1325,6 +1328,31 @@ mod tests {
         assert_eq!(normalize_input("noSuchTool", untouched.clone()), untouched);
     }
 
+    /// An HTML-escaped encoded list (the `queries` envelope, `ranges`,
+    /// `include`) repairs like any encoded list, on every tool and path.
+    #[test]
+    fn html_escaped_encoded_lists_validate_after_normalization() {
+        let fetch = normalize_input(
+            "localFetch",
+            json!({"queries":[{"path":"/tmp/a.rs","ranges":"[&quot;1-3&quot;]"}]}),
+        );
+        assert_eq!(fetch["queries"][0]["ranges"], json!(["1-3"]));
+        validate("localFetch", fetch).expect("decoded ranges validate");
+        let search = normalize_input(
+            "localSearch",
+            json!({"queries":[{"path":"/tmp","matchString":"x","include":"[&quot;*.md&quot;]"}]}),
+        );
+        assert_eq!(search["queries"][0]["include"], json!(["*.md"]));
+        validate("localSearch", search).expect("decoded include validates");
+        let envelope = normalize_input(
+            "localFetch",
+            json!({"queries":"[{&quot;path&quot;:&quot;/tmp/a.rs&quot;,&quot;ranges&quot;:[&quot;1-2&quot;]}]"}),
+        );
+        assert_eq!(envelope["queries"][0]["path"], "/tmp/a.rs");
+        assert_eq!(envelope["queries"][0]["ranges"], json!(["1-2"]));
+        validate("localFetch", envelope).expect("decoded envelope validates");
+    }
+
     /// localFetch and ghGetFileContent accept host spellings of line ranges
     /// on every path (CLI and MCP both normalize through here).
     #[test]
@@ -1480,6 +1508,11 @@ mod tests {
         assert!(
             swapped.contains("Missing required field: rewrite (pattern takes rewrite"),
             "{swapped}"
+        );
+        let dependents = details("astTopology", json!({"operation":"dependents","path":"/r"}));
+        assert!(
+            dependents.contains("Missing required field: source (Set source to the file"),
+            "{dependents}"
         );
         let history = details(
             "ghSearchHistory",

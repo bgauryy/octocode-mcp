@@ -1220,7 +1220,17 @@ fn stop_overlapping_a_slow_start_waits_then_tears_it_down() {
         let client = NativeLspClient::new(config);
         let starter = client.clone();
         let start = tokio::spawn(async move { starter.start().await });
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        // The server writes its pid on spawn and answers `initialize` only
+        // after FAKE_INIT_DELAY_MS: once the pid exists, start is in flight.
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !pid_file.exists() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the slow server never spawned"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(!start.is_finished(), "start must still be in flight");
         timeout(Duration::from_secs(20), client.stop())
             .await
             .expect("stop must not deadlock against an in-flight start")

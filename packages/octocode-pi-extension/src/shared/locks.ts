@@ -82,8 +82,20 @@ const dialogs = new Queue(() => {
  * once, so its own aborted dialog returns without showing.
  */
 export function withDialog<R>(run: () => Promise<R>, signal?: AbortSignal): Promise<R> {
-  return dialogs.run(run, signal);
+  return dialogs.run(async () => {
+    open += 1;
+    try {
+      return await run();
+    } finally {
+      open -= 1;
+    }
+  }, signal);
 }
+
+let open = 0;
+
+/** Whether one of Octocode's dialogs is showing now. */
+export const dialogOpen = (): boolean => open > 0;
 
 /** How many interactions wait for another one's dialog to close. */
 export const dialogsWaiting = (): number => dialogs.waiting;

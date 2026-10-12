@@ -5,7 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { REPOS, checks, clasifyUnavailable, collect, inventoryRows, patchNumbersIssue, rawPatch, rowData, sourceView, startServer, writeResults } from './mcp-client.mjs';
+import { REPOS, checks, clasifyUnavailable, collect, inventoryRows, nextHints, patchNumbersIssue, rawPatch, rowData, sourceView, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, skip, summary } = checks('github');
 const client = await startServer();
@@ -358,6 +358,50 @@ for (const r of Object.values(pinned)) {
   const firstIssue = irows[0] ? rowData(await call('ghGetHistoryItem', { operation: 'issue', owner: r.owner, repo: r.repo, number: irows[0].number }))?.issues?.[0] : null;
   check('issue search state+created: every row closed and created in range', irows.length > 0 && irows.every(closedIn) && firstIssue?.state === 'closed', JSON.stringify({ firstRead: firstIssue?.state, bad: irows.filter(i => !closedIn(i)).slice(0, 2) }));
 }
+
+// ── D2. PR review reads (was review.mjs): selection, pagination, compare patches ──
+// review.mjs checks already above: PR files/counts, all-patches = git, commit
+// diff = git, commit → PR lookup, path history, file reads at the pinned SHA.
+{
+  const r = pinned.rust;
+  const parent = git(r.dir, 'rev-parse', 'HEAD^').trim();
+  const number = +(git(r.dir, 'log', '-1', '--format=%s').match(/#(\d+)\)/)?.[1] ?? 0);
+  const files = git(r.dir, 'diff', '--name-only', parent, 'HEAD').trim().split('\n');
+  const delta = s => rawPatch(s).split('\n').filter(l => /^[+-](?![+-])/.test(l));
+  const gitDelta = file => delta(git(r.dir, 'diff', parent, 'HEAD', '--', file));
+  const patchRows = e => collect(rowData(e), v => typeof v.patch === 'string' && typeof v.path === 'string');
+  const sameDelta = f => JSON.stringify(delta(f.patch)) === JSON.stringify(gitDelta(f.path));
+  const pr = { owner: r.owner, repo: r.repo, operation: 'pullRequest', number };
+  if (number) {
+    const meta = rowData(await call('ghGetHistoryItem', pr))?.pullRequests?.[0];
+    check(`PR #${number}: metadata pins a 40-hex head SHA`, /^[a-f0-9]{40}$/.test(meta?.headSha ?? ''), meta?.headSha);
+    const selected = patchRows(await call('ghGetHistoryItem', { ...pr, sections: ['patches'], include: [files[0]] }));
+    check(`PR #${number}: include selects only the requested file, its patch equal to git`, selected.length === 1 && selected[0].path === files[0] && sameDelta(selected[0]), JSON.stringify(selected.map(f => f.path)));
+    const seen = [];
+    let page = await call('ghGetHistoryItem', { ...pr, pageSize: 1, sections: ['patches'] });
+    for (let n = 0; page && n < 10; n++) {
+      seen.push(...patchRows(page).map(f => f.path));
+      const next = nextHints(page.sc).find(h => /\.next\.(?:continuePatch|nextFilePage|nextPage)$/.test(h.path));
+      page = next ? await client.follow(next) : null;
+    }
+    check(`PR #${number}: pageSize 1 patch pagination visits every changed file once and terminates`, !page && seen.length === files.length && new Set(seen).size === files.length, JSON.stringify(seen));
+    const detail = rowData(await call('ghGetHistoryItem', { ...pr, sections: ['reviews', 'comments', 'reviewComments', 'commits'] }));
+    const hasField = name => collect(detail, o => Object.hasOwn(o, name)).length > 0;
+    check(`PR #${number}: review sections return reviews and commits fields`, hasField('reviews') && hasField('commits'), JSON.stringify(detail).slice(0, 160));
+  }
+  const commit = rowData(await call('ghGetHistoryItem', { operation: 'commit', owner: r.owner, repo: r.repo, ref: r.sha, extras: ['details'] }));
+  check('commit: sha is the pinned SHA', commit?.sha === r.sha, commit?.sha);
+  const compared = patchRows(await call('ghGetHistoryItem', { operation: 'compare', owner: r.owner, repo: r.repo, base: parent, head: r.sha, sections: ['patches'] }));
+  check('compare parent...HEAD with patches: every file delta equals git', compared.length === files.length && compared.every(sameDelta), `${compared.length}/${files.length}`);
+  const open = collect(rowData(await call('ghSearchHistory', { owner: 'microsoft', repo: 'TypeScript', operation: 'pullRequest', state: 'open', pageSize: 3 })), v => typeof v.number === 'number' && typeof v.title === 'string');
+  check('open PR search returns candidates', open.length > 0);
+  if (open.length) {
+    const live = rowData(await call('ghGetHistoryItem', { owner: 'microsoft', repo: 'TypeScript', operation: 'pullRequest', number: open[0].number, sections: ['files'] }))?.pullRequests?.[0];
+    check(`open PR #${open[0].number}: exposes a 40-hex head SHA`, /^[a-f0-9]{40}$/.test(live?.headSha ?? ''), live?.headSha);
+  }
+}
+
+// Large PRs (>100 files, REST oracle): review-large.mjs.
 
 // ── E. clasify over GitHub resources (ground truth from the pinned clone) ──
 if (noClasify) skip('clasify GitHub: locate, absent and scout checks', noClasify);

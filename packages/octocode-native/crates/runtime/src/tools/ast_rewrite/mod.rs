@@ -3,6 +3,7 @@ use crate::policy::prune::PruneMode;
 use crate::tools::ast_rule;
 use crate::tools::empty_walk::{Hits, SAMPLE_FILES, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
+use crate::tools::paging::push_warnings;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };
@@ -94,7 +95,7 @@ struct PreparedFile {
     /// syntax analyzer key on.
     path: String,
     /// Workspace-relative (absolute outside the workspace): the one public
-    /// spelling, in patch headers and `expectedHashes` keys.
+    /// spelling, in `expectedHashes` keys and rows.
     shown: String,
     absolute: PathBuf,
     before_hash: String,
@@ -296,7 +297,7 @@ fn execute(
         .filter(|_| query.page() > 1)
         .zip(query.snapshot())
         .and_then(|(key, pinned)| {
-            preview_memo::reuse(key, pinned, |path| paths.permits_discovery(path))
+            preview_memo::reuse(key, pinned, &boundary, |path| paths.permits_discovery(path))
         });
     let (prepared, coverage, snapshot) = match reused {
         Some(hit) => (
@@ -384,15 +385,6 @@ fn execute(
     mark_mentions(&mut value, &coverage, paths);
     push_warnings(&mut value, recovery_warnings);
     Ok(value)
-}
-
-fn push_warnings(value: &mut Value, extra: impl IntoIterator<Item = String>) {
-    for warning in extra {
-        match value.get_mut("warnings").and_then(Value::as_array_mut) {
-            Some(warnings) => warnings.push(json!(warning)),
-            None => value["warnings"] = json!([warning]),
-        }
-    }
 }
 
 /// The preview memo key: the query as its continuations spell it, without
@@ -856,7 +848,7 @@ fn note_skipped_matches(
         diagnosis.found().count,
         diagnosis.because()
     )]);
-    value["next"]["includeIgnored"] =
+    value["next"]["includeSkipped"] =
         crate::tools::result::Continuation::new(ToolId::AstRewrite, retry).build();
     Ok(())
 }
@@ -1095,8 +1087,7 @@ fn prepare_file(
     context: &PrepareContext<'_>,
 ) -> Result<PreparedFile, RewriteError> {
     context.cancellation.check().map_err(cancelled)?;
-    let metadata = fs::symlink_metadata(&absolute).map_err(io_error)?;
-    let before = fs::read(&absolute).map_err(io_error)?;
+    let (before, permissions) = read_target(context.boundary, &absolute)?;
     context
         .security
         .validate_text_bytes(&before, Some(&absolute), MAX_FILE_BYTES)
@@ -1124,7 +1115,7 @@ fn prepare_file(
     let after_facts =
         check_syntax_regression(context.analyzer, &relative, before_errors, after_text)?;
     let shown = shown_path(context.paths, &absolute);
-    let patch = create_unified_patch(&shown, content, after_text);
+    let patch = create_unified_patch(patch_path(&shown, &relative), content, after_text);
     let mut matches = matches;
     for matched in &mut matches {
         // Row paths are absolute; the response stage names them relative to
@@ -1141,7 +1132,7 @@ fn prepare_file(
         after,
         patch,
         matches,
-        permissions: metadata.permissions(),
+        permissions,
         before_errors,
         after_facts,
     })
@@ -1371,7 +1362,7 @@ fn select(
         // dropping one of a paired open/close rewrite), so re-check here.
         let after_facts =
             check_syntax_regression(analyzer, &file.path, file.before_errors, after_text)?;
-        let patch = create_unified_patch(&file.shown, before_text, after_text);
+        let patch = create_unified_patch(file.patch_path(), before_text, after_text);
         total_patch_bytes = total_patch_bytes.saturating_add(patch.len());
         if total_patch_bytes > max_patch_bytes {
             return Err(RewriteError::new(
@@ -1400,6 +1391,24 @@ fn shown_path(paths: &PathPolicy, absolute: &Path) -> String {
         .filter(|relative| relative != ".")
         .unwrap_or_else(|| absolute.to_string_lossy().into_owned())
         .replace(std::path::MAIN_SEPARATOR, "/")
+}
+
+/// The path a patch header names: the public spelling inside the
+/// workspace; outside it, the path relative to the rewrite root (`relative`),
+/// since `a/` joined to an absolute path is no path `git apply` can use.
+fn patch_path<'a>(shown: &'a str, relative: &'a str) -> &'a str {
+    if Path::new(shown).is_absolute() {
+        relative
+    } else {
+        shown
+    }
+}
+
+impl PreparedFile {
+    /// This file's patch header path (see [`patch_path`]).
+    fn patch_path(&self) -> &str {
+        patch_path(&self.shown, &self.path)
+    }
 }
 
 fn validate_expected_hashes(
@@ -1575,6 +1584,35 @@ fn cancelled(message: String) -> RewriteError {
 
 fn io_error(error: std::io::Error) -> RewriteError {
     RewriteError::new("fileAccessFailed", error.to_string())
+}
+
+/// A target's bytes (one past the size cap at most, so the text check still
+/// names an oversize file) and permissions, read through a handle opened
+/// beneath `boundary` without following any symlink: a target or directory
+/// swapped for a link after the scan is refused, never read through.
+fn read_target(
+    boundary: &Path,
+    absolute: &Path,
+) -> Result<(Vec<u8>, fs::Permissions), RewriteError> {
+    let file = crate::private_file::open_beneath(boundary, absolute).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::InvalidInput {
+            RewriteError::new(
+                "symlinkTarget",
+                "A target is now a symlink or non-file; no changes were prepared.",
+            )
+            .detail(json!({"path":absolute}))
+        } else {
+            io_error(error)
+        }
+    })?;
+    let permissions = file.metadata().map_err(io_error)?.permissions();
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(&file, MAX_FILE_BYTES as u64 + 1),
+        &mut bytes,
+    )
+    .map_err(io_error)?;
+    Ok((bytes, permissions))
 }
 
 /// Base directory for astRewrite's cross-process lock and journal state.

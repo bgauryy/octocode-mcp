@@ -185,9 +185,16 @@ impl Scope {
         let files = match hit {
             Some(files) => Some(files),
             None => {
-                let files = scan_text(&self.root, &self.include, symbol, policy, cancel)
-                    .await?
-                    .map(Arc::new);
+                let files = scan_text(
+                    &self.root,
+                    &self.include,
+                    symbol,
+                    policy,
+                    cancel,
+                    Ignores::Honored,
+                )
+                .await?
+                .map(Arc::new);
                 if let (Some(key), Some(files)) = (stored, &files)
                     && let Ok(mut scans) = TEXT_SCANS.lock()
                 {
@@ -206,6 +213,50 @@ impl Scope {
             });
         }
         Ok(files)
+    }
+
+    /// Files under the scope that spell `symbol` as a word but that ignore
+    /// rules keep out of every lexical scan (default-excluded directories
+    /// such as `node_modules/` stay out), with the deciding rules of the
+    /// first few; files in `skip` (already in the answer) are left out.
+    /// Scanned per request: the scope fingerprint does not cover ignored
+    /// files. Empty when either scan failed or hit a bound.
+    pub(super) async fn ignored_text_files(
+        &self,
+        symbol: &str,
+        skip: &std::collections::HashSet<String>,
+        policy: &PathPolicy,
+        cancel: &dyn CancellationCheck,
+    ) -> Result<IgnoredMentions, LspFailure> {
+        let Some(visible) = self.text_files(symbol, policy, cancel).await? else {
+            return Ok(IgnoredMentions::default());
+        };
+        let Some(every) = scan_text(
+            &self.root,
+            &self.include,
+            symbol,
+            policy,
+            cancel,
+            Ignores::Lifted,
+        )
+        .await?
+        else {
+            return Ok(IgnoredMentions::default());
+        };
+        let files = every
+            .into_iter()
+            .filter(|file| !visible.contains(file) && !skip.contains(file))
+            .collect::<Vec<_>>();
+        let root = Path::new(&self.root);
+        let mut rules = Vec::new();
+        for file in files.iter().take(crate::tools::empty_walk::SAMPLE_FILES) {
+            if let Some(rule) = crate::tools::empty_walk::ignore_rule(root, Path::new(file), false)
+                && !rules.contains(&rule)
+            {
+                rules.push(rule);
+            }
+        }
+        Ok(IgnoredMentions { files, rules })
     }
 
     /// Files the text scan of `symbol` found that the server's answer does
@@ -363,23 +414,46 @@ fn family_include(language_id: Option<&str>, anchor: &Path) -> Vec<String> {
     globs
 }
 
+/// Files that spell a name but that ignore rules keep out of the lexical
+/// scans (see [`Scope::ignored_text_files`]).
+#[derive(Debug, Default)]
+pub(super) struct IgnoredMentions {
+    /// Canonical paths, sorted.
+    pub(super) files: Vec<String>,
+    /// Distinct deciding rules (`.gitignore:1 'gen/'`) of the first files.
+    pub(super) rules: Vec<String>,
+}
+
+/// Whether a text scan honors ignore rules (every lexical scan does) or
+/// lifts them to find what they hide.
+#[derive(Clone, Copy)]
+enum Ignores {
+    Honored,
+    Lifted,
+}
+
 /// Word-bounded files-only scan of `root` (family `include`, read policy),
-/// observing `cancel` and the scan bounds.
+/// observing `cancel` and the scan bounds. A scan that lifts ignore rules
+/// still skips the default-excluded directories.
 async fn scan_text(
     root: &str,
     include: &[String],
     symbol: &str,
     policy: &PathPolicy,
     cancel: &dyn CancellationCheck,
+    ignores: Ignores,
 ) -> Result<Option<BTreeSet<String>>, LspFailure> {
     if symbol.trim().is_empty() {
         return Ok(None);
     }
+    let lifted = matches!(ignores, Ignores::Lifted);
     let options = TextSearchOptions {
         path: root.to_owned(),
         pattern: word_pattern(symbol),
         files_only: Some(true),
         include: (!include.is_empty()).then(|| include.to_vec()),
+        no_ignore: lifted.then_some(true),
+        exclude_dir: lifted.then(|| crate::policy::prune::PruneMode::SearchSafe.directories(true)),
         ..TextSearchOptions::default()
     };
     let filter = Arc::new(policy.clone());

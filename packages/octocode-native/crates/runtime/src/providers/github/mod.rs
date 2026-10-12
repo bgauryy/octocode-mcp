@@ -16,7 +16,7 @@ pub use octocode_github::{
     GitHubProvider, GitHubTransport, GraphQlError, HistoryPage, HistoryRequest, LimiterKey,
     NamedRef, ProviderError, ProviderErrorKind, ProviderErrorReason, PullListRequest, RateLimit,
     RefKind, RefMatch, RepositorySearchItem, RepositorySearchPage, RepositorySearchRequest,
-    RequestContext, RequestSpec, RetryPolicy, SearchName, TextMatch, TreeRequest, TreeResponse,
-    qualifier_value, quote_search_keyword, search_phrase, validate_qualifier_value,
-    validate_search_name,
+    RequestContext, RequestSpec, RetryPolicy, TextMatch, TreeRequest, TreeResponse,
+    qualifier_value, quote_search_keyword, search_phrase, validate_person_name,
+    validate_qualifier_value,
 };

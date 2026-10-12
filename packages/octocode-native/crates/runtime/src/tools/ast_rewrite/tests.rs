@@ -211,6 +211,29 @@ fn apply_options() -> AstRewriteRuntimeOptions {
     }
 }
 
+/// A target outside the workspace (in another allowed root) names its
+/// patch headers relative to the rewrite root, never `a/` joined to an
+/// absolute path, so `git apply` from that root can use the patch as is.
+#[test]
+fn a_target_outside_the_workspace_has_root_relative_patch_headers() {
+    let (root, _, security) = fixture();
+    let workspace = make_temp_dir("octocode-rewrite-workspace-").expect("workspace");
+    let policy = PathPolicy::new(crate::policy::path::PathPolicyConfig {
+        workspace_root: Some(workspace.clone()),
+        additional_roots: vec![root.clone()],
+        ..Default::default()
+    })
+    .expect("policy");
+    let (_, preview) = full_preview(&root, &policy, &security);
+    let patch = preview["files"][0]["patch"].as_str().expect("patch");
+    assert!(
+        patch.starts_with("--- a/a.ts\n+++ b/a.ts\n@@ "),
+        "{preview}"
+    );
+    fs::remove_dir_all(root).expect("cleanup");
+    fs::remove_dir_all(workspace).expect("cleanup");
+}
+
 #[test]
 fn syntax_breaking_template_is_rejected_before_any_commit() {
     let (root, policy, security) = fixture();
@@ -282,7 +305,7 @@ fn ignored_and_hidden_directories_are_reachable_and_an_empty_preview_leads_there
         );
         assert_eq!(empty["status"], "empty", "{dir}: {empty}");
         assert!(!empty.to_string().contains("Broaden"), "{dir}: {empty}");
-        let retry = &empty["next"]["includeIgnored"]["query"]["queries"][0];
+        let retry = &empty["next"]["includeSkipped"]["query"]["queries"][0];
         assert_eq!(retry[flag], true, "{dir}: {empty}");
 
         preview[flag] = json!(true);
@@ -948,7 +971,7 @@ fn yaml_rule_and_inferred_language_preview_like_the_explicit_object_rule() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// AS5: a rule-config object `{rule, constraints?, utils?, transform?}` in
+/// A rule-config object `{rule, constraints?, utils?, transform?}` in
 /// `rule`, the same YAML rule file, and the split fields preview alike; a
 /// section given twice is an error, never a silent pick.
 #[test]
@@ -1413,6 +1436,10 @@ fn overlapping_root_lock_is_waited_for_until_released() {
         })
     };
     std::thread::sleep(std::time::Duration::from_millis(300));
+    assert!(
+        !waiter.is_finished(),
+        "the overlapping lock must wait while the enclosing root is held"
+    );
     drop(held);
     waiter
         .join()
@@ -1574,4 +1601,68 @@ fn a_non_identifier_pattern_reports_no_word_mentions() {
     );
     assert_eq!(preview["matchCount"], 1, "{preview}");
     assert!(preview.get("warnings").is_none(), "{preview}");
+}
+
+/// A target directory swapped for a symlink after the scan. The read
+/// walks down from the boundary without following links, so it never returns
+/// bytes from outside the root, and commit re-checks every target the same
+/// way before it stages anything beside it.
+#[cfg(unix)]
+#[test]
+fn a_target_directory_swapped_for_a_symlink_is_never_read_or_written() {
+    let root = fs::canonicalize(make_temp_dir("octocode-rewrite-swap-").expect("root"))
+        .expect("real root");
+    let outside = make_temp_dir("octocode-rewrite-outside-").expect("outside");
+    let source = "const first = oldCall(1);\n";
+    fs::create_dir(root.join("src")).expect("src");
+    fs::write(root.join("src/a.ts"), source).expect("target");
+    // Identical bytes outside, so a hash check alone cannot tell them apart.
+    fs::write(outside.join("a.ts"), source).expect("outside twin");
+    let policy = crate::tools::test_support::workspace_policy(&root);
+    let security = ContentSecurity::new();
+    let mut row = query(&root);
+    row["pageSize"] = json!(100);
+    let request: RewriteRequest = serde_json::from_value(row).expect("typed row");
+    let analyzer = StagedAnalyzer::new(&request).expect("analyzer");
+    let options = AstRewriteRuntimeOptions::default();
+    let context = PrepareContext {
+        boundary: &root,
+        paths: &policy,
+        security: &security,
+        cancellation: &NeverCancel,
+        options: &options,
+        analyzer: &analyzer,
+    };
+    let (raw, _, errors) =
+        run_scan(&request, &root, &NeverCancel, &analyzer, walk_of(&request)).expect("scan");
+    let (absolute, (matches, scanned)) = group_targets(raw, &root, &errors, &context)
+        .expect("targets")
+        .into_iter()
+        .next()
+        .expect("one target");
+    let prepared =
+        prepare_file(absolute.clone(), matches.clone(), scanned, &context).expect("prepared");
+
+    fs::rename(root.join("src"), root.join("src-moved")).expect("move away");
+    std::os::unix::fs::symlink(&outside, root.join("src")).expect("swap in the link");
+
+    let Err(read) = prepare_file(absolute, matches, scanned, &context) else {
+        panic!("never read through the link");
+    };
+    let read = read.value();
+    assert_eq!(read["errorCode"], "symlinkTarget", "{read}");
+    let state = make_temp_dir("octocode-rewrite-swap-state-").expect("state");
+    let commit = commit_transaction(&state, &root, &[prepared], &NeverCancel)
+        .expect_err("never commit through the link")
+        .value();
+    assert_eq!(commit["errorCode"], "transactionFailed", "{commit}");
+    assert_eq!(
+        fs::read_to_string(outside.join("a.ts")).expect("twin"),
+        source
+    );
+    assert_eq!(
+        fs::read_dir(&outside).expect("outside").count(),
+        1,
+        "no stage or backup lands outside the root"
+    );
 }

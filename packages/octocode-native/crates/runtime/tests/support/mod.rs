@@ -22,6 +22,11 @@ static FIXTURE_SEQ: AtomicU64 = AtomicU64::new(0);
 /// narrow during a cold native build with several mock servers active.
 pub const MOCK_PROVIDER_TIMEOUT_MS: &str = "30000";
 
+/// The GitHub API base every fixture starts from: a closed loopback port, so
+/// a test that reaches GitHub without mounting a mock fails fast with a
+/// connection error and never calls api.github.com. Mocked tests override it.
+pub const UNMOCKED_GITHUB_API_URL: &str = "http://127.0.0.1:1/api/v3";
+
 // Mock servers are bare (`MockServer::builder().start()`), never wiremock's
 // pooled `MockServer::start()`: process-wide state keyed by the endpoint
 // (the clasify judgment cache, the GitHub budget's per-host limiter) must not
@@ -110,6 +115,7 @@ impl Workspace {
                 self.home.to_string_lossy().into_owned(),
             ),
             ("GITHUB_TOKEN".into(), self.token.clone()),
+            ("GITHUB_API_URL".into(), UNMOCKED_GITHUB_API_URL.into()),
             ("OCTOCODE_ENABLE_STATS".into(), "false".into()),
             ("MAX_RETRIES".into(), "0".into()),
             ("REQUEST_TIMEOUT".into(), "5000".into()),

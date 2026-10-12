@@ -1032,7 +1032,10 @@
       "tools": [
         "lspSearch"
       ],
-      "text": true
+      "text": true,
+      "allow": [
+        "octocode-local-testing/harness/version-compare/"
+      ]
     },
     {
       "name": "sourceSha",

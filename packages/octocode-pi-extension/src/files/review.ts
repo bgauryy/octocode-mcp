@@ -1,21 +1,12 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { wordCompletions, type Subcommands } from '../shared/commands.js';
-import { withDialog } from '../shared/locks.js';
-import { statusColor } from '../shared/render.js';
+import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { kindOption } from '../permission/ask.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { clipText } from '../shared/util.js';
 
 /**
- * Optional human review of the `file` tool's batches. Off by default; `/octocode review on` (or OCTOCODE_REVIEW=1) asks before
- * every batch is applied, showing each change with the model's reasoning, and lets the user accept or reject changes one by one.
+ * The review of a `file` batch: the `file.workspace` permission dialog. In `manual` mode every batch shows each
+ * change with the model's reasoning, and the user applies all, rejects all, or decides change by change.
  */
-
-export const REVIEW_ENV = 'OCTOCODE_REVIEW';
-const STATUS_KEY = 'octocode-review';
-
-export interface ReviewMode {
-  on: boolean;
-}
 
 interface ChangeQuery {
   type: string;
@@ -49,49 +40,45 @@ export function describeChange(query: ChangeQuery): string[] {
 }
 
 const APPLY_ALL = 'Apply all';
+/** Apply these and every later file change in the repository this session without reviewing. */
+const APPLY_SESSION = kindOption('file.workspace')!;
 const ONE_BY_ONE = 'Review one by one';
 const REJECT_ALL = 'Reject all';
+const REJECT_ALL_NOTE = 'Reject all and tell the agent why…';
+const APPLY = 'Apply';
+const REJECT = 'Reject';
+const REJECT_NOTE = 'Reject and tell the agent why…';
 
 /**
- * Ask which changes of a batch to apply. Returns the indices the user rejected, or 'cancelled' when the dialog was
- * dismissed or interrupted (no verdict). Nothing is applied before this returns.
+ * Ask which changes of a batch to apply. Maps rejected indices to optional user notes, or returns 'cancelled' when the dialog was
+ * dismissed or interrupted (no verdict). Nothing is applied before this returns. `Permission.check` runs it, inside
+ * its one-dialog-at-a-time lock.
  */
-export async function reviewChanges(ctx: ExtensionContext, queries: ChangeQuery[], signal?: AbortSignal): Promise<Set<number> | 'cancelled'> {
-  return withDialog(() => askReview(ctx, queries, signal), signal);
-}
-
-async function askReview(ctx: ExtensionContext, queries: ChangeQuery[], signal?: AbortSignal): Promise<Set<number> | 'cancelled'> {
-  const all = new Set(queries.keys());
+export async function askReview(ctx: Pick<ExtensionContext, 'ui'>, queries: ChangeQuery[], signal?: AbortSignal): Promise<Map<number, string | undefined> | 'cancelled' | 'session'> {
+  const all = (note?: string) => new Map(queries.map((_, index) => [index, note]));
   const options = signal ? { signal } : undefined;
   const list = queries.map((query, index) => sanitizeTerminalText(`${index + 1}. ${query.type} ${query.path} — ${query.reasoning}`)).join('\n');
-  const choice = await ctx.ui.select(`Apply ${queries.length} file change${queries.length === 1 ? '' : 's'}?\n${list}`, queries.length === 1 ? [APPLY_ALL, REJECT_ALL] : [APPLY_ALL, ONE_BY_ONE, REJECT_ALL], options);
+  const choice = await ctx.ui.select(`Apply ${queries.length} file change${queries.length === 1 ? '' : 's'}?\n${list}`, [APPLY_ALL, APPLY_SESSION, ...(queries.length > 1 ? [ONE_BY_ONE] : []), REJECT_ALL, REJECT_ALL_NOTE], options);
   if (choice === undefined || signal?.aborted) return 'cancelled';
-  if (choice === APPLY_ALL) return new Set();
-  if (choice !== ONE_BY_ONE) return all;
-  const rejected = new Set<number>();
+  if (choice === APPLY_ALL) return new Map();
+  if (choice === APPLY_SESSION) return 'session';
+  if (choice === REJECT_ALL) return all();
+  if (choice === REJECT_ALL_NOTE) {
+    const note = await ctx.ui.input('Tell the agent why', 'what to change instead', options);
+    return note === undefined || signal?.aborted ? 'cancelled' : all(note.trim() || undefined);
+  }
+  if (choice !== ONE_BY_ONE) return 'cancelled';
+  const rejected = new Map<number, string | undefined>();
   for (const [index, query] of queries.entries()) {
-    const accepted = await ctx.ui.confirm(`Change ${index + 1} of ${queries.length}`, describeChange(query).join('\n'), options);
-    if (signal?.aborted) return 'cancelled';
-    if (!accepted) rejected.add(index);
+    const decision = await ctx.ui.select(`Change ${index + 1} of ${queries.length}\n${describeChange(query).join('\n')}`, [APPLY, REJECT, REJECT_NOTE], options);
+    if (decision === undefined || signal?.aborted) return 'cancelled';
+    if (decision === APPLY) continue;
+    if (decision === REJECT) rejected.set(index, undefined);
+    else if (decision === REJECT_NOTE) {
+      const note = await ctx.ui.input('Tell the agent why', 'what to change instead', options);
+      if (note === undefined || signal?.aborted) return 'cancelled';
+      rejected.set(index, note.trim() || undefined);
+    } else return 'cancelled';
   }
   return rejected;
-}
-
-/** `/octocode review on|off`: the toggle and its footer note. */
-export function registerReviewCommand(pi: ExtensionAPI, commands: Subcommands, mode: ReviewMode): void {
-  const show = (ctx: ExtensionContext) => {
-    if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, mode.on ? statusColor(ctx, 'warning', 'review on') : undefined);
-  };
-  pi.on('session_start', async (_event, ctx) => show(ctx));
-  commands.add('review', {
-    description: 'review on|off — ask before each file batch',
-    complete: (prefix) => wordCompletions(['on', 'off'], prefix),
-    handler: async (args, ctx) => {
-      const word = args.trim().toLowerCase();
-      if (word === 'on' || word === 'off') mode.on = word === 'on';
-      else if (word !== '') return ctx.ui.notify('Usage: /octocode review on | off', 'warning');
-      show(ctx);
-      ctx.ui.notify(mode.on ? 'Review on: every file change batch asks before it is applied.' : 'Review off: file changes apply directly.', 'info');
-    },
-  });
 }

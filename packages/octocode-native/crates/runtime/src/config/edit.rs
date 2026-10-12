@@ -7,6 +7,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 pub(super) const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
+/// How long an edit waits for the config lock before reporting it busy. A
+/// lock can stay held briefly after its owner released it: a child forked
+/// by any thread carries a copy of the descriptor until it execs.
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
@@ -78,12 +82,16 @@ pub fn replace_private_config(
         )),
         true,
     )?;
-    lock.try_lock().map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::WouldBlock,
-            "Configuration is being edited; retry.",
-        )
-    })?;
+    let deadline = std::time::Instant::now() + LOCK_WAIT;
+    while lock.try_lock().is_err() {
+        if std::time::Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Configuration is being edited; retry.",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
     let original = read_private_config(path)?;
     if config_revision(original.as_deref()) != expected_revision {
         return Err(changed());
@@ -263,6 +271,36 @@ mod tests {
             "one"
         );
         assert!(real.join(".env").is_file());
+    }
+    fn hold_lock(path: &Path) -> fs::File {
+        let lock = open_no_follow(&path.with_file_name(".env.lock"), true).unwrap();
+        lock.lock().unwrap();
+        lock
+    }
+    #[test]
+    fn an_edit_waits_out_a_briefly_held_lock() {
+        let (_root, path) = fixture();
+        let held = hold_lock(&path);
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            drop(held);
+        });
+        assert!(
+            replace_private_config(&path, "missing", "KEY=one\n", false)
+                .unwrap()
+                .0
+        );
+        release.join().unwrap();
+    }
+    #[test]
+    fn an_edit_reports_busy_when_the_lock_stays_held() {
+        let (_root, path) = fixture();
+        let _held = hold_lock(&path);
+        let started = std::time::Instant::now();
+        let error = replace_private_config(&path, "missing", "KEY=one\n", false).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert!(started.elapsed() >= LOCK_WAIT, "{:?}", started.elapsed());
+        assert!(!path.exists());
     }
     #[test]
     fn owned_env_edits_leave_no_backup_of_removed_secrets() {

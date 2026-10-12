@@ -1046,6 +1046,89 @@ async fn walk_across_silent_windows(
     (root, pages)
 }
 
+/// A gitignored file that spells the name is never an importer candidate,
+/// and the row says so: partial, with the deciding ignore rule, and a lead
+/// whose localSearch rows (ignored files included) reach that file.
+#[test]
+fn importer_recovery_names_gitignored_files_it_skipped() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let (root, execution) = importer_fixture_of("ignored", &[("f", 2)]);
+    std::fs::create_dir_all(root.join(".git")).expect("repository marker");
+    std::fs::write(root.join(".gitignore"), "gen/\n").expect("gitignore");
+    std::fs::create_dir_all(root.join("gen")).expect("ignored dir");
+    std::fs::write(
+        root.join("gen/g000.ts"),
+        "import { target } from '../a';\ntarget();\n",
+    )
+    .expect("ignored importer");
+    let pool = LspClientPool::new(LspPoolOptions::default());
+    let query = serde_json::from_value(serde_json::json!({
+        "operation": "references", "path": root.join("a.ts").to_string_lossy(),
+        "symbolName": "target", "line": 1, "pageSize": 100,
+        "workspaceRoot": root.to_string_lossy()
+    }))
+    .expect("query");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let row = tokio::runtime::Runtime::new()
+        .expect("rt")
+        .block_on(super::execute(
+            query,
+            &crate::tools::cancel::NeverCancel,
+            &pool,
+            &paths,
+            &execution,
+            None,
+        ))
+        .expect("row");
+    assert_contract_valid(&row);
+    assert!(row.to_string().contains("f001.ts"), "{row}");
+    assert!(!row.to_string().contains("g000.ts\",\"matches"), "{row}");
+    assert_eq!(row["isPartial"], true, "{row}");
+    assert!(
+        row["partialReasons"]
+            .as_array()
+            .is_some_and(|reasons| reasons.contains(&serde_json::json!("importerScanIgnored"))),
+        "{row}"
+    );
+    let warned = row["warnings"].to_string();
+    assert!(
+        warned.contains("1 file") && warned.contains(".gitignore:1 'gen/'"),
+        "{row}"
+    );
+    let lead = &row["next"]["includeSkipped"];
+    assert_eq!(lead["tool"], "localSearch", "{row}");
+    let rows = lead["query"]["queries"].as_array().expect("lead rows");
+    let policy = crate::tools::test_support::workspace_policy(&root);
+    let found = rows
+        .iter()
+        .flat_map(|search| {
+            assert_eq!(search["includeIgnored"], true, "{search}");
+            let query: crate::tools::local_search::LocalSearchQuery =
+                serde_json::from_value(search.clone()).expect("lead row is a localSearch query");
+            crate::tools::local_search::execute_local_search(
+                &query,
+                &policy,
+                &crate::security::ContentSecurity::new(),
+                &crate::tools::cancel::NeverCancel,
+                None,
+                None,
+            )
+            .expect("lead runs")
+            .files
+            .into_iter()
+            .map(|file| file.path)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        found.iter().any(|path| path.ends_with("g000.ts")),
+        "{found:?}"
+    );
+    remove_importer_fixture(&root);
+}
+
 /// An importer window with no verified site is a step of a continuing scan,
 /// not an empty answer: the request goes on to the next window, so a later
 /// page always lists sites or ends the scan, and the sites past the silent

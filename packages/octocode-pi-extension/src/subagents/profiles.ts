@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseFrontmatter } from '@earendil-works/pi-coding-agent';
+import { parseFrontmatter, type ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { Permission } from '../permission/ask.js';
+import type { ActionClass } from '../permission/mode.js';
 import { globalPaths, piAgentDir, projectAgentDirs } from '../shared/home.js';
 import { packageRoot } from '../shared/package.js';
 
@@ -81,4 +83,39 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
     ...(flag('mcp') === false ? { mcp: false as const } : {}),
     ...(flag('hooks') === true ? { hooks: true as const } : {}),
   };
+}
+
+const toolList = (list: string | undefined): string[] => (list ?? '').split(',').map((name) => name.trim()).filter(Boolean);
+
+/** The workspace classes a profile's tools reach (its `tools` allow list, less `excludeTools`): what a spawn grant may carry. */
+export function profileReach(profile: AgentProfile | undefined): ActionClass[] {
+  const allowed = toolList(profile?.tools);
+  const excluded = new Set(toolList(profile?.excludeTools));
+  // Excluding `file` drops Pi's edit and write too (buildAgentArgs).
+  if (excluded.has('file')) for (const name of ['edit', 'write']) excluded.add(name);
+  const has = (names: string[]) => names.some((name) => !excluded.has(name) && (allowed.length === 0 || allowed.includes(name)));
+  return [...(has(['file', 'edit', 'write']) ? ['file.workspace' as const] : []), ...(has(['bash', 'powershell']) ? ['shell' as const] : [])];
+}
+
+const REACH_TEXT: Record<string, string> = { 'file.workspace': 'edit files in the repository', shell: 'run shell commands' };
+
+/**
+ * The `agent.spawn` ask, showing the profile, what its tools reach and the task. Returns the grant for the child: the
+ * classes the profile reaches when the user allowed this spawn, none when the mode itself allows spawning (the child
+ * inherits the mode). A refusal throws, before anything starts.
+ */
+export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, profile: AgentProfile | undefined, task: string, signal?: AbortSignal): Promise<ActionClass[]> {
+  const name = profile?.name ?? 'general';
+  const reach = profileReach(profile);
+  const may = reach.length > 0 ? `may ${reach.map((action) => REACH_TEXT[action]).join(' and ')}` : 'may only read and research';
+  const verdict = await permission.check(ctx, {
+    action: 'agent.spawn',
+    title: 'Start this subagent?',
+    what: [`${name} ${may}; everything else still asks, and asks are denied in the child.`, `task: ${task}`],
+    // Keyed by reach too: a profile edited to reach further later is a new question.
+    grant: { key: `${name} ${reach.join(',')}`, label: `${name} subagents` },
+    ...(signal ? { signal } : {}),
+  });
+  if (!verdict.allowed) throw new Error(verdict.message);
+  return verdict.via === 'mode' ? [] : reach;
 }

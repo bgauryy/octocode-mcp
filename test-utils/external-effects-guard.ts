@@ -1,45 +1,56 @@
 /**
- * external-effects-guard.ts — Vitest global setup
+ * external-effects-guard.ts — Vitest setup file (setupFiles) shared by the
+ * octocode-mcp, octocode and @octocodeai/config suites.
  *
- * Blocks accidental outbound network calls and external process launches
- * (browsers, system openers, remote npx packages) from unit tests.
+ * Makes every unit test hermetic by construction:
+ * - a fresh empty OCTOCODE_HOME and GH_CONFIG_DIR per test file, so no test
+ *   reads the user's ~/.octocode (auth.json, .octocoderc, .env) or gh login;
+ * - no GitHub token or classification key from the developer's shell;
+ * - outbound HTTP(S) from native code goes to a dead proxy (127.0.0.1:9) and
+ *   outbound `fetch` rejects; loopback stays reachable for local fixtures;
+ * - child processes are limited to the current Node binary unless a test
+ *   names the local executables it runs (e.g. the packaged native binary).
  *
- * Tests that legitimately need real network or processes must inject their own
- * mocks. This guard fails loudly so the need is never silently skipped.
+ * Tests that need any of these must inject their own fake. The guard fails
+ * loudly so the need is never silently skipped. The temp home lives under the
+ * OS temp directory, which the OS reclaims.
  *
- * Contracts verified by tests/external-effects-guard.test.ts.
+ * Contracts verified by packages/octocode-config/tests/external-effects-guard.test.ts.
  */
 import { vi } from 'vitest';
+import { hermeticEnv } from './hermetic-env.js';
 
-// ─── Live-integration flag guard ──────────────────────────────────────────────────
-// Vitest's env config can only set vars to '' (not delete them). Delete here so
-// tests see undefined rather than an empty string for these integration flags.
-delete process.env['OCTOCODE_CHROME_DEBUG_E2E'];
-delete process.env['RUN_CHROME_LIVE'];
-delete process.env['RUN_MCP_LIVE'];
+// ─── Hermetic env: home, credentials, live flags, network sink ──────────────────────
+// Node's process.env setters update the real environment, so the native addon
+// (reqwest system-proxy) and spawned children see the same isolated env.
+// Deleting (not blanking, as vitest's `env` would) keeps flags undefined.
+const hermetic = hermeticEnv(process.env, 'test');
+for (const name of Object.keys(process.env)) {
+  if (!(name in hermetic)) delete process.env[name];
+}
+Object.assign(process.env, hermetic);
+export const HERMETIC_HOME = hermetic['OCTOCODE_HOME']!;
 
 const BLOCK_PROCESS = 'TEST_EXTERNAL_EFFECT_BLOCKED: inject a process/browser mock';
 const BLOCK_FETCH = 'TEST_EXTERNAL_EFFECT_BLOCKED: inject a fetch mock';
-const LOCAL_PROCESS_OPT_IN = 'OCTOCODE_TEST_ALLOW_LOCAL_PROCESS';
 
-delete process.env[LOCAL_PROCESS_OPT_IN];
+/** Absolute paths of local executables a test file opted into. */
+const allowedExecutables = new Set<string>();
 
 /**
- * Permit only the local fixture executables used by true integration tests.
- * The returned cleanup keeps the permission explicit and scoped to the file.
+ * Permit the named local executables (absolute paths, e.g. the packaged
+ * native binary) for the calling test file. The returned cleanup revokes them.
  */
-export function allowLocalFixtureProcesses(): () => void {
-  process.env[LOCAL_PROCESS_OPT_IN] = '1';
+export function allowLocalExecutables(...paths: string[]): () => void {
+  for (const path of paths) allowedExecutables.add(path);
   return () => {
-    delete process.env[LOCAL_PROCESS_OPT_IN];
+    for (const path of paths) allowedExecutables.delete(path);
   };
 }
 
 // ─── Fetch guard ─────────────────────────────────────────────────────────────
-// Preserve hermetic loopback fixtures while rejecting every outbound request.
-// Integration tests exercise real HTTP framing against ephemeral local servers;
-// treating those requests as external effects made the guard test implementation
-// details instead of the actual network boundary.
+// Loopback fixtures stay reachable (tests exercise real HTTP framing against
+// ephemeral local servers); every outbound request rejects.
 const realFetch = globalThis.fetch.bind(globalThis);
 
 function isLoopback(url: URL): boolean {
@@ -49,53 +60,44 @@ function isLoopback(url: URL): boolean {
   );
 }
 
-globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit): Promise<Response> => {
   const url =
-    typeof input === 'string'
-      ? input
-      : input instanceof URL
-        ? input.href
-        : (input as Request).url;
-  if (/^https?:\/\//i.test(url)) {
-    const parsed = new URL(url);
-    if (isLoopback(parsed)) return realFetch(input, init);
-    return Promise.reject(new Error(BLOCK_FETCH));
-  }
-  return Promise.reject(new Error(`fetch called with unexpected input in tests: ${url}`));
+    typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
+  if (/^https?:\/\//i.test(url) && isLoopback(new URL(url))) return realFetch(input, init);
+  return Promise.reject(new Error(`${BLOCK_FETCH}: ${url}`));
 }) as typeof fetch;
 
 // ─── Child-process guard ─────────────────────────────────────────────────────
-// Allow only the current Node.js binary (process.execPath) so tests can spawn
-// deterministic Node sub-processes. Every other command is blocked.
-vi.mock('node:child_process', async (importOriginal) => {
+// Only the current Node.js binary (the node launcher and deterministic Node
+// sub-processes) and the executables a test allowed. A test file that mocks
+// node:child_process itself replaces this guard with its own fake.
+vi.mock('node:child_process', async importOriginal => {
   const cp = await importOriginal<typeof import('node:child_process')>();
 
   function isSafe(cmd: string): boolean {
-    if (cmd === process.execPath) return true;
-    // Allow shell-style commands whose first token is the Node.js executable
-    // (possibly double-quoted for paths with spaces), e.g. `${process.execPath} script.mjs`
-    // or `"${process.execPath}" "script.mjs"`.
+    if (cmd === process.execPath || allowedExecutables.has(cmd)) return true;
+    // Shell-style commands whose first token is the Node.js executable
+    // (possibly double-quoted), e.g. `"${process.execPath}" "script.mjs"`.
     const firstToken = cmd.startsWith('"')
       ? cmd.slice(1, cmd.indexOf('"', 1))
       : (cmd.split(/\s/)[0] ?? '');
-    if (firstToken === process.execPath) return true;
-    if (process.env[LOCAL_PROCESS_OPT_IN] !== '1') return false;
-    return /(?:^|\/)(?:git|bash|zsh|sh)$/.test(cmd);
+    return firstToken === process.execPath;
   }
 
-  const guardedSpawn = ((cmd: string, ...rest: unknown[]) => {
-    if (!isSafe(cmd)) throw new Error(BLOCK_PROCESS);
-    return (cp.spawn as (...a: unknown[]) => unknown)(cmd, ...rest);
-  }) as typeof cp.spawn;
-
-  const guardedSpawnSync = ((cmd: string, ...rest: unknown[]) => {
-    if (!isSafe(cmd)) throw new Error(BLOCK_PROCESS);
-    return (cp.spawnSync as (...a: unknown[]) => unknown)(cmd, ...rest);
-  }) as typeof cp.spawnSync;
+  const guard =
+    <F extends (...args: never[]) => unknown>(original: F): F =>
+    ((cmd: string, ...rest: unknown[]) => {
+      if (!isSafe(cmd)) throw new Error(`${BLOCK_PROCESS}: ${cmd}`);
+      return (original as unknown as (...a: unknown[]) => unknown)(cmd, ...rest);
+    }) as unknown as F;
 
   return {
     ...cp,
-    spawn: guardedSpawn,
-    spawnSync: guardedSpawnSync,
+    spawn: guard(cp.spawn),
+    spawnSync: guard(cp.spawnSync),
+    execFile: guard(cp.execFile),
+    execFileSync: guard(cp.execFileSync),
+    exec: guard(cp.exec),
+    execSync: guard(cp.execSync),
   };
 });

@@ -1,24 +1,24 @@
-import type { Usage } from '@earendil-works/pi-ai';
+import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Type } from 'typebox';
-import { envFlag, envInt } from '../shared/env.js';
-import { formatDuration, shortPath, toolCallCount } from '../shared/format.js';
-import { errorMessage, firstLine, settleWithin } from '../shared/util.js';
+import { formatCost, formatDuration, shortPath, toolCallCount } from '../shared/format.js';
+import { addReply, emptyTotals, errorMessage, firstLine, modelLookup, settleWithin, unpricedModel, type ModelLookup } from '../shared/util.js';
 import { AgentsView } from '../team/panel.js';
-import { newId } from '../team/routing.js';
+import { checkGoal, GOAL_DESCRIPTION, GOAL_MAX_CHARS } from '../team/identity.js';
 import { USER_SENDER, type Team } from '../team/session.js';
 import { teamWorkspace } from '../team/store.js';
 import { timedTool } from '../shared/render.js';
 import { projectTrustNow } from '../shared/trust.js';
-import { doneSummary, renderAgentCall, renderAgentMessage, renderAgentResult, type RunDetails } from './render.js';
-import { routeModel, type ModelRoute } from './model.js';
-import { buildAgentArgs, runSubagent, type Identity } from './process.js';
-import type { AgentProfile } from './profiles.js';
-import { agentScratch, dropEmptyScratch, ReadReports, ReportQueue, RESULT_TYPE, scratchRoot, sweepScratch } from './handoff.js';
+import type { Permission } from '../permission/ask.js';
+import { deniedLabel, doneSummary, renderAgentCall, renderAgentMessage, renderAgentResult, type RunDetails } from './render.js';
+import { claimRun, joinTeam, lingerSeconds, maxSubagents, withIdentity, type AgentRuns, type Run } from './claim.js';
+import { buildAgentArgs, runSubagent, type ChildProgress, type Identity } from './process.js';
+import { askSpawn, type AgentProfile } from './profiles.js';
+import { pendingReportsDir, ReadReports, ReportQueue, RESULT_TYPE, savePendingReport, scratchRoot, sweepScratch, takePendingReports, type Report } from './handoff.js';
 import { saveShot, shotsDir, type Shot } from './screenshots.js';
-import { agentsCommand, stopBackground, type Background, type BackgroundRun } from './command.js';
+import { agentsCommand, stopBackground, type BackgroundRun } from './command.js';
 import type { Subcommand } from '../shared/commands.js';
-import { createWorktree, describePrune, finishWorktree, isolationReport, pruneWorktrees, recordWorktreePid, type Worktree } from './worktree.js';
+import { createWorktree, describePrune, finishWorktree, isolationReport, pendingRefs, pruneWorktrees, recordWorktreePid, type Worktree } from './worktree.js';
 
 /** What the rest of the extension may do with the subagents this session started. */
 export interface AgentControl {
@@ -28,6 +28,8 @@ export interface AgentControl {
   settle(): Promise<unknown>;
   /** Background subagents running now (a session switch would stop them). */
   background(): number;
+  /** Session shutdown's first step: stops every background subagent and waits (bounded) for their reports. Idempotent. */
+  stopAll(): Promise<void>;
   /** `/octocode agents`: list agents, tell, kill, merge; `index.ts` registers it and its `/agents` shortcut. */
   command: Subcommand;
 }
@@ -35,133 +37,11 @@ export interface AgentControl {
 /** Longest accepted task; a runaway task text is refused by schema validation instead of spawning a child. */
 export const MAX_TASK_CHARS = 16_384;
 
-const COLLABORATE_ENV = 'OCTOCODE_SUBAGENT_COLLABORATE';
-
-/** Whether subagents collaborate when a call does not say: `OCTOCODE_SUBAGENT_COLLABORATE` = 1/true/on, else no. */
-export function collaborateByDefault(env: NodeJS.ProcessEnv = process.env): boolean {
-  return envFlag(env, COLLABORATE_ENV);
-}
-
-/** The task a collaborating subagent receives: its own task plus who else is on the team and how to reach them. */
-export function teamTask(task: string, parentId: string, others: Array<[string, string]>): string {
-  const list = others.length > 0 ? others.map(([id, line]) => `- \`${id}\`: ${line}`).join('\n') : '- none yet; `coordinate list` shows teammates that start later.';
-  return `${task}\n\n## Teammates\nYou collaborate with the other subagents that ${parentId} started for the same goal. Running now:\n${list}`;
-}
-
-/**
- * The facts only this child has. They ride in its task, not its system prompt, so every child of one profile shares a
- * cached prompt prefix.
- */
-export function withIdentity(task: string, identity: Pick<Identity, 'id' | 'parentId' | 'scratch'>): string {
-  const parent = identity.parentId ? `\`${identity.parentId}\`` : 'another agent';
-  const scratch = identity.scratch ? `\`${shortPath(identity.scratch)}\`` : '`.octocode/tmp/` in the repository';
-  return `${task}\n\n## You\nYour id is \`${identity.id}\`, working for ${parent}. Your scratch folder, for handoff files and a long report, is ${scratch}.`;
-}
-
 /** How long shutdown waits for stopped background subagents: past the SIGTERM grace, after which they are killed. */
 const SHUTDOWN_WAIT_MS = 6_000;
 
-export const MAX_SUBAGENTS_ENV = 'OCTOCODE_MAX_SUBAGENTS';
-const DEFAULT_MAX_SUBAGENTS = 3;
-
-/** How many subagents may run at once: `OCTOCODE_MAX_SUBAGENTS` (a positive integer), else 3. Many parallel children get messy. */
-export function maxSubagents(env: NodeJS.ProcessEnv = process.env): number {
-  const value = envInt(env, MAX_SUBAGENTS_ENV, DEFAULT_MAX_SUBAGENTS);
-  return value >= 1 ? value : DEFAULT_MAX_SUBAGENTS;
-}
-
-/** The refusal for a call over the limit, or undefined when there is room. */
-export function subagentLimitError(active: Iterable<string>, limit: number): string | undefined {
-  const ids = [...active];
-  if (ids.length < limit) return undefined;
-  return `${ids.length} subagents are already running (${ids.join(', ')}); the limit is ${limit}. Wait for one to finish (background answers arrive as messages), pass the work to a running subagent with \`sendMessage\`, or do it yourself. The limit is set by ${MAX_SUBAGENTS_ENV}.`;
-}
-
-/** State of one agent tool registration; a replaced session starts clean. */
-interface AgentRuns {
-  pi: ExtensionAPI;
-  team: Team;
-  background: Background;
-  /** Foreground runs, so `/agents kill` can stop one without aborting the whole turn. */
-  foreground: Background;
-  reports: ReportQueue;
-  read: ReadReports;
-  /** Subagents running now (foreground and background), by id. */
-  running: Map<string, string | undefined>; // A task line is present once a collaborating run launches.
-  /** Bumped when a session ends: a background run started under an earlier session drops its late report. */
-  session: number;
-}
-
-interface AgentParams {
-  task: string;
-  profile?: string;
-  model?: string;
-  background?: boolean;
-  collaborate?: boolean;
-  isolate?: boolean;
-}
-
 type Outcome = Awaited<ReturnType<typeof runSubagent>>;
 type AgentUpdate = (update: { content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>; details: RunDetails }) => void;
-
-/** A claimed subagent run: who it is, who started it, where it hands files back, and how it gives its slot back. */
-interface Run {
-  identity: Identity;
-  profile: AgentProfile | undefined;
-  /** The model it runs on (the parent's when nothing else routes); `fallback` is the profile's unavailable preference. */
-  route: Extract<ModelRoute, { model?: string }>;
-  /** Why the run starts without the team (its database is unusable), for the result. */
-  teamNote: string;
-  release: () => void;
-}
-
-/**
- * Checks the profile and the subagent limit, then claims a slot. Checked and claimed with no await in between, so
- * parallel calls in one turn cannot overshoot the limit.
- */
-function claimRun(runs: AgentRuns, profiles: Map<string, AgentProfile>, params: AgentParams, ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager' | 'modelRegistry' | 'model'>): Run {
-  const { cwd } = ctx;
-  const profile = params.profile ? profiles.get(params.profile) : undefined;
-  if (params.profile && !profile) throw new Error(`Unknown profile "${params.profile}". Available: ${[...profiles.keys()].join(', ')}`);
-  const overLimit = subagentLimitError(runs.running.keys(), maxSubagents());
-  if (overLimit) throw new Error(overLimit);
-  // An explicit model is strict; a profile's is a preference that falls back to this session's model.
-  const route = routeModel({ explicit: params.model, preferred: profile?.model, available: ctx.modelRegistry?.getAvailable() ?? [], parent: ctx.model });
-  if ('error' in route) throw new Error(route.error);
-  // Joining gives the child its parent's address for sendMessage; without a usable team database it still runs, alone.
-  let parentId: string | undefined;
-  let teamNote = '';
-  try {
-    parentId = runs.team.join().id;
-  } catch (error) {
-    teamNote = `\n\n(Started without the team: ${errorMessage(error)}. It cannot message you or its teammates.)`;
-  }
-  const collaborate = parentId !== undefined && (params.collaborate ?? collaborateByDefault());
-  const identity: Identity = {
-    id: newId(profile?.name ?? 'general'),
-    task: firstLine(params.task).slice(0, 160),
-    parentSession: ctx.sessionManager.getSessionId(),
-    ...(parentId ? { parentId } : {}),
-    ...(collaborate ? { collaborate } : {}),
-  };
-  runs.running.set(identity.id, undefined);
-  const scratch = agentScratch(cwd, identity.id);
-  if (scratch) identity.scratch = scratch;
-  const release = () => {
-    if (!runs.running.delete(identity.id)) return;
-    const kept = scratch && !dropEmptyScratch(scratch);
-    runs.team.rememberFinished(identity.id, `its report (or failure) already reached you${kept ? ` (files it handed back, and its full report when cut, are in ${shortPath(scratch)})` : ''}.`);
-  };
-  return { identity, profile, route, teamNote, release };
-}
-
-/** A collaborating run's task, listing its running teammates (they find the newcomer with `coordinate list`). */
-function joinTeam(runs: AgentRuns, run: Run, task: string): string {
-  const others = [...runs.running].filter((entry): entry is [string, string] => entry[1] !== undefined);
-  const withTeam = teamTask(task, run.identity.parentId ?? 'your parent', others);
-  runs.running.set(run.identity.id, run.identity.task ?? '');
-  return withTeam;
-}
 
 /** An isolated run's private worktree; `finish` commits its changes to the agent's ref and removes it, once, and returns the text for the report. */
 class Isolation {
@@ -189,12 +69,16 @@ class Isolation {
   }
 }
 
-/** Progress of a run into `details` (tool lines, usage, the latest screenshot), mirrored to `onUpdate`. */
-function tracker(identity: Identity, details: RunDetails) {
+/**
+ * Progress of a run into `details` (tool lines, usage, the latest screenshot), mirrored to `onUpdate`. A reply from a model
+ * without pricing (looked up in this session's registry) marks the run's cost `n/a`.
+ */
+function tracker(identity: Identity, details: RunDetails, find: ModelLookup) {
   const dir = shotsDir();
   let shots = 0;
   let latest: Shot | undefined;
-  return (onUpdate: AgentUpdate | undefined) => (line: string | undefined, usage: Usage, image?: { data: string; mimeType: string }) => {
+  return (onUpdate: AgentUpdate | undefined) => ({ activity: line, usage, reply, image, denied }: ChildProgress) => {
+    if (denied) details.denied = (details.denied ?? 0) + 1;
     if (line) {
       details.toolCalls += 1;
       details.activity = [...details.activity.slice(-4), line];
@@ -203,51 +87,66 @@ function tracker(identity: Identity, details: RunDetails) {
       latest = saveShot(dir, identity.id, (shots += 1), image);
       details.shot = latest.path;
     }
-    // Cached prompt tokens are still prompt tokens: without them a cached run shows ↑3.
-    details.input = usage.input + usage.cacheRead + usage.cacheWrite;
-    details.output = usage.output;
+    // `usage` is the run's total so far: the details restart from it. Cached prompt tokens count in ↑.
+    const unpriced = details.unpriced || unpricedModel(reply, find) !== undefined;
+    Object.assign(details, emptyTotals());
+    addReply(details, usage, unpriced);
     const text = { type: 'text' as const, text: line ?? details.activity.at(-1) ?? 'working' };
     // Partial results only reach the user's screen, so the latest screenshot is drawn there but never enters the model's context.
     onUpdate?.({ content: image && latest?.data ? [text, { type: 'image', data: latest.data, mimeType: latest.mimeType }] : [text], details: { ...details } });
   };
 }
 
+/** A run's details as it starts. */
+function runDetails(run: Run): RunDetails {
+  const { model, fallback } = run.route;
+  return {
+    id: run.identity.id, profile: run.identity.role, goal: run.identity.goal, toolCalls: 0, activity: [], input: 0, cacheRead: 0, output: 0, cost: 0, unpriced: false, startedAt: Date.now(), status: 'running',
+    ...(model ? { model } : {}), ...(fallback ? { fallback } : {}),
+  };
+}
+
 const withShot = (details: RunDetails, text: string) => (details.shot ? `${text}\n\n(Last screenshot: ${shortPath(details.shot)})` : text);
 
 /** Runs the subagent in the background; its report (or why it stopped) arrives as a message, and then it gives its slot back. */
-function startBackground(runs: AgentRuns, run: Run, details: RunDetails, task: string, launch: (signal: AbortSignal) => Promise<Outcome>, finish: () => Promise<string>): void {
+function startBackground(
+  runs: AgentRuns, run: Run, details: RunDetails, task: string, launch: (signal: AbortSignal) => Promise<Outcome>, finish: () => Promise<string>, piSession: string,
+  linger?: () => string,
+): void {
   const { background, read } = runs;
   const { identity } = run;
   const session = runs.session;
-  // A report that arrives after its session ended has nobody to read it.
-  const reports = { add: (report: Parameters<ReportQueue['add']>[0]) => (session === runs.session ? runs.reports.add(report) : undefined) };
+  // A report that arrives after its session ended (a reload, a switch) is kept for the next start of that Pi session.
+  const reports = { add: (report: Report) => (session === runs.session ? runs.reports.add(report) : savePendingReport(pendingReportsDir(piSession), identity.id, report)) };
   const controller = new AbortController();
   const entry: BackgroundRun = { controller, done: Promise.resolve() };
   background.set(identity.id, entry);
   read.track(identity.id, identity.scratch);
-  // The parent may have many runs going: every report names the task it answers.
-  const taskLine = identity.task ? `\nTask: ${identity.task}` : '';
+  // The parent may have many runs going: every report names the agent, its role and its goal.
+  const who = `${identity.id} (${identity.role}: ${identity.goal})`;
   // For the renderer: the expanded report shows the whole prompt.
-  const shown = { task };
+  const shown = { task, goal: identity.goal ?? '', profile: identity.role ?? '' };
   entry.done = (async () => {
     try {
       const outcome = await launch(controller.signal);
       const note = await finish();
       details.seconds = Math.round((Date.now() - details.startedAt) / 1000);
-      const cost = outcome.usage.cost.total > 0 ? ` · $${outcome.usage.cost.total.toFixed(2)}` : '';
-      const head = outcome.error ? `Background subagent ${identity.id} failed: ${outcome.error}${taskLine}` : `Background subagent ${identity.id} finished (${formatDuration(Date.now() - details.startedAt)} · ${toolCallCount(details.toolCalls)}${cost}):${taskLine}`;
+      const head = outcome.error ? `Background subagent ${who} failed: ${outcome.error}` : `Background subagent ${who} finished (${[formatDuration(Date.now() - details.startedAt), toolCallCount(details.toolCalls), deniedLabel(details), formatCost(details)].filter(Boolean).join(' · ')}):`;
       const durationMs = Date.now() - details.startedAt;
       const summary = outcome.error ? `Failed: ${firstLine(outcome.error)}` : doneSummary(details, durationMs);
       const alreadyRead = read.consume(identity.id);
       const next = outcome.error ? `\n${FAILED_NEXT}${outcome.text ? PARTIAL_UNVERIFIED : ''}` : '';
-      reports.add({ content: `${head}${next}\n${withShot(details, outcome.text || '(no text)')}${note}`, details: { id: identity.id, status: outcome.error ? 'failed' : 'done', summary, durationMs, ...shown }, wake: !alreadyRead });
+      // A successful run that lingers stays reachable: the report says for how long and how to use or end it.
+      const reachable = outcome.error ? '' : (linger?.() ?? '');
+      reports.add({ content: `${head}${next}\n${withShot(details, outcome.text || '(no text)')}${note}${reachable}`, details: { id: identity.id, status: outcome.error ? 'failed' : 'done', summary, durationMs, ...shown }, wake: !alreadyRead });
     } catch (error) {
       const note = await finish();
       read.consume(identity.id);
       const by = entry.stoppedBy;
       const reason = by === USER_SENDER ? 'cancelled by the user' : by ? `stopped by ${by}` : `stopped: ${errorMessage(error)}`;
+      const reachable = by === 'permission change' ? (linger?.() ?? '') : '';
       reports.add({
-        content: `Background subagent ${identity.id} ${reason}${taskLine}${note}`,
+        content: `Background subagent ${who} ${reason}${note}${reachable}`,
         details: { id: identity.id, status: 'stopped', summary: reason.charAt(0).toUpperCase() + reason.slice(1), durationMs: Date.now() - details.startedAt, ...shown, ...(by ? { requested: true } : {}) },
         wake: !by,
       });
@@ -296,31 +195,58 @@ async function runForeground(
   return { content: [{ type: 'text' as const, text: `${withShot(details, outcome.text || '(subagent returned no text)')}${note}` }], details, usage: outcome.usage };
 }
 
-export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<string, AgentProfile>, team: Team): AgentControl {
+export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<string, AgentProfile>, team: Team, permission: Permission): AgentControl {
   pi.registerMessageRenderer(RESULT_TYPE, renderAgentMessage);
   // Per registration, not per module: a replaced session starts clean.
   const runs: AgentRuns = { pi, team, background: new Map(), foreground: new Map(), reports: new ReportQueue(pi), read: new ReadReports(), running: new Map(), session: 0 };
   const { background } = runs;
-  pi.on('tool_result', async (event, ctx) => {
-    if (!event.isError && background.size > 0) runs.read.observe(event.toolName, event.input, ctx.cwd);
-    return undefined;
-  });
+  pi.on('tool_result', async (event, ctx) => void (!event.isError && background.size > 0 && runs.read.observe(event.toolName, event.input, ctx.cwd)));
   const panel = new AgentsView(team);
-  pi.on('session_shutdown', async (_event, ctx) => {
+  // Finished background runs still reachable (OCTOCODE_SUBAGENT_LINGER_SECONDS): a message resumes their saved conversation.
+  const lingering = new Map<string, { until: number; run: Run; ctx: ExtensionContext }>();
+  const resuming = new Set<string>();
+  let launching = new AbortController();
+  const cancelLaunches = () => {
+    launching.abort();
+    launching = new AbortController();
+  };
+  /** Where a run that will linger saves its conversation (its scratch folder, under its own name); undefined otherwise. */
+  const savedSession = (run: Run, eligible: boolean) =>
+    eligible && lingerSeconds() > 0 && run.identity.scratch ? { dir: path.join(run.identity.scratch, 'session'), id: run.identity.id } : undefined;
+  /** Called when the run reported: it stays reachable for the window, and the report says so. */
+  const lingerFor = (run: Run, ctx: ExtensionContext) => (): string => {
+    const seconds = lingerSeconds();
+    lingering.set(run.identity.id, { until: Date.now() + seconds * 1000, run, ctx });
+    return `\n\n${run.identity.id} stays reachable for ${seconds} s: \`sendMessage\` to it continues this conversation; \`coordinate stop ${run.identity.id}\` ends that.`;
+  };
+  const stopAll = async (by = 'session shutdown'): Promise<void> => {
     // Wait (bounded) for stopped children to file their reports; a named stop files them without starting a turn.
-    const stopping = [...background].map(([id, entry]) => (stopBackground(background, id, 'session shutdown'), entry.done));
+    for (const id of runs.foreground.keys()) stopBackground(runs.foreground, id, by, 'subagent');
+    const stopping = [...background].map(([id, entry]) => (stopBackground(background, id, by), entry.done));
     await settleWithin(Promise.all(stopping), SHUTDOWN_WAIT_MS);
     runs.reports.flush();
-    // A child still closing keeps its entry (and its slot) until it exits; its report then goes nowhere.
+  };
+  permission.onRevoke(() => {
+    cancelLaunches();
+    void stopAll('permission change');
+  });
+  pi.on('session_shutdown', async (_event, ctx) => {
+    cancelLaunches();
+    // Usually done already: index.ts runs it before the team leaves.
+    await stopAll();
+    // A child still closing keeps its entry (and its slot) until it exits; its report waits for this session's next start.
     runs.session += 1;
+    lingering.clear();
     panel.stop(ctx);
   });
   // Worktrees left by a Pi process that died: their changes are saved to the agent's ref, then the worktree goes (kept when saving fails).
   pi.on('session_start', async (_event, ctx) => {
     panel.start(ctx);
+    // Reports of background runs that finished after this session last ended (a reload) arrive now, once.
+    for (const report of takePendingReports(pendingReportsDir(ctx.sessionManager.getSessionId()))) runs.reports.add(report);
     // Off the start path: it lists and deletes directories.
     const root = scratchRoot(ctx.cwd);
-    setImmediate(() => sweepScratch(root));
+    setImmediate(() => void sweepScratch(root));
     void pruneWorktrees(ctx.cwd)
       .then(describePrune, (error: unknown) => ({ text: `Could not prune orphaned subagent worktrees: ${errorMessage(error)}`, level: 'warning' as const }))
       .then((note) => {
@@ -334,11 +260,12 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     label: 'Agent',
     description:
       'Delegate a self-contained task to a fresh Pi session that does not inherit this conversation. Choose a profile by its task and capabilities. ' +
-      `Foreground calls return the report; background calls return an agent id and deliver the report automatically later. Independent calls can run in parallel, at most ${maxSubagents()} at once (background included); extra calls are refused. ` +
+      `Foreground calls return reports; background calls return the agent's name and send a report later. Parallel calls share a limit of ${maxSubagents()} agents; excess calls are refused. ` +
       'Reports include verification and blockers; long reports name their full file. Review the result before integrating it.',
     promptSnippet: 'Delegate bounded work to a subagent',
     parameters: Type.Object({
-      task: Type.String({ description: 'Goal, bounded scope, paths, evidence and decisions the subagent cannot infer, existing authorization and required output', maxLength: MAX_TASK_CHARS, minLength: 1 }),
+      goal: Type.String({ description: GOAL_DESCRIPTION, minLength: 1, maxLength: GOAL_MAX_CHARS }),
+      task: Type.String({ description: 'Bounded scope, paths, evidence and decisions the subagent cannot infer, existing authorization and required output', maxLength: MAX_TASK_CHARS, minLength: 1 }),
       profile: Type.Optional(Type.String({ description: 'Profile name from the active Profiles list; omit for a general-purpose subagent. Profiles set instructions, tool exclusions and MCP access' })),
       model: Type.Optional(Type.String({ description: 'Model override: provider/id or a bare id, optionally with a :thinking level. Refused when unavailable; omit to use the profile\'s model, else this session\'s' })),
       background: Type.Optional(Type.Boolean({ description: 'Return at once for long or parallel work; the report arrives as a message. `sendMessage` redirects it; `coordinate stop` ends it' })),
@@ -346,46 +273,93 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       isolate: Type.Optional(Type.Boolean({ description: 'Work in a private git worktree; changes land on refs/octocode/pi/<id>, not in this tree. The report names the ref: ask the user to run `/agents merge <id>` to bring them in' })),
     }),
     async execute(_id, params, signal, onUpdate, ctx) {
-      const run = claimRun(runs, getProfiles(), params, ctx);
+      const launchSignal = signal ? AbortSignal.any([signal, launching.signal]) : launching.signal;
+      launchSignal.throwIfAborted();
+      const goal = checkGoal(params.goal);
+      // The spawn ask first (claimRun refuses an unknown profile): a denied spawn claims and starts nothing.
+      const grants = params.profile && !getProfiles().has(params.profile) ? [] : await askSpawn(permission, ctx, getProfiles().get(params.profile ?? ''), params.task, launchSignal);
+      // An isolated run's name must not repeat a saved ref: `/agents merge <name>` would be ambiguous.
+      const refs = params.isolate ? await pendingRefs(ctx.cwd) : [];
+      launchSignal.throwIfAborted();
+      const run = claimRun(runs, getProfiles(), { ...params, goal }, ctx, refs);
+      // A child cannot ask anyone: it also gets every kind the user allowed for this session.
+      run.identity.permission = { mode: permission.mode, grants: [...new Set([...grants, ...permission.childGrants()])] };
       const isolation = new Isolation(run.identity.id);
       let finalized: Promise<string> | undefined;
       const finish = () => (finalized ??= isolation.finish().finally(run.release));
       let handedOff = false;
       try {
         const cwd = params.isolate ? await isolation.start(ctx, run.identity) : ctx.cwd;
+        launchSignal.throwIfAborted();
         const worktree = isolation.worktree;
         const warning = `${worktree?.warning ? `\n\n${worktree.warning}` : ''}${run.teamNote}`;
         const onSpawn = worktree ? (pid: number) => recordWorktreePid(worktree, pid) : undefined;
         const own = withIdentity(params.task, run.identity);
         const task = run.identity.collaborate ? joinTeam(runs, run, own) : own;
-        const { model, fallback } = run.route;
-        const details: RunDetails = {
-          id: run.identity.id, profile: run.profile?.name ?? 'general', toolCalls: 0, activity: [], input: 0, output: 0, startedAt: Date.now(), status: 'running',
-          ...(model ? { model } : {}), ...(fallback ? { fallback } : {}),
-        };
-        const track = tracker(run.identity, details);
-        const args = buildAgentArgs(task, run.profile, run.route.model);
+        const details = runDetails(run);
+        const track = tracker(run.identity, details, modelLookup(ctx));
+        const session = savedSession(run, params.background === true && !params.isolate);
+        const args = buildAgentArgs(task, run.profile, run.route.model, undefined, undefined, session);
         const launch = (runSignal: AbortSignal | undefined, update: AgentUpdate | undefined) => runSubagent(args, cwd, run.profile, run.identity, runSignal, track(update), onSpawn);
-        if (!params.background) return await runForeground(runs, run, details, (runSignal) => launch(runSignal, onUpdate), finish, warning, signal);
-        startBackground(runs, run, details, params.task, (runSignal) => launch(runSignal, undefined), finish);
+        if (!params.background) return await runForeground(runs, run, details, (runSignal) => launch(runSignal, onUpdate), finish, warning, launchSignal);
+        startBackground(runs, run, details, params.task, (runSignal) => launch(runSignal, undefined), finish, ctx.sessionManager.getSessionId(), session ? lingerFor(run, ctx) : undefined);
         handedOff = true;
         details.status = 'background';
-        return { content: [{ type: 'text', text: `Started ${run.identity.id} in the background; its report arrives as a message.${warning}` }], details };
+        return { content: [{ type: 'text', text: `Started ${run.identity.id} (${run.identity.role}: ${goal}) in the background; its report arrives as a message.${warning}` }], details };
       } finally {
-        if (!handedOff) {
-          // A failure before the run started still removes the worktree.
-          await finish();
-        }
+        // A failure before the run started still removes the worktree.
+        if (!handedOff) await finish();
       }
     },
     renderCall: renderAgentCall,
     renderResult: renderAgentResult,
   }));
+  /** A message to a lingering run, from its parent or the user, resumes it in the background; undefined when it does not linger. */
+  const resume = async (id: string, text: string, from: string, signal?: AbortSignal): Promise<string | undefined> => {
+    const prior = lingering.get(id);
+    if (!prior || (from !== prior.run.identity.parentId && from !== USER_SENDER)) return undefined;
+    if (Date.now() > prior.until) {
+      lingering.delete(id);
+      return undefined;
+    }
+    if (resuming.has(id)) throw new Error(`${id} is already awaiting permission to resume.`);
+    const launchSignal = signal ? AbortSignal.any([signal, launching.signal]) : launching.signal;
+    launchSignal.throwIfAborted();
+    const { run: last, ctx } = prior;
+    const params = { goal: last.identity.goal, task: text, background: true, ...(last.profile ? { profile: last.profile.name } : {}) };
+    resuming.add(id);
+    let run: Run | undefined;
+    try {
+      const grants = await askSpawn(permission, ctx, getProfiles().get(params.profile ?? ''), text, launchSignal);
+      launchSignal.throwIfAborted();
+      if (lingering.get(id) !== prior) throw new Error(`Subagent ${id} is no longer available to resume.`);
+      // Keep the saved conversation and model, but renew authorization from the parent's current policy.
+      const identity = { ...last.identity, permission: { mode: permission.mode, grants: [...new Set([...grants, ...permission.childGrants()])] } };
+      run = { ...claimRun(runs, getProfiles(), params, ctx, [], identity), route: last.route };
+      const details = runDetails(run);
+      const track = tracker(run.identity, details, modelLookup(ctx));
+      const message = `Follow-up from ${from === USER_SENDER ? 'the user' : 'your parent'}:\n${text}`;
+      const args = buildAgentArgs(message, run.profile, run.route.model, undefined, undefined, savedSession(run, true));
+      const resumed = run;
+      const launch = (signal: AbortSignal) => runSubagent(args, ctx.cwd, resumed.profile, resumed.identity, signal, track(undefined));
+      startBackground(runs, run, details, text, launch, () => Promise.resolve('').finally(resumed.release), ctx.sessionManager.getSessionId(), lingerFor(run, ctx));
+      lingering.delete(id);
+    } catch (error) {
+      run?.release();
+      throw error;
+    } finally {
+      resuming.delete(id);
+    }
+    return `Resumed ${id} with your message; its reply arrives as a background report.`;
+  };
+  team.setResumer(resume);
   return {
-    stop: (id, by) => stopBackground(background, id, by),
+    // A lingering run has nothing running: stopping it ends its window.
+    stop: (id, by) => (lingering.delete(id) ? undefined : stopBackground(background, id, by)),
     // Reports still inside their batching window go out now: a held headless run hands them to its next turn.
     settle: () => Promise.all([...background.values()].map((entry) => entry.done)).then(() => runs.reports.flush()),
     background: () => background.size,
+    stopAll,
     command: agentsCommand(team, background, runs.foreground),
   };
 }

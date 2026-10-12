@@ -561,47 +561,52 @@ mod tests {
         assert_eq!(LineIndex::new("").content_len(), 1);
     }
 
+    /// Byte offsets map to a (line, UTF-16 column) position.
     #[test]
-    fn line_index_byte_to_position_ascii() {
-        let src = "line1\nline2\nline3";
-        let index = LineIndex::tree_sitter(src);
-        assert_eq!(index.byte_to_position(src, 0), (0, 0));
-        assert_eq!(index.byte_to_position(src, 3), (0, 3)); // inside "line1"
-        assert_eq!(index.byte_to_position(src, 6), (1, 0)); // start of "line2"
-        assert_eq!(index.byte_to_position(src, 12), (2, 0)); // start of "line3"
-    }
-
-    #[test]
-    fn line_index_byte_to_position_multibyte() {
-        // "a🌍b\ncd": line 0 is "a🌍b" (byte len 6), line 1 is "cd".
-        let src = "a🌍b\ncd";
-        let index = LineIndex::tree_sitter(src);
-        assert_eq!(index.byte_to_position(src, 0), (0, 0)); // 'a'
-        assert_eq!(index.byte_to_position(src, 1), (0, 1)); // start of 🌍
-        assert_eq!(index.byte_to_position(src, 5), (0, 3)); // 'b', after 2-unit emoji
-        assert_eq!(index.byte_to_position(src, 7), (1, 0)); // start of "cd"
-    }
-
-    #[test]
-    fn line_index_byte_to_position_clamps_beyond_length() {
-        let src = "hi";
-        let index = LineIndex::tree_sitter(src);
-        assert_eq!(index.byte_to_position(src, 100), (0, 2));
-    }
-
-    #[test]
-    fn line_index_byte_to_position_snaps_mid_multibyte_offset_down() {
-        // A byte offset landing inside 🌍 (bytes 1..5) must report the column of
-        // the character it falls in — 🌍 starts at UTF-16 column 1 — rather than
-        // collapse to column 0 as a non-char-boundary slice silently would.
-        let src = "a🌍b\ncd";
-        let index = LineIndex::tree_sitter(src);
-        assert_eq!(index.byte_to_position(src, 2), (0, 1));
-        assert_eq!(index.byte_to_position(src, 3), (0, 1));
-        assert_eq!(index.byte_to_position(src, 4), (0, 1));
-        // Character boundaries are unaffected by the snap.
-        assert_eq!(index.byte_to_position(src, 1), (0, 1));
-        assert_eq!(index.byte_to_position(src, 5), (0, 3));
+    fn line_index_byte_to_position_cases() {
+        // (case, source, byte offset → (line, column) pairs)
+        type Case = (&'static str, &'static str, &'static [(u32, (u32, u32))]);
+        let cases: [Case; 4] = [
+            (
+                "ascii",
+                "line1\nline2\nline3",
+                // inside "line1", start of "line2", start of "line3"
+                &[(0, (0, 0)), (3, (0, 3)), (6, (1, 0)), (12, (2, 0))],
+            ),
+            (
+                // Line 0 is "a🌍b" (byte len 6), line 1 is "cd".
+                "multibyte",
+                "a🌍b\ncd",
+                // 'a', start of 🌍, 'b' after the 2-unit emoji, start of "cd"
+                &[(0, (0, 0)), (1, (0, 1)), (5, (0, 3)), (7, (1, 0))],
+            ),
+            ("clamps beyond length", "hi", &[(100, (0, 2))]),
+            (
+                // A byte offset landing inside 🌍 (bytes 1..5) must report the column of
+                // the character it falls in — 🌍 starts at UTF-16 column 1 — rather than
+                // collapse to column 0 as a non-char-boundary slice silently would.
+                // Character boundaries (1 and 5) are unaffected by the snap.
+                "snaps a mid-multibyte offset down",
+                "a🌍b\ncd",
+                &[
+                    (2, (0, 1)),
+                    (3, (0, 1)),
+                    (4, (0, 1)),
+                    (1, (0, 1)),
+                    (5, (0, 3)),
+                ],
+            ),
+        ];
+        for (case, src, expected) in cases {
+            let index = LineIndex::tree_sitter(src);
+            for &(byte, position) in expected {
+                assert_eq!(
+                    index.byte_to_position(src, byte),
+                    position,
+                    "{case}: byte {byte}"
+                );
+            }
+        }
     }
 
     #[test]

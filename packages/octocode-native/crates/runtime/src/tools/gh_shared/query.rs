@@ -1,6 +1,6 @@
 //! GitHub search query syntax shared by ghSearchRepo and ghSearchCode,
 //! matching the canonical provider query builders.
-use crate::providers::github::{ProviderError, SearchName, qualifier_value, validate_search_name};
+use crate::providers::github::qualifier_value;
 
 /// Emit `key:value` as one term (quoted when the value holds whitespace,
 /// quotes, or parentheses) so it cannot split into stray keywords.
@@ -11,18 +11,6 @@ pub(crate) fn push(parts: &mut Vec<String>, key: &str, value: Option<&str>) {
             parts.push(format!("{key}:{value}"));
         }
     }
-}
-
-/// Owner and repository names become `repo:`/`user:` scopes; reject any value
-/// that is not a GitHub name before it can rewrite the scope.
-pub(crate) fn validate_scope(owner: Option<&str>, repo: Option<&str>) -> Result<(), ProviderError> {
-    if let Some(owner) = owner {
-        validate_search_name("owner", owner, SearchName::Owner)?;
-    }
-    if let Some(repo) = repo {
-        validate_search_name("repo", repo, SearchName::Repository)?;
-    }
-    Ok(())
 }
 
 /// Range qualifiers (`>100`, `a..b`) never contain meaningful whitespace;

@@ -672,7 +672,7 @@ mod tests {
         );
     }
 
-    /// SH4: a rejected qualifier term lists the keys the field declares.
+    /// A rejected qualifier term lists the keys the field declares.
     #[test]
     fn rejected_qualifier_lists_the_declared_keys() {
         let schema = json!({"type":"string","pattern":"^\\s*(?:(?:author|label):(?:\"[^\"]+\"|[^\\s\"]+)\\s*)+$",

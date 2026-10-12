@@ -246,25 +246,45 @@ mod tests {
         assert_eq!(*tracker.count_rx.borrow(), MAX_ACTIVE_PROGRESS_TOKENS);
     }
 
+    /// How long `wait_until_idle` waits, and what it reports, on paused time.
     #[tokio::test(start_paused = true)]
-    async fn progress_tracker_settle_is_bounded_by_caller_timeout() {
-        let tracker = ProgressTracker::new();
-        let start = Instant::now();
-        let readiness = tracker.wait_until_idle(150).await;
-        assert_eq!(start.elapsed(), Duration::from_millis(150));
-        // Never saw progress -> only the settle window elapsed.
-        assert_eq!(readiness, Readiness::SilentServer);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn progress_tracker_waits_full_settle_when_no_progress_and_ample_timeout() {
-        // A server that indexes WITHOUT progress events gets the conservative
-        // settle window, not an aggressive 100 ms one.
-        let tracker = ProgressTracker::new();
-        let start = Instant::now();
-        let readiness = tracker.wait_until_idle(10_000).await;
-        assert_eq!(start.elapsed(), Duration::from_millis(2_000));
-        assert_eq!(readiness, Readiness::SilentServer);
+    async fn progress_tracker_wait_is_bounded_by_settle_and_caller_timeout() {
+        let cases = [
+            // Never saw progress -> only the settle window elapsed.
+            (
+                "settle is bounded by the caller timeout",
+                None,
+                150,
+                150,
+                Readiness::SilentServer,
+            ),
+            // A server that indexes WITHOUT progress events gets the conservative
+            // settle window, not an aggressive 100 ms one.
+            (
+                "full settle when no progress and ample timeout",
+                None,
+                10_000,
+                2_000,
+                Readiness::SilentServer,
+            ),
+            (
+                "times out when a token never ends",
+                Some("stuck"),
+                300,
+                300,
+                Readiness::Timeout,
+            ),
+        ];
+        for (case, token, timeout_ms, elapsed_ms, expected) in cases {
+            let tracker = ProgressTracker::new();
+            if let Some(token) = token {
+                tracker.on_begin(token.to_owned()).await;
+            }
+            let start = Instant::now();
+            let readiness = tracker.wait_until_idle(timeout_ms).await;
+            assert_eq!(start.elapsed(), Duration::from_millis(elapsed_ms), "{case}");
+            assert_eq!(readiness, expected, "{case}");
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -309,16 +329,6 @@ mod tests {
             "one status token, not one per report"
         );
         assert_eq!(tracker.wait_until_idle(300).await, Readiness::Timeout);
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn progress_tracker_times_out_when_token_never_ends() {
-        let tracker = ProgressTracker::new();
-        tracker.on_begin("stuck".to_owned()).await;
-        let start = Instant::now();
-        let readiness = tracker.wait_until_idle(300).await;
-        assert_eq!(start.elapsed(), Duration::from_millis(300));
-        assert_eq!(readiness, Readiness::Timeout);
     }
 
     #[tokio::test(start_paused = true)]

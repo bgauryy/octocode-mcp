@@ -10,6 +10,9 @@
 # Writes judge/<armA>~<armB>/p<pass>-<Qn>.md (verdict ending in a ```json score block) and
 # appends the X/Y map to judge/<armA>~<armB>/MAP.secret.txt.
 # Env: JUDGE_PROVIDER (default guy-provider-openai), JUDGE_MODEL (default gpt-5.5).
+#      JUDGE_RUNNER=codex: codex exec judge (model JUDGE_MODEL, default gpt-5.5; workspace-write
+#      sandbox with network in an empty temp cwd, gh behind the guard; recorded in
+#      judge/<pair>/JUDGE.txt).
 set -euo pipefail
 CAMP="$(cd "$1" && pwd)"; A="$2"; B="$3"; PASS="$4"; Q="$5"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -81,6 +84,23 @@ if [ "$QDIR" = local-questions ]; then   # read-only git/find for the local judg
   export PATH="$HERE/guard-local:$PATH"
 fi
 cd "$DIR"
+if [ "${JUDGE_RUNNER:-pi}" = codex ]; then
+  CODEX="${CODEX_BIN:-$(command -v codex || echo /Applications/Codex.app/Contents/Resources/codex-cli/bin/codex)}"
+  MODEL="${JUDGE_MODEL:-gpt-5.5}"
+  echo "runner=codex model=$MODEL codex=$("$CODEX" --version 2>/dev/null)" > "$DIR/JUDGE.txt"
+  for attempt in 1 2 3; do
+    WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/bench-judge-XXXXXX")"
+    { cat "$REF/JUDGING.md"; echo; cat "$REF/example-verdict.md"; echo; echo '---'; echo; printf '%s\n' "$PROMPT"; } > "$WORKDIR/prompt.md"
+    "$CODEX" exec --ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules \
+      -s workspace-write -c sandbox_workspace_write.network_access=true -m "$MODEL" -C "$WORKDIR" \
+      -o "$DIR/p$PASS-$Q.md" - < "$WORKDIR/prompt.md" > "$DIR/p$PASS-$Q.stderr.log" 2>&1 || true
+    rm -rf "$WORKDIR"
+    if grep -q '```json' "$DIR/p$PASS-$Q.md" 2>/dev/null; then echo "$A~$B p$PASS $Q judged"; exit 0; fi
+    sleep $((attempt * 30))
+  done
+  echo "$A~$B p$PASS $Q NO VERDICT ($(tail -c 120 "$DIR/p$PASS-$Q.stderr.log" | tr '\n' ' '))"
+  exit 1
+fi
 # A provider hiccup (connection error, empty reply) is retried with backoff; a judge that
 # still returns no ```json verdict is reported, never scored.
 for attempt in 1 2 3; do

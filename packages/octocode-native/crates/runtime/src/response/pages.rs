@@ -291,6 +291,18 @@ pub(crate) fn counted(count: u64, singular: &str, plural: &str) -> String {
     format!("{count} {}", if count == 1 { singular } else { plural })
 }
 
+/// The first `limit` of `names` joined with `, `, then the count of the
+/// rest: `a, b, +3 more`.
+pub(crate) fn first_named(names: impl IntoIterator<Item = String>, limit: usize) -> String {
+    let mut names = names.into_iter();
+    let mut shown = names.by_ref().take(limit).collect::<Vec<_>>();
+    let rest = names.count();
+    if rest > 0 {
+        shown.push(format!("+{rest} more"));
+    }
+    shown.join(", ")
+}
+
 pub(crate) fn more(count: u64, singular: &str, plural: &str) -> String {
     format!(
         "{count} more {}",
@@ -638,6 +650,11 @@ impl PageFacts {
         self
     }
 
+    /// Whether a later page holds more.
+    pub(crate) fn has_more(self) -> bool {
+        self.has_more
+    }
+
     /// The `pagination` block.
     pub(crate) fn to_value(self) -> Value {
         let mut block = Map::new();
@@ -667,21 +684,36 @@ pub(crate) fn slice_page<T: Clone>(
     page: usize,
     page_size: usize,
 ) -> (Vec<T>, PageFacts) {
+    let (window, facts) = page_window(items.len(), page, page_size);
+    (items[window].to_vec(), facts)
+}
+
+/// The index range of one count-cut page over `len` items, and its facts
+/// (see [`slice_page`]); a page past the end is an empty range.
+pub(crate) fn page_window(
+    len: usize,
+    page: usize,
+    page_size: usize,
+) -> (std::ops::Range<usize>, PageFacts) {
     let page = page.max(1);
     let size = page_size.max(1);
-    let facts = PageFacts::counted(page, size, items.len());
+    let facts = PageFacts::counted(page, size, len);
     let past_end = facts.total_pages.is_some_and(|pages| page > pages);
-    let start = (page - 1).saturating_mul(size);
-    let rows = items.iter().skip(start).take(size).cloned().collect();
-    (rows, facts.out_of_range(past_end))
+    let start = (page - 1).saturating_mul(size).min(len);
+    let end = start.saturating_add(size).min(len);
+    (start..end, facts.out_of_range(past_end))
 }
+
+/// Cursor keys a tool's pagination block carries to the response stage,
+/// which moves them onto `next` (see [`slim_pagination`]).
+const CURSOR_KEYS: [&str; 3] = ["nextPage", "snapshot", "resultId"];
 
 /// One pagination block, one shape for every tool and page: where the page
 /// stands, its size, what is known of the total and whether more exists.
 /// The cursor (`nextPage`, `snapshot`, `resultId`) rides `next`; a false
 /// cap flag asserts nothing, and a true one repeats `providerLimit`.
 pub(super) fn slim_pagination(block: &mut Map<String, Value>, limited: bool) {
-    for key in ["nextPage", "snapshot", "resultId"] {
+    for key in CURSOR_KEYS {
         block.remove(key);
     }
     match block.get("totalItemsCapped").and_then(Value::as_bool) {
@@ -1300,5 +1332,108 @@ mod tests {
             PageFacts::sized(1, 4, 90, true).to_value().to_string(),
             r#"{"currentPage":1,"totalPages":4,"totalItems":90,"hasMore":true}"#
         );
+    }
+
+    /// Keys any branch of the shared output `pagination` schema declares,
+    /// for every tool, plus the cursor keys the stage moves onto `next`.
+    fn declared_pagination_keys() -> std::collections::BTreeMap<&'static str, Vec<String>> {
+        ToolId::ALL
+            .iter()
+            .filter_map(|tool| {
+                let contract = crate::contracts::tool_contract(*tool).expect("tool contract");
+                let pagination = contract["outputSchema"]["$defs"].get("OutputPagination")?;
+                let mut keys = pagination["anyOf"]
+                    .as_array()
+                    .map_or_else(|| vec![pagination], |branches| branches.iter().collect())
+                    .into_iter()
+                    .flat_map(|branch| branch["properties"].as_object().into_iter().flatten())
+                    .map(|(key, _)| key.clone())
+                    .collect::<Vec<_>>();
+                assert!(
+                    !keys.is_empty(),
+                    "{} declares output pagination",
+                    tool.as_str()
+                );
+                keys.extend(super::CURSOR_KEYS.map(str::to_owned));
+                Some((tool.as_str(), keys))
+            })
+            .collect()
+    }
+
+    /// Every key native writes into a response `pagination` block is one the
+    /// contract declares for every tool (the block is one shared schema): a
+    /// `PageFacts` block with every fact set, and every literal write
+    /// `…["pagination"]["key"] =` or through a `get_mut("pagination")`
+    /// binding in the runtime's non-test sources.
+    #[test]
+    fn every_emitted_pagination_key_is_declared_by_the_contract() {
+        let declared = declared_pagination_keys();
+        assert!(
+            declared.len() > 10,
+            "tools with output pagination: {declared:?}"
+        );
+        let mut emitted = PageFacts::counted(2, 5, 40)
+            .out_of_range(true)
+            .to_value()
+            .as_object()
+            .expect("block")
+            .keys()
+            .map(|key| (key.clone(), "PageFacts".to_owned()))
+            .collect::<Vec<_>>();
+        let direct = regex::Regex::new(r#"\["pagination"\]\["(\w+)"\]\s*=[^=]"#).expect("regex");
+        let binding = regex::Regex::new(r#"let Some\((\w+)\) = [^;{]*get_mut\("pagination"\)"#)
+            .expect("regex");
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut dirs = vec![src];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).expect("src dir") {
+                let path = entry.expect("entry").path();
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_default();
+                if path.is_dir() {
+                    if name != "tests" {
+                        dirs.push(path);
+                    }
+                    continue;
+                }
+                if !name.ends_with(".rs") || name == "tests.rs" || name.ends_with("_tests.rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).expect("source");
+                let text = text.split("#[cfg(test)]").next().unwrap_or_default();
+                let at = path.display().to_string();
+                emitted.extend(
+                    direct
+                        .captures_iter(text)
+                        .map(|capture| (capture[1].to_owned(), at.clone())),
+                );
+                for bound in binding.captures_iter(text) {
+                    let write =
+                        regex::Regex::new(&format!(r#"\b{}\["(\w+)"\]\s*=[^=]"#, &bound[1]))
+                            .expect("regex");
+                    emitted.extend(
+                        write
+                            .captures_iter(text)
+                            .map(|capture| (capture[1].to_owned(), at.clone())),
+                    );
+                }
+            }
+        }
+        let undeclared = emitted
+            .iter()
+            .flat_map(|(key, at)| {
+                declared
+                    .iter()
+                    .filter(move |(_, keys)| !keys.contains(key))
+                    .map(move |(tool, _)| format!("{at}: pagination.{key} ({tool})"))
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            undeclared.is_empty(),
+            "undeclared pagination keys: {undeclared:#?}"
+        );
+        assert!(emitted.len() > 5, "the scan finds the writes: {emitted:?}");
     }
 }

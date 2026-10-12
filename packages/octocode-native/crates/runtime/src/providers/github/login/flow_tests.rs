@@ -12,7 +12,7 @@ use wiremock::{
 #[tokio::test]
 async fn refresh_cannot_restore_logout_or_overwrite_a_new_login() {
     for replacement in [false, true] {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         let dir = tempfile::tempdir().unwrap();
         let store = CredentialStore::new(dir.path());
         let mut old = tests::stored(Some("2000-01-01T00:00:00Z"), Some("old-refresh"));
@@ -108,7 +108,7 @@ async fn grant_token_once(server: &MockServer) {
 
 #[tokio::test]
 async fn missing_enterprise_client_id_never_posts_a_refresh() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     tests::forbid_posts(&server).await;
     let dir = tempfile::tempdir().unwrap();
     let store = CredentialStore::new(dir.path());
@@ -130,7 +130,7 @@ async fn missing_enterprise_client_id_never_posts_a_refresh() {
 
 #[tokio::test]
 async fn device_login_waits_for_authorization_then_saves_complete_credentials_once() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     device(&server, 15).await;
     user(&server).await;
     let polls = AtomicUsize::new(0);
@@ -179,7 +179,7 @@ async fn device_login_waits_for_authorization_then_saves_complete_credentials_on
 
 #[tokio::test]
 async fn device_login_reports_failed_save_instead_of_success() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     device(&server, 15).await;
     user(&server).await;
     grant_token_once(&server).await;
@@ -204,7 +204,7 @@ async fn device_login_reports_failed_save_instead_of_success() {
 #[tokio::test]
 async fn denied_or_expired_device_authorization_never_saves_credentials() {
     for error in ["access_denied", "expired_token"] {
-        let server = MockServer::start().await;
+        let server = MockServer::builder().start().await;
         device(&server, 15).await;
         Mock::given(method("POST"))
             .and(path("/login/oauth/access_token"))
@@ -229,7 +229,7 @@ async fn denied_or_expired_device_authorization_never_saves_credentials() {
 
 #[tokio::test]
 async fn cancelled_or_timed_out_device_login_never_saves_credentials() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     device(&server, 0).await;
     let save = |_: &StoredCredentials| -> Result<(), ProviderError> {
         panic!("cancelled login must not save")
@@ -253,7 +253,7 @@ async fn cancelled_or_timed_out_device_login_never_saves_credentials() {
 
 #[tokio::test]
 async fn refresh_persists_rotated_tokens_and_propagates_save_failure() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
         .and(path("/login/oauth/access_token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(token()))
@@ -295,7 +295,7 @@ async fn refresh_persists_rotated_tokens_and_propagates_save_failure() {
 
 #[tokio::test]
 async fn missing_or_expired_refresh_token_never_calls_provider_or_saves() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     tests::forbid_posts(&server).await;
     for refresh in [None, Some(""), Some("expired-refresh")] {
         let mut stored = tests::stored(Some("2000-01-01T00:00:00Z"), refresh);
@@ -315,7 +315,7 @@ async fn missing_or_expired_refresh_token_never_calls_provider_or_saves() {
 async fn device_login_persists_into_home_and_a_new_store_reads_it() {
     let dir = tempfile::tempdir().unwrap();
     let store = CredentialStore::new(dir.path());
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     device(&server, 15).await;
     user(&server).await;
     grant_token_once(&server).await;
@@ -347,7 +347,7 @@ async fn device_login_persists_into_home_and_a_new_store_reads_it() {
 
 #[tokio::test]
 async fn concurrent_home_refreshes_rotate_once_and_persist_for_next_process() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let dir = tempfile::tempdir().unwrap();
     let store = CredentialStore::new(dir.path());
     let mut old = tests::stored(Some("2000-01-01T00:00:00Z"), Some("single-use-refresh"));
@@ -401,7 +401,7 @@ async fn concurrent_home_refreshes_rotate_once_and_persist_for_next_process() {
 
 #[tokio::test]
 async fn failed_reauthentication_preserves_existing_home_login() {
-    let server = MockServer::start().await;
+    let server = MockServer::builder().start().await;
     let dir = tempfile::tempdir().unwrap();
     let store = CredentialStore::new(dir.path());
     let mut existing = tests::stored(None, Some("existing-refresh"));

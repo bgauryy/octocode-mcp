@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type SessionInfo } from '@earendil-works/pi-coding-agent';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
+import { formatCost } from '../shared/format.js';
 import { sessionDir } from '../shared/home.js';
 import { contentText, errorMessage } from '../shared/util.js';
 import { shortDuration } from './brief.js';
@@ -32,14 +33,14 @@ function title({ info, parentPrompt }: ListedSession): string {
   return oneLine(info.name || info.firstMessage || (parentPrompt ? `↳ ${parentPrompt}` : '(no prompt yet)'), 60);
 }
 
-/** `● name-or-first-prompt · cwd · branch · 2h ago · $1.84 · 7 files · 12 messages · 3f9a2c`, `(current)` for this session. */
+/** `● name-or-first-prompt · cwd · branch · 2h ago · ≈$1.84 · 7 files · 12 messages · 3f9a2c`, `(current)` for this session. */
 function sessionLine(row: ListedSession, current: string | undefined, all: boolean, now = Date.now()): string {
   const { info, extra } = row;
   const parts = [`${live(row) ? '●' : '○'} ${title(row)}`];
   if (all) parts.push(oneLine(path.basename(info.cwd) || info.cwd || '?', 40));
   if (extra?.branch) parts.push(oneLine(extra.branch, 40));
   parts.push(`${shortDuration(now - info.modified.getTime())} ago`);
-  if (extra && extra.cost > 0) parts.push(`$${extra.cost.toFixed(2)}`);
+  if (extra && (extra.cost > 0 || extra.unpriced === 1)) parts.push(formatCost({ cost: extra.cost, unpriced: extra.unpriced === 1 }));
   if (extra && extra.files_changed > 0) parts.push(`${extra.files_changed} file${extra.files_changed === 1 ? '' : 's'}`);
   parts.push(`${info.messageCount} message${info.messageCount === 1 ? '' : 's'}`, shortId(info.id));
   return `${parts.join(' · ')}${info.id === current ? ' (current)' : ''}`;

@@ -62,6 +62,33 @@ fn fixture() -> Workspace {
     workspace
 }
 
+/// A runtime whose language servers for the table's extensions are a missing
+/// command: the path policy decides before discovery, and no installed
+/// server (tsserver's type acquisition runs `npm install`) is ever started.
+fn runtime(workspace: &Workspace) -> ToolRuntime {
+    let servers: serde_json::Map<String, Value> = [
+        ".ts",
+        ".md",
+        ".env",
+        ".pem",
+        ".local",
+        ".json",
+        ".keystore",
+    ]
+    .into_iter()
+    .map(|extension| {
+        (
+            extension.to_owned(),
+            json!({"command": "octocode-test-missing-lsp", "args": [], "languageId": "plaintext"}),
+        )
+    })
+    .collect();
+    // Outside the workspace, so the walks never list it.
+    let config = workspace.home.join("lsp.json");
+    std::fs::write(&config, json!({"languageServers": servers}).to_string()).expect("lsp config");
+    workspace.runtime(&[("OCTOCODE_LSP_CONFIG", config.to_string_lossy().into_owned())])
+}
+
 /// The one-file query each tool takes for `path`.
 fn file_query(tool: &str, path: &std::path::Path) -> Value {
     match tool {
@@ -103,7 +130,7 @@ async fn denial(runtime: &ToolRuntime, tool: &str, path: &std::path::Path) -> Op
 #[tokio::test]
 async fn every_local_tool_decides_by_filename_not_directory_name() {
     let workspace = fixture();
-    let runtime = workspace.runtime(&[]);
+    let runtime = runtime(&workspace);
     for (relative, _, expect) in TABLE {
         let path = workspace.workspace.join(relative);
         for tool in TOOLS {
@@ -136,7 +163,7 @@ async fn every_local_tool_decides_by_filename_not_directory_name() {
 #[tokio::test]
 async fn walks_keep_source_folders_and_disclose_only_credential_files() {
     let workspace = fixture();
-    let runtime = workspace.runtime(&[]);
+    let runtime = runtime(&workspace);
     let root = &workspace.workspace;
     let withheld = TABLE
         .iter()
@@ -205,7 +232,7 @@ async fn secret_content_is_redacted_in_any_directory() {
     let body = format!("export const awsAccessKeyId = \"{AWS_KEY}\";\nexport const marker = 1;\n");
     let secret = workspace.write("src/secrets/aws.ts", &body);
     let plain = workspace.write("src/private/aws.ts", &body);
-    let runtime = workspace.runtime(&[]);
+    let runtime = runtime(&workspace);
     for path in [&secret, &plain] {
         let fetched = call(&runtime, "localFetch", json!({"path": path}))
             .await

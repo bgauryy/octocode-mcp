@@ -1532,60 +1532,100 @@ mod tests {
         );
     }
 
+    /// An exact lookup on each registry parses one row with its name,
+    /// version and registry page.
     #[tokio::test]
-    async fn pypi_parses_exact_lookup() {
-        let http = StaticHttp::json(json!({
-            "info": {
-                "name": "requests",
-                "version": "2.31.0",
-                "summary": "Python HTTP for Humans.",
-                "license": "Apache-2.0",
-                "home_page": "https://requests.readthedocs.io",
-                "project_urls": {"Source": "https://github.com/psf/requests"}
+    async fn exact_lookups_parse_one_row_per_registry() {
+        let cases = [
+            (
+                ArtifactType::Pypi,
+                "requests",
+                json!({
+                    "info": {
+                        "name": "requests",
+                        "version": "2.31.0",
+                        "summary": "Python HTTP for Humans.",
+                        "license": "Apache-2.0",
+                        "home_page": "https://requests.readthedocs.io",
+                        "project_urls": {"Source": "https://github.com/psf/requests"}
+                    }
+                }),
+                "2.31.0",
+                "pypi.org",
+            ),
+            (
+                ArtifactType::Crates,
+                "serde",
+                json!({
+                    "crate": {
+                        "id": "serde",
+                        "name": "serde",
+                        "max_stable_version": "1.0.200",
+                        "description": "A generic serialization/deserialization framework",
+                        "license": "MIT OR Apache-2.0",
+                        "repository": "https://github.com/serde-rs/serde"
+                    }
+                }),
+                "1.0.200",
+                "crates.io",
+            ),
+            (
+                ArtifactType::Packagist,
+                "laravel/framework",
+                // p2/{name}.json response with entries for the tagged URL
+                json!({
+                    "packages": {
+                        "laravel/framework": [
+                            {
+                                "name": "laravel/framework",
+                                "version": "10.0.0",
+                                "description": "The Laravel Framework.",
+                                "license": ["MIT"]
+                            }
+                        ]
+                    }
+                }),
+                "10.0.0",
+                "packagist.org",
+            ),
+            (
+                ArtifactType::Rubygems,
+                "rails",
+                json!({
+                    "name": "rails",
+                    "version": "7.0.6",
+                    "info": "Full-stack web application framework.",
+                    "homepage_uri": "https://rubyonrails.org",
+                    "source_code_uri": "https://github.com/rails/rails"
+                }),
+                "7.0.6",
+                "rubygems.org",
+            ),
+        ];
+        for (ecosystem, name, body, version, registry_host) in cases {
+            let http = StaticHttp::json(body);
+            let b = test_budget();
+            let client = RegistryClient::uncached(&http, &b);
+            let q = exact_query(ecosystem, name);
+            let state = ArtifactProviderState::default();
+            let page = match ecosystem {
+                ArtifactType::Pypi => pypi(&q, &client).await,
+                ArtifactType::Crates => crates(&q, &state, &client).await,
+                ArtifactType::Packagist => packagist(&q, &state, &client).await,
+                ArtifactType::Rubygems => rubygems(&q, &state, &client).await,
+                other => unreachable!("no exact-lookup case for {other:?}"),
             }
-        }));
-        let b = test_budget();
-        let client = RegistryClient::uncached(&http, &b);
-        let q = exact_query(ArtifactType::Pypi, "requests");
-        let page = pypi(&q, &client).await.expect("pypi");
-        assert_eq!(page.artifacts.len(), 1);
-        let item = &page.artifacts[0];
-        assert_eq!(item.name, "requests");
-        assert_eq!(item.version.as_deref(), Some("2.31.0"));
-        assert!(
-            item.registry_url.contains("pypi.org"),
-            "{}",
-            item.registry_url
-        );
-    }
-
-    #[tokio::test]
-    async fn crates_parses_exact_lookup() {
-        let http = StaticHttp::json(json!({
-            "crate": {
-                "id": "serde",
-                "name": "serde",
-                "max_stable_version": "1.0.200",
-                "description": "A generic serialization/deserialization framework",
-                "license": "MIT OR Apache-2.0",
-                "repository": "https://github.com/serde-rs/serde"
-            }
-        }));
-        let b = test_budget();
-        let client = RegistryClient::uncached(&http, &b);
-        let q = exact_query(ArtifactType::Crates, "serde");
-        let page = crates(&q, &ArtifactProviderState::default(), &client)
-            .await
-            .expect("crates");
-        assert_eq!(page.artifacts.len(), 1);
-        let item = &page.artifacts[0];
-        assert_eq!(item.name, "serde");
-        assert_eq!(item.version.as_deref(), Some("1.0.200"));
-        assert!(
-            item.registry_url.contains("crates.io"),
-            "{}",
-            item.registry_url
-        );
+            .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            assert_eq!(page.artifacts.len(), 1, "{name}");
+            let item = &page.artifacts[0];
+            assert_eq!(item.name, name);
+            assert_eq!(item.version.as_deref(), Some(version), "{name}");
+            assert!(
+                item.registry_url.contains(registry_host),
+                "{name}: {}",
+                item.registry_url
+            );
+        }
     }
 
     #[tokio::test]
@@ -1708,64 +1748,6 @@ mod tests {
         assert_eq!(
             go_proxy_escape("github.com/BurntSushi/toml"),
             "github.com/!burnt!sushi/toml"
-        );
-    }
-
-    #[tokio::test]
-    async fn packagist_parses_exact_lookup() {
-        // p2/{name}.json response with entries for the tagged URL
-        let http = StaticHttp::json(json!({
-            "packages": {
-                "laravel/framework": [
-                    {
-                        "name": "laravel/framework",
-                        "version": "10.0.0",
-                        "description": "The Laravel Framework.",
-                        "license": ["MIT"]
-                    }
-                ]
-            }
-        }));
-        let b = test_budget();
-        let client = RegistryClient::uncached(&http, &b);
-        let q = exact_query(ArtifactType::Packagist, "laravel/framework");
-        let page = packagist(&q, &ArtifactProviderState::default(), &client)
-            .await
-            .expect("packagist");
-        assert_eq!(page.artifacts.len(), 1);
-        let item = &page.artifacts[0];
-        assert_eq!(item.name, "laravel/framework");
-        assert_eq!(item.version.as_deref(), Some("10.0.0"));
-        assert!(
-            item.registry_url.contains("packagist.org"),
-            "{}",
-            item.registry_url
-        );
-    }
-
-    #[tokio::test]
-    async fn rubygems_parses_exact_lookup() {
-        let http = StaticHttp::json(json!({
-            "name": "rails",
-            "version": "7.0.6",
-            "info": "Full-stack web application framework.",
-            "homepage_uri": "https://rubyonrails.org",
-            "source_code_uri": "https://github.com/rails/rails"
-        }));
-        let b = test_budget();
-        let client = RegistryClient::uncached(&http, &b);
-        let q = exact_query(ArtifactType::Rubygems, "rails");
-        let page = rubygems(&q, &ArtifactProviderState::default(), &client)
-            .await
-            .expect("rubygems");
-        assert_eq!(page.artifacts.len(), 1);
-        let item = &page.artifacts[0];
-        assert_eq!(item.name, "rails");
-        assert_eq!(item.version.as_deref(), Some("7.0.6"));
-        assert!(
-            item.registry_url.contains("rubygems.org"),
-            "{}",
-            item.registry_url
         );
     }
 }

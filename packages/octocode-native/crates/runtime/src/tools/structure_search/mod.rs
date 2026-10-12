@@ -23,7 +23,7 @@ fn max_walk() -> u32 {
 
 use crate::policy::prune::PruneMode;
 use crate::tools::display_name;
-use crate::tools::empty_walk::{Hits, Verdict, Walk, diagnose, lift};
+use crate::tools::empty_walk::{Cause, Hits, Verdict, Walk, diagnose, lift};
 use crate::tools::result::ToolError;
 use serde_json::{Value, json};
 
@@ -285,7 +285,7 @@ fn note_empty(
     };
     let mut retry = json!({"page": 1, "snapshot": null});
     lift(&mut retry, diagnosis.causes());
-    out["next"]["includeIgnored"] = continuation(query, retry);
+    out["next"]["includeSkipped"] = continuation(query, retry);
     let hint = format!(
         "{} entries sit behind skipped paths ({}); the lead lists them.",
         diagnosis.found().count,
@@ -296,6 +296,19 @@ fn note_empty(
         None => out["hints"] = json!([hint]),
     }
     Ok(())
+}
+
+/// A non-empty first page whose walk left out `.gitignore`d entries leads to
+/// the same listing over them; an empty one gets its lead from
+/// [`note_empty`], which proves the skipped paths hold entries.
+fn lead_to_ignored(out: &mut Value, query: &impl serde::Serialize, seen: &Uncovered) {
+    if seen.ignored == 0 || out["status"] == "empty" || out["next"].get("includeSkipped").is_some()
+    {
+        return;
+    }
+    let mut retry = json!({"page": 1, "snapshot": null});
+    lift(&mut retry, &[Cause::Ignored]);
+    out["next"]["includeSkipped"] = continuation(query, retry);
 }
 
 /// Where a listing's rows were cut, for the continuation tail both
@@ -332,8 +345,17 @@ impl Cut {
     /// More pages exist, but the next page number is past the contract's
     /// `page` maximum.
     fn page_ceiling(&self) -> bool {
-        self.has_more()
-            && self.page >= crate::tools::id::query_limits::structure_search::PAGE_MAXIMUM
+        self.has_more() && self.next_page().is_none()
+    }
+    /// The page a continuation names after this one, when the contract
+    /// admits it.
+    fn next_page(&self) -> Option<usize> {
+        crate::tools::paging::admitted(
+            crate::tools::id::ToolId::StructureSearch,
+            None,
+            "page",
+            self.page + 1,
+        )
     }
     /// The walk stopped at the largest `maxEntries`: entries past it are
     /// on no page.
@@ -351,11 +373,11 @@ impl Cut {
     fn finish(&self, out: &mut Value, query: &impl serde::Serialize, warnings: &mut Vec<String>) {
         // Every listed row stays reachable: a walk ceiling ends the listing,
         // never the pages over the rows it did list.
-        if self.has_more() && !self.page_ceiling() {
-            out["next"]["nextPage"] = continuation(
-                query,
-                json!({"page": self.page + 1, "snapshot": self.snapshot}),
-            );
+        if self.has_more()
+            && let Some(next_page) = self.next_page()
+        {
+            out["next"]["nextPage"] =
+                continuation(query, json!({"page": next_page, "snapshot": self.snapshot}));
         }
         if self.terminal() {
             let past = if self.page_ceiling() {
@@ -456,7 +478,7 @@ fn drop_grouped_dirs<R>(
 }
 
 /// The directory of a listed row as the response names it: relative to the
-/// workspace root (SS2), `prefix` being the listed path's own spelling.
+/// workspace root, `prefix` being the listed path's own spelling.
 pub(super) fn group_dir(prefix: &str, dir: &str) -> String {
     match (prefix, dir) {
         (_, "") => prefix.to_owned(),
@@ -482,7 +504,7 @@ pub(super) fn listing_prefix(
         .unwrap_or_else(|| dir.to_string_lossy().into_owned())
 }
 
-/// One listing shape for `tree` and `files` (SS2/SS4): consecutive entries
+/// One listing shape for `tree` and `files`: consecutive entries
 /// of one directory become a `{dir, files}` group, `dir` workspace-relative
 /// (the listed path's own entries included), so `dir + "/" + name` is a
 /// path a local tool takes.

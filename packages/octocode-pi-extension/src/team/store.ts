@@ -5,7 +5,7 @@ import { agentDbPath, canonicalPath, repoKey } from '../shared/home.js';
 import { processAlive } from '../shared/process.js';
 import { EditLog } from './edits.js';
 import { num, type Row } from '../agentdb/rows.js';
-import { toLease, toMember, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type Traffic } from './model.js';
+import { toLease, toMember, toMessage, toTraffic, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type SendOptions, type Traffic } from './model.js';
 
 /**
  * The team tables of the agent database: who works in this repository, what they say to each other, and which files
@@ -13,8 +13,9 @@ import { toLease, toMember, type DeadLetter, type Lease, type LeaseRequest, type
  * rows scoped by workspace = git root. Entities, after the octocode-agents-communication skill:
  *   agents      one live agent; its owner rewrites the row as it works (status, tool, tokens, heartbeat)
  *   messages    immutable; may require a reply and may answer another message (replyTo)
- *   deliveries  one row per recipient: delivered when injected, completed when answered, dead when the recipient left unread
+ *   deliveries  one row per recipient: delivered when the model saw it, completed when answered, dead when the recipient left unread
  *               (the sender is told once: notified_at); `wake` says whether it may start a turn of an idle recipient
+ *               (1), or also stop a busy one's current step (2, an interrupt)
  *   leases      cooperative file/tree reservations that expire unless the owner keeps renewing them
  */
 
@@ -22,7 +23,10 @@ export const AGENT_ID_ENV = 'OCTOCODE_AGENT_ID';
 export const PARENT_ID_ENV = 'OCTOCODE_PARENT_ID';
 /** Set in a subagent: its parent Pi's pid. The child leaves and shuts down when that process is gone (a crashed parent). */
 export const PARENT_PID_ENV = 'OCTOCODE_PARENT_PID';
-export const AGENT_TASK_ENV = 'OCTOCODE_AGENT_TASK';
+/** Set in a subagent: the role it was started with (its profile), shown next to its name. */
+export const AGENT_ROLE_ENV = 'OCTOCODE_AGENT_ROLE';
+/** Set in a subagent: its goal, at most five words (`identity.ts`). Stored in the `task` column, which keeps its name so older extensions read the same database. */
+export const AGENT_GOAL_ENV = 'OCTOCODE_AGENT_GOAL';
 /** Set in a subagent started with `collaborate`: it works with its sibling subagents, not only for its parent. */
 export const AGENT_COLLABORATE_ENV = 'OCTOCODE_AGENT_COLLABORATE';
 /** A subagent's own handoff folder (`<workspace>/.octocode/tmp/agents/<id>`): long results go there as files, not into its report. */
@@ -74,6 +78,8 @@ export class TeamStore {
   /** Who changed which file recently, in the same database. */
   readonly edits: EditLog;
   private prunedAt = -Infinity;
+  /** Nested `quick` calls: only the outermost restores the long busy wait. */
+  private quickDepth = 0;
 
   private constructor(
     private readonly agent: AgentDb,
@@ -116,11 +122,11 @@ export class TeamStore {
 
   /** Runs background work with a short busy wait, so a database held by another process never freezes this one. */
   quick<T>(work: () => T): T {
-    this.db.exec(`PRAGMA busy_timeout=${QUICK_BUSY_MS}`);
+    if (this.quickDepth++ === 0) this.db.exec(`PRAGMA busy_timeout=${QUICK_BUSY_MS}`);
     try {
       return work();
     } finally {
-      this.db.exec(`PRAGMA busy_timeout=${BUSY_MS}`);
+      if (--this.quickDepth === 0) this.db.exec(`PRAGMA busy_timeout=${BUSY_MS}`);
     }
   }
 
@@ -139,13 +145,13 @@ export class TeamStore {
     this.prune(member.updatedAt);
     this.db
       .prepare(
-        `INSERT INTO agents (id, workspace, role, parent_id, pid, status, task, activity, model, joined_at, seen_at, tool_calls, input, output, cost)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO agents (id, workspace, role, parent_id, pid, status, task, activity, model, joined_at, seen_at, tool_calls, input, cache_read, output, cost, unpriced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET status=excluded.status, task=excluded.task, activity=excluded.activity, model=excluded.model, seen_at=excluded.seen_at,
-           tool_calls=excluded.tool_calls, input=excluded.input, output=excluded.output, cost=excluded.cost`,
+           tool_calls=excluded.tool_calls, input=excluded.input, cache_read=excluded.cache_read, output=excluded.output, cost=excluded.cost, unpriced=excluded.unpriced`,
       )
-      .run(member.id, this.workspace, member.role, member.parentId ?? null, member.pid, member.status, member.task ?? null, member.activity ?? null, member.model ?? null,
-        member.joinedAt, member.updatedAt, member.toolCalls, member.input, member.output, member.cost);
+      .run(member.id, this.workspace, member.role, member.parentId ?? null, member.pid, member.status, member.goal ?? null, member.activity ?? null, member.model ?? null,
+        member.joinedAt, member.updatedAt, member.toolCalls, member.input, member.cacheRead, member.output, member.cost, member.unpriced ? 1 : 0);
   }
 
   /** Leave: the agent and its reservations go; the messages it never read become dead letters the sender can see. */
@@ -155,6 +161,24 @@ export class TeamStore {
       this.db.prepare('DELETE FROM leases WHERE owner = ?').run(id);
       this.db.prepare('UPDATE deliveries SET dead_at = ? WHERE recipient = ? AND delivered_at IS NULL AND dead_at IS NULL').run(now, id);
     });
+  }
+
+  /**
+   * The machine slept from `since` to `now`: no agent could heartbeat or renew. Members still live at `since` (by
+   * heartbeat) and leases not yet expired then get a fresh start from `now`, so the first process awake does not prune
+   * its sleeping peers, drop their reservations or dead-letter their messages. Idempotent: every process that wakes
+   * calls it. A member that stays silent after the wake goes `STALE_MS` later, its leases `LEASE_MS` later.
+   */
+  resume(since: number, now = Date.now()): void {
+    this.transaction(() => {
+      this.db.prepare('UPDATE agents SET seen_at = MAX(seen_at, ?) WHERE workspace = ? AND seen_at >= ?').run(now, this.workspace, since - STALE_MS);
+      this.db.prepare('UPDATE leases SET expires_at = MAX(expires_at, ?) WHERE workspace = ? AND expires_at > ?').run(now + LEASE_MS, this.workspace, since);
+    });
+  }
+
+  /** Every agent name in the shared database, whatever its workspace (ids are unique across all of them), live or not yet dropped. */
+  names(): string[] {
+    return (this.db.prepare('SELECT id FROM agents').all() as Row[]).map((row) => String(row['id']));
   }
 
   /** Live agents of this workspace, oldest first, with unanswered-message counts and held paths. Dead ones are removed. */
@@ -187,12 +211,13 @@ export class TeamStore {
    * `wake` (a question, or a sender outside the team) lets it start an idle recipient's turn; otherwise only the
    * answer to a question that recipient asked, and still awaited, wakes it.
    */
-  send(from: string, to: string[], body: string, options: { replyRequired: boolean; replyTo?: number; wake?: boolean }, now = Date.now()): { id: number | undefined; departed: string[] } {
-    const live = new Set(this.list(now).map((member) => member.id));
-    const departed = to.filter((recipient) => !live.has(recipient));
-    const recipients = to.filter((recipient) => live.has(recipient));
-    if (recipients.length === 0) return { id: undefined, departed };
-    const id = this.transaction(() => {
+  send(from: string, to: string[], body: string, options: SendOptions & { replyRequired: boolean; wake?: boolean }, now = Date.now()): { id: number | undefined; departed: string[] } {
+    return this.transaction(() => {
+      // Liveness is read in the same IMMEDIATE transaction as the insert: no recipient can leave in between.
+      const live = new Set(this.list(now).map((member) => member.id));
+      const departed = to.filter((recipient) => !live.has(recipient));
+      const recipients = to.filter((recipient) => live.has(recipient));
+      if (recipients.length === 0) return { id: undefined, departed };
       // The asker is woken by the answer to its own open question, never by a reply to an FYI or a thank-you.
       let asker: string | undefined;
       if (options.replyTo !== undefined) {
@@ -205,11 +230,10 @@ export class TeamStore {
         .run(this.workspace, from, body, options.replyRequired ? 1 : 0, options.replyTo ?? null, now);
       const id = Number(lastInsertRowid);
       const insert = this.db.prepare('INSERT INTO deliveries (message, recipient, wake) VALUES (?, ?, ?)');
-      for (const recipient of recipients) insert.run(id, recipient, options.wake || options.replyRequired || recipient === asker ? 1 : 0);
+      for (const recipient of recipients) insert.run(id, recipient, options.interrupt ? 2 : options.wake || options.replyRequired || recipient === asker ? 1 : 0);
       if (options.replyTo !== undefined) this.db.prepare('UPDATE deliveries SET completed_at = ? WHERE message = ? AND recipient = ? AND completed_at IS NULL').run(now, options.replyTo, from);
-      return id;
+      return { id, departed };
     });
-    return { id, departed };
   }
 
   /** The sender of message `id` in this workspace and whether it asked for a reply; undefined when there is no such message. */
@@ -245,28 +269,21 @@ export class TeamStore {
     });
   }
 
-  /** How many messages wait undelivered for `id` (the inbox index alone): the inbox reads them only when this is non-zero. */
-  waiting(id: string): number {
-    return num((this.db.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE recipient = ? AND delivered_at IS NULL AND dead_at IS NULL').get(id) as Row)['n']);
+  /** How many messages newer than `after` wait undelivered for `id` (the inbox index alone): the inbox reads them only when this is non-zero. */
+  waiting(id: string, after = 0): number {
+    return num((this.db.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE recipient = ? AND message > ? AND delivered_at IS NULL AND dead_at IS NULL').get(id, after) as Row)['n']);
   }
 
-  /** One bounded batch waiting for `id`, oldest first. `ack` marks only messages actually handed over. */
-  pending(id: string): Message[] {
+  /** One bounded batch of messages newer than `after` waiting for `id`, oldest first. `ack` marks the ones the model saw. */
+  pending(id: string, after = 0): Message[] {
     const rows = this.db
       .prepare(
-        `SELECT m.id, m.sender, m.body, m.created_at, m.reply_required, m.reply_to, d.wake FROM deliveries d JOIN messages m ON m.id = d.message
-         WHERE d.recipient = ? AND d.delivered_at IS NULL AND d.dead_at IS NULL ORDER BY m.id LIMIT ?`,
+        `SELECT m.id, m.sender, m.body, m.created_at, m.reply_required, m.reply_to, d.wake, s.role AS sender_role, s.task AS sender_goal
+         FROM deliveries d JOIN messages m ON m.id = d.message LEFT JOIN agents s ON s.id = m.sender
+         WHERE d.recipient = ? AND d.message > ? AND d.delivered_at IS NULL AND d.dead_at IS NULL ORDER BY m.id LIMIT ?`,
       )
-      .all(id, INBOX_BATCH_SIZE) as Row[];
-    return rows.map((row) => {
-      const replyTo = row['reply_to'];
-      const wake = row['wake'];
-      return {
-        id: num(row['id']), from: String(row['sender']), to: id, text: String(row['body']), at: num(row['created_at']), replyRequired: row['reply_required'] === 1,
-        ...(typeof replyTo === 'number' ? { replyTo } : {}),
-        ...(typeof wake === 'number' ? { wake: wake === 1 } : {}),
-      };
-    });
+      .all(id, after, INBOX_BATCH_SIZE) as Row[];
+    return rows.map((row) => toMessage(row, id));
   }
 
   /** Mark messages delivered to `id` (FYI messages are complete on delivery). One reader per recipient, so no lease. */
@@ -274,7 +291,7 @@ export class TeamStore {
     if (messageIds.length === 0) return;
     this.transaction(() => {
       const mark = this.db.prepare(
-        'UPDATE deliveries SET delivered_at = ?, completed_at = CASE WHEN (SELECT reply_required FROM messages WHERE id = ?) = 1 THEN NULL ELSE ? END WHERE message = ? AND recipient = ? AND delivered_at IS NULL',
+        'UPDATE deliveries SET delivered_at = ?, completed_at = CASE WHEN (SELECT reply_required FROM messages WHERE id = ?) = 1 THEN completed_at ELSE COALESCE(completed_at, ?) END WHERE message = ? AND recipient = ? AND delivered_at IS NULL',
       );
       for (const message of messageIds) mark.run(now, message, now, message, id);
     });
@@ -287,22 +304,7 @@ export class TeamStore {
   recent(limit = 30, now = Date.now(), windowMs = 10 * 60_000): Traffic[] {
     const rows = this.db.prepare('SELECT * FROM messages WHERE workspace = ? AND created_at > ? ORDER BY id DESC LIMIT ?').all(this.workspace, now - windowMs, limit) as Row[];
     const deliveries = this.db.prepare('SELECT recipient, delivered_at, completed_at, dead_at FROM deliveries WHERE message = ? ORDER BY recipient');
-    return rows.map((row) => {
-      const sent = deliveries.all(num(row['id'])) as Row[];
-      const replyRequired = row['reply_required'] === 1;
-      const state: Traffic['state'] =
-        sent.some((d) => d['delivered_at'] === null && d['dead_at'] === null)
-          ? 'queued'
-          : sent.length === 0 || sent.some((d) => d['dead_at'] !== null)
-            ? 'dead-lettered'
-            : replyRequired
-              ? sent.every((d) => d['completed_at'] !== null)
-                ? 'answered'
-                : 'awaiting reply'
-              : 'delivered';
-      const replyTo = row['reply_to'];
-      return { id: num(row['id']), from: String(row['sender']), to: sent.map((d) => String(d['recipient'])), text: String(row['body']), at: num(row['created_at']), ...(typeof replyTo === 'number' ? { replyTo } : {}), state };
-    });
+    return rows.map((row) => toTraffic(row, deliveries.all(num(row['id'])) as Row[]));
   }
 
   // ── leases ────────────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NO_REPLY, startCdpStub, type CdpHandler, type CdpStub, type StubPage } from './fixtures/cdp-stub.js';
+import { fakePermission } from './fake-pi.js';
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
@@ -67,7 +68,7 @@ async function setup(handle: CdpHandler) {
   const cdp = await startCdpStub({ handle });
   stubs.push(cdp);
   vi.stubEnv('OCTOCODE_CHROME_PORT', String(cdp.port));
-  const browser = new BrowserTool();
+  const browser = new BrowserTool(fakePermission());
   tools.push(browser);
   let tool: Tool | undefined;
   const pi = { registerTool: (definition: Tool) => (tool = definition), on: () => undefined } as unknown as ExtensionAPI;

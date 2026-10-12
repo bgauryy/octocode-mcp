@@ -28,6 +28,7 @@ import { getPlatformSkillsDir } from '../../../src/cli/commands/skills/platforms
 import { parseSkillPlatforms } from '@octocodeai/octocode-skill-installer';
 import type { ParsedArgs } from '../../../src/cli/types.js';
 import { EXIT } from '../../../src/cli/exit-codes.js';
+import { fakeNative } from '../../utils/fake-native.js';
 
 function run(
   args: string[] = [],
@@ -47,6 +48,7 @@ describe('skill command', () => {
   beforeEach(() => {
     isolated.home = fs.mkdtempSync(path.join(tmpdir(), 'octocode-skill-test-'));
     vi.spyOn(process, 'cwd').mockReturnValue(isolated.home);
+    vi.stubEnv('OCTOCODE_NATIVE_BIN', fakeNative(isolated.home));
     process.exitCode = undefined;
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -54,6 +56,7 @@ describe('skill command', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     fs.rmSync(isolated.home, { recursive: true, force: true });
     process.exitCode = undefined;
   });

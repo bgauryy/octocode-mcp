@@ -76,6 +76,24 @@ describe('registerNotify', () => {
     expect(s.unsubscribed()).toBe(true);
   });
 
+  it('switches focus reporting off when the process exits without a session shutdown, and drops the hook at shutdown', async () => {
+    const before = new Set(process.listeners('exit'));
+    const s = setup({ TERM_PROGRAM: 'iTerm.app' });
+    await s.fake.fire('session_start', {}, s.ctx);
+    const added = process.listeners('exit').filter((listener) => !before.has(listener));
+    expect(added).toHaveLength(1);
+    (added[0] as () => void)();
+    expect(s.writes.filter((data) => data === '\x1b[?1004l')).toHaveLength(1);
+    await s.fake.fire('session_start', {}, s.ctx);
+    expect(process.listeners('exit').filter((listener) => !before.has(listener))).toHaveLength(1);
+    await s.fake.fire('session_shutdown', {}, s.ctx);
+    expect(process.listeners('exit').filter((listener) => !before.has(listener))).toEqual([]);
+    // Off: focus reporting was never turned on, so nothing to undo.
+    const off = setup({ OCTOCODE_NOTIFY: 'off' });
+    await off.fake.fire('session_start', {}, off.ctx);
+    expect(process.listeners('exit').filter((listener) => !before.has(listener))).toEqual([]);
+  });
+
   it('skips interrupted runs, reports errors, debounces and signals dialogs', async () => {
     vi.useFakeTimers({ now: 1_000_000 });
     const s = setup({ OCTOCODE_NOTIFY: 'always' });

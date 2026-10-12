@@ -267,6 +267,7 @@ fn scan_facts(
                 .language_globs()
                 .as_ref()
                 .map(crate::tools::ast_rule::language_globs),
+            show_hidden: None,
         },
         &|path| {
             cancel
@@ -1517,8 +1518,12 @@ pub(super) fn join(a: &str, b: &str) -> String {
     normalize(&format!("{a}/{b}"))
 }
 pub(super) fn join_within_root(a: &str, b: &str) -> Option<String> {
-    let mut parts = Vec::new();
-    for component in Path::new(&format!("{a}/{b}")).components() {
+    climb(Vec::new(), &format!("{a}/{b}")).map(|parts| parts.join("/"))
+}
+/// The relative `path` walked from `parts`; `None` when a `..` climbs above
+/// them or `path` is absolute.
+pub(super) fn climb(mut parts: Vec<String>, path: &str) -> Option<Vec<String>> {
+    for component in Path::new(path).components() {
         match component {
             Component::CurDir => {}
             Component::ParentDir => {
@@ -1528,7 +1533,7 @@ pub(super) fn join_within_root(a: &str, b: &str) -> Option<String> {
             Component::RootDir | Component::Prefix(_) => return None,
         }
     }
-    Some(parts.join("/"))
+    Some(parts)
 }
 /// Implicit-default scans larger than this are refused before parsing: a
 /// monorepo root otherwise parses thousands of files and can exhaust the call

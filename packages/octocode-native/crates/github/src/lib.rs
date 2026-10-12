@@ -29,12 +29,12 @@ pub use content::{
     GitHubProvider, NoCache, is_full_sha,
 };
 pub use credentials::{CredentialSource, ResolvedCredential};
-pub use endpoint::{GitHubEndpoint, credential_host};
+pub use endpoint::{GitHubEndpoint, credential_host, is_loopback};
 pub use error::{ProviderError, ProviderErrorKind, ProviderErrorReason, RateLimit};
 pub use history::{CommitListRequest, HistoryPage, HistoryRequest, PullListRequest};
 pub use query_syntax::{
-    SearchName, qualifier_value, quote_search_keyword, search_phrase, validate_qualifier_value,
-    validate_search_name,
+    qualifier_value, quote_search_keyword, search_phrase, validate_person_name,
+    validate_qualifier_value,
 };
 pub use refs::{NamedRef, RefKind, RefMatch, RefPage};
 pub use request_budget::{BudgetStop, RequestBudget};

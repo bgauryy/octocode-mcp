@@ -48,7 +48,7 @@ impl PathAccess for Paths {
                 resource_missing: false,
                 sparse_checkout: false,
                 directory: false,
-                nearest_dir: None,
+                search_root: None,
             })
     }
 }
@@ -909,6 +909,70 @@ fn standard_view_lines_cite_their_source_lines() {
     );
 }
 
+/// A minified view pages in raw source lines, the unit of `totalLines`,
+/// the gutter numbers and `ranges`: each page covers raw lines
+/// `offset+1..=offset+length`, its gutter numbers lie inside that span,
+/// pages are contiguous, and together they reach every raw line and show
+/// every kept line exactly once.
+#[test]
+fn minified_views_page_in_raw_source_lines() {
+    let t = Temp::new();
+    let paths = Paths(t.0.clone());
+    let p = t.0.join("a.js");
+    let groups = 3_000;
+    let source: String = (1..=groups)
+        .map(|n| format!("// note {n}\n\nexport const value{n} = {n};\n"))
+        .collect();
+    fs::write(&p, &source).expect("fixture");
+    let raw_total = groups * 3;
+    let kept: Vec<usize> = (1..=groups).map(|n| n * 3).collect();
+    for first in [
+        serde_json::json!({"minify":"standard","unit":"lines","length":30}),
+        serde_json::json!({"minify":"standard","fullContent":true}),
+    ] {
+        let mut query = qj(&p, first.clone());
+        let (mut expected_offset, mut shown) = (0, Vec::new());
+        for _ in 0..1_000 {
+            let page = execute_local_fetch(
+                &query,
+                &paths,
+                &Safe,
+                &NeverCancel,
+                &LocalFetchRegex,
+                Some(50_000),
+            );
+            assert_eq!(page.total_lines, Some(raw_total), "{first}");
+            let pagination = page.pagination.clone().expect("paged");
+            assert_eq!(pagination.unit, WindowUnit::Lines, "{first}");
+            assert_eq!(pagination.total_lines, raw_total, "{first} {pagination:?}");
+            assert_eq!(pagination.offset, expected_offset, "{first} {pagination:?}");
+            let span = pagination.offset + 1..=pagination.offset + pagination.length;
+            for line in page.content.as_deref().unwrap_or_default().lines() {
+                let number: usize = line
+                    .split_once('\t')
+                    .and_then(|(number, _)| number.parse().ok())
+                    .unwrap_or_else(|| panic!("numbered line: {line:?}"));
+                assert!(span.contains(&number), "{first} {number} outside {span:?}");
+                shown.push(number);
+            }
+            expected_offset = pagination.offset + pagination.length;
+            match page.next.and_then(|next| next.continue_window) {
+                Some(next) => {
+                    assert!(pagination.has_more, "{first} {pagination:?}");
+                    assert_eq!(next.query.offset(), Some(expected_offset), "{first}");
+                    query = next.query;
+                }
+                None => break,
+            }
+        }
+        assert_eq!(
+            expected_offset, raw_total,
+            "{first}: pages reach the last raw line"
+        );
+        assert_eq!(shown, kept, "{first}: every kept line exactly once");
+    }
+}
+
 /// `minify:"symbols"` uses one gutter, `N\t`, in every language and on
 /// every line, closing-brace lines included.
 #[test]
@@ -1683,13 +1747,15 @@ fn directory_path_is_not_a_file_with_tree_lead() {
     }
 }
 
-/// A missing file leads to a listing by its stem under the closest
-/// existing directory.
+/// A missing file leads to a listing by its stem from the workspace root:
+/// a file moved to another tree (or a path that names the wrong package)
+/// is found at any depth, not only under the closest existing directory.
 #[test]
 fn missing_file_leads_to_files_by_stem() {
     let t = Temp::new();
-    fs::create_dir_all(t.0.join("src/b")).expect("dirs");
-    fs::write(t.0.join("src/b/blok.ts"), "x\n").expect("moved");
+    fs::create_dir_all(t.0.join("src/a")).expect("dirs");
+    fs::create_dir_all(t.0.join("pkg/docs")).expect("dirs");
+    fs::write(t.0.join("pkg/docs/blok.ts"), "x\n").expect("moved");
     let mut req = LocalFetchQuery::test_default();
     req.path = "src/a/blok.rs".parse().expect("path");
     let result = fetch(&req, &workspace_policy(&t.0));
@@ -1701,8 +1767,19 @@ fn missing_file_leads_to_files_by_stem() {
     let next = serde_json::to_value(result.next.as_ref().expect("next")).expect("json");
     let listing = &next["findFile"]["query"]["queries"][0];
     assert_eq!(listing["operation"], "files", "{next}");
-    assert_eq!(listing["path"], "src", "{next}");
+    assert_eq!(listing["path"], ".", "{next}");
     assert_eq!(listing["include"], serde_json::json!(["blok.*"]), "{next}");
+    // The lead runs and lists the moved file.
+    let (paths, security) = crate::tools::test_support::simple_policy(&t.0);
+    let listed = crate::tools::structure_search::execute_structure(
+        &serde_json::from_value(listing.clone()).expect("structureSearch row"),
+        &paths,
+        &security,
+        &crate::tools::cancel::NeverCancel,
+        None,
+    )
+    .expect("listing");
+    assert!(listed.to_string().contains("blok.ts"), "{listed}");
 }
 
 /// The lead keeps the whole stem as a glob, so a short name (`x.md`)
@@ -1924,7 +2001,7 @@ fn read_block_lead_is_byte_capped() {
     assert!(lines * 520 <= 32 * 1024, "{next}");
 }
 
-/// GF3: a plain read's readBlock covers every cut declaration, not just
+/// A plain read's readBlock covers every cut declaration, not just
 /// the first hit's.
 #[test]
 fn read_block_covers_every_cut_declaration() {
@@ -1970,7 +2047,7 @@ fn read_block_covers_every_cut_declaration() {
     assert!(covers(66) && covers(126), "{ranges:?}");
 }
 
-/// repo-sweep: a `unit:"lines"` walk over a file holding one line longer
+/// A `unit:"lines"` walk over a file holding one line longer
 /// than a page reaches every source byte exactly once. Line pages continue
 /// at the next line; the oversized line is served as byte pages that each
 /// cite it as `sourceLineRanges: [{line, endLine}]` (the wire names),
@@ -2081,6 +2158,11 @@ fn regex_read_past_the_match_limit_is_partial_with_a_search_lead() {
         let result = fetch(&request, &Paths(t.0.clone()));
         assert_eq!(result.error, None, "{engine:?}");
         assert_eq!(result.is_partial, Some(true), "{engine:?}");
+        assert_eq!(
+            result.partial_reasons,
+            vec![super::types::PartialReason::RegexMatchLimit],
+            "{engine:?}"
+        );
         assert!(
             result.warnings.iter().any(|w| w.contains("match limit")),
             "{engine:?}: {:?}",
@@ -2135,8 +2217,8 @@ fn paged_regex_read_past_the_match_limit_keeps_its_search_lead() {
 }
 
 /// A matchString read of a JSON file names each hit line's section: a
-/// window that hides the section header still says `devDependencies.vite`
-/// (Q14). Other files carry no `matchKeys`.
+/// window that hides the section header still says `devDependencies.vite`.
+/// Other files carry no `matchKeys`.
 #[test]
 fn json_match_reads_name_each_hit_line_key_path() {
     let t = Temp::new();
@@ -2173,7 +2255,7 @@ fn json_match_reads_name_each_hit_line_key_path() {
 }
 
 /// A matchString read of a TOML file names each hit's table and key, with
-/// the same `matchKeys` map (Q13: `[target.'cfg(…)'.dependencies]`).
+/// the same `matchKeys` map (`[target.'cfg(…)'.dependencies]`).
 #[test]
 fn toml_match_reads_name_each_hit_line_key_path() {
     let t = Temp::new();
@@ -2200,7 +2282,7 @@ fn toml_match_reads_name_each_hit_line_key_path() {
 }
 
 /// A list item that does not compile as a regex is named by index and text
-/// (Q3: `"def post("` in a `regex:"rust"` list), on both regex engines.
+/// (`"def post("` in a `regex:"rust"` list), on both regex engines.
 #[test]
 fn invalid_regex_items_are_named_by_index() {
     let t = Temp::new();

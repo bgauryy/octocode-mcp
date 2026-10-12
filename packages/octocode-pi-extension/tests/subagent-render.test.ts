@@ -3,12 +3,18 @@ import { doneSummary, renderAgentCall, renderAgentMessage, renderAgentResult, ty
 import { rendered, theme } from './fake-pi.js';
 
 const ctx = (extra: Record<string, unknown> = {}) => ({ args: {}, lastComponent: undefined, isPartial: false, isError: false, expanded: false, state: {}, ...extra }) as never;
-const details = (extra: Partial<RunDetails> = {}): RunDetails => ({ id: 'general-0001', profile: 'general', toolCalls: 2, activity: ['→ bash ls', '→ read a.ts'], input: 1_500, output: 500, startedAt: 0, status: 'done', ...extra });
+const details = (extra: Partial<RunDetails> = {}): RunDetails => ({ id: 'general-0001', profile: 'general', goal: 'audit auth token refresh', toolCalls: 2, activity: ['→ bash ls', '→ read a.ts'], input: 1_500, cacheRead: 0, output: 500, cost: 0, unpriced: false, startedAt: 0, status: 'done', ...extra });
 
 describe('subagent renderers', () => {
+  it('names the goal in the call row, after the profile', () => {
+    expect(rendered(renderAgentCall({ task: 't', goal: 'audit auth token refresh', profile: 'reviewer', isolate: true } as never, theme, ctx()))).toContain('Agent(reviewer · audit auth token refresh · isolated)');
+  });
+
   it('summarizes a finished run with and without a duration', () => {
-    expect(doneSummary(details(), 38_000)).toBe('Done (2 tool calls · 2k tokens · 38s)');
-    expect(doneSummary(details({ toolCalls: 1 }), undefined)).toBe('Done (1 tool call · 2k tokens)');
+    expect(doneSummary(details(), 38_000)).toBe('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · 38s)');
+    expect(doneSummary(details({ toolCalls: 1 }), undefined)).toBe('Done (general-0001 · 1 tool call · ↑1.5k ↓500)');
+    expect(doneSummary(details({ cacheRead: 1_200, cost: 0.12 }), 38_000)).toBe('Done (general-0001 · 2 tool calls · ↑1.5k (80% cached) ↓500 · ≈$0.12 · 38s)');
+    expect(doneSummary(details({ cost: 0.12, unpriced: true }), undefined)).toBe('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · ≈$0.12 + n/a)');
   });
 
   it('draws the call with the profile and tags, never the prompt', () => {
@@ -30,7 +36,7 @@ describe('subagent renderers', () => {
     expect(warned(true)).toContain('Not isolated: no git repo');
     expect(warned(true)).not.toContain('Started general-0001');
     const fallback = rendered(renderAgentResult({ content: [{ type: 'text', text: 'answer' }], details: details({ seconds: 90 }) }, { isPartial: false, expanded: false }, theme, ctx()));
-    expect(fallback).toContain('Done (2 tool calls · 2k tokens · 1m30s)');
+    expect(fallback).toContain('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · 1m30s)');
     const bare = rendered(renderAgentResult({ content: [{ type: 'text', text: 'Subagent failed\ndetail' }], details: undefined }, { isPartial: false, expanded: false }, theme, ctx({ isError: true })));
     expect(bare).toContain('Subagent failed');
   });
@@ -49,13 +55,12 @@ describe('subagent renderers', () => {
     expect(live(true)).toMatch(/Prompt[\s\S]*Progress[\s\S]*→ read a\.ts/);
   });
 
-  it('shows a background report with its full prompt instead of the task line', () => {
-    const message = (expanded: boolean) => rendered(renderAgentMessage({ role: 'custom', customType: 'x', content: 'Background subagent general-0001 finished (3s · 1 tool call):\nTask: Fix login\nAll fixed.', details: { id: 'general-0001', status: 'done', summary: 'Done (1 tool call)', durationMs: 3_000, task: 'Fix login\nin src/auth.ts' }, display: true, timestamp: 0 } as never, { expanded, outputPad: 1 }, theme as never) as never);
-    expect(message(false)).toContain('Agent(general-0001)');
+  it('shows a background report with its name, role and goal, and its full prompt when expanded', () => {
+    const message = (expanded: boolean) => rendered(renderAgentMessage({ role: 'custom', customType: 'x', content: 'Background subagent general-0001 finished (3s · 1 tool call):\nAll fixed.', details: { id: 'general-0001', status: 'done', summary: 'Done (1 tool call)', durationMs: 3_000, profile: 'researcher', goal: 'fix login flow', task: 'Fix login\nin src/auth.ts' }, display: true, timestamp: 0 } as never, { expanded, outputPad: 1 }, theme as never) as never);
+    expect(message(false)).toContain('Agent(general-0001 · researcher · fix login flow)');
     expect(message(false)).not.toContain('Fix login');
     expect(message(false)).toContain('All fixed.');
     expect(message(true)).toMatch(/Prompt\n\s+Fix login\n\s+in src\/auth\.ts\n\s*\n\s+Report\n\s+All fixed\./);
-    expect(message(true)).not.toContain('Task: ');
   });
 
   it('draws a background report message without details as a plain report', () => {

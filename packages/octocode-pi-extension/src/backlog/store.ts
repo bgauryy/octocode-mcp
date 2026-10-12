@@ -1,6 +1,7 @@
 import type { AgentDb } from '../agentdb/db.js';
 import { sessionRunningPid } from '../agentdb/liveness.js';
 import { sanitizeTerminalText, secretProblem, storedText } from '../shared/sanitize.js';
+import { toItem, type Row } from './row.js';
 
 /**
  * The per-repository backlog in the shared agent database (`backlog`, `backlog_notes`; schema in src/agentdb). Items are
@@ -10,6 +11,11 @@ import { sanitizeTerminalText, secretProblem, storedText } from '../shared/sanit
  *   todo      accepted, not started
  *   ongoing   claimed by one session or subagent (the assignee)
  *   done      finished, with a note saying what changed and how it was verified
+ *
+ * An item has a title, a goal (what done means) and a body (why, evidence, plan). The store keeps when it was created,
+ * last claimed (`started_at`), updated and done. An item may name the item it came from (`from`: a split, follow-up or finding), so the origin lists what came of it.
+ * Every update writes a `change` note with what it changed (a replaced body is kept in full), next to the agent's own
+ * notes, which say why.
  */
 
 export const STATES = ['backlog', 'todo', 'ongoing', 'done'] as const;
@@ -18,6 +24,7 @@ export const PRIORITIES = ['p0', 'p1', 'p2', 'p3'] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
 export const TITLE_MAX = 200;
+export const GOAL_MAX = 500;
 export const BODY_MAX = 4000;
 export const NOTE_MAX = 1000;
 export const TAGS_MAX = 8;
@@ -29,6 +36,8 @@ export interface Item {
   /** `B<seq>`. */
   ref: string;
   title: string;
+  /** What done means: the observable result or check that closes the item. */
+  goal: string;
   body: string;
   state: State;
   priority: number;
@@ -38,13 +47,21 @@ export interface Item {
   sourceSession?: string;
   createdAt: number;
   updatedAt: number;
+  /** When the item was last claimed (moved to ongoing, or taken over); kept when it is done, cleared when released. */
+  startedAt?: number;
   doneAt?: number;
+  /** The item this one came from, by number (`B<from>`). */
+  from?: number;
   version: number;
 }
+
+/** `note`: text an agent or the user wrote; `change`: what an update changed, written by the store. */
+export type NoteKind = 'note' | 'change';
 
 export interface Note {
   at: number;
   author: string;
+  kind: NoteKind;
   text: string;
 }
 
@@ -57,40 +74,25 @@ export interface Actor {
 
 export class BacklogError extends Error {}
 
-interface Row {
-  id: number;
-  seq: number;
-  title: string;
-  body: string;
-  state: State;
-  priority: number;
-  tags: string;
-  assignee: string | null;
-  created_by: string;
-  source_session: string | null;
-  created_at: number;
-  updated_at: number;
-  done_at: number | null;
-  version: number;
-}
+/** Items with the number of the item each came from; filters and order use the `b.` alias. */
+const SELECT = 'SELECT b.*, f.seq AS from_seq FROM backlog b LEFT JOIN backlog f ON f.id = b.from_item';
 
-const toItem = (row: Row): Item => ({
-  rowId: row.id,
-  seq: row.seq,
-  ref: `B${row.seq}`,
-  title: row.title,
-  body: row.body,
-  state: row.state,
-  priority: row.priority,
-  tags: row.tags ? row.tags.split(' ') : [],
-  ...(row.assignee ? { assignee: row.assignee } : {}),
-  createdBy: row.created_by,
-  ...(row.source_session ? { sourceSession: row.source_session } : {}),
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-  ...(row.done_at ? { doneAt: row.done_at } : {}),
-  version: row.version,
-});
+const tagText = (tags: readonly string[]) => (tags.length ? tags.map((tag) => `#${tag}`).join(' ') : 'none');
+const refText = (seq: number | undefined) => (seq === undefined ? 'none' : `B${seq}`);
+
+/** The change note for one update: every field that changed, old → new; a replaced body is kept in full. */
+function changeText(before: Item, after: Item): string {
+  const parts: string[] = [];
+  if (after.state !== before.state) parts.push(`state ${before.state} → ${after.state}`);
+  if (after.assignee !== before.assignee) parts.push(`assignee ${before.assignee ?? 'none'} → ${after.assignee ?? 'none'}`);
+  if (after.priority !== before.priority) parts.push(`priority ${priorityName(before.priority)} → ${priorityName(after.priority)}`);
+  if (after.tags.join(' ') !== before.tags.join(' ')) parts.push(`tags ${tagText(before.tags)} → ${tagText(after.tags)}`);
+  if (after.from !== before.from) parts.push(`from ${refText(before.from)} → ${refText(after.from)}`);
+  if (after.title !== before.title) parts.push(`title was "${before.title}"`);
+  if (after.goal !== before.goal) parts.push(before.goal ? `goal was "${before.goal}"` : 'goal added');
+  if (after.body !== before.body) parts.push(before.body ? `body replaced; it was:\n${before.body}` : 'body added');
+  return parts.join(' · ');
+}
 
 /** `B12`, `b12`, `#12` or `12` → 12. */
 export function parseRef(ref: string): number | undefined {
@@ -120,20 +122,26 @@ export const priorityName = (priority: number): Priority => PRIORITIES[priority]
 
 interface AddInput {
   title: string;
+  goal?: string;
   body?: string;
   state?: State;
   priority?: number;
   tags?: readonly string[];
+  /** The item this one came from (`B12`). */
+  from?: string;
   createdBy: string;
   sourceSession?: string;
 }
 
 interface UpdateInput {
   title?: string;
+  goal?: string;
   body?: string;
   state?: State;
   priority?: number;
   tags?: readonly string[];
+  /** The item this one came from (`B12`); null clears the link. */
+  from?: string | null;
   note?: string;
   /** Refuse when the item changed since this version was read (a board holding a stale copy). */
   version?: number;
@@ -144,10 +152,15 @@ interface UpdateInput {
 interface ListQuery {
   states?: readonly State[];
   query?: string;
+  /** Only the items that came from this one (`B12`). */
+  from?: string;
   limit?: number;
+  offset?: number;
 }
 
-const ORDER = `CASE state WHEN 'ongoing' THEN 0 WHEN 'todo' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END, priority, updated_at DESC, seq DESC`;
+const ORDER = `CASE b.state WHEN 'ongoing' THEN 0 WHEN 'todo' THEN 1 WHEN 'backlog' THEN 2 ELSE 3 END, b.priority, b.updated_at DESC, b.seq DESC`;
+
+const likeEscape = (text: string) => text.replace(/[\\%_]/g, (char) => `\\${char}`);
 
 export class BacklogStore {
   constructor(
@@ -163,25 +176,50 @@ export class BacklogStore {
   get(ref: string | number): Item | undefined {
     const seq = typeof ref === 'number' ? ref : parseRef(ref);
     if (seq === undefined) return undefined;
-    const row = this.db.prepare('SELECT * FROM backlog WHERE repo_key = ? AND seq = ?').get(this.repo, seq) as Row | undefined;
+    const row = this.db.prepare(`${SELECT} WHERE b.repo_key = ? AND b.seq = ?`).get(this.repo, seq) as Row<State> | undefined;
     return row ? toItem(row) : undefined;
+  }
+
+  /** The items that came from `item`, in board order. */
+  derived(item: Item): Item[] {
+    const rows = this.db.prepare(`${SELECT} WHERE b.from_item = ? ORDER BY ${ORDER}`).all(item.rowId) as unknown as Row<State>[];
+    return rows.map(toItem);
+  }
+
+  /** The row id of the item `ref` names, refused when it is missing, is `item` itself, or already comes from `item`. */
+  private origin(ref: string, item?: Item): number {
+    const target = this.get(ref);
+    if (!target) throw new BacklogError(`No backlog item ${sanitizeTerminalText(ref)} to link from.`);
+    if (!item) return target.rowId;
+    if (target.rowId === item.rowId) throw new BacklogError(`${item.ref} cannot come from itself.`);
+    const seen = new Set<number>();
+    for (let at: Item | undefined = target; at?.from !== undefined && !seen.has(at.seq); at = this.get(at.from)) {
+      seen.add(at.seq);
+      if (at.from === item.seq) throw new BacklogError(`${target.ref} already comes from ${item.ref}: the link would make a loop.`);
+    }
+    return target.rowId;
   }
 
   /** Items in `states` (every state when unset), ongoing first, then by priority and most recently updated; `total` counts past the limit. */
   list(query: ListQuery = {}): { items: Item[]; total: number } {
     const states = query.states?.length ? [...new Set(query.states)] : [...STATES];
-    const where = [`repo_key = ?`, `state IN (${states.map(() => '?').join(', ')})`];
+    const where = [`b.repo_key = ?`, `b.state IN (${states.map(() => '?').join(', ')})`];
     const args: Array<string | number> = [this.repo, ...states];
     const text = query.query?.trim();
     if (text) {
-      where.push(`(title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')`);
-      const like = `%${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
-      args.push(like, like, like);
+      // Title, goal and body match any substring; a tag matches only whole (`ui` is not found in `build`), with or without `#`.
+      where.push(`(b.title LIKE ? ESCAPE '\\' OR b.goal LIKE ? ESCAPE '\\' OR b.body LIKE ? ESCAPE '\\' OR (' ' || b.tags || ' ') LIKE ? ESCAPE '\\')`);
+      const like = `%${likeEscape(text)}%`;
+      args.push(like, like, like, `% ${likeEscape(text.replace(/^#+/, ''))} %`);
+    }
+    if (query.from !== undefined) {
+      where.push('b.from_item = ?');
+      args.push(this.origin(query.from));
     }
     const clause = where.join(' AND ');
-    const total = (this.db.prepare(`SELECT COUNT(*) AS n FROM backlog WHERE ${clause}`).get(...args) as { n: number }).n;
+    const total = (this.db.prepare(`SELECT COUNT(*) AS n FROM backlog b WHERE ${clause}`).get(...args) as { n: number }).n;
     const limit = query.limit === undefined ? -1 : Math.max(0, Math.floor(query.limit));
-    const rows = this.db.prepare(`SELECT * FROM backlog WHERE ${clause} ORDER BY ${ORDER} LIMIT ?`).all(...args, limit) as unknown as Row[];
+    const rows = this.db.prepare(`${SELECT} WHERE ${clause} ORDER BY ${ORDER} LIMIT ? OFFSET ?`).all(...args, limit, query.offset ?? 0) as unknown as Row<State>[];
     return { items: rows.map(toItem), total };
   }
 
@@ -192,9 +230,9 @@ export class BacklogStore {
     return counts;
   }
 
-  notes(item: Item, limit = 10): Note[] {
-    const rows = this.db.prepare('SELECT at, author, text FROM backlog_notes WHERE item = ? ORDER BY at DESC, id DESC LIMIT ?').all(item.rowId, limit) as unknown as Note[];
-    return rows.reverse().map((row) => ({ at: row.at, author: row.author, text: row.text }));
+  notes(item: Item, limit = 10, offset = 0): Note[] {
+    const rows = this.db.prepare('SELECT at, author, kind, text FROM backlog_notes WHERE item = ? ORDER BY at DESC, id DESC LIMIT ? OFFSET ?').all(item.rowId, limit, offset) as unknown as Note[];
+    return rows.reverse().map((row) => ({ at: row.at, author: row.author, kind: row.kind, text: row.text }));
   }
 
   noteCount(item: Item): number {
@@ -204,7 +242,7 @@ export class BacklogStore {
   add(input: AddInput): Item {
     const title = storedText(input.title, TITLE_MAX);
     if (!title) throw new BacklogError('An item needs a title.');
-    refuseSecrets({ title: input.title, body: input.body, tags: input.tags });
+    refuseSecrets({ title: input.title, goal: input.goal, body: input.body, tags: input.tags });
     const agentDb = this.agentDb();
     return agentDb.transaction(() => {
       // Numbers are never reused, even after the newest item is deleted: the high-water mark lives in `meta`.
@@ -213,15 +251,34 @@ export class BacklogStore {
       const max = (agentDb.db.prepare('SELECT MAX(seq) AS n FROM backlog WHERE repo_key = ?').get(this.repo) as { n: number | null }).n ?? 0;
       const seq = Math.max(mark, max) + 1;
       agentDb.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(seq));
+      const from = input.from === undefined ? null : this.origin(input.from);
       const at = this.now();
       const state = input.state ?? 'backlog';
       agentDb.db
         .prepare(
-          `INSERT INTO backlog (repo_key, seq, title, body, state, priority, tags, assignee, created_by, source_session, created_at, updated_at, done_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+          `INSERT INTO backlog (repo_key, seq, title, goal, body, state, priority, tags, assignee, created_by, source_session, created_at, updated_at, started_at, done_at, from_item)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(this.repo, seq, title, storedText(input.body, BODY_MAX), state, clampPriority(input.priority), cleanTags(input.tags ?? []).join(' '), input.createdBy, input.sourceSession ?? null, at, at, state === 'done' ? at : null);
-      return this.get(seq)!;
+        .run(
+          this.repo,
+          seq,
+          title,
+          storedText(input.goal, GOAL_MAX),
+          storedText(input.body, BODY_MAX),
+          state,
+          clampPriority(input.priority),
+          cleanTags(input.tags ?? []).join(' '),
+          input.createdBy,
+          input.sourceSession ?? null,
+          at,
+          at,
+          state === 'ongoing' ? at : null,
+          state === 'done' ? at : null,
+          from,
+        );
+      const item = this.get(seq)!;
+      if (item.from !== undefined) this.log(item, at, input.createdBy, 'change', `created from B${item.from}`);
+      return item;
     });
   }
 
@@ -231,7 +288,7 @@ export class BacklogStore {
    * others may only add a note (the user may force an edit). A subagent may only touch items its parent holds.
    */
   update(ref: string, input: UpdateInput, actor: Actor): Item {
-    refuseSecrets({ title: input.title, body: input.body, note: input.note, tags: input.tags });
+    refuseSecrets({ title: input.title, goal: input.goal, body: input.body, note: input.note, tags: input.tags });
     const agentDb = this.agentDb();
     return agentDb.transaction(() => {
       const item = this.get(ref);
@@ -241,7 +298,7 @@ export class BacklogStore {
         throw new BacklogError(`${item.ref} is not claimed by your parent: a subagent updates only the items its parent has claimed.`);
       }
       const holder = !actor.owners && item.state === 'ongoing' && item.assignee && item.assignee !== actor.id ? this.liveHolder(item.assignee) : undefined;
-      const changes = (['title', 'body', 'state', 'priority', 'tags'] as const).some((field) => input[field] !== undefined);
+      const changes = (['title', 'goal', 'body', 'state', 'priority', 'tags', 'from'] as const).some((field) => input[field] !== undefined);
       if (holder && (input.state === 'ongoing' || (changes && !input.force))) {
         throw new BacklogError(`${item.ref} is ongoing for ${holder}, which is still running: add a note, leave it, or ask the user.`);
       }
@@ -255,22 +312,37 @@ export class BacklogStore {
       const title = input.title === undefined ? item.title : storedText(input.title, TITLE_MAX);
       if (!title) throw new BacklogError('An item needs a title.');
       const doneAt = state === 'done' ? (item.state === 'done' ? (item.doneAt ?? at) : at) : null;
+      // A claim (or a takeover) starts the clock; releasing the item clears it; done keeps it, so the cycle time stays.
+      const claimed = state === 'ongoing' && (item.state !== 'ongoing' || assignee !== item.assignee);
+      const startedAt = claimed ? at : state === 'backlog' || state === 'todo' ? null : (item.startedAt ?? null);
+      const fromItem = input.from === undefined ? (item.from === undefined ? null : this.get(item.from)!.rowId) : input.from === null ? null : this.origin(input.from, item);
       agentDb.db
-        .prepare('UPDATE backlog SET title = ?, body = ?, state = ?, priority = ?, tags = ?, assignee = ?, updated_at = ?, done_at = ?, version = version + 1 WHERE id = ?')
+        .prepare('UPDATE backlog SET title = ?, goal = ?, body = ?, state = ?, priority = ?, tags = ?, assignee = ?, updated_at = ?, started_at = ?, done_at = ?, from_item = ?, version = version + 1 WHERE id = ?')
         .run(
           title,
+          input.goal === undefined ? item.goal : storedText(input.goal, GOAL_MAX),
           input.body === undefined ? item.body : storedText(input.body, BODY_MAX),
           state,
           input.priority === undefined ? item.priority : clampPriority(input.priority),
           input.tags === undefined ? item.tags.join(' ') : cleanTags(input.tags).join(' '),
           assignee ?? null,
           at,
+          startedAt,
           doneAt,
+          fromItem,
           item.rowId,
         );
-      if (note) agentDb.db.prepare('INSERT INTO backlog_notes (item, at, author, text) VALUES (?, ?, ?, ?)').run(item.rowId, at, actor.id, note);
-      return this.get(item.seq)!;
+      const updated = this.get(item.seq)!;
+      // What changed first, then why: notes at one time read in insertion order.
+      const change = changeText(item, updated);
+      if (change) this.log(item, at, actor.id, 'change', change);
+      if (note) this.log(item, at, actor.id, 'note', note);
+      return updated;
     });
+  }
+
+  private log(item: Item, at: number, author: string, kind: NoteKind, text: string): void {
+    this.db.prepare('INSERT INTO backlog_notes (item, at, author, kind, text) VALUES (?, ?, ?, ?, ?)').run(item.rowId, at, author, kind, text);
   }
 
   /** Deletes an item and its notes. With `actor` (the agent), an item another live session holds is refused. */
@@ -282,6 +354,12 @@ export class BacklogStore {
       if (version !== undefined && version !== item.version) throw new BacklogError(`${item.ref} changed elsewhere — reload it.`);
       const holder = actor && item.state === 'ongoing' && item.assignee && item.assignee !== actor.id ? this.liveHolder(item.assignee) : undefined;
       if (holder) throw new BacklogError(`${item.ref} is ongoing for ${holder}, which is still running: leave it or ask the user.`);
+      // The items that came from it keep a trace of the link in their change log.
+      const at = this.now();
+      for (const child of this.derived(item)) {
+        agentDb.db.prepare('UPDATE backlog SET from_item = NULL, version = version + 1 WHERE id = ?').run(child.rowId);
+        this.log(child, at, actor?.id ?? 'user', 'change', `from ${item.ref} → none (${item.ref} "${item.title}" was removed)`);
+      }
       agentDb.db.prepare('DELETE FROM backlog WHERE id = ?').run(item.rowId);
       return item;
     });

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { withDialog } from '../src/shared/locks.js';
 import { showAskDialog, type AskQuestion, type AskResult } from '../src/ask/dialog.js';
 import { formatAnswers, registerAskUser } from '../src/ask/tool.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
-import { visibleWidth } from '@earendil-works/pi-tui';
+import { CURSOR_MARKER, visibleWidth } from '@earendil-works/pi-tui';
 
 const KEY = { enter: '\r', escape: '\x1b', tab: '\t', shiftTab: '\x1b[Z', up: '\x1b[A', down: '\x1b[B', right: '\x1b[C', left: '\x1b[D', space: ' ' };
 const tui = { requestRender: () => undefined, terminal: { rows: 40, columns: 100 } };
@@ -48,6 +49,21 @@ describe('askUser', () => {
       dialog.handleInput(KEY.escape);
     }) } });
     await showAskDialog(ctx, [{ ...scope, question: 'Which\u001b]0;hidden\u0007 scope?' }]);
+  });
+
+  it('redraws on a focus change, so the cursor marker follows focus', async () => {
+    const frames: string[] = [];
+    const ctx = fakeCtx({ cwd: '.', ui: { custom: (factory) => new Promise((resolve) => {
+      const dialog = factory(tui, theme, {}, resolve) as Dialog;
+      frames.push(dialog.render(80).join('\n'));
+      dialog.focused = true;
+      frames.push(dialog.render(80).join('\n'));
+      dialog.focused = false;
+      frames.push(dialog.render(80).join('\n'));
+      resolve({ cancelled: true, answers: [] });
+    }) } });
+    await showAskDialog(ctx, [{ question: 'Your name?', header: 'Name', options: [] }]);
+    expect(frames.map((frame) => frame.includes(CURSOR_MARKER))).toEqual([false, true, false]);
   });
 
   it('formats askUser answers and declines', () => {
@@ -161,6 +177,24 @@ describe('askUser tool', () => {
   registerAskUser(fake.pi);
   const tool = fake.tools.get('askUser');
   const params = { questions: [{ ...scope, header: 'A very long header' }, extras] };
+
+  it('does not open a cancelled queued question over an active dialog', async () => {
+    let release!: () => void;
+    const holder = withDialog(() => new Promise<void>((resolve) => { release = resolve; }));
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const custom = vi.fn();
+    const ctx = fakeCtx({ cwd: '.', ui: { custom } });
+    const controller = new AbortController();
+    try {
+      const pending = tool.execute('queued', params, controller.signal, undefined, ctx);
+      controller.abort();
+      expect((await pending).details).toMatchObject({ cancelled: true, reason: 'aborted' });
+      expect(custom).not.toHaveBeenCalled();
+    } finally {
+      release();
+      await holder;
+    }
+  });
 
   it('answers for a missing user when there is no UI', async () => {
     const result = await tool.execute('c', params, undefined, undefined, fakeCtx({ cwd: '.', hasUI: false }));

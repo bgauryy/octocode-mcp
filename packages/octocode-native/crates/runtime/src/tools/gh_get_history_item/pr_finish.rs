@@ -11,8 +11,8 @@ use super::util::{nonzero, str_at, string};
 use super::window::clamp_warning;
 use crate::contracts::tool_types::ExtraKind;
 use crate::tools::gh_shared::ensure_next;
-use crate::tools::gh_shared::push_warning;
 use crate::tools::id::ToolId;
+use crate::tools::paging::push_warnings;
 use crate::tools::result::remove_nulls;
 use serde_json::{Value, json};
 
@@ -82,10 +82,10 @@ pub(super) fn finish_pr(
     if (patch_mode != "none" || plan.needle.is_some())
         && let Some(warning) = clamp_warning(query)
     {
-        push_warning(&mut out, warning);
+        push_warnings(&mut out, [warning]);
     }
     if let Some(warning) = needle_missed {
-        push_warning(&mut out, warning);
+        push_warnings(&mut out, [warning]);
     }
     promote_pr_continuations(&mut out, query);
     attach_full_patch_continuation(&mut out, query);
@@ -191,13 +191,13 @@ fn attach_context_reads(
         Some(reasons) => reasons.push(json!("contextClipped")),
         None => out["partialReasons"] = json!(["contextClipped"]),
     }
-    push_warning(
+    push_warnings(
         out,
-        format!(
+        [format!(
             "contextLines {} reaches past the diff hunks of {} file(s) (contextClipped).",
             match_context(query),
             clipped.len()
-        ),
+        )],
     );
     ensure_next(out);
     for (index, (path, ranges)) in clipped.iter().enumerate() {

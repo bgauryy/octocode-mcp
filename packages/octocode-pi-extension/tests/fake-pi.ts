@@ -1,5 +1,11 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import type { OctocodeMcp, OctocodeOwner } from '../src/mcp/octocode.js';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { Permission } from '../src/permission/ask.js';
+import type { PermissionMode } from '../src/permission/mode.js';
+
+type EditorFactory = ReturnType<ExtensionContext['ui']['getEditorComponent']>;
 
 /** Identity theme: colours and styles pass text through, so rendered components read as plain text. */
 export const theme = {
@@ -24,6 +30,7 @@ export function fakePi() {
   const commands = new Map<string, any>();
   const handlers = new Map<string, Handler[]>();
   const renderers = new Map<string, any>();
+  const shortcuts = new Map<string, { description?: string; handler: (ctx: unknown) => unknown }>();
   const sent: Array<{ message: any; options: any }> = [];
   const entries: Array<{ customType: string; data: unknown }> = [];
   let activeTools: string[] | undefined;
@@ -34,7 +41,7 @@ export function fakePi() {
     registerMessageRenderer: (type: string, renderer: unknown) => renderers.set(type, renderer),
     registerEntryRenderer: (type: string, renderer: unknown) => renderers.set(type, renderer),
     registerFlag: () => undefined,
-    registerShortcut: () => undefined,
+    registerShortcut: (key: string, options: { description?: string; handler: (ctx: unknown) => unknown }) => shortcuts.set(key, options),
     getFlag: () => undefined,
     on: (event: string, handler: Handler) => {
       const list = handlers.get(event) ?? [];
@@ -59,7 +66,7 @@ export function fakePi() {
   };
   /** Runs every handler for `event` in order and returns the last one's result, as Pi does for most events. */
   const fire = async (event: string, payload: unknown, ctx: unknown) => (await emit(event, payload, ctx)).at(-1);
-  return { pi: pi as unknown as ExtensionAPI, tools, commands, handlers, renderers, sent, entries, emit, fire };
+  return { pi: pi as unknown as ExtensionAPI, tools, commands, handlers, renderers, shortcuts, sent, entries, emit, fire };
 }
 
 export interface FakeUi {
@@ -68,6 +75,7 @@ export interface FakeUi {
   widgets: Map<string, unknown>;
   footer?: unknown;
   header?: unknown;
+  editor?: EditorFactory | undefined;
   title?: string;
   selects: Array<string | undefined>;
   inputs: Array<string | undefined>;
@@ -85,6 +93,8 @@ export function fakeCtx(options: { cwd: string; hasUI?: boolean; mode?: string; 
     setWidget: (key: string, content: unknown) => (content === undefined ? state.widgets.delete(key) : state.widgets.set(key, content)),
     setFooter: (factory: unknown) => ((ui as FakeUi).footer = factory),
     setHeader: (factory: unknown) => ((ui as FakeUi).header = factory),
+    setEditorComponent: (factory: EditorFactory | undefined) => ((ui as FakeUi).editor = factory),
+    getEditorComponent: () => (ui as FakeUi).editor,
     setTitle: (title: string) => ((ui as FakeUi).title = title),
     setWorkingMessage: (message?: string) => ((ui as FakeUi & { working?: string }).working = message),
     setWorkingIndicator: (indicator: unknown) => ((ui as FakeUi & { indicator?: unknown }).indicator = indicator),
@@ -127,4 +137,12 @@ export function fakeOctocode(owner: OctocodeOwner = { by: 'extension' }) {
     },
   };
   return { mcp, state };
+}
+
+/** A started permission state in `mode` (default workspace: in-repo work runs, anything else asks). */
+export function fakePermission(mode: PermissionMode = 'workspace', options: { pi?: ExtensionAPI; isSubagent?: boolean } = {}): Permission {
+  const permission = new Permission({ pi: options.pi ?? fakePi().pi, env: { OCTOCODE_PERMISSION: mode }, isSubagent: options.isSubagent ?? false });
+  // The OS temp folder: tests/setup-env.ts saved a trust decision for it.
+  permission.start({ cwd: fs.realpathSync(os.tmpdir()), isProjectTrusted: () => true, hasUI: false } as never);
+  return permission;
 }
