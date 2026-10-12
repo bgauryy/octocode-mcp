@@ -17,18 +17,6 @@ pub(super) fn paginate(items: Vec<Value>, q: &AstTopologyQuery) -> (Vec<Value>, 
     (page, facts.to_value())
 }
 
-/// The warning for a result page past the end, naming the valid range.
-pub(super) fn out_of_range_warning(pagination: &Value) -> Option<String> {
-    (pagination["outOfRange"] == true).then(|| {
-        let pages = pagination["totalPages"].as_u64().unwrap_or(1);
-        format!(
-            "page:{} is out of range (only {pages} page(s), {} result(s)) — returned 0 results. Use page:1..{pages}.",
-            pagination["currentPage"],
-            pagination["totalItems"]
-        )
-    })
-}
-
 /// Mark a replayed page whose graph snapshot no longer matches; the runtime
 /// writes the shared `error` text (`response::pages::restart_stale`).
 pub(super) fn insert_snapshot_changed(base: &mut Map<String, Value>) {
@@ -45,7 +33,6 @@ pub(super) fn restart_continuation(q: &AstTopologyQuery) -> Value {
         query.remove("diagnosticPage");
     }
     Continuation::new(ToolId::AstTopology, query)
-        .why("Restart pagination from the current graph snapshot.")
         .confidence("exact")
         .build()
 }
@@ -91,7 +78,7 @@ pub(super) fn add_coverage(
         *counts.entry(d.code.clone()).or_default() += 1
     }
     let languages=b.languages.iter().map(|(language,files,linking)|json!({"language":language,"files":files,"linking":linking})).collect::<Vec<_>>();
-    let mut imports = json!({"resolved":b.imports[0],"external":b.imports[1],"unresolvedInternal":b.imports[2],"unsupported":b.imports[3]});
+    let mut imports = json!({"resolved":b.imports[0],"external":b.imports[1],"unresolvedInternal":b.imports[2],"unsupported":b.imports[3],"unit":"statements"});
     if b.imports[4] > 0 {
         imports["nonCode"] = json!(b.imports[4]);
     }
@@ -101,7 +88,7 @@ pub(super) fn add_coverage(
     }
     if q.diagnostic_snapshot().as_ref().is_some_and(|x| x != &id) {
         insert_snapshot_changed(base);
-        base.insert("results".into(), json!([]));
+        base.insert("nodes".into(), json!([]));
         base.insert("coverage".into(), coverage);
         return CoverageState {
             changed: true,
@@ -171,8 +158,10 @@ pub(super) fn add_coverage(
     }
 }
 
-/// One row per distinct code+message, in first-file order. A single
-/// occurrence keeps `file`/`line`; repeated ones list `files` as `path[:line]`.
+/// One row per distinct code+message, in first-file order, except that
+/// skipped files lead: they are absent from every answer, so the first
+/// diagnostic page names them. Every row lists its occurrences as `files`
+/// (`path[:line]`), one or many.
 pub(super) fn group_diagnostics(diagnostics: &[Diagnostic]) -> Vec<Value> {
     let mut order = Vec::<(&str, &str)>::new();
     let mut members = BTreeMap::<(&str, &str), Vec<&Diagnostic>>::new();
@@ -184,21 +173,21 @@ pub(super) fn group_diagnostics(diagnostics: &[Diagnostic]) -> Vec<Value> {
         }
         list.push(d);
     }
+    order.sort_by_key(|(code, _)| *code != "scan-skip");
     order
         .into_iter()
-        .map(|key| match members[&key].as_slice() {
-            [single] => json!(single),
-            many => json!({
+        .map(|key| {
+            json!({
                 "code": key.0,
                 "message": key.1,
-                "files": many
+                "files": members[&key]
                     .iter()
                     .map(|d| match d.line {
                         Some(line) => format!("{}:{line}", d.file),
                         None => d.file.clone(),
                     })
                     .collect::<Vec<_>>()
-            }),
+            })
         })
         .collect()
 }
@@ -230,6 +219,18 @@ impl ScanCuts {
     pub(super) fn graph_cut(self) -> bool {
         self.max_files || self.edge_cap
     }
+    /// The graph part of `coverage.parts`: `None` when no cut touches it.
+    /// Skipped files make the graph partial too, so `coverage.state` never
+    /// reads `complete` beside `isPartial`.
+    pub(super) fn graph_state(self) -> Option<&'static str> {
+        if self.graph_cut() {
+            Some("scan-truncated")
+        } else if self.files_skipped {
+            Some("files-skipped")
+        } else {
+            None
+        }
+    }
     /// A wider file scan reaches more of the graph: more files cannot lift
     /// the edge cap.
     pub(super) fn widenable(self) -> bool {
@@ -248,10 +249,22 @@ impl ScanCuts {
     pub(super) fn warnings(self, q: &AstTopologyQuery) -> Vec<String> {
         let mut warnings = Vec::new();
         if self.max_files {
+            let at_maximum = q.max_files().unwrap_or(20_000) >= super::topology_max("maxFiles");
             warnings.push(format!(
-                "scan stopped at maxFiles ({}) — graph results are partial",
-                q.max_files().unwrap_or(20_000)
+                "scan stopped at maxFiles ({}) — graph results are partial{}",
+                q.max_files().unwrap_or(20_000),
+                if at_maximum {
+                    "; maxFiles is at its maximum, so this limit is terminal: narrow path or add exclude"
+                } else {
+                    ""
+                }
             ));
+        }
+        if self.files_skipped {
+            warnings.push(
+                "skipped files are not in the graph (coverage.diagnostics names each file and why); no continuation reaches them, so this limit is terminal"
+                    .to_owned(),
+            );
         }
         if self.edge_cap {
             warnings.push(format!(
@@ -268,6 +281,13 @@ impl ScanCuts {
             || self.edge_cap
             || self.max_files && q.max_files().unwrap_or(20_000) >= super::topology_max("maxFiles")
     }
+}
+
+/// Why a page ceiling is terminal and how to still see the rest.
+pub(super) fn page_ceiling_warning(what: &str, ceiling: usize) -> String {
+    format!(
+        "{what} page ceiling reached (page {ceiling}): rows past it are unreachable by paging, so this limit is terminal; narrow the query (path, exclude, entrypoints) to reach them"
+    )
 }
 
 /// The `supersedes` field and warning of page 1 of a widened scan.
@@ -297,7 +317,6 @@ pub(super) fn expand_scan(q: &AstTopologyQuery) -> Option<Value> {
         Some(1),
         Some((cur * 2).max(cur + 1).min(max_files)),
         None,
-        "Rebuild the graph with more files; its results replace every row of this scan.",
     );
     if let Some(row) = widen
         .pointer_mut("/query/queries/0")
@@ -320,19 +339,10 @@ pub(super) fn add_next(
         .get("pagination")
         .is_some_and(|pagination| pagination["hasMore"] == true);
     if more_results && (q.page() as usize) < PAGE_MAXIMUM {
-        let why = match q.analysis() {
-            GraphAnalysis::Dependencies => "Continue dependencies.",
-            GraphAnalysis::Dependents => "Continue dependents.",
-            GraphAnalysis::Path => "Continue path results.",
-            GraphAnalysis::Cycles => "Continue cycle components.",
-            GraphAnalysis::Reachability => "Continue reachability classifications.",
-            GraphAnalysis::DeadCode => "Continue dead-code candidates.",
-            GraphAnalysis::Drift => "Continue topology drift results.",
-        };
         // Bind the next result page to this graph snapshot; result pages
         // never re-send diagnostic rows.
         let snapshot = base["pagination"].get("resultId").cloned();
-        let mut page = continuation(q, Some(q.page() + 1), None, snapshot, why);
+        let mut page = continuation(q, Some(q.page() + 1), None, snapshot);
         if let Some(row) = page
             .pointer_mut("/query/queries/0")
             .and_then(Value::as_object_mut)
@@ -352,7 +362,6 @@ pub(super) fn add_next(
         next.insert(
             "readDiagnostics".into(),
             Continuation::new(ToolId::AstTopology, value)
-                .why("Coverage diagnostic rows behind the coverage counts.")
                 .confidence("exact")
                 .build(),
         );
@@ -367,7 +376,6 @@ pub(super) fn add_next(
         next.insert(
             "nextDiagnosticPage".into(),
             Continuation::new(ToolId::AstTopology, value)
-                .why("Continue coverage diagnostics from the same diagnostic snapshot.")
                 .confidence("exact")
                 .build(),
         );
@@ -381,7 +389,6 @@ pub(super) fn add_next(
         next.insert(
             "restartDiagnostics".into(),
             Continuation::new(ToolId::AstTopology, value)
-                .why("Restart diagnostic pagination from the current diagnostic snapshot.")
                 .confidence("exact")
                 .build(),
         );
@@ -396,25 +403,24 @@ pub(super) fn add_next(
         next.insert("expandScan".into(), widen);
     }
     if q.analysis() == GraphAnalysis::DeadCode
-        && let Some(c) = base["results"].as_array().and_then(|x| x.first())
+        && let Some(c) = base["nodes"].as_array().and_then(|x| x.first())
         && let (Some(file), Some(name), Some(line)) =
             (c["file"].as_str(), c["name"].as_str(), c["line"].as_u64())
     {
         // The path anchors on the canonical graph root (inferred when `path`
         // is omitted). No lead when no language server would answer it.
         let path = root.join(file).to_string_lossy().into_owned();
-        if let Some(mut row) = crate::tools::lsp_search::verify_query(
+        if let Some(mut row) = crate::tools::leads::lsp::verify_query(
             &path,
             name,
             line,
-            crate::tools::lsp_search::Verify::References,
+            crate::tools::leads::lsp::Verify::References,
         ) {
             row["includeDeclaration"] = json!(false);
             row["groupByFile"] = json!(true);
             next.insert(
-                crate::tools::lsp_search::lead_name(&row),
+                crate::tools::leads::lsp::lead_name(&row),
                 Continuation::new(ToolId::LspSearch, row)
-                    .why(format!("Verify candidate \"{name}\" before deletion; repeat for each result, prioritizing viaHeuristic:\"reexport-chain\"."))
                     .confidence("high")
                     .build(),
             );
@@ -432,7 +438,7 @@ pub(super) fn read_lead(
     q: &AstTopologyQuery,
     base: &Map<String, Value>,
 ) -> Option<Value> {
-    let top = base.get("results")?.as_array()?.first()?;
+    let top = base.get("nodes")?.as_array()?.first()?;
     let (importer, line) = match q.analysis() {
         GraphAnalysis::Dependents => (top["file"].as_str()?, top["importLine"].as_u64()?),
         GraphAnalysis::Dependencies => (top["via"].as_str()?, top["importLine"].as_u64()?),
@@ -454,7 +460,6 @@ pub(super) fn read_lead(
             ToolId::LocalFetch,
             json!({"path": path, "ranges": [format!("{line}-{line}")]}),
         )
-        .why("Read the import line behind the top result.")
         .confidence("high")
         .build(),
     )
@@ -488,7 +493,6 @@ pub(super) fn continuation(
     page: Option<u32>,
     max: Option<u32>,
     snapshot: Option<Value>,
-    why: &str,
 ) -> Value {
     let mut v = clean_query(q);
     if let Some(x) = page {
@@ -502,7 +506,6 @@ pub(super) fn continuation(
         v["diagnosticSnapshot"] = snapshot;
     }
     Continuation::new(ToolId::AstTopology, v)
-        .why(why)
         .confidence("exact")
         .build()
 }

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -67,6 +68,20 @@ function normalizeToolPath(input: string, tool: boolean): string {
 export function resolveToolPath(cwd: string, raw: string): string {
   const normalized = normalizeToolPath(raw, true);
   return path.isAbsolute(normalized) ? path.resolve(normalized) : path.resolve(normalizeToolPath(cwd, false), normalized);
+}
+
+/**
+ * The file Pi's `read` opens for `raw` (core/tools/path-utils `resolveReadPath`, not exported): `resolveToolPath`, or
+ * when that does not exist, the first existing macOS variant: a narrow no-break space before AM/PM (screenshot names),
+ * NFD (decomposed) form, a curly apostrophe (U+2019), or NFD with a curly apostrophe.
+ */
+export function resolveReadToolPath(cwd: string, raw: string): string {
+  const resolved = resolveToolPath(cwd, raw);
+  if (fs.existsSync(resolved)) return resolved;
+  const nfd = resolved.normalize('NFD');
+  const curly = (value: string) => value.replace(/'/g, '\u2019');
+  const variants = [resolved.replace(/ (AM|PM)\./gi, '\u202F$1.'), nfd, curly(resolved), curly(nfd)];
+  return variants.find((variant) => variant !== resolved && fs.existsSync(variant)) ?? resolved;
 }
 
 /**
@@ -231,7 +246,7 @@ interface WorkspacePaths {
 
 /** `<repo root>/.octocode` paths for `cwd`. Nothing is created. */
 export function workspacePaths(cwd: string): WorkspacePaths {
-  const root = findRepoRoot(cwd);
+  const { root } = repoKey(cwd);
   const dir = path.join(root, OCTOCODE_DIR);
   return { root, dir, skills: path.join(dir, 'skills'), agents: path.join(dir, 'agents'), hooks: path.join(dir, 'hooks.json'), tmp: path.join(dir, 'tmp') };
 }
@@ -271,6 +286,35 @@ export function configFileLines(files: string[], userFiles: string[], home = os.
   });
 }
 
+/** Which repository a directory belongs to; the one answer every feature (team, backlog, memory, sessions, workspace files) uses. */
+export interface RepoKey {
+  /** realpath of the git common dir (worktrees share their main repo's key), else `root`. */
+  key: string;
+  /** realpath of the git toplevel; without git, of the nearest directory holding `.git`, else of cwd. */
+  root: string;
+  name: string;
+}
+
+const repoCache = new Map<string, RepoKey>();
+
+/**
+ * `file` with symlinks resolved, so one file reached through two paths has one name: the realpath of its deepest
+ * existing ancestor joined with the rest (the file itself may not exist yet).
+ */
+export function canonicalPath(file: string): string {
+  const absolute = path.resolve(file);
+  const rest: string[] = [];
+  for (let dir = absolute; ; dir = path.dirname(dir)) {
+    try {
+      return path.join(fs.realpathSync.native(dir), ...rest.reverse());
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) return absolute;
+      rest.push(path.basename(dir));
+    }
+  }
+}
+
 /**
  * `cwd` and its ancestors up to the repository root (the nearest directory holding `.git`), nearest first; just
  * `cwd` outside a repository.
@@ -284,5 +328,25 @@ export function dirsToRepoRoot(cwd: string): string[] {
   }
 }
 
-/** The repository root (the nearest directory holding `.git`), else `cwd` itself. */
-export const findRepoRoot = (cwd: string): string => dirsToRepoRoot(cwd).at(-1) ?? path.resolve(cwd);
+/**
+ * Which repository `cwd` belongs to, symlinks resolved, so one checkout reached through two paths is one repository.
+ * Cached per cwd; never throws.
+ */
+export function repoKey(cwd: string): RepoKey {
+  const cached = repoCache.get(cwd);
+  if (cached) return cached;
+  let result: RepoKey;
+  try {
+    const out = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+    const [common, top] = out.split(/\r?\n/).map((line) => line.trim());
+    if (!common || !top) throw new Error('not a work tree');
+    const root = canonicalPath(top);
+    result = { key: canonicalPath(common), root, name: path.basename(root) };
+  } catch {
+    // No git (or not a work tree git can read): the nearest `.git` marker still names the repository.
+    const root = canonicalPath(dirsToRepoRoot(cwd).at(-1) ?? cwd);
+    result = { key: root, root, name: path.basename(root) };
+  }
+  repoCache.set(cwd, result);
+  return result;
+}

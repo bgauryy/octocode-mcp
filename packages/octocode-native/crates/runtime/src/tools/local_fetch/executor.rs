@@ -1,6 +1,6 @@
 use super::extraction::{extract, line_count};
 use super::pagination::{
-    continuation, page, result_counts, sanitize_byte_page, sanitize_line_page,
+    continuation, page_within, result_counts, sanitize_byte_page, sanitize_line_page,
 };
 use super::types::*;
 use super::validation::{decode_text, is_binary};
@@ -154,6 +154,7 @@ pub fn execute_local_fetch(
         &SourceFacts {
             modified: meta.modified().ok().and_then(system_time_iso),
             window,
+            first_page_bytes: None,
         },
         security,
         cancel,
@@ -191,15 +192,30 @@ fn not_a_file(q: &LocalFetchQuery) -> LocalFetchResult {
 /// changed extension shows at any depth.
 fn missing_file_listing(q: &LocalFetchQuery, nearest: &str) -> Option<serde_json::Value> {
     let name = Path::new(q.path.as_str()).file_name()?.to_string_lossy();
-    let stem = name.split_once('.').map_or(name.as_ref(), |(stem, _)| stem);
-    (!stem.is_empty()).then(|| {
+    // `stem.*`: the same name under any extension (a file moved from `.rs`
+    // to `.ts` is still found), never every name merely containing the stem.
+    // A name without an extension is matched as written.
+    let include = match name.split_once('.') {
+        Some((stem, _)) if !stem.is_empty() => format!("{}.*", escape_glob(stem)),
+        _ => name.to_string(),
+    };
+    (!include.is_empty()).then(|| {
         crate::tools::result::Continuation::new(
             ToolId::StructureSearch,
-            serde_json::json!({"operation": "files", "path": nearest, "include": [stem]}),
+            serde_json::json!({"operation": "files", "path": nearest, "include": [include]}),
         )
-        .why("Find the file by its name under its closest existing directory.")
         .build()
     })
+}
+
+/// `text` as a glob that matches only itself.
+fn escape_glob(text: &str) -> String {
+    text.chars()
+        .flat_map(|c| match c {
+            '*' | '?' | '[' | ']' | '{' | '}' => vec!['[', c, ']'],
+            _ => vec![c],
+        })
+        .collect()
 }
 
 /// The row for a path the policy refused or could not resolve.
@@ -274,7 +290,7 @@ fn bind_continuation_to_source(result: &mut LocalFetchResult) {
     if let Some(next) = result
         .next
         .as_mut()
-        .and_then(|next| next.r#continue.as_mut())
+        .and_then(|next| next.continue_window.as_mut())
     {
         next.query.snapshot = snapshot;
     }
@@ -300,9 +316,9 @@ pub fn process_fetched_content(
         Err(error) => return extraction_error(q, error),
     };
     if ext.count == Some(0) {
-        return no_match(q, &source);
+        return no_match(q, &source, regex);
     }
-    let view = select_view(q, &mut ext, &mut source.warnings);
+    let view = select_view(q, &mut ext);
     if let Err(e) = cancel.check() {
         return LocalFetchResult::error(q.path.to_string(), "cancelled", e);
     }
@@ -316,13 +332,20 @@ pub fn process_fetched_content(
     } else {
         q
     };
-    let head_view = head_query(q, view.mode, source.total_lines);
+    let head_view = head_query(q, view.mode, view.text.len());
     let head = head_view.is_some();
     let page_q = head_view.as_ref().unwrap_or(q);
+    // A selected view's first page may be held to the caller's preview
+    // budget; its continuations page at the line page budget.
+    let line_page_bytes = facts
+        .first_page_bytes
+        .filter(|_| (q.match_string.is_some() || q.has_ranges()) && q.offset().is_none())
+        .unwrap_or(super::pagination::LINE_PAGE_BYTES);
     let scanned = match scan_page(
         q,
         page_q,
         &view.text,
+        line_page_bytes,
         source_path,
         security,
         &source,
@@ -339,6 +362,7 @@ pub fn process_fetched_content(
     warnings.extend(scanned.warnings);
     let pg = scanned.page;
     warn_redacted(&pg.text, scanned.redacted, &source, &mut warnings);
+    warn_unmatchable(q, &source, &ext.matched_lines, &mut warnings);
     let out_of_range = pg.out_of_range;
     let mut next = page_next(q, &pg, head, &mut warnings);
     // Follow-ups to data the extraction selected but did not return.
@@ -347,7 +371,7 @@ pub fn process_fetched_content(
         next.get_or_insert_with(NextCalls::default)
             .absorb(follow_ups);
     }
-    read_scope_warnings(q, &pg, head, view.mode, source.total_lines, &mut warnings);
+    read_scope_warnings(q, &pg, head, source.total_lines, &mut warnings);
     // Redaction (source-wide for matchString, or on the page) replaces text
     // within lines; the anchors stay and the warning above says the text is
     // not verbatim.
@@ -364,6 +388,8 @@ pub fn process_fetched_content(
     };
     let mut matched_lines = std::mem::take(&mut ext.matched_lines);
     matched_lines.retain(|n| source_ranges.iter().any(|r| *n >= r.start && *n <= r.end));
+    let match_keys =
+        crate::tools::match_keys::line_key_paths(source_path, &source.text, &matched_lines);
     let (chars, ret_bytes, ret_lines) = result_counts(&pg.text);
     LocalFetchResult {
         path: q.path.to_string(),
@@ -378,6 +404,7 @@ pub fn process_fetched_content(
         source_line_ranges: source_ranges,
         match_ranges: ext.match_ranges,
         matched_lines,
+        match_keys,
         blocks,
         selected_match_count: ext.count,
         modified: (view.mode != MinifyMode::Symbols)
@@ -389,7 +416,7 @@ pub fn process_fetched_content(
         returned_bytes: Some(ret_bytes),
         returned_lines: Some(ret_lines),
         pagination: Some(pg.pagination),
-        // A capped regex scan selected a prefix of the matches (H1).
+        // A capped regex scan selected a prefix of the matches.
         is_partial: ((next.as_ref().is_some_and(NextCalls::leaves_more) && !out_of_range)
             || ext.match_limited)
             .then_some(true),
@@ -404,21 +431,19 @@ pub fn process_fetched_content(
     }
 }
 
-/// The head page of an untargeted first read of a large file: paging
-/// through every line is rarely what an unanchored read needs, and the head
-/// plus a locate (or an anchored read) costs a fraction of a page.
-fn head_query(
-    q: &LocalFetchQuery,
-    mode: MinifyMode,
-    total_lines: usize,
-) -> Option<LocalFetchQuery> {
-    (unanchored_first_read(q) && mode == MinifyMode::None && total_lines >= LARGE_READ_LINES).then(
-        || LocalFetchQuery {
+/// The head page of an untargeted first read whose view would not fit one
+/// line page: paging through it is rarely what an unanchored read needs, and
+/// the head plus a locate (or an anchored read) costs a fraction of a page.
+/// An outline (`symbols`) is already the orientation view and is never cut.
+fn head_query(q: &LocalFetchQuery, mode: MinifyMode, view_bytes: usize) -> Option<LocalFetchQuery> {
+    (unanchored_first_read(q)
+        && mode != MinifyMode::Symbols
+        && view_bytes > super::pagination::LINE_PAGE_BYTES)
+        .then(|| LocalFetchQuery {
             unit: Some(WindowUnit::Lines),
             length: wire_positive(HEAD_LINES),
             ..q.clone()
-        },
-    )
+        })
 }
 
 /// The decoded source, redacted before any window is cut from it.
@@ -490,62 +515,57 @@ fn prepare_source(
     })
 }
 
-fn extraction_error(q: &LocalFetchQuery, error: String) -> LocalFetchResult {
-    let code = if error.starts_with("Invalid regex") {
-        "invalidPattern"
-    } else if error.starts_with("Regex execution unavailable") {
-        "executionFailed"
-    } else {
-        "invalidInput"
-    };
-    LocalFetchResult::error(q.path.to_string(), code, error)
+/// A failed selection; an invalid regex carries its repaired read (the
+/// message names the item and the parser's reason).
+fn extraction_error(q: &LocalFetchQuery, error: ExtractionError) -> LocalFetchResult {
+    let mut result =
+        LocalFetchResult::error(q.path.to_string(), error.kind.error_code(), error.message());
+    if error.kind == ExtractionErrorKind::InvalidPattern {
+        result.next = super::pattern_repair::repair(q).map(|repair| NextCalls {
+            repair: Some(repair),
+            ..NextCalls::default()
+        });
+    }
+    result
 }
 
-/// A matchString that selected no line: an empty row with one hint.
-fn no_match(q: &LocalFetchQuery, source: &Source) -> LocalFetchResult {
-    // The response keeps one hint per row. In a file with redactions a
-    // shorter token cannot reach text matched against a placeholder, so
-    // that explanation replaces the generic advice. It depends only on the
-    // file, never on the guess (no oracle), and reveals no more than a
-    // plain fetch (which shows the placeholders).
+/// A matchString that selected no line: an empty row with its facts.
+fn no_match(q: &LocalFetchQuery, source: &Source, regex: &impl RegexMatch) -> LocalFetchResult {
+    // In a file with redactions the text may sit behind a placeholder; that
+    // fact depends only on the file, never on the guess (no oracle), and
+    // reveals no more than a plain fetch (which shows the placeholders).
     let redacted = source.match_redacted || source.key_blocks_redacted;
-    let case_sensitive = q
-        .match_strings()
-        .iter()
-        .any(|pattern| q.case_sensitive_for(pattern));
-    let hint = if redacted {
-        REDACTED_MATCH_HINT.into()
-    } else {
-        no_match_hint(q, ToolId::LocalSearch.as_str())
-    };
-    // A case-sensitive miss reruns as the same read, case-insensitive.
-    let ignore_case = (case_sensitive && !redacted).then(|| {
+    let mut warnings = Vec::new();
+    // A case-sensitive miss reruns as the same read, case-insensitive, only
+    // when that read selects lines; the count is the fact beside the lead.
+    let insensitive = (!redacted)
+        .then(|| insensitive_match_count(q, &source.text, regex))
+        .filter(|count| *count > 0);
+    let ignore_case = insensitive.map(|count| {
+        warnings.push(format!(
+            "{count} {} ignoring case.",
+            if count == 1 {
+                "line matches"
+            } else {
+                "lines match"
+            }
+        ));
         let mut query = q.clone();
         query.case_mode = Some(ReadCaseMode::Insensitive);
-        Continuation {
-            query,
-            reason: Some("Match the text case-insensitively.".into()),
-        }
+        Continuation { query }
     });
     // The text may live in another file of this directory: one localSearch
     // there finds it (not offered when redactions hide the text).
     let search = (!(source.match_redacted || source.key_blocks_redacted))
-        .then(|| q.match_strings().first().map(|text| (*text).to_owned()))
-        .flatten()
-        .map(|text| {
+        .then(|| {
             let dir = Path::new(q.path.as_str())
                 .parent()
                 .map(|dir| dir.to_string_lossy().into_owned())
                 .filter(|dir| !dir.is_empty())
                 .unwrap_or_else(|| ".".to_owned());
-            let mut row = serde_json::json!({"path": dir, "matchString": text});
-            if q.is_regex() {
-                row["regex"] = serde_json::json!("rust");
-            }
-            crate::tools::result::Continuation::new(ToolId::LocalSearch, row)
-                .why("Search the file's directory for the text.")
-                .build()
-        });
+            super::extraction::search_lead(q, &dir, &q.match_strings())
+        })
+        .flatten();
     LocalFetchResult {
         path: q.path.to_string(),
         source_sha256: Some(source.sha256.clone()),
@@ -557,7 +577,8 @@ fn no_match(q: &LocalFetchQuery, source: &Source) -> LocalFetchResult {
             ..NextCalls::default()
         })
         .filter(|next| !next.is_empty()),
-        hints: vec![hint],
+        warnings,
+        hints: no_match_hints(q, redacted),
         total_lines: Some(source.total_lines),
         selected_match_count: Some(0),
         source_chars: Some(source.chars),
@@ -579,15 +600,13 @@ struct View {
 /// Apply the requested `minify` view to the extracted text. A match read
 /// stays verbatim evidence; an outline the file type cannot give falls
 /// back to the standard view.
-fn select_view(
-    q: &LocalFetchQuery,
-    ext: &mut super::extraction::Extraction,
-    warnings: &mut Vec<String>,
-) -> View {
+fn select_view(q: &LocalFetchQuery, ext: &mut super::extraction::Extraction) -> View {
     let requested = q.minify_mode();
     let selected = std::mem::take(&mut ext.text);
     // matchString reads are verbatim source; the tool description says so,
-    // so the row carries no fallback notice.
+    // so the row carries no fallback notice. Byte windows address the
+    // selected view (a numbered walk pages an oversized line by view bytes),
+    // so they take no view of their own here.
     if q.match_string.is_some() {
         return View {
             text: selected,
@@ -600,7 +619,10 @@ fn select_view(
     // same separator in every language.
     let standard_view = |selected: &str| {
         let view = octocode_engine::portable::apply_content_view_minification(selected, &q.path);
-        crate::tools::numbered::number_view(selected, ext.source_lines.as_deref(), &view)
+        let lines = ext.source_lines.as_deref();
+        // A compaction that joins lines would cite them wrong: keep lines whole.
+        crate::tools::numbered::number_view(selected, lines, &view)
+            .unwrap_or_else(|| crate::tools::numbered::line_faithful_view(selected, lines))
     };
     let view = |text, mode| View {
         text,
@@ -611,20 +633,11 @@ fn select_view(
         MinifyMode::None => view(selected, MinifyMode::None),
         MinifyMode::Standard => view(standard_view(&selected), MinifyMode::Standard),
         MinifyMode::Symbols => {
-            if let Some(s) = octocode_engine::portable::extract_signatures(&selected, &q.path) {
-                let outline =
-                    octocode_engine::portable::apply_content_view_minification(&s, &q.path);
-                view(
-                    declaration_ranges(
-                        crate::tools::numbered::tab_gutter(&outline),
-                        &selected,
-                        &q.path,
-                    ),
-                    MinifyMode::Symbols,
-                )
-            } else if let Some(outline) =
-                crate::content::markdown_heading_outline(&selected, &q.path)
-            {
+            // The outline's lines are the source's own: no whitespace pass,
+            // which would join tokens (`boolean{`, `string,...args`).
+            let outline = octocode_engine::portable::extract_signatures(&selected, &q.path)
+                .or_else(|| crate::content::markdown_heading_outline(&selected, &q.path));
+            if let Some(outline) = outline {
                 view(
                     declaration_ranges(
                         crate::tools::numbered::tab_gutter(&outline),
@@ -634,7 +647,7 @@ fn select_view(
                     MinifyMode::Symbols,
                 )
             } else {
-                warnings.push(format!("No smaller outline is available for {}; using the standard content view. The outline may be unsupported, oversized, or the source may be minified/bundled (single giant lines) — read specific line ranges instead.",q.path));
+                // `minifyFallback` is the typed notice of the applied view.
                 View {
                     text: standard_view(&selected),
                     mode: MinifyMode::Standard,
@@ -694,10 +707,12 @@ struct ScannedPage {
 /// its own window (see `sanitize_line_page` / `sanitize_byte_page`); a
 /// complete view, or a window whose scan fails, takes the whole-view scan,
 /// which owns the typed security-limit recovery.
+#[allow(clippy::too_many_arguments)]
 fn scan_page(
     q: &LocalFetchQuery,
     page_q: &LocalFetchQuery,
     selected: &str,
+    line_page_bytes: usize,
     source_path: &std::path::Path,
     security: &impl ContentScan,
     source: &Source,
@@ -711,12 +726,13 @@ fn scan_page(
         ))
     };
     if q.full_content != Some(true) {
-        let windowed = match page(selected, page_q).map_err(pagination_error)? {
-            raw if raw.pagination.unit == WindowUnit::Lines => {
-                sanitize_line_page(selected, raw, source_path, security).unwrap_or(None)
-            }
-            raw => sanitize_byte_page(selected, raw, source_path, security).unwrap_or(None),
-        };
+        let windowed =
+            match page_within(selected, page_q, line_page_bytes).map_err(pagination_error)? {
+                raw if raw.pagination.unit == WindowUnit::Lines => {
+                    sanitize_line_page(selected, raw, source_path, security).unwrap_or(None)
+                }
+                raw => sanitize_byte_page(selected, raw, source_path, security).unwrap_or(None),
+            };
         // Page sanitizers keep line counts, so a redacted page still maps
         // onto source lines.
         if let Some((page, redacted)) = windowed {
@@ -742,7 +758,7 @@ fn scan_page(
             )));
         }
     };
-    let page = page(&safe, page_q).map_err(pagination_error)?;
+    let page = page_within(&safe, page_q, line_page_bytes).map_err(pagination_error)?;
     // A whole-view scan maps onto source lines only when it kept the count.
     let lines_kept = safe == selected || line_count(&safe) == line_count(selected);
     Ok(ScannedPage {
@@ -779,7 +795,6 @@ fn security_limit(
         result.next = Some(NextCalls {
             read_bounded_lines: Some(Continuation {
                 query: single_line_query(q, line),
-                reason: Some("The selected view is too large to scan safely. Read one source line; this starts a different source-line view, not a…".into()),
             }),
             ..NextCalls::default()
         });
@@ -792,7 +807,8 @@ fn security_limit(
 /// not misreported.
 fn warn_redacted(text: &str, view_redacted: bool, source: &Source, warnings: &mut Vec<String>) {
     let redactions = if view_redacted || source.match_redacted || source.key_blocks_redacted {
-        text.matches("[REDACTED").count()
+        text.matches(octocode_engine::security::REDACTION_PREFIX)
+            .count()
     } else {
         0
     };
@@ -807,6 +823,37 @@ fn warn_redacted(text: &str, view_redacted: bool, source: &Source, warnings: &mu
     }
 }
 
+/// matchString runs on redacted text, so a match inside a redacted value is
+/// not selected: name how many redacted lines no hit selected, so they are
+/// not dropped silently. The count depends only on the file (a plain read
+/// shows the same placeholders), never on the guess. A `ranges` read counts
+/// hits inside its ranges only, so it is left out.
+fn warn_unmatchable(
+    q: &LocalFetchQuery,
+    source: &Source,
+    hits: &[usize],
+    warnings: &mut Vec<String>,
+) {
+    if !source.match_redacted || q.match_string.is_none() || q.has_ranges() {
+        return;
+    }
+    let unseen = source
+        .text
+        .lines()
+        .enumerate()
+        // Hits are ascending line numbers.
+        .filter(|(index, line)| {
+            line.contains(octocode_engine::security::REDACTION_PREFIX) && hits.binary_search(&(index + 1)).is_err()
+        })
+        .count();
+    if unseen > 0 {
+        let lines = if unseen == 1 { "line" } else { "lines" };
+        warnings.push(format!(
+            "{unseen} redacted {lines} outside this result: matchString cannot see text behind a [REDACTED…] placeholder; a plain read shows where they are."
+        ));
+    }
+}
+
 /// The page's own continuation: the next page, or a restart for an offset
 /// past the end of the view.
 fn page_next(
@@ -817,8 +864,13 @@ fn page_next(
 ) -> Option<NextCalls> {
     if !pg.out_of_range {
         let mut next = continuation(q, &pg.pagination);
-        // Paging on from the head uses the default page size.
-        if head && let Some(read) = next.as_mut().and_then(|next| next.r#continue.as_mut()) {
+        // Paging on from a line head uses the default line page size. A head
+        // that fell back to a byte page (one oversized line) keeps its unit
+        // and window: they give `offset` its meaning.
+        if head
+            && pg.pagination.unit == WindowUnit::Lines
+            && let Some(read) = next.as_mut().and_then(|next| next.continue_window.as_mut())
+        {
             read.query.length = None;
             read.query.unit = None;
         }
@@ -829,50 +881,77 @@ fn page_next(
         WindowUnit::Bytes => (pg.pagination.total_bytes, "bytes"),
     };
     warnings.push(format!(
-        "offset {} is past the end of the selected view ({total} {unit}); nothing was returned. Follow next.restart to read from the start.",
+        "offset {} is past the end of the selected view ({total} {unit}); nothing was returned.",
         q.offset().unwrap_or(0),
     ));
     let mut query = q.clone();
     query.offset = Some(0);
     Some(NextCalls {
-        restart: Some(Continuation {
-            query,
-            reason: Some(
-                "Offset is past the end of the selected view; restart from offset 0.".into(),
-            ),
-        }),
+        restart: Some(Continuation { query }),
         ..NextCalls::default()
     })
 }
 
-/// Notes for a read with no anchor: a large file's head, or a mid-size
-/// file's first page. Rows with content keep no prose hint, so these are
-/// warnings.
+/// Notes for a read with no anchor: a large file's head, and a reversed
+/// range. Rows with content keep no prose hint, so these are warnings.
 fn read_scope_warnings(
     q: &LocalFetchQuery,
     pg: &super::pagination::Page,
     head: bool,
-    mode: MinifyMode,
     total_lines: usize,
     warnings: &mut Vec<String>,
 ) {
-    if head && pg.pagination.has_more {
+    warnings.extend(reversed_range_warnings(q));
+    if let Some(pages) = long_line_pages(q, pg) {
+        warnings.push(long_line_warning(pages));
+    } else if head && pg.pagination.has_more {
         warnings.push(format!(
             "Large file ({total_lines} lines) read without an anchor: returned its first {} lines.",
             pg.view_lines.1
         ));
     }
-    if !head
-        && !pg.out_of_range
-        && pg.pagination.has_more
-        && mode == MinifyMode::None
-        && unanchored_first_read(q)
-    {
-        warnings.push(format!(
-            "Unanchored read: lines {}-{} of {total_lines}. Read the deciding lines with matchString or ranges.",
-            pg.view_lines.0, pg.view_lines.1
-        ));
-    }
+}
+
+/// A line read fell back to byte pages inside one line this long (a
+/// minified bundle, a one-line JSON dump) takes this many pages or more
+/// before its first page names the faster routes.
+const LONG_LINE_PAGES: usize = 8;
+
+/// The byte pages a file's first page opens, when a line read had to page by
+/// bytes (one line over a line page) and there are [`LONG_LINE_PAGES`] or
+/// more of them.
+fn long_line_pages(q: &LocalFetchQuery, pg: &super::pagination::Page) -> Option<usize> {
+    let asked_bytes = q.unit == Some(WindowUnit::Bytes) || q.full_content == Some(true);
+    let page = &pg.pagination;
+    let pages = page.total_bytes.checked_div(page.length)?;
+    (!asked_bytes
+        && page.unit == WindowUnit::Bytes
+        && page.offset == 0
+        && page.has_more
+        && pages >= LONG_LINE_PAGES)
+        .then(|| page.total_bytes.div_ceil(page.length))
+}
+
+fn long_line_warning(pages: usize) -> String {
+    use crate::tools::id::query_limits::local_fetch::LENGTH_MAXIMUM;
+    format!(
+        "One line fills this file: {pages} byte pages to read it through. Faster: matchString returns byte windows around each hit \
+         (add contextLines for more), or unit:\"bytes\" with length:{LENGTH_MAXIMUM} walks it in fewer, larger pages."
+    )
+}
+
+/// A reversed range (`"50-10"`) reads the same span low end first; the row
+/// says so, so the caller sees how its range was read.
+fn reversed_range_warnings(q: &LocalFetchQuery) -> Vec<String> {
+    q.ranges
+        .iter()
+        .filter_map(|range| {
+            let (start, end) = range.split_once('-')?;
+            let (start, end) = (start.parse::<u64>().ok()?, end.parse::<u64>().ok()?);
+            (end < start)
+                .then(|| format!("Range \"{range}\" is reversed: read as lines {end}-{start}."))
+        })
+        .collect()
 }
 
 /// The source lines a page shows: through the view-to-source line map when
@@ -898,7 +977,7 @@ fn page_source_ranges(
 
 /// A first read with nothing selecting what to return: no match, range,
 /// block, page cursor, page size, or whole-file request.
-fn unanchored_first_read(q: &LocalFetchQuery) -> bool {
+pub(crate) fn unanchored_first_read(q: &LocalFetchQuery) -> bool {
     q.match_string.is_none()
         && !q.has_ranges()
         && q.start_line().is_none()
@@ -947,8 +1026,8 @@ fn single_line_query(q: &LocalFetchQuery, line: usize) -> LocalFetchQuery {
         match_string: None,
         regex: None,
         case_mode: None,
+        whole_word: None,
         context_lines: None,
-        context_bytes: None,
         unit: None,
         offset: None,
         length: None,
@@ -970,12 +1049,9 @@ fn stale_snapshot(q: &LocalFetchQuery) -> LocalFetchResult {
     query.snapshot = None;
     query.offset = None;
     result.next = Some(NextCalls {
-        r#continue: None,
+        continue_window: None,
         read_bounded_lines: None,
-        restart: Some(Continuation {
-            query,
-            reason: Some("The source changed; restart this view on the current version.".into()),
-        }),
+        restart: Some(Continuation { query }),
         ..NextCalls::default()
     });
     result
@@ -1034,7 +1110,7 @@ mod source_size_tests {
             paths,
             &Passthrough,
             &NeverCancel,
-            &LocalFetchRegex::default(),
+            &LocalFetchRegex,
             None,
         )
     }
@@ -1124,8 +1200,8 @@ mod source_size_tests {
         let next = first
             .next
             .as_ref()
-            .and_then(|n| n.r#continue.clone())
-            .expect("continue");
+            .and_then(|n| n.continue_window.clone())
+            .expect("continueWindow");
         assert!(next.query.snapshot.is_some());
         let second = query(next.query);
         assert_eq!(second.status, "success", "{second:?}");
@@ -1140,7 +1216,7 @@ mod source_size_tests {
         let inner = wide
             .next
             .as_ref()
-            .and_then(|n| n.r#continue.clone())
+            .and_then(|n| n.continue_window.clone())
             .expect("inner continue");
         let wide_two = query(inner.query);
         let page_end = |r: &LocalFetchResult| r.source_line_ranges.last().map(|range| range.end);
@@ -1176,7 +1252,7 @@ mod source_size_tests {
             .next
             .as_ref()
             .and_then(|next| next.text_search.clone())
-            .expect("textSearch lead");
+            .expect("findText lead");
         assert_eq!(search["tool"], "localSearch", "{search}");
         assert_eq!(search["query"]["queries"][0]["matchString"], "line 7 ");
         assert!(
@@ -1272,7 +1348,7 @@ mod source_size_tests {
             query = page
                 .next
                 .as_ref()
-                .and_then(|next| next.r#continue.clone())
+                .and_then(|next| next.continue_window.clone())
                 .unwrap_or_else(|| panic!("no continuation after line {}", next_line - 1))
                 .query;
         }
@@ -1354,7 +1430,7 @@ mod source_size_tests {
                 &Paths(dir.clone()),
                 &security,
                 &NeverCancel,
-                &LocalFetchRegex::default(),
+                &LocalFetchRegex,
                 None,
             )
         };
@@ -1380,7 +1456,7 @@ mod source_size_tests {
             &Paths(dir.clone()),
             &security,
             &NeverCancel,
-            &LocalFetchRegex::default(),
+            &LocalFetchRegex,
             None,
         );
         assert!(
@@ -1420,36 +1496,42 @@ mod source_size_tests {
     }
 }
 
-/// Why a matchString can miss text that is visibly in the file.
-const REDACTED_MATCH_HINT: &str = "No visible line matches; this file has secrets, and matchString runs on [REDACTED…] placeholders, never secret text.";
+/// Why a matchString can miss text that is visibly in the file: it ran on
+/// the redacted text, whose secrets are placeholders.
+const REDACTED_MATCH_HINT: &str = "No visible line matches; this file's secrets were redacted to [REDACTED…] placeholders before matching.";
 
-/// Next step for a matchString that selected no line, tuned to how it matched.
-/// `finder` names the search tool that locates the file containing the text.
-/// Kept under the 120-char guidance cap.
-pub(crate) fn no_match_hint(q: &LocalFetchQuery, finder: &str) -> String {
-    let regex = q.is_regex();
-    let patterns = q.match_strings();
-    // A literal `a|b` reads as alternation to most agents; it is not one.
-    if !regex && patterns.iter().any(|pattern| pattern.contains('|')) {
-        return format!(
-            "No line contains this text; `|` is literal: pass a matchString list, regex:\"rust\", or use {finder}."
-        );
+/// The per-call facts of a matchString that selected no line: redaction
+/// (the text may sit behind a placeholder) and a literal `|` (read as
+/// alternation by most agents; it is not one). The leads beside the row
+/// (`ignoreCase`, `findText`) are its next steps.
+pub(crate) fn no_match_hints(q: &LocalFetchQuery, redacted: bool) -> Vec<String> {
+    let mut hints = Vec::new();
+    if redacted {
+        hints.push(REDACTED_MATCH_HINT.to_owned());
     }
-    let case_sensitive = patterns.iter().any(|pattern| q.case_sensitive_for(pattern));
-    match (regex, case_sensitive) {
-        (false, false) => {
-            format!("No line contains this text; try a shorter token, regex:\"rust\", or {finder}.")
-        }
-        (false, true) => {
-            format!("No line contains this case-sensitive text; run hints.ignoreCase, or {finder}.")
-        }
-        (true, false) => {
-            format!("No line matches this regex (^/$ per line); simplify it or use {finder}.")
-        }
-        (true, true) => {
-            format!("No line matches this case-sensitive regex; run hints.ignoreCase, or {finder}.")
-        }
+    if !q.is_regex()
+        && q.match_strings()
+            .iter()
+            .any(|pattern| pattern.contains('|'))
+    {
+        hints.push("`|` in matchString matched literally, not as alternation.".to_owned());
     }
+    hints
+}
+
+/// Lines the same read selects when every pattern matches case-insensitively;
+/// 0 when the patterns do not compile that way either.
+pub(crate) fn insensitive_match_count(
+    q: &LocalFetchQuery,
+    text: &str,
+    regex: &impl RegexMatch,
+) -> usize {
+    let mut insensitive = q.clone();
+    insensitive.case_mode = Some(ReadCaseMode::Insensitive);
+    super::extraction::extract(&insensitive, text, regex)
+        .ok()
+        .and_then(|extraction| extraction.count)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -1470,7 +1552,7 @@ mod line_page_scan_tests {
             &SourceFacts::default(),
             &security(),
             &NeverCancel,
-            &LocalFetchRegex::default(),
+            &LocalFetchRegex,
         )
     }
     fn lines_query(offset: usize, chunk: usize) -> LocalFetchQuery {
@@ -1488,35 +1570,34 @@ mod line_page_scan_tests {
             .collect()
     }
 
-    /// A large file read with no anchor returns a short head instead of a
-    /// full page: the read is not targeted yet. Paging on (default page
-    /// size) and whole-file reads are unchanged; small files and anchored
-    /// reads keep their pages.
+    /// A read with no anchor whose view would not fit one page returns a
+    /// short head instead of the page: the read is not targeted yet. Paging
+    /// on, whole-file reads and anchored reads are unchanged; a file that
+    /// fits one page is returned whole, with no note.
     #[test]
-    fn an_unanchored_read_of_a_large_file_returns_a_head() {
-        let source = filler(LARGE_READ_LINES);
+    fn an_unanchored_read_over_one_page_returns_a_head() {
+        // 1,000 short lines: far below any line-count ceiling, over 16 KiB.
+        let source = filler(1_000);
+        assert!(source.len() > 16 * 1024);
         let plain = LocalFetchQuery {
             path: "/fixture/app.ts".parse().expect("path"),
             ..LocalFetchQuery::test_default()
         };
         let head = fetch(&source, &plain);
         assert_eq!(head.returned_lines, Some(HEAD_LINES), "{head:?}");
-        assert!(
-            head.warnings
-                .iter()
-                .any(|warning| warning.contains("first 50 lines")),
-            "{:?}",
-            head.warnings
+        assert_eq!(
+            head.warnings,
+            vec!["Large file (1000 lines) read without an anchor: returned its first 50 lines."]
         );
         let next = head
             .next
-            .and_then(|next| next.r#continue)
-            .expect("continue");
+            .and_then(|next| next.continue_window)
+            .expect("continueWindow");
         assert_eq!(next.query.offset(), Some(HEAD_LINES));
         assert_eq!(next.query.window_length(), None);
         let page = fetch(&source, &next.query);
         assert!(page.returned_lines.expect("lines") > HEAD_LINES, "{page:?}");
-        // Whole-file, anchored, and small reads are unchanged.
+        // Whole-file, anchored and symbol reads are unchanged.
         let whole = fetch(
             &source,
             &LocalFetchQuery {
@@ -1533,68 +1614,20 @@ mod line_page_scan_tests {
             },
         );
         assert_eq!(ranged.returned_lines, Some(191));
-        let small = fetch(&filler(LARGE_READ_LINES - 1), &plain);
-        assert!(small.returned_lines.expect("lines") > HEAD_LINES);
-        // A smaller file keeps its full page; only the deciding-lines note.
-        assert!(
-            small
-                .warnings
-                .iter()
-                .all(|warning| warning.starts_with("Unanchored read: lines 1-")),
-            "{:?}",
-            small.warnings
-        );
-    }
-
-    /// A mid-size file read without an anchor returns its first page with a
-    /// note toward the deciding lines; complete and anchored reads get none.
-    #[test]
-    fn an_unanchored_partial_read_points_at_the_deciding_lines() {
-        let plain = LocalFetchQuery {
-            path: "/fixture/app.ts".parse().expect("path"),
-            ..LocalFetchQuery::test_default()
-        };
-        let page = fetch(&filler(LARGE_READ_LINES - 1), &plain);
-        assert!(page.next.is_some(), "{page:?}");
-        let tip = page
-            .warnings
-            .iter()
-            .find(|warning| warning.starts_with("Unanchored read: lines 1-"))
-            .unwrap_or_else(|| panic!("{:?}", page.warnings));
-        assert!(tip.contains("matchString") && tip.len() <= 120, "{tip}");
-        let whole = fetch(&filler(20), &plain);
-        assert!(whole.warnings.is_empty(), "{:?}", whole.warnings);
-        let ranged = fetch(
-            &filler(LARGE_READ_LINES - 1),
+        // A standard view is guarded the same way (ghGetFileContent's default).
+        let standard = fetch(
+            &source,
             &LocalFetchQuery {
-                ranges: vec![format!("{}-{}", 10, 20).parse().expect("range")],
+                minify: Some(MinifyMode::Standard),
                 ..plain.clone()
             },
         );
-        assert!(ranged.warnings.is_empty(), "{:?}", ranged.warnings);
-    }
-
-    /// The head warning names only calls every surface has: a clasify lead,
-    /// when one applies, is its own `hints.clasify` entry.
-    #[test]
-    fn the_large_file_head_warning_names_no_optional_tool() {
-        let head = fetch(
-            &filler(LARGE_READ_LINES),
-            &LocalFetchQuery {
-                path: "/fixture/app.ts".parse().expect("path"),
-                ..LocalFetchQuery::test_default()
-            },
-        );
-        let warning = head
-            .warnings
-            .iter()
-            .find(|warning| warning.contains("without an anchor"))
-            .expect("head warning");
-        // The per-call fact only: descriptions teach matchString/ranges.
-        assert_eq!(
-            warning,
-            "Large file (2000 lines) read without an anchor: returned its first 50 lines."
-        );
+        assert_eq!(standard.returned_lines, Some(HEAD_LINES), "{standard:?}");
+        // A file that fits one page is read whole, with no note.
+        let small = fetch(&filler(500), &plain);
+        assert_eq!(small.returned_lines, Some(500), "{small:?}");
+        assert!(small.warnings.is_empty(), "{:?}", small.warnings);
+        assert!(small.next.is_none(), "{small:?}");
     }
 
     #[test]
@@ -1656,7 +1689,7 @@ mod line_page_scan_tests {
         loop {
             let result = fetch(&source, &q);
             union.push_str(result.content.as_deref().expect("content"));
-            let Some(next) = result.next.and_then(|next| next.r#continue) else {
+            let Some(next) = result.next.and_then(|next| next.continue_window) else {
                 break;
             };
             q = next.query;
@@ -1671,7 +1704,7 @@ mod line_page_scan_tests {
         }
     }
 
-    /// Byte pages walked by `next.continue` reproduce the whole-view scan:
+    /// Byte pages walked by `next.continueWindow` reproduce the whole-view scan:
     /// every secret is redacted, including ones a raw byte boundary would cut.
     #[test]
     fn byte_pages_redact_secrets_straddling_the_boundary() {
@@ -1705,7 +1738,7 @@ mod line_page_scan_tests {
                 );
                 union.push_str(content);
                 pages += 1;
-                let Some(next) = result.next.and_then(|next| next.r#continue) else {
+                let Some(next) = result.next.and_then(|next| next.continue_window) else {
                     break;
                 };
                 q = next.query;
@@ -1761,7 +1794,7 @@ mod line_page_scan_tests {
             &SourceFacts::default(),
             &scanner,
             &NeverCancel,
-            &LocalFetchRegex::default(),
+            &LocalFetchRegex,
         );
         let page_time = started.elapsed();
         assert!(paged.content.is_some_and(|content| content.len() >= 8_000));
@@ -1793,7 +1826,7 @@ mod line_page_scan_tests {
         assert!(result.out_of_range);
         assert_eq!(result.is_partial, None);
         let next = result.next.clone().expect("next");
-        assert!(next.r#continue.is_none());
+        assert!(next.continue_window.is_none());
         assert_eq!(next.restart.expect("restart").query.offset, Some(0));
         let wire = serde_json::to_value(&result).expect("wire");
         assert_eq!(wire["pagination"]["outOfRange"], true, "{wire}");

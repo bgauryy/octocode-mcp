@@ -12,6 +12,8 @@ describe('sanitizeTerminalText', () => {
     ['strips OSC title (BEL)', '\u001b]0;pwned\u0007after', 'after'],
     ['strips OSC 8 links (ST)', '\u001b]8;;https://evil.test\u001b\\click\u001b]8;;\u001b\\', 'click'],
     ['strips an unterminated OSC to the end', 'ok\u001b]52;c;Zm9v', 'ok'],
+    ['ends an unterminated OSC at its line, keeping the lines after it', 'line1 \u001b] oops\nline2\nline3', 'line1 \nline2\nline3'],
+    ['ends an unterminated DCS at its line', 'a\u0090junk\nb', 'a\nb'],
     ['strips DCS strings', 'x\u001bPqpayload\u001b\\y', 'xy'],
     ['strips 8-bit CSI', 'a\u009b31mb', 'ab'],
     ['strips lone ESC sequences', 'a\u001bcb\u001b(Bc', 'abc'],

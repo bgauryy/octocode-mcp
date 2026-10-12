@@ -1,12 +1,11 @@
 //! Public-page windows over GitHub REST collections: provider batch loading
 //! derived from public page cursors, and the page objects reported back.
 use super::inventory::max_inventory_page;
-use super::{DEFAULT_PAGE_SIZE, fetch};
+use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, fetch};
 use crate::providers::github::{GitHubTransport, ProviderError, RequestContext};
+use octocode_github::MAX_PER_PAGE;
 use serde_json::{Value, json};
 
-/// GitHub REST collection batch size (the `per_page` maximum).
-pub(super) const PROVIDER_BATCH: usize = 100;
 /// PR and commit file lists stop at 3000 files (30 batches of 100).
 pub(super) const MAX_FILE_BATCHES: usize = 30;
 /// Comments/reviews scanned for one page (3000 items).
@@ -76,7 +75,7 @@ impl Loaded {
     }
 }
 
-/// The public page a load must cover, read in `PROVIDER_BATCH`-sized batches.
+/// The public page a load must cover, read in `MAX_PER_PAGE`-sized batches.
 pub(super) struct WindowSpec {
     pub(super) max_batches: usize,
     pub(super) page: usize,
@@ -128,7 +127,7 @@ pub(super) async fn load_window_with(
     context: &RequestContext,
 ) -> Result<Loaded, ProviderError> {
     if spec.filtered
-        && let Some(total) = spec.provider_total.filter(|total| *total > PROVIDER_BATCH)
+        && let Some(total) = spec.provider_total.filter(|total| *total > MAX_PER_PAGE)
     {
         return load_all_batches(
             transport,
@@ -145,13 +144,13 @@ pub(super) async fn load_window_with(
     let mut first_batch = if spec.filtered {
         1
     } else {
-        (start / PROVIDER_BATCH).min(spec.max_batches - 1) + 1
+        (start / MAX_PER_PAGE).min(spec.max_batches - 1) + 1
     };
     loop {
         let mut loaded = Loaded {
             items: Vec::new(),
             state: WindowState {
-                skipped: (first_batch - 1) * PROVIDER_BATCH,
+                skipped: (first_batch - 1) * MAX_PER_PAGE,
                 exhausted: false,
                 capped: false,
             },
@@ -164,7 +163,7 @@ pub(super) async fn load_window_with(
                 transport,
                 segments,
                 &[
-                    ("per_page", PROVIDER_BATCH.to_string()),
+                    ("per_page", MAX_PER_PAGE.to_string()),
                     ("page", batch.to_string()),
                 ],
                 context,
@@ -191,7 +190,7 @@ pub(super) async fn load_window_with(
             batch += 1;
         }
         // A jump past the real end (stale page cursor) restarts from batch 1
-        // so the page clamps to the true last page.
+        // so a page past the true last page is flagged out of range.
         if loaded.items.is_empty() && first_batch > 1 {
             first_batch = 1;
             continue;
@@ -210,13 +209,13 @@ async fn load_all_batches(
     extract: fn(&mut Value) -> Vec<Value>,
     context: &RequestContext,
 ) -> Result<Loaded, ProviderError> {
-    let batches = total.div_ceil(PROVIDER_BATCH).clamp(1, max_batches);
+    let batches = total.div_ceil(MAX_PER_PAGE).clamp(1, max_batches);
     let pages = futures_util::future::try_join_all((1..=batches).map(|batch| async move {
         fetch(
             transport,
             segments,
             &[
-                ("per_page", PROVIDER_BATCH.to_string()),
+                ("per_page", MAX_PER_PAGE.to_string()),
                 ("page", batch.to_string()),
             ],
             context,
@@ -257,7 +256,7 @@ pub(super) fn reconcile_file_totals(
     filtered: bool,
 ) {
     let Some(total) = changed_files else { return };
-    let listable = total.min(MAX_FILE_BATCHES * PROVIDER_BATCH);
+    let listable = total.min(MAX_FILE_BATCHES * MAX_PER_PAGE);
     if !state.exhausted && !filtered {
         let per = page["pageSize"].as_u64().unwrap_or(1).max(1) as usize;
         let current = page["currentPage"].as_u64().unwrap_or(1) as usize;
@@ -299,7 +298,7 @@ pub(super) fn paginate_collection(
 }
 
 /// Page `values` (the filtered list, preceded by `skipped` items that were
-/// never loaded). An exhausted list reports exact totals and clamps the page;
+/// never loaded). An exhausted list reports exact totals and flags a page past its end;
 /// otherwise the counts cover only what was loaded.
 pub(super) fn paginate_window(
     values: Vec<Value>,
@@ -314,11 +313,10 @@ pub(super) fn paginate_window(
     let loaded = skipped + values.len();
     let pages = loaded.div_ceil(per).max(1);
     let requested = page.unwrap_or(1).max(1);
-    let current = if exhausted {
-        requested.min(pages)
-    } else {
-        requested
-    };
+    // A page past an exhausted list is empty and flagged, never clamped to
+    // the last page, which would repeat rows the caller already has.
+    let current = requested;
+    let past_end = exhausted && current > pages;
     let start = (current - 1) * per;
     let more = if exhausted { current < pages } else { true };
     let slice = values
@@ -326,7 +324,8 @@ pub(super) fn paginate_window(
         .skip(start.saturating_sub(skipped))
         .take(per)
         .collect();
-    let facts = crate::response::pages::PageFacts::open(current, Some(per), more);
+    let facts =
+        crate::response::pages::PageFacts::open(current, Some(per), more).out_of_range(past_end);
     // Only an exhausted listing knows its page count.
     let mut page = if exhausted {
         facts.with_total(loaded)
@@ -341,6 +340,34 @@ pub(super) fn paginate_window(
     (slice, page)
 }
 
+/// A file page's counters are stats (dropped by default), so a limit that
+/// ends its coverage is restated on the row itself: `terminalLimit`, and
+/// the provider limit's reason in `partialReasons`. The page schema does not
+/// declare `terminalLimit`, so lifting moves it off the page.
+pub(super) fn lift_page_limits(row: &mut Value, page: &mut Value) {
+    if page
+        .as_object_mut()
+        .and_then(|page| page.remove("terminalLimit"))
+        != Some(Value::Bool(true))
+    {
+        return;
+    }
+    row["terminalLimit"] = json!(true);
+    if let Some(reason) = page
+        .pointer("/providerLimit/reason")
+        .and_then(Value::as_str)
+    {
+        let reasons = row
+            .as_object_mut()
+            .map(|row| row.entry("partialReasons").or_insert_with(|| json!([])));
+        if let Some(Value::Array(reasons)) = reasons
+            && !reasons.iter().any(|known| known == reason)
+        {
+            reasons.push(json!(reason));
+        }
+    }
+}
+
 pub(super) fn mark_capped(page: &mut Value, capped: bool) {
     if capped {
         // Totals cover only the batches read before the cap, not the item.
@@ -348,6 +375,63 @@ pub(super) fn mark_capped(page: &mut Value, capped: bool) {
         page["terminalLimit"] = json!(true);
         page["providerLimit"] = json!({"reason":"providerBatchLimit"});
     }
+}
+
+/// Patch characters one call carries across a page's files by default,
+/// derived from the effective automatic response page
+/// (`output.pagination.defaultCharLength`, 1k–50k). Rendered text prints
+/// patches verbatim (no escaping), so the default window takes 4/5 of the
+/// page less a fixed reserve for the row header and metadata, never below
+/// 2/5 of it: a default window plus row metadata fits one response page.
+/// An explicit `length` is honoured up to that one-row budget: a larger
+/// window would only be re-sliced into response `rowPart`s, more calls for
+/// the same patch text. A row that still outgrows its page is lossless:
+/// automatic paging splits it by whole rows, and the walk's
+/// `next.continuePatch`/`nextFilePage` rides the row's last part
+/// (`id::resumes_after_shown`), so following it never skips a part.
+/// A bigger window comes with a bigger response page (`responseLength`).
+pub(super) const PATCH_DEFAULT_SHARE: (usize, usize) = (4, 5);
+
+pub(super) const PATCH_DEFAULT_RESERVE: usize = 5_000;
+
+/// Page assumed when the runtime did not supply one (direct callers, tests).
+pub(super) const FALLBACK_AUTO_PAGE: usize = 20_000;
+
+pub(super) fn auto_page(auto_page: Option<usize>) -> usize {
+    auto_page
+        .filter(|page| *page > 0)
+        .unwrap_or(FALLBACK_AUTO_PAGE)
+}
+
+/// The default window of a `matchString` view: the page share without the
+/// fixed reserve.
+pub(super) fn literal_patch_window(auto_page_chars: Option<usize>) -> usize {
+    let page = auto_page(auto_page_chars);
+    let (num, den) = PATCH_DEFAULT_SHARE;
+    (page * num / den).max(1)
+}
+
+/// The warning of a patch read whose explicit `length` was clamped to
+/// one response page; `None` when it fit.
+pub(super) fn clamp_warning(query: &HistoryItemRequest) -> Option<String> {
+    let length = query.char_length()?;
+    let window = patch_window(Some(length), query.auto_page_chars);
+    (window < length).then(|| {
+        format!("length {length} exceeds one response page; patch windows hold {window} chars.")
+    })
+}
+
+/// The patch window of one row: most of its response page. An explicit
+/// `length` is clamped to that budget, so one row's window always fits one
+/// response page.
+pub(super) fn patch_window(char_length: Option<usize>, auto_page_chars: Option<usize>) -> usize {
+    let page = auto_page(auto_page_chars);
+    let (num, den) = PATCH_DEFAULT_SHARE;
+    let budget = (page * num / den)
+        .min(page.saturating_sub(PATCH_DEFAULT_RESERVE))
+        .max(page * 2 / 5)
+        .max(1);
+    char_length.map_or(budget, |length| length.clamp(1, budget))
 }
 
 #[cfg(test)]
@@ -371,5 +455,16 @@ mod tests {
         assert_eq!(page["totalItems"], 140);
         assert_eq!(page["totalPages"], 5);
         assert_eq!(page["countScope"], "complete");
+    }
+
+    #[test]
+    fn a_page_past_an_exhausted_window_is_empty_and_flagged_not_clamped() {
+        let items = (0..10).map(|n| json!(n)).collect::<Vec<_>>();
+        let (slice, page) = paginate_window(items, 0, true, Some(4), Some(5));
+        assert!(slice.is_empty(), "must not repeat the last page: {slice:?}");
+        assert_eq!(page["currentPage"], 4);
+        assert_eq!(page["totalPages"], 2);
+        assert_eq!(page["hasMore"], false);
+        assert_eq!(page["outOfRange"], true);
     }
 }

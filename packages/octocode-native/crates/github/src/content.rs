@@ -515,22 +515,16 @@ impl GitHubTransport {
     }
 }
 
-/// Type a ref-resolution failure: a 404 is the repository (missing, private,
-/// or hidden from the token), a 422 "No commit found" the ref itself. A
-/// missing ref is not-found input (one code and exit class for every tool),
-/// not a malformed request.
+/// Type a ref-resolution failure: a bare 404 is the repository (missing,
+/// private, or hidden from the token); the transport already typed a missing
+/// ref ("No commit found") as `RefNotFound`.
 fn classify_ref_failure(error: ProviderError) -> ProviderError {
     match error.status {
-        Some(404) => {
+        Some(404) if error.reason.is_none() => {
             let mut error = error.with_reason(super::ProviderErrorReason::RepositoryNotFound);
             // GitHub links its commit docs; the failure is the repository.
             error.documentation_url =
                 Some("https://docs.github.com/rest/repos/repos#get-a-repository".into());
-            error
-        }
-        Some(422) if error.message.starts_with("No commit found") => {
-            let mut error = error.with_reason(super::ProviderErrorReason::RefNotFound);
-            error.kind = ProviderErrorKind::NotFound;
             error
         }
         _ => error,
@@ -570,10 +564,8 @@ fn parse_content_payload(body: &[u8], path: &str) -> Result<ContentPayload, Prov
 /// A directory read, typed so `runtime::github::file_error` keys its
 /// tree-listing recovery on the reason rather than the message.
 fn is_a_directory(path: &str) -> ProviderError {
-    not_a_file(format!(
-        "Path \"{path}\" is a directory, not a file; list it with ghStructure."
-    ))
-    .with_reason(super::ProviderErrorReason::PathIsDirectory)
+    not_a_file(format!("Path \"{path}\" is a directory, not a file"))
+        .with_reason(super::ProviderErrorReason::PathIsDirectory)
 }
 fn not_a_file(message: String) -> ProviderError {
     ProviderError::new(ProviderErrorKind::Validation, message)
@@ -714,10 +706,7 @@ fn text_bytes(bytes: Vec<u8>, blob_sha: Option<&str>) -> Result<Vec<u8>, Provide
         .unwrap_or_default();
     Err(ProviderError::new(
         ProviderErrorKind::Validation,
-        format!(
-            "Binary file ({} bytes{blob}); ghGetFileContent returns text only.",
-            bytes.len()
-        ),
+        format!("Binary file ({} bytes{blob})", bytes.len()),
     )
     .with_reason(super::ProviderErrorReason::BinaryFile))
 }

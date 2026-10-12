@@ -269,7 +269,7 @@ mod tests {
         cache.inflight.lock().unwrap().len()
     }
 
-    /// L6: a flight whose request never finishes (dropped future, panic)
+    /// A flight whose request never finishes (dropped future, panic)
     /// still releases its slot: the map cannot grow without bound.
     #[test]
     fn a_dropped_flight_releases_its_slot() {
@@ -288,7 +288,7 @@ mod tests {
         assert_eq!(inflight_len(&cache), 0, "unwinding lands the flight");
     }
 
-    /// L6: waiters queued behind a failed request share its failure instead
+    /// Waiters queued behind a failed request share its failure instead
     /// of each asking the provider again; once the wave lands, a later
     /// request starts fresh.
     #[tokio::test]

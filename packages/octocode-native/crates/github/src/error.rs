@@ -45,11 +45,16 @@ pub enum ProviderErrorReason {
     IssueIsPullRequest,
     /// A file read named a directory.
     PathIsDirectory,
+    /// A tree listing named a file.
+    PathIsFile,
     /// The requested search page is past GitHub's 1,000-result window.
     SearchWindowExceeded,
     /// The repository itself did not resolve (missing, private, or not
     /// visible to the token), as opposed to a path or ref inside it.
     RepositoryNotFound,
+    /// A search qualifier (`author:`, `assignee:`, …) names a user GitHub
+    /// cannot find or the token cannot see; the repository scope is fine.
+    UserNotFound,
     /// An explicit branch, tag, or SHA does not exist in the repository.
     RefNotFound,
     /// A pull-request number names an issue.
@@ -65,10 +70,14 @@ pub struct ProviderError {
     pub status: Option<u16>,
     pub request_id: Option<Box<str>>,
     pub documentation_url: Option<Box<str>>,
-    pub rate_limit: Option<RateLimit>,
+    pub rate_limit: Option<Box<RateLimit>>,
     pub retryable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<ProviderErrorReason>,
+    /// `x-github-sso` authorization URL of a SAML-protected organization: the
+    /// token must be authorized there before the request can succeed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sso_url: Option<Box<str>>,
 }
 
 impl ProviderError {
@@ -89,6 +98,7 @@ impl ProviderError {
                     | ProviderErrorKind::Server
             ),
             reason: None,
+            sso_url: None,
         }
     }
 

@@ -163,8 +163,9 @@ const githubTokenSources = new Map<string, string | null>();
  * unavailable. Native owns credential discovery; one probe per binary.
  */
 function nativeGithubTokenSource(): string | null {
-  const bin = resolveNativeBin();
-  if (!bin) return null;
+  const resolved = resolveNativeBin();
+  if ('error' in resolved) return null;
+  const { bin } = resolved;
   const cached = githubTokenSources.get(bin);
   if (cached !== undefined) return cached;
   const [command, args] = nativeCommand(bin, [

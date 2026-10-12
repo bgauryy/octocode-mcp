@@ -23,10 +23,11 @@ use crate::providers::github::{
     ProviderErrorKind, ProviderErrorReason, PullListRequest, RequestContext,
 };
 use crate::security::scan::ContentScan;
+use crate::tools::gh_shared::field_names;
 use crate::tools::num::usize_of;
 pub(crate) use errors::history_failure;
 use filters::Filters;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// The operation discriminant of a [`GhSearchHistoryQuery`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -92,10 +93,12 @@ impl GhSearchHistoryQuery {
             Self::Commit { qualifiers, .. } => qualifiers.as_deref().map(String::as_str),
         }
     }
-    pub(crate) fn concise(&self) -> Option<bool> {
+    /// The `fields` pick; empty keeps rows whole.
+    pub(crate) fn fields(&self) -> Vec<String> {
         match self {
-            Self::PullRequest { concise, .. } | Self::Issue { concise, .. } => *concise,
-            Self::Commit { .. } => None,
+            Self::PullRequest { fields, .. } => field_names(fields),
+            Self::Issue { fields, .. } => field_names(fields),
+            Self::Commit { fields, .. } => field_names(fields),
         }
     }
     pub(crate) fn page(&self) -> Option<usize> {
@@ -120,14 +123,14 @@ impl GhSearchHistoryQuery {
     }
     pub(crate) fn since(&self) -> Option<&str> {
         match self {
+            Self::PullRequest { since, .. } | Self::Issue { since, .. } => since.as_deref(),
             Self::Commit { since, .. } => since.as_deref(),
-            _ => None,
         }
     }
     pub(crate) fn until(&self) -> Option<&str> {
         match self {
+            Self::PullRequest { until, .. } | Self::Issue { until, .. } => until.as_deref(),
             Self::Commit { until, .. } => until.as_deref(),
-            _ => None,
         }
     }
     /// The ref a commit listing walks.
@@ -137,18 +140,23 @@ impl GhSearchHistoryQuery {
             _ => None,
         }
     }
+    /// The wire `sort` is `field` or `field:direction`; this is the field.
     pub(crate) fn sort(&self) -> Option<String> {
+        self.sort_spec().map(|spec| {
+            spec.split_once(':')
+                .map_or(spec.as_str(), |(f, _)| f)
+                .to_owned()
+        })
+    }
+    /// The direction half of the wire `sort`, when it names one.
+    pub(crate) fn order(&self) -> Option<String> {
+        self.sort_spec()
+            .and_then(|spec| spec.split_once(':').map(|(_, order)| order.to_owned()))
+    }
+    fn sort_spec(&self) -> Option<String> {
         match self {
             Self::PullRequest { sort, .. } | Self::Issue { sort, .. } => {
                 sort.as_ref().map(ToString::to_string)
-            }
-            Self::Commit { .. } => None,
-        }
-    }
-    pub(crate) fn order(&self) -> Option<String> {
-        match self {
-            Self::PullRequest { order, .. } | Self::Issue { order, .. } => {
-                order.as_ref().map(ToString::to_string)
             }
             Self::Commit { .. } => None,
         }
@@ -209,6 +217,20 @@ impl HistorySearch {
     }
 }
 
+/// A failed history search: the provider error and, when one call repairs
+/// it, that lead (keyed by name).
+#[derive(Debug)]
+pub struct HistoryFailure {
+    pub error: ProviderError,
+    pub next: Option<Value>,
+}
+
+impl From<ProviderError> for HistoryFailure {
+    fn from(error: ProviderError) -> Self {
+        Self { error, next: None }
+    }
+}
+
 /// Runs one history search: GitHub search for keywords and search-only
 /// filters, else the REST list endpoint.
 pub async fn execute(
@@ -216,13 +238,17 @@ pub async fn execute(
     query: GhSearchHistoryQuery,
     context: &RequestContext,
     security: &impl ContentScan,
-) -> Result<Value, ProviderError> {
+) -> Result<Value, HistoryFailure> {
     let mut query = HistorySearch::new(query)?;
     let page = query.page().unwrap_or(1);
     let per = page_size(&query);
     let searching = query::uses_search(&query);
     if searching {
         crate::tools::gh_shared::reject_window(page, per)?;
+    }
+    let mut unconfirmed = Vec::new();
+    if searching && query.operation() == HistoryOperation::Commit {
+        unconfirmed = confirm_commit_users(transport, &query, context).await?;
     }
     let mut fetched = fetch(transport, &query, page, per, searching, context).await;
     let mut rename_warnings = Vec::new();
@@ -239,14 +265,59 @@ pub async fn execute(
         mut result,
         terms,
         warnings,
-    } = fetched
-        .map_err(unsearchable_repository)
-        .map_err(|error| name_missing_scope(error, &query))?;
+    } = fetched.map_err(|error| missing_scope_failure(error, &query))?;
+    // A commit list answers an unknown author with no rows; only an empty
+    // list pays for confirming the login.
+    if !searching && query.operation() == HistoryOperation::Commit && result.items.is_empty() {
+        unconfirmed = confirm_commit_users(transport, &query, context).await?;
+    }
     result.warnings.splice(0..0, rename_warnings);
+    result.warnings.splice(0..0, unconfirmed);
     result.warnings.extend(warnings);
     rows::sanitize_items(&mut result.items, security)?;
     let paging = shape::Paging::new(&result, page, per);
     Ok(shape::shape(&query, result, &paging, terms))
+}
+
+/// Confirms the logins a commit search or an empty commit list names
+/// (`author:`, `committer:`; an email has no profile to look up), each once.
+/// GitHub's commit search drops an unknown login and answers the unfiltered
+/// total, and the commit list answers it with no rows, where issue and PR
+/// search answer a 422; a missing login is that same typed failure. A
+/// lookup that fails otherwise never blocks the answer: it is a warning.
+async fn confirm_commit_users(
+    transport: &GitHubTransport,
+    query: &HistorySearch,
+    context: &RequestContext,
+) -> Result<Vec<String>, HistoryFailure> {
+    let mut logins: Vec<&str> = Vec::new();
+    for login in [query.author(), query.committer()].into_iter().flatten() {
+        // Apps (`app/name`) have no `/users` route either.
+        if !login.contains(['@', '/']) && !logins.iter().any(|l| l.eq_ignore_ascii_case(login)) {
+            logins.push(login);
+        }
+    }
+    let lookups = logins
+        .iter()
+        .map(|login| transport.confirm_user(login, context));
+    let mut warnings = Vec::new();
+    for (login, outcome) in logins
+        .iter()
+        .zip(futures_util::future::join_all(lookups).await)
+    {
+        match outcome {
+            Ok(()) => {}
+            Err(error) if error.reason == Some(ProviderErrorReason::UserNotFound) => {
+                return Err(missing_scope_failure(error, query));
+            }
+            Err(error) if error.kind == ProviderErrorKind::Cancelled => return Err(error.into()),
+            Err(error) => warnings.push(format!(
+                "Could not confirm that user {login} exists ({}); GitHub does not report an unknown login for commits.",
+                error.message
+            )),
+        }
+    }
+    Ok(warnings)
 }
 
 /// The page size: the stamped contract default, else the schema default,
@@ -323,7 +394,7 @@ async fn list_commits(
     let (o, r) = query::required_repo(query)?;
     // Invalid-value warnings were already collected by the terms.
     let (since, until) = query::resolve_commit_window(query, &mut Vec::new())?;
-    let mut listed = transport
+    transport
         .list_commits_by_committer(
             &CommitListRequest {
                 owner: o.into(),
@@ -332,20 +403,14 @@ async fn list_commits(
                 path: query.path().map(str::to_owned),
                 author: query.author().map(str::to_owned),
                 since,
-                until,
+                until: until.map(|until| query::inclusive_until(&until)),
                 page,
                 per_page: per,
             },
             query.committer(),
             context,
         )
-        .await?;
-    if listed.items.is_empty() && (query.since().is_some() || query.until().is_some()) {
-        listed.warnings.push(
-            "since/until matched no commits (GitHub commit listing uses committer date and does not follow renames).".into(),
-        );
-    }
-    Ok(listed)
+        .await
 }
 
 async fn list_pull_requests(
@@ -374,12 +439,15 @@ async fn list_pull_requests(
         .await
 }
 
-/// A scoped search a rename could explain: no rows, or GitHub's 422
-/// "cannot be searched".
+/// A scoped search a rename could explain: no rows, or a repository GitHub
+/// search could not find (its 422 "cannot be searched", typed by the
+/// transport).
 fn may_be_renamed(fetched: &Result<Fetched, ProviderError>) -> bool {
     match fetched {
-        Ok(fetched) => fetched.result.items.is_empty(),
-        Err(error) => unsearchable(error),
+        // Rows on other pages mean the scope exists: a page past the end is
+        // not a rename.
+        Ok(fetched) => fetched.result.items.is_empty() && fetched.result.total_count == 0,
+        Err(error) => crate::tools::gh_shared::repository_not_found(error),
     }
 }
 
@@ -395,9 +463,10 @@ async fn follow_rename(
         return Ok(None);
     };
     match transport.canonical_owner_repo(owner, repo, context).await {
-        Ok((canonical_owner, canonical_repo, true, warnings)) => {
-            query.query.set_scope(&canonical_owner, &canonical_repo);
-            Ok(Some(warnings))
+        Ok(Some(canonical)) => {
+            let warning = crate::tools::gh_shared::renamed_warning(owner, repo, &canonical);
+            query.query.set_scope(&canonical.0, &canonical.1);
+            Ok(Some(vec![warning]))
         }
         Err(error)
             if matches!(
@@ -407,46 +476,42 @@ async fn follow_rename(
         {
             Err(error)
         }
-        Ok(_) | Err(_) => Ok(None),
+        Ok(None) | Err(_) => Ok(None),
     }
 }
 
-fn unsearchable(error: &ProviderError) -> bool {
-    error.kind == ProviderErrorKind::Validation && error.message.contains("cannot be searched")
-}
-
-/// Search over a missing or invisible repository answers 422 ("cannot be
-/// searched"): it is the repository that was not found, not a bad query.
-fn unsearchable_repository(error: ProviderError) -> ProviderError {
-    if unsearchable(&error) {
-        let mut not_found = ProviderError::new(ProviderErrorKind::NotFound, error.message.clone());
-        not_found.status = error.status;
-        not_found.with_reason(ProviderErrorReason::RepositoryNotFound)
-    } else {
-        error
+/// A bare GitHub 404 of a listing. A commit listing at a `ref` cannot tell
+/// a missing ref from a missing repository: the message names the ref and
+/// the refs listing is the one lead (it fails on a missing repository).
+/// Without a ref the repository itself did not resolve; the message names it.
+fn missing_scope_failure(mut error: ProviderError, query: &HistorySearch) -> HistoryFailure {
+    if error.reason == Some(ProviderErrorReason::UserNotFound) {
+        let next = leads::without_users(query).map(|lead| json!({ "withoutUsers": lead }));
+        return HistoryFailure { error, next };
     }
-}
-
-/// A bare GitHub 404 of a listing (a missing repository, private to this
-/// token, or a commit listing's missing ref): name the scope it listed.
-fn name_missing_scope(mut error: ProviderError, query: &HistorySearch) -> ProviderError {
     if error.kind != ProviderErrorKind::NotFound || error.reason.is_some() {
-        return error;
+        return error.into();
     }
     let (Some(owner), Some(repo)) = (query.owner(), query.repo()) else {
         error.message = crate::tools::gh_shared::provider_message(&error).into_boxed_str();
-        return error;
+        return error.into();
     };
-    error.message = match query.reference() {
-        Some(reference) => format!(
-            "Ref \"{reference}\" or repository {owner}/{repo} not found, or the repository is private to this token"
-        ),
-        None => format!(
+    let Some(reference) = query.reference() else {
+        // The repository itself did not resolve: the message names it.
+        error.message = format!(
             "Repository {owner}/{repo} not found, or private and not accessible to this token"
+        )
+        .into_boxed_str();
+        return error.into();
+    };
+    error.message =
+        format!("Ref \"{reference}\" or repository {owner}/{repo} not found").into_boxed_str();
+    HistoryFailure {
+        error,
+        next: Some(
+            serde_json::json!({"viewRefs": crate::tools::gh_shared::ref_recovery(owner, repo)}),
         ),
     }
-    .into_boxed_str();
-    error
 }
 
 /// Output facts the shared response stages ask about.
@@ -495,7 +560,7 @@ fn clasify_history(
             fetch.insert("operation".into(), serde_json::json!(operation));
             let identity = match (operation, &located) {
                 ("commit", Some((owner, repo))) => {
-                    row.get("sha").and_then(Value::as_str).map(|sha| {
+                    row.get("commitSha").and_then(Value::as_str).map(|sha| {
                         fetch.insert("ref".into(), serde_json::json!(sha));
                         format!(
                             "{owner}/{repo}@{}",
@@ -530,14 +595,6 @@ fn clasify_history(
 /// Owner and repository of a history item: its own fields when a search spans
 /// repositories, else the searched repository.
 fn clasify_item_repository(row: &Value, query: &GhSearchHistoryQuery) -> Option<(String, String)> {
-    if let Some(full) = row.get("repository").and_then(|repository| {
-        repository
-            .as_str()
-            .or_else(|| repository.get("fullName")?.as_str())
-    }) && let Some((owner, repo)) = full.split_once('/')
-    {
-        return Some((owner.to_owned(), repo.to_owned()));
-    }
     let owner = row
         .get("owner")
         .and_then(Value::as_str)

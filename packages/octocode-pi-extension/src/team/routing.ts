@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { formatClock, formatDuration, memberStats } from '../shared/format.js';
 import { resolveToolPath } from '../shared/home.js';
 import type { Change } from './edits.js';
-import type { Lease, Member, Message } from './model.js';
+import type { DeadLetter, Lease, Member, Message } from './model.js';
 import { errorMessage, firstLine } from '../shared/util.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 
@@ -18,6 +18,12 @@ export const MESSAGE_MAX_CHARS = 8_000;
 export const outside = (from: string) => from === USER_SENDER || from === EXTERNAL_SENDER;
 
 /** A delivered message as the recipient reads it: who sent it, the text, and how (or whether) to reply. */
+/** The notice a sender gets when every recipient of its message left the team before reading it. */
+export function deadLetterText(letter: DeadLetter): string {
+  const who = letter.recipients.join(', ');
+  return sanitizeTerminalText(`Message #${letter.id} to ${who} was not read: ${letter.recipients.length === 1 ? `${who} left` : 'they left'} the team first. Its text began: "${letter.text.split('\n')[0]!.slice(0, 120)}"`);
+}
+
 export function messageText(message: Message, parentId: string | undefined): string {
   const label =
     message.from === USER_SENDER

@@ -279,7 +279,7 @@ fn missing_repository_names_the_repository_with_a_recovery_hint() {
         "Repository not found: fixture-owner/fixture-repo"
     );
     assert_eq!(error.hints.len(), 1);
-    // D8: the hint fits the 120-char guidance cap whole (the message names
+    // The hint fits the 120-char guidance cap whole (the message names
     // the repository), so the response stage never cuts it mid-sentence.
     let long = repository_not_found(&parse_query(serde_json::json!({
         "owner": "o".repeat(39), "repo": "r".repeat(100),
@@ -298,7 +298,7 @@ fn missing_repository_names_the_repository_with_a_recovery_hint() {
     );
 }
 
-/// D8: a clone row continues into the local tools on its checkout (the
+/// A clone row continues into the local tools on its checkout (the
 /// sparse subtree when one was requested), and a cache hit names its age.
 #[test]
 fn clone_rows_continue_into_local_tools_and_name_the_cache_age() {
@@ -416,6 +416,33 @@ fn creates_a_new_configured_home_before_authorizing_the_clone_target() {
     assert!(Path::new(&result.location.local_path).starts_with(cache_home));
 }
 
+/// The runtime allows only the checkout trees under the Octocode home
+/// (`<home>/tmp/clone`), never the home itself (credentials, logs): a clone
+/// must authorize its clones root, not the whole home.
+#[test]
+fn clones_with_only_the_clones_root_allowed_under_an_existing_home() {
+    let fixture = Fixture::new();
+    let (_root, cache_home) = home_root("clones-root-only");
+    let policy = PathPolicy::new(PathPolicyConfig {
+        workspace_root: Some(fixture.work.clone()),
+        additional_roots: vec![cache::clones_root(&cache_home)],
+        ..Default::default()
+    })
+    .expect("policy");
+    let endpoint = api_github_endpoint();
+    let runner = fixture_runner(&fixture);
+    let config = CloneConfig::persistent(&cache_home);
+    let context = setup(&runner, &config, &endpoint, &policy, &NeverCancel, None);
+
+    let result = execute_clone(&query(), &context).expect("clone under the clones root");
+    assert_eq!(result.location.commit_sha, fixture.first_commit);
+    assert!(
+        Path::new(&result.location.local_path).starts_with(cache::clones_root(&cache_home)),
+        "{}",
+        result.location.local_path
+    );
+}
+
 #[test]
 fn denied_cache_home_is_not_created() {
     let root = Temp::new("allowed");
@@ -496,7 +523,7 @@ fn clones_caches_refreshes_sparse_tag_and_commit_without_token_argv() {
             .expect("read clone"),
         "fixture\n"
     );
-    assert!(fresh.total_size > 0);
+    assert!(fresh.bytes > 0);
     let cached = execute_clone(&query(), &context).expect("cached clone");
     assert!(cached.location.cached);
     // A cache hit reports the verification state persisted at clone time, not a
@@ -1802,8 +1829,8 @@ fn cache_hits_skip_the_git_probe_and_report_the_recorded_size() {
         .clear();
     let cached = execute_clone(&query(), &context).expect("cached clone");
     assert!(cached.location.cached);
-    assert_eq!(cached.total_size, fresh.total_size);
-    assert!(fresh.total_size > 0);
+    assert_eq!(cached.bytes, fresh.bytes);
+    assert!(fresh.bytes > 0);
     let seen = runner
         .seen
         .lock()

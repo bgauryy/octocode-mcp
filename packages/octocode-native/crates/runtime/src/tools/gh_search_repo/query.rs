@@ -15,8 +15,8 @@ pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
         stars,
         pushed,
         created,
-        match_,
-        archived,
+        match_in,
+        include_archived,
         license,
         topics,
         ..
@@ -26,7 +26,15 @@ pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
         .map(|v| quote_search_keyword(v))
         .filter(|v| !v.is_empty())
         .collect();
-    push(&mut parts, "user", owner.as_deref().map(String::as_str));
+    // owner+repo with filters searches inside that one repository.
+    match (owner.as_deref(), query.repo.as_deref()) {
+        (Some(owner), Some(repo)) => push(
+            &mut parts,
+            "repo",
+            Some(&format!("{}/{}", owner.as_str(), repo.as_str())),
+        ),
+        (owner, _) => push(&mut parts, "user", owner.map(String::as_str)),
+    }
     for topic in topics {
         push(&mut parts, "topic", Some(topic));
     }
@@ -42,7 +50,7 @@ pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
     }
     push(&mut parts, "language", language.as_deref());
     push(&mut parts, "license", license.as_deref());
-    for kind in match_ {
+    for kind in match_in {
         push(&mut parts, "in", Some(&kind.to_string()));
     }
     // `archived:true` includes archived repositories (no qualifier); the
@@ -53,7 +61,7 @@ pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
             .split_whitespace()
             .any(|term| matches!(term, "is:archived" | "is:not-archived"))
     });
-    if *archived != Some(true) && !archive_qualifier {
+    if *include_archived != Some(true) && !archive_qualifier {
         parts.push("archived:false".into());
     }
     if let Some(qualifiers) = query.qualifiers.as_deref() {
@@ -81,7 +89,7 @@ mod tests {
     #[test]
     fn archived_true_includes_and_is_archived_replaces_the_default() {
         let included = repositories(&parse(
-            serde_json::json!({"mainGoal": "test", "reasoning":"test","keywords":["x"],"archived":true}),
+            serde_json::json!({"mainGoal": "test", "reasoning":"test","keywords":["x"],"includeArchived":true}),
         ));
         assert!(!included.contains("archived:"), "{included}");
         let only = repositories(&parse(

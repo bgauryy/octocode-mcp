@@ -3,8 +3,13 @@ import {
   resolveNativeBin,
   shouldDelegateToNative,
 } from './native-delegate.js';
-import { hasHelpFlag, hasVersionFlag, parseArgs } from './parser.js';
-import { EXIT } from './exit-codes.js';
+import {
+  hasHelpFlag,
+  hasVersionFlag,
+  isTrueFlag,
+  parseArgs,
+} from './parser.js';
+import { reportExecutionFailure } from './exit-codes.js';
 
 /**
  * The npm CLI is a launcher, not a second implementation. The native Rust
@@ -16,15 +21,6 @@ import { EXIT } from './exit-codes.js';
  *  - the TTY client picker for a bare `install` (selection only — every
  *    operation after selection runs native).
  */
-/** Boolean flags arrive as `true` (bare) or a string (`--json=true`). */
-export function isTrueFlag(value: unknown): boolean {
-  if (value === true) return true;
-  return (
-    typeof value === 'string' &&
-    ['true', '1', 'yes'].includes(value.toLowerCase())
-  );
-}
-
 export async function runCLI(argv?: string[]): Promise<boolean> {
   const { maybeWarnAboutStaleBuild } = await import('./stale-build.js');
   maybeWarnAboutStaleBuild();
@@ -63,17 +59,20 @@ export async function runCLI(argv?: string[]): Promise<boolean> {
     return true;
   }
 
-  const bin = resolveNativeBin();
-  if (!bin) {
+  const resolved = resolveNativeBin();
+  if ('error' in resolved) {
     // Runtime-unavailable is an execution failure (exit 5), matching the native
     // exit-code table and the `schema` path; do not throw into main().catch,
-    // which would report a generic exit 1 for the same condition.
-    process.stderr.write(
-      'The native Octocode runtime is unavailable for this platform or installation.\n'
+    // which would report the same condition as a crash. The resolver's own
+    // message carries the fix (for example the missing platform package).
+    process.exitCode = reportExecutionFailure(
+      `The native Octocode runtime is unavailable for this platform or installation.\n${resolved.error}`,
+      isTrueFlag(args.options.json),
+      'toolUnavailable'
     );
-    process.exitCode = EXIT.TOOL;
     return false;
   }
+  const { bin } = resolved;
 
   if (
     args.command === 'config' &&

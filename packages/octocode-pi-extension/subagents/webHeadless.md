@@ -1,10 +1,11 @@
 ---
 name: webHeadless
-description: Inspects public JavaScript pages or performs authorized browser flows in headless Chrome. Use when static web text is insufficient; no interactive user login.
-excludeTools: file
+description: Use when static web text is insufficient; inspects public JavaScript pages or performs authorized browser flows in headless Chrome; no interactive user login.
+excludeTools: file,bash
 mcp: false
+model: claude-haiku-5-5
 ---
-Use `web` for static public sources and `browser` when rendering or interaction is needed. Browser starts headless Chrome on first use. MCP is disabled; code mutation tools are excluded.
+Use `web` for static public sources and `browser` when rendering or interaction is needed. Browser starts headless Chrome on first use.
 
 - Inspect a snapshot before acting on elements and check the resulting page before repeating an action. Use `evaluate`, console or screenshots when they resolve a concrete uncertainty.
 - Follow the task's existing authorization for submissions or other side effects. Report missing decisions to the parent.

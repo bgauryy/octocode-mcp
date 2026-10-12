@@ -16,13 +16,15 @@
 //!
 //! Public coordinates, input and output, are one-based lines and one-based
 //! UTF-16 columns (see [`locations`]); requests anchor by `symbolName` and
-//! `lineHint`.
+//! `line`.
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::num::{u32_of, u32_of_signed};
 use octocode_engine::lsp::config::{
     LspDiscoveryOptions, default_server_for_file, default_server_for_workspace_root,
-    representative_source_for, workspace_root_languages, workspace_root_representative_source,
+    representative_source_for, typescript_server_fallback,
+    typescript_server_fallback_for_workspace_root, workspace_root_languages,
+    workspace_root_representative_source,
 };
 use octocode_engine::lsp::pool::LspClientPool;
 use octocode_engine::lsp::uri::path_to_uri as engine_path_to_uri;
@@ -34,9 +36,10 @@ use std::time::Duration;
 
 mod anchor;
 mod failure;
+mod heritage;
+mod import_stop;
 mod importers;
 mod inferred_project;
-mod lead;
 mod locations;
 mod ops;
 mod output;
@@ -51,8 +54,6 @@ mod walk;
 
 pub use failure::LspFailure;
 use failure::{failure, mark_partial, with_next};
-pub(crate) use lead::lead_name;
-pub use lead::{Verify, verify_query, with_lead_discovery};
 pub(crate) use output::Output;
 use render::decode_uri_path;
 use source::{SourceCache, SourceReadError, read_bounded_source_async, snippet_policy};
@@ -64,11 +65,6 @@ const DIDOPEN_SETTLE_MS: u32 = 400;
 const DIDOPEN_READY_TIMEOUT_MS: u32 = 15_000;
 /// How often a long language-server await re-checks cancellation.
 const CANCEL_POLL_MS: u64 = 50;
-/// Default rows per page of locations (references, callers, …).
-pub(super) const LOCATIONS_PER_PAGE: u32 = 40;
-/// Default rows per page of compact symbol rows (documentSymbols,
-/// workspaceSymbol): the contract's page maximum.
-pub(super) const SYMBOLS_PER_PAGE: u32 = 100;
 
 use crate::contracts::tool_types as wire;
 pub use crate::contracts::tool_types::LspSearchQuery;
@@ -117,9 +113,9 @@ impl LspSearchQuery {
             Self::Document(_) => None,
         }
     }
-    pub(crate) fn line_hint(&self) -> Option<u32> {
+    pub(crate) fn anchor_line(&self) -> Option<u32> {
         match self {
-            Self::Anchored(query) => Some(u32_of(query.line_hint.get())),
+            Self::Anchored(query) => Some(u32_of(query.line.get())),
             _ => None,
         }
     }
@@ -144,22 +140,19 @@ impl LspSearchQuery {
             _ => None,
         }
     }
-    pub(crate) fn depth(&self) -> Option<u32> {
+    pub(crate) fn graph_depth(&self) -> Option<u32> {
         match self {
-            Self::Anchored(query) => query.depth.map(u32_of_signed),
+            Self::Anchored(query) => query.graph_depth.map(u32_of_signed),
             _ => None,
         }
     }
     pub(crate) fn page(&self) -> Option<u32> {
         each_shape!(self, page => Some(u32_of(page.get())))
     }
-    /// Rows per page: the caller's `pageSize`, else 40 locations.
-    pub(crate) fn page_size(&self) -> u32 {
-        self.page_size_or(LOCATIONS_PER_PAGE)
-    }
-    /// Rows per page: the caller's `pageSize`, else `default`.
-    pub(crate) fn page_size_or(&self, default: u32) -> u32 {
-        each_shape!(self, page_size => page_size.as_ref().map_or(default, |size| u32_of(size.get())))
+    /// Rows per page when the caller sets `pageSize`; unset pages fill the
+    /// response window instead.
+    pub(crate) fn page_size(&self) -> Option<u32> {
+        each_shape!(self, page_size => page_size.as_ref().map(|size| u32_of(size.get())))
     }
     /// The importer window (`importerPage`, one-based) of an anchored query.
     pub(crate) fn importer_page(&self) -> u32 {
@@ -196,7 +189,7 @@ pub struct LspExecutionConfig {
     /// Resolved `OCTOCODE_*` settings (process env and trusted `.env` layers).
     pub env: std::collections::BTreeMap<String, String>,
     pub octocode_home: Option<std::path::PathBuf>,
-    pub(crate) lead_cache: std::sync::Arc<lead::LeadProbeCache>,
+    pub(crate) lead_cache: std::sync::Arc<crate::tools::leads::lsp::LeadProbeCache>,
     pub(crate) prewarm_state: std::sync::Arc<std::sync::Mutex<prewarm::WarmState>>,
 }
 
@@ -211,6 +204,18 @@ impl LspExecutionConfig {
             env: self.env.clone(),
             octocode_home: self.octocode_home.clone(),
         }
+    }
+
+    /// Discovery for the `lspSearch` leads other tools offer: the configured
+    /// server file counts only when the path policy authorizes reading it.
+    #[must_use]
+    pub fn lead_discovery(&self, paths: &PathPolicy) -> LspDiscoveryOptions {
+        let config_path = self
+            .config_path
+            .as_deref()
+            .and_then(|path| paths.validate_read(path).ok())
+            .map(|validated| validated.canonical);
+        self.discovery(config_path)
     }
 }
 
@@ -487,6 +492,7 @@ pub async fn execute(
     pool: &LspClientPool,
     paths: &PathPolicy,
     execution_config: &LspExecutionConfig,
+    response_window: Option<usize>,
 ) -> Result<Value, LspFailure> {
     // No reuse until the anchor text (and, for incoming walks, the scope
     // fingerprint) keys the page's responses: see `scope_responses`.
@@ -494,7 +500,14 @@ pub async fn execute(
     octocode_engine::lsp::client::RESPONSE_SCOPE
         .scope(
             std::cell::RefCell::new(scope),
-            scope::with_canonical_memo(execute_page(query, cancel, pool, paths, execution_config)),
+            scope::with_canonical_memo(execute_page(
+                query,
+                cancel,
+                pool,
+                paths,
+                execution_config,
+                response_window,
+            )),
         )
         .await
 }
@@ -506,6 +519,9 @@ struct Target {
     uri: String,
     root_only: bool,
     config: octocode_engine::lsp::types::JsLanguageServerConfig,
+    /// The server to use when `config` (octocode's native tsgo) fails to
+    /// start; `None` where there is no substitute.
+    fallback: Option<octocode_engine::lsp::types::JsLanguageServerConfig>,
 }
 
 impl Target {
@@ -520,13 +536,30 @@ async fn execute_page(
     pool: &LspClientPool,
     paths: &PathPolicy,
     execution_config: &LspExecutionConfig,
+    response_window: Option<usize>,
 ) -> Result<Value, LspFailure> {
     cancel.check().map_err(LspFailure::cancelled)?;
     let original_root = query.workspace_root().map(str::to_owned);
     let path = query.resolve_paths(paths)?;
-    match run_page(&query, path, cancel, pool, paths, execution_config).await {
+    match run_page(
+        &query,
+        path,
+        cancel,
+        pool,
+        paths,
+        execution_config,
+        response_window,
+    )
+    .await
+    {
         Ok(mut row) | Err(Exit::Row(mut row)) => {
             restore_root_spelling(&mut row, query.workspace_root(), original_root.as_deref());
+            failure::stamp_coverage(&mut row);
+            Ok(row)
+        }
+        Err(Exit::Failed(failure)) if failure.lexical_fallback => {
+            let mut row = failure.row(&query, query.path().unwrap_or_default());
+            failure::stamp_coverage(&mut row);
             Ok(row)
         }
         Err(Exit::Failed(failure)) => Err(failure),
@@ -540,6 +573,7 @@ async fn run_page(
     pool: &LspClientPool,
     paths: &PathPolicy,
     execution_config: &LspExecutionConfig,
+    response_window: Option<usize>,
 ) -> Result<Value, Exit> {
     let target = discover_server(query, path, paths, execution_config)?;
     let language_id = target.config.language_id.as_deref();
@@ -589,6 +623,7 @@ async fn run_page(
         line: anchor.line,
         character: anchor.character,
         language_id,
+        budget: crate::tools::page_windows::page_budget(response_window, &query.to_row()),
     }
     .run()
     .await?;
@@ -695,11 +730,17 @@ fn discover_server(
         ));
     };
     receipt::apply_rust_context(&mut config, query).map_err(LspFailure::invalid_query)?;
+    let fallback = if root_only {
+        typescript_server_fallback_for_workspace_root(&workspace, &discovery)
+    } else {
+        typescript_server_fallback(&path, &workspace, &discovery)
+    };
     Ok(Target {
         path,
         uri,
         root_only,
         config,
+        fallback,
     })
 }
 
@@ -737,6 +778,10 @@ async fn read_anchor_document(
 struct Session {
     client: octocode_engine::lsp::client::NativeLspClient,
     _lease: octocode_engine::lsp::client::LspLease,
+    /// The server that answers: the target's, or its fallback.
+    config: octocode_engine::lsp::types::JsLanguageServerConfig,
+    /// Why the target's own server did not start, when `config` replaced it.
+    fell_back_from: Option<String>,
     /// The post-didOpen readiness (`"timeout"` when the project load was
     /// still running).
     open_readiness: Option<String>,
@@ -755,25 +800,12 @@ async fn open_session(
     cancel: &dyn CancellationCheck,
     pool: &LspClientPool,
 ) -> Result<Session, Exit> {
-    let (client, lease) =
-        match cancellable(cancel, pool.acquire_leased(target.config.clone())).await? {
-            Ok(Some(leased)) => leased,
-            Ok(None) => {
-                return Err(target.fail(
-                    query,
-                    "serverUnavailable",
-                    "Language server failed to start.",
-                    false,
-                ));
-            }
-            Err(error) => {
-                let code = match LspFailure::from_engine(&error).code {
-                    "timeout" => "timeout",
-                    _ => "serverUnavailable",
-                };
-                return Err(target.fail(query, code, &error.to_string(), false));
-            }
-        };
+    let Leased {
+        client,
+        lease,
+        config,
+        fell_back_from,
+    } = acquire_leased_client(query, target, pool, cancel).await?;
     if client.readiness().as_deref() == Some("timeout") {
         return Err(target.fail(
             query,
@@ -784,6 +816,8 @@ async fn open_session(
     }
     if let Some(capability) = receipt::required_capability(&query.operation())
         && !client.has_capability(capability.to_owned())
+        && !heritage::fallback_provider(&query.operation())
+            .is_some_and(|provider| client.has_capability(provider.to_owned()))
     {
         return Err(target.fail(
             query,
@@ -796,8 +830,88 @@ async fn open_session(
     Ok(Session {
         client,
         _lease: lease,
+        config,
+        fell_back_from,
         open_readiness,
     })
+}
+
+/// A pooled client leased for one operation.
+struct Leased {
+    client: octocode_engine::lsp::client::NativeLspClient,
+    lease: octocode_engine::lsp::client::LspLease,
+    /// The configuration that actually started: `target.config`, or its
+    /// fallback.
+    config: octocode_engine::lsp::types::JsLanguageServerConfig,
+    /// Why `target.config` did not start, when `config` is the fallback.
+    fell_back_from: Option<String>,
+}
+
+/// Lease a client for `target.config`. When it fails to start (not when the
+/// request is cancelled) and the target has a fallback, lease that instead
+/// and keep the reason, so the answer can say which server replied.
+async fn acquire_leased_client(
+    query: &LspSearchQuery,
+    target: &Target,
+    pool: &LspClientPool,
+    cancel: &dyn CancellationCheck,
+) -> Result<Leased, Exit> {
+    let (code, message) =
+        match start_failure(cancellable(cancel, pool.acquire_leased(target.config.clone())).await?)
+        {
+            Ok((client, lease)) => {
+                return Ok(Leased {
+                    client,
+                    lease,
+                    config: target.config.clone(),
+                    fell_back_from: None,
+                });
+            }
+            Err(failure) => failure,
+        };
+    let Some(fallback) = target.fallback.clone() else {
+        return Err(target.fail(query, code, &message, false));
+    };
+    match start_failure(cancellable(cancel, pool.acquire_leased(fallback.clone())).await?) {
+        Ok((client, lease)) => Ok(Leased {
+            client,
+            lease,
+            config: fallback,
+            fell_back_from: Some(message),
+        }),
+        Err(_) => Err(target.fail(query, code, &message, false)),
+    }
+}
+
+/// The failure code and message of a server that did not start.
+fn start_failure(
+    acquired: octocode_engine::error::Result<
+        Option<(
+            octocode_engine::lsp::client::NativeLspClient,
+            octocode_engine::lsp::client::LspLease,
+        )>,
+    >,
+) -> Result<
+    (
+        octocode_engine::lsp::client::NativeLspClient,
+        octocode_engine::lsp::client::LspLease,
+    ),
+    (&'static str, String),
+> {
+    match acquired {
+        Ok(Some(leased)) => Ok(leased),
+        Ok(None) => Err((
+            "serverUnavailable",
+            "Language server failed to start.".to_owned(),
+        )),
+        Err(error) => {
+            let code = match LspFailure::from_engine(&error).code {
+                "timeout" => "timeout",
+                _ => "serverUnavailable",
+            };
+            Err((code, error.to_string()))
+        }
+    }
 }
 
 /// The first didOpen of a document can trigger a project load (tsserver
@@ -884,6 +998,14 @@ fn annotate(
             )],
         );
     }
+    if let Some(reason) = &session.fell_back_from {
+        failure::push_warning(
+            result,
+            format!(
+                "The native TypeScript server (tsgo) did not start ({reason}); typescript-language-server (tsserver) answered."
+            ),
+        );
+    }
     let language_id = target.config.language_id.as_deref();
     inferred_project::annotate(result, query, language_id, &target.path, scope);
     inferred_project::annotate_compile_database(result, query, language_id, &target.path, scope);
@@ -893,7 +1015,7 @@ fn annotate(
         query,
         &target.uri,
         resolved_symbol,
-        &target.config,
+        &session.config,
         &session.client,
         query.wants(crate::contracts::tool_types::ExtraKind::Receipts),
     );

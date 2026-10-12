@@ -1,4 +1,6 @@
+use crate::contracts::tool_types::DefaultExcludes;
 use crate::policy::prune::DefaultsFlag;
+use crate::tools::empty_walk::Walk;
 use crate::tools::result::ToolError;
 use crate::{
     policy::{path::PathPolicy, prune::PruneMode},
@@ -9,21 +11,21 @@ use octocode_engine::types::FileSystemQueryOptions;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
-use super::files::{format_size, walk_warnings};
+use super::files::walk_warnings;
 use crate::contracts::tool_types::StructureSearchQueryTree;
 
 /// Engine-unit views over the generated `tree` query.
 impl StructureSearchQueryTree {
     /// Levels below `path` (1 = its children), as the engine counts them.
-    /// Omitted, a listing shows `path`'s children; an `include` filter
-    /// searches every level, like ghStructure.
+    /// Omitted, a listing shows `path`'s children; a filter (`include`,
+    /// `extensions`, `entryType`) searches every level, like ghStructure.
     fn walk_depth(&self) -> u32 {
         self.max_depth.map_or_else(
             || {
-                if self.include.is_empty() {
-                    1
-                } else {
+                if self.filtered() {
                     super::structure_max("maxDepth")
+                } else {
+                    1
                 }
             },
             |depth| u32::try_from(depth.get()).unwrap_or(u32::MAX),
@@ -61,11 +63,14 @@ impl StructureSearchQueryTree {
 }
 
 /// One outline row: its directory relative to `path` (`""` is `path`) and
-/// its entry there: the name, then `/` (directory), `@` (symlink) or
-/// ` (<size>)` (file).
+/// its entry there, in the listing-entry shape `files` uses
+/// (`super::files::entry_text`).
 struct TreeRow {
     dir: String,
     entry: String,
+    /// The entry's name and kind, to render it with details on its page.
+    name: String,
+    kind: &'static str,
     /// A regular file's size in bytes; `None` for directories and symlinks.
     size: Option<i64>,
     /// The walked entry, for the continuation pages' change check.
@@ -126,8 +131,8 @@ pub fn execute_tree(
     let identity = json!([
         validated.canonical.to_string_lossy(),
         q.walk_depth(),
-        q.hidden,
-        q.no_ignore,
+        q.include_hidden,
+        q.include_ignored,
         q.include,
         q.extensions,
         q.entry_type.map(|kind| kind.to_string()),
@@ -136,6 +141,8 @@ pub fn execute_tree(
         requested,
         q.scan_offset(),
         q.page_size(),
+        q.extras
+            .contains(&crate::contracts::tool_types::ExtraKind::Details),
     ]);
     let policy = paths.identity();
     let snapshot_in = q.snapshot.as_deref().map(String::as_str);
@@ -158,18 +165,57 @@ pub fn execute_tree(
         return Ok(restart);
     }
     let prefix = super::listing_prefix(paths, &validated.canonical);
-    let pages = super::page_ranges(&tree_costs(&walk.rows, &prefix), q.page_size(), budget);
+    let detail = q
+        .extras
+        .contains(&crate::contracts::tool_types::ExtraKind::Details);
+    let pages = super::page_ranges(
+        &tree_costs(&walk.rows, &prefix, detail),
+        q.page_size(),
+        budget,
+    );
     if !stored && pages.len() > 1 {
         super::memo::put(snapshot.clone(), policy, &validated.canonical, &walk);
     }
-    Ok(tree_page(
+    let mut out = tree_page(
         q,
         &walk,
         &pages,
         snapshot,
         (&validated.canonical, &prefix),
         requested,
-    ))
+        (detail.then_some(paths), cancel),
+    )?;
+    let shown = Walk {
+        ignored: q.include_ignored == Some(true),
+        hidden: q.include_hidden == Some(true),
+        default_excludes: q.default_excludes.defaults(),
+    };
+    super::note_empty(
+        &mut out,
+        q,
+        &validated.canonical,
+        &walk.uncovered,
+        shown,
+        |relaxed| {
+            let mut relaxed_query = q.clone();
+            relaxed_query.include_ignored = Some(relaxed.ignored);
+            relaxed_query.include_hidden = Some(relaxed.hidden);
+            relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
+            relaxed_query.scan_offset = None;
+            let found = walk_tree(
+                &relaxed_query,
+                &validated.canonical,
+                paths,
+                security,
+                cancel,
+                requested,
+            )?;
+            Ok(super::found_entries(
+                found.rows.into_iter().map(|row| row.source),
+            ))
+        },
+    )?;
+    Ok(out)
 }
 
 /// Walk the tree once: rows in listing order, cut to `requested`, with
@@ -183,17 +229,16 @@ fn walk_tree(
     requested: usize,
 ) -> Result<TreeWalk, ToolError> {
     // Leave out what localSearch leaves out: `.gitignore`d entries (unless
-    // noIgnore) and paths the sensitive-file policy denies. Denied entries
+    // includeIgnored) and paths the sensitive-file policy denies. Denied entries
     // the listing would otherwise show are counted and reported, never
     // silently dropped.
-    let gitignore = (!q.no_ignore.unwrap_or(false))
+    let gitignore = (!q.include_ignored.unwrap_or(false))
         .then(|| crate::policy::gitignore::GitignoreFilter::new(root));
-    let show_hidden = q.hidden.unwrap_or(false);
+    let show_hidden = q.include_hidden.unwrap_or(false);
     let include = crate::policy::include::include_globs(&q.include);
     let probe = super::FilterProbe::new(root, &include, &q.extensions, None);
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let (ignored, hidden) = (AtomicUsize::new(0), AtomicUsize::new(0));
-    let ignored_dirs = super::IgnoredDirs::default();
     let pruned = PruneMode::SyntaxVisible.directories(q.default_excludes.defaults());
     let discovery = paths.discovery_walk();
     let native = octocode_engine::portable::query_file_system_typed(
@@ -214,7 +259,7 @@ fn walk_tree(
         },
         &|path, file_type| {
             // Dot entries out of view (no `hidden`) are neither listed nor
-            // counted as withheld or ignored; the ones `hidden:true` would
+            // counted as withheld or ignored; the ones `includeHidden:true` would
             // walk (permitted, not ignored, not a pruned directory) are
             // counted as hidden.
             let name = crate::tools::display_name(path);
@@ -224,7 +269,6 @@ fn walk_tree(
             }) {
                 if show_hidden || !dot {
                     ignored.fetch_add(1, Relaxed);
-                    ignored_dirs.record(path);
                 }
                 return Ok(false);
             }
@@ -245,7 +289,7 @@ fn walk_tree(
             Ok(allowed)
         },
     )
-    .map_err(|error| super::walk_error(error, q.path.as_str()))?;
+    .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
     let (mut rows, files, dirs, bytes) = tree_rows(&native.entries, security);
     let available = rows.len();
@@ -273,7 +317,6 @@ fn walk_tree(
         bytes,
         uncovered: super::Uncovered {
             ignored: ignored.into_inner(),
-            ignored_dirs: ignored_dirs.into_names(),
             withheld: withheld
                 .into_inner()
                 .unwrap_or_else(|error| error.into_inner()),
@@ -297,23 +340,28 @@ fn tree_rows(
             let relative = security.sanitize_text(&entry.relative_path, None).content;
             let (dir, name) = relative.rsplit_once('/').unwrap_or(("", &relative));
             let mut file_size = None;
-            let text = match entry.entry_type.as_str() {
+            let kind = match entry.entry_type.as_str() {
                 "directory" => {
                     dirs += 1;
-                    format!("{name}/")
+                    "directory"
                 }
-                "symlink" => format!("{name}@"),
+                "symlink" => "symlink",
                 _ => {
                     files += 1;
                     let size = entry.size.unwrap_or(0);
                     bytes += size;
                     file_size = Some(size);
-                    format!("{name} ({size})")
+                    "file"
                 }
             };
+            // Every non-directory entry names its size, a symlink its own.
+            let size = (kind != "directory").then(|| entry.size.unwrap_or(0));
+            let text = super::files::entry_text(name, kind, size, None, None);
             TreeRow {
                 dir: dir.to_owned(),
                 entry: text,
+                name: name.to_owned(),
+                kind,
                 size: file_size,
                 source: std::path::PathBuf::from(&entry.path),
                 seen: {
@@ -330,27 +378,30 @@ fn tree_rows(
 /// listing it bare (`"name/"`) under its parent too would show it twice,
 /// even when the two land on different pages.
 fn drop_grouped_dirs(rows: &mut Vec<TreeRow>) {
-    let grouped = super::group_dirs(rows.iter().map(|row| &row.dir));
-    rows.retain(|row| {
-        let Some(name) = row.entry.strip_suffix('/') else {
-            return true;
-        };
-        let path = if row.dir.is_empty() {
-            name.to_owned()
-        } else {
-            format!("{}/{name}", row.dir)
-        };
-        !grouped.contains(&path)
-    });
+    super::drop_grouped_dirs(
+        rows,
+        |row| row.dir.as_str(),
+        |row| {
+            let name = row.entry.strip_suffix('/')?;
+            Some(if row.dir.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{}/{name}", row.dir)
+            })
+        },
+    );
 }
 
 /// A row costs its quoted entry, plus its group's `{dir, files}` header
 /// (the workspace-relative directory) whenever it opens one.
-fn tree_costs(rows: &[TreeRow], prefix: &str) -> Vec<super::RowCost> {
+fn tree_costs(rows: &[TreeRow], prefix: &str, detail: bool) -> Vec<super::RowCost> {
     rows.iter()
         .enumerate()
         .map(|(index, row)| super::RowCost {
-            entry: crate::tools::stream_page::json_chars(&row.entry) + 1,
+            entry: crate::tools::stream_page::json_chars(&row.entry)
+                + 1
+                + usize::from(detail && row.kind != "directory")
+                    * super::files::DETAIL_FIELDS_RESERVE,
             header: crate::tools::stream_page::json_chars(
                 &json!({"dir":super::group_dir(prefix, &row.dir),"files":[]}),
             ) + 1,
@@ -367,7 +418,8 @@ fn tree_page(
     snapshot: String,
     (root, prefix): (&std::path::Path, &str),
     requested: usize,
-) -> Value {
+    (detail, cancel): (Option<&PathPolicy>, &dyn CancellationCheck),
+) -> Result<Value, ToolError> {
     let page = q.page().max(1);
     let total = walk.rows.len();
     let cut = super::Cut {
@@ -384,16 +436,34 @@ fn tree_page(
         covered: walk.covered,
         snapshot: snapshot.clone(),
     };
-    let files = pages
+    // Details are read for this page's files only, like `files` does.
+    let shown_rows = pages
         .get(page - 1)
-        .map(|shown| {
-            super::dir_groups(
-                &walk.rows[shown.clone()],
-                |row| (&row.dir, &row.entry),
-                prefix,
-            )
+        .map_or(&walk.rows[..0], |shown| &walk.rows[shown.clone()])
+        .iter()
+        .map(|row| {
+            let entry = match detail {
+                Some(paths) if row.kind != "directory" => {
+                    let lines = super::files::line_count(&row.source, paths, cancel)?;
+                    let modified = row
+                        .seen
+                        .1
+                        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                        .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok());
+                    super::files::entry_text(
+                        &row.name,
+                        row.kind,
+                        Some(i64::try_from(row.seen.0).unwrap_or(i64::MAX)),
+                        (lines > 0).then_some(lines),
+                        modified,
+                    )
+                }
+                _ => row.entry.clone(),
+            };
+            Ok((row.dir.clone(), entry))
         })
-        .unwrap_or_default();
+        .collect::<Result<Vec<_>, ToolError>>()?;
+    let files = super::dir_groups(&shown_rows, |row| (&row.0, &row.1), prefix);
     let mut out = json!({
         "path": super::display_name(root),
         "files": files,
@@ -405,12 +475,13 @@ fn tree_page(
     // The walk's summary and its retries describe the whole listing: page 1
     // states them once.
     if page == 1 {
-        out["summary"] = json!(summary(walk));
         // Skipped dot entries matter when the listing is filtered or empty;
         // an unfiltered outline names their count in the summary.
-        if walk.uncovered.hidden > 0 && (total == 0 || q.filtered()) {
+        let report_hidden = walk.uncovered.hidden > 0 && total > 0 && q.filtered();
+        out["summary"] = summary(walk);
+        if report_hidden {
             out["next"]["includeHidden"] =
-                super::continuation(q, json!({"hidden":true,"page":1,"snapshot":null}));
+                super::continuation(q, json!({"includeHidden":true,"page":1,"snapshot":null}));
         }
         if !q.filtered()
             && let Some(read) = tree_read(&walk.rows, root)
@@ -420,7 +491,8 @@ fn tree_page(
     }
     if cut.total_pages > 1 || page > cut.total_pages {
         let mut facts =
-            crate::response::pages::PageFacts::sized(page, cut.total_pages, total, cut.has_more());
+            crate::response::pages::PageFacts::sized(page, cut.total_pages, total, cut.has_more())
+                .out_of_range(cut.out_of_range());
         if let Some(size) = q.page_size() {
             facts = facts.with_page_size(size);
         }
@@ -432,65 +504,38 @@ fn tree_page(
     if !warnings.is_empty() {
         out["warnings"] = json!(warnings);
     }
-    walk.uncovered.note_empty(&mut out, q);
-    out
+    Ok(out)
 }
 
-/// Project manifests a tree's read lead prefers, in this order.
-const MANIFESTS: &[&str] = &[
-    "package.json",
-    "Cargo.toml",
-    "pyproject.toml",
-    "go.mod",
-    "pom.xml",
-];
-
-/// `next.read` on a tree's first page: the listed root's manifest (whole,
-/// they are small), else its README, else the outline of its first small
-/// hand-written source file.
+/// `next.read` on a tree's first page: the best-ranked listed file that is
+/// small and not generated ([`read_rank`](crate::tools::root_read::read_rank),
+/// the ranking ghStructure shares), outlined (`minify:"symbols"`) when it has
+/// an outline.
 fn tree_read(rows: &[TreeRow], root: &std::path::Path) -> Option<Value> {
-    let small = |row: &&TreeRow| {
-        row.size
-            .is_some_and(|size| size <= super::files::READ_LEAD_MAX_BYTES)
-    };
-    let name = |row: &TreeRow| super::display_name(&row.source);
-    let top = || {
-        rows.iter()
-            .filter(|row| row.dir.is_empty() && row.size.is_some())
-    };
-    let whole = MANIFESTS
+    let (relative, _) = rows
         .iter()
-        .find_map(|manifest| top().find(|row| name(row) == *manifest))
-        .or_else(|| {
-            top()
-                .filter(small)
-                .find(|row| name(row).to_ascii_lowercase().starts_with("readme"))
-        });
-    let (row, minify) = match whole {
-        Some(row) => (row, None),
-        None => {
-            let relative = |row: &TreeRow| {
-                if row.dir.is_empty() {
-                    name(row)
-                } else {
-                    format!("{}/{}", row.dir, name(row))
-                }
+        .filter(|row| {
+            row.size
+                .is_some_and(|size| size <= super::files::READ_LEAD_MAX_BYTES)
+        })
+        .filter_map(|row| {
+            let name = super::display_name(&row.source);
+            let (relative, depth) = if row.dir.is_empty() {
+                (name, 0)
+            } else {
+                let depth = row.dir.matches('/').count() + 1;
+                (format!("{}/{name}", row.dir), depth)
             };
-            let row = rows.iter().filter(small).find(|row| {
-                let path = relative(row);
-                crate::tools::outlines(&path) && !super::files::generated_or_fixture(&path)
-            })?;
-            (row, Some("symbols"))
-        }
-    };
-    let path = root.join(if row.dir.is_empty() {
-        name(row)
-    } else {
-        format!("{}/{}", row.dir, name(row))
-    });
-    let mut query = json!({"path": path.to_string_lossy()});
-    if let Some(minify) = minify {
-        query["minify"] = json!(minify);
+            if super::files::generated_or_fixture(&relative) {
+                return None;
+            }
+            let rank = crate::tools::root_read::read_rank(&relative, depth, &[])?;
+            Some((relative, (rank, depth)))
+        })
+        .min_by(|left, right| (left.1, &left.0).cmp(&(right.1, &right.0)))?;
+    let mut query = json!({"path": root.join(&relative).to_string_lossy()});
+    if crate::tools::outlines(&relative) {
+        query["minify"] = json!("symbols");
     }
     Some(
         crate::tools::result::Continuation::new(crate::tools::id::ToolId::LocalFetch, query)
@@ -499,34 +544,21 @@ fn tree_read(rows: &[TreeRow], root: &std::path::Path) -> Option<Value> {
 }
 
 /// The walk's counts, plus how many entries `.gitignore` hid (the path
-/// policy's withheld entries are a warning on every page), how many dot entries were skipped without `hidden`, and which
-/// directories the default prune skipped: their names stay out of the
-/// listing, but their absence is not silent.
-fn summary(walk: &TreeWalk) -> String {
+/// policy's withheld entries are a warning on every page), how many dot
+/// entries were skipped without `includeHidden` (reported when the listing
+/// is filtered or empty), and which directories the default prune skipped:
+/// their names stay out of the listing, but their absence is not silent.
+fn summary(walk: &TreeWalk) -> Value {
     let uncovered = &walk.uncovered;
-    let entries = |count: usize| if count == 1 { "entry" } else { "entries" };
-    let mut summary = format!(
-        "{} files, {} dirs, {}",
-        walk.files,
-        walk.dirs,
-        format_size(walk.bytes)
-    );
+    let mut summary = json!({"files": walk.files, "dirs": walk.dirs, "bytes": walk.bytes});
     if uncovered.ignored > 0 {
-        summary.push_str(&format!(
-            "; {} {} hidden by .gitignore (noIgnore:true lists them)",
-            uncovered.ignored,
-            entries(uncovered.ignored)
-        ));
+        summary["ignored"] = json!(uncovered.ignored);
     }
     if uncovered.hidden > 0 {
-        summary.push_str(&format!(
-            "; {} dot {} skipped (hidden:true lists them)",
-            uncovered.hidden,
-            entries(uncovered.hidden)
-        ));
+        summary["hidden"] = json!(uncovered.hidden);
     }
-    if let Some(note) = uncovered.pruned_note() {
-        summary.push_str(&format!("; {note}"));
+    if let Some(pruned) = uncovered.pruned_names() {
+        summary["pruned"] = json!(pruned);
     }
     summary
 }

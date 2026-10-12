@@ -26,6 +26,26 @@ describe('incremental subagent reports', () => {
       expect(Buffer.byteLength(report.result().text)).toBeLessThan(10 * 1024);
     }
     expect(fs.readFileSync(path.join(scratch, 'report.md'), 'utf8')).toBe(sections.join('\n\n---\n\n'));
+    // One preview of the whole report and one pointer, not a truncation notice per follow-up.
+    const text = report.result().text;
+    expect(text.match(/\[Output trimmed/g)).toHaveLength(1);
+    expect(text.match(/Full report:/g)).toHaveLength(1);
+    expect(text.startsWith('Section 0: ')).toBe(true);
+  });
+
+  it('previews the whole report after short follow-ups, counting every line, with one notice and one pointer', () => {
+    const scratch = tmp();
+    const report = new ReportTracker(scratch);
+    report.answer('line of text\n'.repeat(1000), 'stop');
+    for (let i = 0; i < 3; i++) {
+      report.incoming('custom');
+      report.answer(`follow-up ${i}`, 'stop');
+    }
+    const whole = fs.readFileSync(path.join(scratch, 'report.md'), 'utf8');
+    const text = report.result().text;
+    expect(text).toContain(`of ${whole.split('\n').length} lines`);
+    expect(text.match(/\[Output trimmed/g)).toHaveLength(1);
+    expect(text.match(/Full report:/g)).toHaveLength(1);
   });
 
   it('replaces a retry at its UTF-8 byte offset without keeping the superseded answer', () => {

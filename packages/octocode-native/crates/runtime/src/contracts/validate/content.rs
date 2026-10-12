@@ -28,10 +28,10 @@ pub(super) fn validate(input: &Value, extraction: bool) -> Result<(), ContractVa
         };
         if extraction {
             add(
-                ranged && (full || matched),
+                full && (matched || ranged),
                 "content.extraction-mode",
-                "ranges",
-                "Choose ranges or fullContent/matchString.",
+                "fullContent",
+                "fullContent reads the whole file; drop it to select lines.",
             );
             add(
                 query.get("block") == Some(&Value::Bool(true)) && !(matched || ranged),
@@ -39,20 +39,7 @@ pub(super) fn validate(input: &Value, extraction: bool) -> Result<(), ContractVa
                 "block",
                 "block widens ranges or matchString; set one.",
             );
-            add(
-                full && matched,
-                "content.extraction-mode",
-                "matchString",
-                "Choose fullContent or matchString.",
-            );
         } else {
-            add(
-                query.get("contextBytes").is_some()
-                    && (query.get("contextLines").is_some() || !matched),
-                "content.context-unit",
-                "contextBytes",
-                "contextBytes requires matchString and is exclusive with contextLines.",
-            );
             add(
                 full && ["offset", "length", "unit"]
                     .iter()
@@ -68,41 +55,6 @@ pub(super) fn validate(input: &Value, extraction: bool) -> Result<(), ContractVa
                 "minify",
                 "minify:\"symbols\" cannot accompany matchString or ranges. Read the outline, then select source lines.",
             );
-            add(
-                !matched && (query.get("regex").is_some() || query.get("caseMode").is_some()),
-                "content.match-controls",
-                "matchString",
-                "Match options require matchString.",
-            );
-        }
-        if extraction {
-            for (position, range) in query
-                .get("ranges")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .enumerate()
-            {
-                let reversed = range
-                    .as_str()
-                    .and_then(crate::tools::line_spans::parse_span::<u64>)
-                    .is_some_and(|(start, end)| end < start);
-                if reversed {
-                    issues.extend(
-                        issue(
-                            "content.range-order",
-                            vec![
-                                "queries".into(),
-                                index.to_string(),
-                                "ranges".into(),
-                                position.to_string(),
-                            ],
-                            "Set each range as start-end with end >= start.",
-                        )
-                        .issues,
-                    );
-                }
-            }
         }
     }
     if issues.is_empty() {

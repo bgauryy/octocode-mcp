@@ -7,7 +7,7 @@ use ast_grep_config::{Fixer, GlobalRules, RuleConfig, SerializableRuleConfig};
 use ast_grep_core::{
     AstGrep,
     language::Language,
-    matcher::{Pattern, PatternBuilder, PatternError},
+    matcher::{Matcher, Pattern, PatternBuilder, PatternError},
     meta_var::MetaVariable,
     replacer::Replacer,
     tree_sitter::{LanguageExt, StrDoc, TSLanguage},
@@ -15,12 +15,14 @@ use ast_grep_core::{
 use serde::{Deserialize, Deserializer, Serialize, de};
 use serde_json::Value;
 
+use crate::search::classify::{is_comment_kind, is_string_kind};
 use crate::signatures::extractor::AST_EXECUTION_TIMEOUT;
 use crate::signatures::languages::{LanguageEntry, all_entries};
 use crate::text::utf8_offsets::LineIndex;
 
 use super::kinds::named_kind_id;
 use super::language::{AgLanguage, primary_expando_for_ext};
+use super::layout::Layout;
 use super::macro_bodies::{MAX_MACRO_DEPTH, MacroBodies, is_body_candidate, parse_body};
 use super::octo::parse_tree_with_deadline;
 
@@ -203,11 +205,17 @@ pub(crate) fn rewrite(
 pub struct CompiledRewrite {
     config: RuleConfig<RewriteLanguage>,
     fixer: Fixer,
+    layout: Option<Layout>,
     macros: Option<MacroBodies>,
+    /// The symbol a bare-identifier rule renames (see
+    /// [`widen_identifier_pattern`]); its word-level mentions are accounted.
+    bare_name: Option<String>,
 }
 
-pub fn compile_rewrite(rule_config: Value) -> Result<CompiledRewrite, String> {
+pub fn compile_rewrite(mut rule_config: Value) -> Result<CompiledRewrite, String> {
     let anchors = pattern_anchors(&rule_config);
+    let layout = Layout::new(&rule_config);
+    let bare_name = widen_identifier_pattern(&mut rule_config);
     let serialized: SerializableRuleConfig<RewriteLanguage> =
         serde_json::from_value(rule_config)
             .map_err(|error| format!("[structural.rewrite.invalid] {error}"))?;
@@ -230,7 +238,84 @@ pub fn compile_rewrite(rule_config: Value) -> Result<CompiledRewrite, String> {
     Ok(CompiledRewrite {
         config,
         fixer,
+        layout,
         macros,
+        bare_name,
+    })
+}
+
+/// Whether a grammar's node kind names an identifier: `identifier` and the
+/// `*_identifier` family (`type_identifier`, `field_identifier`,
+/// `property_identifier`…), which grammars keep apart by syntactic position.
+fn is_identifier_kind(kind: &str) -> bool {
+    kind == "identifier" || kind.ends_with("_identifier")
+}
+
+/// A rule that is only a bare-identifier `pattern` names a symbol, not one
+/// syntactic position. ast-grep parses `Name` as the grammar's expression
+/// identifier, so a rename would skip the same name as a type, field or
+/// property (`struct Name`, `impl Name`, `x: Name`). The rule becomes every
+/// identifier-family kind of the grammar whose text is exactly the name; kinds
+/// that merely contain the name (`Name::new`, strings, comments) stay out.
+/// Any other pattern keeps the single shape it names.
+fn widen_identifier_pattern(rule_config: &mut Value) -> Option<String> {
+    let language = rule_config
+        .get("language")
+        .and_then(Value::as_str)
+        .and_then(RewriteLanguage::from_selector)?;
+    let pattern = rule_config
+        .get("rule")
+        .and_then(Value::as_object)
+        .filter(|rule| rule.len() == 1)
+        .and_then(|rule| rule.get("pattern"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .map(str::to_owned)?;
+    let pattern = pattern.as_str();
+    let Ok(compiled) = Pattern::try_new(pattern, language.clone()) else {
+        return None;
+    };
+    // A single terminal node of an identifier kind, and nothing else.
+    let ts_language = &language.entry.language;
+    let is_bare_identifier = compiled.fixed_string() == pattern
+        && compiled.potential_kinds().is_some_and(|kinds| {
+            let mut kinds = kinds.iter();
+            matches!(
+                (kinds.next(), kinds.next()),
+                (Some(id), None) if u16::try_from(id)
+                    .ok()
+                    .and_then(|id| ts_language.node_kind_for_id(id))
+                    .is_some_and(is_identifier_kind)
+            )
+        });
+    if !is_bare_identifier {
+        return None;
+    }
+    let text = format!("^{}$", regex::escape(pattern));
+    let mut kinds: Vec<&str> = (0..ts_language.node_kind_count())
+        .filter_map(|id| u16::try_from(id).ok())
+        .filter(|id| ts_language.node_kind_is_named(*id) && ts_language.node_kind_is_visible(*id))
+        .filter_map(|id| ts_language.node_kind_for_id(id))
+        .filter(|kind| is_identifier_kind(kind) && named_kind_id(ts_language, kind).is_some())
+        .collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    let any: Vec<Value> = kinds
+        .into_iter()
+        .map(|kind| serde_json::json!({"kind":kind,"regex":text}))
+        .collect();
+    rule_config["rule"] = serde_json::json!({"any":any});
+    Some(pattern.to_owned())
+}
+
+/// Where `name` stands as a whole word in `content`: not part of a longer
+/// identifier (letters, digits, `_` or `$` on either side).
+fn word_occurrences<'a>(content: &'a str, name: &'a str) -> impl Iterator<Item = usize> + 'a {
+    let joins = |c: char| c.is_alphanumeric() || c == '_' || c == '$';
+    content.match_indices(name).filter_map(move |(start, _)| {
+        let before = content[..start].chars().next_back();
+        let after = content[start + name.len()..].chars().next();
+        (!before.is_some_and(joins) && !after.is_some_and(joins)).then_some(start)
     })
 }
 
@@ -288,6 +373,19 @@ fn rule_config_message(error: &ast_grep_config::RuleConfigError) -> String {
 pub struct RewriteScan {
     pub matches: Vec<StructuralRewriteMatch>,
     pub syntax_errors: u32,
+    /// For a bare-identifier rule: whole-word mentions of the name that no
+    /// match covers (empty for every other rule).
+    pub unmatched: Vec<UnmatchedMention>,
+}
+
+/// A whole-word mention of a renamed symbol that the rewrite leaves alone.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnmatchedMention {
+    /// 0-based line, like [`StructuralRewritePosition::line`].
+    pub line: u32,
+    /// `false` inside a comment or string, where an identifier rename does
+    /// not reach by design; `true` in code, a position the rule missed.
+    pub in_code: bool,
 }
 
 /// When [`CompiledRewrite`] counts syntax errors on its parse tree.
@@ -350,7 +448,21 @@ impl CompiledRewrite {
             .as_ref()
             .map(|macros| macros.token_trees(tree.root_node(), content))
             .unwrap_or_default();
-        self.collect_matches(content, tree, None, deadline, &line_index, &mut output)?;
+        // Text inside the file's string literals never matches in a body.
+        let strings = if bodies.is_empty() {
+            Vec::new()
+        } else {
+            super::macro_bodies::string_literals(tree.root_node())
+        };
+        self.collect_matches(
+            content,
+            tree,
+            None,
+            &strings,
+            deadline,
+            &line_index,
+            &mut output,
+        )?;
         // Rust macro arguments re-parsed as code (see `macro_bodies`); each
         // body's own invocations are queued in turn, up to the nesting bound.
         let mut depth_of = vec![1; bodies.len()];
@@ -373,6 +485,7 @@ impl CompiledRewrite {
                 content,
                 body,
                 Some(&range),
+                &strings,
                 deadline,
                 &line_index,
                 &mut output,
@@ -384,10 +497,48 @@ impl CompiledRewrite {
         } else {
             0
         };
+        let unmatched = self.unmatched_mentions(content, &error_tree, &output, &line_index)?;
         Ok(RewriteScan {
             matches: output,
             syntax_errors,
+            unmatched,
         })
+    }
+
+    /// Whole-word mentions of a bare-identifier rule's name outside every
+    /// match, each told apart as code or comment/string text by the smallest
+    /// node of the file's own parse that holds it.
+    fn unmatched_mentions(
+        &self,
+        content: &str,
+        tree: &tree_sitter::Tree,
+        matches: &[StructuralRewriteMatch],
+        line_index: &LineIndex,
+    ) -> Result<Vec<UnmatchedMention>, String> {
+        let Some(name) = &self.bare_name else {
+            return Ok(Vec::new());
+        };
+        let mut found = Vec::new();
+        for start in word_occurrences(content, name) {
+            let covered = matches.iter().any(|matched| {
+                (matched.byte_start as usize..matched.byte_end as usize).contains(&start)
+            });
+            if covered {
+                continue;
+            }
+            let in_code = tree
+                .root_node()
+                .descendant_for_byte_range(start, start + name.len())
+                .is_none_or(|node| {
+                    let kind = node.kind();
+                    !(is_comment_kind(kind) || is_string_kind(kind))
+                });
+            let (line, _) = u32::try_from(start)
+                .map(|byte| line_index.byte_to_position(content, byte))
+                .map_err(|_| "[structural.rewrite.range] byte offset overflow".to_owned())?;
+            found.push(UnmatchedMention { line, in_code });
+        }
+        Ok(found)
     }
 
     /// Rewrite matches of one parse tree of `content` (the file, or one
@@ -397,6 +548,7 @@ impl CompiledRewrite {
         content: &str,
         tree: tree_sitter::Tree,
         body: Option<&tree_sitter::Range>,
+        strings: &[std::ops::Range<usize>],
         deadline: Instant,
         line_index: &LineIndex,
         output: &mut Vec<StructuralRewriteMatch>,
@@ -410,7 +562,7 @@ impl CompiledRewrite {
         });
         for matched in grep.root().find_all(&config.matcher) {
             if let Some(body) = body
-                && !is_body_candidate(matched.get_inner_node(), body)
+                && !is_body_candidate(matched.get_inner_node(), body, strings)
             {
                 continue;
             }
@@ -426,7 +578,11 @@ impl CompiledRewrite {
                 ));
             }
             let replaced = fixer.get_replaced_range(&matched, &config.matcher);
-            let replacement = fixer.generate_replacement(&matched);
+            let replacement = self
+                .layout
+                .as_ref()
+                .and_then(|layout| layout.replacement(&matched, &config.language, content))
+                .unwrap_or_else(|| fixer.generate_replacement(&matched));
             // Columns are 0-based UTF-16 code units like astSearch and LSP
             // (ast-grep's `column()` counts Unicode scalars).
             let span = matched.range();
@@ -559,6 +715,40 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// A template that sets a multi-capture off with spaces keeps the source's
+    /// line break there: a class body written on its own lines stays on its
+    /// own lines, at the source's indentation, instead of joining the header.
+    #[test]
+    fn a_multi_capture_keeps_the_line_break_the_source_had_before_it() {
+        let rule = |fix: &str| {
+            json!({
+                "id":"octocode-inline-rewrite","language":"python","severity":"warning",
+                "message":"Octocode inline structural rewrite",
+                "rule":{"pattern":"class $N(Exception): $$$B"},
+                "fix":fix
+            })
+        };
+        let source = "class A(Exception):\n    pass\n\nif x:\n    class B(Exception):\n        a = 1\n        b = 2\n\nclass C(Exception): pass\n";
+        let found = rewrite(source, rule("class $N(RuntimeError): $$$B")).expect("rewrite");
+        let replacements = found
+            .iter()
+            .map(|found| found.replacement.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            replacements,
+            [
+                "class A(RuntimeError):\n    pass",
+                // The nested class's body stays at the source's indentation.
+                "class B(RuntimeError):\n        a = 1\n        b = 2",
+                // A body that shared the header's line still does.
+                "class C(RuntimeError): pass",
+            ]
+        );
+        // A template that already breaks the line is the author's layout.
+        let found = rewrite(source, rule("class $N(RuntimeError):\n    $$$B")).expect("rewrite");
+        assert_eq!(found[0].replacement, "class A(RuntimeError):\n    pass");
+    }
 
     #[test]
     fn pattern_rules_generate_ast_grep_replacements_and_captures() {
@@ -907,5 +1097,143 @@ mod tests {
         let parser = rewrite_parser_for_path("typescript", "App.tsx");
         assert_eq!(count_syntax_errors(jsx, &parser).expect("tsx"), 0);
         assert!(count_syntax_errors(jsx, "typescript").expect("ts") > 0);
+    }
+    fn rename(language: &str, source: &str, from: &str) -> Vec<StructuralRewriteMatch> {
+        rewrite(
+            source,
+            json!({
+                "id":"octocode-inline-rewrite","language":language,
+                "rule":{"pattern":from},"fix":"Renamed"
+            }),
+        )
+        .expect("rewrite")
+    }
+
+    /// A bare identifier names a symbol, not one syntactic position: ast-grep
+    /// parses `Name` as an expression `identifier`, so declarations, impls,
+    /// field types and annotations (`type_identifier`, `field_identifier`…)
+    /// would be silently left behind. Each hit is a code position; the word
+    /// inside a string or comment, and longer names, are not.
+    #[test]
+    fn a_bare_identifier_pattern_matches_every_identifier_kind_of_the_grammar() {
+        let cases = [
+            (
+                "rust",
+                "struct Name { inner: Name }\nimpl Name { fn new() -> Name { Name::default() } }\n\
+                 fn f(a: &Name) { let b: Vec<Name> = Vec::new(); let c = Name { inner: x }; }\n\
+                 // Name in a comment\nconst S: &str = \"Name\"; struct NameOther;\n",
+                8,
+            ),
+            (
+                "typescript",
+                "interface Name { f: Name }\nclass C implements Name { io?: Name }\n\
+                 function g(a: Name): Name { const x: Name = a; return x; }\n\
+                 // Name in a comment\nconst s = \"Name\"; type NameOther = 1;\n",
+                7,
+            ),
+            (
+                "go",
+                "type Name struct { inner Name }\nfunc f(a *Name) Name { var b Name; return b }\n\
+                 // Name in a comment\nvar s = \"Name\"\n",
+                5,
+            ),
+            (
+                "java",
+                "class Name { Name inner; Name make(Name a) { return new Name(); } }\n\
+                 // Name in a comment\nclass NameOther {}\n",
+                5,
+            ),
+            (
+                "python",
+                "class Name:\n    pass\nx = Name()\ny = \"Name\"  # Name\n",
+                2,
+            ),
+        ];
+        for (language, source, expected) in cases {
+            let found = rename(language, source, "Name");
+            assert_eq!(found.len(), expected, "{language}: {found:#?}");
+            for matched in &found {
+                assert_eq!(matched.text, "Name", "{language}");
+                assert_eq!(matched.replacement, "Renamed", "{language}");
+                // Each hit is a code position: the source text under its
+                // range is the identifier itself.
+                assert_eq!(
+                    &source[matched.byte_start as usize..matched.byte_end as usize],
+                    "Name"
+                );
+            }
+        }
+    }
+
+    fn identifier_scan(language: &str, content: &str) -> RewriteScan {
+        compile_rewrite(json!({
+            "id":"r","language":language,"rule":{"pattern":"Name"},"fix":"Renamed"
+        }))
+        .expect("compile")
+        .scan(content)
+        .expect("scan")
+    }
+
+    /// The widened rule covers every identifier node, so what a word-level
+    /// search still finds is text: comments and strings, named with their
+    /// lines and told apart from code.
+    #[test]
+    fn a_rename_names_word_mentions_in_comments_and_strings_it_leaves() {
+        let scan = identifier_scan(
+            "rust",
+            "// Name in a comment\nstruct Name;\nconst S: &str = \"Name\";\nstruct NameOther;\n",
+        );
+        assert_eq!(scan.matches.len(), 1);
+        let lines: Vec<(u32, bool)> = scan
+            .unmatched
+            .iter()
+            .map(|mention| (mention.line, mention.in_code))
+            .collect();
+        assert_eq!(lines, [(0, false), (2, false)]);
+    }
+
+    /// A name the identifier kinds miss in code (a Go label is `label_name`)
+    /// is reported as code, so the preview cannot call itself complete.
+    #[test]
+    fn a_rename_names_code_positions_no_identifier_kind_reached() {
+        let scan = identifier_scan(
+            "go",
+            "package p\nvar Name int\nfunc f() {\nName:\n\tfor {\n\t\tgoto Name\n\t}\n}\n",
+        );
+        assert_eq!(scan.matches.len(), 1, "{:?}", scan.matches);
+        let lines: Vec<(u32, bool)> = scan
+            .unmatched
+            .iter()
+            .map(|mention| (mention.line, mention.in_code))
+            .collect();
+        assert_eq!(lines, [(3, true), (5, true)]);
+    }
+
+    /// Only a bare-identifier rule counts word mentions.
+    #[test]
+    fn a_pattern_that_is_not_a_bare_identifier_reports_no_mentions() {
+        let scan = compile_rewrite(json!({
+            "id":"r","language":"rust","rule":{"pattern":"Name::new()"},"fix":"x"
+        }))
+        .expect("compile")
+        .scan("// Name::new() Name\nfn f() { Name::new(); }\n")
+        .expect("scan");
+        assert!(scan.unmatched.is_empty());
+    }
+
+    /// Only a bare identifier widens: a metavariable, a member path and a call
+    /// keep the one syntactic shape they name.
+    #[test]
+    fn only_a_bare_identifier_pattern_widens() {
+        let source = "struct Name { inner: Name }\nfn f() { let a = Name::new(); Name; }\n";
+        let call = rename("rust", source, "Name::new()");
+        assert_eq!(call.len(), 1, "{call:#?}");
+        // `$A` is a metavariable, not a name: it stays the error it was.
+        let error = rewrite(
+            source,
+            json!({"id":"r","language":"rust","rule":{"pattern":"$A"},"fix":"x"}),
+        )
+        .expect_err("a lone metavariable names no kind");
+        assert!(error.contains("kind"), "{error}");
     }
 }

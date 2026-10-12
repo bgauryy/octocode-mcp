@@ -6,6 +6,7 @@ use crate::{
     providers::github::ProviderError,
     security::ContentSecurity,
     tools::{
+        ast_rewrite::AstRewriteRuntimeOptions,
         id::{ToolFamily, ToolId},
         local_fetch::LocalFetchRegex,
         lsp_search::{LspExecutionConfig, prewarm},
@@ -123,13 +124,25 @@ impl DomainDispatcher {
             Ok(
                 match crate::tools::artifact_search::execute(query, call).await {
                     Ok(data) => dispatch::value_result(data),
-                    Err(error) => dispatch::provider_failure(
-                        error.message,
-                        error.code,
-                        error.hints,
-                        error.status,
-                        None,
-                    ),
+                    Err(error) => {
+                        let next = error.next;
+                        let mut row = dispatch::provider_failure(
+                            error.message,
+                            error.code,
+                            error.hints,
+                            error.status,
+                            None,
+                        );
+                        // A repair lead is the recovery: no code fallback
+                        // text beside it.
+                        if let Some(next) = next
+                            && let Some(data) = row.data.as_object_mut()
+                        {
+                            data.shift_remove("hints");
+                            data.insert("next".into(), *next);
+                        }
+                        row
+                    }
                 },
             )
         })
@@ -151,6 +164,7 @@ impl DomainDispatcher {
                 &self.lsp_pool,
                 &self.paths,
                 &self.lsp_execution_config,
+                context.response_window,
             )
             .await
             {
@@ -180,7 +194,7 @@ impl DomainDispatcher {
         let query = query.clone();
         let paths = self.paths.clone();
         let security = self.security.clone();
-        let regex = self.regex.clone();
+        let regex = self.regex;
         let views = self.local_views.clone();
         // Streamed listing pages are sized to fit one automatic response
         // window, which every call of a walk shares (an explicit
@@ -192,7 +206,15 @@ impl DomainDispatcher {
         };
         // OCTOCODE_BETA is the shared gate for beta local tools. For astRewrite,
         // enabling beta permits both preview and hash-guarded apply.
-        let allow_apply = self.config.resolved.local.beta;
+        let rewrite = AstRewriteRuntimeOptions {
+            allow_apply: self.config.resolved.local.beta,
+            state_dir: self
+                .config
+                .env_value("OCTOCODE_AST_REWRITE_STATE_DIR")
+                .filter(|dir| !dir.is_empty())
+                .map(PathBuf::from),
+            ..Default::default()
+        };
         let cargo = self.config.env_value("OCTOCODE_CARGO").map(str::to_owned);
         // `lsp.prewarm`: `targeted` warms the server an offered lspSearch
         // call names; `all` also warms the file a read or search names.
@@ -203,19 +225,23 @@ impl DomainDispatcher {
             tokio::task::spawn_blocking(move || {
                 // lspSearch leads offered by local tools probe the runtime's
                 // resolved server settings, not the bare process env.
-                crate::tools::lsp_search::with_lead_discovery(&lsp, &paths, || {
-                    dispatch::execute_local(
-                        tool,
-                        &query,
-                        &paths,
-                        &security,
-                        &context,
-                        &regex,
-                        &views,
-                        allow_apply,
-                        cargo.as_deref(),
-                    )
-                })
+                crate::tools::leads::lsp::with_lead_discovery(
+                    lsp.lead_discovery(&paths),
+                    lsp.lead_cache.clone(),
+                    || {
+                        dispatch::execute_local(
+                            tool,
+                            &query,
+                            &paths,
+                            &security,
+                            &context,
+                            &regex,
+                            &views,
+                            &rewrite,
+                            cargo.as_deref(),
+                        )
+                    },
+                )
             })
             .await
             .map_err(|_| ExecutionError::WorkerFailed)?

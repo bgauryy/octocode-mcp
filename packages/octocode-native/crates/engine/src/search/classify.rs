@@ -195,11 +195,11 @@ fn classify_node(node: Node, src: &str) -> &'static str {
     KIND_IDENTIFIER
 }
 
-fn is_comment_kind(k: &str) -> bool {
+pub(crate) fn is_comment_kind(k: &str) -> bool {
     k.contains("comment")
 }
 
-fn is_string_kind(k: &str) -> bool {
+pub(crate) fn is_string_kind(k: &str) -> bool {
     // string, string_literal, raw_string_literal, interpreted_string_literal,
     // template_string, char_literal …
     k.contains("string") || k.contains("char_literal") || k == "string_content"
@@ -298,6 +298,7 @@ mod tests {
         TextSearchMatch {
             line,
             column,
+            byte_offset: 0,
             value: String::new(),
             count: None,
             kind: None,

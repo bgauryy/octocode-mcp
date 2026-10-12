@@ -21,7 +21,10 @@ fn max_walk() -> u32 {
     structure_max("maxEntries")
 }
 
+use crate::policy::prune::PruneMode;
 use crate::tools::display_name;
+use crate::tools::empty_walk::{Hits, Verdict, Walk, diagnose, lift};
+use crate::tools::result::ToolError;
 use serde_json::{Value, json};
 
 /// Continuations a listing row copies its query into: `next.nextPage` and
@@ -88,7 +91,6 @@ fn page_ranges(
 }
 
 pub use crate::contracts::tool_types::StructureSearchQuery;
-use crate::tools::result::ToolError;
 
 /// The policy error for `requested`; a missing path also leads to a tree of
 /// its nearest existing parent, so the agent sees what is there instead.
@@ -127,30 +129,33 @@ fn file_root(file: &std::path::Path, paths: &crate::policy::path::PathPolicy) ->
 
 pub type StructureResult = Result<Value, ToolError>;
 
-/// A failed walk of `requested`: a vanished root reads like any other
-/// missing path.
-fn walk_error(error: impl ToString, requested: &str) -> ToolError {
-    let message = error.to_string();
-    let lower = message.to_ascii_lowercase();
-    let code = if message.starts_with("[structure.execution.cancelled]") {
-        "cancelled"
-    } else if lower.contains("no such file") || lower.contains("not found") {
-        return ToolError::new(
-            crate::policy::PATH_NOT_FOUND,
-            format!("Path does not exist: {requested}"),
-        );
-    } else if lower.contains("permission denied") {
-        "permissionDenied"
-    } else if lower.contains("invalid") && lower.contains("regex") {
-        "invalidPattern"
-    } else if lower.starts_with("invalid ") {
-        // The engine rejects a malformed filter value (`size`, `time`, ...)
-        // before walking: caller input, like the typed time-filter checks.
-        "invalidInput"
-    } else {
-        "executionFailed"
+/// A failed walk of `requested`, coded by the engine's typed kind: a
+/// vanished root reads like any other missing path, and a walk the policy
+/// callback stopped because the call was cancelled says so.
+fn walk_error(
+    error: octocode_engine::error::Error,
+    requested: &str,
+    cancel: &dyn crate::tools::cancel::CancellationCheck,
+) -> ToolError {
+    use octocode_engine::error::ErrorKind;
+    if let Err(message) = cancel.check() {
+        return ToolError::cancelled(message);
+    }
+    let code = match error.kind() {
+        ErrorKind::NotFound => {
+            return ToolError::new(
+                crate::policy::PATH_NOT_FOUND,
+                format!("Path does not exist: {requested}"),
+            );
+        }
+        ErrorKind::PermissionDenied => "permissionDenied",
+        ErrorKind::InvalidPattern => "invalidPattern",
+        // A malformed filter value (`size`, ...) is rejected before the
+        // walk: caller input, like the typed time-filter checks.
+        ErrorKind::InvalidInput => "invalidInput",
+        _ => "executionFailed",
     };
-    ToolError::new(code, message)
+    ToolError::new(code, error.to_string())
 }
 
 fn allow_discovery(
@@ -159,26 +164,22 @@ fn allow_discovery(
     discovery: &crate::policy::path::DiscoveryWalk<'_>,
     cancel: &dyn crate::tools::cancel::CancellationCheck,
 ) -> Result<bool, String> {
-    cancel
-        .check()
-        .map_err(|message| format!("[structure.execution.cancelled] {message}"))?;
+    // A cancelled call stops the walk; `walk_error` reports it.
+    cancel.check()?;
     Ok(discovery.permits_entry(path, file_type))
 }
 
 /// A continuation page whose walk no longer hashes to its `snapshot`: the
-/// stale stored walk is dropped and the listing restarts from page 1.
+/// stale stored walk is dropped and the listing restarts from page 1. A
+/// page without a snapshot pins nothing: it pages the current walk.
 fn restart_if_stale(
     query: &impl serde::Serialize,
     page: usize,
     snapshot: Option<&str>,
     current: &str,
 ) -> Option<Value> {
-    if page <= 1 || snapshot == Some(current) {
-        return None;
-    }
-    if let Some(stale) = snapshot {
-        memo::evict(stale);
-    }
+    let stale = snapshot.filter(|snapshot| page > 1 && *snapshot != current)?;
+    memo::evict(stale);
     Some(crate::tools::result::stale_snapshot(continuation(
         query,
         json!({"page":1,"snapshot":null}),
@@ -211,7 +212,6 @@ fn narrow_scope(query: &impl serde::Serialize) -> Value {
         crate::tools::id::ToolId::StructureSearch,
         json!({"operation": "tree", "path": path, "maxDepth": 1}),
     )
-    .why("Outline the subdirectories to list separately.")
     .build()
 }
 
@@ -221,95 +221,81 @@ fn narrow_scope(query: &impl serde::Serialize) -> Value {
 #[derive(Clone, Debug, Default)]
 struct Uncovered {
     ignored: usize,
-    /// Basenames of the `.gitignore`d directories (at most
-    /// [`IGNORED_DIR_NAMES`]): one named like a default-pruned directory
-    /// needs `defaultExcludes:false` too before its entries are walked.
-    ignored_dirs: Vec<String>,
     withheld: crate::policy::discovery::Withheld,
     hidden: usize,
     pruned: Vec<String>,
 }
 
-/// Most `.gitignore`d directory names a walk keeps for its retry.
-const IGNORED_DIR_NAMES: usize = 64;
-
-/// Records each `.gitignore`d directory's basename, bounded, for
-/// [`Uncovered::ignored_dirs`].
-#[derive(Default)]
-struct IgnoredDirs(std::sync::Mutex<Vec<String>>);
-
-impl IgnoredDirs {
-    fn record(&self, path: &std::path::Path) {
-        if !path.is_dir() {
-            return;
-        }
-        let mut names = self.0.lock().unwrap_or_else(|error| error.into_inner());
-        if names.len() < IGNORED_DIR_NAMES {
-            names.push(display_name(path));
-        }
-    }
-    fn into_names(self) -> Vec<String> {
-        self.0
-            .into_inner()
-            .unwrap_or_else(|error| error.into_inner())
-    }
-}
-
 impl Uncovered {
-    /// The default-pruned directories as one clause: their count and each
-    /// distinct name once.
-    fn pruned_note(&self) -> Option<String> {
+    /// The distinct names of the default-pruned directories, sorted.
+    fn pruned_names(&self) -> Option<Vec<String>> {
         if self.pruned.is_empty() {
             return None;
         }
         let mut names = self
             .pruned
             .iter()
-            .map(|dir| dir.rsplit('/').next().unwrap_or(dir))
+            .map(|dir| dir.rsplit('/').next().unwrap_or(dir).to_owned())
             .collect::<Vec<_>>();
         names.sort_unstable();
         names.dedup();
-        let count = self.pruned.len();
-        Some(format!(
-            "{count} default-excluded {} not walked: {}",
-            if count == 1 { "dir" } else { "dirs" },
-            names.join(", ")
-        ))
+        Some(names)
     }
 
-    /// An empty listing cannot prove absence in what the walk skipped: say
-    /// so (the counts and names are in `summary`), and lead to the same
-    /// listing with all of it included in one hop: a `.gitignore`d
-    /// directory named like a default-pruned one (`target/`) needs both
-    /// flags.
-    fn note_empty(&self, out: &mut Value, query: &impl serde::Serialize) {
-        if out["status"] != "empty" || (self.ignored == 0 && self.pruned.is_empty()) {
-            return;
-        }
-        let pruned_names = crate::policy::prune::PruneMode::SyntaxVisible.directories(true);
-        let ignored_pruned = self
-            .ignored_dirs
-            .iter()
-            .any(|name| pruned_names.contains(name));
-        let mut retry = json!({"page": 1, "snapshot": null});
-        let (mut skipped, mut flags) = (Vec::new(), Vec::new());
-        if self.ignored > 0 {
-            retry["noIgnore"] = json!(true);
-            skipped.push(".gitignore'd");
-            flags.push("noIgnore:true");
-        }
-        if !self.pruned.is_empty() || ignored_pruned {
-            retry["defaultExcludes"] = json!(false);
-            skipped.push("default-excluded");
-            flags.push("defaultExcludes:false");
-        }
-        out["hints"] = json!([format!(
-            "Skipped {} entries may match; hints.includeIgnored sets {}.",
-            skipped.join("/"),
-            flags.join(", ")
-        )]);
-        out["next"]["includeIgnored"] = continuation(query, retry);
+    /// Whether the walk skipped anything a relaxed walk could list.
+    fn saw_skips(&self) -> bool {
+        self.ignored > 0 || self.hidden > 0 || !self.pruned.is_empty()
     }
+}
+
+/// What a relaxed listing probe found: the walked entries.
+fn found_entries(entries: impl Iterator<Item = std::path::PathBuf>) -> Hits {
+    let mut count = 0;
+    let mut sample = Vec::new();
+    for entry in entries {
+        count += 1;
+        if sample.len() < crate::tools::empty_walk::SAMPLE_FILES {
+            sample.push(entry);
+        }
+    }
+    Hits {
+        count,
+        sample,
+        cut: false,
+    }
+}
+
+/// An empty listing cannot prove absence in what its walk skipped: when the
+/// same listing over some of it (`probe` re-walks with the given flags)
+/// finds entries, name the rule, entry or directory in a hint and lead to
+/// the listing with exactly those causes lifted.
+fn note_empty(
+    out: &mut Value,
+    query: &impl serde::Serialize,
+    root: &std::path::Path,
+    seen: &Uncovered,
+    walk: Walk,
+    probe: impl FnMut(Walk) -> Result<Hits, ToolError>,
+) -> Result<(), ToolError> {
+    if out["status"] != "empty" || !seen.saw_skips() {
+        return Ok(());
+    }
+    let Verdict::Skipped(diagnosis) = diagnose(root, PruneMode::SyntaxVisible, walk, probe)? else {
+        return Ok(());
+    };
+    let mut retry = json!({"page": 1, "snapshot": null});
+    lift(&mut retry, diagnosis.causes());
+    out["next"]["includeIgnored"] = continuation(query, retry);
+    let hint = format!(
+        "{} entries sit behind skipped paths ({}); the lead lists them.",
+        diagnosis.found().count,
+        diagnosis.because()
+    );
+    match out["hints"].as_array_mut() {
+        Some(hints) => hints.push(json!(hint)),
+        None => out["hints"] = json!([hint]),
+    }
+    Ok(())
 }
 
 /// Where a listing's rows were cut, for the continuation tail both
@@ -389,9 +375,7 @@ impl Cut {
                     self.requested
                 )
             };
-            warnings.push(format!(
-                "terminalLimit: {past} are on no page. List each subdirectory separately (hints.narrowScope outlines them) to reach them."
-            ));
+            warnings.push(format!("terminalLimit: {past} are on no page."));
             out["next"]["narrowScope"] = narrow_scope(query);
         }
         // The widened walk resumes after this window: offered on its last
@@ -415,7 +399,7 @@ impl Cut {
                 .into_iter()
                 .filter_map(|(cut, reason)| cut.then_some(reason))
                 .collect::<Vec<_>>();
-            out["truncated"] = json!(true);
+            out["clipped"] = json!(true);
             out["partialReasons"] = json!(reasons);
             if self.early_exit {
                 out["atLeast"] = json!(self.scan_offset + self.total + 1);
@@ -423,18 +407,52 @@ impl Cut {
                 out["totalAvailable"] = json!(self.total_discovered.max(self.available));
             }
         }
-        if self.out_of_range() {
-            warnings.push(format!(
-                "page:{} is out of range (only {} page(s), {} entries). Use page:1..{}.",
-                self.page, self.total_pages, self.total, self.total_pages
-            ));
-        }
     }
 }
 
-/// The directories that head a `{dir, …}` group.
-fn group_dirs<'a>(dirs: impl Iterator<Item = &'a String>) -> std::collections::HashSet<String> {
-    dirs.filter(|dir| !dir.is_empty()).cloned().collect()
+/// Names each directory once: by its own `{dir, …}` group when the group
+/// lists an entry, else by its `name/` stub. A stub is dropped only when the
+/// directory's group survives, so a directory whose subdirectories all have
+/// groups of their own keeps its stub instead of vanishing from the listing.
+/// `dir_of` is the group a row sits in; `stub_path_of` is the directory path
+/// a bare `name/` row stands for (`None` for any other row).
+fn drop_grouped_dirs<R>(
+    rows: &mut Vec<R>,
+    dir_of: impl Fn(&R) -> &str,
+    stub_path_of: impl Fn(&R) -> Option<String>,
+) {
+    let mut grouped = rows
+        .iter()
+        .filter(|row| stub_path_of(row).is_none())
+        .map(|row| dir_of(row).to_owned())
+        .collect::<std::collections::HashSet<_>>();
+    // A group's rows sit deeper than the stub naming it, so the deepest
+    // groups settle first and decide the stubs above them.
+    let depth = |dir: &str| {
+        if dir.is_empty() {
+            0
+        } else {
+            dir.matches('/').count() + 1
+        }
+    };
+    let mut stubs = (0..rows.len())
+        .filter(|&index| stub_path_of(&rows[index]).is_some())
+        .collect::<Vec<_>>();
+    stubs.sort_by_key(|&index| std::cmp::Reverse(depth(dir_of(&rows[index]))));
+    let mut dropped = std::collections::HashSet::new();
+    for index in stubs {
+        let path = stub_path_of(&rows[index]).unwrap_or_default();
+        if grouped.contains(&path) {
+            dropped.insert(index);
+        } else {
+            grouped.insert(dir_of(&rows[index]).to_owned());
+        }
+    }
+    let mut index = 0;
+    rows.retain(|_| {
+        index += 1;
+        !dropped.contains(&(index - 1))
+    });
 }
 
 /// The directory of a listed row as the response names it: relative to the

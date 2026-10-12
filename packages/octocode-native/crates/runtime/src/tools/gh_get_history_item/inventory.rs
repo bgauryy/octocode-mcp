@@ -1,10 +1,12 @@
 //! Changed-file inventory: compact rows, directory summaries, the review
 //! pick, and the pull-request file page.
 use super::filter::*;
-use super::patch::*;
-use super::util::{needle, str_at, string, usize_at};
-use super::window::WindowState;
-use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, MAX_COLLECTION_PAGE};
+use super::patch::page::{shape_patch_page, shape_patch_page_reserving};
+use super::text::needle;
+use super::util::{str_at, string, usize_at};
+use super::window::{WindowState, auto_page, patch_window};
+use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest};
+use octocode_github::MAX_PER_PAGE;
 use serde_json::{Map, Value, json};
 
 /// Largest patch-free inventory page (contract pullRequest `pageSize` maximum).
@@ -28,16 +30,16 @@ pub(super) fn file_page_size(query: &HistoryItemRequest, patches: bool) -> usize
         // A literal search returns every hit file of the PR on one page:
         // hits are bounded by matches (and the patch window), not by files.
         (None, true) if query.match_string().is_some() => {
-            super::window::MAX_FILE_BATCHES * MAX_COLLECTION_PAGE
+            super::window::MAX_FILE_BATCHES * MAX_PER_PAGE
         }
         // Patches pack into one char window whatever the page size, so a
         // patch read lists a whole provider batch: one continuation stream
         // walks every patch of a PR of up to that many files.
-        (None, true) => super::window::PROVIDER_BATCH,
+        (None, true) => MAX_PER_PAGE,
         (Some(_), true) => query.collection_page_size(),
         (Some(size), false) => size.clamp(1, max_inventory_page()),
         (None, false) => (auto_page(query.auto_page_chars) / INVENTORY_ROW_CHARS)
-            .clamp(MAX_COLLECTION_PAGE, max_inventory_page())
+            .clamp(MAX_PER_PAGE, max_inventory_page())
             .max(DEFAULT_PAGE_SIZE),
     }
 }
@@ -98,9 +100,9 @@ pub(super) fn inventory_row(file: &Value, name: &str) -> String {
     row
 }
 
-/// Compact a patch-free file page, in provider order: a run of two or more
-/// consecutive files in one directory becomes `{"dir/": [rows]}` whose rows
-/// name files relative to it; every other file is a full-path row.
+/// Compact a patch-free file page: files of one directory share a
+/// `{"dir/": [rows]}` group (see [`group_by_directory`]); every other file is
+/// a full-path row.
 pub(super) fn compact_inventory(files: &[Value]) -> Vec<Value> {
     group_by_directory(files, inventory_row)
 }
@@ -135,9 +137,10 @@ pub(super) fn summary_row(file: &Value, name: &str) -> String {
     row
 }
 
-/// Group consecutive rows of one directory: a run of two or more files in
-/// one directory becomes `{"dir/": [rows]}` whose rows name files relative
-/// to it; every other file is a full-path row, in provider order.
+/// Group a page's rows by directory: a directory with two or more files
+/// becomes one `{"dir/": [rows]}` group, where it first appears, whose rows
+/// name files relative to it and keep provider order; every other file is a
+/// full-path row, in provider order.
 pub(super) fn group_by_directory(
     files: &[Value],
     render: fn(&Value, &str) -> String,
@@ -149,34 +152,31 @@ pub(super) fn group_by_directory(
             .map_or("", |(dir, _)| dir)
             .to_owned()
     };
+    let dirs: Vec<String> = files.iter().map(dir_of).collect();
+    let mut grouped = std::collections::HashMap::<&str, usize>::new();
+    for dir in dirs.iter().filter(|dir| !dir.is_empty()) {
+        *grouped.entry(dir.as_str()).or_default() += 1;
+    }
+    let mut emitted = std::collections::HashSet::<&str>::new();
     let mut out = Vec::new();
-    let mut start = 0;
-    while start < files.len() {
-        let dir = dir_of(&files[start]);
-        let end = start
-            + files[start..]
+    for (file, dir) in files.iter().zip(&dirs) {
+        let path = str_at(file, "/filename").unwrap_or("");
+        if grouped.get(dir.as_str()).is_none_or(|count| *count < 2) {
+            out.push(json!(render(file, path)));
+        } else if emitted.insert(dir.as_str()) {
+            let rows = files
                 .iter()
-                .take_while(|file| dir_of(file) == dir)
-                .count();
-        let run = &files[start..end];
-        if run.len() >= 2 && !dir.is_empty() {
-            let rows = run
-                .iter()
-                .map(|file| {
-                    let path = str_at(file, "/filename").unwrap_or("");
-                    json!(render(file, &path[dir.len() + 1..]))
+                .zip(&dirs)
+                .filter(|(_, other)| *other == dir)
+                .map(|(member, _)| {
+                    let name = str_at(member, "/filename").unwrap_or("");
+                    json!(render(member, &name[dir.len() + 1..]))
                 })
                 .collect::<Vec<_>>();
             let mut group = Map::new();
             group.insert(format!("{dir}/"), Value::Array(rows));
             out.push(Value::Object(group));
-        } else {
-            out.extend(
-                run.iter()
-                    .map(|file| json!(render(file, str_at(file, "/filename").unwrap_or("")))),
-            );
         }
-        start = end;
     }
     out
 }
@@ -184,7 +184,7 @@ pub(super) fn group_by_directory(
 /// What shaping a pull request's changed-file page found.
 pub(super) struct ShapedFiles {
     /// A selected path matched no changed file and the provider has no more.
-    pub(super) no_selected_match: bool,
+
     /// The page's review pick (`next.readSelectedPatches`).
     pub(super) review: Vec<String>,
     /// In-scope text files a `matchString` could not search because GitHub
@@ -276,20 +276,11 @@ pub(super) fn shape_pr_files(
     files: Vec<Value>,
     state: WindowState,
     query: &HistoryItemRequest,
-    selector: Option<&Map<String, Value>>,
     patch_mode: &str,
     scope: Option<&InventoryFilter>,
 ) -> ShapedFiles {
-    let (selected_names, ranges) = patch_selection(selector);
-    let selection_requested = patch_mode == "selected" && !selected_names.is_empty();
-    let selected_path_matched = !selection_requested
-        || files.iter().any(|file| {
-            let path = str_at(file, "/filename").unwrap_or("");
-            selected_names.iter().any(|selected| selected == path)
-        });
     let needle = needle(query);
     let filter = FileFilter {
-        selected: &selected_names,
         needle: needle.as_deref(),
         scope,
     };
@@ -307,27 +298,8 @@ pub(super) fn shape_pr_files(
         .filter(|file| filter.matches(file))
         .collect::<Vec<_>>();
     let per_page = file_page_size(query, patch_mode != "none");
-    let (slice, page) = state.paginate(filtered, query.file_page(), Some(per_page));
+    let (slice, page) = state.paginate(filtered, query.page(), Some(per_page));
     let review = review_selection(&slice, patch_window(None, query.auto_page_chars));
-    let slice = slice
-        .into_iter()
-        .map(|mut file| {
-            if let Some((additions, deletions)) =
-                str_at(&file, "/filename").and_then(|path| ranges.get(path))
-            {
-                let filtered_patch = octocode_engine::portable::filter_patch(
-                    str_at(&file, "/patch").unwrap_or(""),
-                    Some(octocode_engine::types::FilterPatchOptions {
-                        additions: additions.clone(),
-                        deletions: deletions.clone(),
-                        ..Default::default()
-                    }),
-                );
-                file["patch"] = Value::String(filtered_patch);
-            }
-            file
-        })
-        .collect::<Vec<_>>();
     // A patch read that does not fit one response lists its page's files
     // first (status, change counts, hunks), then the patches in file order.
     let summary = (patch_mode != "none" && query.char_offset().is_none())
@@ -361,7 +333,6 @@ pub(super) fn shape_pr_files(
         }
         pagination.insert("files".into(), page);
         return ShapedFiles {
-            no_selected_match: false,
             review,
             unsearched,
             first_unsearched,
@@ -395,7 +366,6 @@ pub(super) fn shape_pr_files(
     }
     pagination.insert("files".into(), page);
     ShapedFiles {
-        no_selected_match: selection_requested && !selected_path_matched && state.exhausted,
         review,
         unsearched,
         first_unsearched,
@@ -460,7 +430,7 @@ pub(super) const BINARY_EXTENSIONS: &[&str] = &[
 /// but still counts its lines. `binary`: a binary extension. `omitted`:
 /// GitHub sent neither patch nor line counts — binary, empty, or past the
 /// PR's total diff budget — so `additions`/`deletions` of 0 are not evidence
-/// of an unchanged file; read the file at `sourceSha` instead.
+/// of an unchanged file; read the file at `headSha` instead.
 pub(super) fn missing_patch_reason(file: &Value) -> Option<&'static str> {
     let changes = usize_at(file, "/additions") + usize_at(file, "/deletions");
     if changes > 0 {

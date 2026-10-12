@@ -127,12 +127,9 @@ pub(super) fn attach_provider_context(
     );
     let anchored = is_anchored(&query.operation());
     // The row's `path` names the anchor file once; the anchor receipt and a
-    // single-file payload restate it only when they point elsewhere.
+    // locations restate it only when they point elsewhere.
     if let Some(resolved_symbol) = public_resolved_symbol(query, resolved_symbol, canonical_uri) {
         envelope.insert("resolvedSymbol".into(), resolved_symbol);
-    }
-    if let Some(payload) = envelope.get_mut("payload") {
-        drop_same_uri(payload, canonical_uri);
     }
     let lsp = envelope
         .entry("lsp")
@@ -143,11 +140,7 @@ pub(super) fn attach_provider_context(
         if let Some(provider) = provider_for_operation(&query.operation()) {
             lsp.insert("provider".into(), json!(provider));
         }
-        if anchored {
-            lsp.remove("source");
-        } else {
-            lsp.insert("source".into(), json!("lsp"));
-        }
+        settle_source(lsp, anchored);
         // `lsp.receipt` is verbose (core field class): the verbose stage
         // drops it unless the row's `extras` names `receipts`.
         let mut receipt = resolved_server_receipt(config, client);
@@ -180,8 +173,26 @@ pub(super) fn attach_provider_context(
 }
 
 /// The anchor receipt a row shows: what the request did not say, the line a
-/// symbol moved to off its `lineHint`. A symbol found on its `lineHint`
+/// symbol moved to off its `line`. A symbol found on its `line`
 /// (only its column is new) restates the request: no receipt.
+/// A server answer is `source:"lsp"`, implied on anchored rows and stated
+/// on the others. A degraded source another stage set (a native scan that
+/// stood in for the server) is kept: it is what the row's evidence rests on.
+fn settle_source(lsp: &mut serde_json::Map<String, Value>, anchored: bool) {
+    if lsp
+        .get("source")
+        .and_then(Value::as_str)
+        .is_some_and(|source| source != "lsp")
+    {
+        return;
+    }
+    if anchored {
+        lsp.remove("source");
+    } else {
+        lsp.insert("source".into(), json!("lsp"));
+    }
+}
+
 pub(super) fn public_resolved_symbol(
     query: &LspSearchQuery,
     resolved_symbol: Option<Value>,
@@ -290,4 +301,33 @@ pub(super) fn resolved_server_receipt(
         receipt["readiness"] = json!(readiness);
     }
     receipt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::settle_source;
+    use serde_json::{Value, json};
+
+    fn settled(lsp: Value, anchored: bool) -> Value {
+        let mut lsp = lsp.as_object().cloned().expect("an lsp object");
+        settle_source(&mut lsp, anchored);
+        Value::Object(lsp)
+    }
+
+    /// A native scan that answered for the server keeps its label on every
+    /// row, anchored or not; a server answer is implied on anchored rows.
+    #[test]
+    fn a_degraded_source_survives_the_receipt_stage() {
+        for anchored in [true, false] {
+            let row = settled(json!({"source": "native-graph-facts"}), anchored);
+            assert_eq!(row["source"], "native-graph-facts", "anchored={anchored}");
+        }
+        assert!(
+            settled(json!({"source": "lsp"}), true)
+                .get("source")
+                .is_none()
+        );
+        assert!(settled(json!({}), true).get("source").is_none());
+        assert_eq!(settled(json!({}), false)["source"], "lsp");
+    }
 }

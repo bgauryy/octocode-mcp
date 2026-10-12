@@ -1,4 +1,4 @@
-// Deterministic competitor harness (beat-rg-gh PLAN S5): frozen tasks run as
+// Deterministic competitor harness (beat-rg-gh PLAN): frozen tasks run as
 // an octocode recipe (MCP via the shared client; CLI for CLI-only tools) and
 // as the shell recipe an expert agent would run (rg/sed/git/gh/ast-grep/npm).
 // Both sides are judged by the same truth check; calls, model-visible bytes
@@ -18,7 +18,7 @@
 // never-trim (every truncation signal has an executable continuation or a
 // terminal-limit disclosure). Shape-agnostic: `next` = pages (it also held
 // leads in legacy streams), `hints` = leads + text; see harness/sensors.mjs.
-// RFC tool-quality-efficiency S1 sensors (harness/sensors.mjs):
+// RFC tool-quality-efficiency sensors (harness/sensors.mjs):
 //   schema errors   MCP/CLI input-validation errors per task (target 0)
 //   verbose fields  default-output fields from harness/verbose-fields.json (report only)
 //   verbatim replay a bounded sample of every task's continuations runs unchanged and must validate
@@ -84,7 +84,7 @@ function rgPreamble() {
 }
 const PREAMBLE = rgPreamble();
 
-// ---------- workspace (F1) ----------
+// ---------- workspace ----------
 /**
  * The corpus repo a task runs in, relative to ROOT ('' = the octocode root):
  * an explicit `workspace`, else the single `{{T}}/<corpus>` its recipe names.
@@ -200,7 +200,7 @@ function resolve(value, entries, ws = '') {
 }
 
 /**
- * The call brief (F2). Briefs are optional: a research task sends its short
+ * The call brief. Briefs are optional: a research task sends its short
  * `mainGoal`, a single-call lookup or page walk sends none. Legacy runs brief
  * every call with the question.
  */
@@ -313,7 +313,7 @@ function octocodeEvidence(entry, ev, { unsearched = false } = {}) {
       if (isHintKey(key)) continue;
       if (key === 'unsearchedFiles' && Array.isArray(child)) { if (unsearched) for (const s of child) { const m = /^!\w+ (.+)$/.exec(s); if (m) ev.files.add(m[1]); } continue; }
       if (key === 'files' && entry.tool === 'ghGetHistoryItem' && Array.isArray(child) && child.some(c => typeof c === 'string' || (c && !('path' in c)))) { for (const f of inventoryRows(child)) if (f.path) ev.files.add(f.path); continue; }
-      // `enclosing` names the declaration around a hit (X1/X2); its line is not a hit.
+      // `enclosing` names the declaration around a hit; its line is not a hit.
       if (key === 'from' || key === 'displayRange' || key === 'enclosing') continue;
       walk(child, here, Array.isArray(child) ? true : false);
     }
@@ -406,12 +406,12 @@ function maxNextEntries(node) {
 // A paging continuation (it reaches the rest of the same evidence), as
 // opposed to a lead to a different read (read, readPullRequest, viewRepo, …).
 const PAGING_NAME = /page|continue|more|expand|resume|pagination|clasify|^next$/i;
-const PAGING_KEYS = ['page', 'offset', 'matchPage', 'filePage', 'patchPage', 'responseOffset', 'after', 'resume'];
+const PAGING_KEYS = ['page', 'offset', 'matchPage', 'patchPage', 'responseOffset', 'after', 'resume'];
 // A core `pages` name (e.g. nextDiagnosticPage) pages its row whatever its spelling.
 const isPaging = ({ name, hint }, tool = '') => isPageName(name, tool) || PAGING_NAME.test(name) || PAGING_KEYS.some(k => k in hint.query) || (hint.query.queries ?? []).some(q => PAGING_KEYS.some(k => k in q));
 // A query that asked for a window (range, match, block, view) is partial by
 // request: its omission markers and isPartial flag are not truncation.
-const WINDOW_KEYS = ['matchString', 'ranges', 'block', 'symbol', 'view', 'length', 'offset', 'unit', 'include', 'patchRanges', 'contextLines'];
+const WINDOW_KEYS = ['matchString', 'ranges', 'block', 'symbol', 'view', 'length', 'offset', 'unit', 'include', 'contextLines'];
 const OMISSION = /\.\.\. \[(?:lines? \d+(?:-\d+)?|\d+ gaps in lines \d+-\d+) (?:omitted|not requested)\] \.\.\.|\[\.\.\.\s*\d+ (?:more|omitted)[^\]]*\]/;
 
 /** Truncation signals under one row: [{at, signal}], skipping continuation values. */
@@ -490,7 +490,7 @@ function taskSensors(entries, evidenceSteps) {
   };
 }
 
-/** S1 sensors over a recipe's responses: schema errors, verbose fields, body hash and key byte shares. */
+/** Sensors over a recipe's responses: schema errors, verbose fields, body hash and key byte shares. */
 function s1Sensors(entries) {
   const schema = entries.map(schemaErrors);
   const verbose = {};
@@ -598,7 +598,7 @@ async function runTask(task) {
     coldComp ??= competitor; competitor = shellSide(task.competitor, truth, ws);
     if (octocode.skipped || competitor.skipped) return { status: 'skipped', skipReason: `rate limited (${octocode.skipped ? 'octocode' : 'competitor'})` };
   }
-  // F3: the unfiltered first try, or the expert recipe when it already is one.
+  // The unfiltered first try, or the expert recipe when it already is one.
   if (task.unfiltered) {
     if (task.codeSearch) await paceCodeSearch();
     unfiltered = shellSide(task.unfiltered, truth, ws);
@@ -657,7 +657,7 @@ for (const task of selected) {
       if (s.followedAll) check(`${task.id} ${task.tool}: never-trim (every truncation has a continuation or terminal-limit disclosure)`, false, `${s.violations.length} violations: ${detail}`);
       else console.log(`INFO [competitors] ${task.id}: never-trim violations ${s.violations.length} — ${detail}`);
     }
-    // R2: the cap applies to lead menus (hints, or today's non-page next entries); pages are uncapped.
+    // The cap applies to lead menus (hints, or today's non-page next entries); pages are uncapped.
     if (s && s.leadEntriesMax > NEXT_ENTRY_CAP) {
       const detail = `${s.leadEntriesMax} lead entries in one menu (cap ${NEXT_ENTRY_CAP}): ${s.nextNames.join(',')}`;
       if (process.env.OCTOCODE_COMPETITOR_STRICT_NEXT === '1') check(`${task.id} ${task.tool}: lead entries per menu ≤ ${NEXT_ENTRY_CAP}`, false, detail);

@@ -20,8 +20,8 @@ wrappers or aliases: the tool name and the JSON query are the entire interface.
 Each tool command takes one JSON query: positional, `--input <file>`, or
 `--input -` (stdin). On a terminal it prints the same readable text MCP clients
 get; on a pipe it prints single-line JSON. `--json` forces JSON on a terminal.
-Errors follow the output: the `octocode.toolError` JSON envelope on stdout in
-JSON mode, text on stderr otherwise.
+Errors follow the output: the `{"error":"…"}` JSON envelope on stdout in JSON
+mode, text on stderr otherwise.
 
 | Command | Purpose |
 |---|---|
@@ -46,7 +46,7 @@ JSON mode, text on stderr otherwise.
 
 | Command | Purpose |
 |---|---|
-| `schema [tool]` | No name: compact catalog of every enabled tool with fields and agent instructions. With a name: the full input contract (default `--view full`). `--view variants` lists branch names, selectors, and examples; `--view query` prints the self-contained query schema, and `--select FIELD=VALUE` (or `variant=NAME`, `--view query` only) keeps one union branch. Indented on a terminal, one line on a pipe. Output validation schemas remain internal. |
+| `schema [tool]` | No name: compact catalog of every enabled tool with fields and agent instructions. With a name: the full input contract (default `--view full`). `--view variants` lists each operation with its required fields and an example; `--view query` prints the row MCP lists, and `--select operation=VALUE` (`--view query` only) prints that operation's row. Indented on a terminal, one line on a pipe. Output validation schemas remain internal. |
 | `config` | Config file paths, `.env` paths, loaded key names, and config warnings (`--json`). `config home` (home path), `config get KEY` (resolved value; exit 1 = unset), `config set KEY VALUE` (or `set KEY --stdin`), `config unset KEY`, `config check KEY` (exit 0 = set, 1 = unset), `config view` (local settings UI). Only `config get` prints a value. |
 | `auth` | GitHub auth: `status` (`--json`), `login` (device flow; `--refresh`, `--force`, `--hostname`, `--json`), `logout` (`--json`). See [`auth`](#auth--github-authentication). |
 | `install` | Write or check MCP client configuration for supported IDEs and agent hosts. |
@@ -62,7 +62,7 @@ Use `npx octocode <command> --help` for the live command help. A tool's help
 required fields, by variant when the tool has several, and one runnable example.
 `npx octocode skill <subcommand> --help` shows that subcommand's usage and flags.
 
-`npx octocode schema` (and a bare `npx octocode` on a pipe) carries agent instructions in the catalog's `instructions` field. A bare `npx octocode` on a terminal, `--help`, `-h`, and `help` print the command reference. Instructions come from the shared MCP contract and reflect runtime tool availability; classification guidance is omitted when classification is disabled.
+`npx octocode schema` (and a bare `npx octocode` on a pipe) carries agent instructions in the catalog's `instructions` field. A bare `npx octocode` on a terminal, `--help`, `-h`, and `help` print the command reference. Instructions are the shared MCP contract text, the same on every runtime; which tools run here is each catalog row's availability (`clasify` lists only with a classification key).
 
 ## Quick start
 
@@ -118,7 +118,7 @@ map cheaply → search narrowly → read exact evidence → follow symbols or hi
 npx octocode structureSearch '{"queries":[{"operation":"tree","path":"/ABS/repo/crates/runtime/src","mainGoal":"Where is ToolRuntime built and used?","reasoning":"Map the crate before searching."}]}'
 npx octocode localSearch '{"queries":[{"path":"/ABS/repo/crates/runtime/src","matchString":"ToolRuntime","resultView":"matchOnly","mainGoal":"Where is ToolRuntime built and used?","reasoning":"Find the defining file."}]}'
 npx octocode localFetch '{"queries":[{"path":"/ABS/repo/crates/runtime/src/runtime/engine.rs","matchString":"ToolRuntime","mainGoal":"Where is ToolRuntime built and used?","reasoning":"Read the definition."}]}'
-npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/crates/runtime/src/runtime/engine.rs","operation":"references","symbolName":"ToolRuntime","lineHint":40,"mainGoal":"Where is ToolRuntime built and used?","reasoning":"Trace its callers."}]}'
+npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/crates/runtime/src/runtime/engine.rs","operation":"references","symbolName":"ToolRuntime","line":69,"mainGoal":"Where is ToolRuntime built and used?","reasoning":"Trace its callers."}]}'
 ```
 
 The brief is optional. Add `mainGoal` (the research question the query serves)
@@ -127,7 +127,7 @@ unknown; omit both on simple lookups. A blank brief field is dropped. The
 legacy name `goal` is accepted for one release and maps to `mainGoal`.
 Responses split follow-ups into two channels: `next` holds pages and coverage
 continuations (the result is incomplete until you run them), and `hints` holds
-optional leads plus prose tips in `hints.text`. A `next` page or `hints` lead
+optional leads, plus `hints.text` for a per-call fact no lead states. A `next` page or `hints` lead
 carries the brief only when the producing query sent one. Queries accept a single object, a JSON
 array, or `{"queries":[…]}` for a batch (up to 5). Large queries avoid shell
 quoting with `--input <file>`.
@@ -195,14 +195,16 @@ On files, `deps` and `dependents` follow imports; on symbols, they follow calls.
 
 - **Node ids:** `src/a.ts` (file), `src/a.ts#Class.method` (symbol), and
   `pkg:react` (package). An `@<line>` suffix appears only when a name repeats.
-  Absolute paths, bare names, and `Class.method` also resolve. An ambiguous
+  Absolute paths, bare names, and `Class.method` also resolve where the
+  language names methods by receiver (a Go method id has no receiver: use its
+  bare name). An ambiguous
   reference exits 2 and lists `candidates`.
 - **Output:** readable text on a terminal; one JSON object on a pipe or with
   `--json`. Lists carry `total`
   and `results`. A cut adds `truncated` and `next`, a paste-ready command. Use
   `--limit` and `--offset` to page.
 - **Exit codes:** `0` ok · `1` empty · `2` bad input or ambiguous · `3` no graph
-  or node · `5` error · `6` more pages.
+  or node · `5` error. A cut result is still `0`: run `next`.
 - **Snapshots:** `ingest` writes
   `<workspace>/.octocode/graph/<UTC time>-<scope>/{graph.bin,manifest.json}`
   and updates `latest`. It keeps 3 snapshots per scope (`--keep`). The
@@ -483,7 +485,7 @@ npx octocode graph ingest /ABS/repo
 npx octocode graph query dependents src/config.ts --depth 2   # who is affected
 npx octocode graph query impact --since origin/main            # changed files -> tests to run
 npx octocode graph query issues --min-score 0.3                # triage, then verify each lead
-npx octocode lspSearch '{"queries":[{"operation":"references","path":"/ABS/repo/src/config.ts","symbolName":"load","lineHint":12}]}'
+npx octocode lspSearch '{"queries":[{"operation":"references","path":"/ABS/repo/src/config.ts","symbolName":"load","line":12}]}'
 ```
 
 Use the graph for repo-wide structure (imports, callers, cycles, reachability,
@@ -507,7 +509,7 @@ Get line anchors first, then trace the symbol:
 
 ```bash
 npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/src/index.ts","operation":"documentSymbols"}]}'
-npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/src/index.ts","operation":"references","symbolName":"runCLI","lineHint":42}]}'
+npx octocode lspSearch '{"queries":[{"path":"/ABS/repo/src/index.ts","operation":"references","symbolName":"runCLI","line":42}]}'
 ```
 
 ### Package to source
@@ -597,10 +599,9 @@ boolean and exits `1` when unset; for an unset GitHub token key it also names
 
 Output follows the terminal: tools and `graph` print readable text, and `schema`
 indented JSON, on a terminal; all three print single-line JSON on a pipe. Errors follow the
-output: the `{"kind":"octocode.toolError","version":1,"error":"…"}` envelope on
-stdout in JSON mode (with `tool` and `details` when known, and `errorCode` for a
-tool call's error: `invalidInput` for a rejected query), text on stderr
-otherwise. A mistyped command on a pipe also gets the envelope, with the names
+output: the `{"error":"…"}` envelope on stdout in JSON mode (a tool call's
+error adds `details` when there are repair steps and `errorCode`, e.g.
+`invalidInput` for a rejected query), text on stderr otherwise. A mistyped command on a pipe also gets the envelope, with the names
 it is close to. Exit codes are the same in both modes. `NO_COLOR` disables color.
 
 ### Exit codes
@@ -613,14 +614,25 @@ it is close to. Exit codes are the same in both modes. `NO_COLOR` disables color
 | `3` | A command or tool execution failed with a classified not-found error. |
 | `4` | Authentication or permission failure. |
 | `5` | Tool or API execution error. |
-| `6` | Partial result — the response carries a re-runnable `next.*`, `next.clasify`, or `responsePagination.next` continuation. |
-| `7` | Rate limited. |
+| `7` | Rate limited: a failed row's error is throttling, and no other failure outranks it. |
 | `130` | Interrupted (Ctrl-C). |
 
-For mixed batches, inspect every `results[].status`: exit `0` can include a
-successful row alongside a runtime-error row. A rejected input row produces exit
-`2`; a continuation produces exit `6`. Exit codes alone do not establish that
-every row succeeded.
+A batch exits with its worst row, in this order: a row rejected as
+`invalidInput` (`2`); a failed row (`status:"error"`, including `staleSnapshot`),
+which exits with the class of its error code (`3`, `4`, `5`, or `7`), or `5` when
+failed rows disagree (a retryable failure, which carries `next.retry`, is a
+failed row like any other); every row empty (`1`); else `0`. An answering row
+never hides a failed one.
+
+Paging is success. A result with a `next.*`, `next.clasify` or
+`responsePagination` continuation, `pagination.hasMore`, or a partial source
+read exits `0`, exactly as the MCP server reports it (it has no exit codes):
+read `pagination.hasMore` and `next.*` to learn whether to continue. A script
+tells "read the next page" (exit `0`, `next.*` present) from "start over"
+(`staleSnapshot`: `5`, with `next.restart`). A `snapshot` no search issued is
+malformed input (`invalidInput`, `2`), not stale. Exit `0` therefore means no
+row failed; still read `results[].status` for which rows are empty or partial.
+There is no exit `6`.
 
 ### Environment variables
 

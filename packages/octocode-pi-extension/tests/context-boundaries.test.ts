@@ -1,10 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { planContextTrims, type TrimMemo } from '../src/compaction/register.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
 import { messageText } from '../src/team/routing.js';
 import { registerTurnSetup } from '../src/turn.js';
-import { fakePi } from './fake-pi.js';
-import { tmp } from './helpers.js';
+import { fakeOctocode, fakePi } from './fake-pi.js';
 
 describe('agent context boundaries', () => {
   it('starts children with a fresh identity and browser mode while retaining user settings', () => {
@@ -50,12 +49,10 @@ describe('agent context boundaries', () => {
   });
 
   it('projects only active capabilities and refreshes changed profile guidance', async () => {
-    // Without the built-in Octocode server (or an mcp.json entry), guidance follows the Octocode tools present.
-    vi.stubEnv('OCTOCODE_MCP', '0');
-    vi.stubEnv('PI_CODING_AGENT_DIR', tmp());
+    // With no Octocode server running, guidance follows the Octocode tools present.
     const fake = fakePi();
     let description = 'first profile';
-    registerTurnSetup(fake.pi, { isSubagent: false, profiles: () => new Map([['reviewer', { name: 'reviewer', description, prompt: '' }]]) });
+    registerTurnSetup(fake.pi, { isSubagent: false, profiles: () => new Map([['reviewer', { name: 'reviewer', description, prompt: '' }]]), octocode: fakeOctocode({ by: 'off' }).mcp });
     (fake.pi as unknown as { getCommands: () => unknown[] }).getCommands = () => [{ name: 'mcp' }];
     const prompt = async (selectedTools: string[]) => {
       const event = { systemPromptOptions: { sections: {} as Record<string, string>, selectedTools } };
@@ -63,13 +60,12 @@ describe('agent context boundaries', () => {
       return event.systemPromptOptions.sections['octocode']!;
     };
     const inactive = await prompt(['read']);
-    expect(inactive).not.toContain('Prefer Octocode MCP');
+    expect(inactive).not.toContain('Use Octocode MCP');
     expect(inactive).not.toContain('# Delegation');
     expect(inactive).not.toContain('# Subagent');
     const active = ['read', 'agent', 'mcp__octocode__localSearch'];
     expect(await prompt(active)).toContain('first profile');
     description = 'updated profile';
     expect(await prompt(active)).toContain('updated profile');
-    vi.unstubAllEnvs();
   });
 });

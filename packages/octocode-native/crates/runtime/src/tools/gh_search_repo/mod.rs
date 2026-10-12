@@ -8,7 +8,8 @@ use crate::providers::github::{
     RequestContext,
 };
 use crate::tools::gh_shared::{
-    GhFailure, SEARCH_RESULT_CAP, add_next, apply_partial, reject_window, search_failure,
+    GhFailure, SEARCH_RESULT_CAP, add_next, apply_partial, field_names, pick_rows, push_warning,
+    reject_window, search_failure, with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
@@ -33,21 +34,34 @@ pub async fn run<C: ConditionalCache>(
             error.kind == crate::providers::github::ProviderErrorKind::NotFound
                 && error.reason.is_none()
         });
-        let failure = search_failure(
-            error,
-            "Lower page, or narrow with keywords, stars, created, or updated to reach deeper results.",
+        let failure = with_search_repair(
+            search_failure(error, None),
+            ToolId::GhSearchRepo,
+            query,
+            page_size(query),
+            query.repo.as_deref().map(|repo| repo.as_str()),
         );
+        // The message names the login; no repair lead exists for it.
         match missing_owner {
             Some(owner) => GhFailure {
                 message: format!(
                     "Owner \"{owner}\" not found: no GitHub user or organization has this login"
                 ),
+                hints: Vec::new(),
                 ..failure
-            }
-            .hint("Check the login's spelling, or find the repository with keywords."),
+            },
             None => failure,
         }
     })
+}
+
+/// Repositories per page: the query's, within the contract maximum.
+fn page_size(query: &GhSearchRepoQuery) -> usize {
+    usize_of(query.page_size).min(crate::contracts::query_schema_max(
+        ToolId::GhSearchRepo,
+        None,
+        "pageSize",
+    ))
 }
 
 pub(crate) async fn execute<C: ConditionalCache>(
@@ -56,12 +70,13 @@ pub(crate) async fn execute<C: ConditionalCache>(
     context: &RequestContext,
 ) -> Result<ToolData, ProviderError> {
     query::validate_repo_scope(query)?;
+    if let (Some(owner), Some(repo)) = (query.owner.as_deref(), query.repo.as_deref())
+        && !filtered(query)
+    {
+        return exact_repository(provider, query, owner, repo, context).await;
+    }
     let current = usize_of(query.page);
-    let per = usize_of(query.page_size).min(crate::contracts::query_schema_max(
-        ToolId::GhSearchRepo,
-        None,
-        "pageSize",
-    ));
+    let per = page_size(query);
     let owner_only = owner_only(query);
     // The owner listing pages through the REST list API, which has no
     // 1,000-result search window; only search is bounded by it.
@@ -107,39 +122,45 @@ pub(crate) async fn execute<C: ConditionalCache>(
     // a listing that skipped some offers them (the description states the
     // search default once).
     let archived_skipped = listing.as_ref().map_or(0, |listing| listing.archived);
-    let excluded = query.archived.is_none() && archived_skipped > 0;
+    let excluded = query.include_archived != Some(true) && archived_skipped > 0;
     if excluded {
         leads.insert(
             leads.len().min(1),
             ("includeArchived", include_archived(query)),
         );
     }
-    let repositories = if query.concise == Some(true) {
-        data.items
-            .into_iter()
-            .map(|r| json!(r.full_name))
-            .collect::<Vec<_>>()
-    } else {
-        let wanted = wanted_topics(query);
-        data.items
-            .into_iter()
-            .map(|item| repository_row(item, &wanted))
-            .collect::<Vec<_>>()
-    };
+    let wanted = wanted_topics(query);
+    let fields = field_names(&query.fields);
+    let repositories = data
+        .items
+        .into_iter()
+        .map(|item| repository_row(item, &wanted))
+        .collect::<Vec<_>>();
     let repositories_empty = repositories.is_empty();
+    // A page past the last has no rows though the search (or the listing's
+    // earlier pages) has some: the shared response stage restarts it.
+    let past_end = repositories_empty
+        && current > 1
+        && match &listing {
+            Some(_) => archived_skipped == 0,
+            None => total > 0 && current > pages,
+        };
     let mut value = match &listing {
         // The REST listing reports no total: `page` is the provider page
         // cursor and `next.nextPage` follows the real Link header. The
-        // listing is ordered by latest push; page counters are verbose
-        // (core field class).
+        // listing is ordered by latest push (the `owner` description says
+        // so); page counters are verbose (core field class).
         Some(listing) => {
-            let mut pagination =
-                crate::response::pages::PageFacts::open(current, Some(per), more).to_value();
+            let mut pagination = crate::response::pages::PageFacts::open(current, Some(per), more)
+                .out_of_range(past_end)
+                .to_value();
             pagination["providerPagesRead"] = json!(listing.last_page + 1 - current);
-            json!({"repositories":repositories,"order":"pushed","pagination":pagination})
+            json!({"repositories":repositories,"pagination":pagination})
         }
         None => json!({"repositories":repositories,"pagination":
-            crate::response::pages::PageFacts::counted(current, per, total).to_value()}),
+            crate::response::pages::PageFacts::counted(current, per, total)
+                .out_of_range(past_end)
+                .to_value()}),
     };
     let next_from = listing
         .as_ref()
@@ -159,50 +180,89 @@ pub(crate) async fn execute<C: ConditionalCache>(
         "repository",
     );
     if archived_skipped > 0 {
-        let warning = json!(format!(
-            "Skipped {archived_skipped} archived repositories: hints.includeArchived lists them."
-        ));
-        match value.get_mut("warnings").and_then(Value::as_array_mut) {
-            Some(warnings) => warnings.push(warning),
-            None => value["warnings"] = json!([warning]),
-        }
+        push_warning(
+            &mut value,
+            format!(
+                "{} skipped",
+                crate::response::pages::counted(
+                    u64::try_from(archived_skipped).unwrap_or(u64::MAX),
+                    "archived repository",
+                    "archived repositories"
+                )
+            ),
+        );
     }
-    let mut output = repository_output(
+    pick_rows(&mut value, "repositories", REPO_ID, &fields);
+    let output = repository_output(
         value,
-        repositories_empty && !more,
+        query,
+        repositories_empty && !more && !past_end,
         provider_incomplete,
         provider_capped,
     );
-    if output.status == Some("empty")
-        && let Some(broader) = broader_search(query)
-    {
-        output.data["next"]["findRepository"] = broader;
-    }
     Ok(output)
+}
+
+/// `owner`+`repo` alone: that repository's row, with its default branch, from the
+/// repository endpoint; no search request and no page.
+async fn exact_repository<C: ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    query: &GhSearchRepoQuery,
+    owner: &str,
+    repo: &str,
+    context: &RequestContext,
+) -> Result<ToolData, ProviderError> {
+    let item = provider.transport.repository(owner, repo, context).await?;
+    let row = repository_row(item, &[]);
+    let fields = field_names(&query.fields);
+    let mut value = json!({ "repositories": [row] });
+    pick_rows(&mut value, "repositories", REPO_ID, &fields);
+    Ok(ToolData::from(value))
+}
+
+/// A repository row's id: a `fields` pick keeps it.
+const REPO_ID: &[&str] = &["owner", "repo"];
+
+/// The filters a query sets beside its keywords, by wire name: the one
+/// table every narrowing check reads.
+fn set_filters(query: &GhSearchRepoQuery) -> Vec<&'static str> {
+    [
+        ("topics", !query.topics.is_empty()),
+        ("language", query.language.is_some()),
+        ("stars", query.stars.is_some()),
+        ("pushed", query.pushed.is_some()),
+        ("created", query.created.is_some()),
+        ("match", !query.match_in.is_empty()),
+        ("license", query.license.is_some()),
+        ("qualifiers", query.qualifiers.is_some()),
+    ]
+    .into_iter()
+    .filter_map(|(name, set)| set.then_some(name))
+    .collect()
+}
+
+/// Filters beside owner+repo search inside that repository; without them
+/// the pair is a one-row lookup.
+fn filtered(query: &GhSearchRepoQuery) -> bool {
+    !query.keywords.is_empty()
+        || !set_filters(query).is_empty()
+        // `archived:false` is the default, so it filters nothing.
+        || query.include_archived == Some(true)
 }
 
 /// The owner a query only lists: no term, topic, or filter beyond the owner,
 /// in an order the listing API can serve.
 fn owner_only(query: &GhSearchRepoQuery) -> Option<&str> {
-    let unfiltered = query.keywords.is_empty()
-        && query.topics.is_empty()
-        && query.language.is_none()
-        && query.stars.is_none()
-        && query.pushed.is_none()
-        && query.created.is_none()
-        && query.match_.is_empty()
-        && query.archived.is_none()
-        && query.license.is_none()
-        && query.qualifiers.is_none()
+    let listable = !filtered(query)
         && matches!(
             query.sort,
-            GhSearchRepoQuerySort::BestMatch | GhSearchRepoQuerySort::Updated
+            GhSearchRepoQuerySort::BestMatch | GhSearchRepoQuerySort::UpdatedDesc
         );
     query
         .owner
         .as_deref()
         .map(String::as_str)
-        .filter(|_| unfiltered)
+        .filter(|_| listable)
 }
 
 /// List an owner's repositories by latest push. The listing API cannot rank
@@ -279,34 +339,63 @@ fn include_archived(query: &GhSearchRepoQuery) -> Value {
     if query.sort != GhSearchRepoQuerySort::BestMatch {
         row["sort"] = json!(query.sort.to_string());
     }
-    row["archived"] = json!(true);
-    Continuation::new(ToolId::GhSearchRepo, row)
-        .why("Archived repositories are excluded by default.")
-        .build()
+    row["includeArchived"] = json!(true);
+    Continuation::new(ToolId::GhSearchRepo, row).build()
 }
 
-/// An empty filtered search, rerun with its keywords (and owner) alone.
-fn broader_search(query: &GhSearchRepoQuery) -> Option<Value> {
-    let filtered = !query.topics.is_empty()
-        || query.language.is_some()
-        || query.stars.is_some()
-        || query.pushed.is_some()
-        || query.created.is_some()
-        || !query.match_.is_empty()
-        || query.license.is_some()
-        || query.qualifiers.is_some();
-    if !filtered || query.keywords.is_empty() {
-        return None;
+/// Broadened variants at most: one call's batch.
+const BROADEN_VARIANTS: usize = 5;
+
+/// An empty search, broadened: one variant per set filter (and, with
+/// several keywords, one per dropped keyword), run as one batch, so the
+/// variant that returns rows names what emptied the search. A variant the
+/// tool would reject (nothing left to search by) is skipped.
+fn broaden_search(query: &GhSearchRepoQuery) -> Option<Value> {
+    let mut base = serde_json::to_value(query).unwrap_or_else(|_| json!({}));
+    if let Some(row) = base.as_object_mut() {
+        // Defaults and the brief stay out of the copied call.
+        row.retain(|key, value| {
+            !matches!(
+                key.as_str(),
+                "page" | "extras" | "sort" | "pageSize" | "mainGoal" | "reasoning"
+            ) && !value.is_null()
+        });
     }
-    let mut broader = json!({"keywords": query.keywords});
-    if let Some(owner) = query.owner.as_deref() {
-        broader["owner"] = json!(owner.as_str());
+    if query.sort != GhSearchRepoQuerySort::BestMatch {
+        base["sort"] = json!(query.sort.to_string());
     }
-    Some(
-        Continuation::new(ToolId::GhSearchRepo, broader)
-            .why("Rerun the keywords without the filters that emptied the search.")
-            .build(),
-    )
+    let mut variants = Vec::new();
+    for filter in set_filters(query) {
+        let mut row = base.clone();
+        if let Some(object) = row.as_object_mut() {
+            object.remove(filter);
+        }
+        variants.push(row);
+    }
+    if query.keywords.len() >= 2 {
+        variants.extend((0..query.keywords.len()).rev().map(|dropped| {
+            let mut row = base.clone();
+            row["keywords"] = json!(
+                query
+                    .keywords
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| *index != dropped)
+                    .map(|(_, keyword)| keyword)
+                    .collect::<Vec<_>>()
+            );
+            row
+        }));
+    }
+    variants.retain(|row| {
+        crate::contracts::validate(ToolId::GhSearchRepo.as_str(), json!({"queries":[row]})).is_ok()
+    });
+    variants.truncate(BROADEN_VARIANTS);
+    (!variants.is_empty()).then(|| {
+        Continuation::input(ToolId::GhSearchRepo, json!({ "queries": variants }))
+            .confidence("low")
+            .build()
+    })
 }
 
 /// Provider pages read by one owner-only listing call before it stops.
@@ -323,6 +412,7 @@ struct OwnerListing {
 
 fn repository_output(
     value: Value,
+    query: &GhSearchRepoQuery,
     repositories_empty: bool,
     provider_incomplete: bool,
     provider_capped: bool,
@@ -330,7 +420,9 @@ fn repository_output(
     let mut output = ToolData::from(value);
     if repositories_empty && !provider_incomplete && !provider_capped {
         output.status = Some("empty");
-        output.data["hints"] = json!(["Broaden keywords or remove repository filters."]);
+        if let Some(broader) = broaden_search(query) {
+            output.data["next"]["broadenSearch"] = broader;
+        }
     }
     output
 }
@@ -357,7 +449,9 @@ fn wanted_topics(query: &GhSearchRepoQuery) -> Vec<String> {
         .collect()
 }
 
-/// One compact repository row: `owner` and `repo`, the decision facts (stars,
+/// One compact repository row: `owner`, `repo` and `defaultBranch` (the
+/// next hop's coordinates; a page whose rows agree states the branch once in
+/// `shared`), the decision facts (stars,
 /// language, license, last push, creation, `archived`/`fork` when set), the whole
 /// description, and every topic (query matches first). Forks and the
 /// metadata-update date are verbose (core field class).
@@ -383,9 +477,11 @@ fn repository_row(
         .map_or((None, item.name.clone()), |(owner, repo)| {
             (Some(owner.to_owned()), repo.to_owned())
         });
+    let default_branch = Some(item.default_branch).filter(|branch| !branch.is_empty());
     let mut row = json!({
         "owner": owner,
         "repo": repo,
+        "defaultBranch": default_branch,
         "stars": item.stargazers_count,
         "language": item.language,
         "license": item.license.and_then(|license| license.spdx_id),
@@ -412,8 +508,24 @@ fn repository_row(
 /// This tool's output facts for the shared response stages.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
-    fn fallback_hint(&self, _query: &serde_json::Value) -> &'static str {
-        "Broaden keywords or remove repository filters."
+    fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {
+        use crate::tools::output::has_value;
+        if [
+            "topics",
+            "language",
+            "stars",
+            "pushed",
+            "created",
+            "license",
+            "qualifiers",
+        ]
+        .iter()
+        .any(|key| has_value(query, key))
+        {
+            "Drop topics/language/stars/date/license filters or use fewer keywords."
+        } else {
+            "Use fewer or broader keywords, or set owner and repo to open one."
+        }
     }
     fn evidence_kind(&self, _query: &serde_json::Value, _data: &serde_json::Value) -> &'static str {
         "provider"
@@ -463,14 +575,22 @@ mod tests {
 
     #[test]
     fn complete_repository_zero_is_empty_but_partial_zero_is_not() {
-        let complete = repository_output(json!({"repositories":[]}), true, false, false);
+        let query: GhSearchRepoQuery =
+            serde_json::from_value(json!({"keywords":["x"],"language":"rust"})).expect("query");
+        let complete = repository_output(json!({"repositories":[]}), &query, true, false, false);
         assert_eq!(complete.status, Some("empty"));
-        assert!(complete.data["hints"][0].is_string());
+        assert!(complete.data.get("hints").is_none());
+        assert_eq!(
+            complete.data["next"]["broadenSearch"]["query"]["queries"],
+            json!([{"keywords":["x"]}])
+        );
 
         for (incomplete, capped) in [(true, false), (false, true)] {
-            let partial = repository_output(json!({"repositories":[]}), true, incomplete, capped);
+            let partial =
+                repository_output(json!({"repositories":[]}), &query, true, incomplete, capped);
             assert_eq!(partial.status, None);
             assert!(partial.data.get("hints").is_none());
+            assert!(partial.data.get("next").is_none());
         }
     }
 

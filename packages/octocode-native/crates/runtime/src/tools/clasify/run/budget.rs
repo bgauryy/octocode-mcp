@@ -140,14 +140,10 @@ pub(super) fn budget_candidates(
 pub(super) fn budget_spent(candidate: Candidate, remaining: usize) -> CapturedPage {
     match candidate.page {
         CapturedPage::Ready { context, .. } => CapturedPage::Failed {
-            error: ClassificationError::new(
-                "classificationBudgetSpent",
-                format!(
-                    "Earlier candidates used this call's {remaining} characters; this {}-character candidate was not classified.",
-                    candidate.chars
-                ),
-                "Run its hints.read, or narrow the page or raise maxChars to classify it.",
-            ),
+            error: ClassificationError::unjudged(format!(
+                "Earlier candidates used this call's {remaining} characters; this {}-character candidate was not classified.",
+                candidate.chars
+            )),
             context,
         },
         failed => failed,
@@ -288,15 +284,8 @@ pub(super) const MAX_SHRINK_ATTEMPTS: usize = 4;
 
 /// Query fields that select less than the whole file in the source view; a
 /// flat page read with any of them is not re-read from line one.
-const PARTIAL_READ_FIELDS: [&str; 7] = [
-    "matchString",
-    "ranges",
-    "block",
-    "unit",
-    "offset",
-    "length",
-    "contextBytes",
-];
+const PARTIAL_READ_FIELDS: [&str; 6] =
+    ["matchString", "ranges", "block", "unit", "offset", "length"];
 
 /// `(unit, offset, size)` of a page's chunk window. A flat whole-file page
 /// (no pagination, no range or match selector, source view) is the window of
@@ -390,12 +379,12 @@ pub(super) fn split_ranges(source: &Value, state: &Value) -> Option<Vec<(u64, u6
         .as_array()?
         .iter()
         .map(|range| {
-            let (start, end) = range.as_str()?.split_once('-')?;
-            let (start, end) = (start.parse::<u64>().ok()?, end.parse::<u64>().ok()?);
+            let (start, end) = crate::tools::line_spans::parse_span::<u64>(range.as_str()?)?;
             Some((start, total.map_or(end, |total| end.min(total))))
         })
         .collect::<Option<Vec<_>>>()?
         .into_iter()
+        // A span starting past the file end reads nothing.
         .filter(|(start, end)| start <= end)
         .collect::<Vec<_>>();
     (!spans.is_empty()).then_some(spans)
@@ -496,11 +485,11 @@ mod tests {
         let source = json!({"tool":"localFetch","query":{"path":"/tmp/source"}});
         let first = json!({"results":[{"data":{
             "content":{"next":"evidence"},
-            "next":{"continue":{"tool":"localFetch","query":{"path":"short"}}}
+            "next":{"continueWindow":{"tool":"localFetch","query":{"path":"short"}}}
         }}]});
         let second = json!({"results":[{"data":{
             "content":{"next":"evidence"},
-            "next":{"continue":{"tool":"localFetch","query":{"path":"a".repeat(10_000)}}}
+            "next":{"continueWindow":{"tool":"localFetch","query":{"path":"a".repeat(10_000)}}}
         }}]});
         assert_eq!(
             assessed_payload_chars(&source, &first),
@@ -558,7 +547,7 @@ mod tests {
         assert!(resume_search(&list, None, 1).is_none());
     }
 
-    /// P3: a list whose candidates are its rows resumes at the first
+    /// A list whose candidates are its rows resumes at the first
     /// deferred row; a list that groups rows (AST matches per file) or a
     /// later page of unknown size does not.
     #[test]
@@ -618,6 +607,13 @@ mod tests {
         let spans = split_ranges(&source, &state).expect("splits");
         assert_eq!(spans, vec![(3, 10), (20, 30)], "clamped to the file");
         assert_eq!(span_lines(&spans), 19);
+        let reversed =
+            json!({"tool":"localFetch","query":{"path":"/r/a.txt","ranges":["10-3","40-20"]}});
+        assert_eq!(
+            split_ranges(&reversed, &state),
+            Some(spans.clone()),
+            "a reversed range names the same span"
+        );
         let (head, tail) = ranges_read(&source, &spans, 10);
         assert_eq!(head["query"]["ranges"], json!(["3-10", "20-21"]));
         assert_eq!(tail.expect("rest")["query"]["ranges"], json!(["22-30"]));
@@ -635,7 +631,7 @@ mod tests {
         let source = json!({"tool":"localFetch","query":{"path":"/r/a.txt","fullContent":true}});
         let state = json!({"results":[{"data":{
             "pagination":{"unit":"lines","offset":16,"length":8,"hasMore":true},
-            "next":{"continue":{"tool":"localFetch","query":{"queries":[{"snapshot":"v1"}]}}}
+            "next":{"continueWindow":{"tool":"localFetch","query":{"queries":[{"snapshot":"v1"}]}}}
         }}]});
         let smaller = shrunk_page(&source, &state, 2_233, 2_000).expect("smaller page");
         assert_eq!(

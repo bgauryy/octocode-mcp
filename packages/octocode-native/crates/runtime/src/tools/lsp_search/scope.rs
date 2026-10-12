@@ -4,7 +4,7 @@
 //! package's `package.json`, a member crate's `Cargo.toml`): right for the
 //! server, too narrow for "who else mentions this name". Lexical scans
 //! (importer candidates, the Rust cfg-gate count, `textOnlyFiles`) and the
-//! `textSearch` lead use one wider scope instead:
+//! `findText` lead use one wider scope instead:
 //!
 //! 1. the nearest ancestor holding `.git` (a directory or a worktree file);
 //! 2. else the outermost workspace manifest (`pnpm-workspace.yaml`,

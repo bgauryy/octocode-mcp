@@ -80,22 +80,22 @@ fn context_lines_scale_the_default_match_content_length() {
     };
     let scaled = run(&base);
     let matched = &scaled["files"][0]["matches"][0];
-    assert!(matched.get("truncated").is_none(), "{scaled}");
+    assert!(matched.get("originalChars").is_none(), "{scaled}");
     assert!(matched["value"].as_str().expect("value").chars().count() > 300);
 
     let explicit = run(&ls_query(
         serde_json::json!({"matchContentLength": 200}),
         Some(&base.clone()),
     ));
-    assert_eq!(explicit["files"][0]["matches"][0]["truncated"], true);
+    assert!(explicit["files"][0]["matches"][0]["originalChars"].is_u64());
 
     let detailed = run(&ls_query(
-        serde_json::json!({"contextLines": null, "resultView": LocalSearchQueryResultView::Detailed}),
+        serde_json::json!({"contextLines": 3, "resultView": LocalSearchQueryResultView::Paginated}),
         Some(&base.clone()),
     ));
     assert!(
         detailed["files"][0]["matches"][0]
-            .get("truncated")
+            .get("originalChars")
             .is_none(),
         "{detailed}"
     );
@@ -112,7 +112,7 @@ fn match_only_caps_display_after_unique_grouping_and_preserves_continuations() {
     .expect("fixture");
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
-        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle.*".to_string(), "resultView": LocalSearchQueryResultView::MatchOnly, "matchContentLength": 30, "matchPageSize": 1, "unique": LocalSearchQueryUnique::Count}),
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle.*".to_string(), "regex": "rust", "resultView": LocalSearchQueryResultView::MatchOnly, "matchContentLength": 30, "matchPageSize": 1, "unique": LocalSearchQueryUnique::Count}),
         None,
     );
     let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
@@ -123,19 +123,20 @@ fn match_only_caps_display_after_unique_grouping_and_preserves_continuations() {
         matched["value"].as_str().expect("value").chars().count(),
         30
     );
-    assert_eq!(matched["truncated"], true);
     assert_eq!(matched["originalChars"], 4105);
     assert_eq!(matched["returnedChars"], 30);
     assert_eq!(matched["count"], 2);
-    assert_eq!(body["stats"]["matchCount"], 3);
-    assert_eq!(body["stats"]["matchedLineCount"], 3);
-    assert_eq!(body["stats"]["capped"], false);
+    assert_eq!(body["matchCount"], 3);
+    assert_eq!(body["matchedLineCount"], 3);
+    assert!(body.get("partialReasons").is_none(), "{body}");
     assert_eq!(body["files"][0]["pagination"]["totalItems"], 2);
     assert!(
-        first
+        !first
             .warnings
             .iter()
-            .any(|warning| warning.contains("matchContentLength"))
+            .any(|warning| warning.contains("matchContentLength")),
+        "{:?}",
+        first.warnings
     );
     let next = &body["next"]["nextMatchPage"]["query"]["queries"][0];
     assert_eq!(next["matchContentLength"], 30);
@@ -174,7 +175,6 @@ fn match_only_caps_display_after_unique_grouping_and_preserves_continuations() {
             matched["value"].as_str().expect("value").chars().count(),
             expected_chars
         );
-        assert_eq!(matched.get("truncated").is_some(), expected_chars < 4105);
         assert_eq!(
             matched.get("originalChars").is_some(),
             expected_chars < 4105
@@ -200,7 +200,7 @@ fn interior_private_key_match_is_redacted_without_markers_in_view() {
     // so a hit inside the base64 body would surface the key material.
     let result = search_root(
         root.path(),
-        serde_json::json!({"matchString": "MIIEpQIB".to_string(), "resultView": LocalSearchQueryResultView::Detailed, "contextLines": 0}),
+        serde_json::json!({"matchString": "MIIEpQIB".to_string(), "resultView": LocalSearchQueryResultView::Paginated, "contextLines": 0}),
     );
     let body_json = serde_json::to_value(&result).expect("serialize");
     let value = body_json["files"][0]["matches"][0]["value"]
@@ -258,7 +258,7 @@ fn innocent_base64_match_is_not_redacted() {
     .expect("fixture");
     let result = search_root(
         root.path(),
-        serde_json::json!({"matchString": "aGVsbG8".to_string(), "resultView": LocalSearchQueryResultView::Detailed, "contextLines": 0}),
+        serde_json::json!({"matchString": "aGVsbG8".to_string(), "resultView": LocalSearchQueryResultView::Paginated, "contextLines": 0}),
     );
     let body_json = serde_json::to_value(&result).expect("serialize");
     let value = body_json["files"][0]["matches"][0]["value"]
@@ -273,7 +273,7 @@ fn innocent_base64_match_is_not_redacted() {
 // A pathological single giant line (generated/minified file) must not
 // emit a multi-MB body. The total-response budget clips each match value —
 // every match row and its line anchor is preserved (no silent drop, no
-// continuation cursor needed); the clip is flagged `truncated`.
+// continuation cursor needed); the clip is reported by `originalChars`.
 #[test]
 fn oversized_match_is_clipped_to_response_budget_without_dropping_rows() {
     let root = tempfile::tempdir().expect("fixture directory");
@@ -281,7 +281,7 @@ fn oversized_match_is_clipped_to_response_budget_without_dropping_rows() {
     fs::write(root.path().join("giant.txt"), format!("{line}\n")).expect("fixture");
     let result = search_root(
         root.path(),
-        serde_json::json!({"matchString": "needle".to_string(), "resultView": LocalSearchQueryResultView::Detailed, "matchContentLength": 5_000_000, "contextLines": 0}),
+        serde_json::json!({"matchString": "needle".to_string(), "resultView": LocalSearchQueryResultView::Paginated, "matchContentLength": 5_000_000, "contextLines": 0}),
     );
     let matches = result.files[0].matches.as_ref().expect("matches");
     assert_eq!(
@@ -298,7 +298,7 @@ fn oversized_match_is_clipped_to_response_budget_without_dropping_rows() {
         "value not clipped to budget: {} chars",
         matches[0].value.chars().count()
     );
-    assert!(matches[0].truncated, "clip must be flagged truncated");
+    assert!(matches[0].clipped, "clip must be flagged clipped");
     let body = serde_json::to_string(&result).expect("serialize");
     assert!(
         body.len() <= 2_000_000,
@@ -310,7 +310,7 @@ fn oversized_match_is_clipped_to_response_budget_without_dropping_rows() {
 #[test]
 fn content_view_snippet_carries_truncation_indicator() {
     // A content-view match on a line longer than matchContentLength is
-    // clipped by the engine; the runtime must surface truncated/originalChars
+    // clipped by the engine; the runtime must surface originalChars
     // plus the truncation warning.
     let root = tempfile::tempdir().expect("fixture directory");
     let long_line = format!("needle {}", "x".repeat(600));
@@ -321,18 +321,21 @@ fn content_view_snippet_carries_truncation_indicator() {
     );
     let body = serde_json::to_value(&result).expect("serialize");
     let matched = &body["files"][0]["matches"][0];
-    assert_eq!(matched["truncated"], true);
     assert!(
         matched["originalChars"].as_u64().expect("originalChars") >= 606,
         "{matched:?}"
     );
     assert!(matched["returnedChars"].as_u64().expect("returnedChars") <= 500);
+    // The row's flags and its `expandValues` lead say it; no warning repeats them.
     assert!(
-        result
+        !result
             .warnings
             .iter()
-            .any(|warning| warning.contains("matchContentLength"))
+            .any(|warning| warning.contains("matchContentLength")),
+        "{:?}",
+        result.warnings
     );
+    assert!(body["next"].get("expandValues").is_some(), "{body}");
 }
 
 #[test]
@@ -356,7 +359,7 @@ fn excludes_sensitive_and_symlink_descendants_before_projection() {
     let policy = crate::tools::test_support::workspace_policy(&root);
     let security = ContentSecurity::new();
     let request = ls_query(
-        serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle".to_string(), "hidden": true, "noIgnore": true, "sort": LocalSearchQuerySort::Path}),
+        serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle".to_string(), "includeHidden": true, "includeIgnored": true, "sort": LocalSearchQuerySort::Path}),
         None,
     );
     let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
@@ -430,13 +433,30 @@ fn rejects_changed_and_forged_snapshots_even_on_empty_or_final_pages() {
             .code,
         "staleSnapshot"
     );
-    continued.snapshot = Some("forged".parse().expect("snapshot"));
-    assert_eq!(
-        execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
-            .expect_err("forged snapshot")
-            .code,
-        "staleSnapshot"
-    );
+    // A snapshot no search ever issued is malformed input, not a dead
+    // snapshot; a well-formed one from another version or query is stale.
+    for malformed in ["forged", "lexical-live-v4:nothex", "lexical-live-v4:"] {
+        continued.snapshot = Some(malformed.parse().expect("snapshot"));
+        let error = execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
+            .expect_err("malformed snapshot");
+        assert_eq!(error.code, "invalidInput", "{malformed}");
+        assert!(error.message.contains("snapshot"), "{}", error.message);
+        assert!(error.next.is_none(), "an input error has no restart");
+    }
+    let (_, digest) = snapshot.split_once(':').expect("versioned snapshot");
+    for foreign in [
+        format!("lexical-live-v3:{digest}"),
+        format!("lexical-live-v4:{}", "0".repeat(64)),
+    ] {
+        continued.snapshot = Some(foreign.parse().expect("snapshot"));
+        assert_eq!(
+            execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
+                .expect_err("foreign snapshot")
+                .code,
+            "staleSnapshot",
+            "{foreign}"
+        );
+    }
     fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -465,7 +485,7 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
     .expect("fixture");
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
-        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "include": ["*.ts"], "noIgnore": true, "pageSize": 1, "matchPageSize": 1, "sort": "path"}),
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "alpha", "include": ["*.ts"], "includeIgnored": true, "pageSize": 1, "matchPageSize": 1, "sort": "path"}),
         None,
     );
     let initial = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
@@ -488,7 +508,7 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
         // `alpha` alone reads as literal text, so a regex mode changes it.
         ("regex", serde_json::json!({"regex": "rust"})),
         ("caseMode", serde_json::json!({"caseMode": "insensitive"})),
-        ("hidden", serde_json::json!({"hidden": true})),
+        ("includeHidden", serde_json::json!({"includeHidden": true})),
         ("wholeWord", serde_json::json!({"wholeWord": true})),
         (
             "path",
@@ -545,7 +565,7 @@ fn frozen_snapshot_rejects_changed_search_semantics_on_cache_hit_and_miss() {
     assert!(control.files.is_empty());
 }
 
-/// Continuations reuse the page-1 scan whatever `noIgnore` says, so pages
+/// Continuations reuse the page-1 scan whatever `includeIgnored` says, so pages
 /// stay consistent; a matched file that changed since the scan, or a
 /// scan that expired, falls back to a rescan that restarts a changed
 /// result.
@@ -633,7 +653,7 @@ fn a_same_size_same_mtime_edit_restarts_instead_of_serving_old_values() {
     fs::write(&b, "const needle = \"OLD_B\";\n").expect("fixture");
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
-        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "regex": "literal", "sort": "path", "include": ["*.ts"], "noIgnore": true, "pageSize": 1}),
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "regex": "literal", "sort": "path", "include": ["*.ts"], "includeIgnored": true, "pageSize": 1}),
         None,
     );
     let (_, _, page_two) = first_page(&request, &policy, &security);
@@ -697,12 +717,12 @@ fn every_view_keeps_reusing_its_scan_while_files_are_unchanged() {
         serde_json::json!({}),
         serde_json::json!({"contextLines": 2}),
         serde_json::json!({"matchContentLength": 20}),
-        serde_json::json!({"resultView": "detailed"}),
+        serde_json::json!({"resultView": "paginated", "contextLines": 3}),
         serde_json::json!({"resultView": "matchOnly", "matchContentLength": 5}),
-        serde_json::json!({"resultView": "matchOnly", "unique": "count", "matchString": "needle[ a-z]*"}),
+        serde_json::json!({"resultView": "matchOnly", "unique": "count", "matchString": "needle[ a-z]*", "regex": "rust"}),
         serde_json::json!({"resultView": "files"}),
         serde_json::json!({"resultView": "countMatches"}),
-        serde_json::json!({"multiline": "on", "matchString": "needle\\nmid"}),
+        serde_json::json!({"multiline": "on", "matchString": "needle\\nmid", "regex": "rust"}),
     ];
     for (index, view) in views.iter().enumerate() {
         let request = ls_query(
@@ -752,7 +772,7 @@ fn a_stored_key_fragment_never_surfaces_after_a_stamp_preserving_swap() {
     fs::write(&key, &old).expect("fixture");
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
-        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "QUJD", "regex": "literal", "sort": "path", "include": ["*.ts"], "noIgnore": true, "pageSize": 1}),
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "QUJD", "regex": "literal", "sort": "path", "include": ["*.ts"], "includeIgnored": true, "pageSize": 1}),
         None,
     );
     let (_, _, page_two) = first_page(&request, &policy, &security);
@@ -880,12 +900,11 @@ fn skipped_single_file_target_explains_the_cap_instead_of_silent_empty() {
         .expect("search");
     let body = serde_json::to_value(&result).expect("serialize");
 
-    assert_eq!(body["stats"]["filesScanned"], 0, "{body}");
-    assert_eq!(body["stats"]["capped"], true, "{body}");
+    assert_eq!(body["filesScanned"], 0, "{body}");
     assert!(
-        body["stats"]["capReason"]
-            .as_str()
-            .is_some_and(|reason| reason.contains("maxFileSize")),
+        body["partialReasons"]
+            .as_array()
+            .is_some_and(|reasons| reasons.iter().any(|reason| reason == "maxFileSize")),
         "{body}"
     );
     let hint = body["hints"][0].as_str().expect("skip hint");
@@ -911,6 +930,108 @@ fn search_fixture(files: &[(&str, &str)], request: LocalSearchQuery) -> serde_js
     let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
         .expect("search");
     serde_json::to_value(&result).expect("serialize")
+}
+
+/// The declaration row `index` of `file` sits in: its own `enclosing`, or
+/// the nearest earlier row whose `enclosing.line` is its `enclosingLine`.
+fn owner_of(file: &serde_json::Value, index: usize) -> Option<serde_json::Value> {
+    let rows = file["matches"].as_array().expect("rows");
+    if let Some(own) = rows[index].get("enclosing") {
+        return Some(own.clone());
+    }
+    let line = rows[index].get("enclosingLine")?;
+    let owner = rows[..index]
+        .iter()
+        .rev()
+        .filter_map(|row| row.get("enclosing"))
+        .find(|enclosing| enclosing["line"] == *line);
+    Some(
+        owner
+            .unwrap_or_else(|| panic!("row {index} refs line {line} no earlier row names: {file}"))
+            .clone(),
+    )
+}
+
+/// Rows in one declaration name it once: the first carries `enclosing`,
+/// the rest `enclosingLine` (its name line), and every row still resolves
+/// to its owner. The page is smaller than naming it on every row.
+#[test]
+fn rows_in_one_declaration_name_it_once_and_the_rest_reference_it() {
+    let source = "fn f() {\n    helper();\n    helper();\n    helper();\n}\n\nfn g() {\n    helper();\n}\n\nfn h() {\n    helper();\n    helper();\n}\n";
+    let body = search_fixture(
+        &[("src/a.rs", source)],
+        ls_query(serde_json::json!({"matchString": "helper"}), None),
+    );
+    let file = &body["files"][0];
+    let rows = file["matches"].as_array().expect("rows");
+    assert_eq!(rows.len(), 6, "{body}");
+    let named: Vec<bool> = rows
+        .iter()
+        .map(|row| row.get("enclosing").is_some())
+        .collect();
+    assert_eq!(named, [true, false, false, true, true, false], "{body}");
+    assert_eq!(rows[1]["enclosingLine"], 1, "{body}");
+    assert_eq!(rows[2]["enclosingLine"], 1, "{body}");
+    assert_eq!(rows[5]["enclosingLine"], 11, "{body}");
+    assert!(rows[0].get("enclosingLine").is_none(), "{body}");
+    let owners: Vec<String> = (0..rows.len())
+        .map(|i| {
+            owner_of(file, i).expect("owner")["symbolName"]
+                .as_str()
+                .expect("name")
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(owners, ["f", "f", "f", "g", "h", "h"], "{body}");
+    // Bytes: one full object per declaration, a number for each repeat.
+    let full = r#""enclosing":{"symbolName":"f","kind":"function","line":1,"endLine":5}"#.len();
+    let bare: usize = rows
+        .iter()
+        .map(|row| {
+            let mut row = row.clone();
+            row.as_object_mut()
+                .expect("row")
+                .retain(|key, _| !key.starts_with("enclosing"));
+            row.to_string().len()
+        })
+        .sum();
+    let shown: usize = rows.iter().map(|row| row.to_string().len()).sum();
+    // Naming it on every row would add 6 full objects; 3 repeats are a
+    // number instead (about 50 bytes each).
+    let every_row = bare + 6 * (full + 1);
+    assert!(shown + 100 < every_row, "{shown} vs {every_row}: {body}");
+    // A sweep names its owner once, then references it 59 times.
+    let sweep = format!("fn many() {{\n{}}}\n", "    helper();\n".repeat(60));
+    let wide = search_fixture(
+        &[("src/b.rs", &sweep)],
+        ls_query(serde_json::json!({"matchString": "helper"}), None),
+    );
+    let text = wide["files"][0]["matches"].to_string();
+    assert_eq!(text.matches("\"enclosing\":").count(), 1, "{wide}");
+    assert_eq!(text.matches("\"enclosingLine\":1").count(), 59, "{wide}");
+}
+
+/// Two declarations sharing a name line (an impl and its first method)
+/// stay distinguishable: a reference means the nearest earlier row naming
+/// that line, so a row whose owner is not that one names its own.
+#[test]
+fn enclosing_references_stay_unambiguous_when_name_lines_collide() {
+    let source = "impl X { fn a() {\n    helper();\n}\n    const C: u8 = helper();\n    const D: u8 = helper();\n}\n";
+    let body = search_fixture(
+        &[("src/c.rs", source)],
+        ls_query(serde_json::json!({"matchString": "helper"}), None),
+    );
+    let file = &body["files"][0];
+    let rows = file["matches"].as_array().expect("rows");
+    assert_eq!(rows.len(), 3, "{body}");
+    let owners: Vec<serde_json::Value> =
+        (0..3).map(|i| owner_of(file, i).expect("owner")).collect();
+    assert_eq!(owners[0]["symbolName"], "a", "{body}");
+    assert_eq!(owners[1]["symbolName"], "X", "{body}");
+    assert_eq!(owners[2]["symbolName"], "X", "{body}");
+    // Row 1 shares name line 1 with row 0's owner but is another declaration.
+    assert!(rows[1].get("enclosing").is_some(), "{body}");
+    assert_eq!(rows[2]["enclosingLine"], 1, "{body}");
 }
 
 /// `include` naming a directory path scopes the search to its files
@@ -940,7 +1061,7 @@ fn an_include_that_matches_no_file_says_so() {
             None,
         ),
     );
-    assert_eq!(body["stats"]["filesScanned"], 0, "{body}");
+    assert_eq!(body["filesScanned"], 0, "{body}");
     let hint = body["hints"][0].as_str().expect("scope hint");
     assert!(hint.contains("include/exclude matched no file"), "{hint}");
     assert!(
@@ -979,13 +1100,13 @@ fn small_pages_name_enclosing_declarations_and_lead_to_callers() {
         serde_json::json!({"symbolName":"caller","kind":"function","line":10,"endLine":12}),
         "{body}"
     );
-    let lead = &body["next"]["callers"];
+    let lead = &body["next"]["findCallers"];
     let declared_at = body["files"][0]["path"].as_str().expect("path").to_owned();
-    let server = crate::tools::lsp_search::verify_query(
+    let server = crate::tools::leads::lsp::verify_query(
         &declared_at,
         "helper",
         8,
-        crate::tools::lsp_search::Verify::Callers,
+        crate::tools::leads::lsp::Verify::Callers,
     );
     if server.is_none() {
         assert!(lead.is_null(), "no language server, no lead: {body}");
@@ -1000,7 +1121,7 @@ fn small_pages_name_enclosing_declarations_and_lead_to_callers() {
         lead["query"]["queries"][0]["symbolName"], "helper",
         "{body}"
     );
-    assert_eq!(lead["query"]["queries"][0]["lineHint"], 8, "{body}");
+    assert_eq!(lead["query"]["queries"][0]["line"], 8, "{body}");
     let uri = lead["query"]["queries"][0]["path"].as_str().expect("path");
     assert!(
         std::path::Path::new(uri).is_absolute() && uri.ends_with("src/a.rs"),
@@ -1012,7 +1133,7 @@ fn small_pages_name_enclosing_declarations_and_lead_to_callers() {
         ls_query(serde_json::json!({"matchString": "fn helper"}), None),
     );
     assert_eq!(
-        keyword["next"]["callers"]["query"]["queries"][0]["lineHint"], 8,
+        keyword["next"]["findCallers"]["query"]["queries"][0]["line"], 8,
         "{keyword}"
     );
     let insensitive = search_fixture(
@@ -1027,8 +1148,8 @@ fn small_pages_name_enclosing_declarations_and_lead_to_callers() {
         "{insensitive}"
     );
 
-    // A run of hits in one declaration names it once, with its last
-    // line: rows below it inside that range share it.
+    // Every hit in one declaration names it (Q7: a later row without it
+    // read as "no enclosing function"); a hit outside any has none.
     let run =
         "fn f() {\n    helper();\n    helper();\n    helper();\n}\nstatic H: fn() = helper;\n";
     let body = search_fixture(
@@ -1036,15 +1157,15 @@ fn small_pages_name_enclosing_declarations_and_lead_to_callers() {
         ls_query(serde_json::json!({"matchString": "helper"}), None),
     );
     let rows = &body["files"][0]["matches"];
-    assert_eq!(
-        rows[0]["enclosing"],
-        serde_json::json!({"symbolName":"f","kind":"function","line":1,"endLine":5}),
-        "{body}"
-    );
-    for row in 1..4 {
-        assert!(rows[row].get("enclosing").is_none(), "{body}");
+    for row in 0..3 {
+        assert_eq!(
+            owner_of(&body["files"][0], row),
+            Some(serde_json::json!({"symbolName":"f","kind":"function","line":1,"endLine":5})),
+            "{body}"
+        );
     }
     assert_eq!(rows[3]["line"], 6, "{body}");
+    assert!(rows[3].get("enclosing").is_none(), "{body}");
 
     // A declaration search names the owner of declaring hits only: the
     // other hits are text that merely mentions the declaration.
@@ -1070,23 +1191,23 @@ fn small_pages_name_enclosing_declarations_and_lead_to_callers() {
         &[("src/b.rs", &sweep)],
         ls_query(serde_json::json!({"matchString": "helper"}), None),
     );
-    // A sweep names its owner too: once, on the first row of the run.
+    // A sweep names its owner on every row.
     let rows = wide["files"][0]["matches"].as_array().expect("rows");
     assert_eq!(rows.len(), 60, "{wide}");
-    assert_eq!(
-        rows[0]["enclosing"],
-        serde_json::json!({"symbolName":"many","kind":"function","line":1,"endLine":62}),
-        "{wide}"
-    );
     assert!(
-        rows[1..].iter().all(|row| row.get("enclosing").is_none()),
+        (0..rows.len()).all(|row| owner_of(&wide["files"][0], row)
+            == Some(
+                serde_json::json!({"symbolName":"many","kind":"function","line":1,"endLine":62})
+            )),
         "{wide}"
     );
 }
 
-/// A result within the page budget is shown whole with no paging
-/// metadata, however many hits it has; a larger one opens with 10 rows
-/// per file, and a caller cap always wins.
+/// A result within the page budget and one page of files is shown whole
+/// with no paging metadata, however many hits it has; a larger one opens
+/// with 10 rows per file, more files than a page walk by page (see
+/// `a_small_result_over_one_page_of_files_still_pages_by_file_count`), and
+/// a caller cap always wins.
 #[test]
 fn a_small_result_shows_every_hit_without_paging() {
     let small = "needle\n".repeat(13);
@@ -1099,7 +1220,7 @@ fn a_small_result_shows_every_hit_without_paging() {
     assert!(file.get("pagination").is_none(), "{body}");
     assert!(body.get("pagination").is_none(), "{body}");
     assert!(body["next"].get("nextMatchPage").is_none(), "{body}");
-    let many_files: Vec<(String, String)> = (0..25)
+    let many_files: Vec<(String, String)> = (0..20)
         .map(|n| (format!("f{n:02}.txt"), "needle\n".to_owned()))
         .collect();
     let refs: Vec<(&str, &str)> = many_files
@@ -1112,8 +1233,8 @@ fn a_small_result_shows_every_hit_without_paging() {
     );
     assert_eq!(
         spread["files"].as_array().map(Vec::len),
-        Some(25),
-        "all files on one page"
+        Some(20),
+        "a page of files is shown whole"
     );
     assert!(spread.get("pagination").is_none(), "{spread}");
     // Far more than one old match page, still well within the budget.
@@ -1237,7 +1358,10 @@ fn a_small_complete_result_hands_off_a_read_of_its_top_file() {
         .collect();
     let regex = search_fixture(
         &[("a.py", &scattered)],
-        ls_query(serde_json::json!({"matchString": "needle_(a|b)"}), None),
+        ls_query(
+            serde_json::json!({"matchString": "needle_(a|b)", "regex": "rust"}),
+            None,
+        ),
     );
     let read = &regex["next"]["read"]["query"]["queries"][0];
     assert_eq!(read["matchString"], "needle_(a|b)", "{regex}");
@@ -1293,7 +1417,7 @@ fn clipped_values_never_leak_partial_secrets() {
     let file = format!("token: {token} end\n");
     let cases = [
         ls_query(
-            serde_json::json!({"matchString": "ghp_[0-9a-z]{20}".to_string(), "resultView": LocalSearchQueryResultView::MatchOnly}),
+            serde_json::json!({"matchString": "ghp_[0-9a-z]{20}".to_string(), "regex": "rust", "resultView": LocalSearchQueryResultView::MatchOnly}),
             None,
         ),
         ls_query(
@@ -1341,6 +1465,34 @@ fn short_spans_inside_private_key_bodies_are_redacted() {
     assert!(!all_values(&body).contains("interior"), "{body}");
 }
 
+/// A literal marker string in ordinary source opens a block that never
+/// closes; the code after it must stay readable, while a real key's body
+/// (here also unterminated) stays redacted.
+#[test]
+fn code_after_a_literal_key_marker_stays_readable() {
+    let literal = "const PEM = \"-----BEGIN RSA PRIVATE KEY-----\";\nlet needle_one = compute();\nfn needle_two() {}\n";
+    let body = search_fixture(
+        &[("src.rs", literal)],
+        ls_query(
+            serde_json::json!({"matchString": "needle_", "resultView": LocalSearchQueryResultView::MatchOnly}),
+            None,
+        ),
+    );
+    assert_eq!(all_values(&body), "needle_\nneedle_", "{body}");
+    assert!(!all_values(&body).contains("REDACTED"), "{body}");
+    let key = "-----BEGIN OPENSSH PRIVATE KEY-----\nMIIEpQIBAAKCAQEAinteriorKeyBodyQWERTYAAAAAAAAAAAAAAAAAAAAAAAAAAAA\nfn needle_after() {}\n";
+    let body = search_fixture(
+        &[("key.rs", key)],
+        ls_query(
+            serde_json::json!({"matchString": "interior|needle_after", "regex": "rust", "resultView": LocalSearchQueryResultView::MatchOnly}),
+            None,
+        ),
+    );
+    let values = all_values(&body);
+    assert!(!values.contains("interior"), "{body}");
+    assert!(values.contains("needle_after"), "{body}");
+}
+
 /// Sources above the whole-file key-scan cap are verified by the streamed
 /// prefix pass: late interior key bodies stay redacted (terminated or
 /// not), while innocent base64 outside any block stays readable.
@@ -1356,7 +1508,7 @@ fn late_key_bodies_in_large_sources_stay_redacted() {
         format!("{innocent}\n{filler}-----BEGIN OPENSSH PRIVATE KEY-----\n{body}\n{body}\n");
     for content in [&terminated, &unterminated] {
         assert!(content.len() as u64 > 10 * 1024 * 1024);
-        for view in ["matchOnly", "detailed"] {
+        for view in ["matchOnly", "paginated"] {
             let found = search_fixture(
                 &[("big.txt", content.as_str())],
                 ls_query(
@@ -1370,7 +1522,7 @@ fn late_key_bodies_in_large_sources_stay_redacted() {
         let readable = search_fixture(
             &[("big.txt", content.as_str())],
             ls_query(
-                serde_json::json!({"matchString": "innocentB64", "resultView": "detailed", "contextLines": 0}),
+                serde_json::json!({"matchString": "innocentB64", "resultView": "paginated", "contextLines": 0}),
                 None,
             ),
         );
@@ -1418,7 +1570,7 @@ fn next_page_restarts_match_rows_and_next_match_page_tracks_shown_files() {
 
 /// A grid page names what each page reaches: `nextMatchPage` the rows
 /// left in this page's files, `nextPage` the files after them. Row
-/// totals live once, as `stats.matchedLines` beside the occurrence
+/// totals live once, as `matchedLineCount` beside the occurrence
 /// count, and a later match page says which match page it shows.
 #[test]
 fn grid_pages_count_the_rows_a_match_page_reaches_and_name_the_match_page() {
@@ -1440,8 +1592,8 @@ fn grid_pages_count_the_rows_a_match_page_reaches_and_name_the_match_page() {
     assert!(body["next"].get("nextMatchPage").is_some(), "{body}");
     assert!(body["pagination"].get("matchCount").is_none(), "{body}");
     assert!(body["pagination"].get("matchPage").is_none(), "{body}");
-    assert_eq!(body["stats"]["matchedLineCount"], 11, "{body}");
-    assert_eq!(body["stats"]["matchCount"], 12, "{body}");
+    assert_eq!(body["matchedLineCount"], 11, "{body}");
+    assert_eq!(body["matchCount"], 12, "{body}");
     let second = search_fixture(&files, request(2));
     assert_eq!(second["pagination"]["currentPage"], 1, "{second}");
     assert_eq!(second["pagination"]["matchPage"], 2, "{second}");
@@ -1594,9 +1746,11 @@ fn binary_prefix_matches_mark_a_search_partial_and_terminal() {
     assert_eq!(body["isPartial"], true, "{body}");
     assert_eq!(body["terminalLimit"], true, "{body}");
     assert!(body["next"].get("nextPage").is_none(), "{body}");
-    assert_eq!(body["stats"]["capReason"], "binaryQuit");
-    // capped agrees with capReason instead of contradicting it.
-    assert_eq!(body["stats"]["capped"], true, "{body}");
+    assert_eq!(
+        body["partialReasons"],
+        serde_json::json!(["binaryQuit"]),
+        "{body}"
+    );
     // localFetch rejects binary files, so a binary file is never the read:
     // the read takes the shown text hit.
     let read = &body["next"]["read"];
@@ -1754,7 +1908,7 @@ fn default_paginated_view_is_lean_and_detailed_keeps_context() {
     let detailed = search_fixture(
         &[("a.txt", &numbered(30, &[20]))],
         ls_query(
-            serde_json::json!({"matchString": "needle".to_string(), "resultView": LocalSearchQueryResultView::Detailed}),
+            serde_json::json!({"matchString": "needle".to_string(), "contextLines": 3}),
             None,
         ),
     );
@@ -1871,7 +2025,7 @@ fn overlapping_context_windows_merge_into_one_block() {
         "23\tline 23\n24\tline 24\n25\tline 25 needle\n26\tline 26\n27\tline 27"
     );
     // Counts stay per matched line.
-    assert_eq!(body["stats"]["matchedLineCount"], 4);
+    assert_eq!(body["matchedLineCount"], 4);
 }
 
 #[test]
@@ -1965,7 +2119,7 @@ fn single_page_results_omit_redundant_accounting() {
 }
 
 // Continuations carry only the caller's window fields; the next call
-// derives the view's defaults (the detailed view's 3 context lines) the
+// derives the view's defaults (the default context lines, the page size) the
 // same way, so its snapshot still matches.
 #[test]
 fn continuations_derive_the_view_window_defaults() {
@@ -1998,7 +2152,7 @@ fn continuations_derive_the_view_window_defaults() {
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned()}),
-        Some(&make(LocalSearchQueryResultView::Detailed)),
+        Some(&make(LocalSearchQueryResultView::Paginated)),
     );
     let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
         .expect("first page");
@@ -2013,6 +2167,27 @@ fn continuations_derive_the_view_window_defaults() {
     continued.path = request.path.clone();
     execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
         .expect("detailed continuation is not stale");
+}
+
+/// A malformed `include` glob is caller input, coded by the engine's typed
+/// kind: a pattern that spells "glob" is not.
+#[test]
+fn a_bad_include_glob_is_invalid_input() {
+    let t = tempfile::tempdir().expect("tempdir");
+    fs::write(t.path().join("a.rs"), "glob\n").expect("fixture");
+    let (policy, security) = policy_for(t.path());
+    let mut fields = serde_json::json!({"matchString": "glob", "include": ["src/{a"]});
+    fields["path"] = t.path().to_string_lossy().into_owned().into();
+    let error = execute_local_search(
+        &ls_query(fields, None),
+        &policy,
+        &security,
+        &NeverCancel,
+        None,
+        None,
+    )
+    .expect_err("bad glob");
+    assert_eq!(error.code, "invalidInput", "{error:?}");
 }
 
 /// Search `root` with `fields` (path set to `root`), default security and
@@ -2081,7 +2256,7 @@ fn lock_dir(dir: &std::path::Path) -> bool {
 /// `hidden` made unreadable; `None` when the process can still read it.
 #[cfg(unix)]
 fn locked_secret(root: &std::path::Path) -> Option<std::path::PathBuf> {
-    let hidden = root.join("hidden");
+    let hidden = root.join("includeHidden");
     fs::create_dir(&hidden).expect("dir");
     fs::write(hidden.join("secret.txt"), "needle-only-here\n").expect("fixture");
     lock_dir(&hidden).then_some(hidden)
@@ -2102,7 +2277,7 @@ fn a_scope_where_every_path_is_unreadable_is_an_access_error_not_empty() {
     };
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
-        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-only-here".to_string(), "regex": LocalSearchQueryRegex::Literal, "noIgnore": true}),
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-only-here".to_string(), "regex": LocalSearchQueryRegex::Literal, "includeIgnored": true}),
         None,
     );
     let outcome = execute_local_search(&request, &policy, &security, &NeverCancel, None, None);
@@ -2114,8 +2289,8 @@ fn a_scope_where_every_path_is_unreadable_is_an_access_error_not_empty() {
         "{}",
         error.message
     );
-    assert!(error.hints.iter().any(|h| h.contains("permissions")));
-    assert!(error.hints.iter().all(|h| !h.contains("caseMode")));
+    // The message names the count and first failure; no advice rides along.
+    assert!(error.hints.is_empty(), "{:?}", error.hints);
 }
 
 #[cfg(unix)]
@@ -2128,7 +2303,7 @@ fn unreadable_paths_beside_readable_misses_make_the_result_partial() {
     };
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
-        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-only-here".to_string(), "regex": LocalSearchQueryRegex::Literal, "noIgnore": true}),
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle-only-here".to_string(), "regex": LocalSearchQueryRegex::Literal, "includeIgnored": true}),
         None,
     );
     let outcome = execute_local_search(&request, &policy, &security, &NeverCancel, None, None);
@@ -2138,10 +2313,13 @@ fn unreadable_paths_beside_readable_misses_make_the_result_partial() {
     let body = serde_json::to_value(&result).expect("serialize");
     assert_eq!(body["isPartial"], true, "{body}");
     assert_eq!(body["terminalLimit"], true, "{body}");
-    assert_eq!(body["stats"]["errorCount"], 1, "{body}");
-    let hint = body["hints"][0].as_str().expect("hint");
-    assert!(hint.contains("permissions"), "{hint}");
-    assert!(!hint.contains("caseMode"), "{hint}");
+    assert_eq!(body["fileErrors"]["count"], 1, "{body}");
+    // The count is stated once, as a warning; no advice.
+    assert!(
+        body["warnings"].to_string().contains("1 path unreadable"),
+        "{body}"
+    );
+    assert!(!body["hints"].to_string().contains("unreadable"), "{body}");
 }
 
 #[test]
@@ -2159,7 +2337,7 @@ fn a_nul_keeps_the_matches_before_it_and_warns() {
     assert_ne!(result.status, SearchStatus::Empty);
     let body = serde_json::to_value(&result).expect("serialize");
     assert_eq!(body["files"][0]["matches"][0]["line"], 1, "{body}");
-    assert_eq!(body["stats"]["matchCount"], 1, "{body}");
+    assert_eq!(body["matchCount"], 1, "{body}");
     // The warning names the file it could not search past the NUL.
     assert!(
         result
@@ -2193,7 +2371,7 @@ fn follow_expansions(result: &LocalSearchResult, policy: &PathPolicy) -> (usize,
             policy,
             &ContentSecurity::new(),
             &NeverCancel,
-            &crate::tools::local_fetch::LocalFetchRegex::default(),
+            &crate::tools::local_fetch::LocalFetchRegex,
             None,
         );
         assert_eq!(fetched.error, None, "{read}");
@@ -2224,7 +2402,7 @@ fn clipped_values_carry_reads_that_return_them_whole() {
     let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
         .expect("search");
     let body = serde_json::to_value(&result).expect("serialize");
-    assert!(body.to_string().contains("\"truncated\":true"), "{body}");
+    assert!(body.to_string().contains("\"originalChars\""), "{body}");
     let (reads, content) = follow_expansions(&result, &policy);
     assert_eq!(reads, 2, "{body}");
     assert!(content.contains(&long), "{content:.300}");
@@ -2353,7 +2531,7 @@ fn clipped_values_on_a_grid_page_widen_the_same_page() {
     )
     .expect("widened search");
     let again = serde_json::to_value(&again).expect("serialize");
-    assert!(!again.to_string().contains("\"truncated\":true"), "{again}");
+    assert!(!again.to_string().contains("\"originalChars\""), "{again}");
     let paths = |value: &serde_json::Value| {
         value["files"]
             .as_array()
@@ -2379,14 +2557,14 @@ fn clipped_multiline_values_widen_a_file_scoped_search() {
     let (policy, security) = policy_for(root.path());
     let request = ls_query(
         serde_json::json!({"path": root.path().to_string_lossy().into_owned(),
-                "matchString": "const list = \\[[^\\]]*\\]", "multiline": "on"}),
+                "matchString": "const list = \\[[^\\]]*\\]", "regex": "rust", "multiline": "on"}),
         None,
     );
     let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
         .expect("search");
     let body_json = serde_json::to_value(&result).expect("serialize");
     assert!(
-        body_json.to_string().contains("\"truncated\":true"),
+        body_json.to_string().contains("\"originalChars\""),
         "{body_json}"
     );
     let next = result.next.clone().unwrap_or_default();
@@ -2412,7 +2590,7 @@ fn clipped_multiline_values_widen_a_file_scoped_search() {
     )
     .expect("widened search");
     let again = serde_json::to_value(&again).expect("serialize");
-    assert!(!again.to_string().contains("\"truncated\":true"), "{again}");
+    assert!(!again.to_string().contains("\"originalChars\""), "{again}");
     assert!(again.to_string().contains("item59"), "{again}");
 }
 
@@ -2532,11 +2710,9 @@ fn leading_nul_binaries_are_counted_with_a_listing_continuation() {
     assert!(!result.terminal_limit, "{body}");
     assert_eq!(result.status, SearchStatus::Success, "{body}");
     assert_eq!(result.stats.cap_reason, None, "{body}");
-    assert_eq!(
-        result.warnings,
-        ["binarySkipped: 31 binary files not searched (.woff2 30, .png 1)."],
-        "{body}"
-    );
+    // A row with hits states the count in stats, not as a warning.
+    assert!(result.warnings.is_empty(), "{body}");
+    assert_eq!(body["binarySkipped"], 31, "{body}");
     let text = body.to_string();
     assert!(!text.contains("Font-0"), "{text}");
 
@@ -2577,9 +2753,9 @@ fn an_extensionless_leading_nul_binary_is_listed_by_basename() {
     let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
         .expect("search");
     assert!(!result.is_partial);
-    assert!(
-        result.warnings[0]
-            .starts_with("binarySkipped: 2 binary files not searched (no extension 1, .woff2 1)"),
+    assert_eq!(
+        result.stats.binary_skipped,
+        Some(2),
         "{:?}",
         result.warnings
     );
@@ -2609,17 +2785,27 @@ fn opaque_binary_files_in_scope_do_not_make_a_search_partial() {
     assert_ne!(body["isPartial"], true, "{body}");
     assert_ne!(body["terminalLimit"], true, "{body}");
     assert_ne!(body["status"], "partial", "{body}");
-    assert_eq!(
-        body["warnings"],
-        serde_json::json!(["binarySkipped: 1 binary file not searched (.node 1)."]),
-        "{body}"
+    assert!(body.get("warnings").is_none(), "{body}");
+    assert_eq!(body["binarySkipped"], 1, "{body}");
+    // An empty row says it in warnings, where the count may explain the miss.
+    let empty = search_fixture(
+        &[
+            ("addon.node", "\u{7f}ELF\u{2}\u{1}\u{1}\u{0}needle\n"),
+            ("a.txt", "other\n"),
+        ],
+        ls_query(
+            serde_json::json!({"matchString": "needle".to_string()}),
+            None,
+        ),
     );
     assert!(
-        body["stats"]
-            .get("capReason")
-            .is_none_or(serde_json::Value::is_null),
-        "{body}"
+        empty["warnings"]
+            .to_string()
+            .contains("binarySkipped: 1 binary file not searched (.node 1)."),
+        "{empty}"
     );
+    assert!(empty.get("binarySkipped").is_none(), "{empty}");
+    assert!(body.get("partialReasons").is_none(), "{body}");
 
     // Targeted directly, the empty result still says why.
     let root = tempfile::tempdir().expect("fixture directory");
@@ -2652,12 +2838,14 @@ fn an_empty_result_with_a_binary_cut_is_partial_not_empty() {
         ),
     );
     assert_eq!(body["isPartial"], true, "{body}");
+    // The binary cut is stated once, as a warning.
     assert!(
-        body["hints"].as_array().is_some_and(|hints| hints
+        body["warnings"].as_array().is_some_and(|warnings| warnings
             .iter()
-            .any(|h| h.as_str().is_some_and(|h| h.contains("NUL byte")))),
+            .any(|w| w.as_str().is_some_and(|w| w.contains("NUL byte")))),
         "{body}"
     );
+    assert!(!body["hints"].to_string().contains("NUL byte"), "{body}");
 }
 
 #[test]
@@ -2697,7 +2885,21 @@ fn relevance_cap_keeps_hot_file_and_marks_first_and_final_pages_partial() {
         .expect("last collected page");
     assert!(last.is_partial);
     assert!(last.terminal_limit);
-    assert!(last.next.is_none());
+    // No page continues past the cap; the only lead lists the scope to split.
+    let next = last.next.as_ref().expect("split lead");
+    assert_eq!(
+        next.as_object()
+            .map(|map| map.keys().cloned().collect::<Vec<_>>()),
+        Some(vec!["viewTree".to_owned()]),
+        "{next}"
+    );
+    assert!(
+        last.warnings
+            .iter()
+            .any(|w| w.contains("2 of 10002 matched files")),
+        "{:?}",
+        last.warnings
+    );
     assert_eq!(last.stats.cap_reason.as_deref(), Some("maxCollectedFiles"));
 }
 
@@ -2744,6 +2946,7 @@ fn clipped_secret_guard_fails_closed_when_the_source_cannot_be_reread() {
         matches: vec![octocode_engine::types::TextSearchMatch {
             line: 1,
             column: 0,
+            byte_offset: 0,
             value: "…token = ghp_abcdefghijklmnop".into(),
             count: None,
             kind: None,
@@ -2786,6 +2989,7 @@ fn clipped_secret_guard_fails_closed_when_the_match_line_is_gone() {
         matches: vec![octocode_engine::types::TextSearchMatch {
             line: 40,
             column: 0,
+            byte_offset: 0,
             value: "…token = ghp_abcdefghijklmnop".into(),
             count: None,
             kind: None,
@@ -2813,15 +3017,14 @@ fn clipped_secret_guard_fails_closed_when_the_match_line_is_gone() {
     );
 }
 
-/// Without `regex`, text with no regex operator (`| \\ [ ] * + ? ^ $ { }`)
-/// is literal, so `.unwrap()` and an empty group `()` find only that text;
-/// an operator keeps it a regex, and an explicit `regex` always wins. An
-/// inferred mode the two readings disagree on is disclosed once.
+/// Without `regex`, text is literal, so `.unwrap()`, an empty group `()`,
+/// `x[0]`, `.get(0)?` and `a|b` find only that text, and an explicit `regex`
+/// always wins. Only an empty literal search mentions the regex reading.
 #[test]
-fn an_unset_regex_reads_operator_free_text_literally() {
+fn an_unset_regex_reads_every_text_literally() {
     let files = [("a.rs", "x.unwrap();\nunwrap_or(1);\nfoo_unwrap()\n")];
     let run = |fields: serde_json::Value| search_fixture(&files, ls_query(fields, None));
-    let lines = |body: &serde_json::Value| body["stats"]["matchedLineCount"].as_u64().unwrap_or(0);
+    let lines = |body: &serde_json::Value| body["matchedLineCount"].as_u64().unwrap_or(0);
     let warned = |body: &serde_json::Value, text: &str| {
         body["warnings"].as_array().is_some_and(|all| {
             all.iter()
@@ -2830,14 +3033,30 @@ fn an_unset_regex_reads_operator_free_text_literally() {
     };
     let literal = run(serde_json::json!({"matchString": ".unwrap()"}));
     assert_eq!(lines(&literal), 1, "{literal}");
-    assert!(warned(&literal, "ran as literal text"), "{literal}");
+    assert!(!warned(&literal, "ran as literal text"), "{literal}");
+    let missed = run(serde_json::json!({"matchString": ".unwrap_or(2)"}));
+    assert!(warned(&missed, "ran as literal text"), "{missed}");
+    // Code punctuation is not a regex: indexing and `?` find their text.
+    let code = [(
+        "b.rs",
+        "let a = matches[0];\nlet b = v.get(0)?;\nlet c = x;\n",
+    )];
+    for text in ["matches[0]", ".get(0)?"] {
+        let body = search_fixture(
+            &code,
+            ls_query(serde_json::json!({"matchString": text}), None),
+        );
+        assert_eq!(lines(&body), 1, "{text}: {body}");
+    }
     assert!(literal["next"].get("searchLiteral").is_none(), "{literal}");
     let group = run(serde_json::json!({"matchString": "()"}));
     assert_eq!(lines(&group), 2, "{group}");
+    // `a|b` is no exception: without `regex` it is literal text too.
     let alternation = run(serde_json::json!({"matchString": "unwrap_or|foo_"}));
+    assert_eq!(lines(&alternation), 0, "{alternation}");
+    assert!(warned(&alternation, "ran as literal text"), "{alternation}");
+    let alternation = run(serde_json::json!({"matchString": "unwrap_or|foo_", "regex": "rust"}));
     assert_eq!(lines(&alternation), 2, "{alternation}");
-    // An obvious regex ran as one: no inferred-regex note.
-    assert!(!warned(&alternation, "ran as a regex"), "{alternation}");
     let explicit = run(serde_json::json!({"matchString": ".unwrap()", "regex": "rust"}));
     assert_eq!(lines(&explicit), 2, "{explicit}");
     let exact = run(serde_json::json!({"matchString": "unwrap_or|foo_", "regex": "literal"}));
@@ -2852,6 +3071,40 @@ fn an_unset_regex_reads_operator_free_text_literally() {
             "{quiet}"
         );
     }
+}
+
+/// An include whose files all sit in ignored paths is not a scope miss: the
+/// row names the skip cause and its lifting lead, and neither claims that
+/// include/exclude matched no file nor leads to a listing that skips them too.
+#[test]
+fn an_include_matching_only_ignored_files_names_the_skip_not_the_scope() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    fs::create_dir(root.path().join(".git")).expect("repository marker");
+    fs::write(root.path().join(".gitignore"), "repos/\n").expect("gitignore");
+    fs::create_dir_all(root.path().join("repos/go")).expect("ignored dir");
+    fs::write(root.path().join("repos/go/a.go"), "func (s *T) Run() {}\n").expect("go");
+    fs::write(root.path().join("notes.txt"), "other\n").expect("text");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(),
+            "matchString": "func (s *T)", "include": ["*.go"]}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+        .expect("search");
+    assert!(result.files.is_empty());
+    let hints = result.hints.join(" | ");
+    assert!(hints.contains("match in skipped paths"), "{hints}");
+    assert!(
+        !hints.contains("include/exclude matched no file"),
+        "{hints}"
+    );
+    let next = result.next.as_ref().expect("lead");
+    assert_eq!(
+        next["includeIgnored"]["query"]["queries"][0]["includeIgnored"], true,
+        "{next}"
+    );
+    assert!(next.get("viewTree").is_none(), "{next}");
 }
 
 /// An empty search whose text lives only in ignored or hidden files says
@@ -2877,7 +3130,7 @@ fn an_empty_search_names_matches_under_ignored_and_hidden_paths() {
     // The probe's finding is the row's first hint (rows keep one).
     let hint = &result.hints[0];
     assert!(
-        hint.starts_with("Run hints.includeIgnored: 2 file(s) match in skipped paths (")
+        hint.starts_with("2 file(s) match in skipped paths (")
             && hint.contains(".gitignore:1 'logs/'")
             && hint.contains("hidden .notes/"),
         "{hint}"
@@ -2885,8 +3138,11 @@ fn an_empty_search_names_matches_under_ignored_and_hidden_paths() {
     assert!(hint.len() <= 120, "{hint}");
     let next = result.next.as_ref().expect("lead");
     let lead = &next["includeIgnored"];
-    assert_eq!(lead["query"]["queries"][0]["noIgnore"], true, "{lead}");
-    assert_eq!(lead["query"]["queries"][0]["hidden"], true, "{lead}");
+    assert_eq!(
+        lead["query"]["queries"][0]["includeIgnored"], true,
+        "{lead}"
+    );
+    assert_eq!(lead["query"]["queries"][0]["includeHidden"], true, "{lead}");
     let retried: LocalSearchQuery =
         serde_json::from_value(lead["query"]["queries"][0].clone()).expect("lead query");
     let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
@@ -2922,7 +3178,7 @@ fn an_empty_search_names_default_excluded_directories_that_match() {
     assert!(result.files.is_empty());
     let hint = &result.hints[0];
     assert!(
-        hint.starts_with("Run hints.includeIgnored") && hint.contains("(build/)"),
+        hint.starts_with("1 file(s) match in skipped paths") && hint.contains("(build/)"),
         "{hint}"
     );
     let lead = &result.next.as_ref().expect("lead")["includeIgnored"]["query"]["queries"][0];
@@ -2931,6 +3187,86 @@ fn an_empty_search_names_default_excluded_directories_that_match() {
     let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
         .expect("retry");
     assert_eq!(found.files.len(), 1, "{found:?}");
+}
+
+/// A probe that runs out of time proves nothing about the ignored paths it
+/// could not search: the row still names them and its lead lifts exactly the
+/// ignore rules, under the key that says so. It is not a scope miss either.
+#[test]
+fn an_unproven_probe_names_the_ignored_paths_and_leads_with_include_ignored() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    fs::create_dir(root.path().join(".git")).expect("repository marker");
+    fs::write(root.path().join(".gitignore"), "repos/*\n").expect("gitignore");
+    fs::create_dir_all(root.path().join("repos/go")).expect("ignored dir");
+    fs::write(root.path().join("repos/go/a.go"), "func Run() {}\n").expect("go");
+    fs::create_dir_all(root.path().join("build")).expect("build dir");
+    fs::write(root.path().join("build/out.go"), "func Out() {}\n").expect("built");
+    fs::write(root.path().join("notes.txt"), "other\n").expect("text");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(),
+            "matchString": "func", "include": ["*.go"]}),
+        None,
+    );
+    let result = super::leads::with_probe_budget(std::time::Duration::ZERO, || {
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+            .expect("search")
+    });
+    assert!(result.files.is_empty());
+    let hints = result.hints.join(" | ");
+    assert!(
+        hints.contains("repos/go/") && hints.contains(".gitignore:1 'repos/*'"),
+        "{hints}"
+    );
+    assert!(!hints.contains("matched no file"), "{hints}");
+    assert!(!hints.contains("No matches in"), "{hints}");
+    let next = result.next.as_ref().expect("lead");
+    let lead = &next["includeIgnored"]["query"]["queries"][0];
+    assert_eq!(lead["includeIgnored"], true, "{next}");
+    assert!(next.get("viewTree").is_none(), "{next}");
+    let retried: LocalSearchQuery = serde_json::from_value(lead.clone()).expect("lead query");
+    let found = execute_local_search(&retried, &policy, &security, &NeverCancel, None, None)
+        .expect("retry");
+    assert!(
+        found.files.iter().any(|file| file.path.ends_with("a.go")),
+        "{found:?}"
+    );
+    // No ignored path to name: an unproven probe says nothing about them.
+    let plain = tempfile::tempdir().expect("fixture directory");
+    fs::write(plain.path().join("notes.txt"), "other\n").expect("text");
+    let (policy, security) = policy_for(plain.path());
+    let request = ls_query(
+        serde_json::json!({"path": plain.path().to_string_lossy().into_owned(), "matchString": "absent"}),
+        None,
+    );
+    let result = super::leads::with_probe_budget(std::time::Duration::ZERO, || {
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+            .expect("search")
+    });
+    assert!(result.next.is_none(), "{:?}", result.next);
+}
+
+/// Once the hint names the skipped paths that hold a match, the generic count
+/// of searched files does not follow it: the cause leads the row alone.
+#[test]
+fn a_skipped_match_replaces_the_generic_empty_count() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    fs::create_dir(root.path().join(".git")).expect("repository marker");
+    fs::write(root.path().join(".gitignore"), "repos/\n").expect("gitignore");
+    fs::create_dir_all(root.path().join("repos")).expect("ignored dir");
+    fs::write(root.path().join("repos/a.go"), "func Run() {}\n").expect("go");
+    fs::write(root.path().join("b.ts"), "export {}\n").expect("ts");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(),
+            "matchString": "func", "include": ["*.go", "*.ts"]}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+        .expect("search");
+    let hints = result.hints.join(" | ");
+    assert!(hints.contains("match in skipped paths"), "{hints}");
+    assert!(!hints.contains("No matches in"), "{hints}");
 }
 
 /// Skipped binaries are disclosed once, on the first page: a later page
@@ -2952,14 +3288,7 @@ fn skipped_binaries_are_disclosed_on_the_first_page_only() {
     );
     let page1 =
         execute_local_search(&first, &policy, &security, &NeverCancel, None, None).expect("page 1");
-    assert!(
-        page1
-            .warnings
-            .iter()
-            .any(|w| w.starts_with("binarySkipped")),
-        "{:?}",
-        page1.warnings
-    );
+    assert_eq!(page1.stats.binary_skipped, Some(1), "{:?}", page1.warnings);
     assert!(
         page1
             .next
@@ -2970,6 +3299,7 @@ fn skipped_binaries_are_disclosed_on_the_first_page_only() {
     let second: LocalSearchQuery = serde_json::from_value(next).expect("page 2 query");
     let page2 = execute_local_search(&second, &policy, &security, &NeverCancel, None, None)
         .expect("page 2");
+    assert_eq!(page2.stats.binary_skipped, None, "{:?}", page2.warnings);
     assert!(
         !page2
             .warnings
@@ -3106,7 +3436,7 @@ fn a_workspace_relative_replay_of_an_absolute_search_walks_every_page_once() {
     }
 }
 
-/// N4: a page cut by a binary file (`binaryQuit`) is partial, but its shown
+/// A page cut by a binary file (`binaryQuit`) is partial, but its shown
 /// text hits stay one read away.
 #[test]
 fn partial_binary_cut_page_keeps_read_lead() {
@@ -3130,7 +3460,32 @@ fn partial_binary_cut_page_keeps_read_lead() {
     );
 }
 
-/// N4/D7: a warning never names a lead the lead cap may drop.
+/// A search that found nothing in the readable text but was cut by a
+/// binary file (`binaryQuit`) is partial and terminal, so the bare
+/// `No matches` fact cannot stand alone: it leads to the scope's tree to
+/// narrow the search.
+#[test]
+fn zero_match_binary_cut_search_leads_to_narrow_the_scope() {
+    // The NUL sits past the file's leading bytes, as in a text file with one
+    // stray NUL: the scan quits there instead of skipping the file.
+    let blob = format!("{}\u{0}tail\n", "line of text\n".repeat(2000));
+    let body = search_fixture(
+        &[("a.rs", "fn a() {}\n"), ("blob.dat", blob.as_str())],
+        ls_query(serde_json::json!({"matchString": "zzqqxxnotthere"}), None),
+    );
+    assert_eq!(
+        body["partialReasons"],
+        serde_json::json!(["binaryQuit"]),
+        "{body}"
+    );
+    assert_eq!(body["terminalLimit"], true, "{body}");
+    assert_eq!(
+        body["next"]["viewTree"]["tool"], "structureSearch",
+        "{body}"
+    );
+}
+
+/// A warning never names a lead the lead cap may drop.
 #[test]
 fn binary_warning_never_names_a_capped_lead() {
     let body = search_fixture(
@@ -3146,43 +3501,37 @@ fn binary_warning_never_names_a_capped_lead() {
     );
 }
 
-/// Q5: the inferred-regex note is kept for texts whose literal reading is
-/// plausible, and dropped for obvious regexes.
+/// Q5: an unset `regex` is literal for every text, regex-shaped or not, and
+/// an empty literal search names the `regex` field that would run it as one.
 #[test]
-fn inferred_regex_note_only_when_ambiguous() {
-    use super::leads::unambiguous_regex;
+fn an_unset_regex_is_literal_even_for_regex_shaped_text() {
     for text in [
         "register.*Tool",
         "a|b",
         "\\bfoo",
         "x.+y",
-        "fn read|struct",
         "pub fn [a-z_]+\\(",
         "^use ",
         "id_[0-9]",
     ] {
-        assert!(unambiguous_regex(text), "{text}");
+        let body = search_fixture(
+            &[("a.rs", "register_x_Tool\nfn read\n")],
+            ls_query(serde_json::json!({"matchString": text}), None),
+        );
+        assert_eq!(body["matchCount"], 0, "{text}: {body}");
+        assert!(
+            body["warnings"].to_string().contains("ran as literal text"),
+            "{text}: {body}"
+        );
     }
-    for text in [
-        "a?.b",
-        "$scope",
-        "arr[0]",
-        "x + y",
-        "*ptr",
-        "a || b",
-        "list[i]?",
-        "read(path)?",
-    ] {
-        assert!(!unambiguous_regex(text), "{text}");
-    }
-    let obvious = search_fixture(
+    let pattern = search_fixture(
         &[("a.rs", "register_x_Tool\n")],
-        ls_query(serde_json::json!({"matchString": "register.*Tool"}), None),
+        ls_query(
+            serde_json::json!({"matchString": "register.*Tool", "regex": "rust"}),
+            None,
+        ),
     );
-    assert!(
-        !obvious["warnings"].to_string().contains("ran as a regex"),
-        "{obvious}"
-    );
+    assert_eq!(pattern["matchCount"], 1, "{pattern}");
 }
 
 /// N8a: the withheld notice lives once, in warnings; the empty hint does
@@ -3191,12 +3540,12 @@ fn inferred_regex_note_only_when_ambiguous() {
 fn withheld_notice_appears_once_on_empty_rows() {
     let body = search_fixture(
         &[
-            ("src/secrets/a.ts", "export const ISecretX = 1;\n"),
+            ("src/credentials.json", "{\"ISecretX\": 1}\n"),
             ("src/b.ts", "export const other = 1;\n"),
         ],
         ls_query(serde_json::json!({"matchString": "ISecretX"}), None),
     );
-    assert_eq!(body["stats"]["matchCount"], 0, "{body}");
+    assert_eq!(body["matchCount"], 0, "{body}");
     let text = body.to_string();
     assert_eq!(text.matches("withheld by path policy").count(), 1, "{body}");
     let hint = body["hints"][0].as_str().expect("empty hint");
@@ -3205,7 +3554,7 @@ fn withheld_notice_appears_once_on_empty_rows() {
     assert!(hint.chars().count() <= 120, "{hint}");
 }
 
-/// LS6: a missing path leads to a tree of its nearest existing parent.
+/// A missing path leads to a tree of its nearest existing parent.
 #[test]
 fn missing_path_leads_to_nearest_parent_tree() {
     let root = tempfile::tempdir().expect("fixture");
@@ -3226,7 +3575,7 @@ fn missing_path_leads_to_nearest_parent_tree() {
     );
 }
 
-/// LS7: a scope-miss row leads to a listing with the same globs.
+/// A scope-miss row leads to a listing with the same globs.
 #[test]
 fn scope_miss_leads_to_files_listing_with_same_globs() {
     let body = search_fixture(
@@ -3236,7 +3585,7 @@ fn scope_miss_leads_to_files_listing_with_same_globs() {
             None,
         ),
     );
-    assert_eq!(body["stats"]["filesScanned"], 0, "{body}");
+    assert_eq!(body["filesScanned"], 0, "{body}");
     let lead = &body["next"]["viewTree"];
     assert_eq!(lead["tool"], "structureSearch", "{body}");
     let listing = &lead["query"]["queries"][0];
@@ -3244,7 +3593,7 @@ fn scope_miss_leads_to_files_listing_with_same_globs() {
     assert_eq!(listing["include"], serde_json::json!(["*.zzz"]), "{body}");
 }
 
-/// X7: a bare word include also searches inside directories named by it.
+/// A bare word include also searches inside directories named by it.
 #[test]
 fn bare_word_include_searches_inside_named_dir() {
     let body = search_fixture(
@@ -3262,7 +3611,7 @@ fn bare_word_include_searches_inside_named_dir() {
     assert!(!text.contains("other/b.rs"), "{body}");
 }
 
-/// LS3 stage 1: a large page keeps every run's owner, with its last line.
+/// A large page keeps every run's owner, with its last line.
 #[test]
 fn large_page_keeps_enclosing_labels() {
     let source: String = (0..6)
@@ -3274,21 +3623,22 @@ fn large_page_keeps_enclosing_labels() {
     );
     let rows = body["files"][0]["matches"].as_array().expect("rows");
     assert_eq!(rows.len(), 60, "{body}");
-    for (index, row) in rows.iter().enumerate() {
-        if index % 10 == 0 {
-            let enclosing = &row["enclosing"];
-            assert_eq!(enclosing["kind"], "function", "row {index}: {body}");
-            assert!(
-                enclosing["endLine"].as_u64() > enclosing["line"].as_u64(),
-                "row {index}: {body}"
-            );
-        } else {
-            assert!(row.get("enclosing").is_none(), "row {index}: {body}");
-        }
+    for index in 0..rows.len() {
+        let enclosing = &owner_of(&body["files"][0], index).expect("owner");
+        assert_eq!(
+            enclosing["symbolName"],
+            format!("f{}", index / 10),
+            "row {index}: {body}"
+        );
+        assert_eq!(enclosing["kind"], "function", "row {index}: {body}");
+        assert!(
+            enclosing["endLine"].as_u64() > enclosing["line"].as_u64(),
+            "row {index}: {body}"
+        );
     }
 }
 
-/// LS2: declaration rows carry `declaration:true`; other rows carry nothing.
+/// Declaration rows carry `declaration:true`; other rows carry nothing.
 #[test]
 fn declaration_rows_are_marked_sparsely() {
     let body = search_fixture(
@@ -3588,14 +3938,14 @@ fn count_views_order_by_count_under_the_default_sort() {
     assert_eq!(files[0].path, "decl.rs", "a line view keeps relevance");
 }
 
-/// `noIgnore` is the one "search everything" switch: it
+/// `includeIgnored` is the one "search everything" switch: it
 /// also walks hidden files. An explicit `hidden:false` still wins.
 #[test]
 fn no_ignore_also_walks_hidden_files() {
     use super::executor::search_options;
     let root = std::path::Path::new(".");
     let all = search_options(
-        &ls_query(serde_json::json!({"noIgnore": true}), None),
+        &ls_query(serde_json::json!({"includeIgnored": true}), None),
         root,
         None,
     );
@@ -3603,7 +3953,10 @@ fn no_ignore_also_walks_hidden_files() {
     let plain = search_options(&ls_query(serde_json::json!({}), None), root, None);
     assert_ne!(plain.hidden, Some(true));
     let kept = search_options(
-        &ls_query(serde_json::json!({"noIgnore": true, "hidden": false}), None),
+        &ls_query(
+            serde_json::json!({"includeIgnored": true, "includeHidden": false}),
+            None,
+        ),
         root,
         None,
     );
@@ -3620,7 +3973,7 @@ fn a_large_line_result_leads_to_per_file_counts() {
         &[("big.txt", &many), ("small.txt", "needle\n")],
         ls_query(serde_json::json!({"matchString":"needle"}), None),
     );
-    let lead = &body["next"]["countFiles"];
+    let lead = &body["next"]["viewFileCount"];
     assert_eq!(lead["tool"], "localSearch", "{body}");
     let row = lead.pointer("/query/queries/0").unwrap_or(&lead["query"]);
     assert_eq!(row["resultView"], "countMatches", "{lead}");
@@ -3629,12 +3982,15 @@ fn a_large_line_result_leads_to_per_file_counts() {
         "{lead}"
     );
     let hints = body["hints"].to_string();
-    assert!(hints.contains("hints.countFiles"), "{body}");
+    assert!(
+        hints.contains("matches.") && !hints.contains("hints."),
+        "{body}"
+    );
     let small = search_fixture(
         &[("a.txt", "needle\n")],
         ls_query(serde_json::json!({"matchString":"needle"}), None),
     );
-    assert!(small["next"].get("countFiles").is_none(), "{small}");
+    assert!(small["next"].get("viewFileCount").is_none(), "{small}");
     let counts = search_fixture(
         &[("big.txt", &many)],
         ls_query(
@@ -3642,7 +3998,7 @@ fn a_large_line_result_leads_to_per_file_counts() {
             None,
         ),
     );
-    assert!(counts["next"].get("countFiles").is_none(), "{counts}");
+    assert!(counts["next"].get("viewFileCount").is_none(), "{counts}");
 }
 
 /// A compound identifier that matches nothing is probed in its other case
@@ -3655,7 +4011,7 @@ fn a_missed_identifier_leads_to_its_spelling_variants() {
         &files,
         ls_query(serde_json::json!({"matchString":"parseConfig"}), None),
     );
-    let lead = &body["next"]["didYouMean"];
+    let lead = &body["next"]["findSimilar"];
     assert_eq!(lead["tool"], "localSearch", "{body}");
     let row = lead.pointer("/query/queries/0").unwrap_or(&lead["query"]);
     let pattern = row["matchString"].as_str().unwrap_or_default();
@@ -3663,7 +4019,7 @@ fn a_missed_identifier_leads_to_its_spelling_variants() {
     assert_eq!(row["regex"], "rust", "{row}");
     let hints = body["hints"].to_string();
     assert!(
-        hints.contains("hints.didYouMean") && hints.contains("1 file"),
+        hints.contains("other spellings match in 1 file") && !hints.contains("hints."),
         "{body}"
     );
     // The variant lead runs and finds the file.
@@ -3674,7 +4030,7 @@ fn a_missed_identifier_leads_to_its_spelling_variants() {
             &files,
             ls_query(serde_json::json!({"matchString": miss}), None),
         );
-        assert!(none["next"].get("didYouMean").is_none(), "{miss}: {none}");
+        assert!(none["next"].get("findSimilar").is_none(), "{miss}: {none}");
     }
 }
 
@@ -3757,7 +4113,7 @@ fn an_empty_search_names_the_rule_that_skipped_its_matches() {
         .expect("search");
     let hint = &result.hints[0];
     assert!(
-        hint.starts_with("Run hints.includeIgnored: 3 file(s)"),
+        hint.starts_with("3 file(s) match in skipped paths"),
         "{hint}"
     );
     for why in [
@@ -3819,4 +4175,454 @@ fn enclosing_names_leave_room_for_the_rendered_path_prefix() {
         }
         page += 1;
     }
+}
+
+/// Q24/Q13: a hit in a JSON or TOML file names its key path, one
+/// `matchKeys` map per file row; other files carry none.
+#[test]
+fn json_and_toml_hits_name_their_key_paths() {
+    let package = "{\n  \"scripts\": {\n    \"typescript\": \"tsc --noEmit\"\n  },\n  \"devDependencies\": {\n    \"typescript\": \"6.0.2\"\n  }\n}\n";
+    let cargo = "[package]\nname = \"demo\"\n\n[workspace]\nmembers = [\n    \"typescript-x\",\n]\n\n[dependencies]\ntypescript = \"1\"\n";
+    let body = search_fixture(
+        &[
+            ("package.json", package),
+            ("Cargo.toml", cargo),
+            ("notes.md", "typescript\n"),
+        ],
+        ls_query(
+            serde_json::json!({"matchString": "typescript", "sort": "path"}),
+            None,
+        ),
+    );
+    let file = |name: &str| {
+        body["files"]
+            .as_array()
+            .and_then(|files| files.iter().find(|file| file["path"] == name))
+            .unwrap_or_else(|| panic!("{name}: {body}"))
+            .clone()
+    };
+    assert_eq!(
+        file("package.json")["matchKeys"],
+        serde_json::json!({"3": "scripts.typescript", "6": "devDependencies.typescript"}),
+        "{body}"
+    );
+    assert_eq!(
+        file("Cargo.toml")["matchKeys"],
+        serde_json::json!({"6": "workspace.members[0]", "10": "dependencies.typescript"}),
+        "{body}"
+    );
+    assert!(file("notes.md").get("matchKeys").is_none(), "{body}");
+}
+
+/// Q18: the over-1 MiB note counts only files whose language has
+/// declarations (a lockfile never had any), and says `1 hit row`.
+#[test]
+fn oversized_enclosing_note_skips_files_without_declarations() {
+    let filler = "// padding line for an oversized source file\n".repeat(25_000);
+    let body = search_fixture(
+        &[
+            ("uv.lock", &format!("needle = 1\n{filler}")),
+            ("big.rs", &format!("fn f() {{ needle(); }}\n{filler}")),
+        ],
+        ls_query(serde_json::json!({"matchString": "needle"}), None),
+    );
+    let warnings = body["warnings"].to_string();
+    assert!(
+        warnings.contains("are not named in files over 1 MiB; 1 hit row there has none."),
+        "{body}"
+    );
+    let lock_only = search_fixture(
+        &[("uv.lock", &format!("needle = 1\n{filler}"))],
+        ls_query(serde_json::json!({"matchString": "needle"}), None),
+    );
+    assert!(
+        !lock_only["warnings"].to_string().contains("1 MiB"),
+        "{lock_only}"
+    );
+}
+
+/// Files past the collection cap are named with their count on every
+/// page, never only in `stats`.
+#[test]
+fn files_past_the_collection_cap_are_disclosed() {
+    let scanned = octocode_engine::types::TextSearchStats {
+        files_matched: Some(10_851),
+        capped: Some(true),
+        cap_reason: Some("maxCollectedFiles".into()),
+        ..Default::default()
+    };
+    let stats = executor::search_stats(&scanned, executor::MAX_COLLECTED_FILES);
+    let warning =
+        leads::uncollected_warning(&stats, executor::MAX_COLLECTED_FILES).expect("disclosed");
+    assert!(warning.contains("851 of 10851"), "{warning}");
+    let uncapped = executor::search_stats(
+        &octocode_engine::types::TextSearchStats {
+            files_matched: Some(10),
+            ..Default::default()
+        },
+        10,
+    );
+    assert!(leads::uncollected_warning(&uncapped, 10).is_none());
+}
+
+/// A PCRE2 matching limit on a readable file is the pattern's failure,
+/// not an unreadable scope, and the error names the file root-relative.
+#[test]
+fn a_pcre2_matching_limit_is_a_pattern_failure_not_an_unreadable_file() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    let mut text = "a".repeat(50_000);
+    text.push_str("b\n");
+    fs::write(root.path().join("patho.txt"), &text).expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    let file = root.path().join("patho.txt");
+    let request = ls_query(
+        serde_json::json!({"path": file.to_string_lossy().into_owned(), "matchString": "(a+)+$", "regex": "pcre2"}),
+        None,
+    );
+    let error = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+        .expect_err("every file failed in the matcher");
+    assert_eq!(error.code, "invalidPattern", "{error:?}");
+    assert!(error.message.contains("first: patho.txt:"), "{error:?}");
+    assert!(
+        !error
+            .message
+            .contains(&root.path().to_string_lossy().into_owned()),
+        "{error:?}"
+    );
+    // In a folder with a matching file the limit is disclosed per call.
+    fs::write(root.path().join("ok.txt"), "aaa\n").expect("fixture");
+    let folder = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "(a+)+$", "regex": "pcre2"}),
+        None,
+    );
+    let result = execute_local_search(&folder, &policy, &security, &NeverCancel, None, None)
+        .expect("one file searched");
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|w| w
+                .starts_with("patternLimit: the regex hit the engine's matching limit in 1 file")),
+        "{:?}",
+        result.warnings
+    );
+}
+
+/// The scope listing a localSearch lead offers walks the same scope the
+/// search did: `includeIgnored` and `defaultExcludes:false` carry over.
+#[test]
+fn scope_listing_keeps_the_search_walk_scope() {
+    let request = ls_query(
+        serde_json::json!({"path": "/repo", "matchString": "x", "includeIgnored": true, "defaultExcludes": false, "include": ["*.ts"]}),
+        None,
+    );
+    let listing = leads::scope_listing(&request);
+    let query = &listing["query"]["queries"][0];
+    assert_eq!(query["operation"], "files", "{listing}");
+    assert_eq!(query["includeIgnored"], true, "{listing}");
+    assert_eq!(query["defaultExcludes"], false, "{listing}");
+    assert_eq!(query["include"], serde_json::json!(["*.ts"]), "{listing}");
+    let plain = leads::scope_listing(&ls_query(
+        serde_json::json!({"path": "/repo", "matchString": "x"}),
+        None,
+    ));
+    let plain = &plain["query"]["queries"][0];
+    assert!(
+        plain.get("includeIgnored").is_none() && plain.get("defaultExcludes").is_none(),
+        "{plain}"
+    );
+}
+
+/// An ignore rule above the search root is named relative to it,
+/// never by an absolute path.
+#[test]
+fn a_skip_reason_above_the_root_is_root_relative() {
+    let top = tempfile::tempdir().expect("top");
+    fs::create_dir_all(top.path().join(".git")).expect("git");
+    fs::write(top.path().join(".gitignore"), "*.log\n").expect("ignore");
+    let root = top.path().join("sub");
+    fs::create_dir_all(&root).expect("root");
+    let reason =
+        crate::tools::empty_walk::ignore_rule(&root, &root.join("x.log"), false).expect("ignored");
+    assert_eq!(reason, "../.gitignore:1 '*.log'");
+}
+
+/// Every page of a walk, from `request`: runs page 1, then each later page
+/// pinned to the first page's snapshot, until the page count it reported.
+fn walk_pages(files: &[(&str, &str)], request: &LocalSearchQuery) -> Vec<serde_json::Value> {
+    let root = tempfile::tempdir().expect("fixture directory");
+    for (name, body) in files {
+        fs::write(root.path().join(name), body).expect("fixture");
+    }
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned()}),
+        Some(request),
+    );
+    let first = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+        .expect("first page");
+    let total = first.pagination.as_ref().map_or(1, |p| p.total_pages);
+    let snapshot = first.source_snapshot.clone();
+    let mut pages = vec![serde_json::to_value(&first).expect("serialize")];
+    for page in 2..=total {
+        let next = ls_query(
+            serde_json::json!({"page": page, "snapshot": snapshot}),
+            Some(&request),
+        );
+        let result = execute_local_search(&next, &policy, &security, &NeverCancel, None, None)
+            .expect("later page");
+        pages.push(serde_json::to_value(&result).expect("serialize"));
+    }
+    pages
+}
+
+/// A page holds at most the default page size of files in every view, so
+/// the enclosing names it promises (and its warning) describe that page:
+/// a result of more files than a page opens with a full page and walks the
+/// rest, never one oversized page with unnamed rows.
+#[test]
+fn a_small_result_over_one_page_of_files_still_pages_by_file_count() {
+    let sources: Vec<(String, String)> = (0..25)
+        .map(|i| {
+            (
+                format!("f{i:02}.rs"),
+                format!("fn f{i}() {{\n    needle();\n}}\n"),
+            )
+        })
+        .collect();
+    let fixtures: Vec<(&str, &str)> = sources
+        .iter()
+        .map(|(name, body)| (name.as_str(), body.as_str()))
+        .collect();
+    for view in ["matchOnly", "paginated"] {
+        let request = ls_query(
+            serde_json::json!({"matchString": "needle", "resultView": view}),
+            None,
+        );
+        let pages = walk_pages(&fixtures, &request);
+        assert_eq!(pages.len(), 2, "{view}: {pages:?}");
+        let counts: Vec<usize> = pages
+            .iter()
+            .map(|page| page["files"].as_array().expect("files").len())
+            .collect();
+        assert_eq!(counts, [20, 5], "{view}: {pages:?}");
+        for page in &pages {
+            assert!(page.get("warnings").is_none(), "{view}: {page}");
+            for file in page["files"].as_array().expect("files") {
+                assert!(file["matches"][0].get("enclosing").is_some(), "{page}");
+            }
+        }
+        assert_eq!(pages[0]["pagination"]["hasMore"], true, "{view}: {pages:?}");
+    }
+}
+
+/// Streamed pages are cut by the response budget, so a file can ride
+/// several pages: `totalItems` counts the hit rows the pages walk (each
+/// shown exactly once), never the files, and `totalPages` counts those
+/// same pages.
+#[test]
+fn streamed_pagination_counts_pages_and_items_in_one_unit() {
+    let hot = "needle\n".repeat(1200);
+    let fixtures = [("a.txt", "needle\n"), ("hot.txt", hot.as_str())];
+    let request = ls_query(serde_json::json!({"matchString": "needle"}), None);
+    let pages = walk_pages(&fixtures, &request);
+    assert!(pages.len() > 2, "{} pages", pages.len());
+    let shown: usize = pages
+        .iter()
+        .flat_map(|page| page["files"].as_array().expect("files"))
+        .map(|file| file["matches"].as_array().expect("rows").len())
+        .sum();
+    assert_eq!(shown, 1201);
+    for page in &pages {
+        let pagination = &page["pagination"];
+        assert_eq!(pagination["totalPages"], pages.len(), "{page}");
+        assert_eq!(pagination["totalItems"], shown, "{page}");
+        assert!(pagination.get("pageSize").is_none(), "{page}");
+    }
+}
+
+/// Every `next.*` lead of a body is a call its own tool accepts.
+fn assert_leads_validate(body: &serde_json::Value, label: &str) {
+    for (name, lead) in body["next"].as_object().into_iter().flatten() {
+        let tool = lead["tool"].as_str().expect("lead tool");
+        if let Err(error) = crate::contracts::validate(tool, lead["query"].clone()) {
+            panic!(
+                "{label}: next.{name} is invalid: {:?}\n{lead}",
+                error.issues
+            );
+        }
+    }
+}
+
+/// A result large enough to lead to per-file counts, read as matchOnly
+/// with `unique`, leads to a call the schema accepts, for every view and
+/// uniqueness mode: a lead never fails validation.
+#[test]
+fn every_lead_of_every_view_validates_against_the_schema() {
+    let root = tempfile::tempdir().expect("fixture");
+    fs::write(root.path().join("a.txt"), "needle one\n".repeat(900)).expect("a");
+    fs::write(root.path().join("b.txt"), "needle two\n".repeat(900)).expect("b");
+    let (policy, security) = policy_for(root.path());
+    let views = [
+        LocalSearchQueryResultView::Paginated,
+        LocalSearchQueryResultView::MatchOnly,
+        LocalSearchQueryResultView::Files,
+        LocalSearchQueryResultView::CountMatches,
+    ];
+    let uniques = [
+        LocalSearchQueryUnique::Off,
+        LocalSearchQueryUnique::Count,
+        LocalSearchQueryUnique::List,
+    ];
+    for view in views {
+        for unique in uniques {
+            let only = view == LocalSearchQueryResultView::MatchOnly;
+            if !only && unique != LocalSearchQueryUnique::Off {
+                continue;
+            }
+            for page_size in [None, Some(1)] {
+                let request = ls_query(
+                    serde_json::json!({
+                        "path": root.path().to_string_lossy().into_owned(),
+                        "matchString": "needle",
+                        "resultView": view,
+                        "unique": unique,
+                        "pageSize": page_size,
+                    }),
+                    None,
+                );
+                let result =
+                    execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+                        .expect("search");
+                let body = serde_json::to_value(result).expect("serialize");
+                assert_leads_validate(&body, &format!("{view:?}/{unique:?}/{page_size:?}"));
+            }
+        }
+    }
+}
+
+/// Local eval (a): children of the search root that are ignored by the
+/// enclosing repository's `.gitignore` are named as ignored, even when each
+/// child is a repository of its own (a nested `.git` ends the child's own
+/// rules, never the outer rule that skipped the whole child).
+#[test]
+fn an_empty_search_over_ignored_nested_repositories_names_the_ignore_rule() {
+    let top = tempfile::tempdir().expect("fixture directory");
+    fs::create_dir(top.path().join(".git")).expect("outer repository");
+    fs::write(top.path().join(".gitignore"), "repos/*\n").expect("gitignore");
+    let root = top.path().join("repos");
+    for child in ["a", "b"] {
+        fs::create_dir_all(root.join(child).join(".git")).expect("nested repository");
+        fs::create_dir_all(root.join(child).join(".github")).expect("hidden dir");
+        fs::write(root.join(child).join(".github/x.py"), "needle\n").expect("fixture");
+        fs::write(root.join(child).join("y.py"), "needle\n").expect("fixture");
+    }
+    let reason = crate::tools::empty_walk::ignore_rule(&root, &root.join("a/.github/x.py"), false)
+        .expect("skipped");
+    assert_eq!(reason, "../.gitignore:1 'repos/*'");
+    let (policy, security) = policy_for(top.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.to_string_lossy().into_owned(), "matchString": "needle"}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+        .expect("search");
+    assert!(result.files.is_empty());
+    let hint = &result.hints[0];
+    assert!(hint.contains("../.gitignore:1 'repos/*'"), "{hint}");
+    assert!(!hint.contains("hidden a/.github"), "{hint}");
+    let lead = &result.next.as_ref().expect("lead")["includeIgnored"];
+    assert_eq!(
+        lead["query"]["queries"][0]["includeIgnored"], true,
+        "{lead}"
+    );
+}
+
+/// The flat totals of a search row (`matchCount`, `filesScanned`, …) satisfy
+/// the strict output contract: no `stats` object, `fileCount`, `capped` or
+/// `capReason`, and an unreadable path or a limit surfaces as
+/// `fileErrors` / `partialReasons`.
+#[test]
+fn a_search_row_serializes_flat_totals_that_satisfy_the_output_contract() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    fs::write(root.path().join("a.txt"), "needle one\nneedle two\n").expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle"}),
+        None,
+    );
+    let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+        .expect("search");
+    let mut wire = serde_json::to_value(&result).expect("serialize");
+    assert_eq!(wire["matchCount"], 2, "{wire}");
+    assert_eq!(wire["filesScanned"], 1, "{wire}");
+    for gone in ["stats", "fileCount", "capped", "capReason", "searchTime"] {
+        assert!(wire.get(gone).is_none(), "{gone}: {wire}");
+    }
+    crate::contracts::validate_output(
+        "localSearch",
+        &serde_json::json!({"results":[{"index":0,"data":wire.take()}]}),
+    )
+    .expect("flat totals satisfy the output contract");
+
+    let stats = SearchStats {
+        total_occurrences: 0,
+        matched_lines: 0,
+        files_matched: 0,
+        files_searched: 3,
+        bytes_searched: None,
+        capped: Some(true),
+        cap_reason: Some("maxFiles, maxOnlyMatchingPerLine".into()),
+        partial_reasons: vec!["maxFiles".into(), "maxOnlyMatchingPerLine".into()],
+        error_count: Some(1),
+        first_error: Some("x.bin: denied".into()),
+        file_errors: Some(FileErrors {
+            count: 1,
+            first: Some("x.bin: denied".into()),
+        }),
+        binary_skipped: None,
+    };
+    let wire = serde_json::to_value(&stats).expect("serialize");
+    assert_eq!(
+        wire["fileErrors"],
+        serde_json::json!({"count":1,"first":"x.bin: denied"})
+    );
+    assert_eq!(
+        wire["partialReasons"],
+        serde_json::json!(["maxFiles", "maxOnlyMatchingPerLine"])
+    );
+}
+
+/// A line holding more matches than one page (or the old per-line cap of
+/// 1000) still reaches every match: `next.nextMatchPage` walks them all.
+#[test]
+fn match_only_pages_every_match_of_a_line_with_thousands_of_hits() {
+    let root = tempfile::tempdir().expect("fixture directory");
+    let hits = 2_500;
+    fs::write(
+        root.path().join("min.js"),
+        format!("{}\n", "needle ".repeat(hits)),
+    )
+    .expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    let mut request = ls_query(
+        serde_json::json!({"path": root.path().to_string_lossy().into_owned(), "matchString": "needle", "resultView": LocalSearchQueryResultView::MatchOnly, "matchPageSize": 400}),
+        None,
+    );
+    let mut seen = Vec::new();
+    for _ in 0..20 {
+        let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+            .expect("page");
+        let body = serde_json::to_value(&result).expect("serialize");
+        assert!(body.get("partialReasons").is_none(), "{body}");
+        for matched in body["files"][0]["matches"].as_array().expect("matches") {
+            seen.push(matched["column"].as_u64().expect("column"));
+        }
+        let Some(next) = body["next"].get("nextMatchPage") else {
+            break;
+        };
+        request = ls_query(next["query"]["queries"][0].clone(), Some(&request));
+    }
+    let expected: Vec<u64> = (0..hits as u64).map(|n| n * 7 + 1).collect();
+    assert_eq!(seen, expected);
 }

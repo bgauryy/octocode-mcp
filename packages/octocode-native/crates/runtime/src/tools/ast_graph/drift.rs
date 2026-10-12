@@ -51,7 +51,7 @@ pub(crate) fn drift(
     if q.diagnostic_snapshot()
         .is_some_and(|expected| expected != snapshot)
     {
-        base_map.insert("results".into(), json!([]));
+        base_map.insert("nodes".into(), json!([]));
         insert_snapshot_changed(&mut base_map);
         base_map.insert(
             "next".into(),
@@ -59,6 +59,7 @@ pub(crate) fn drift(
         );
         return Ok(Value::Object(base_map));
     }
+    let answer_empty = super::analysis::answer_is_empty(&items);
     let (page, pagination) = paginate(items, q);
     let has_more = pagination["hasMore"] == json!(true);
     let cuts = ScanCuts::of(&head).union(ScanCuts::of(&base));
@@ -68,12 +69,14 @@ pub(crate) fn drift(
         base_map.insert("confidence".into(), json!("low"));
         warnings.push("graphs are not comparable — see summary.incompatibilities".to_owned());
     }
-    warnings.extend(out_of_range_warning(&pagination));
-    base_map.insert("results".into(), Value::Array(page));
+    base_map.insert("nodes".into(), Value::Array(page));
     base_map.insert("pagination".into(), pagination);
-    base_map.insert("summary".into(), summary);
+    base_map.insert("graphSummary".into(), summary);
     if !warnings.is_empty() {
         base_map.insert("warnings".into(), json!(warnings));
+    }
+    if answer_empty {
+        super::analysis::mark_empty(&mut base_map);
     }
 
     // A diff of two cut graphs is never complete: a file-scan cut offers
@@ -82,6 +85,10 @@ pub(crate) fn drift(
     let mut reasons = cuts.reasons();
     if page_limit {
         reasons.push("pageLimit");
+        super::analysis::push_warning(
+            &mut base_map,
+            super::page::page_ceiling_warning("result", PAGE_MAXIMUM),
+        );
     }
     if !reasons.is_empty() {
         base_map.insert("isPartial".into(), json!(true));
@@ -99,31 +106,19 @@ pub(crate) fn drift(
     } else {
         "truncated"
     };
-    let graph_state = if cuts.graph_cut() || cuts.files_skipped {
-        "scan-truncated"
-    } else {
-        "complete"
-    };
+    let graph_state = cuts.graph_state().unwrap_or("complete");
     let mut completeness = Map::new();
-    for (key, state) in [("results", results_state), ("graph", graph_state)] {
+    for (key, state) in [("nodes", results_state), ("graph", graph_state)] {
         if state != "complete" {
             completeness.insert(key.into(), json!(state));
         }
     }
-    if !completeness.is_empty() {
-        base_map.insert("completeness".into(), Value::Object(completeness));
-    }
+    super::analysis::state_coverage(&mut base_map, completeness);
     let mut next = Map::new();
     if has_more && !page_limit {
         next.insert(
             "nextPage".into(),
-            continuation(
-                q,
-                Some(q.page() + 1),
-                None,
-                Some(json!(snapshot)),
-                "Continue topology drift results.",
-            ),
+            continuation(q, Some(q.page() + 1), None, Some(json!(snapshot))),
         );
         base_map["pagination"]["resultId"] = json!(snapshot);
     } else if cuts.widenable()

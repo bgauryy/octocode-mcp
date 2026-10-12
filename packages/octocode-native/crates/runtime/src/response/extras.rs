@@ -43,20 +43,44 @@ pub(crate) fn all_paths(tool: ToolId) -> Vec<&'static str> {
         .collect()
 }
 
+/// Whether [`prune_row`] leaves the extra at `path` on a row of `query`:
+/// its kind is wanted, its key is picked, or no kind of `tool` lists it.
+#[must_use]
+pub fn keeps(tool: ToolId, query: &Value, path: &str) -> bool {
+    tool.extra_paths()
+        .iter()
+        .filter(|(_, paths)| paths.contains(&path))
+        .all(|(kind, _)| wants_name(query, kind) || picked(query, path))
+}
+
 /// Drops `tool`'s extra fields from one result row unless its query names
 /// their kind. Error rows are pruned too: an extra field explains the call,
 /// not the failure.
+/// A key a query's `fields` pick names is evidence the caller asked for,
+/// so it stays whatever its extras kind.
 pub fn prune_row(row: &mut Value, tool: ToolId, query: &Value) {
     for (kind, paths) in tool.extra_paths() {
         if wants_name(query, kind) {
             continue;
         }
         for path in *paths {
+            if picked(query, path) {
+                continue;
+            }
             if let Some(rest) = path.strip_prefix("results[].") {
                 remove(row, &segments(rest));
             }
         }
     }
+}
+
+/// Whether `path` ends in a key the query's `fields` pick names.
+fn picked(query: &Value, path: &str) -> bool {
+    let key = path.rsplit('.').next().unwrap_or(path);
+    query
+        .get("fields")
+        .and_then(Value::as_array)
+        .is_some_and(|fields| fields.iter().any(|field| field.as_str() == Some(key)))
 }
 
 /// `a.b[].c` → `[("a", false), ("b", true), ("c", false)]`: each field name
@@ -114,14 +138,14 @@ mod tests {
             ToolId::GhSearchCode => {
                 json!({"files":[{"path":"a.rs","matches":[{"value":"x"}]}]})
             }
-            ToolId::GhStructure => json!({"entries":[]}),
+            ToolId::GhStructure => json!({"files":[]}),
             ToolId::GhGetFileContent => json!({"path":"a.rs","content":"x"}),
             ToolId::GhSearchHistory => json!({"commits":[]}),
-            ToolId::GhGetHistoryItem => json!({"sha":"abc"}),
+            ToolId::GhGetHistoryItem => json!({"commitSha":"abc"}),
             ToolId::ArtifactSearch => json!({"artifacts":[{"name":"x"}]}),
             ToolId::GhCloneRepo => json!({"error":"x"}),
             ToolId::LocalSearch => json!({
-                "stats":{"matchCount":1},
+                "matchCount":1,
                 "files":[{"path":"a.rs","matches":[{"value":"x"}]}]
             }),
             ToolId::StructureSearch => json!({"files":[]}),
@@ -129,11 +153,13 @@ mod tests {
                 "files":[{"path":"a.rs","matches":[{"value":"x"}]}],
                 "nodes":["1 k 1:1-1:2"]
             }),
-            ToolId::AstTopology => json!({"results":[{"file":"a.rs"}],"summary":{},"coverage":{}}),
+            ToolId::AstTopology => {
+                json!({"nodes":[{"file":"a.rs"}],"graphSummary":{},"coverage":{"state":"complete"}})
+            }
             ToolId::AstRewrite => json!({"matches":[]}),
             ToolId::LocalFetch => json!({"path":"a.rs","content":"x"}),
             ToolId::LspSearch => {
-                json!({"payload":{"kind":"references","files":[{"path":"a.ts","matches":[{"line":1}]}]},"lsp":{}})
+                json!({"kind":"references","files":[{"path":"a.ts","matches":[{"line":1}]}],"lsp":{},"coverage":{"state":"complete"}})
             }
             ToolId::Clasify => Value::Null,
         }
@@ -346,11 +372,11 @@ mod tests {
                 );
             }
         }
-        let page = json!({"tool":"lspSearch","query":{"queries":[{"path":"/r/a.ts","operation":"references","symbolName":"a","lineHint":1,"page":2}]}});
+        let page = json!({"tool":"lspSearch","query":{"queries":[{"path":"/r/a.ts","operation":"references","symbolName":"a","line":1,"page":2}]}});
         let lead =
             json!({"tool":"localFetch","query":{"queries":[{"path":"/r/a.ts","ranges":["1-2"]}]}});
         let mut row = json!({"index":0,"meta":{"evidence":{"kind":"semantic","confidence":"high"}},"cache":1,"data":{
-            "payload":{"kind":"empty"},
+            "kind":"empty","category":"noResults",
             "workspaceRoot":"/r",
             "lsp":{"receipt":{"command":"tsserver"}},
             "next":{"nextPage":page},
@@ -384,9 +410,10 @@ mod tests {
     #[test]
     fn no_new_ad_hoc_extras_output_branches() {
         const ALLOWED: &[(&str, usize)] = &[
-            // Shared value-conditional dedupe pass ("echo keeps everything"),
-            // and the git HEAD read made only for receipts.
-            ("response/rows.rs", 2),
+            // Shared value-conditional dedupe pass (echo keeps request
+            // echoes; stats keeps the whole statistics block the default
+            // trims), and the git HEAD read made only for receipts.
+            ("response/rows.rs", 3),
             // The language-server receipt is built only for receipts.
             ("tools/lsp_search/mod.rs", 1),
             // Snippet `matches` go only when resolved `lines` replace them.
@@ -400,9 +427,12 @@ mod tests {
             // Extras-gated output not yet moved into core's extra classes.
             ("tools/ast_rewrite/output.rs", 5),
             ("tools/artifact_search/mod.rs", 1),
+            // Line counts and modified times: reading them costs I/O per entry.
+            ("tools/structure_search/files.rs", 1),
             ("tools/gh_get_history_item/patch_hop.rs", 1),
             ("tools/gh_get_history_item/pr_sections.rs", 1),
-            ("tools/gh_get_history_item/pull_request.rs", 4),
+            ("tools/gh_get_history_item/pr_finish.rs", 3),
+            ("tools/gh_get_history_item/pull_request.rs", 1),
             // Full pages, runner-up windows and usage receipts (details, stats).
             ("tools/clasify/run/mod.rs", 3),
         ];
@@ -463,5 +493,34 @@ mod tests {
                 "{file}: {count} extras branch line(s), {allowed} allowed. Declare the field extra in core (fieldClass) instead."
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod picked_tests {
+    use super::*;
+    use serde_json::json;
+
+    /// `fields:["license"]` keeps the details-class `license` a default row
+    /// drops: the pick is the caller's request, not an opt-in extra.
+    #[test]
+    fn a_picked_extra_key_survives_pruning() {
+        let path = ToolId::GhSearchRepo
+            .extra_paths()
+            .iter()
+            .flat_map(|(_, paths)| paths.iter().copied())
+            .find(|path| path.ends_with(".license"))
+            .expect("license is an extra path");
+        let picked_query = json!({"keywords":["x"],"fields":["license"]});
+        assert!(picked(&picked_query, path));
+        assert!(!picked(&json!({"keywords":["x"]}), path));
+        let mut row = json!({"data":{"repositories":[{"owner":"o","repo":"r","license":"mit"}]}});
+        prune_row(&mut row, ToolId::GhSearchRepo, &picked_query);
+        assert_eq!(row["data"]["repositories"][0]["license"], "mit", "{row}");
+        prune_row(&mut row, ToolId::GhSearchRepo, &json!({"keywords":["x"]}));
+        assert!(
+            row["data"]["repositories"][0].get("license").is_none(),
+            "{row}"
+        );
     }
 }

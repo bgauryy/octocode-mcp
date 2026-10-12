@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { dialogsWaiting, exclusive, forgetCheck, onDialogsChange, recordCheck, takeTiming, withDialog } from '../src/shared/locks.js';
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -85,6 +85,15 @@ describe('withDialog', () => {
     await Promise.all([holder, aborted, later]);
     expect(log).toEqual(['holder', 'nested', 'aborted ran', 'holder done', 'later']);
     await expect(withDialog(async () => 'pre-aborted', AbortSignal.abort())).resolves.toBe('pre-aborted');
+  });
+
+  it('removes its abort listener once the interaction gets its turn', async () => {
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, 'addEventListener');
+    const remove = vi.spyOn(controller.signal, 'removeEventListener');
+    for (let i = 0; i < 3; i++) await withDialog(async () => i, controller.signal);
+    expect(add).toHaveBeenCalledTimes(3);
+    expect(remove.mock.calls.map(([, listener]) => listener)).toEqual(add.mock.calls.map(([, listener]) => listener));
   });
 });
 

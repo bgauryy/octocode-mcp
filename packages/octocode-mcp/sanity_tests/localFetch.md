@@ -3,7 +3,7 @@
 Use the built CLI or MCP tool with the same queries.
 
 - Inspect full and compact schemas: the name is `localFetch`; fields include `unit`, `offset`, and `length`.
-- Read a UTF-8 fixture containing emoji, CRLF, blank lines, and a long line. Walk every `next.continue` unchanged in both chunk modes and concatenate content; compare with the exact source.
+- Read a UTF-8 fixture containing emoji, CRLF, blank lines, and a long line. Walk every `next.continueWindow` unchanged in both chunk modes and concatenate content; compare with the exact source.
 - Request an inclusive line range. Its pages stop at the selected end and contain no injected line numbers.
 - Request literal and regex matches with overlapping context. Walk small line/byte chunks; check selected ranges, page-local matching anchors, and no duplicated content.
 - Check original-file `totalLines`/`sourceBytes` on every successful page, empty file, and no-match result. Compare view totals and returned bytes separately.

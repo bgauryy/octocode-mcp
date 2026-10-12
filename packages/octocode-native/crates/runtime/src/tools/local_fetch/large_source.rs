@@ -14,6 +14,7 @@
 use super::executor::process_fetched_content;
 use super::types::*;
 use crate::security::scan::ContentScan;
+use crate::security::{BlockLine, KeyBlockState, LineShape, LineShapeScan, is_key_header_prefix};
 use crate::tools::cancel::CancellationCheck;
 use sha2::{Digest, Sha256};
 use std::io::Read;
@@ -23,12 +24,16 @@ use std::path::Path;
 pub(super) const MAX_STREAM_SOURCE_BYTES: u64 = 1024 * 1024 * 1024;
 /// Lines one streamed window holds; pages inside it stay 16 KB.
 const WINDOW_LINES: usize = 5_000;
+/// Lines a chunked read of a streamed source returns when it names no
+/// `length`. Deliberately not [`DEFAULT_LINE_CHUNK`]: a streamed source is
+/// one past the whole-file ceiling, and its chunks have always been this
+/// short; unifying the two would change how such files page.
+const STREAMED_CHUNK_LINES: usize = 100;
 /// Bytes one streamed window holds; a longer window is cut at a line end or,
 /// for a single giant line, mid-line with a warning.
 const WINDOW_BYTES: usize = 4 * 1024 * 1024;
 /// Line prefix kept for private-key marker detection outside the window.
 const MARKER_PREFIX_BYTES: usize = 256;
-const KEY_PLACEHOLDER: &[u8] = b"[REDACTED-PRIVATEKEYFRAGMENT]";
 
 struct Streamed {
     digest: String,
@@ -44,7 +49,7 @@ struct Streamed {
 fn is_marker(head: &[u8], edge: &str) -> bool {
     let text = String::from_utf8_lossy(head);
     let text = text.trim_start();
-    text.starts_with(edge) && text.contains("PRIVATE KEY")
+    text.contains(edge) && text.contains("PRIVATE KEY")
 }
 
 /// The requested lines kept while a source streams past: byte-capped, with
@@ -58,7 +63,10 @@ struct WindowLines {
     line_start: usize,
     /// The current line's leading bytes, for private-key marker detection.
     head: Vec<u8>,
-    in_key: bool,
+    /// Private-key block state over the lines closed so far.
+    block: KeyBlockState,
+    /// The current line's shape, scanned only while a block is open.
+    shape: LineShapeScan,
     held_last: usize,
     key_lines: usize,
     clipped_line: Option<usize>,
@@ -73,7 +81,8 @@ impl WindowLines {
             window: Vec::new(),
             line_start: 0,
             head: Vec::new(),
-            in_key: false,
+            block: KeyBlockState::default(),
+            shape: LineShapeScan::default(),
             held_last: first.saturating_sub(1),
             key_lines: 0,
             clipped_line: None,
@@ -86,6 +95,9 @@ impl WindowLines {
         if self.head.len() < MARKER_PREFIX_BYTES {
             let take = (MARKER_PREFIX_BYTES - self.head.len()).min(piece.len());
             self.head.extend_from_slice(&piece[..take]);
+        }
+        if self.block.is_open() {
+            self.shape.feed(piece);
         }
         if !(self.first..=self.last).contains(&line) || self.full {
             return;
@@ -114,23 +126,24 @@ impl WindowLines {
     fn finish(&mut self, line: usize) {
         let begins = is_marker(&self.head, "-----BEGIN ");
         let ends = is_marker(&self.head, "-----END ");
-        let inside = self.in_key || begins;
+        let (head, shape) = (&self.head, self.shape);
+        let inside = self.block.advance(begins, ends, || match shape.finish() {
+            LineShape::Other if is_key_header_prefix(head) => BlockLine::Header,
+            shape => BlockLine::Shape(shape),
+        });
         let held = self.full && self.clipped_line != Some(line);
         if (self.first..=self.last).contains(&line) && !held {
             if inside {
                 self.window.truncate(self.line_start);
-                self.window.extend_from_slice(KEY_PLACEHOLDER);
+                self.window
+                    .extend_from_slice(crate::security::key_fragment_placeholder().as_bytes());
                 self.window.push(b'\n');
                 self.key_lines += 1;
             }
             self.held_last = line;
         }
-        if begins && !ends {
-            self.in_key = true;
-        } else if ends {
-            self.in_key = false;
-        }
         self.head.clear();
+        self.shape = LineShapeScan::default();
         if self.clipped_line == Some(line) {
             self.held_last = line;
         }
@@ -215,7 +228,6 @@ fn line_chunk_query(q: &LocalFetchQuery, offset: usize) -> LocalFetchQuery {
     query.regex = None;
     query.case_mode = None;
     query.context_lines = None;
-    query.context_bytes = None;
     query.clear_block_selectors();
     query.unit = Some(WindowUnit::Lines);
     query.offset = if offset == 0 {
@@ -227,11 +239,8 @@ fn line_chunk_query(q: &LocalFetchQuery, offset: usize) -> LocalFetchQuery {
     query
 }
 
-fn continuation(query: LocalFetchQuery, reason: &str) -> Continuation {
-    Continuation {
-        query,
-        reason: Some(reason.into()),
-    }
+fn continuation(query: LocalFetchQuery) -> Continuation {
+    Continuation { query }
 }
 
 /// Serve `q` from a source larger than the whole-file ceiling.
@@ -256,32 +265,73 @@ pub(super) fn fetch_window(
             q,
             len,
             "fullContent, minify, block, and byte chunks need the whole file. Read line ranges or line windows.",
-            read_bounded(q, "Read the file in bounded line windows."),
+            read_bounded(q),
         );
     }
     if q.has_ranges() && q.start_line().is_none() {
         return fetch_ranges(q, path, len, modified, security, cancel, regex);
     }
+    let (mut result, window) = stream_window(q, path, len, modified, security, cancel, regex);
+    if let Some((first, last)) = window {
+        let total = result.total_lines.unwrap_or_default();
+        result
+            .warnings
+            .insert(0, streamed_warning(len, &format!("{first}-{last}"), total));
+    }
+    result
+}
+
+/// The one warning a streamed read carries: the size past the whole-file
+/// ceiling and the lines it served.
+fn streamed_warning(len: u64, served: &str, total: usize) -> String {
+    format!(
+        "Large source ({}MB): served lines {served} of {total} from streamed windows.",
+        len / (1024 * 1024)
+    )
+}
+
+/// One streamed line window (a range or a chunk) with the `first-last` lines
+/// it held, so the caller states them once for every window it joins.
+fn stream_window(
+    q: &LocalFetchQuery,
+    path: &Path,
+    len: u64,
+    modified: Option<String>,
+    security: &impl ContentScan,
+    cancel: &impl CancellationCheck,
+    regex: &impl RegexMatch,
+) -> (LocalFetchResult, Option<(usize, usize)>) {
     let (first, requested_last, chunked) = match (q.start_line(), q.end_line()) {
         (Some(start), end) => (start, end.unwrap_or(start), false),
         _ => {
             let offset = q.offset().unwrap_or(0);
-            (offset + 1, offset + q.window_length().unwrap_or(100), true)
+            (
+                offset + 1,
+                offset + q.window_length().unwrap_or(STREAMED_CHUNK_LINES),
+                true,
+            )
         }
     };
     let last = requested_last.min(first + WINDOW_LINES - 1);
     let streamed = match stream(path, first, last, cancel) {
         Ok(streamed) => streamed,
-        Err(error) => return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", error),
+        Err(error) => {
+            return (
+                LocalFetchResult::error(q.path.to_string(), "fileReadFailed", error),
+                None,
+            );
+        }
     };
     if let Some(expected) = q.snapshot.as_deref()
         && **expected != streamed.digest
     {
-        return restart_error(
-            q,
-            "staleSnapshot",
-            crate::response::pages::STALE_SNAPSHOT_ERROR.into(),
-            "Restart on the current file version.",
+        return (
+            restart_error(
+                q,
+                "staleSnapshot",
+                crate::response::pages::STALE_SNAPSHOT_ERROR.into(),
+            ),
+            None,
         );
     }
     let total = streamed.total_lines;
@@ -290,10 +340,9 @@ pub(super) fn fetch_window(
             q,
             "invalidPagination",
             format!("Line {first} is past the end of the file ({total} lines)."),
-            "Read from the first line.",
         );
         result.total_lines = Some(total);
-        return result;
+        return (result, None);
     }
     let held_last = streamed.last.max(streamed.first);
     let mut window_query = q.clone();
@@ -314,13 +363,14 @@ pub(super) fn fetch_window(
         &super::types::SourceFacts {
             modified,
             window: None,
+            first_page_bytes: None,
         },
         security,
         cancel,
         regex,
     );
     if result.status == "error" {
-        return result;
+        return (result, None);
     }
     map_to_file(&mut result, &streamed, len);
     let more = if chunked {
@@ -335,7 +385,7 @@ pub(super) fn fetch_window(
         chunked,
         more.then_some(requested_last),
     );
-    result
+    (result, Some((streamed.first, held_last)))
 }
 
 /// Several `ranges`: each (overlaps and neighbours merged, in line order) is
@@ -369,7 +419,7 @@ fn fetch_ranges(
     for &(start, end) in &merged {
         let mut one = q.clone();
         one.set_line_span(start, end);
-        let part = fetch_window(&one, path, len, modified.clone(), security, cancel, regex);
+        let (part, _) = stream_window(&one, path, len, modified.clone(), security, cancel, regex);
         if part.status == "error" {
             return part;
         }
@@ -381,7 +431,7 @@ fn fetch_ranges(
                     "lines {start}-{end} need more than one streamed window page, so these ranges cannot be served in one read. Read that span on its own (its pages continue it), and the other ranges in their own rows."
                 ),
                 NextCalls {
-                    read_bounded_lines: Some(continuation(one, "Read the long span in pages.")),
+                    read_bounded_lines: Some(continuation(one)),
                     ..NextCalls::default()
                 },
             );
@@ -394,17 +444,11 @@ fn fetch_ranges(
             q,
             "staleSnapshot",
             crate::response::pages::STALE_SNAPSHOT_ERROR.into(),
-            "Restart on the current file version.",
         );
     }
     let mut parts = parts.into_iter();
     let Some(mut result) = parts.next() else {
-        return unsupported(
-            q,
-            len,
-            "no line range was requested.",
-            read_bounded(q, "Read the file in bounded line windows."),
-        );
+        return unsupported(q, len, "no line range was requested.", read_bounded(q));
     };
     let served = |result: &LocalFetchResult| {
         result
@@ -415,10 +459,6 @@ fn fetch_ranges(
             .or(result.start_line.zip(result.end_line))
     };
     let mut spans_served = served(&result).into_iter().collect::<Vec<_>>();
-    // Each window says which lines it served; one line says it for all.
-    result
-        .warnings
-        .retain(|warning| !warning.starts_with("Large source ("));
     for mut part in parts {
         let span = served(&part);
         let (Some(content), Some(next_content)) = (result.content.as_mut(), part.content.take())
@@ -441,7 +481,7 @@ fn fetch_ranges(
         spans_served.extend(span);
         result.source_line_ranges.extend(part.source_line_ranges);
         for warning in part.warnings {
-            if !warning.starts_with("Large source (") && !result.warnings.contains(&warning) {
+            if !result.warnings.contains(&warning) {
                 result.warnings.push(warning);
             }
         }
@@ -472,13 +512,10 @@ fn fetch_ranges(
         })
         .collect::<Vec<_>>()
         .join(", ");
+    // Each window held its lines; one line says it for all.
     result.warnings.insert(
         0,
-        format!(
-            "Large source ({}MB): served lines {listed} of {} from streamed windows.",
-            len / (1024 * 1024),
-            result.total_lines.unwrap_or_default()
-        ),
+        streamed_warning(len, &listed, result.total_lines.unwrap_or_default()),
     );
     result.pagination = None;
     result
@@ -519,43 +556,30 @@ fn match_needs_whole_file(q: &LocalFetchQuery, len: u64) -> LocalFetchResult {
             crate::contracts::tool_types::ReadCaseMode::Insensitive => "insensitive",
         });
     }
-    let mut next = read_bounded(q, "Read the file from the start in bounded line windows.");
+    if q.whole_word() {
+        search["wholeWord"] = serde_json::json!(true);
+    }
+    let mut next = read_bounded(q);
     next.text_search = Some(
         crate::tools::result::Continuation::new(crate::tools::id::ToolId::LocalSearch, search)
-            .why("Locate the matching lines; localSearch streams the file.")
             .build(),
     );
-    let mut result = unsupported(
-        q,
-        len,
-        "matchString needs the whole file. Find the line with localSearch (it streams files up to 512MB), then read it with ranges.",
-        next,
-    );
-    result.hints = vec![
-        "Locate the lines with hints.textSearch (localSearch streams the file), then read them with ranges."
-            .to_owned(),
-    ];
-    result
+    unsupported(q, len, "matchString needs the whole file.", next)
 }
 
 /// Bounded line windows from the first line.
-fn read_bounded(q: &LocalFetchQuery, reason: &str) -> NextCalls {
+fn read_bounded(q: &LocalFetchQuery) -> NextCalls {
     NextCalls {
-        read_bounded_lines: Some(continuation(line_chunk_query(q, 0), reason)),
+        read_bounded_lines: Some(continuation(line_chunk_query(q, 0))),
         ..NextCalls::default()
     }
 }
 
 /// An error row whose recovery restarts from the first line window.
-fn restart_error(
-    q: &LocalFetchQuery,
-    code: &str,
-    message: String,
-    reason: &str,
-) -> LocalFetchResult {
+fn restart_error(q: &LocalFetchQuery, code: &str, message: String) -> LocalFetchResult {
     let mut result = LocalFetchResult::error(q.path.to_string(), code, message);
     result.next = Some(NextCalls {
-        restart: Some(continuation(line_chunk_query(q, 0), reason)),
+        restart: Some(continuation(line_chunk_query(q, 0))),
         ..NextCalls::default()
     });
     result
@@ -563,7 +587,6 @@ fn restart_error(
 
 /// Map a window's positions, totals and digest back to the whole file.
 fn map_to_file(result: &mut LocalFetchResult, streamed: &Streamed, len: u64) {
-    let held_last = streamed.last.max(streamed.first);
     let shift = streamed.first - 1;
     result.start_line = result.start_line.map(|line| line + shift);
     result.end_line = result.end_line.map(|line| line + shift);
@@ -576,15 +599,6 @@ fn map_to_file(result: &mut LocalFetchResult, streamed: &Streamed, len: u64) {
     result.source_bytes = usize::try_from(len).ok();
     result.source_chars = None;
     result.source_sha256 = Some(streamed.digest.clone());
-    result.warnings.insert(
-        0,
-        format!(
-            "Large source ({}MB): served lines {}-{} of {total} from a streamed window.",
-            len / (1024 * 1024),
-            streamed.first,
-            held_last
-        ),
-    );
     if streamed.key_lines > 0 {
         result.warnings.push(format!(
             "redactedContent: {} line(s) inside private-key blocks were replaced; this content is not verbatim source.",
@@ -618,7 +632,7 @@ fn continue_window(
     let inner = result
         .next
         .as_mut()
-        .and_then(|next| next.r#continue.as_mut());
+        .and_then(|next| next.continue_window.as_mut());
     if let Some(inner) = inner {
         if chunked {
             // The page's window offset counts the window lines already served.
@@ -644,10 +658,7 @@ fn continue_window(
         };
         query.snapshot = snapshot;
         NextCalls {
-            r#continue: Some(continuation(
-                query,
-                "Next streamed window of the same request.",
-            )),
+            continue_window: Some(continuation(query)),
             ..NextCalls::default()
         }
     });
@@ -683,6 +694,25 @@ mod tests {
         assert_eq!(streamed.key_lines, 2);
         let after = stream(file.path(), 6, 6, &NeverCancel).expect("stream");
         assert_eq!(after.window, b"y\n");
+    }
+
+    #[test]
+    fn unterminated_key_redacts_its_body_run_and_leaves_later_code_readable() {
+        let file = temp(
+            b"let a = 1;\nconst PEM = \"-----BEGIN RSA PRIVATE KEY-----\";\nlet b = compute(a);\nfn main() {}\n-----BEGIN OPENSSH PRIVATE KEY-----\nSECRET1\nSECRET2\nfn tail() {}\n",
+        );
+        let streamed = stream(file.path(), 1, 8, &NeverCancel).expect("stream");
+        let window = String::from_utf8(streamed.window).expect("utf8");
+        assert!(
+            !window.contains("SECRET") && !window.contains("BEGIN"),
+            "{window}"
+        );
+        assert!(window.contains("let b = compute(a);"), "{window}");
+        assert!(
+            window.contains("fn main() {}") && window.contains("fn tail() {}"),
+            "{window}"
+        );
+        assert_eq!(streamed.key_lines, 4);
     }
 
     #[test]

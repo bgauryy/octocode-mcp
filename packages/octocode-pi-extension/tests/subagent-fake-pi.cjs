@@ -22,6 +22,10 @@ if (task.startsWith('oversized')) {
   process.exit(3);
 } else if (task.startsWith('hostile')) {
   emit(say('\u001b]8;;https://evil.example\u0007click\u001b]8;;\u0007 \u001b[2Jdone\u202e', { stopReason: 'error', errorMessage: 'bad\u001b]0;title\u0007 provider' }));
+} else if (task.startsWith('orphan holder')) {
+  // Answers, then exits while a grandchild that left the process group keeps the stdio pipes open.
+  require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => undefined, 8000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }).unref();
+  emit(say('ORPHAN REPORT'));
 } else if (task.startsWith('hang')) {
   // A stalled model stream: no events at all.
   process.on('SIGTERM', () => process.exit(143));

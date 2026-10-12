@@ -4,13 +4,16 @@
 //! [`crate::tools::result::Continuation`]: `{tool, query, why?, confidence?}`
 //! where `query` is the complete tool input. [`finalize`] then shapes every
 //! call of a response once, row by row:
-//! 1. inherit the source row's intent fields (only the fields it sent,
-//!    never over the call's own): the brief on same-tool calls, a non-empty `extras`
-//!    on every call;
+//! 1. inherit the source row's non-empty `extras` (never over the call's
+//!    own) on same-tool calls, only the `hints` opt-in on cross-tool calls.
+//!    No continuation inherits the brief (`mainGoal`, `reasoning`): it is
+//!    optional, request-level, and copied into every row of every page it
+//!    was the largest token sink of a walk;
 //! 2. drop cross-tool calls this surface cannot run (a row whose drop a scope
 //!    rule names gets one warning);
 //! 3. channel each call (pages stay in `next`, leads and prose go to `hints`;
-//!    see [`super::channels`]);
+//!    a partial row with no page keeps every lead whole; see
+//!    [`super::channels`]);
 //! 4. compact each kept call: drop the fields validation restores, and
 //!    validate it against the strict input contract. An invalid call is a
 //!    runtime defect and is returned, never passed on silently.
@@ -22,7 +25,6 @@ use serde_json::{Map, Value};
 use super::channels::{HINTS_KEY, PAGES_KEY};
 use crate::contracts::{ContractValidationError, ValidationIssue, validate_query};
 use crate::tools::id::ToolId;
-use crate::tools::result::INTENT_FIELDS;
 
 /// Which cross-tool calls a surface can run; a call to a disabled tool drops
 /// silently.
@@ -112,7 +114,7 @@ pub fn finalize(
             &mut Visit {
                 tool,
                 recovery,
-                intent: source.as_ref().map(intent_of).unwrap_or_default(),
+                extras: source.as_ref().and_then(extras_of),
                 scope,
                 memo: &mut memo,
                 issues: &mut row_issues,
@@ -141,7 +143,8 @@ type Memo = HashMap<(String, String), Value>;
 struct Visit<'a, 's> {
     tool: ToolId,
     recovery: bool,
-    intent: Map<String, Value>,
+    /// The source row's non-empty `extras`.
+    extras: Option<Value>,
     scope: &'a Scope<'s>,
     memo: &'a mut Memo,
     issues: &'a mut Vec<ValidationIssue>,
@@ -169,6 +172,7 @@ fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
                 if let Some(Value::Object(calls)) = object.get_mut(key) {
                     calls.retain(|_, call| keep(call, ctx));
                     for call in calls.values_mut().filter(|call| call_of(call)) {
+                        drop_brief(call);
                         inherit(call, ctx);
                     }
                     if calls.is_empty() {
@@ -185,8 +189,11 @@ fn visit(value: &mut Value, ctx: &mut Visit<'_, '_>, path: &mut Vec<String>) {
             let opt_in_leads = row_level
                 && !ctx.recovery
                 && !ctx.tool.output().resource_major()
-                && !wants_hints(&ctx.intent);
-            super::channels::shape(object, ctx.tool, ctx.recovery, opt_in_leads);
+                && !wants_hints(ctx.extras.as_ref());
+            // An object that reports a failure (`errorCode`) is a recovery
+            // row wherever it sits: clasify's resource errors carry no row `status`.
+            let recovery = ctx.recovery || object.contains_key("errorCode");
+            super::channels::shape(object, ctx.tool, recovery, opt_in_leads);
             for key in [PAGES_KEY, HINTS_KEY] {
                 if let Some(Value::Object(calls)) = object.get_mut(key) {
                     for (name, call) in calls.iter_mut() {
@@ -244,11 +251,20 @@ fn keep(call: &Value, ctx: &mut Visit<'_, '_>) -> bool {
     target == ctx.tool.as_str() || (ctx.scope.is_available)(target)
 }
 
-/// The source row's intent fields on every row of the call (a field the
-/// call carries is kept). The brief (`mainGoal`, `reasoning`) steers the
-/// same tool's walk only; a cross-tool lead starts its own research step.
+/// The source row's `extras` on every row of the call (a row that carries
+/// its own keeps it): the output opt-ins steer the same tool's walk; a
+/// cross-tool lead starts its own research step and keeps only the `hints`
+/// opt-in, so the walk still offers leads.
 fn inherit(call: &mut Value, ctx: &Visit<'_, '_>) {
     let same_tool = call.get("tool").and_then(Value::as_str) == Some(ctx.tool.as_str());
+    let extras = match (&ctx.extras, same_tool) {
+        (None, _) => return,
+        (Some(extras), true) => extras.clone(),
+        (Some(extras), false) if wants_hints(Some(extras)) => Value::Array(vec![Value::from(
+            super::extras::name(crate::contracts::tool_types::ExtraKind::Hints),
+        )]),
+        (Some(_), false) => return,
+    };
     let Some(rows) = call
         .get_mut("query")
         .and_then(|query| query.get_mut("queries"))
@@ -257,37 +273,45 @@ fn inherit(call: &mut Value, ctx: &Visit<'_, '_>) {
         return;
     };
     for row in rows.iter_mut().filter_map(Value::as_object_mut) {
-        for (field, value) in &ctx.intent {
-            if same_tool || field == "extras" {
-                row.entry(field.clone()).or_insert_with(|| value.clone());
-            }
-        }
+        row.entry("extras").or_insert_with(|| extras.clone());
     }
 }
 
-/// Whether the source row's `extras` opts into lead hints.
-fn wants_hints(intent: &Map<String, Value>) -> bool {
+/// Drops the brief (`mainGoal`, `reasoning`) a tool copied into a call when
+/// it built the call by cloning its row query. The brief is request-level,
+/// so no continuation carries it; only a tool whose input reads the brief as
+/// its question (the clasify handoff) keeps it.
+fn drop_brief(call: &mut Value) {
+    if call.get("tool").and_then(Value::as_str) == Some(ToolId::Clasify.as_str()) {
+        return;
+    }
+    let Some(rows) = call
+        .get_mut("query")
+        .and_then(|query| query.get_mut("queries"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for row in rows.iter_mut().filter_map(Value::as_object_mut) {
+        row.remove("mainGoal");
+        row.remove("reasoning");
+    }
+}
+
+/// Whether an `extras` list opts into lead hints.
+fn wants_hints(extras: Option<&Value>) -> bool {
     let hints = super::extras::name(crate::contracts::tool_types::ExtraKind::Hints);
-    intent
-        .get("extras")
+    extras
         .and_then(Value::as_array)
         .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Some(hints)))
 }
 
-/// The intent fields `query` sent: the brief strings and a non-empty
-/// `extras` list.
-fn intent_of(query: &Value) -> Map<String, Value> {
-    INTENT_FIELDS
-        .into_iter()
-        .filter_map(|field| {
-            query
-                .get(field)
-                .filter(|value| {
-                    value.is_string() || value.as_array().is_some_and(|kinds| !kinds.is_empty())
-                })
-                .map(|value| (field.to_owned(), value.clone()))
-        })
-        .collect()
+/// The non-empty `extras` list `query` sent.
+fn extras_of(query: &Value) -> Option<Value> {
+    query
+        .get("extras")
+        .filter(|value| value.as_array().is_some_and(|kinds| !kinds.is_empty()))
+        .cloned()
 }
 
 /// Compact one `next`/`hints` entry: a call, or clasify's own `next.clasify`
@@ -456,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn same_tool_calls_inherit_the_brief_and_every_call_inherits_extras() {
+    fn same_tool_calls_inherit_only_extras_cross_tool_calls_only_hints() {
         let first = json!({"mainGoal":"Find a.","reasoning":"First.","extras":["hints","stats"]});
         let second = json!({"mainGoal":"Find b.","extras":[]});
         let mut out = json!({"results":[
@@ -478,36 +502,107 @@ mod tests {
             &[Some(&first), Some(&second)],
         );
         let page = &out["results"][0]["data"]["next"]["nextPage"]["query"]["queries"][0];
-        assert_eq!(page["mainGoal"], "Find a.", "a page keeps the brief");
-        assert_eq!(page["reasoning"], "First.");
-        assert_eq!(page["extras"], json!(["hints", "stats"]));
-        let lead = &out["results"][0]["data"]["hints"]["viewRepo"]["query"]["queries"][0];
         assert!(
-            lead.get("mainGoal").is_none(),
-            "a cross-tool lead takes no brief: {lead}"
+            page.get("mainGoal").is_none() && page.get("reasoning").is_none(),
+            "a page carries no brief: {page}"
         );
-        assert!(lead.get("reasoning").is_none(), "{lead}");
+        assert_eq!(page["extras"], json!(["hints", "stats"]), "{page}");
+        let lead = &out["results"][0]["data"]["hints"]["viewRepo"]["query"]["queries"][0];
+        assert!(lead.get("mainGoal").is_none(), "{lead}");
         assert_eq!(
             lead["extras"],
-            json!(["hints", "stats"]),
-            "extras follow the source row"
+            json!(["hints"]),
+            "a cross-tool lead keeps only the lead opt-in"
         );
         let clasify = &out["results"][0]["data"]["hints"]["clasify"]["query"]["queries"][0];
-        assert_eq!(clasify["mainGoal"], "Locate.", "an existing brief is kept");
+        assert_eq!(
+            clasify["mainGoal"], "Locate.",
+            "a brief the tool built into its lead stays"
+        );
         let items = &out["results"][1]["data"]["items"][0];
         let page = &items["next"]["nextPage"]["query"]["queries"][0];
-        assert_eq!(page["mainGoal"], "Find b.");
-        assert!(
-            page.get("reasoning").is_none(),
-            "only the fields the row sent"
-        );
-        assert!(
-            page.get("extras").is_none(),
-            "an empty extras array is the default: {page}"
+        assert_eq!(
+            page,
+            &json!({"owner":"o","keywords":["b"],"page":2}),
+            "an empty extras array is the default"
         );
         let read = &items["hints"]["read"]["query"]["queries"][0];
-        assert!(read.get("mainGoal").is_none(), "{read}");
         assert!(read.get("extras").is_none(), "{read}");
+    }
+
+    /// A tool that builds its page by cloning the row query copies the brief
+    /// with it; the one continuation stage drops it there too, on pages and
+    /// leads alike, so no tool has to remember to. Only a call to a tool
+    /// whose input reads the brief (the clasify handoff) keeps it.
+    #[test]
+    fn a_brief_a_tool_copied_into_its_continuation_is_dropped() {
+        let source = json!({"mainGoal":"Find a.","reasoning":"First."});
+        let copied = |page: u32| json!({"matchString":"a","path":"/r","mainGoal":"Find a.","reasoning":"First.","page":page});
+        let mut out = json!({"results":[{"index":0,"data":{
+            "next":{"nextPage":call("localSearch", copied(2))},
+            "hints":{
+                "readFile":call("localFetch", json!({"path":"/r/a","mainGoal":"Find a.","reasoning":"First."})),
+                "clasify":call("clasify", json!({"mainGoal":"Find a.",
+                    "resources":[{"id":"f","tool":"localFetch","query":{"path":"/r/a"}}],
+                    "questions":[{"id":"t","type":"locate","ask":"where"}]}))
+            }
+        }}]});
+        run(&mut out, ToolId::LocalSearch, &[Some(&source)]);
+        let data = &out["results"][0]["data"];
+        for (name, row) in [
+            ("nextPage", &data["next"]["nextPage"]["query"]["queries"][0]),
+            (
+                "readFile",
+                &data["hints"]["readFile"]["query"]["queries"][0],
+            ),
+        ] {
+            assert!(
+                row.get("mainGoal").is_none() && row.get("reasoning").is_none(),
+                "{name} carries no brief: {row}"
+            );
+        }
+        assert_eq!(
+            data["hints"]["clasify"]["query"]["queries"][0]["mainGoal"], "Find a.",
+            "the clasify handoff reads the brief as its question"
+        );
+    }
+
+    /// The brief is request-level: copied into every row of a page it was
+    /// the largest token sink of a walk. Measured on this five-row page with
+    /// an 87-char `mainGoal` and a 97-char `reasoning` (serde_json bytes of
+    /// the page's `query`): 1343 with the brief on every row, 298 without it
+    /// (-1045 bytes, 78%); the inherited `extras` is 19 of those bytes per
+    /// row, and a 500-char brief would have cost ~5 KB per five-row page.
+    #[test]
+    fn a_five_row_page_carries_no_brief() {
+        let source = json!({
+            "mainGoal":"Find where the response stage inherits the brief into continuation rows across tools.",
+            "reasoning":"The walk pages a wide search; every page repeated the brief in each of its rows, so measure it.",
+            "extras":["stats"]
+        });
+        let rows: Vec<Value> = (1..=5)
+            .map(|index| json!({"path":format!("src/f{index}.rs"),"ranges":["1-9"]}))
+            .collect();
+        let mut out = json!({"results":[{"index":0,"data":{"next":{
+            "readHits":{"tool":"localFetch","query":{"queries":rows.clone()}}
+        }}}]});
+        run(&mut out, ToolId::LocalFetch, &[Some(&source)]);
+        let page = &out["results"][0]["data"]["next"]["readHits"]["query"];
+        let without = serde_json::to_vec(page).expect("json").len();
+        let mut briefed = page.clone();
+        for row in briefed["queries"].as_array_mut().expect("rows") {
+            row["mainGoal"] = source["mainGoal"].clone();
+            row["reasoning"] = source["reasoning"].clone();
+        }
+        let with = serde_json::to_vec(&briefed).expect("json").len();
+        for row in page["queries"].as_array().expect("rows") {
+            assert_eq!(row["extras"], json!(["stats"]), "{page}");
+            assert!(row.get("mainGoal").is_none(), "{page}");
+        }
+        assert!(
+            with > without * 4,
+            "brief on every row: {with} bytes, extras only: {without} bytes"
+        );
     }
 
     /// A successful row offers only the contract's default leads unless its
@@ -601,10 +696,11 @@ mod tests {
         run(&mut out, ToolId::LocalSearch, &[None]);
         let query = &out["results"][0]["data"]["next"]["nextPage"]["query"]["queries"][0];
         // matchContentLength has no schema default (it scales with
-        // contextLines), so validation cannot restore it and it is kept.
+        // contextLines), so validation cannot restore it and it is kept. The
+        // brief is request-level: no continuation carries it.
         assert_eq!(
             query,
-            &json!({"matchString":"foo","path":"/tmp","mainGoal":"Find foo.","reasoning":"r","extras":["stats"],"matchContentLength":200,"page":2,"contextLines":0})
+            &json!({"matchString":"foo","path":"/tmp","extras":["stats"],"matchContentLength":200,"page":2,"contextLines":0})
         );
     }
 
@@ -761,23 +857,35 @@ mod tests {
     }
 
     #[test]
-    fn recovery_leads_and_why_stay_only_on_empty_or_failed_rows() {
+    /// A recovery lead stays only on an empty or failed row. A lead carries
+    /// no prose: the tool description states what each lead kind is for.
+    fn recovery_leads_stay_only_on_empty_or_failed_rows() {
         let tree = call("ghStructure", json!({"owner":"o","repo":"r","path":"src"}));
-        let mut why = call(
+        let read = call(
             "ghGetFileContent",
             json!({"owner":"o","repo":"r","path":"a"}),
         );
-        why["why"] = json!("Read  the   top hit.");
-        let row = |status: &str| json!({"index":0,"status":status,"data":{"next":{"viewTree":tree.clone(),"read":why.clone()}}});
+        let row = |status: &str| json!({"index":0,"status":status,"data":{"next":{"viewTree":tree.clone(),"read":read.clone()}}});
         let mut ok = json!({"results":[row("ok")]});
         run(&mut ok, ToolId::GhSearchCode, &[None]);
-        let hints = &ok["results"][0]["data"]["hints"];
-        assert!(hints.get("viewTree").is_none(), "{hints}");
-        assert!(hints["read"].get("why").is_none(), "{hints}");
+        let data = &ok["results"][0]["data"];
+        assert!(
+            data.get("hints")
+                .and_then(|hints| hints.get("viewTree"))
+                .is_none(),
+            "{data}"
+        );
         let mut empty = json!({"results":[row("empty")]});
         run(&mut empty, ToolId::GhSearchCode, &[None]);
         let hints = &empty["results"][0]["data"]["hints"];
-        assert!(hints["viewTree"].is_object(), "{hints}");
-        assert_eq!(hints["read"]["why"], "Read the top hit.");
+        for name in ["viewTree", "read"] {
+            assert_eq!(
+                hints[name]
+                    .as_object()
+                    .map(|call| call.keys().cloned().collect::<Vec<_>>()),
+                Some(vec!["tool".to_owned(), "query".to_owned()]),
+                "{name}: {hints}"
+            );
+        }
     }
 }

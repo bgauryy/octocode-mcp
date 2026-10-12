@@ -21,18 +21,29 @@
 
 use super::LspSearchQuery;
 use super::failure::{LspFailure, flag_partial, query_value};
+use super::import_stop::{proven_missing, stays_on_import};
 use super::recovery::{get_locations, resolve_definition_chain, snippet_identity};
 use super::render::{TS_LANGUAGE_IDS, uri_to_path};
 use super::scope::{Scope, canonical};
 use super::source::SourceCache;
 use crate::policy::path::PathPolicy;
 use crate::tools::cancel::CancellationCheck;
+use futures_util::stream::{self, StreamExt, TryStreamExt};
 use octocode_engine::lsp::client::{LocationRequest, NativeLspClient, SnippetReadPolicy};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 /// Candidate files opened and verified per request: one importer window.
 pub(super) const MAX_CANDIDATE_FILES: usize = 24;
+/// Windows one request may verify. A later window that holds no verified
+/// importer is skipped in the same request (its page would list no site),
+/// up to this many windows or [`SKIP_BUDGET`] of wall time;
+/// `next.nextImporterPage` resumes after them.
+pub(super) const MAX_WINDOWS_PER_REQUEST: usize = 8;
+/// Wall time after which a request that has skipped silent windows stops
+/// skipping and returns its page of the continuing scan: one call stays
+/// within the time of a few windows however slow the server is.
+const SKIP_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 /// Prefix of a candidate-list digest (the `snapshot` of
 /// `next.nextImporterPage`).
 const DIGEST_PREFIX: &str = "lsp-imp:";
@@ -66,6 +77,11 @@ pub(super) struct Importers {
     /// Candidates whose every occurrence the server resolved to another
     /// declaration: checked, and not uses of this symbol.
     pub(super) rejected: Vec<String>,
+    /// Candidates of this window the server could not resolve (a failed
+    /// identity check, or a definition chain that never left the file while
+    /// the declaration lives elsewhere): neither verified nor rejected, so
+    /// they stay out of the answer and count as text-only files.
+    pub(super) unverified: Vec<String>,
 }
 
 /// Which importer window a request verifies (`importerPage`, one-based),
@@ -90,10 +106,13 @@ impl<'a> WindowRequest<'a> {
     }
 }
 
-/// One importer window of the sorted candidate list.
+/// The importer windows one request verified, of the sorted candidate list.
 #[derive(Debug)]
 pub(super) struct Window {
-    /// One-based window index and window count.
+    /// One-based index of the first window the request verified (its
+    /// `importerPage`), of the last one it verified, and the window count.
+    /// The two differ when windows without a verified importer were skipped.
+    pub(super) first: u32,
     pub(super) page: u32,
     pub(super) pages: u32,
     /// Digest of the whole candidate list.
@@ -127,6 +146,7 @@ impl Window {
             return Cut::Stale;
         }
         Cut::Window(Self {
+            first: page,
             page,
             pages,
             digest,
@@ -140,9 +160,24 @@ impl Window {
         start.min(self.total)..(start + MAX_CANDIDATE_FILES).min(self.total)
     }
 
-    /// This window's candidates.
+    /// The candidates of the window verified last.
     pub(super) fn files(&self) -> &[String] {
         &self.candidates[self.range(self.page)]
+    }
+
+    /// Verify the next window as well: the last one held no importer.
+    fn advance(&mut self) {
+        self.page += 1;
+    }
+
+    /// Windows this request has verified so far.
+    fn verified_windows(&self) -> usize {
+        (self.page - self.first) as usize + 1
+    }
+
+    /// One-based candidate numbers `(first, last)` this request verified.
+    pub(super) fn verified_candidates(&self) -> (usize, usize) {
+        (self.range(self.first).start + 1, self.range(self.page).end)
     }
 
     /// Candidates of this window and every earlier one: the files the walk
@@ -151,12 +186,19 @@ impl Window {
         &self.candidates[..self.range(self.page).end]
     }
 
-    /// Candidates of every other window.
+    /// Candidates of every window this request did not verify.
     pub(super) fn foreign(&self) -> impl Iterator<Item = &String> {
-        let own = self.range(self.page);
-        self.candidates[..own.start]
+        let (start, end) = (self.range(self.first).start, self.range(self.page).end);
+        self.candidates[..start]
             .iter()
-            .chain(&self.candidates[own.end..])
+            .chain(&self.candidates[end..])
+    }
+
+    /// Whether a file (canonical path) belongs to a window this request
+    /// verified: a candidate's locations belong to its own window, and a file
+    /// outside the list to the last one.
+    fn verified_owner(&self, file: &str) -> bool {
+        (self.first..=self.page).contains(&self.owner(file))
     }
 
     /// The window that owns a file (canonical path): its candidate window,
@@ -258,12 +300,13 @@ impl Importers {
         chosen
     }
 
-    /// Whether a recovered location in `file` (canonical) belongs to this
-    /// request's window: a candidate's locations belong to its own window.
+    /// Whether a recovered location in `file` (canonical) belongs to the
+    /// windows this request verified: a candidate's locations belong to its
+    /// own window.
     pub(super) fn owns(&self, file: &str) -> bool {
         self.window
             .as_ref()
-            .is_none_or(|window| window.owner(file) == window.page)
+            .is_none_or(|window| window.verified_owner(file))
     }
 
     /// The candidate digest, salted into this request's location snapshot so
@@ -272,9 +315,62 @@ impl Importers {
         self.window.as_ref().map(|window| window.digest.as_str())
     }
 
-    /// Candidates verified by this window and every earlier one.
-    pub(super) fn covered(&self) -> &[String] {
-        self.window.as_ref().map_or(&[], Window::covered)
+    /// Candidates checked by this window and every earlier one, less this
+    /// window's unverified candidates: those stay text-only so the row's
+    /// coverage and lexical lead disclose them.
+    pub(super) fn covered(&self) -> Vec<String> {
+        let unverified = self.unverified.iter().collect::<HashSet<_>>();
+        self.window
+            .as_ref()
+            .map_or(&[][..], Window::covered)
+            .iter()
+            .filter(|file| !unverified.contains(file))
+            .cloned()
+            .collect()
+    }
+
+    /// A page whose windows held no verified importer lists no site. While
+    /// the scan goes on (or after earlier windows), that is one step of the
+    /// scan, not an empty answer: the row stops being `empty` (no exit-1
+    /// outcome, no re-anchor hint) and says which candidates were checked
+    /// and whether the scan goes on. Only a first page that ends the scan
+    /// with no site is a true empty answer.
+    fn settle_silent_page(&self, row: &mut Value, query: &LspSearchQuery, window: &Window) {
+        if (window.first <= 1 && !window.more())
+            || row.get("status").and_then(Value::as_str) != Some("empty")
+        {
+            return;
+        }
+        let (from, to) = window.verified_candidates();
+        let held = if self.anchors.is_empty() {
+            "held no reference to this symbol"
+        } else {
+            "held no reference to this symbol that an earlier page does not list"
+        };
+        let tail = match (window.more(), self.failed) {
+            (true, _) => "the scan continues: the importer lead verifies the following candidates",
+            // Candidates that could not be read are not verified: the scan
+            // ended, but it is not complete (the warning names the failure).
+            (false, true) => {
+                "that was the last window; the candidates the scan could not read stay unchecked"
+            }
+            (false, false) => "that was the last window, so the importer scan is complete",
+        };
+        let Some(object) = row.as_object_mut() else {
+            return;
+        };
+        for field in ["status", "category", "hints"] {
+            object.remove(field);
+        }
+        object.insert("kind".into(), json!(query.operation()));
+        object.insert("matches".into(), json!([]));
+        object.insert(
+            "reason".into(),
+            json!(format!(
+                "Candidates {from}-{to} of {} {held}; {tail}.",
+                window.total
+            )),
+        );
     }
 
     /// Record the scan on the row's coverage so readers and
@@ -287,7 +383,7 @@ impl Importers {
         }
         let files = self.per_file().count();
         let more = self.window.as_ref().is_some_and(Window::more);
-        if let Some(payload) = row.get_mut("payload").and_then(Value::as_object_mut) {
+        if let Some(payload) = row.as_object_mut() {
             let coverage = payload.entry("coverage").or_insert_with(|| json!({}));
             coverage["importerScan"] = json!(if self.failed {
                 SCAN_FAILED
@@ -298,6 +394,9 @@ impl Importers {
             });
             coverage["verifiedImporterFiles"] = json!(files);
         }
+        if let Some(window) = &self.window {
+            self.settle_silent_page(row, query, window);
+        }
         let Some(window) = self.window.as_ref().filter(|window| window.more()) else {
             return;
         };
@@ -305,18 +404,12 @@ impl Importers {
         let last_location_page =
             row.pointer("/pagination/hasMore").and_then(Value::as_bool) != Some(true);
         if !self.failed {
+            let (from, to) = window.verified_candidates();
             let warning = format!(
-                "{} candidate files mention this name outside the server's answer; importer recovery verifies {MAX_CANDIDATE_FILES} per importer page. This is importer page {} of {}; {}next.nextImporterPage verifies candidates {}-{}.",
-                window.total,
-                window.page,
-                window.pages,
-                if last_location_page {
-                    ""
-                } else {
-                    "after this window's last location page (next.nextPage), "
-                },
+                "{total} candidate files mention this name outside the server's answer; importer recovery verifies {MAX_CANDIDATE_FILES} at a time. Verified candidates {from}-{to} of {total}; the importer lead (offered on the last page of sites) verifies candidates {}-{}.",
                 range.start + 1,
                 range.end,
+                total = window.total,
             );
             flag_partial(row, query, CAPPED_REASON, Some(&warning), scope);
         }
@@ -331,14 +424,6 @@ impl Importers {
         }
         row["next"]["nextImporterPage"] =
             crate::tools::result::Continuation::new(crate::tools::id::ToolId::LspSearch, next)
-                .why(format!(
-                    "Verify importer candidates {}-{} of {} (importer page {} of {}).",
-                    range.start + 1,
-                    range.end,
-                    window.total,
-                    window.page + 1,
-                    window.pages
-                ))
                 .confidence("exact")
                 .build();
     }
@@ -408,24 +493,45 @@ pub(super) async fn verified_anchors(
             ..Importers::default()
         });
     };
-    let (opened, open_failed) =
-        open_candidates(client, sources, cancel, window.files(), symbol).await?;
-    let (anchors, rejected, verify_failed) = verify_occurrences(
-        client,
-        sources,
-        snippet_policy,
-        cancel,
-        opened,
-        &declaration,
-    )
-    .await?;
-    let failed = open_failed || verify_failed;
+    let mut window = window;
+    let started = std::time::Instant::now();
+    let mut anchors = Vec::new();
+    let mut rejected = Vec::new();
+    let mut unverified = Vec::new();
+    loop {
+        let (opened, open_failed) =
+            open_candidates(client, sources, cancel, window.files(), symbol).await?;
+        let (found, other, unresolved) = verify_occurrences(
+            client,
+            sources,
+            snippet_policy,
+            cancel,
+            opened,
+            &declaration,
+        )
+        .await?;
+        anchors.extend(found);
+        rejected.extend(other);
+        unverified.extend(unresolved.into_iter().chain(open_failed));
+        // The first window lists the anchor's own answer; a later one with
+        // no verified importer would list nothing, so the request goes on.
+        let silent = window.first > 1 && anchors.is_empty();
+        if !silent
+            || !window.more()
+            || window.verified_windows() >= MAX_WINDOWS_PER_REQUEST
+            || started.elapsed() >= SKIP_BUDGET
+        {
+            break;
+        }
+        window.advance();
+    }
     Ok(Importers {
         anchors,
         window: Some(window),
         stale: false,
-        failed,
+        failed: !unverified.is_empty(),
         rejected,
+        unverified,
     })
 }
 
@@ -434,20 +540,20 @@ type OpenedFile = (String, Vec<(u32, u32, bool)>);
 
 /// Open every candidate that mentions `symbol`; wait once, on the last, for
 /// the project load the opens trigger, so identity checks do not race it.
-/// Returns each opened file's occurrences and whether any candidate failed.
+/// Returns each opened file's occurrences and the candidates that failed.
 async fn open_candidates(
     client: &NativeLspClient,
     sources: &mut SourceCache<'_>,
     cancel: &dyn CancellationCheck,
     files: &[String],
     symbol: &str,
-) -> Result<(Vec<OpenedFile>, bool), LspFailure> {
+) -> Result<(Vec<OpenedFile>, Vec<String>), LspFailure> {
     let mut opened = Vec::new();
-    let mut failed = false;
+    let mut failed = Vec::new();
     for (index, file) in files.iter().enumerate() {
         cancel.check().map_err(LspFailure::cancelled)?;
         let Some(source) = sources.get(file).await else {
-            failed = true;
+            failed.push(file.clone());
             continue;
         };
         let spots = occurrences(&source.content, symbol);
@@ -470,7 +576,7 @@ async fn open_candidates(
         if synced.is_ok() {
             opened.push((file.clone(), spots));
         } else {
-            failed = true;
+            failed.push(file.clone());
         }
     }
     Ok((opened, failed))
@@ -478,7 +584,11 @@ async fn open_candidates(
 
 /// Keep each occurrence whose definition chain reaches `declaration`.
 /// Returns the verified anchors, the files whose every occurrence resolved
-/// elsewhere, and whether any identity check failed.
+/// to another declaration (rejected), and the files left unverified: an
+/// identity check failed, or every occurrence's chain stopped inside the
+/// file itself (an import binding the server did not follow) while the
+/// declaration lives elsewhere. Unresolved is not proof of another
+/// declaration, so such a file is never rejected.
 async fn verify_occurrences(
     client: &NativeLspClient,
     sources: &mut SourceCache<'_>,
@@ -486,54 +596,148 @@ async fn verify_occurrences(
     cancel: &dyn CancellationCheck,
     opened: Vec<OpenedFile>,
     declaration: &HashSet<String>,
-) -> Result<(Vec<Anchor>, Vec<String>, bool), LspFailure> {
-    let mut failed = false;
-    let mut anchors = Vec::new();
-    let mut rejected = Vec::new();
-    for (file, spots) in opened {
-        let mut file_failed = false;
-        let verified_before = anchors.len();
-        // One verified anchor answers for the whole file's program; keep
-        // checking only until a verified call site is found as well.
-        let mut verified_any = false;
-        for (spot_line, spot_character, is_call) in spots {
-            if verified_any && !is_call {
-                continue;
-            }
-            cancel.check().map_err(LspFailure::cancelled)?;
-            let resolved = identities(
+) -> Result<(Vec<Anchor>, Vec<String>, Vec<String>), LspFailure> {
+    let policy = sources.policy();
+    let missing = proven_missing(policy);
+    // A server that pipelines requests (tsgo) gets several files at once,
+    // each with its own source cache (a cache needs `&mut`); the answers
+    // keep candidate order. tsserver works through requests one at a time,
+    // so there each file waits its turn on the shared cache instead of
+    // queueing behind the others against its request timeout.
+    let verdicts = if client.serves_requests_concurrently() {
+        ordered_concurrently(opened, CONCURRENT_FILE_VERIFICATIONS, |file| async {
+            let mut own = SourceCache::new(policy);
+            verify_file(
                 client,
-                sources,
+                &mut own,
                 snippet_policy,
                 cancel,
-                &file,
-                spot_line,
-                spot_character,
+                file,
+                declaration,
+                &missing,
             )
-            .await?;
-            let Some(resolved) = resolved else {
-                failed = true;
-                file_failed = true;
-                continue;
-            };
-            if !resolved.is_disjoint(declaration) {
-                anchors.push(Anchor {
-                    path: file.clone(),
-                    line: spot_line,
-                    character: spot_character,
-                    is_call,
-                });
-                if is_call {
-                    break;
-                }
-                verified_any = true;
-            }
+            .await
+        })
+        .await?
+    } else {
+        let mut verdicts = Vec::with_capacity(opened.len());
+        for file in opened {
+            verdicts.push(
+                verify_file(
+                    client,
+                    sources,
+                    snippet_policy,
+                    cancel,
+                    file,
+                    declaration,
+                    &missing,
+                )
+                .await?,
+            );
         }
-        if !file_failed && anchors.len() == verified_before {
-            rejected.push(file);
+        verdicts
+    };
+    let mut anchors = Vec::new();
+    let mut rejected = Vec::new();
+    let mut unverified = Vec::new();
+    for verdict in verdicts {
+        if !verdict.anchors.is_empty() {
+            anchors.extend(verdict.anchors);
+        } else if verdict.unresolved {
+            unverified.push(verdict.file);
+        } else {
+            rejected.push(verdict.file);
         }
     }
-    Ok((anchors, rejected, failed))
+    Ok((anchors, rejected, unverified))
+}
+
+/// Run `task` over `items` with at most `limit` in flight; results keep
+/// the order of `items`, and the first failure drops the unfinished tasks.
+async fn ordered_concurrently<I, T, Fut>(
+    items: Vec<I>,
+    limit: usize,
+    task: impl FnMut(I) -> Fut,
+) -> Result<Vec<T>, LspFailure>
+where
+    Fut: std::future::Future<Output = Result<T, LspFailure>>,
+{
+    stream::iter(items)
+        .map(task)
+        .buffered(limit)
+        .try_collect()
+        .await
+}
+
+/// Candidate files verified at once on a server that pipelines requests.
+const CONCURRENT_FILE_VERIFICATIONS: usize = 8;
+
+/// What the definition chains of one candidate's occurrences proved.
+struct FileVerdict {
+    file: String,
+    anchors: Vec<Anchor>,
+    /// A chain failed or stopped at an import the server did not follow, so
+    /// without an anchor the file stays unverified rather than rejected.
+    unresolved: bool,
+}
+
+async fn verify_file(
+    client: &NativeLspClient,
+    sources: &mut SourceCache<'_>,
+    snippet_policy: &SnippetReadPolicy,
+    cancel: &dyn CancellationCheck,
+    (file, spots): OpenedFile,
+    declaration: &HashSet<String>,
+    missing: &(impl Fn(&Path) -> bool + Sync),
+) -> Result<FileVerdict, LspFailure> {
+    let content = match sources.get(&file).await {
+        Some(source) => source.content.clone(),
+        None => String::new(),
+    };
+    let mut anchors = Vec::new();
+    let mut unresolved = false;
+    // One verified anchor answers for the whole file's program; keep
+    // checking only until a verified call site is found as well.
+    let mut verified_any = false;
+    for (spot_line, spot_character, is_call) in spots {
+        if verified_any && !is_call {
+            continue;
+        }
+        cancel.check().map_err(LspFailure::cancelled)?;
+        let resolved = identities(
+            client,
+            sources,
+            snippet_policy,
+            cancel,
+            &file,
+            spot_line,
+            spot_character,
+        )
+        .await?;
+        let Some(resolved) = resolved else {
+            unresolved = true;
+            continue;
+        };
+        if !resolved.is_disjoint(declaration) {
+            anchors.push(Anchor {
+                path: file.clone(),
+                line: spot_line,
+                character: spot_character,
+                is_call,
+            });
+            if is_call {
+                break;
+            }
+            verified_any = true;
+        } else if stays_on_import(&resolved, &file, declaration, &content, missing) {
+            unresolved = true;
+        }
+    }
+    Ok(FileVerdict {
+        file,
+        anchors,
+        unresolved,
+    })
 }
 
 /// LSP `SymbolKind`s that own call sites: method, constructor, function.
@@ -814,13 +1018,38 @@ mod tests {
             failed: true,
             ..Importers::default()
         };
-        let mut row = json!({"status": "success", "payload": {}});
+        let mut row = json!({"status": "success"});
         let query = serde_json::from_value(json!({
-            "operation": "references", "path": "/r/a.ts", "symbolName": "x", "lineHint": 1
+            "operation": "references", "path": "/r/a.ts", "symbolName": "x", "line": 1
         }))
         .expect("query");
         importers.annotate(&mut row, &query, &Scope::new("/r".into(), Vec::new()));
-        assert_eq!(row["payload"]["coverage"]["importerScan"], SCAN_FAILED);
+        assert_eq!(row["coverage"]["importerScan"], SCAN_FAILED);
+    }
+
+    /// Unverified candidates stay out of the answer, so `textOnlyFiles` and
+    /// the lexical lead disclose them, and the scan is never complete.
+    #[test]
+    fn unverified_candidates_are_not_answered_and_fail_the_scan() {
+        let list = candidates(3);
+        let Cut::Window(window) = Window::cut(list.clone(), WindowRequest::default()) else {
+            panic!("window 1 is never stale");
+        };
+        let importers = Importers {
+            window: Some(window),
+            failed: true,
+            unverified: vec![list[1].clone()],
+            ..Importers::default()
+        };
+        assert_eq!(importers.covered(), vec![list[0].clone(), list[2].clone()]);
+        let scope = Scope::new("/r".into(), Vec::new());
+        let query = serde_json::from_value(json!({
+            "operation": "references", "path": "/r/a.ts", "symbolName": "x", "line": 1
+        }))
+        .expect("query");
+        let mut row = json!({"status": "success"});
+        importers.annotate(&mut row, &query, &scope);
+        assert_eq!(row["coverage"]["importerScan"], SCAN_FAILED);
     }
 
     #[test]
@@ -1119,6 +1348,49 @@ mod tests {
             Window::cut(changed, WindowRequest::default()),
             Cut::Window(_)
         ));
+    }
+
+    /// Importer verification on a pipelining server: results keep candidate
+    /// order, no more than `limit` run at once, and several really overlap.
+    #[tokio::test]
+    async fn bounded_verification_overlaps_tasks_and_keeps_order() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (running, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let done = ordered_concurrently((0..12u64).collect(), 4, |item| {
+            let (running, peak) = (&running, &peak);
+            async move {
+                let now = running.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(now, Ordering::SeqCst);
+                // Later items finish first, so order comes from the combinator.
+                tokio::time::sleep(std::time::Duration::from_millis(40 - item * 3)).await;
+                running.fetch_sub(1, Ordering::SeqCst);
+                Ok(item)
+            }
+        })
+        .await
+        .expect("all tasks succeed");
+        assert_eq!(done, (0..12).collect::<Vec<_>>());
+        assert_eq!(peak.load(Ordering::SeqCst), 4);
+    }
+
+    #[tokio::test]
+    async fn a_failed_verification_stops_the_rest() {
+        let started = std::sync::atomic::AtomicUsize::new(0);
+        let result = ordered_concurrently((0..20u32).collect(), 2, |item| {
+            let started = &started;
+            async move {
+                started.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if item == 1 {
+                    Err(LspFailure::invalid_query("boom"))
+                } else {
+                    tokio::time::sleep(std::time::Duration::from_millis(30)).await;
+                    Ok(item)
+                }
+            }
+        })
+        .await;
+        assert!(result.is_err());
+        assert!(started.load(std::sync::atomic::Ordering::SeqCst) < 20);
     }
 
     #[test]

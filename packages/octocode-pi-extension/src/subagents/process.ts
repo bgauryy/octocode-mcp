@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Usage } from '@earendil-works/pi-ai';
-import { BROWSER_VISIBLE_ENV, envInt, HOOKS_ENV, MCP_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
+import { BROWSER_VISIBLE_ENV, envInt, HOOKS_ENV, MCP_ENV, PARENT_SESSION_ENV, SUBAGENT_ENV, TRUST_ROOT_ENV } from '../shared/env.js';
 import { formatDuration } from '../shared/format.js';
 import { killTree } from '../shared/process.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { addUsage, emptyUsage, isRecord, toolHint } from '../shared/util.js';
-import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_SCRATCH_ENV, AGENT_TASK_ENV, PARENT_ID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
+import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_SCRATCH_ENV, AGENT_TASK_ENV, PARENT_ID_ENV, PARENT_PID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
 import type { AgentProfile } from './profiles.js';
 import { imagesOf } from './screenshots.js';
 import { ReportTracker } from './report.js';
@@ -26,6 +26,8 @@ export interface Identity {
   trustRoot?: string;
   /** Its handoff folder: files it writes there are read by the parent on demand instead of riding in its report. */
   scratch?: string;
+  /** The parent's Pi session id: the backlog claims the child may update. */
+  parentSession?: string;
 }
 
 /**
@@ -37,7 +39,8 @@ export function subagentProcessEnv(profile: AgentProfile | undefined, base: Node
   const hooks = base[HOOKS_ENV];
   const inherited = { ...base };
   // User settings survive; run identity, trust delegation and browser mode belong to this child.
-  for (const key of [HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, AGENT_ID_ENV, PARENT_ID_ENV, AGENT_TASK_ENV, AGENT_COLLABORATE_ENV, AGENT_SCRATCH_ENV]) delete inherited[key];
+  const owned = [HOOKS_ENV, TRUST_ROOT_ENV, BROWSER_VISIBLE_ENV, AGENT_ID_ENV, PARENT_ID_ENV, AGENT_TASK_ENV, AGENT_COLLABORATE_ENV, AGENT_SCRATCH_ENV, PARENT_SESSION_ENV, PARENT_PID_ENV];
+  for (const key of owned) delete inherited[key];
   return {
     ...inherited,
     ...(profile?.hooks && hooks !== undefined ? { [HOOKS_ENV]: hooks } : {}),
@@ -51,6 +54,8 @@ export function subagentProcessEnv(profile: AgentProfile | undefined, base: Node
     ...(identity?.workspace ? { [TEAM_WORKSPACE_ENV]: identity.workspace } : {}),
     ...(identity?.trustRoot ? { [TRUST_ROOT_ENV]: identity.trustRoot } : {}),
     ...(identity?.scratch ? { [AGENT_SCRATCH_ENV]: identity.scratch } : {}),
+    ...(identity?.parentSession ? { [PARENT_SESSION_ENV]: identity.parentSession } : {}),
+    ...(identity ? { [PARENT_PID_ENV]: String(process.pid) } : {}),
   };
 }
 
@@ -78,10 +83,11 @@ function selfExtensionPath(): string | undefined {
 export function buildAgentArgs(task: string, profile: AgentProfile | undefined, model: string | undefined, extension = selfExtensionPath()): string[] {
   const args = ['--mode', 'json', '--no-session'];
   // `--no-extensions` also turns off Pi's built-in MCP and tool-search extensions, which serve Octocode's research tools
-  // (its GitHub and package registry tools are deferred behind `tool_search`): load them back unless the profile opts out of MCP.
+  // and the user's own deferred MCP servers: load them back unless the profile opts out of MCP.
   if (extension) args.push('--no-extensions', '-e', extension, ...(profile?.mcp === false ? [] : ['-e', 'builtin:mcp', '-e', 'builtin:tool-search']));
-  const chosenModel = model ?? profile?.model;
-  if (chosenModel) args.push('--model', chosenModel);
+  // `model` is already resolved (`provider/id`, optionally `:thinking`); none means the parent's model. The profile's own
+  // preference is routed by `routeModel` before this, so an unavailable one never reaches Pi.
+  if (model) args.push('--model', model);
   if (profile?.tools) args.push('--tools', profile.tools);
   if (profile?.excludeTools) args.push('--exclude-tools', expandExcludes(profile.excludeTools));
   if (profile?.prompt) args.push('--append-system-prompt', profile.prompt);
@@ -98,7 +104,7 @@ function expandExcludes(excludeTools: string): string {
 }
 
 /** How long a cancelled subagent gets to exit after SIGTERM before it is killed. */
-const KILL_GRACE_MS = 5_000;
+const SUBAGENT_STOP_GRACE_MS = 5_000;
 /** JSON events can contain images; a malformed child must not grow an unterminated frame forever. */
 export const MAX_EVENT_BYTES = 16 * 1024 * 1024;
 
@@ -112,6 +118,9 @@ const DEFAULT_IDLE_MINUTES = 10;
  * hold on background jobs may each stay silent for up to 15 minutes without the child being hung.
  */
 const BUSY_GRACE_MS = 15 * 60_000;
+
+/** After the child exits, how long its stdio gets to drain before the run settles without waiting for `close` (a grandchild may hold the pipes open). */
+const EXIT_GRACE_MS = 1_000;
 
 export interface WatchdogLimits {
   /** Quiet time before a generating child counts as hung (Infinity: never). */
@@ -161,7 +170,7 @@ export function runSubagent(
     let stderr = '';
     let frameBytes = 0;
     let streamFailure: Error | undefined;
-    const abort = () => killTree(child.pid, KILL_GRACE_MS);
+    const abort = () => killTree(child.pid, SUBAGENT_STOP_GRACE_MS);
     signal?.addEventListener('abort', abort, { once: true });
     // Watchdog: a child stuck on a stalled model stream emits nothing; stop it instead of spinning forever.
     const startedAt = Date.now();
@@ -244,15 +253,31 @@ export function runSubagent(
     child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
       stderr = (stderr + chunk).slice(-4000);
     });
+    // The run settles once, from `close` (stdio drained) or, when a grandchild that left the process group keeps the
+    // pipes open, from `exit` plus a short grace: the tool call must return and its slot be freed either way.
+    let finished = false;
+    let exitGrace: NodeJS.Timeout | undefined;
+    const finish = (): boolean => {
+      if (finished) return false;
+      finished = true;
+      clearInterval(watchdog);
+      clearTimeout(exitGrace);
+      signal?.removeEventListener('abort', abort);
+      return true;
+    };
     child.on('error', (error) => {
-      clearInterval(watchdog);
-      signal?.removeEventListener('abort', abort);
-      reject(error);
+      if (finish()) reject(error);
     });
-    child.on('close', (code, exitSignal) => {
+    child.on('exit', (code, exitSignal) => {
+      if (finished) return;
       clearInterval(watchdog);
+      exitGrace = setTimeout(() => settle(code, exitSignal), EXIT_GRACE_MS);
+    });
+    child.on('close', (code, exitSignal) => settle(code, exitSignal));
+    const settle = (code: number | null, exitSignal: NodeJS.Signals | null) => {
+      if (!finish()) return;
+      for (const stream of [child.stdout, child.stderr]) stream.destroy();
       if (buffer.trim()) handleLine(buffer);
-      signal?.removeEventListener('abort', abort);
       const { text: finalText, error, answered } = report.result();
       if (streamFailure) reject(streamFailure);
       // A child stopped while settling after its answer still delivers that answer.
@@ -265,7 +290,7 @@ export function runSubagent(
         reject(new Error(`Subagent ${exitReason(code, exitSignal)}: ${sanitizeTerminalText(stderr).trim() || 'no output'}${last}`));
       }
       else resolve({ text: sanitizeTerminalText(finalText), usage, ...(error ? { error: sanitizeTerminalText(error) } : {}) });
-    });
+    };
     // Install cleanup before invoking a callback that can fail (for example, recording worktree ownership).
     try {
       if (child.pid !== undefined) onSpawn?.(child.pid);

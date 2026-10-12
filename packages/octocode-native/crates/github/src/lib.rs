@@ -18,6 +18,10 @@ mod search;
 mod transport;
 mod tree;
 
+/// GitHub REST's largest `per_page`: one provider batch of a list endpoint
+/// (branches, tags, comments, reviews, commits, changed files).
+pub const MAX_PER_PAGE: usize = 100;
+
 pub use budget::{AuthAdmission, ExecutorConfig, GitHubBudget, GitHubResource, LimiterKey};
 pub use commit_dates::{MAX_PATHS_PER_REQUEST, PathDates};
 pub use content::{
@@ -32,16 +36,16 @@ pub use query_syntax::{
     SearchName, qualifier_value, quote_search_keyword, search_phrase, validate_qualifier_value,
     validate_search_name,
 };
-pub use refs::{NamedRef, RefKind, RefPage};
+pub use refs::{NamedRef, RefKind, RefMatch, RefPage};
 pub use request_budget::{BudgetStop, RequestBudget};
-pub use retry::{full_jitter, retry_after_delay};
+pub use retry::{days_from_civil, full_jitter, retry_after_delay};
 pub use search::{
     CodeSearchItem, CodeSearchPage, CodeSearchRequest, RepositoryMetadata, RepositorySearchItem,
     RepositorySearchPage, RepositorySearchRequest, TextMatch, TreeEntry, TreeRequest, TreeResponse,
 };
 pub use transport::{
     GitHubTransport, GraphQlError, GraphQlPage, HTTP_USER_AGENT, HttpMethod, RequestContext,
-    RequestSpec, ResponsePage, RetryPolicy,
+    RequestSpec, ResponsePage, RetryPolicy, sso_partial_warning,
 };
 pub use tree::{ContentsEntry, ContentsListing};
 

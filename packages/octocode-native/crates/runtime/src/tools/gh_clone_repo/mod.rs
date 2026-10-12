@@ -1,5 +1,5 @@
 //! Durable, shallow GitHub checkout materialization through the system Git baseline.
-mod cache;
+pub(crate) mod cache;
 mod git;
 mod process;
 
@@ -161,7 +161,7 @@ pub struct CloneLocation {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloneResult {
-    pub total_size: u64,
+    pub bytes: u64,
     pub location: CloneLocation,
     /// Continuations into the local tools on the checkout.
     pub next: serde_json::Value,
@@ -382,30 +382,31 @@ fn execute_clone(
     )
 }
 
-/// The clone cache home passes the path policy, then exists.
+/// The clones root under the cache home passes the path policy, then exists.
+/// The runtime allows only the checkout trees under the Octocode home, never
+/// the home itself, so the clones root is what must be authorized.
 fn authorize_home(context: &CloneContext<'_>) -> Result<(), CloneError> {
-    // Existing homes and homes below an allowed workspace must pass the
+    let clones_root = cache::clones_root(&context.config.cache_home);
+    // Existing roots and roots below an allowed workspace must pass the
     // ordinary policy check. The one exception is an explicitly configured
-    // root that does not exist yet: its parent lies outside that root until
-    // creation. Do not create a cache directory for any other denied path.
-    match context
-        .path_policy
-        .validate_output(&context.config.cache_home)
-    {
+    // root that does not exist yet and holds the clones root: its parent lies
+    // outside that root until creation. Do not create a cache directory for
+    // any other denied path.
+    match context.path_policy.validate_output(&clones_root) {
         Ok(_) => {}
         Err(error)
             if error.code == PolicyErrorCode::OutsideAllowedRoots
-                && !context.config.cache_home.exists()
                 && context
                     .path_policy
                     .allowed_roots()
-                    .contains(&context.config.cache_home) => {}
+                    .iter()
+                    .any(|root| !root.exists() && clones_root.starts_with(root)) => {}
         Err(error) => return Err(policy_denied(error)),
     }
-    // The configured Octocode home is an explicit cache root. Create it
-    // before validating a clone target below it: otherwise a fresh home has
-    // only an existing parent outside the allowed roots to canonicalize.
-    std::fs::create_dir_all(&context.config.cache_home).map_err(|error| {
+    // Create the clones root before validating a clone target below it:
+    // otherwise a fresh root has only an existing parent outside the allowed
+    // roots to canonicalize.
+    std::fs::create_dir_all(&clones_root).map_err(|error| {
         CloneError::new(
             "cacheUnavailable",
             format!("Could not initialize the configured clone cache home: {error}"),
@@ -701,7 +702,7 @@ fn result(
     hit: CacheHit,
 ) -> Result<CloneResult, CloneError> {
     let local_path = clone_dir.to_string_lossy().into_owned();
-    let total_size = hit
+    let bytes = hit
         .size
         .unwrap_or_else(|| cache::checked_out_size(clone_dir));
     let (cloned_at, expires_at) = hit.age.map_or((None, None), |age| {
@@ -709,7 +710,7 @@ fn result(
     });
     let paths = sparse.map(Sparse::paths);
     Ok(CloneResult {
-        total_size,
+        bytes,
         next: explore_next(clone_dir, paths),
         location: CloneLocation {
             kind: if sparse.is_some() { "tree" } else { "repo" },

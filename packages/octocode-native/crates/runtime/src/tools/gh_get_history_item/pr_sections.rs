@@ -1,11 +1,14 @@
 //! Pull-request discussion, review and commit sections: one public page of
 //! each, with per-item body windows.
-use super::patch::{attach_patch_cursor, shape_files};
+use super::patch::page::shape_files;
 use super::patch_hop::{DiffCursors, attach_diff_continuations, take_reshaped_paths};
-use super::util::{array, body_matches, delivered_earlier, needle, str_at, string, window_body};
+use super::text::{body_matches, delivered_earlier, needle, window_body};
+use super::util::{array, str_at, string};
 use super::window::{WindowState, paginate_window};
 use super::{HistoryItemRequest, ItemOperation, fetch};
 use crate::providers::github::{GitHubTransport, ProviderError, RequestContext};
+use crate::tools::gh_shared::commit::utc_date;
+use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::result::remove_nulls;
 use futures_util::{StreamExt as _, TryStreamExt as _};
@@ -30,15 +33,15 @@ const COMMIT_DETAIL_CONCURRENCY: usize = 4;
 pub(super) struct CommentShape {
     /// A minified body view dropped text from a comment.
     pub(super) dropped: bool,
-    /// `hints.readCommentCode`: the code the page's anchored review comments
-    /// on the first anchor's file discuss.
-    pub(super) code_read: Option<Value>,
+    /// `readCommentCode`, `readCommentCode2`, …: the code the page's anchored
+    /// review comments on the first anchor's file discuss, ten ranges per read.
+    pub(super) code_reads: Vec<Value>,
 }
 
 /// A commit's person as one string: the GitHub login, else the git name
 /// (the same rule as search rows).
 pub(super) fn commit_person(item: &Value) -> Value {
-    match crate::tools::gh_search_history::rows::person(item, "author") {
+    match crate::tools::gh_shared::commit::person(item, "author") {
         Value::Null => Value::from("unknown"),
         person => person,
     }
@@ -68,17 +71,19 @@ fn comment_anchor(comment: &Value) -> Option<(&str, &str, u64, u64)> {
     Some((path, sha, start, line))
 }
 
-/// The ghGetFileContent read of the code the page's anchored review
+/// The ghGetFileContent reads of the code the page's anchored review
 /// comments discuss: the first anchor's file at its commit, with every
 /// anchor of the page on that `(path, commitSha)` as one range each
 /// (`startLine-line` padded by [`COMMENT_CODE_PAD`] lines, touching ranges
-/// merged, at most [`COMMENT_CODE_RANGES`]).
-fn comment_code_read(query: &HistoryItemRequest, comments: &[Value]) -> Option<Value> {
+/// merged), [`COMMENT_CODE_RANGES`] ranges per read.
+fn comment_code_reads(query: &HistoryItemRequest, comments: &[Value]) -> Vec<Value> {
     let anchors = comments
         .iter()
         .filter_map(comment_anchor)
         .collect::<Vec<_>>();
-    let (path, sha, _, _) = *anchors.first()?;
+    let Some(&(path, sha, _, _)) = anchors.first() else {
+        return Vec::new();
+    };
     let mut spans = anchors
         .iter()
         .filter(|(p, c, _, _)| *p == path && *c == sha)
@@ -97,26 +102,27 @@ fn comment_code_read(query: &HistoryItemRequest, comments: &[Value]) -> Option<V
             _ => merged.push(span),
         }
     }
-    merged.truncate(COMMENT_CODE_RANGES);
-    let ranges = merged
-        .into_iter()
-        .map(|(start, end)| format!("{start}-{end}"))
-        .collect::<Vec<_>>();
-    Some(
-        crate::tools::result::Continuation::new(
-            ToolId::GhGetFileContent,
-            json!({
-                "owner": query.owner(),
-                "repo": query.repo(),
-                "path": path,
-                "ref": sha,
-                "ranges": ranges,
-            }),
-        )
-        .why("Read the code the review comments discuss.")
-        .confidence("exact")
-        .build(),
-    )
+    merged
+        .chunks(COMMENT_CODE_RANGES)
+        .map(|spans| {
+            let ranges = spans
+                .iter()
+                .map(|(start, end)| format!("{start}-{end}"))
+                .collect::<Vec<_>>();
+            crate::tools::result::Continuation::new(
+                ToolId::GhGetFileContent,
+                json!({
+                    "owner": query.owner(),
+                    "repo": query.repo(),
+                    "path": path,
+                    "ref": sha,
+                    "ranges": ranges,
+                }),
+            )
+            .confidence("exact")
+            .build()
+        })
+        .collect()
 }
 
 /// Shape one page of PR comments.
@@ -132,26 +138,9 @@ pub(super) fn shape_pr_comments(
         .into_iter()
         .filter(|v| body_matches(v, needle.as_deref()))
         .collect::<Vec<_>>();
-    let is_inline = |v: &Value| str_at(v, "/commentType") == Some("review_inline");
-    comments.sort_by_key(|v| if is_inline(v) { 0 } else { 1 });
-    let total_comments = comments.len();
-    let inline_comments = comments.iter().filter(|v| is_inline(v)).count();
-    let mut commenters = Vec::<String>::new();
-    for author in comments.iter().filter_map(|v| str_at(v, "/author")) {
-        if !commenters.iter().any(|v| v == author) {
-            commenters.push(author.to_owned());
-        }
-    }
-    let latest = comments
-        .iter()
-        .filter_map(|v| str_at(v, "/updatedAt").or_else(|| str_at(v, "/createdAt")))
-        .max()
-        .map(str::to_owned);
-    let (slice, page) = state.paginate(
-        comments,
-        query.comment_page(),
-        Some(query.collection_page_size()),
-    );
+    // Inline review comments first; a row's `path` marks one.
+    comments.sort_by_key(|v| if v.get("path").is_some() { 0 } else { 1 });
+    let (slice, page) = state.paginate(comments, query.page(), Some(query.collection_page_size()));
     let mut shaped = Vec::new();
     let mut first_body_page = None;
     let mut dropped = false;
@@ -168,17 +157,12 @@ pub(super) fn shape_pr_comments(
         if delivered_earlier(query.char_offset(), &body_page) {
             continue;
         }
-        // A whole body restates no window, and an unedited comment no
-        // second timestamp.
+        // A whole body restates no window.
         let windowed = body_page["offset"] != 0 || body_page["hasMore"] == true;
-        let updated = comment
-            .get("updatedAt")
-            .filter(|updated| comment.get("createdAt") != Some(*updated));
         let mut item = json!({
             "id": comment["id"], "author": comment["author"],
-            "commentType": comment.get("commentType").cloned().unwrap_or(json!("discussion")),
             "body": body, "bodyPagination": windowed.then_some(body_page),
-            "createdAt": comment.get("createdAt"), "updatedAt": updated
+            "createdAt": comment.get("createdAt"), "updatedAt": comment.get("updatedAt")
         });
         // The review anchor and thread link: path, line range, side, the
         // commit the lines belong to, and the comment this one replies to.
@@ -190,16 +174,19 @@ pub(super) fn shape_pr_comments(
     }
     if !shaped.is_empty() {
         row["comments"] = Value::Array(shaped);
-        row["reviewSummary"] = json!({"commentsCount":total_comments,"inlineComments":inline_comments,"discussionComments":total_comments-inline_comments,"commenters":commenters.iter().take(8).collect::<Vec<_>>(),"commenterCount":commenters.len(),"latestCommentAt":latest,"countScope":"providerBatch"});
     }
     pagination.insert("comments".into(), page);
     if let Some(page) = first_body_page {
         pagination.insert("commentBody".into(), page);
     }
-    let code_read = row["comments"]
+    let code_reads = row["comments"]
         .as_array()
-        .and_then(|comments| comment_code_read(query, comments));
-    CommentShape { dropped, code_read }
+        .map(|comments| comment_code_reads(query, comments))
+        .unwrap_or_default();
+    CommentShape {
+        dropped,
+        code_reads,
+    }
 }
 
 /// Shape one page of PR reviews; true when a minified body view dropped
@@ -216,11 +203,7 @@ pub(super) fn shape_pr_reviews(
         .into_iter()
         .filter(|v| body_matches(v, needle.as_deref()))
         .collect::<Vec<_>>();
-    let (slice, page) = state.paginate(
-        reviews,
-        query.review_page(),
-        Some(query.collection_page_size()),
-    );
+    let (slice, page) = state.paginate(reviews, query.page(), Some(query.collection_page_size()));
     let mut shaped = Vec::new();
     let mut first_body_page = None;
     let mut dropped = false;
@@ -275,21 +258,17 @@ pub(super) async fn shape_pr_commits(
         .and_then(|content| content.pointer("/commits/includeFiles"))
         .and_then(Value::as_bool)
         == Some(true);
-    let (slice, page) = state.paginate(
-        commits,
-        query.commit_page(),
-        Some(query.collection_page_size()),
-    );
+    let (slice, page) = state.paginate(commits, query.page(), Some(query.collection_page_size()));
     // Each commit's files are one detail request: a few run at once, in
     // page order, through the transport's shared admission and deadline.
     let shaped: Vec<Value> = futures_util::stream::iter(slice)
         .map(|item| async move {
             let sha = string(item.get("sha"));
             let mut commit = json!({
-                "sha":sha,
+                "commitSha":sha,
                 "message":str_at(&item,"/commit/message").unwrap_or(""),
                 "author":commit_person(&item),
-                "date":super::util::utc_date(str_at(&item,"/commit/author/date"))
+                "date":utc_date(str_at(&item,"/commit/author/date"))
             });
             if include_files {
                 let (detail, more) = fetch(
@@ -300,16 +279,16 @@ pub(super) async fn shape_pr_commits(
                 )
                 .await?;
                 let files = array(detail.get("files").cloned().unwrap_or(json!([])));
-                let (files, mut files_page) =
+                let (files, files_page) =
                     paginate_window(files, 0, !more, Some(1), Some(query.collection_page_size()));
                 let (mut files, cursor) = shape_files(files, true, query);
                 let reshaped = take_reshaped_paths(
                     Some(&mut files),
                     query.wants(crate::contracts::tool_types::ExtraKind::Details),
                 );
-                attach_patch_cursor(&mut files_page, cursor);
                 let cursors = DiffCursors::of_file_page(
                     &files_page,
+                    cursor,
                     files.as_array().is_some_and(|files| !files.is_empty()),
                 );
                 commit["files"] = files;
@@ -340,14 +319,11 @@ pub(super) async fn shape_pr_commits(
 /// `matchString` hits); a commit read is never narrowed, so it returns every
 /// patch of that commit whole, paged.
 fn attach_raw_commit_read(commit: &mut Value, query: &HistoryItemRequest, sha: &str) {
-    if !commit.get("next").is_some_and(Value::is_object) {
-        commit["next"] = json!({});
-    }
+    ensure_next(commit);
     commit["next"]["readUntrimmed"] = crate::tools::result::Continuation::new(
         ToolId::GhGetHistoryItem,
         json!({"operation":"commit","owner":query.owner(),"repo":query.repo(),"ref":sha,"sections":["patches"]}),
     )
-    .why("Read this commit's raw patches; the rows above are a reshaped view.")
     .confidence("exact")
     .build();
 }
@@ -368,7 +344,7 @@ mod tests {
         shape_pr_comments(
             &mut row,
             &mut pagination,
-            map_comments(raw, "review_inline", true),
+            map_comments(raw),
             WindowState::COMPLETE,
             &query,
         );
@@ -427,14 +403,10 @@ mod tests {
         }))
         .expect("pull request row");
         let mut row = json!({});
-        let comments = map_comments(
-            vec![
-                raw(json!({"id":1,"line":5,"start_line":null,"commit_id":"c0","side":"LEFT"})),
-                raw(json!({"id":2,"line":2776,"start_line":2773,"commit_id":"head1"})),
-            ],
-            "review_inline",
-            true,
-        );
+        let comments = map_comments(vec![
+            raw(json!({"id":1,"line":5,"start_line":null,"commit_id":"c0","side":"LEFT"})),
+            raw(json!({"id":2,"line":2776,"start_line":2773,"commit_id":"head1"})),
+        ]);
         let shape = shape_pr_comments(
             &mut row,
             &mut Map::new(),
@@ -442,7 +414,9 @@ mod tests {
             WindowState::COMPLETE,
             &query,
         );
-        let read = shape.code_read.expect("a code read");
+        let [read] = shape.code_reads.as_slice() else {
+            panic!("one code read: {:?}", shape.code_reads);
+        };
         assert_eq!(read["tool"], "ghGetFileContent", "{read}");
         let q = &read["query"]["queries"][0];
         assert_eq!(q["ref"], "head1", "{read}");
@@ -450,7 +424,7 @@ mod tests {
         assert_eq!(q["path"], "src/a.ts", "{read}");
     }
 
-    /// HI12(c): one read covers every anchor of the page on the first
+    /// One read covers every anchor of the page on the first
     /// anchor's file and commit; another file or commit stays out.
     #[test]
     fn review_comment_read_covers_every_anchor_on_its_file() {
@@ -460,17 +434,13 @@ mod tests {
         }))
         .expect("pull request row");
         let mut row = json!({});
-        let comments = map_comments(
-            vec![
-                raw(json!({"id":1,"line":40,"start_line":null,"commit_id":"h"})),
-                raw(json!({"id":2,"line":2,"start_line":null,"commit_id":"h"})),
-                raw(json!({"id":3,"line":45,"start_line":43,"commit_id":"h"})),
-                raw(json!({"id":4,"line":9,"commit_id":"h","path":"src/b.ts"})),
-                raw(json!({"id":5,"line":90,"commit_id":"other"})),
-            ],
-            "review_inline",
-            true,
-        );
+        let comments = map_comments(vec![
+            raw(json!({"id":1,"line":40,"start_line":null,"commit_id":"h"})),
+            raw(json!({"id":2,"line":2,"start_line":null,"commit_id":"h"})),
+            raw(json!({"id":3,"line":45,"start_line":43,"commit_id":"h"})),
+            raw(json!({"id":4,"line":9,"commit_id":"h","path":"src/b.ts"})),
+            raw(json!({"id":5,"line":90,"commit_id":"other"})),
+        ]);
         let shape = shape_pr_comments(
             &mut row,
             &mut Map::new(),
@@ -478,16 +448,20 @@ mod tests {
             WindowState::COMPLETE,
             &query,
         );
-        let read = shape.code_read.expect("a code read");
+        let [read] = shape.code_reads.as_slice() else {
+            panic!("one code read: {:?}", shape.code_reads);
+        };
         let q = &read["query"]["queries"][0];
         assert_eq!(q["path"], "src/a.ts", "{read}");
         assert_eq!(q["ref"], "h", "{read}");
         assert_eq!(q["ranges"], json!(["1-5", "37-48"]), "{read}");
-        assert!(row["reviewSummary"].get("themes").is_none(), "{row}");
-        assert_eq!(row["reviewSummary"]["countScope"], "providerBatch", "{row}");
+        // Rows carry the evidence: no summary restates their counts, and an
+        // inline comment is the one with a `path`.
+        assert!(row.get("reviewSummary").is_none(), "{row}");
+        assert!(row["comments"][0].get("commentType").is_none(), "{row}");
     }
 
-    /// QA2: a body continuation (`offset` > 0) re-reads the comment page
+    /// A body continuation (`offset` > 0) re-reads the comment page
     /// to continue its cut bodies; a comment whose whole body an earlier
     /// window delivered is not listed again as an empty row.
     #[test]
@@ -499,17 +473,13 @@ mod tests {
         .expect("pull request row");
         let mut row = json!({});
         let mut pagination = Map::new();
-        let comments = map_comments(
-            vec![
-                raw(json!({"id":1,"body":"short"})),
-                raw(json!({"id":2,"body":"x".repeat(25)})),
-                raw(json!({"id":3,"body":"y".repeat(10)})),
-                // An empty body was whole on the first window too.
-                raw(json!({"id":4,"body":""})),
-            ],
-            "discussion",
-            true,
-        );
+        let comments = map_comments(vec![
+            raw(json!({"id":1,"body":"short"})),
+            raw(json!({"id":2,"body":"x".repeat(25)})),
+            raw(json!({"id":3,"body":"y".repeat(10)})),
+            // An empty body was whole on the first window too.
+            raw(json!({"id":4,"body":""})),
+        ]);
         shape_pr_comments(
             &mut row,
             &mut pagination,
@@ -527,7 +497,7 @@ mod tests {
         );
     }
 
-    /// X5: a commit names its GitHub account first, else its git name.    /// X5: a commit names its GitHub account first, else its git name.
+    /// A commit names its GitHub account first, else its git name.
     #[test]
     fn commit_person_is_login_first() {
         let login = json!({"author":{"login":"rickhanlonii"},"commit":{"author":{"name":"Ricky"}}});

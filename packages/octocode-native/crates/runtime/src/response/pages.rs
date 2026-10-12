@@ -2,18 +2,16 @@
 //! unfinished-result disclosure, the stale-snapshot restart, and the facts
 //! that tell whether a row has more to read.
 //!
-//! A row whose `next` holds pages that leave more to read opens its
-//! `warnings` with one entry that names each page and what it has left,
-//! e.g. `N more changed files (next.nextFilePage)`, or
-//! `more (next.continue)` when the count is unknown. The counts come
-//! from the row's own pagination facts (a page size the continuation leaves
-//! at its default is the contract default); nothing is removed or moved out
-//! of the row. Only a page a tool warning already names, or one whose
-//! pagination says nothing is left, adds nothing; `partialReasons` say why a
-//! row is partial, not how much is left, so they never replace the entry.
-//! The entry follows the tool's own warnings, and `warnings` moves to the
-//! front of the row so an agent reading a long page meets it before the
-//! data; `next` keeps its place.
+//! A row whose `next` holds pages that leave a counted rest shows no
+//! warning for it: its `pagination` blocks and `next` already say where it
+//! stands and what continues. The one exception is a split row whose pages
+//! moved to the response pager, which a part names once in `warnings`
+//! (`7 more changed files (next.nextFilePage on the row's last part)`) because its own `next`
+//! no longer carries them. The counts come from the row's pagination facts,
+//! noted as data ([`Remaining`]) before extras pruning ([`note_remaining`]);
+//! the stage takes them off the rows ([`take_remaining_notes`]) and the
+//! pager words the moved ones ([`redisclose`]). `partialReasons` say why a
+//! row is partial, never how much is left.
 
 use serde_json::{Map, Value, json};
 
@@ -22,116 +20,163 @@ use crate::tools::id::ToolId;
 
 const WARNINGS: &str = "warnings";
 
-/// Adds the remaining-pages warning to every result row. Idempotent: the
-/// entry names its pages, so a second pass finds them named.
-pub(super) fn disclose_remaining_pages(structured: &mut Value, tool: ToolId) {
-    for row in structured
+/// The row key that carries the engine's [`Remaining`] notes until the
+/// stage renders them; never public.
+const REMAINING: &str = "remaining";
+
+/// A page of a row that leaves a counted rest to read: the page's `next`
+/// name and what is left (`17 more files`), as data.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Remaining {
+    pub page: String,
+    pub left: String,
+}
+
+/// Notes on `row` every page of its data that `tool` leaves remaining with
+/// a counted rest. Runs before extras pruning, while the pagination facts
+/// are still on the row.
+pub(crate) fn note_remaining(row: &mut Value, tool: ToolId) {
+    let notes = remaining_notes(row, tool);
+    if let Some(data) = row.get_mut("data") {
+        strip_working_counts(data);
+    }
+    if !notes.is_empty()
+        && let Some(object) = row.as_object_mut()
+    {
+        object.insert(
+            REMAINING.to_owned(),
+            serde_json::to_value(notes).unwrap_or_default(),
+        );
+    }
+}
+
+/// Counts a tool keeps on a `pagination`/`contentPagination` entry only for
+/// the notes above: the contract's strict windows do not declare them.
+const WORKING_COUNTS: [&str; 4] = [
+    "remainingChars",
+    "remainingItems",
+    "nextPageSize",
+    "unfinishedFiles",
+];
+
+/// Drops [`WORKING_COUNTS`] from every pagination entry of `value`, once the
+/// notes have read them.
+fn strip_working_counts(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map.iter_mut() {
+                match (key.as_str(), child) {
+                    ("pagination", Value::Object(entry)) => {
+                        WORKING_COUNTS.iter().for_each(|name| {
+                            entry.remove(*name);
+                        });
+                    }
+                    ("contentPagination", Value::Object(axes)) => {
+                        for entry in axes.values_mut().filter_map(Value::as_object_mut) {
+                            WORKING_COUNTS.iter().for_each(|name| {
+                                entry.remove(*name);
+                            });
+                        }
+                    }
+                    (_, child) => strip_working_counts(child),
+                }
+            }
+        }
+        Value::Array(items) => items.iter_mut().for_each(strip_working_counts),
+        _ => {}
+    }
+}
+
+fn remaining_notes(row: &Value, tool: ToolId) -> Vec<Remaining> {
+    match row.get("data").and_then(Value::as_object) {
+        Some(data) if !is_complete(&row["data"]) => {
+            remaining_pages(data, |name| crate::tools::id::is_remaining(tool, name))
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Every page of `data` that `remains` and counts its rest.
+fn remaining_pages(data: &Map<String, Value>, remains: impl Fn(&str) -> bool) -> Vec<Remaining> {
+    let Some(Value::Object(pages)) = data.get(PAGES_KEY) else {
+        return Vec::new();
+    };
+    pages
+        .iter()
+        .filter(|(name, _)| remains(name))
+        .filter_map(|(name, call)| match remaining(data, name, call) {
+            Left::Counted(left) => Some(Remaining {
+                page: name.clone(),
+                left,
+            }),
+            Left::Done | Left::Unknown => None,
+        })
+        .collect()
+}
+
+/// Takes every result row's notes off the rows, returned by row position
+/// for the pager. A whole row renders nothing: its visible `pagination` and
+/// `next` already carry what is left. Only a split row's moved pages are
+/// worded ([`redisclose`]).
+pub(crate) fn take_remaining_notes(structured: &mut Value) -> Vec<Vec<Remaining>> {
+    structured
         .get_mut("results")
         .and_then(Value::as_array_mut)
         .into_iter()
         .flatten()
-    {
-        if let Some(data) = row.get_mut("data").and_then(Value::as_object_mut)
-            && data.get("complete") != Some(&Value::Bool(true))
-        {
-            disclose_pages(data, |name| crate::tools::id::is_remaining(tool, name));
-        }
-    }
-}
-
-/// A response page that cut a row keeps its `warnings` on the first part
-/// while the row's pages ride the last part: every warning naming one of
-/// `moved` (`next.<name>`) names `responsePagination.next` instead, so a
-/// part never points at a continuation it does not carry.
-pub(crate) fn retarget_moved_pages(data: &mut Map<String, Value>, moved: &[String]) {
-    if moved.is_empty() {
-        return;
-    }
-    let Some(Value::Array(warnings)) = data.get_mut(WARNINGS) else {
-        return;
-    };
-    for warning in warnings.iter_mut() {
-        let Value::String(text) = warning else {
-            continue;
-        };
-        let mut changed = false;
-        for name in moved {
-            let named = format!("next.{name}");
-            if text.contains(&named) {
-                *text = text.replace(&named, "responsePagination.next");
-                changed = true;
-            }
-        }
-        // Count-less lines of several pages now read the same: keep one.
-        if changed {
-            let mut parts: Vec<&str> = Vec::new();
-            for part in text.split("; ") {
-                if !parts.contains(&part) {
-                    parts.push(part);
-                }
-            }
-            *text = parts.join("; ");
-        }
-    }
-}
-
-/// A split row's last part carries the row's pages (each resumes after the
-/// evidence shown), so it names them too, from the facts the part holds.
-pub(crate) fn disclose_carried_pages(data: &mut Map<String, Value>) {
-    disclose_pages(data, |_| true);
-}
-
-/// Adds the line for every page of `data` that `remains` and no warning
-/// names yet.
-fn disclose_pages(data: &mut Map<String, Value>, remains: impl Fn(&str) -> bool) {
-    let Some(Value::Object(pages)) = data.get(PAGES_KEY) else {
-        return;
-    };
-    // A warning naming `next.expandValues` also names its numbered
-    // siblings (`expandValues2`, ...).
-    let named = |name: &str| {
-        let references = [name, name.trim_end_matches(|c: char| c.is_ascii_digit())]
-            .map(|page| format!("next.{page}"));
-        data.get(WARNINGS)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .any(|warning| {
-                references
-                    .iter()
-                    .any(|reference| warning.contains(reference))
-            })
-    };
-    let parts = pages
-        .iter()
-        .filter(|(name, _)| remains(name) && !named(name))
-        .filter_map(|(name, call)| {
-            // A count-less remainder says only what `next.<name>` already
-            // says (the instructions: next.* is the unread rest).
-            let left = match remaining(data, name, call) {
-                Left::Done | Left::Unknown => return None,
-                Left::Counted(left) => left,
-            };
-            Some(format!("{left} (next.{name})"))
+        .map(|row| {
+            row.as_object_mut()
+                .and_then(|object| object.remove(REMAINING))
+                .and_then(|notes| serde_json::from_value(notes).ok())
+                .unwrap_or_default()
         })
-        .collect::<Vec<_>>();
-    if parts.is_empty() {
-        return;
+        .collect()
+}
+
+/// The one `warnings` entry for the pages a split moved to the response
+/// pager: `17 more files (next.nextPage on the row's last part)`. A moved continuation is
+/// the one thing the part's own `pagination` and `next` cannot say. Lines
+/// that read the same appear once.
+fn render_moved(notes: &[Remaining], moved: &[String]) -> Option<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for note in notes.iter().filter(|note| moved.contains(&note.page)) {
+        let part = format!(
+            "{} ({PAGES_KEY}.{} on the row's last part)",
+            note.left, note.page
+        );
+        if !parts.contains(&part) {
+            parts.push(part);
+        }
     }
-    let entry = Value::String(parts.join("; "));
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+/// Appends `entry` to the row's warnings and moves them to the front.
+fn lead_with(data: &mut Map<String, Value>, entry: String) {
     let warnings = match data.shift_remove(WARNINGS) {
         Some(Value::Array(mut warnings)) => {
-            warnings.push(entry);
+            warnings.push(Value::String(entry));
             warnings
         }
-        _ => vec![entry],
+        _ => vec![Value::String(entry)],
     };
     data.shift_insert(0, WARNINGS.to_owned(), Value::Array(warnings));
 }
 
+/// One part of a split row: names the response page for every page the
+/// split `moved` to another part, so a part never points at a continuation
+/// it does not carry.
+pub(crate) fn redisclose(data: &mut Map<String, Value>, notes: &[Remaining], moved: &[String]) {
+    if let Some(entry) = render_moved(notes, moved) {
+        lead_with(data, entry);
+    }
+}
+
 /// The content axis (`contentPagination.<axis>` of an item read) a page
-/// continues. On an item read `nextFilePage` pages the changed files.
+/// continues. On an item read `nextFilePage` pages the changed files. The
+/// contract classifies page names into channels only and declares the
+/// `contentPagination` axes as output fields with no link to the page that
+/// continues them, so this is the one table of that link.
 fn content_axis(page: &str, data: &Map<String, Value>) -> Option<&'static str> {
     Some(match page {
         "continueBody" => "body",
@@ -184,10 +229,16 @@ fn remaining(data: &Map<String, Value>, name: &str, call: &Value) -> Left {
         return Left::of(entry, count);
     }
     match name {
+        // A commit or comparison pages its changed files apart from its
+        // commit `pagination`.
+        "nextFilePage" if data.contains_key("filePagination") => {
+            let entry = &data["filePagination"];
+            Left::of(entry, axis_left("files", entry))
+        }
         "nextMatchPage" => matches_left(data).map_or(Left::Unknown, |left| {
             Left::Counted(more(left, "match", "matches"))
         }),
-        "nextPage" | "nextFilePage" | "continue" => {
+        "nextPage" | "nextFilePage" | "continueWindow" => {
             let Some(pagination) = data.get("pagination") else {
                 return Left::Unknown;
             };
@@ -262,12 +313,12 @@ fn items_left(entry: &Value) -> Option<u64> {
 }
 
 /// Chars left after the shown window: the entry's own `remainingChars`
-/// (one window over several bodies), else `totalChars - nextOffset`.
+/// (one window over several bodies), else `total - nextOffset`.
 fn chars_left(entry: &Value) -> Option<u64> {
     if let Some((left, _)) = number(entry, &["remainingChars"]) {
         return (left > 0).then_some(left);
     }
-    let (total, _) = number(entry, &["totalChars"])?;
+    let (total, _) = number(entry, &["total"])?;
     let (offset, _) = number(entry, &["nextOffset"])?;
     total.checked_sub(offset).filter(|left| *left > 0)
 }
@@ -337,9 +388,8 @@ fn with_page_facts(pagination: &Value, call: &Value) -> Value {
 }
 
 /// What one item of a listing is, by its list key.
-const NOUNS: [(&str, (&str, &str)); 9] = [
+const NOUNS: [(&str, (&str, &str)); 8] = [
     ("files", ("file", "files")),
-    ("entries", ("entry", "entries")),
     ("matches", ("match", "matches")),
     ("symbols", ("symbol", "symbols")),
     ("repositories", ("repository", "repositories")),
@@ -364,18 +414,20 @@ fn row_left(pagination: &Value, data: &Map<String, Value>, call: &Value) -> Opti
         return None;
     }
     if let Some((offset, _)) = number(pagination, &["nextOffset"]) {
-        let (key, singular, plural) = match pagination.get("unit").and_then(Value::as_str) {
-            Some("bytes") => ("totalBytes", "byte", "bytes"),
-            Some("chars") => ("totalChars", "char", "chars"),
-            // A symbols view pages its outline, not the source (LF3).
+        // A window states its view's `total` in its unit; a line window omits
+        // it when the view is the whole file, which `data.totalLines` sizes.
+        let (fallback, singular, plural) = match pagination.get("unit").and_then(Value::as_str) {
+            Some("bytes") => (None, "byte", "bytes"),
+            Some("chars") => (None, "char", "chars"),
+            // A symbols view pages its outline, not the source.
             _ if data.get("contentView").and_then(Value::as_str) == Some("symbols") => {
-                ("totalLines", "outline line", "outline lines")
+                (Some("totalLines"), "outline line", "outline lines")
             }
-            _ => ("totalLines", "line", "lines"),
+            _ => (Some("totalLines"), "line", "lines"),
         };
         let total = pagination
-            .get(key)
-            .or_else(|| data.get(key))
+            .get("total")
+            .or_else(|| data.get(fallback?))
             .and_then(Value::as_u64)?;
         let left = total.checked_sub(offset).filter(|left| *left > 0)?;
         return Some(more(left, singular, plural));
@@ -400,18 +452,35 @@ fn row_left(pagination: &Value, data: &Map<String, Value>, call: &Value) -> Opti
 }
 
 /// The one text of a stale snapshot, whichever tool's cursor went stale.
-pub const STALE_SNAPSHOT_ERROR: &str =
-    "The source or the query changed since the earlier pages; follow next.restart to start over.";
+pub const STALE_SNAPSHOT_ERROR: &str = "The source or the query changed since the earlier pages; nothing shown remains valid, start over.";
 
-/// A stale-snapshot row: the shared text, no `isPartial` (nothing of the
-/// shown result remains to read), and `next.restart` when the tool built
-/// none: page 1 of the same query, without its snapshot and page cursors.
+/// A stale-snapshot row ends the page: the shared text, no `isPartial` and no
+/// `hasMore` (nothing of the shown result remains to read), no continuation
+/// but `next.restart`, which the tool built or is page 1 of the same query
+/// without its snapshot and page cursors.
 pub(super) fn restart_stale(tool: ToolId, query: &Value, data: &mut Value) {
     let Some(object) = data.as_object_mut() else {
         return;
     };
     object.insert("error".into(), json!(STALE_SNAPSHOT_ERROR));
     object.remove("isPartial");
+    for (key, block) in object.iter_mut() {
+        if is_pagination_key(key)
+            && let Some(block) = block.as_object_mut()
+            && block.contains_key("hasMore")
+        {
+            block.insert("hasMore".into(), json!(false));
+        }
+    }
+    if let Some(next) = object.get_mut("next").and_then(Value::as_object_mut) {
+        next.retain(|kind, _| kind == "restart");
+    }
+    ensure_restart(tool, query, object);
+}
+
+/// `next.restart` when the tool built none: page 1 of the same query,
+/// without its snapshot and page cursors.
+fn ensure_restart(tool: ToolId, query: &Value, object: &mut Map<String, Value>) {
     if object
         .get("next")
         .and_then(Value::as_object)
@@ -440,6 +509,40 @@ pub(super) fn restart_stale(tool: ToolId, query: &Value, data: &mut Value) {
         }
         other => *other = json!({ "restart": restart }),
     }
+}
+
+/// A page past the end is one outcome on every tool: the row is empty, its
+/// `reason` names the page and the page count (`page 99 of 4`), and
+/// `next.restart` re-asks the query from page 1. A tool flags it with
+/// `outOfRange` on its `pagination` block or a named one
+/// (`filePagination`). Returns whether `data` was such a page.
+pub(super) fn settle_out_of_range(tool: ToolId, query: &Value, data: &mut Value) -> bool {
+    let Some(object) = data.as_object_mut() else {
+        return false;
+    };
+    let Some(pagination) = object
+        .iter()
+        .find(|(key, block)| is_pagination_key(key) && block["outOfRange"] == true)
+        .map(|(_, block)| block)
+    else {
+        return false;
+    };
+    let reason = match (
+        pagination.get("currentPage").and_then(Value::as_u64),
+        pagination.get("totalPages").and_then(Value::as_u64),
+    ) {
+        (Some(page), Some(pages)) => format!("page {page} of {pages}"),
+        (Some(page), None) => format!("page {page} is past the last page"),
+        _ => "page is past the last page".to_owned(),
+    };
+    object.entry("reason").or_insert(json!(reason));
+    // No page is left to read: a tool's partial signals would only restate
+    // the outcome `reason` and `next.restart` already carry.
+    for signal in ["isPartial", "terminalLimit", "partialReasons"] {
+        object.remove(signal);
+    }
+    ensure_restart(tool, query, object);
+    true
 }
 
 /// One page's facts. Every tool builds its `pagination` block from these
@@ -592,15 +695,19 @@ pub(super) fn slim_pagination(block: &mut Map<String, Value>, limited: bool) {
     }
 }
 
+/// Whether `key` is a pagination block: the shared output fields
+/// `pagination`, `contentPagination` and `responsePagination` share the
+/// suffix by the contract's naming convention; the contract lists no such
+/// keys, so the convention is the rule.
 pub(super) fn is_pagination_key(key: &str) -> bool {
     key == "pagination" || key.ends_with("Pagination")
 }
 
-/// A row that states `complete:true` lists everything in its scope: any
+/// A row that states `coverage.state: "complete"` lists everything in its scope: any
 /// `next.*` it carries is a drill-down, not unread rest.
 #[must_use]
 pub fn is_complete(data: &Value) -> bool {
-    data.get("complete") == Some(&Value::Bool(true))
+    data.pointer("/coverage/state").and_then(Value::as_str) == Some("complete")
 }
 
 pub fn is_partial(data: &Value) -> bool {
@@ -755,7 +862,7 @@ fn bounded(record: &Map<String, Value>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{PageFacts, disclose_remaining_pages};
+    use super::{PageFacts, Remaining, note_remaining, redisclose, take_remaining_notes};
     use crate::tools::id::ToolId;
     use serde_json::{Value, json};
 
@@ -763,17 +870,35 @@ mod tests {
         json!({"tool": tool, "query": {"queries":[{"page": 2}]}})
     }
 
+    /// The row as the engine notes it and the stage takes it: no warning is
+    /// added (the visible pagination and `next` carry the counts), and the
+    /// returned data leads with one `warnings` entry that words each note as
+    /// `<left> (next.<page>)`, so the counting rules stay asserted.
     fn disclosed(data: Value) -> Value {
-        let mut structured = json!({"results": [{"index": 0, "data": data}]});
-        disclose_remaining_pages(&mut structured, ToolId::LocalSearch);
-        let once = structured.clone();
-        disclose_remaining_pages(&mut structured, ToolId::LocalSearch);
-        assert_eq!(structured, once, "idempotent");
-        structured["results"][0]["data"].take()
+        let mut row = json!({"index": 0, "data": data});
+        note_remaining(&mut row, ToolId::LocalSearch);
+        let before = row["data"].clone();
+        let mut structured = json!({"results": [row]});
+        let notes = take_remaining_notes(&mut structured);
+        let row = &structured["results"][0];
+        assert!(row.get(super::REMAINING).is_none(), "{row}");
+        assert_eq!(row["data"], before, "a whole row words no remaining note");
+        let mut data = structured["results"][0]["data"].clone();
+        if !notes[0].is_empty() {
+            let entry = notes[0]
+                .iter()
+                .map(|note| format!("{} (next.{})", note.left, note.page))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let mut warnings = data["warnings"].as_array().cloned().unwrap_or_default();
+            warnings.push(json!(entry));
+            data["warnings"] = json!(warnings);
+        }
+        data
     }
 
     #[test]
-    fn a_pull_request_page_names_every_remaining_count_first() {
+    fn a_pull_request_page_counts_every_remaining_page() {
         let data = disclosed(json!({
             "pullRequests": [{"number": 1, "contentPagination": {
                 "patches": {"hasMore": true, "unfinishedFiles": 12},
@@ -792,13 +917,6 @@ mod tests {
                 "12 unfinished patches (next.continuePatch); 7 more changed files (next.nextFilePage)"
             ]),
             "{data}"
-        );
-        assert_eq!(
-            data.as_object()
-                .and_then(|object| object.keys().next())
-                .map(String::as_str),
-            Some("warnings"),
-            "the disclosure leads the row: {data}"
         );
         assert!(
             data["next"]["continuePatch"].is_object(),
@@ -860,45 +978,51 @@ mod tests {
         let read = disclosed(json!({
             "content": "1\tx",
             "pagination": {"unit": "lines", "offset": 0, "length": 381,
-                "totalLines": 386, "hasMore": true, "nextOffset": 381},
-            "next": {"continue": page("localFetch")}
+                "total": 386, "hasMore": true, "nextOffset": 381},
+            "next": {"continueWindow": page("localFetch")}
         }));
-        assert_eq!(read["warnings"], json!(["5 more lines (next.continue)"]));
+        assert_eq!(
+            read["warnings"],
+            json!(["5 more lines (next.continueWindow)"])
+        );
         let whole = disclosed(json!({
             "path": "a.py",
             "totalLines": 3137,
-            "next": {"continue": page("localFetch")},
+            "next": {"continueWindow": page("localFetch")},
             "pagination": {"unit": "lines", "offset": 0, "length": 471,
                 "hasMore": true, "nextOffset": 471},
             "isPartial": true
         }));
         assert_eq!(
             whole["warnings"],
-            json!(["2666 more lines (next.continue)"])
+            json!(["2666 more lines (next.continueWindow)"])
         );
-        // LF3: a symbols view pages outline lines, not source lines.
+        // A symbols view pages outline lines, not source lines.
         let outline = disclosed(json!({
             "path": "a.rs",
             "contentView": "symbols",
             "content": "1\tfn a()",
             "pagination": {"unit": "lines", "offset": 0, "length": 40,
-                "totalLines": 52, "hasMore": true, "nextOffset": 40},
-            "next": {"continue": page("localFetch")}
+                "total": 52, "hasMore": true, "nextOffset": 40},
+            "next": {"continueWindow": page("localFetch")}
         }));
         assert_eq!(
             outline["warnings"],
-            json!(["12 more outline lines (next.continue)"])
+            json!(["12 more outline lines (next.continueWindow)"])
         );
         let bytes = disclosed(json!({
             "content": "x",
             "pagination": {"unit": "bytes", "offset": 0, "length": 100,
-                "totalBytes": 250, "hasMore": true, "nextOffset": 100},
-            "next": {"continue": page("localFetch")}
+                "total": 250, "hasMore": true, "nextOffset": 100},
+            "next": {"continueWindow": page("localFetch")}
         }));
-        assert_eq!(bytes["warnings"], json!(["150 more bytes (next.continue)"]));
+        assert_eq!(
+            bytes["warnings"],
+            json!(["150 more bytes (next.continueWindow)"])
+        );
         let issue = disclosed(json!({
             "issues": [{"number": 3, "contentPagination": {"body": {"offset": 0,
-                "length": 12000, "totalChars": 14366, "hasMore": true,
+                "unit": "chars", "length": 12000, "total": 14366, "hasMore": true,
                 "nextOffset": 12000}}}],
             "next": {"continueBody": page("ghGetHistoryItem")}
         }));
@@ -906,11 +1030,11 @@ mod tests {
             issue["warnings"],
             json!(["2366 more body chars (next.continueBody)"])
         );
-        // QA2: one offset continues every cut comment of the page; the
+        // One offset continues every cut comment of the page; the
         // count is all of their remaining chars.
         let comments = disclosed(json!({
             "pullRequests": [{"number": 3, "contentPagination": {"commentBody": {"offset": 0,
-                "length": 12000, "totalChars": 26574, "hasMore": true,
+                "unit": "chars", "length": 12000, "total": 26574, "hasMore": true,
                 "nextOffset": 12000, "remainingChars": 101000}}}],
             "next": {"continueCommentBody": page("ghGetHistoryItem")}
         }));
@@ -921,13 +1045,13 @@ mod tests {
     }
 
     #[test]
-    fn pages_without_a_count_or_already_named_add_nothing() {
-        let named = json!({
-            "warnings": ["Snapshot changed. next.restart reruns the search."],
+    fn restarts_and_finished_pages_add_nothing() {
+        let restart = json!({
+            "warnings": ["Snapshot changed."],
             "pagination": {"currentPage": 1, "totalPages": 1, "hasMore": false},
             "next": {"restart": page("localSearch")}
         });
-        assert_eq!(disclosed(named.clone()), named);
+        assert_eq!(disclosed(restart.clone()), restart);
         let finished = json!({
             "pagination": {"currentPage": 2, "totalPages": 2, "hasMore": false},
             "next": {"nextPage": page("localSearch")}
@@ -953,11 +1077,40 @@ mod tests {
             "content": "x",
             "pagination": {"unit": "bytes", "offset": 0, "length": 100,
                 "hasMore": true, "nextOffset": 100},
-            "next": {"continue": page("localFetch")}
+            "next": {"continueWindow": page("localFetch")}
         });
         assert_eq!(disclosed(bytes.clone()), bytes);
         let restart = json!({"next": {"restart": page("localSearch")}});
         assert_eq!(disclosed(restart.clone()), restart);
+    }
+
+    /// A whole row shows no remaining-page warning; a split part
+    /// words only the pages its split moved to the response pager.
+    #[test]
+    fn only_moved_pages_are_worded_on_a_split_part() {
+        let notes = vec![
+            Remaining {
+                page: "nextPage".into(),
+                left: "17 more files".into(),
+            },
+            Remaining {
+                page: "nextMatchPage".into(),
+                left: "26 more matches".into(),
+            },
+        ];
+        let mut part = json!({"files": [], "next": {"nextPage": page("localSearch")}});
+        redisclose(part.as_object_mut().unwrap(), &notes, &[]);
+        assert!(part.get("warnings").is_none(), "{part}");
+        redisclose(
+            part.as_object_mut().unwrap(),
+            &notes,
+            &["nextMatchPage".to_owned()],
+        );
+        assert_eq!(
+            part["warnings"],
+            json!(["26 more matches (next.nextMatchPage on the row's last part)"]),
+            "{part}"
+        );
     }
 
     /// A page size the continuation leaves at its contract default still
@@ -978,7 +1131,7 @@ mod tests {
         // operation names what a page holds.
         let symbols = disclosed(json!({
             "files": [{"path": "a.ts", "symbols": ["fn a"]}],
-            "pagination": {"currentPage": 1, "totalPages": 15, "totalItems": 7194, "hasMore": true},
+            "pagination": {"currentPage": 1, "totalPages": 15, "pageSize": 500, "totalItems": 7194, "hasMore": true},
             "next": {"nextPage": {"tool": "astSearch",
                 "query": {"queries": [{"operation": "symbols", "path": "src", "page": 2}]}}}
         }));
@@ -1012,33 +1165,56 @@ mod tests {
         );
     }
 
-    /// Pages moved to a later response part read as one response page: the
-    /// retargeted line names it once.
+    /// The first part of a split row words the pages that moved to the
+    /// response pager (once per line) after the tool's own warnings; a row
+    /// without moved pages gains nothing.
     #[test]
-    fn retargeted_lines_name_the_response_page_once() {
-        let mut data = json!({
-            "warnings": ["more (next.nextPage); more (next.nextFilePage); 3 unfinished patches (next.continuePatch)"]
-        });
-        let moved = ["nextPage", "nextFilePage", "continuePatch"].map(String::from);
-        super::retarget_moved_pages(data.as_object_mut().expect("object"), &moved);
+    fn split_parts_word_only_the_pages_that_moved() {
+        let note = |page: &str, left: &str| Remaining {
+            page: page.into(),
+            left: left.into(),
+        };
+        let notes = [
+            note("nextPage", "4 more pages"),
+            note("nextFilePage", "7 more changed files"),
+            note("continuePatch", "3 unfinished patches"),
+        ];
+        let mut first = json!({"warnings": ["Regex trap."]});
+        let moved = ["nextPage", "nextFilePage"].map(String::from);
+        super::redisclose(first.as_object_mut().expect("object"), &notes, &moved);
+        assert_eq!(
+            first["warnings"],
+            json!([
+                "Regex trap.",
+                "4 more pages (next.nextPage on the row's last part); 7 more changed files (next.nextFilePage on the row's last part)"
+            ])
+        );
+        let mut kept = json!({"warnings": ["Regex trap."]});
+        super::redisclose(kept.as_object_mut().expect("object"), &notes, &[]);
+        assert_eq!(kept["warnings"], json!(["Regex trap."]));
+        let mut bare = json!({"files": [], "next": {"nextPage": page("astSearch")}});
+        super::redisclose(bare.as_object_mut().expect("object"), &notes, &[]);
+        assert!(bare.get("warnings").is_none(), "{bare}");
+    }
+
+    /// A tool's own warning is data the stage never reads: the count line
+    /// follows it whatever it says.
+    #[test]
+    fn a_tool_warning_never_hides_the_count() {
+        let data = disclosed(json!({
+            "warnings": ["Some match values were truncated."],
+            "files": [{"path": "a"}],
+            "pagination": {"currentPage": 1, "pageSize": 5, "totalItems": 7, "hasMore": true},
+            "next": {"nextPage": page("localSearch"), "expandValues": page("localSearch")}
+        }));
         assert_eq!(
             data["warnings"],
             json!([
-                "more (responsePagination.next); 3 unfinished patches (responsePagination.next)"
-            ])
+                "Some match values were truncated.",
+                "2 more files (next.nextPage)"
+            ]),
+            "{data}"
         );
-    }
-
-    /// A tool warning naming `next.expandValues` covers its numbered
-    /// siblings `expandValues2`, `expandValues3`.
-    #[test]
-    fn a_named_page_covers_its_numbered_siblings() {
-        let named = json!({
-            "warnings": ["Some match values were truncated. next.expandValues reads them whole."],
-            "next": {"expandValues": page("localSearch"), "expandValues2": page("localSearch"),
-                "expandValues3": page("localSearch")}
-        });
-        assert_eq!(disclosed(named.clone()), named);
     }
 
     /// `partialReasons` name why a row is partial (a provider cap, a size
@@ -1066,9 +1242,12 @@ mod tests {
                 "hasMore": true, "nextOffset": 490},
             "isPartial": true,
             "partialReasons": ["full-content-size-limit"],
-            "next": {"continue": page("ghGetFileContent")}
+            "next": {"continueWindow": page("ghGetFileContent")}
         }));
-        assert_eq!(read["warnings"], json!(["1780 more lines (next.continue)"]));
+        assert_eq!(
+            read["warnings"],
+            json!(["1780 more lines (next.continueWindow)"])
+        );
         let patches = disclosed(json!({
             "pullRequests": [{"number": 1, "contentPagination": {
                 "patches": {"hasMore": true, "unfinishedFiles": 3}}}],
@@ -1082,13 +1261,13 @@ mod tests {
         );
     }
 
-    /// LS6(b): a stale snapshot names both causes: the source or the query.
+    /// A stale snapshot names both causes: the source or the query.
     #[test]
     fn stale_snapshot_names_source_or_query() {
         assert!(
             crate::response::pages::STALE_SNAPSHOT_ERROR.contains("source or the query changed")
         );
-        assert!(crate::response::pages::STALE_SNAPSHOT_ERROR.contains("next.restart"));
+        assert!(!crate::response::pages::STALE_SNAPSHOT_ERROR.contains("next."));
     }
 
     #[test]

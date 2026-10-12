@@ -22,10 +22,18 @@ const SPLIT_KEY_SECRET: &str = "privateKeyFragment";
 /// certificates (`-----BEGIN CERTIFICATE-----`) are intentionally excluded —
 /// they are not secret.
 fn is_private_key_boundary(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.ends_with("-----")
-        && trimmed.contains("PRIVATE KEY")
-        && (trimmed.starts_with("-----BEGIN") || trimmed.starts_with("-----END"))
+    is_private_key_begin(line) || is_private_key_end(line)
+}
+
+/// `<prefix> … PRIVATE KEY-----` anywhere in the line: a marker inside a
+/// string literal (`` const key = `-----BEGIN RSA PRIVATE KEY-----` ``) opens
+/// a block as much as one that starts the line.
+fn has_private_key_marker(line: &str, prefix: &str) -> bool {
+    line.match_indices(prefix).any(|(start, _)| {
+        let rest = &line[start + prefix.len()..];
+        rest.find("-----")
+            .is_some_and(|end| rest[..end].contains("PRIVATE KEY"))
+    })
 }
 
 /// A base64 body line as emitted inside PEM/OpenSSH/PGP key blocks (wrapped at
@@ -61,16 +69,12 @@ fn is_private_key_path(path: Option<&Path>) -> bool {
 
 /// PEM/OpenSSH/PGP *private-key* BEGIN marker (`-----BEGIN … PRIVATE KEY-----`).
 fn is_private_key_begin(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("-----BEGIN")
-        && trimmed.ends_with("-----")
-        && trimmed.contains("PRIVATE KEY")
+    has_private_key_marker(line, "-----BEGIN")
 }
 
 /// PEM/OpenSSH/PGP *private-key* END marker (`-----END … PRIVATE KEY-----`).
 fn is_private_key_end(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("-----END") && trimmed.ends_with("-----") && trimmed.contains("PRIVATE KEY")
+    has_private_key_marker(line, "-----END")
 }
 
 /// Full-file guard: redact every line of each PEM/OpenSSH/PGP *private-key* block
@@ -85,31 +89,27 @@ fn is_private_key_end(line: &str) -> bool {
 /// Line count and the trailing newline are preserved so the tool's reported
 /// source-line ranges stay accurate. Content with no `PRIVATE KEY` marker is
 /// returned byte-identical — ordinary base64 (config blobs, hashes, minified
-/// assets) and public `CERTIFICATE` blocks are never touched. An unterminated
-/// block (a BEGIN with no matching END) is redacted through end-of-file.
+/// assets) and public `CERTIFICATE` blocks are never touched. A block ends at
+/// its END marker or, when it has none, at the first line that is not
+/// key-shaped (see [`KeyBlockState`]): code after a literal marker string stays
+/// readable.
 pub(crate) fn redact_private_key_blocks(content: &str) -> (String, bool) {
     if !content.contains("PRIVATE KEY") {
         return (content.to_owned(), false);
     }
-    let placeholder = format!("[REDACTED-{}]", SPLIT_KEY_SECRET.to_uppercase());
+    let placeholder = key_fragment_placeholder();
     let mut out = String::with_capacity(content.len());
-    let mut inside = false;
+    let mut block = KeyBlockState::default();
     let mut changed = false;
     for (i, line) in content.lines().enumerate() {
         if i > 0 {
             out.push('\n');
         }
-        if is_private_key_begin(line) {
-            inside = true;
-        }
-        if inside {
+        if block.push_line(line) {
             changed = true;
             out.push_str(&placeholder);
         } else {
             out.push_str(line);
-        }
-        if is_private_key_end(line) {
-            inside = false;
         }
     }
     if !changed {
@@ -125,7 +125,7 @@ pub(crate) fn redact_private_key_blocks(content: &str) -> (String, bool) {
 /// full-file block guard and the localSearch match guard so redactions read
 /// identically wherever a key body is stripped.
 pub(crate) fn key_fragment_placeholder() -> String {
-    format!("[REDACTED-{}]", SPLIT_KEY_SECRET.to_uppercase())
+    octocode_engine::security::redaction_placeholder(SPLIT_KEY_SECRET)
 }
 
 /// Cheap trigger: does this search-match snippet contain any line shaped like a
@@ -159,15 +159,200 @@ pub(crate) fn private_key_block_line_ranges(content: &str) -> Vec<(u32, u32)> {
 /// so tracker state stays bounded however large the streamed source is.
 pub(crate) const MAX_KEY_BLOCK_RANGES: usize = 4096;
 
+/// What a line inside a private-key block looks like, after stripping the
+/// quoting and concatenation a key pasted into source carries.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LineShape {
+    /// Empty, or only quotes and punctuation.
+    Blank,
+    /// Base64 (`A-Za-z0-9+/=`), optionally quoted and ended with an escaped
+    /// newline, `+`, `,` or `;`: `"MIIE…\n" +`.
+    Body,
+    /// Anything else.
+    Other,
+}
+
+/// Incremental [`LineShape`] classifier: a line is leading decoration, a
+/// base64 core, then trailing decoration. Fed byte pieces so a streamed
+/// source never buffers a whole line.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LineShapeScan {
+    stage: ShapeStage,
+    core: bool,
+    escape: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShapeStage {
+    Lead,
+    Core,
+    Trail,
+    Bad,
+}
+
+impl Default for LineShapeScan {
+    fn default() -> Self {
+        Self {
+            stage: ShapeStage::Lead,
+            core: false,
+            escape: false,
+        }
+    }
+}
+
+impl LineShapeScan {
+    pub(crate) fn feed(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            if self.stage == ShapeStage::Bad {
+                return;
+            }
+            if self.escape {
+                // Only an escaped newline, return or tab is decoration.
+                self.escape = false;
+                if !matches!(byte, b'n' | b'r' | b't') {
+                    self.stage = ShapeStage::Bad;
+                }
+                continue;
+            }
+            let base64 = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=');
+            let decoration = byte.is_ascii_whitespace()
+                || matches!(
+                    byte,
+                    b'"' | b'\'' | b'`' | b',' | b';' | b'.' | b'(' | b')' | b'[' | b']' | b'}'
+                );
+            self.stage = match (self.stage, byte) {
+                (stage, b'\\') => {
+                    self.escape = true;
+                    if stage == ShapeStage::Core {
+                        ShapeStage::Trail
+                    } else {
+                        stage
+                    }
+                }
+                (ShapeStage::Lead, _) if base64 => {
+                    self.core = true;
+                    ShapeStage::Core
+                }
+                (ShapeStage::Lead, _) if decoration => ShapeStage::Lead,
+                (ShapeStage::Core, _) if base64 => ShapeStage::Core,
+                (ShapeStage::Core | ShapeStage::Trail, _) if decoration => ShapeStage::Trail,
+                (ShapeStage::Trail, b'+') => ShapeStage::Trail,
+                _ => ShapeStage::Bad,
+            };
+        }
+    }
+
+    pub(crate) fn finish(self) -> LineShape {
+        match self.stage {
+            ShapeStage::Bad => LineShape::Other,
+            _ if self.core => LineShape::Body,
+            _ => LineShape::Blank,
+        }
+    }
+}
+
+/// `Name: value` armor header (`Proc-Type: 4,ENCRYPTED`, `Version: …`),
+/// judged from a line's leading bytes.
+pub(crate) fn is_key_header_prefix(head: &[u8]) -> bool {
+    let head = head.trim_ascii_start();
+    let name = head
+        .iter()
+        .take_while(|byte| byte.is_ascii_alphanumeric() || **byte == b'-')
+        .count();
+    name > 0 && head[0].is_ascii_alphabetic() && head.get(name) == Some(&b':')
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum BlockPhase {
+    #[default]
+    Outside,
+    /// After the BEGIN marker, before the first body line: armor headers and
+    /// blank lines are allowed.
+    Header,
+    Body,
+}
+
+/// Per-line private-key block state shared by the whole-file redaction, the
+/// range tracker and the streamed read. A block opens at a BEGIN marker and
+/// ends at its END marker (inclusive) or, with no END, before the first line
+/// that is not part of a key: armor headers and blank lines straight after
+/// BEGIN, then base64 body lines. Everything inside is key material; a
+/// literal marker string in ordinary code therefore hides only its own line.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct KeyBlockState {
+    phase: BlockPhase,
+}
+
+/// How a line reads once it is read inside an open block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BlockLine {
+    Header,
+    Shape(LineShape),
+}
+
+impl KeyBlockState {
+    /// Advance over one line; true when it is inside a block (key material).
+    /// `inside` is only called while a block is open and the line is not an
+    /// END marker.
+    pub(crate) fn advance(
+        &mut self,
+        begins: bool,
+        ends: bool,
+        inside: impl FnOnce() -> BlockLine,
+    ) -> bool {
+        if self.phase != BlockPhase::Outside {
+            if ends {
+                self.phase = BlockPhase::Outside;
+                return true;
+            }
+            match (self.phase, inside()) {
+                (_, BlockLine::Shape(LineShape::Body)) => {
+                    self.phase = BlockPhase::Body;
+                    return true;
+                }
+                (BlockPhase::Header, BlockLine::Header | BlockLine::Shape(LineShape::Blank)) => {
+                    return true;
+                }
+                _ => self.phase = BlockPhase::Outside,
+            }
+        }
+        if begins {
+            if !ends {
+                self.phase = BlockPhase::Header;
+            }
+            return true;
+        }
+        false
+    }
+
+    /// True while a block is open: the next line may still be key material.
+    pub(crate) fn is_open(&self) -> bool {
+        self.phase != BlockPhase::Outside
+    }
+
+    pub(crate) fn push_line(&mut self, line: &str) -> bool {
+        self.advance(is_private_key_begin(line), is_private_key_end(line), || {
+            let mut scan = LineShapeScan::default();
+            scan.feed(line.as_bytes());
+            match scan.finish() {
+                LineShape::Other if is_key_header_prefix(line.as_bytes()) => BlockLine::Header,
+                shape => BlockLine::Shape(shape),
+            }
+        })
+    }
+}
+
 /// [`private_key_block_line_ranges`] fed one line at a time, so a caller can
 /// stream a source without retaining it. Lines are pushed in order without
-/// terminators; [`KeyBlockTracker::finish`] closes an unterminated block at
-/// the last pushed line. Past [`MAX_KEY_BLOCK_RANGES`] blocks the last range
-/// is open-ended (`u32::MAX`), redacting every later line.
+/// terminators; [`KeyBlockTracker::finish`] closes an open block at its last
+/// key line. Past [`MAX_KEY_BLOCK_RANGES`] blocks the last range is
+/// open-ended (`u32::MAX`), redacting every later line.
 #[derive(Default)]
 pub(crate) struct KeyBlockTracker {
     ranges: Vec<(u32, u32)>,
+    block: KeyBlockState,
     start: Option<u32>,
+    last_key: u32,
     last: u32,
     saturated: bool,
 }
@@ -175,28 +360,33 @@ pub(crate) struct KeyBlockTracker {
 impl KeyBlockTracker {
     pub(crate) fn push(&mut self, line: &str) {
         self.last = self.last.saturating_add(1);
-        let n = self.last;
-        if self.saturated || !line.contains("PRIVATE KEY") {
+        if self.saturated {
             return;
         }
-        if self.start.is_none() && is_private_key_begin(line) {
-            if self.ranges.len() >= MAX_KEY_BLOCK_RANGES {
-                self.ranges.push((n, u32::MAX));
-                self.saturated = true;
-                return;
+        let n = self.last;
+        if self.block.push_line(line) {
+            if self.start.is_none() {
+                if self.ranges.len() >= MAX_KEY_BLOCK_RANGES {
+                    self.ranges.push((n, u32::MAX));
+                    self.saturated = true;
+                    return;
+                }
+                self.start = Some(n);
             }
-            self.start = Some(n);
-        }
-        if is_private_key_end(line)
-            && let Some(s) = self.start.take()
-        {
-            self.ranges.push((s, n));
+            self.last_key = n;
+            if !self.block.is_open()
+                && let Some(start) = self.start.take()
+            {
+                self.ranges.push((start, n));
+            }
+        } else if let Some(start) = self.start.take() {
+            self.ranges.push((start, self.last_key));
         }
     }
 
     pub(crate) fn finish(mut self) -> Vec<(u32, u32)> {
-        if let Some(s) = self.start.take() {
-            self.ranges.push((s, self.last.max(s)));
+        if let Some(start) = self.start.take() {
+            self.ranges.push((start, self.last_key));
         }
         self.ranges
     }
@@ -237,7 +427,7 @@ fn redact_split_private_key(text: &str, file_path: Option<&Path>) -> Option<Stri
         .map(|line| {
             if is_private_key_boundary(line) || is_key_body_line(line) {
                 changed = true;
-                format!("[REDACTED-{}]", SPLIT_KEY_SECRET.to_uppercase())
+                key_fragment_placeholder()
             } else {
                 line.to_owned()
             }
@@ -315,13 +505,33 @@ impl ContentSecurity {
 
     pub fn sanitize_text(&self, content: &str, file_path: Option<&Path>) -> SanitizationResult {
         let path = file_path.map(|path| path.to_string_lossy());
-        let native = octocode_engine::portable::sanitize_content(content, path.as_deref())
-            .unwrap_or_else(|error| SanitizationResult {
-                content: "[CONTENT-REDACTED-SANITIZER-FAILURE]".to_owned(),
-                has_secrets: true,
-                secrets_detected: vec!["sanitizer-failure".to_owned()],
-                warnings: vec![error.to_string()],
-            });
+        let native = octocode_engine::portable::sanitize_content(content, path.as_deref());
+        self.guard_native(native, file_path)
+    }
+
+    /// Sanitize one string leaf of a tool result about the file at
+    /// `source_path` (`None`: no known file, the pathless output net). The
+    /// path only says what language the text is in, so source code is not
+    /// mistaken for configuration; every credential pattern still applies.
+    pub fn sanitize_leaf(&self, content: &str, source_path: Option<&str>) -> SanitizationResult {
+        let native = match source_path {
+            Some(path) => octocode_engine::portable::sanitize_leaf(content, path),
+            None => octocode_engine::portable::sanitize_content(content, None),
+        };
+        self.guard_native(native, None)
+    }
+
+    fn guard_native(
+        &self,
+        native: octocode_engine::error::Result<SanitizationResult>,
+        file_path: Option<&Path>,
+    ) -> SanitizationResult {
+        let native = native.unwrap_or_else(|error| SanitizationResult {
+            content: "[CONTENT-REDACTED-SANITIZER-FAILURE]".to_owned(),
+            has_secrets: true,
+            secrets_detected: vec!["sanitizer-failure".to_owned()],
+            warnings: vec![error.to_string()],
+        });
         // Guard against a multi-line private key that a bounded read/search
         // window split across its BEGIN/END boundary (the anchored built-in
         // patterns only match a complete block, so a single-boundary window
@@ -654,6 +864,41 @@ mod tests {
     }
 
     #[test]
+    fn markers_inside_string_literals_open_and_close_a_key_block() {
+        // A key pasted into source as a template string or triple-quoted
+        // string: the marker follows code on its line and the END marker is
+        // followed by the closing quote.
+        let body = "MIIEpQIBAAKCAQEAinlineKeyBodyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        for (open, close) in [
+            (
+                "const key = `-----BEGIN RSA PRIVATE KEY-----",
+                "-----END RSA PRIVATE KEY-----`;",
+            ),
+            (
+                "KEY = \"\"\"-----BEGIN PRIVATE KEY-----",
+                "-----END PRIVATE KEY-----\"\"\"",
+            ),
+        ] {
+            let file = format!("use x;\n{open}\n{body}\n{close}\nlet done = true;\n");
+            let (out, changed) = redact_private_key_blocks(&file);
+            assert!(changed, "inline marker not recognised: {open}");
+            assert!(!out.contains(body), "key body leaked: {out}");
+            assert!(
+                out.contains("let done = true;"),
+                "trailing code dropped: {out}"
+            );
+            assert_eq!(out.lines().count(), file.lines().count());
+        }
+        assert!(is_private_key_boundary(
+            "  key = `-----BEGIN OPENSSH PRIVATE KEY-----`"
+        ));
+        assert!(!is_private_key_boundary("-----BEGIN CERTIFICATE-----"));
+        assert!(!is_private_key_boundary(
+            "PRIVATE KEY----- is how a marker ends"
+        ));
+    }
+
+    #[test]
     fn full_file_redaction_leaves_innocent_and_certificate_content_byte_identical() {
         // Ordinary base64 with no private-key marker — must not be touched.
         let blob = "header\naGVsbG8gd29ybGQgbG9uZyBiYXNlNjQgYmxvYiBoZXJlIQ==\nfooter\n";
@@ -680,6 +925,73 @@ mod tests {
         assert!(changed, "unterminated block must redact");
         assert!(!out.contains(body), "unterminated key body leaked: {out}");
         assert!(out.contains("ok"), "pre-block content dropped: {out}");
+    }
+
+    #[test]
+    fn unterminated_marker_redacts_only_the_base64_run_after_it() {
+        // A literal marker string in ordinary source opens a block that never
+        // closes: only the marker line is key material, not the code after it.
+        let literal = "let a = 1;\nconst PEM = \"-----BEGIN RSA PRIVATE KEY-----\";\nlet b = compute(a);\nfn main() {}\n";
+        assert_eq!(private_key_block_line_ranges(literal), vec![(2, 2)]);
+        let (out, changed) = redact_private_key_blocks(literal);
+        assert!(changed);
+        assert!(out.contains("let b = compute(a);"), "{out}");
+        assert!(out.contains("fn main() {}"), "{out}");
+        assert!(!out.contains("BEGIN RSA"), "{out}");
+        assert_eq!(out.lines().count(), literal.lines().count());
+        // A BEGIN literal and a far-away END literal do not make the code
+        // between them a key body.
+        let far = "a\n\"-----BEGIN X PRIVATE KEY-----\"\nlet x = 1;\nlet y = 2;\n\"-----END X PRIVATE KEY-----\"\n";
+        assert_eq!(private_key_block_line_ranges(far), vec![(2, 2)]);
+    }
+
+    #[test]
+    fn unterminated_key_body_stays_redacted_through_its_base64_run() {
+        let body = "MIIEpQIBAAKCAQEAunterminatedKeyBodyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let file = format!(
+            "ok\n-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,0123ABCD\n\n{body}\n{body}\nQUJD==\nfn main() {{}}\n"
+        );
+        assert_eq!(private_key_block_line_ranges(&file), vec![(2, 8)]);
+        let (out, changed) = redact_private_key_blocks(&file);
+        assert!(changed);
+        assert!(!out.contains(body) && !out.contains("QUJD"), "{out}");
+        assert!(!out.contains("DEK-Info"), "{out}");
+        assert!(out.contains("fn main() {}"), "{out}");
+        assert_eq!(out.lines().count(), file.lines().count());
+    }
+
+    #[test]
+    fn quoted_and_concatenated_key_bodies_stay_inside_the_block() {
+        let body = "MIIEpQIBAAKCAQEAquotedKeyBodyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let terminated = format!(
+            "x\nconst k = \"-----BEGIN RSA PRIVATE KEY-----\\n\" +\n  \"{body}\\n\" +\n  \"{body}\\n\" +\n  \"-----END RSA PRIVATE KEY-----\";\nlet done = true;\n"
+        );
+        assert_eq!(private_key_block_line_ranges(&terminated), vec![(2, 5)]);
+        let unterminated = format!(
+            "x\nconst k = \"-----BEGIN RSA PRIVATE KEY-----\\n\" +\n  \"{body}\\n\" +\n  \"{body}\\n\";\nlet done = true;\n"
+        );
+        assert_eq!(private_key_block_line_ranges(&unterminated), vec![(2, 4)]);
+        let (out, _) = redact_private_key_blocks(&unterminated);
+        assert!(!out.contains(body), "{out}");
+        assert!(out.contains("let done = true;"), "{out}");
+    }
+
+    #[test]
+    fn key_block_tracker_streams_the_same_ranges_as_the_whole_file_scan() {
+        let body = "MIIEpQIBAAKCAQEAstreamedKeyBodyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        for file in [
+            format!("a\n-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\nb\n"),
+            format!("a\n\"-----BEGIN PRIVATE KEY-----\"\nlet b = 2;\n{body}\n"),
+            format!(
+                "a\n-----BEGIN PRIVATE KEY-----\n{body}\nlet b = 2;\n-----END PRIVATE KEY-----\n"
+            ),
+        ] {
+            let mut tracker = KeyBlockTracker::default();
+            for line in file.lines() {
+                tracker.push(line);
+            }
+            assert_eq!(tracker.finish(), private_key_block_line_ranges(&file));
+        }
     }
 
     #[test]

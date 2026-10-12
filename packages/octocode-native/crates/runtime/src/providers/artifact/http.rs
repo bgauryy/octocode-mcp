@@ -293,7 +293,7 @@ fn retry_delay(
     attempt: u8,
     budget: &RequestBudget,
 ) -> Option<Duration> {
-    let delay = crate::providers::retry_after(
+    let delay = octocode_github::retry_after_delay(
         headers,
         Duration::from_secs(86_400),
         std::time::SystemTime::now(),
@@ -891,10 +891,13 @@ mod tests {
                 dns_pin: None,
             };
             let budget = RequestBudget::with_timeout(Duration::from_secs(60), 1024);
-            let started = std::time::Instant::now();
-            let response = SystemArtifactHttp::shared()
+            // Build the client first: its one-time TLS root load is setup,
+            // not the retry wait this bound measures.
+            let client = SystemArtifactHttp::shared()
                 .expect("HTTP client")
-                .with_retries(1)
+                .with_retries(1);
+            let started = std::time::Instant::now();
+            let response = client
                 .get(request, &budget)
                 .await
                 .expect("the last answer is returned");

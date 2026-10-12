@@ -1,5 +1,7 @@
 use crate::digest::{json_sha256, sha256};
+use crate::policy::prune::PruneMode;
 use crate::tools::ast_rule;
+use crate::tools::empty_walk::{Hits, SAMPLE_FILES, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
@@ -41,6 +43,9 @@ static APPLY_LOCK: Mutex<()> = Mutex::new(());
 pub struct AstRewriteRuntimeOptions {
     pub allow_apply: bool,
     pub max_patch_bytes: usize,
+    /// Where the cross-process lock and journal state live; `None` = the
+    /// shared system temp dir (see [`state_base_dir`]).
+    pub state_dir: Option<PathBuf>,
 }
 
 impl Default for AstRewriteRuntimeOptions {
@@ -48,6 +53,7 @@ impl Default for AstRewriteRuntimeOptions {
         Self {
             allow_apply: false,
             max_patch_bytes: DEFAULT_MAX_PATCH_BYTES,
+            state_dir: None,
         }
     }
 }
@@ -88,7 +94,7 @@ struct PreparedFile {
     /// syntax analyzer key on.
     path: String,
     /// Workspace-relative (absolute outside the workspace): the one public
-    /// spelling, in patch headers and `expectedHashes` keys (D4).
+    /// spelling, in patch headers and `expectedHashes` keys.
     shown: String,
     absolute: PathBuf,
     before_hash: String,
@@ -222,23 +228,8 @@ impl RewriteError {
 /// names its own fix instead of a generic "preview again" fallback.
 fn recovery_hint(code: &str) -> Option<&'static str> {
     Some(match code {
-        "snapshotRequired" | "expectedHashesRequired" => {
-            "Run the complete preview's hints.apply unchanged; it carries snapshot and expectedHashes."
-        }
-        "expectedHashInvalid" => {
-            "Keys are workspace-relative paths; re-run the preview and run its hints.apply unchanged."
-        }
-        "expectedHashSetMismatch" | "expectedHashMissing" => {
-            "expectedHashes must list exactly the preview's files; re-run the preview, run its hints.apply unchanged."
-        }
-        "hashMismatch" => {
-            "A file changed since preview; follow next.restart, then apply with the new preview's hints.apply."
-        }
         "sourceMismatch" => {
             "Match bytes or the generated replacement disagree with the verified source; preview again with the same query."
-        }
-        "staleSnapshot" => {
-            "Discard earlier preview pages; follow next.restart and page the new preview to its hints.apply."
         }
         "brokenSyntax" => {
             "Fix the rewrite template so the replaced node still parses (keep delimiters and $$$ lists); details.path names the file."
@@ -287,8 +278,9 @@ fn execute(
         .apply()
         .then(|| APPLY_LOCK.lock().unwrap_or_else(|error| error.into_inner()));
     let (lock, recovery_warnings) = if query.apply() {
-        let lock = RootLock::acquire(&boundary)?;
-        let warnings = recover_transactions(&boundary, cancellation)?;
+        let state_base = state_base_dir(options);
+        let lock = RootLock::acquire(&state_base, &boundary)?;
+        let warnings = recover_transactions(&state_base, &boundary, cancellation)?;
         (Some(lock), warnings)
     } else {
         (None, Vec::new())
@@ -307,7 +299,11 @@ fn execute(
             preview_memo::reuse(key, pinned, |path| paths.permits_discovery(path))
         });
     let (prepared, coverage, snapshot) = match reused {
-        Some(hit) => (Arc::clone(&hit.files), hit.coverage, hit.snapshot.clone()),
+        Some(hit) => (
+            Arc::clone(&hit.files),
+            hit.coverage.clone(),
+            hit.snapshot.clone(),
+        ),
         None => {
             let (prepared, coverage) = prepare(
                 &query,
@@ -325,7 +321,7 @@ fn execute(
             let snapshot = snapshot(&query, &root, &prepared, &executable);
             let prepared = Arc::new(prepared);
             if let Some(key) = memo_key {
-                preview_memo::store(key, &snapshot, Arc::clone(&prepared), coverage);
+                preview_memo::store(key, &snapshot, Arc::clone(&prepared), coverage.clone());
             }
             (prepared, coverage, snapshot)
         }
@@ -345,6 +341,14 @@ fn execute(
             "matchCount":0,"affectedFiles":0,"matches":[],"files":[]
         });
         attach_receipts(&mut empty, &query, &executable);
+        note_skipped_matches(
+            &mut empty,
+            &query,
+            &root,
+            &coverage,
+            cancellation,
+            &analyzer,
+        )?;
         empty
     } else {
         let all_matches = prepared
@@ -359,7 +363,7 @@ fn execute(
                 options.max_patch_bytes,
                 &analyzer,
             )?;
-            let transaction = commit(&query, &files, &boundary, paths, cancellation)?;
+            let transaction = commit(&query, &files, &boundary, paths, options, cancellation)?;
             (std::borrow::Cow::Owned(files), matches, Some(transaction))
         } else {
             (std::borrow::Cow::Borrowed(&prepared[..]), all_matches, None)
@@ -372,10 +376,12 @@ fn execute(
             &matches,
             &executable,
             transaction,
+            coverage.mentions.iter().all(|mention| !mention.in_code),
         )
     };
     drop(lock);
     mark_gaps(&mut value, &coverage);
+    mark_mentions(&mut value, &coverage, paths);
     push_warnings(&mut value, recovery_warnings);
     Ok(value)
 }
@@ -491,6 +497,7 @@ fn commit(
     files: &[PreparedFile],
     boundary: &Path,
     paths: &PathPolicy,
+    options: &AstRewriteRuntimeOptions,
     cancellation: &dyn CancellationCheck,
 ) -> Result<Value, RewriteError> {
     validate_expected_hashes(query, files, boundary, paths).map_err(|error| {
@@ -501,8 +508,59 @@ fn commit(
         }
     })?;
     validate_postconditions(query, files, cancellation)?;
-    commit_transaction(boundary, files, cancellation)
+    commit_transaction(&state_base_dir(options), boundary, files, cancellation)
 }
+
+/// Whole-word mentions of a renamed symbol the rewrite leaves. Those in
+/// comments or strings are named in a warning: a syntax rewrite does not
+/// claim them. Those in code are positions the rule missed, so the preview is
+/// partial for that reason and says where.
+fn mark_mentions(value: &mut Value, coverage: &RewriteCoverage, paths: &PathPolicy) {
+    let listing = |in_code: bool| {
+        let mut by_file: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+        for mention in coverage.mentions.iter().filter(|m| m.in_code == in_code) {
+            by_file
+                .entry(shown_path(paths, &mention.file))
+                .or_default()
+                .push(mention.line);
+        }
+        let count = by_file.values().map(Vec::len).sum::<usize>();
+        let lines = by_file
+            .into_iter()
+            .map(|(file, mut lines)| {
+                lines.sort_unstable();
+                lines.dedup();
+                let lines = lines.iter().map(u32::to_string).collect::<Vec<_>>();
+                format!("{file}: {}", lines.join(", "))
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        (count, lines)
+    };
+    let (text, text_lines) = listing(false);
+    let (code, code_lines) = listing(true);
+    if code > 0 {
+        value["isPartial"] = json!(true);
+        value["partialReasons"] = json!([UNCOVERED_CODE_POSITIONS]);
+        push_warnings(
+            value,
+            [format!(
+                "{code} code position(s) hold the renamed name as a whole word, but no identifier kind of the grammar matched them, so a rename leaves them: {code_lines}."
+            )],
+        );
+    }
+    if text > 0 {
+        push_warnings(
+            value,
+            [format!(
+                "{text} comment or string mention(s) of the name stay unchanged: {text_lines}."
+            )],
+        );
+    }
+}
+
+/// `partialReasons` entry: a whole-word mention in code that no match covers.
+pub(super) const UNCOVERED_CODE_POSITIONS: &str = "uncoveredCodePositions";
 
 /// A scan that skipped files is partial at its limit, and says why.
 fn mark_gaps(value: &mut Value, coverage: &RewriteCoverage) {
@@ -580,10 +638,25 @@ fn infer_language(
     let candidates = if directory {
         let prune =
             crate::policy::prune::PruneMode::SyntaxVisible.directories(query.default_excludes());
-        ast_rule::present_grammars(root, &prune, false, false, query.max_files(), &|path| {
-            cancellation.check()?;
-            Ok(paths.permits_discovery(path))
-        })
+        let (include, exclude) = (
+            query.include().unwrap_or_default(),
+            query.exclude().unwrap_or_default(),
+        );
+        ast_rule::present_grammars(
+            root,
+            &prune,
+            query.include_hidden(),
+            query.include_ignored(),
+            query.max_files(),
+            crate::tools::empty_walk::Globs {
+                include: &include,
+                exclude: &exclude,
+            },
+            &|path| {
+                cancellation.check()?;
+                Ok(paths.permits_discovery(path))
+            },
+        )
         .map_err(required)?
         .into_iter()
         .collect::<Vec<_>>()
@@ -666,13 +739,28 @@ fn engine_error(error: String) -> RewriteError {
 /// Corpus-coverage accounting from the rewrite candidate scan. Mirrors the
 /// engine's per-file skip counters so a preview/apply can report how much of the
 /// tree the rewrite actually reached instead of dropping skipped files silently.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 struct RewriteCoverage {
     scan_truncated: bool,
     skipped_unreadable: u32,
     skipped_large: u32,
     skipped_binary: u32,
     skipped_errored: u32,
+    /// Files read and evaluated; an empty answer states it.
+    files_scanned: u32,
+    /// Whole-word mentions of a renamed symbol that no match covers.
+    mentions: Arc<[Mention]>,
+}
+
+/// A whole-word mention of a renamed symbol that the rewrite leaves alone.
+#[derive(Clone)]
+struct Mention {
+    /// The file as the scan named it.
+    file: PathBuf,
+    /// 1-based line.
+    line: u32,
+    /// In code, not in a comment or string.
+    in_code: bool,
 }
 impl RewriteCoverage {
     fn has_gaps(&self) -> bool {
@@ -682,7 +770,7 @@ impl RewriteCoverage {
             || self.skipped_binary > 0
             || self.skipped_errored > 0
     }
-    fn to_json(self) -> Value {
+    fn to_json(&self) -> Value {
         json!({
             "scanTruncated": self.scan_truncated,
             "skippedUnreadable": self.skipped_unreadable,
@@ -711,11 +799,74 @@ impl RewriteCoverage {
 /// count (from the scan's own parse).
 type ScanOutput = (Vec<RawMatch>, RewriteCoverage, BTreeMap<String, u32>);
 
+/// The walk the request's flags describe.
+fn walk_of(query: &RewriteRequest) -> Walk {
+    Walk {
+        ignored: query.include_ignored(),
+        hidden: query.include_hidden(),
+        default_excludes: query.default_excludes(),
+    }
+}
+
+/// An empty preview cannot prove absence in what its walk skipped: when the
+/// same scan over the ignored, hidden or default-excluded paths finds
+/// matches, name why they were skipped and lead to the preview with exactly
+/// the walk flags that reach them. Without such matches the hint says the
+/// pattern matched nothing.
+fn note_skipped_matches(
+    value: &mut Value,
+    query: &RewriteRequest,
+    root: &Path,
+    coverage: &RewriteCoverage,
+    cancellation: &dyn CancellationCheck,
+    analyzer: &StagedAnalyzer,
+) -> Result<(), RewriteError> {
+    let verdict = if query.apply() {
+        Verdict::Absent
+    } else {
+        diagnose(root, PruneMode::SyntaxVisible, walk_of(query), |relaxed| {
+            let (found, _, _) = run_scan(query, root, cancellation, analyzer, relaxed)?;
+            let files = found
+                .iter()
+                .map(|matched| root.join(&matched.file))
+                .collect::<std::collections::BTreeSet<_>>();
+            Ok::<_, RewriteError>(Hits {
+                count: files.len(),
+                sample: files.into_iter().take(SAMPLE_FILES).collect(),
+                cut: false,
+            })
+        })?
+    };
+    let Verdict::Skipped(diagnosis) = verdict else {
+        value["hints"] = json!([ast_rule::empty_match_hint(
+            coverage.files_scanned,
+            query.language(),
+            query.pattern().is_some()
+        )]);
+        return Ok(());
+    };
+    let mut retry = continuation_query(query, Path::new(&query.path()));
+    for key in ["snapshot", "expectedHashes", "selectedMatchIds"] {
+        retry.as_object_mut().map(|object| object.remove(key));
+    }
+    retry["page"] = json!(1);
+    lift(&mut retry, diagnosis.causes());
+    value["hints"] = json!([format!(
+        "{} file(s) match in skipped paths ({}); the lead previews them.",
+        diagnosis.found().count,
+        diagnosis.because()
+    )]);
+    value["next"]["includeIgnored"] =
+        crate::tools::result::Continuation::new(ToolId::AstRewrite, retry).build();
+    Ok(())
+}
+
 fn run_scan(
     query: &RewriteRequest,
     target: &Path,
     cancellation: &dyn CancellationCheck,
     analyzer: &StagedAnalyzer,
+    walk: Walk,
 ) -> Result<ScanOutput, RewriteError> {
     cancellation.check().map_err(cancelled)?;
     let config = analyzer.config();
@@ -730,11 +881,10 @@ fn run_scan(
             include: query.include().clone(),
             exclude: query.exclude().clone(),
             exclude_dir: Some(
-                crate::policy::prune::PruneMode::SyntaxVisible
-                    .directories(query.default_excludes()),
+                crate::policy::prune::PruneMode::SyntaxVisible.directories(walk.default_excludes),
             ),
-            hidden: Some(false),
-            no_ignore: Some(false),
+            hidden: Some(walk.hidden),
+            no_ignore: Some(walk.ignored),
             max_depth: None,
             max_files: Some(max_files),
             max_file_bytes: Some(1_000_000),
@@ -742,12 +892,25 @@ fn run_scan(
     )
     .map_err(engine_error)?;
     cancellation.check().map_err(cancelled)?;
+    let mentions: Arc<[Mention]> = files
+        .files
+        .iter()
+        .flat_map(|file| {
+            file.unmatched.iter().map(|mention| Mention {
+                file: PathBuf::from(&file.path),
+                line: mention.line + 1,
+                in_code: mention.in_code,
+            })
+        })
+        .collect();
     let coverage = RewriteCoverage {
+        mentions,
         scan_truncated: files.scan_truncated,
         skipped_unreadable: files.skipped_unreadable,
         skipped_large: files.skipped_large,
         skipped_binary: files.skipped_binary,
         skipped_errored: files.skipped_errored,
+        files_scanned: files.files_scanned,
     };
 
     #[cfg(test)]
@@ -817,8 +980,13 @@ fn prepare(
     root: &Path,
     context: &PrepareContext<'_>,
 ) -> Result<(Vec<PreparedFile>, RewriteCoverage), RewriteError> {
-    let (raw_matches, coverage, source_errors) =
-        run_scan(query, root, context.cancellation, context.analyzer)?;
+    let (raw_matches, coverage, source_errors) = run_scan(
+        query,
+        root,
+        context.cancellation,
+        context.analyzer,
+        walk_of(query),
+    )?;
     if raw_matches.len() > query.max_matches() {
         return Err(RewriteError::new(
             "matchLimit",
@@ -1041,7 +1209,7 @@ fn prepare_matches(
                 matched.text,
                 matched.replacement
             ]));
-            // Lines and columns are 1-based like every tool (D2); columns
+            // Lines and columns are 1-based like every tool; columns
             // count UTF-16 code units, the end stays exclusive. `byteRange` names the
             // replaced span and is emitted only when it differs from the
             // matched `range.byteOffset`.
@@ -1249,8 +1417,8 @@ fn validate_expected_hashes(
             )
             .detail(json!({"path":path})));
         }
-        // Preview keys are workspace-relative (D4); absolute keys work too.
-        // A pre-D4 key relative to the scanned directory names another file,
+        // Preview keys are workspace-relative; absolute keys work too.
+        // An older key relative to the scanned directory names another file,
         // so it fails closed here or in the set comparison below.
         let validated = paths.validate_read(path).map_err(|_| {
             RewriteError::new(
@@ -1413,14 +1581,13 @@ fn io_error(error: std::io::Error) -> RewriteError {
 ///
 /// Defaults to the shared system temp dir so real, concurrent octocode
 /// processes serialize against the *same* lock and honor each other's journals
-/// — the safety guarantee must not be namespaced away. `OCTOCODE_AST_REWRITE_STATE_DIR`
-/// redirects it for sandboxed/hardened deployments where the system temp dir is
-/// not writable, and lets CI point contending test binaries at private roots
-/// instead of fighting over the one global lock.
-pub(super) fn state_base_dir() -> PathBuf {
-    std::env::var_os("OCTOCODE_AST_REWRITE_STATE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir)
+/// — the safety guarantee must not be namespaced away. The runtime sets
+/// `state_dir` from `OCTOCODE_AST_REWRITE_STATE_DIR` (home-trusted config
+/// environment) for sandboxed/hardened deployments where the system temp dir
+/// is not writable, and lets CI point contending test binaries at private
+/// roots instead of fighting over the one global lock.
+fn state_base_dir(options: &AstRewriteRuntimeOptions) -> PathBuf {
+    options.state_dir.clone().unwrap_or_else(std::env::temp_dir)
 }
 
 /// Per-user suffix for the shared lock/journal directory names under the

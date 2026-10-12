@@ -86,15 +86,17 @@ describe('recent changes by agent', () => {
     expect(fs.existsSync(db)).toBe(false);
   });
 
-  it('keeps paths outside the workspace out, and prunes rows older than a day on write', () => {
+  it('keeps paths outside the workspace out, and prunes rows older than a day with the periodic prune', () => {
     const cwd = fs.realpathSync(tmp());
-    const store = TeamStore.open(cwd, path.join(tmp(), 'team.sqlite'), {});
+    const file = path.join(tmp(), 'team.sqlite');
+    const store = TeamStore.open(cwd, file, {});
     try {
       const now = Date.now();
       store.edits.record('agent-1', 'file', [path.join(cwd, 'in.ts'), path.join(tmp(), 'out.ts')], now - 25 * 60 * 60_000);
       expect(store.edits.changes({ withinMs: 48 * 60 * 60_000 }, now).map((row) => row.path)).toEqual(['in.ts']);
-      // Recording prunes rows past the one-day retention.
       store.edits.record('agent-1', 'file', [path.join(cwd, 'new.ts')], now);
+      // The periodic prune (on opening, then at most once a minute with heartbeats) drops rows past the one-day retention.
+      TeamStore.open(cwd, file, {}).close();
       expect(store.edits.changes({ withinMs: 48 * 60 * 60_000 }, now).map((row) => row.path)).toEqual(['new.ts']);
     } finally {
       store.close();

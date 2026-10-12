@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { nesting, OctocodeApi, optionsFromEnv } from '../src/api/bridge.js';
 import { ApiCallError, ApiClient, isNestedToolEvent } from '../src/api/client.js';
@@ -102,6 +103,22 @@ describe('external API', () => {
     await api.stop();
     expect(fs.existsSync(file)).toBe(false);
     expect(listInstances(env['OCTOCODE_API_DIR']!)).toEqual([]);
+  });
+
+  it('refuses a socket frame over the byte limit, measured in UTF-8 bytes', async () => {
+    const { api } = await boot();
+    // 600k two-byte characters: under the limit in UTF-16 units, over it in UTF-8 bytes.
+    const reply = await new Promise<string>((resolve, reject) => {
+      let text = '';
+      const socket = net.connect(api.instance!.socket!, () => socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: { pad: 'é'.repeat(600_000) } })}\n`));
+      socket.setEncoding('utf8');
+      socket.on('data', (chunk: string) => (text += chunk));
+      socket.on('close', () => resolve(text));
+      // The server may close while the client is still writing the rest of the frame.
+      socket.on('error', (error: NodeJS.ErrnoException) => (error.code === 'EPIPE' || error.code === 'ECONNRESET' ? undefined : reject(error)));
+    });
+    expect(reply).not.toContain('"result"');
+    expect(await new ApiClient(api.instance!).call('ping')).toEqual({});
   });
 
   it('delivers a message as a triggering turn, steering a busy agent', async () => {

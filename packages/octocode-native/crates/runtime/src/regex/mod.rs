@@ -1,6 +1,7 @@
 use regex::{Regex, RegexBuilder};
 
 mod isolated;
+pub(crate) mod repair;
 pub use isolated::{IsolatedRegexEngine, IsolatedRegexLimits};
 
 pub const REGEX_WORKER_PROTOCOL_VERSION: u32 = 1;

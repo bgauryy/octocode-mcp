@@ -16,8 +16,22 @@ pub fn mentions_secondary_rate(body: &str) -> bool {
     })
 }
 
-pub fn is_primary_rate_limit(status: u16, remaining: Option<u64>) -> bool {
-    remaining == Some(0) && matches!(status, 403 | 429)
+/// Octokit: the legacy abuse-detection 403 is a secondary limit.
+fn mentions_abuse_detection(body: &str) -> bool {
+    body.to_ascii_lowercase().contains("abuse detection")
+}
+
+/// GitHub's primary-limit message (`API rate limit exceeded for …`).
+fn mentions_primary_rate(body: &str) -> bool {
+    body.to_ascii_lowercase().contains("rate limit exceeded")
+}
+
+/// An exhausted bucket (`x-ratelimit-remaining: 0`) on a 403/429, or, when
+/// a proxy or GitHub Enterprise sent no `x-ratelimit-*` headers, GitHub's
+/// own rate-limit message.
+pub fn is_primary_rate_limit(status: u16, remaining: Option<u64>, body: &str) -> bool {
+    matches!(status, 403 | 429)
+        && (remaining == Some(0) || (remaining.is_none() && mentions_primary_rate(body)))
 }
 
 pub fn is_secondary_rate_limit(
@@ -29,7 +43,7 @@ pub fn is_secondary_rate_limit(
     if !matches!(status, 403 | 429) {
         return false;
     }
-    if mentions_secondary_rate(body) {
+    if mentions_secondary_rate(body) || mentions_abuse_detection(body) {
         return true;
     }
     if status == 429 && remaining != Some(0) {
@@ -50,8 +64,8 @@ mod tests {
             None,
             "You have exceeded a secondary rate limit. Please wait a few minutes"
         ));
-        assert!(!is_primary_rate_limit(403, Some(21)));
-        assert!(is_primary_rate_limit(403, Some(0)));
+        assert!(!is_primary_rate_limit(403, Some(21), ""));
+        assert!(is_primary_rate_limit(403, Some(0), ""));
         // Word boundary: "secondary rates" / 404 bodies do not qualify.
         assert!(!mentions_secondary_rate("nonsecondary ratex"));
         assert!(!is_secondary_rate_limit(

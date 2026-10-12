@@ -151,7 +151,7 @@ pub(crate) fn reject_response_pagination(
     {
         return Err(crate::runtime::RuntimeError::new(
             "unsupportedResponsePagination",
-            "clasify response pagination is unsupported: replay would repeat context execution and inference. Use the page-level results and next.clasify continuation instead.",
+            "clasify response pagination is unsupported: replay would repeat context execution and inference.",
         ));
     }
     Ok(())
@@ -331,6 +331,21 @@ fn normalize_resource(resource: &mut Resource) {
             .any(|key| query.extra.contains_key(*key))
     {
         query.extra.insert("fullContent".into(), Value::Bool(true));
+    }
+    // Pages, located ranges and `hints.read` cite source lines, so a file
+    // read clasify captures is verbatim unless the caller chose a view. The
+    // compact (`standard`) view does carry source numbers in its gutter
+    // (local_fetch `select_view`, shared by localFetch and ghGetFileContent),
+    // but locate passages count positions from the page's first line
+    // (`locate.rs`: `start + index * passage_lines`) and `page_scope` gives
+    // a transformed view no source scope, so its dropped lines would shift
+    // every located line (a 320-line file judged as 237 compact lines
+    // located line 274 as 195).
+    if is_file_read_tool(tool)
+        && !query.extra.contains_key("minify")
+        && !query.extra.contains_key("queries")
+    {
+        query.extra.insert("minify".into(), Value::from("none"));
     }
     // Search candidates are judged on their files by default: snippets scored
     // a 156-file scout's answer 0.69 in 18 calls, file chunks 0.97 in 4

@@ -85,13 +85,35 @@ const LOCATE = [
 
 /** One Scout page's candidate identity: file path or list item. */
 const pageId = (resource, page) => page.path ?? page.source?.item ?? page.source?.path ?? resource.path ?? '';
+/** A compact answer as one probability (number), or null for choice/error answers. */
+const prob = answer => (typeof answer === 'number' ? answer : null);
+/** Local Scout tools whose pages may leave their own-span read implied. */
+const LOCAL_SCOUT = new Set(['localSearch', 'astSearch', 'lspSearch', 'structureSearch', 'localFetch']);
+/**
+ * The read a Scout page leads to: its `hints.read`, else (local tools only) the
+ * implied localFetch of its own path and span. The span is `line`/`endLine`
+ * (plus optional `totalLines`), or `scope` as lines, disjoint `lineRanges`, or bytes.
+ */
+function pageRead(tool, resource, page) {
+  if (page.hints?.read) return { lead: page.hints.read, implied: false };
+  const file = page.path ?? resource.path;
+  if (!LOCAL_SCOUT.has(tool) || !file) return null;
+  const s = page.scope ?? {};
+  const ranges = page.line && page.endLine ? [`${page.line}-${page.endLine}`]
+    : s.startLine && s.endLine ? [`${s.startLine}-${s.endLine}`]
+      : s.lineRanges ? s.lineRanges.map(r => `${r.startLine}-${r.endLine}`) : null;
+  const query = ranges ? { path: file, ranges }
+    : typeof s.byteOffset === 'number' ? { path: file, unit: 'bytes', offset: s.byteOffset, length: s.byteEnd - s.byteOffset } : null;
+  return query && { lead: { tool: 'localFetch', query: { queries: [query] } }, implied: true };
+}
 /** A clasify call's first matrix and first resource. */
 const firstResource = out => out.sc?.queries?.[0]?.resources?.[0];
 
 /**
  * Scout flows over every scoutTools resource: a list's candidates each become
- * exactly one page (no drop, no repeat across next.clasify), every page's
- * hints.read runs verbatim on that candidate, path lists stay one page for a
+ * exactly one page (no drop, no repeat across next.clasify), ranks follow the
+ * answers, ranks 1–3 lead with a read (explicit or implied own span), every
+ * emitted read runs verbatim on its candidate, path lists stay one page for a
  * choice, fetches judge with `sufficient`, and each misuse fails with a clear
  * errorCode plus the read tool's own recovery.
  */
@@ -108,7 +130,7 @@ async function scoutFlows() {
     { tool: 'localSearch', query: { path: path.join(tokio, 'src'), matchString: 'keep_alive', pageSize: 5 }, ids: d => d.files?.map(f => f.path) },
     { tool: 'astSearch', query: { path: path.join(tokio, 'src/runtime'), operation: 'match', pattern: 'Duration::from_secs($A)', language: 'rust', pageSize: 10 }, ids: d => d.files?.map(f => f.path) },
     { tool: 'astSearch', query: { path: path.join(tokio, 'src/runtime/blocking'), operation: 'symbols' }, ids: d => d.files?.map(f => f.path) },
-    { tool: 'lspSearch', query: { path: path.join(tokio, 'src/runtime/blocking/pool.rs'), operation: 'references', symbolName: 'spawn_blocking', lineHint: 238 }, ids: d => d.payload?.files?.map(f => f.path) },
+    { tool: 'lspSearch', query: { path: path.join(tokio, 'src/runtime/blocking/pool.rs'), operation: 'references', symbolName: 'spawn_blocking', line: 238 }, ids: d => d.files?.map(f => f.path) },
     ...(github ? [
       { tool: 'ghSearchCode', query: { owner: 'tokio-rs', repo: 'tokio', keywords: ['keep_alive', 'blocking'], pageSize: 5 }, ids: d => d.files?.map(f => f.path) },
       { tool: 'ghSearchRepo', query: { keywords: ['tokio', 'runtime'], pageSize: 5 }, ids: d => d.repositories?.map(r => `${r.owner}/${r.repo}`), questions: [{ id: 'is', type: 'yesno', ask: 'This repository is the tokio async runtime itself' }] },
@@ -129,9 +151,28 @@ async function scoutFlows() {
     const resource = firstResource(first);
     const pages = resource?.pages ?? [];
     const got = pages.map(p => pageId(resource, p));
-    // A page without hints.read implies localFetch of its own path and lines.
-    const readable = p => p.hints?.read || (p.path && p.line && p.endLine);
-    check(`${label}: executes with answers and a read on every page`, !first.isError && pages.length > 0 && pages.every(p => p.answers && readable(p)), first.text.slice(0, 200));
+    // Ranking: with 2+ judged pages each carries a 1-based rank ordered by
+    // P(relevant), else the first yes/no question, then P(sufficient).
+    const questions = t.questions ?? screen;
+    const primaryId = (questions.find(q => q.type === 'relevant') ?? questions.find(q => q.type === 'yesno'))?.id;
+    const sufId = questions.find(q => q.type === 'sufficient')?.id;
+    const judged = pages.filter(p => Object.values(p.answers ?? {}).some(a => prob(a) !== null));
+    const keyOf = p => [prob(p.answers?.[primaryId]) ?? -1, prob(p.answers?.[sufId]) ?? -1];
+    const byRank = [...judged].sort((a, b) => a.rank - b.rank);
+    const ranksOk = judged.length < 2 || (byRank.every((p, i) => p.rank === i + 1) && byRank.every((p, i) => {
+      if (i === 0) return true;
+      const [a1, a2] = keyOf(byRank[i - 1]);
+      const [b1, b2] = keyOf(p);
+      return a1 > b1 || (a1 === b1 && a2 >= b2);
+    }));
+    check(`${label}: ranks are 1-based and follow the answers`, !first.isError && ranksOk, JSON.stringify(byRank.map(p => [p.rank, ...keyOf(p)])).slice(0, 200));
+    // Reads: ranks 1–3, sufficient ≥ 0.7, a lone judged page, and unjudged
+    // pages each have a read (explicit, or an implied own-span read); no
+    // other judged page carries hints.read.
+    const leads = p => !judged.includes(p) || judged.length < 2 || p.rank <= 3 || (prob(p.answers?.[sufId]) ?? 0) >= 0.7;
+    const wrongRead = pages.filter(p => (leads(p) ? !pageRead(t.tool, resource, p) : !!p.hints?.read));
+    check(`${label}: executes with answers; ranks 1–3, sufficient ≥ 0.7 and unjudged pages each have a read`, !first.isError && pages.length > 0 && pages.every(p => p.answers) && wrongRead.length === 0,
+      wrongRead.length ? JSON.stringify(wrongRead.map(p => ({ id: pageId(resource, p), rank: p.rank, read: !!p.hints?.read }))).slice(0, 200) : first.text.slice(0, 200));
     const mapped = want.map(id => got.filter(g => g.endsWith(id)).length);
     // Search resources judge files: a large file may be judged in several hit
     // windows, so each candidate has at least one page and no page is foreign.
@@ -147,15 +188,20 @@ async function scoutFlows() {
       const again = (firstResource(second)?.pages ?? []).map(p => pageId(firstResource(second), p)).filter(id => got.includes(id));
       check(`${label}: next.clasify judges no candidate twice`, !second.isError && again.length === 0, JSON.stringify(again).slice(0, 200));
     }
-    let reads = 0;
-    for (const p of pages.slice(0, 3)) {
-      // A page without hints.read implies localFetch of its own path and lines.
-      const lead = p.hints?.read ?? { tool: 'localFetch', query: { queries: [{ path: p.path, ranges: [`${p.line}-${p.endLine}`] }] } };
+    // Every emitted hints.read, plus the implied own-span read of each page
+    // that must lead, runs unchanged on that page's own candidate.
+    const toRead = pages.filter(p => p.hints?.read || leads(p)).map(p => [p, pageRead(t.tool, resource, p)]).filter(([, r]) => r);
+    const misses = [];
+    for (const [p, { lead, implied }] of toRead) {
       const read = await raw(lead.tool, lead.query);
       const id = pageId(resource, p).split(/[/#@:]/).pop();
-      if (!read.isError && read.text.includes(id)) reads += 1;
+      // Lean reads need not echo their target (ghStructure lists entries
+      // only): a repository read is on its candidate when it names it.
+      const target = lead.query?.queries?.[0] ?? lead.query ?? {};
+      const named = target.owner && target.repo && `${target.owner}/${target.repo}` === pageId(resource, p);
+      if (read.isError || read.rowErrors || !(read.text.includes(id) || named)) misses.push({ id, rank: p.rank, implied, error: read.text.slice(0, 80) });
     }
-    check(`${label}: each page's read runs on its candidate`, reads === Math.min(3, pages.length), `${reads}/${Math.min(3, pages.length)}`);
+    check(`${label}: every emitted read runs on its own candidate`, toRead.length > 0 && misses.length === 0, `${toRead.length - misses.length}/${toRead.length} ${JSON.stringify(misses).slice(0, 160)}`);
   }
   // Path lists stay one page and suit a choice over the listed paths.
   const pick = [{ id: 'pick', type: 'choice', ask: 'Which listed file implements the blocking thread pool?', labels: { pool: 'pool.rs', other: 'another listed file', insufficient: 'not listed' } }];
@@ -193,7 +239,7 @@ async function scoutFlows() {
   const empty = await scout('localSearch', { path: path.join(tokio, 'src'), matchString: 'zzz_no_such_token_octocode' });
   check('scout error: an empty list is classificationContextEmpty with the tool\'s own hint', errorOf(empty).errorCode === 'classificationContextEmpty' && !(errorOf(empty).hints?.text ?? []).some(h => h.startsWith('Run the ordinary context tool')), JSON.stringify(errorOf(empty)).slice(0, 220));
   const failed = await scout('localSearch', { path: path.join(tokio, 'no-such-dir'), matchString: 'x' });
-  check('scout error: a failed read keeps its errorCode and executable recovery lead', errorOf(failed).errorCode === 'pathNotFound' && (errorOf(failed).hints?.text ?? []).some(h => h.includes('structureSearch')), JSON.stringify(errorOf(failed)).slice(0, 220));
+  check('scout error: a failed read keeps its errorCode and executable recovery lead', errorOf(failed).errorCode === 'pathNotFound' && errorOf(failed).hints?.viewTree?.tool === 'structureSearch' && typeof errorOf(failed).hints.viewTree.query?.queries?.[0]?.path === 'string', JSON.stringify(errorOf(failed)).slice(0, 220));
 }
 
 if (process.env.OCTOCODE_CLASIFY_ONLY === 'scout') {
@@ -326,9 +372,14 @@ let prefilterQuality;
   check('best: multi-page calls rank windows by exists, then probability', ordered, JSON.stringify(run.bests[0]?.t?.slice(0, 3)));
   const hinted = await raw('clasify', { queries: [{ mainGoal: GOAL, reasoning: 'hint', resources: [{ tool: 'localFetch', query: { reasoning: 'x', path: truth.file, ranges: ['1-40'] } }], questions: [{ id: 'h', type: 'locate', ask: 'Where is serverCron defined?' }] }] });
   const q = hinted.sc?.queries?.[0];
-  check('hint: an identifier target suggests localSearch', (q?.hints?.text ?? []).some(h => h.includes('serverCron') && h.includes('localSearch')), JSON.stringify(q?.hints));
+  // A literal target skips the provider: a per-call text line plus an
+  // executable hints.findText localSearch lead that finds the identifier.
+  const lead = q?.hints?.findText;
+  const leadRun = lead?.tool === 'localSearch' && await raw(lead.tool, lead.query);
+  check('hint: an identifier target suggests localSearch', (q?.hints?.text ?? []).some(h => h.includes('serverCron')) && JSON.stringify(lead?.query ?? {}).includes('serverCron')
+    && !(q?.resources ?? []).some(r => r.pages?.length) && leadRun && !leadRun.isError && /int serverCron\(/.test(leadRun.text), JSON.stringify(q?.hints).slice(0, 200));
   const plain = await raw('clasify', { queries: [{ mainGoal: GOAL, reasoning: 'hint', resources: [{ tool: 'localFetch', query: { reasoning: 'x', path: truth.file, ranges: ['1-40'] } }], questions: [{ id: 'h', type: 'locate', ask: 'The license header of this file.' }] }] });
-  check('hint: a described target gets no routing hint', !plain.sc?.queries?.[0]?.hints?.text && !plain.sc?.queries?.[0]?.hints?.textSearch && !plain.isError, JSON.stringify(plain.sc?.queries?.[0]?.hints ?? plain.isError));
+  check('hint: a described target gets no routing hint', !plain.sc?.queries?.[0]?.hints?.text && !plain.sc?.queries?.[0]?.hints?.findText && !plain.isError, JSON.stringify(plain.sc?.queries?.[0]?.hints ?? plain.isError));
 }
 
 // Huge single file (3MB, 54k lines): narrow first, as the skill prescribes.

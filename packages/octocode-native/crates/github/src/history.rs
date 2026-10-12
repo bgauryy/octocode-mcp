@@ -1,4 +1,7 @@
-use super::{GitHubTransport, ProviderError, ProviderErrorKind, RequestContext, RequestSpec};
+use super::{
+    GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
+    RequestSpec,
+};
 use serde_json::Value;
 
 #[derive(Clone, Debug)]
@@ -104,34 +107,59 @@ impl GitHubTransport {
             has_more,
         })
     }
+    /// The canonical `(owner, repo)` of a renamed repository; `None` when
+    /// `owner/repo` stands (case aside) or does not exist. The caller words
+    /// the rename warning.
     pub async fn canonical_owner_repo(
         &self,
         owner: &str,
         repo: &str,
         context: &RequestContext,
-    ) -> Result<(String, String, bool, Vec<String>), ProviderError> {
+    ) -> Result<Option<(String, String)>, ProviderError> {
         match self.repository_metadata(owner, repo, context).await {
-            Ok(meta) => {
-                if let Some(full) = meta.full_name.as_deref()
-                    && let Some((canonical_owner, canonical_repo)) = full.split_once('/')
-                    && (canonical_owner != owner || canonical_repo != repo)
-                {
-                    return Ok((
-                        canonical_owner.into(),
-                        canonical_repo.into(),
-                        true,
-                        vec![format!(
-                            "Repository {owner}/{repo} was renamed to {canonical_owner}/{canonical_repo} — GitHub search does not follow renames, so the canonical name was searched instead."
-                        )],
-                    ));
-                }
-                Ok((owner.into(), repo.into(), false, Vec::new()))
-            }
-            Err(error) if error.kind == ProviderErrorKind::NotFound => {
-                Ok((owner.into(), repo.into(), false, Vec::new()))
-            }
+            Ok(meta) => Ok(meta
+                .full_name
+                .as_deref()
+                .and_then(|full| full.split_once('/'))
+                .filter(|(canonical_owner, canonical_repo)| {
+                    !(canonical_owner.eq_ignore_ascii_case(owner)
+                        && canonical_repo.eq_ignore_ascii_case(repo))
+                })
+                .map(|(canonical_owner, canonical_repo)| {
+                    (canonical_owner.to_owned(), canonical_repo.to_owned())
+                })),
+            Err(error) if error.kind == ProviderErrorKind::NotFound => Ok(None),
             Err(error) => Err(error),
         }
+    }
+    /// Confirms that `login` is a GitHub account the token can see
+    /// (`GET /users/{login}`, through the response cache). GitHub's commit
+    /// search drops an unknown `author:`/`committer:` login without error and
+    /// answers the unfiltered total, so a search names its logins here first.
+    /// A 404 is a [`ProviderErrorReason::UserNotFound`] failure; any other
+    /// failure is the lookup's own.
+    pub async fn confirm_user(
+        &self,
+        login: &str,
+        context: &RequestContext,
+    ) -> Result<(), ProviderError> {
+        let url = self.endpoint().rest(&["users", login])?;
+        self.cached_search::<Value>(
+            "github-user",
+            RequestSpec::get(url),
+            context,
+            "invalid GitHub user response",
+            |_| true,
+        )
+        .await
+        .map(|_| ())
+        .map_err(|mut error| {
+            if error.status == Some(404) {
+                error.message = format!("no user named \"{login}\"").into_boxed_str();
+                error = error.with_reason(ProviderErrorReason::UserNotFound);
+            }
+            error
+        })
     }
     pub async fn list_pull_requests(
         &self,
@@ -224,7 +252,7 @@ impl GitHubTransport {
             );
         }
         // Search answers come from the search index: cached like code search.
-        let mut value: Value = self
+        let (mut value, withheld): (Value, _) = self
             .cached_search(
                 "github-history-search",
                 spec,
@@ -252,7 +280,7 @@ impl GitHubTransport {
                 _ => Vec::new(),
             },
             provider_page: request.page,
-            warnings: Vec::new(),
+            warnings: crate::sso_partial_warning(&withheld).into_iter().collect(),
             listed: false,
             has_more: false,
         })

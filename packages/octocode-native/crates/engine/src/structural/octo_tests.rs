@@ -567,6 +567,42 @@ fn pasted_ast_grep_rule_file_metadata_is_tolerated() {
     assert!(error.contains("unknown field `constraints`"), "{error}");
 }
 
+/// An unknown rule key names the keys the rule takes and shows one rule that
+/// parses and relates two nodes.
+#[test]
+fn an_unknown_rule_key_comes_with_a_working_example() {
+    let query = StructuralQuery::new(
+        None,
+        Some("kind: class_declaration\nhas:\n  field: superclasses\n"),
+    )
+    .unwrap();
+    let error = compile_matcher(&lang("ts"), &query).err().unwrap();
+    assert!(error.contains("unknown field `field`"), "{error}");
+    let (_, example) = error.split_once("Example rule: ").expect("an example");
+    let example = StructuralQuery::new(None, Some(example)).unwrap();
+    assert!(compile_matcher(&lang("ts"), &example).is_ok());
+}
+
+/// A rule key from another matcher (`field`) is refused with the keys the
+/// rule takes and a working rule to copy.
+#[test]
+fn an_unknown_rule_key_is_refused_with_an_example_rule() {
+    let query = StructuralQuery::new(
+        None,
+        Some("kind: class_declaration\nhas:\n  field: superclasses\n"),
+    )
+    .unwrap();
+    let error = compile_matcher(&lang("ts"), &query).err().unwrap();
+    assert!(error.contains("unknown field `field`"), "{error}");
+    assert!(error.contains("expected one of `kind`"), "{error}");
+    let example = error.split("Example rule: ").nth(1).expect("example rule");
+    let query = StructuralQuery::new(None, Some(example.trim())).unwrap();
+    assert!(
+        compile_matcher(&lang("ts"), &query).is_ok(),
+        "the example compiles"
+    );
+}
+
 #[test]
 fn malformed_yaml_is_parsed_once_without_changing_compile_errors() {
     RULE_PARSE_COUNT.with(|count| count.set(0));
@@ -760,6 +796,21 @@ fn rust_patterns_match_inside_macro_token_trees() {
     assert_eq!(rule.len(), 5);
 }
 
+/// A DSL macro body re-parsed as code never matches inside its strings:
+/// `json!({"pattern":"pub fn source() {}"})` holds no function.
+#[test]
+fn rust_macro_bodies_never_match_inside_string_literals() {
+    let source = "fn t() {\n    let q = json!({\n        \"operation\":\"match\",\"path\":root,\n        \"pattern\":\"pub fn source() {}\",\"maxFiles\":1\n    });\n}\n";
+    let found = run_pattern(source, "rs", "fn $NAME() {}");
+    assert!(
+        found
+            .iter()
+            .all(|m| m.text != "fn source() {}" && m.text != "pub fn source() {}"),
+        "{:?}",
+        found.iter().map(|m| &m.text).collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn rust_macro_bodies_keep_enclosing_ancestors_and_skip_the_delimiter_wrapper() {
     let inside = run_rule(
@@ -789,7 +840,7 @@ fn rust_macro_bodies_keep_enclosing_ancestors_and_skip_the_delimiter_wrapper() {
     );
 }
 
-/// X14: a `macro_rules!` template body is searched like an invocation's
+/// A `macro_rules!` template body is searched like an invocation's
 /// arguments (re-parsed in place), never silently skipped.
 #[test]
 fn rust_macro_rules_template_bodies_are_searched() {

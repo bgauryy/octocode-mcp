@@ -1,13 +1,13 @@
 import type { ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { repoKey, sharedAgentDb } from '../agentdb/db.js';
+import { sharedAgentDb } from '../agentdb/db.js';
+import { PARENT_SESSION_ENV } from '../shared/env.js';
+import { repoKey } from '../shared/home.js';
 import { BacklogStore, type Actor } from './store.js';
 
 export interface BacklogOptions {
   isSubagent: boolean;
   /** This subagent's team id (the author of its notes); its session id is used when unset. */
   agentId?: () => string | undefined;
-  /** The Pi process that started this subagent: its session is the parent whose items the subagent may update. */
-  parentPid?: number;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -27,7 +27,8 @@ export function openBacklog(ctx: Pick<ExtensionContext, 'cwd' | 'sessionManager'
   const session = ctx.sessionManager.getSessionId();
   if (!options.isSubagent) return { store, actor: { id: session }, session, repoName: repo.name };
   const id = options.agentId?.() || session;
-  // A subagent never claims: it may update only what its parent's sessions hold.
-  const owners = new Set(store.sessionsOf(options.parentPid ?? process.ppid));
+  // A subagent never claims: it may update only what the session that started it holds (named by the parent, not inferred).
+  const parent = env[PARENT_SESSION_ENV];
+  const owners = new Set(parent ? [parent] : []);
   return { store, actor: { id, owners }, session, repoName: repo.name };
 }

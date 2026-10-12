@@ -9,6 +9,7 @@ use std::ops::Range;
 
 use super::channels::{HINTS_KEY, PAGES_KEY};
 use super::pager::{ResponsePageOptions, ResponsePagination, restart_pagination};
+use super::pages::Remaining;
 use crate::tools::stream_page::json_chars;
 
 /// Page-plan size reserved for a row's per-call facts. It depends only on
@@ -655,8 +656,10 @@ fn row_next_chars(row: &Value, share: PartShare) -> usize {
         .sum()
 }
 
-/// Keep only the continuations and hints a row part rides (see [`PartShare`]).
-fn keep_row_next(value: &mut Value, share: PartShare) {
+/// Keep only the continuations and hints a row part rides (see
+/// [`PartShare`]); the row's remaining-page `notes` are re-rendered for the
+/// pages the part carries or moved.
+fn keep_row_next(value: &mut Value, share: PartShare, notes: &[Remaining]) {
     let retain = |slot: Option<&mut Map<String, Value>>| {
         let Some(slot) = slot else {
             return;
@@ -676,9 +679,10 @@ fn keep_row_next(value: &mut Value, share: PartShare) {
                 }
             }
         }
-        super::pages::retarget_moved_pages(slot, &moved);
-        if share == PartShare::Last {
-            super::pages::disclose_carried_pages(slot);
+        // Only the first part holds the row's base data; its warning names
+        // the pages that moved to the response pager.
+        if share == PartShare::First {
+            super::pages::redisclose(slot, notes, &moved);
         }
     };
     retain(value.get_mut("data").and_then(Value::as_object_mut));
@@ -725,6 +729,7 @@ pub(super) fn paginate_rows(
     full: &str,
     options: &ResponsePageOptions,
     mut volatile: Vec<Option<Map<String, Value>>>,
+    remaining: &[Vec<Remaining>],
 ) -> (Map<String, Value>, ResponsePagination) {
     let budget = options.response_length.unwrap_or(1).max(1);
     let rows = match structured.remove("results") {
@@ -747,8 +752,21 @@ pub(super) fn paginate_rows(
     let changed = options.response_snapshot.as_deref() != Some(&snapshot);
     if requested > 0 && (changed || requested >= plan.total_pages) {
         structured.insert("results".into(), Value::Array(Vec::new()));
+        // The page asked for, named in the envelope so a restart says why.
+        let reason = if changed {
+            "the full response changed or its snapshot is missing; restart from responseOffset=0"
+                .to_owned()
+        } else {
+            format!(
+                "page {} of {} is past the last page; restart from responseOffset=0",
+                requested + 1,
+                plan.total_pages
+            )
+        };
+        structured.shift_insert(0, "warnings".into(), json!([reason]));
         let pagination = restart_pagination(
             "rows",
+            requested + 1,
             requested,
             plan.total_pages,
             total,
@@ -758,7 +776,7 @@ pub(super) fn paginate_rows(
         );
         return (structured, pagination);
     }
-    let selected = plan.build_page(requested, &mut volatile);
+    let selected = plan.build_page(requested, &mut volatile, remaining);
     let later = plan.rows_after(requested);
     structured.insert("results".into(), Value::Array(selected));
     if later > 0 {
@@ -858,6 +876,7 @@ impl RowPlan {
         &mut self,
         page: usize,
         volatile: &mut [Option<Map<String, Value>>],
+        remaining: &[Vec<Remaining>],
     ) -> Vec<Value> {
         let mut parts: Vec<&Placed> = self.placed.iter().filter(|p| p.page == page).collect();
         parts.sort_by_key(|p| (p.row, p.part));
@@ -873,7 +892,11 @@ impl RowPlan {
                 {
                     data.extend(fields);
                 }
-                keep_row_next(&mut value, PartShare::of(p.part, p.of));
+                keep_row_next(
+                    &mut value,
+                    PartShare::of(p.part, p.of),
+                    remaining.get(p.row).map_or(&[][..], Vec::as_slice),
+                );
                 let continues = value
                     .as_object_mut()
                     .and_then(|row| row.shift_remove("rowPart"))
@@ -1013,6 +1036,7 @@ mod tests {
             &full,
             &options,
             Vec::new(),
+            &[],
         );
         assert!(pagination.total_pages > 2 && pagination.has_more);
         let row = &first["results"][0];
@@ -1034,6 +1058,7 @@ mod tests {
                 &full,
                 &options,
                 Vec::new(),
+                &[],
             );
             for row in envelope["results"].as_array().unwrap() {
                 for file in row["data"]["files"].as_array().unwrap() {
@@ -1052,12 +1077,60 @@ mod tests {
             &full,
             &stale,
             Vec::new(),
+            &[],
         );
         assert_eq!(restart.restart, Some(true));
         assert_eq!(restart.next_char_offset, Some(0));
     }
 
-    /// D4: a row with two large arrays (a comparison's commits and files)
+    /// A rows-scope offset past the last page is a restart that names the
+    /// page asked for ("page 51 of N"), not page 1, and says so in `warnings`.
+    #[test]
+    fn rows_offset_past_the_end_restarts_naming_the_requested_page() {
+        let matches = (1..=200)
+            .map(|line| json!({"line":line,"value":"x".repeat(40)}))
+            .collect::<Vec<_>>();
+        let structured = json!({"results":[{"index":0,"data":{
+            "files":[{"path":"a","matches":matches}]
+        }}]});
+        let options = ResponsePageOptions {
+            response_length: Some(2000),
+            response_scope: Some("rows".into()),
+            ..Default::default()
+        };
+        let full = structured.to_string();
+        let (_, first) = paginate_rows(
+            structured.as_object().unwrap().clone(),
+            &full,
+            &options,
+            Vec::new(),
+            &[],
+        );
+        let past = ResponsePageOptions {
+            response_offset: Some(50),
+            response_snapshot: Some(first.snapshot.clone()),
+            ..options
+        };
+        let (envelope, restart) = paginate_rows(
+            structured.as_object().unwrap().clone(),
+            &full,
+            &past,
+            Vec::new(),
+            &[],
+        );
+        assert_eq!(restart.restart, Some(true));
+        assert_eq!(restart.current_page, 51, "the page asked for");
+        assert_eq!(restart.total_pages, first.total_pages);
+        let reason = format!("page 51 of {}", first.total_pages);
+        assert!(
+            envelope["warnings"].as_array().is_some_and(|w| w
+                .iter()
+                .any(|w| w.as_str().is_some_and(|w| w.contains(&reason)))),
+            "{envelope:?}"
+        );
+    }
+
+    /// A row with two large arrays (a comparison's commits and files)
     /// delivers each array once; slices of one never repeat the other.
     #[test]
     fn rows_scope_never_repeats_a_second_large_array_per_fragment() {
@@ -1068,7 +1141,7 @@ mod tests {
             .map(|n| format!("M +1 -1 src/file_{n:03}.rs"))
             .collect::<Vec<_>>();
         let structured = json!({"results":[{"index":0,"data":{
-            "type":"compare","totalCommits":100,"commits":commits,"files":files
+            "type":"compare","aheadBy":100,"commits":commits,"files":files
         }}]});
         let options = ResponsePageOptions {
             response_length: Some(6_000),
@@ -1081,6 +1154,7 @@ mod tests {
             &full,
             &options,
             Vec::new(),
+            &[],
         );
         let (mut commits_seen, mut files_seen, mut chars) = (0, 0, 0);
         for page in 0..first.total_pages {
@@ -1094,6 +1168,7 @@ mod tests {
                 &full,
                 &options,
                 Vec::new(),
+                &[],
             );
             chars += json_chars(&Value::Object(envelope.clone()));
             for row in envelope["results"].as_array().unwrap() {
@@ -1131,6 +1206,7 @@ mod tests {
             &full,
             &options,
             Vec::new(),
+            &[],
         );
         let items = first["results"][0]["data"]["files"][0]["matches"]
             .as_array()
@@ -1183,11 +1259,12 @@ mod lazy_page_tests {
             &full,
             &options(length, 0, None),
             Vec::new(),
+            &[],
         );
         (0..first.total_pages)
             .map(|offset| {
                 let request = options(length, offset, Some(first.snapshot.clone()));
-                let page = paginate_rows(structured.clone(), &full, &request, Vec::new());
+                let page = paginate_rows(structured.clone(), &full, &request, Vec::new(), &[]);
                 assert!(page.1.restart.is_none(), "length {length} page {offset}");
                 page
             })
@@ -1255,7 +1332,7 @@ mod lazy_page_tests {
         }
     }
 
-    /// B2: one broad row must not fill the first pages alone; every row of a
+    /// One broad row must not fill the first pages alone; every row of a
     /// batch shows its head on page one, within the budget. Each split row's
     /// page continuation waits for its last part.
     #[test]
@@ -1341,7 +1418,7 @@ mod lazy_page_tests {
         assert_eq!(delivered(&pages).len(), 1_500);
     }
 
-    /// B3: a split row's page continuation rides its last part, so a caller
+    /// A split row's page continuation rides its last part, so a caller
     /// following it never skips the parts in between; a drill-down rides the
     /// first part, beside the head of the evidence. Each appears once.
     #[test]
@@ -1461,7 +1538,7 @@ mod lazy_page_tests {
         text.contains(&format!("/c{id}/"))
     }
 
-    /// N6: an element too large for a page splits into parts. Its secondary
+    /// An element too large for a page splits into parts. Its secondary
     /// lists (the actionable runtime cycles and edges) ride its first part,
     /// before any `files` slice, and every later part names the element it
     /// continues on `rowPart.continues`, at position 0 of the paged array.
@@ -1529,7 +1606,7 @@ mod lazy_page_tests {
         }
     }
 
-    /// N7: an astTopology `cycles` row, one huge cycle between two small
+    /// An astTopology `cycles` row, one huge cycle between two small
     /// ones. Each page holds at most one part of a row, so `results[i]` is
     /// the whole of that row on the page; every edge record is delivered
     /// once; and the first page is filled with the head of the evidence.
@@ -1649,6 +1726,7 @@ mod lazy_page_tests {
             &full,
             &options(700, 0, None),
             Vec::new(),
+            &[],
         );
         assert!(first.total_pages > 20, "{}", first.total_pages);
         let last = first.total_pages - 1;
@@ -1658,6 +1736,7 @@ mod lazy_page_tests {
             &full,
             &options(700, last, Some(first.snapshot.clone())),
             Vec::new(),
+            &[],
         );
         let returned = page["results"].as_array().map_or(0, Vec::len);
         let built = MATERIALIZED.with(std::cell::Cell::get);
@@ -1676,36 +1755,42 @@ mod lazy_page_tests {
             "next":{"nextPage":{"tool":"astSearch","query":{"queries":[{"page":2}]}}},
             "hints":{"read":{"tool":"localFetch","query":{"path":"a"}}}
         }});
-        keep_row_next(&mut row, PartShare::Last);
+        keep_row_next(&mut row, PartShare::Last, &[]);
         assert!(row["data"].get("warnings").is_none(), "{row}");
         assert!(row["data"]["next"].get("nextPage").is_some(), "{row}");
         assert!(row["data"].get("hints").is_none(), "{row}");
     }
 
     /// A split row's first part keeps its warnings while its pages ride the
-    /// last part: a warning there names the response page, never a `next`
-    /// entry the part does not carry.
+    /// last part: its disclosure, re-rendered from the row's notes, names
+    /// the response page, never a `next` entry the part does not carry.
     #[test]
     fn a_first_part_warning_names_only_continuations_it_carries() {
+        let notes = [Remaining {
+            page: "nextPage".into(),
+            left: "4 more pages".into(),
+        }];
         let mut row = json!({"index":0,"data":{
-            "warnings":["Regex trap.","4 more pages (next.nextPage)"],
+            "warnings":["Regex trap."],
             "files":[],
             "next":{"nextPage":{"tool":"astSearch","query":{"page":2}}},
             "hints":{"read":{"tool":"localFetch","query":{"path":"a"}}}
         }});
-        keep_row_next(&mut row, PartShare::First);
+        keep_row_next(&mut row, PartShare::First, &notes);
         assert!(row["data"].get("next").is_none(), "{row}");
         assert_eq!(
             row["data"]["warnings"],
-            json!(["Regex trap.", "4 more pages (responsePagination.next)"]),
+            json!([
+                "Regex trap.",
+                "4 more pages (next.nextPage on the row's last part)"
+            ]),
             "{row}"
         );
         let mut whole = json!({"index":0,"data":{
-            "warnings":["4 more pages (next.nextPage)"],
             "next":{"nextPage":{"tool":"astSearch","query":{"page":2}}}
         }});
         let before = whole.clone();
-        keep_row_next(&mut whole, PartShare::Whole);
+        keep_row_next(&mut whole, PartShare::Whole, &notes);
         assert_eq!(whole, before);
     }
 }

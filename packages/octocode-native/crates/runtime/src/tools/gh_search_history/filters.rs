@@ -28,10 +28,12 @@ pub(super) struct Filters {
     pub review_requested: Option<String>,
     pub reviewed_by: Option<String>,
     pub review: Option<String>,
-    pub checks: Option<String>,
-    pub merged_at: Option<String>,
+    pub status: Option<String>,
+    pub merged: Option<String>,
     pub head: Option<String>,
     pub base: Option<String>,
+    /// `-key:value` terms: rows matching them are excluded (search only).
+    pub excluded: Vec<(String, String)>,
 }
 
 impl Filters {
@@ -69,13 +71,28 @@ enum Field {
     ReviewRequested,
     ReviewedBy,
     Review,
-    Checks,
-    MergedAt,
+    Status,
+    Merged,
     Head,
     Base,
 }
 
 impl Field {
+    /// Whether the qualifier's value is a GitHub login (or, for commits, an
+    /// email): the ones GitHub search rejects when the user does not exist.
+    fn is_person(self) -> bool {
+        matches!(
+            self,
+            Self::Assignee
+                | Self::Author
+                | Self::Committer
+                | Self::Commenter
+                | Self::Mentions
+                | Self::ReviewRequested
+                | Self::ReviewedBy
+        )
+    }
+
     fn name(self) -> &'static str {
         match self {
             Self::Assignee => "assignee",
@@ -97,8 +114,8 @@ impl Field {
             Self::ReviewRequested => "review-requested",
             Self::ReviewedBy => "reviewed-by",
             Self::Review => "review",
-            Self::Checks => "checks",
-            Self::MergedAt => "merged-at",
+            Self::Status => "status",
+            Self::Merged => "merged",
             Self::Head => "head",
             Self::Base => "base",
         }
@@ -141,16 +158,29 @@ const QUALIFIER_KEYS: &[(&str, Field, u8)] = &[
     ("review-requested", Field::ReviewRequested, PR),
     ("reviewed-by", Field::ReviewedBy, PR),
     ("review", Field::Review, PR),
-    ("status", Field::Checks, PR),
-    ("checks", Field::Checks, PR),
-    ("merged", Field::MergedAt, PR),
-    ("merged-at", Field::MergedAt, PR),
+    ("status", Field::Status, PR),
+    ("merged", Field::Merged, PR),
     ("draft", Field::Draft, PR),
     ("head", Field::Head, PR),
     ("base", Field::Base, PR),
 ];
 /// Scope comes from owner/repo/operation, never from free text.
 const SCOPE_QUALIFIERS: &[&str] = &["repo", "org", "user", "owner", "type"];
+
+/// `qualifiers` without its person terms (`author:x`, `-reviewed-by:y`, …):
+/// what is left once the logins that failed to resolve are out of the way.
+pub(super) fn without_person_terms(qualifiers: &str) -> String {
+    qualifiers
+        .split_whitespace()
+        .filter(|term| {
+            let key = term.trim_start_matches('-').split(':').next().unwrap_or("");
+            !QUALIFIER_KEYS
+                .iter()
+                .any(|(name, field, _)| *name == key && field.is_person())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 fn qualifier_error(message: String) -> ProviderError {
     ProviderError::new(ProviderErrorKind::Validation, message)
@@ -213,6 +243,11 @@ fn setting(
         (Field::State, "open" | "closed") if !negated => (field, Setting::Text(value.into())),
         (Field::State, "merged") if pull_request && !negated => {
             (field, Setting::Text(value.into()))
+        }
+        (Field::State, _) if negated => {
+            return Err(qualifier_error(format!(
+                "qualifiers: -is:{value}: set state instead."
+            )));
         }
         (Field::State, "pr" | "issue" | "pull-request") => {
             return Err(qualifier_error(format!(
@@ -286,8 +321,8 @@ impl Filters {
             Field::ReviewRequested => text(&mut self.review_requested, value),
             Field::ReviewedBy => text(&mut self.reviewed_by, value),
             Field::Review => text(&mut self.review, value),
-            Field::Checks => text(&mut self.checks, value),
-            Field::MergedAt => text(&mut self.merged_at, value),
+            Field::Status => text(&mut self.status, value),
+            Field::Merged => text(&mut self.merged, value),
             Field::Head => text(&mut self.head, value),
             Field::Base => text(&mut self.base, value),
             Field::Archived | Field::Draft => {
@@ -316,8 +351,8 @@ impl Filters {
     }
 
     /// Parses a query's `qualifiers` string: allowlisted keys only, scope
-    /// qualifiers rejected, a filter set twice rejected, unknown keys get a
-    /// suggestion.
+    /// qualifiers rejected, a filter set twice rejected (an excluded value
+    /// may repeat), unknown keys get a suggestion.
     pub(super) fn parse(query: &GhSearchHistoryQuery) -> Result<Self, ProviderError> {
         let mut filters = Self::default();
         let Some(text) = query.qualifiers() else {
@@ -345,6 +380,18 @@ impl Filters {
                 )));
             }
             let field = qualifier_field(&key, operation)?;
+            // A negated filter excludes what it names; the typed flags
+            // (`is:`, `draft:`, `archived:`, `in:`) keep their own spellings.
+            if negated
+                && operation != COMMIT
+                && !matches!(
+                    field,
+                    Field::State | Field::Draft | Field::Archived | Field::Match
+                )
+            {
+                filters.excluded.push((key, value.to_owned()));
+                continue;
+            }
             let (field, value) = setting(&key, field, value, negated, pull_request)?;
             filters.set(&key, field, value)?;
         }
@@ -388,7 +435,7 @@ mod tests {
     }
 
     /// SH4 drift: native `QUALIFIER_KEYS` is the contract's key list, per
-    /// operation (A10: commit people filters are qualifiers too).
+    /// operation (commit people filters are qualifiers too).
     #[test]
     fn native_qualifier_keys_match_the_contract() {
         for (operation, bit) in [

@@ -9,7 +9,7 @@ Load when a query shape is non-obvious. `schema <tool>` lists every variant with
   {"tool":"localFetch","query":{"path":"/ABS/repo/src/example.ts","matchString":["export function","throw new"],"block":true}},
   {"tool":"localFetch","query":{"path":"/ABS/repo/src/example.ts","ranges":["10-30","120-140"]}},
   {"tool":"astSearch","query":{"operation":"symbols","path":"/ABS/repo/src","symbolName":["createServer","listen"]}},
-  {"tool":"lspSearch","query":{"path":"/ABS/repo/src/example.ts","operation":"references","symbolName":"example","lineHint":10,"includeDeclaration":false,"groupByFile":true}},
+  {"tool":"lspSearch","query":{"path":"/ABS/repo/src/example.ts","operation":"references","symbolName":"example","line":10,"includeDeclaration":false,"groupByFile":true}},
   {"tool":"astTopology","query":{"operation":"reachability","path":"/ABS/repo","entrypoints":["src/index.ts"]}},
   {"tool":"ghSearchCode","query":{"owner":"tokio-rs","repo":"tokio","keywords":["max_blocking_threads"],"path":"tokio/src/runtime"}},
   {"tool":"ghGetFileContent","query":{"owner":"tokio-rs","repo":"tokio","path":"tokio/src/runtime/builder.rs","matchString":"max_blocking_threads: 512","block":true}},

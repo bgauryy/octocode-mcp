@@ -1,3 +1,4 @@
+import type { OctocodeMcp, OctocodeOwner } from '../src/mcp/octocode.js';
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from '@earendil-works/pi-coding-agent';
 
 /** Identity theme: colours and styles pass text through, so rendered components read as plain text. */
@@ -25,10 +26,8 @@ export function fakePi() {
   const renderers = new Map<string, any>();
   const sent: Array<{ message: any; options: any }> = [];
   const entries: Array<{ customType: string; data: unknown }> = [];
-  const mcpServers = new Map<string, any>();
   let activeTools: string[] | undefined;
   const pi = {
-    registerMcpServer: (name: string, config: unknown) => mcpServers.set(name, config),
     getSettings: () => ({}),
     registerTool: (tool: { name: string }) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: unknown) => commands.set(name, command),
@@ -60,7 +59,7 @@ export function fakePi() {
   };
   /** Runs every handler for `event` in order and returns the last one's result, as Pi does for most events. */
   const fire = async (event: string, payload: unknown, ctx: unknown) => (await emit(event, payload, ctx)).at(-1);
-  return { pi: pi as unknown as ExtensionAPI, tools, commands, handlers, renderers, sent, entries, mcpServers, emit, fire };
+  return { pi: pi as unknown as ExtensionAPI, tools, commands, handlers, renderers, sent, entries, emit, fire };
 }
 
 export interface FakeUi {
@@ -112,4 +111,20 @@ export function fakeCtx(options: { cwd: string; hasUI?: boolean; mode?: string; 
     model: undefined,
     getContextUsage: () => undefined,
   } as never;
+}
+
+/** A stand-in for the Octocode server a turn asks about: who runs it, whether it connects, and its instructions. */
+export function fakeOctocode(owner: OctocodeOwner = { by: 'extension' }) {
+  const state = { owner, connected: true, instructions: undefined as string | undefined, readyCalls: 0 };
+  const mcp: Pick<OctocodeMcp, 'owner' | 'ready' | 'instructions'> = {
+    owner: () => state.owner,
+    ready: async () => {
+      state.readyCalls++;
+      return state.connected;
+    },
+    get instructions() {
+      return state.instructions;
+    },
+  };
+  return { mcp, state };
 }

@@ -15,7 +15,7 @@ pub(super) fn validate_history_keyword_scope(input: &Value) -> Result<(), Contra
         if query.get("operation").and_then(Value::as_str) != Some("commit") {
             continue;
         }
-        for field in ["path", "ref", "base", "head"] {
+        for field in ["path", "ref"] {
             if query.get(field).is_some() {
                 return Err(issue(
                     "history.keyword-scope",

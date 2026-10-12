@@ -65,9 +65,7 @@ fn diagnostic(
     message: impl Into<String>,
     path: &str,
 ) -> StructuralDiagnostic {
-    StructuralDiagnostic::new(code, severity, stage, message)
-        .with_path(path)
-        .with_recovery("Use a supported source extension and keep the same content when requesting the next page.")
+    StructuralDiagnostic::new(code, severity, stage, message).with_path(path)
 }
 
 /// Inspect a bounded preorder view of the syntax tree, parsed with the
@@ -410,6 +408,24 @@ mod tests {
         let recovery = stop.recovery.as_deref().unwrap_or_default();
         assert!(!recovery.contains("extension"), "{recovery}");
         assert!(recovery.contains("nextOffset"), "{recovery}");
+    }
+
+    /// A diagnostic names a recovery only when it has one that fits it: a
+    /// failed or recovered parse is not fixed by paging.
+    #[test]
+    fn parse_diagnostics_carry_no_paging_recovery() {
+        let unsupported = inspect_source("hello", "x.unknown", None);
+        let recovered = inspect_source("const b = ;\n", "broken.ts", None);
+        let diagnostics = unsupported.diagnostics.iter().chain(&recovered.diagnostics);
+        assert_eq!(diagnostics.clone().count(), 2);
+        for diagnostic in diagnostics {
+            assert!(
+                diagnostic.recovery.is_none(),
+                "{}: {:?}",
+                diagnostic.code,
+                diagnostic.recovery
+            );
+        }
     }
 
     #[test]

@@ -9,6 +9,7 @@
     "@modelcontextprotocol/server": "^2.1.0",
     "@octocodeai/octocode-core": "20.0.1",
     "@octocodeai/octocode-native": "20.2.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "zod": "^4.6.2"
   },
   "devDependencies": {

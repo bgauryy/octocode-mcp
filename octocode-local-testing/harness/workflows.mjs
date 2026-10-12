@@ -15,27 +15,27 @@ const callers = e => lspCallers(e).map(c => `${c.name}@${path.basename(c.path ??
 // F1 — TS/JS importers from the declaration side (inferred project, CommonJS alias).
 for (const [variant, ext] of [['cjs-noconfig', 'cjs'], ['cjs-jsconfig', 'cjs'], ['esm-noconfig', 'mjs'], ['esm-tsconfig', 'ts']]) {
   const file = path.join(LSP, variant, `a.${ext}`);
-  const refs = await call('lspSearch', { path: file, symbolName: 'stage', lineHint: 1, operation: 'references' });
+  const refs = await call('lspSearch', { path: file, symbolName: 'stage', line: 1, operation: 'references' });
   check(`F1 ${variant}: references reach the importer b.${ext}`, locations(refs).some(f => f.endsWith(`b.${ext}`)), locations(refs).map(f => path.basename(f)).join(','));
-  const up = await call('lspSearch', { path: file, symbolName: 'stage', lineHint: 1, operation: 'callers' });
+  const up = await call('lspSearch', { path: file, symbolName: 'stage', line: 1, operation: 'callers' });
   check(`F1 ${variant}: callers find run`, callers(up).some(c => c.startsWith('run@b.')), callers(up).join(','));
 }
 {
   const file = path.join(NATIVE, 'scripts/native-addon-utils.cjs');
   // Anchor on the live declaration line: this is a real repo file that moves.
-  const lineHint = fs.readFileSync(file, 'utf8').split('\n').findIndex(line => line.startsWith('function stageFile(')) + 1;
-  // LP8: coverage.importerScan is a verbose (stats) field, listed only under extras:["stats"].
-  const refs = await call('lspSearch', { path: file, symbolName: 'stageFile', lineHint, operation: 'references', extras: ['stats'] });
+  const line = fs.readFileSync(file, 'utf8').split('\n').findIndex(l => l.startsWith('function stageFile(')) + 1;
+  // coverage.importerScan is a verbose (stats) field, listed only under extras:["stats"].
+  const refs = await call('lspSearch', { path: file, symbolName: 'stageFile', line, operation: 'references', extras: ['stats'] });
   const files = new Set(locations(refs).map(f => path.basename(f)));
   check('F1 real repo: stageFile references span build-native.cjs + test', files.has('build-native.cjs') && files.has('build-publication.test.cjs'), [...files].join(','));
-  const coverage = rowData(refs)?.payload?.coverage;
+  const coverage = rowData(refs)?.coverage;
   check('F1: coverage reports a complete importer scan (extras stats)', coverage?.importerScan === 'complete', JSON.stringify(coverage));
 }
 
 // F2 — workspaceSymbol ranks the exact name first.
 {
   const ws = await call('lspSearch', { path: path.join(NATIVE, 'crates/runtime/src/process_status.rs'), operation: 'workspaceSymbol', symbolName: 'is_alive' });
-  const first = rowData(ws)?.payload?.matches?.[0]?.name;
+  const first = rowData(ws)?.matches?.[0]?.symbolName;
   check('F2: exact workspace symbol ranks first', first === 'is_alive', first);
 }
 
@@ -46,7 +46,7 @@ for (const [variant, ext] of [['cjs-noconfig', 'cjs'], ['cjs-jsconfig', 'cjs'], 
   check('F3: mixed root names the searched language and offers hints.searchRust', (rowData(ws)?.lsp?.language ?? (/\btypescript (?:language )?server\b/.test(JSON.stringify(rowData(ws)?.hints?.text ?? [])) ? 'typescript' : undefined)) === 'typescript' && !!route, JSON.stringify(rowData(ws)?.hints));
   if (route) {
     const followed = await client.follow(route);
-    check('F3: following hints.searchRust finds is_alive', (rowData(followed)?.payload?.matches ?? []).some(i => i.name === 'is_alive'), followed.text.slice(0, 100));
+    check('F3: following hints.searchRust finds is_alive', (rowData(followed)?.matches ?? []).some(i => i.symbolName === 'is_alive'), followed.text.slice(0, 100));
   }
 }
 
@@ -94,8 +94,8 @@ for (const [variant, ext] of [['cjs-noconfig', 'cjs'], ['cjs-jsconfig', 'cjs'], 
 
 // F10 — groupByFile paths resolve against root.
 {
-  const refs = await call('lspSearch', { path: path.join(NATIVE, 'crates/runtime/src/process_status.rs'), symbolName: 'is_alive', lineHint: 1, operation: 'references', groupByFile: true });
-  const byFile = rowData(refs)?.payload?.files ?? [];
+  const refs = await call('lspSearch', { path: path.join(NATIVE, 'crates/runtime/src/process_status.rs'), symbolName: 'is_alive', line: 1, operation: 'references', groupByFile: true });
+  const byFile = rowData(refs)?.files ?? [];
   const missing = byFile.map(f => rootPath(refs, f.path)).filter(f => !fs.existsSync(f));
   check('F10: every groupByFile path = root + path exists', byFile.length > 0 && missing.length === 0, missing.slice(0, 2).join(','));
 }
@@ -105,7 +105,7 @@ for (const [variant, ext] of [['cjs-noconfig', 'cjs'], ['cjs-jsconfig', 'cjs'], 
   const log = path.join(FIXTURES, 'large/huge.log');
   if (fs.existsSync(log)) {
     const count = await call('localSearch', { path: log, matchString: 'level=ERROR', resultView: 'countMatches' });
-    const n = rowData(count)?.stats?.matchCount ?? collect(rowData(count), o => typeof o.matchCount === 'number')[0]?.matchCount;
+    const n = rowData(count)?.matchCount ?? collect(rowData(count), o => typeof o.matchCount === 'number')[0]?.matchCount;
     check('L1: 28MB log is searched (exact count)', n === Math.floor(400_000 / 97), `count=${n}`);
     const tail = await call('localFetch', { path: log, ranges: ['399999-400000'] });
     check('L2: 28MB log tail window served with exact totals', rowData(tail)?.totalLines === 400_000 && (rowData(tail)?.content ?? '').includes('req=400000'), rowData(tail)?.errorCode ?? '');

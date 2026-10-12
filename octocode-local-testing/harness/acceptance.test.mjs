@@ -1,9 +1,9 @@
-// node --test harness/acceptance.test.mjs — one red and one green fixture per B1 check.
+// node --test harness/acceptance.test.mjs — one red and one green fixture per acceptance check.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { checkChainFit, checkRowContract, descriptionLint, packedCoordinates, packedStrings, silentOmissions, surfaceBudget, zeroBasedTexts, zeroCoordinates } from './acceptance.mjs';
 
-const inputs = { localFetch: new Set(['path', 'matchString', 'startLine', 'endLine']), lspSearch: new Set(['path', 'symbolName', 'lineHint', 'operation']) };
+const inputs = { localFetch: new Set(['path', 'matchString', 'startLine', 'endLine']), lspSearch: new Set(['path', 'symbolName', 'line', 'operation']) };
 const published = t => inputs[t] ?? null;
 const opts = { inputNames: published, published, toolNames: Object.keys(inputs) };
 
@@ -18,7 +18,7 @@ test('C1 packed coordinates: lsp/ast packed rows fail, "<line>\\t<value>" passes
   assert.equal(packedCoordinates('2026-05-30T23:55:19Z'), 0);
 });
 
-test('C1 packed coordinates: a symbols outline entry (P1) passes only under symbols/members', () => {
+test('C1 packed coordinates: a symbols outline entry passes only under symbols/members', () => {
   const outline = { results: [{ data: { symbols: ['a (3-5, function, doc 2)', { symbolName: 'B', kind: 'impl', line: 7, endLine: 20, members: ['c (8-10, doc 7)'] }] } }] };
   assert.deepEqual(packedStrings(outline), []);
   assert.equal(packedStrings({ results: [{ data: { locations: ['c (8-10, doc 7)'] } }] }).length, 1);
@@ -36,7 +36,7 @@ test('C1 chain fit: unknown target field and packed row fail; clean row passes',
   assert.deepEqual(checkChainFit(good, 'lspSearch', opts), []);
 });
 
-test('C1 hint text lint (X12): unpublished knob without a lead fails; with a lead passes', () => {
+test('C1 hint text lint: unpublished knob without a lead fails; with a lead passes', () => {
   const bad = { results: [{ data: { hints: { text: ['try caseMode:"insensitive"'] } } }] };
   assert.ok(checkChainFit(bad, 'localFetch', opts).some(r => r.includes('caseMode')));
   const good = { results: [{ data: { hints: { text: ['try caseMode:"insensitive"'], retry: { tool: 'localFetch', query: { queries: [{ path: 'a', caseMode: 'insensitive' }] } } } } }] };

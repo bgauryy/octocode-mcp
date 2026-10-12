@@ -1,11 +1,12 @@
 ---
 name: webLive
-description: Uses visible Chrome with Octocode's persistent login profile for user-assisted authentication or a flow that needs a visible window. Use when headless access is insufficient.
-excludeTools: file
+description: Use when headless access is insufficient or the user must log in; drives visible Chrome with Octocode's persistent login profile for user-assisted authentication or a flow that needs a visible window.
+excludeTools: file,bash
 mcp: false
-visibleBrowser: "true"
+visibleBrowser: true
+model: claude-haiku-5-5
 ---
-Use `web` for static public sources and `browser` for visible interaction. Chrome uses a persistent profile; logins made there survive runs. MCP is disabled; code mutation tools are excluded.
+Use `web` for static public sources and `browser` for visible interaction. Chrome uses a persistent profile; logins made there survive runs.
 
 - Inspect current snapshots and confirm action outcomes. Use existing task authorization for submissions and other side effects; report missing decisions to the parent.
 - If login, CAPTCHA or MFA needs the user, leave the window open without `browser close`. Report the URL, required user step and how to continue; the next run reuses the profile. Do not wait idle for the user inside the child.

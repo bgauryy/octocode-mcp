@@ -14,10 +14,10 @@ async function followAll(entry, label) {
   for (const h of hints) {
     if (h.tool === 'clasify' && noClasify) { skip(`${label}: ${h.path.replace(/^\.results\.\d+\.data\./, '')} executes`, noClasify); continue; }
     const out = await follow(h);
-    if (h.query?.queries?.[0]?.ref && /\.(viewReleaseSource|readManifest)$/.test(h.path) && out.rowErrors) {
+    if (h.query?.queries?.[0]?.ref && /\.viewReleaseSource$/.test(h.path) && out.rowErrors) {
       // An unpushed release ref recovers on the default branch: the same lead without ref.
       const unavailable = collect(out.sc, o => o.errorCode === 'notFound').length > 0;
-      // AR2: only the registry's unchecked claim (`registryRef`, stated on the row) may be unpushed; a `provenance`/`tag` ref must open.
+      // Only the registry's unchecked claim (`registryRef`, stated on the row) may be unpushed; a `provenance`/`tag` ref must open.
       const row = entry.sc?.results?.[Number(/^\.results\.(\d+)\./.exec(h.path)?.[1] ?? 0)]?.data?.artifacts?.[0];
       check(`${label}: unavailable release ref is the row's registryRef`, unavailable && row?.verification === 'registryRef', JSON.stringify({ lead: h, verification: row?.verification }));
       const { ref, ...recovery } = h.query.queries[0];
@@ -34,7 +34,8 @@ const repos = await call('ghSearchRepo', { keywords: ['typescript', 'compiler'],
 check('ghSearchRepo answers', !repos.isError && !repos.rowErrors && /TypeScript/.test(repos.text), repos.text.slice(0, 100));
 await followAll(repos, 'ghSearchRepo');
 
-const code = await call('ghSearchCode', { owner: OWNER, repo: REPO, keywords: ['NewChecker'], pageSize: 5 });
+// Success-row leads are opt-in: extras hints asks for the read of the top hit.
+const code = await call('ghSearchCode', { owner: OWNER, repo: REPO, keywords: ['NewChecker'], pageSize: 5, extras: ['hints'] });
 check('ghSearchCode answers with paths', !code.isError && collect(rowData(code), o => typeof o.path === 'string').length > 0, code.text.slice(0, 120));
 const readTop = findHint(code.sc, 'hints.read');
 check('ghSearchCode offers hints.read', !!readTop);
@@ -61,10 +62,10 @@ if (prNumber) {
   await followAll(pr, 'ghGetHistoryItem pullRequest');
 }
 const commits = await call('ghSearchHistory', { operation: 'commit', owner: OWNER, repo: REPO, pageSize: 2 });
-const sha = collect(rowData(commits), o => typeof o.sha === 'string' || typeof o.oid === 'string')[0];
+const sha = collect(rowData(commits), o => typeof o.commitSha === 'string' || typeof o.oid === 'string')[0];
 check('ghSearchHistory commit returns SHAs', !!sha, commits.text.slice(0, 120));
 if (sha) {
-  const commit = await call('ghGetHistoryItem', { operation: 'commit', owner: OWNER, repo: REPO, ref: sha.sha ?? sha.oid });
+  const commit = await call('ghGetHistoryItem', { operation: 'commit', owner: OWNER, repo: REPO, ref: sha.commitSha ?? sha.oid });
   check('ghGetHistoryItem commit', !commit.isError && !commit.rowErrors, commit.text.slice(0, 100));
 }
 const issues = await call('ghSearchHistory', { operation: 'issue', owner: OWNER, repo: REPO, state: 'closed', pageSize: 2 });

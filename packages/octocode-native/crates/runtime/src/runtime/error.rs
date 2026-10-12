@@ -3,8 +3,8 @@ use serde_json::{Value, json};
 
 /// Project a typed contract failure into the CallToolResult shape MCP
 /// returns: the same actionable projection the CLI prints (`error` plus its
-/// repair `details`), pointed at the tool's inputSchema; an output contract
-/// violation keeps its cause. Runtime and transport faults remain errors at
+/// repair `details`, typed with `errorCode`); an output contract violation
+/// keeps its cause. Runtime and transport faults remain errors at
 /// the NAPI boundary.
 pub fn mcp_input_error(tool: &str, error: &RuntimeError) -> Option<Value> {
     // A response that breaks its own output contract names the broken field
@@ -18,7 +18,7 @@ pub fn mcp_input_error(tool: &str, error: &RuntimeError) -> Option<Value> {
         }));
     }
     (error.code == "invalidInput").then(|| {
-        let envelope = typed_error_envelope(tool, error);
+        let envelope = typed_error_envelope(error);
         let detail = tool_error_text(&envelope).unwrap_or_default();
         json!({
             "content": [{"type":"text","text":format!(
@@ -30,14 +30,14 @@ pub fn mcp_input_error(tool: &str, error: &RuntimeError) -> Option<Value> {
     })
 }
 
-/// The `octocode.toolError` envelope of a rejected call, typed with the
-/// error's `errorCode`: the formatted payload when validation built one, else
+/// The `{error, details?, errorCode}` envelope of a rejected call, typed with
+/// the error's `errorCode`: the formatted payload when validation built one, else
 /// the bare message. MCP returns it as structuredContent and the CLI prints
 /// it on stdout, so both surfaces answer with one row.
-pub fn typed_error_envelope(tool: &str, error: &RuntimeError) -> Value {
+pub fn typed_error_envelope(error: &RuntimeError) -> Value {
     let mut envelope = match error.payload.as_deref() {
         Some(payload @ Value::Object(_)) => payload.clone(),
-        _ => crate::contracts::tool_error(Some(tool), &error.message, None),
+        _ => crate::contracts::tool_error(&error.message, Vec::new()),
     };
     if envelope.get("errorCode").is_none() {
         envelope["errorCode"] = json!(error.code);
@@ -46,7 +46,7 @@ pub fn typed_error_envelope(tool: &str, error: &RuntimeError) -> Value {
     envelope
 }
 
-/// `octocode.toolError` → one line: the error, then each repair detail. The
+/// An error envelope → one line: the error, then each repair detail. The
 /// one text projection of a tool error: MCP input errors and the CLI terminal
 /// channel both print it.
 pub fn tool_error_text(payload: &Value) -> Option<String> {
@@ -61,7 +61,8 @@ pub fn tool_error_text(payload: &Value) -> Option<String> {
     Some(if details.is_empty() {
         error.to_owned()
     } else {
-        format!("{error} {}", details.join("; "))
+        // The error and each detail are separate clauses.
+        format!("{error}; {}", details.join("; "))
     })
 }
 
@@ -75,7 +76,7 @@ mod tests {
         RuntimeError {
             code: "invalidInput".into(),
             message: error.to_string(),
-            payload: Some(Box::new(contracts::format_input_error(tool, &error, true))),
+            payload: Some(Box::new(contracts::format_input_error(tool, &error))),
             validation_issues: Some(error.issues),
         }
     }
@@ -83,11 +84,17 @@ mod tests {
     fn text(tool: &str, input: Value) -> String {
         let result = mcp_input_error(tool, &invalid(tool, input)).expect("an MCP error");
         assert_eq!(result["isError"], true);
-        // The structured row is the CLI's `octocode.toolError` envelope,
-        // typed: an agent reading structuredContent branches on errorCode.
+        // The structured row is the CLI's error envelope, typed: an agent
+        // reading structuredContent branches on errorCode. The caller knows
+        // the tool, so there is no kind/version/tool frame.
         let envelope = &result["structuredContent"];
-        assert_eq!(envelope["kind"], "octocode.toolError", "{envelope}");
-        assert_eq!(envelope["tool"], tool, "{envelope}");
+        for frame in ["kind", "version", "tool"] {
+            assert!(
+                envelope.get(frame).is_none(),
+                "{frame} on {tool}: {envelope}"
+            );
+        }
+        assert!(envelope["error"].is_string(), "{envelope}");
         assert_eq!(envelope["errorCode"], "invalidInput", "{envelope}");
         let text = result["content"][0]["text"]
             .as_str()
@@ -108,8 +115,7 @@ mod tests {
         .expect("an MCP error");
         assert_eq!(
             result["structuredContent"],
-            json!({"kind":"octocode.toolError","version":1,"tool":"clasify",
-                   "error":"clasify pages by itself","errorCode":"invalidInput"})
+            json!({"error":"clasify pages by itself","errorCode":"invalidInput"})
         );
     }
 
@@ -124,7 +130,8 @@ mod tests {
             "{typo}"
         );
         assert!(typo.contains("did you mean 'matchString'?"), "{typo}");
-        assert!(typo.contains("See the localFetch inputSchema"), "{typo}");
+        // No static schema note: the instructions name the schema once.
+        assert!(!typo.contains("inputSchema"), "{typo}");
         assert!(!typo.contains("octocode schema"), "{typo}");
 
         let missing = text(

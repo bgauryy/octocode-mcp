@@ -15,6 +15,8 @@ export function workspaceResolutionPackages(nativePackage) {
   return [
     '@octocodeai/octocode-skill-installer',
     '@octocodeai/config',
+    // The Pi extension depends on `octocode-mcp@latest`; development runs the workspace server instead.
+    'octocode-mcp',
     '@octocodeai/octocode-native',
     ...nativePlatformPackages(nativePackage),
   ];

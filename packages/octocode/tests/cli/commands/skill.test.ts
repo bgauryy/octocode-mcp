@@ -105,11 +105,7 @@ describe('skill command', () => {
     ({ args, options, message }) => {
       run(args, { ...options, json: true });
       expect(process.exitCode).toBe(EXIT.USAGE);
-      expect(loggedJson()).toEqual({
-        kind: 'octocode.toolError',
-        version: 1,
-        error: message,
-      });
+      expect(loggedJson()).toEqual({ error: message });
       expect(console.error).not.toHaveBeenCalled();
     }
   );
@@ -126,11 +122,7 @@ describe('skill command', () => {
     (...args) => {
       run(args, { json: true });
       expect(process.exitCode).toBeGreaterThan(0);
-      expect(loggedJson()).toMatchObject({
-        kind: 'octocode.toolError',
-        version: 1,
-        error: expect.any(String),
-      });
+      expect(loggedJson()).toEqual({ error: expect.any(String) });
       expect(console.error).not.toHaveBeenCalled();
     }
   );
@@ -290,8 +282,7 @@ describe('skill command', () => {
       'dry-run': true,
       json: true,
     });
-    expect(loggedJson<{ kind: string; error: string }>()).toMatchObject({
-      kind: 'octocode.toolError',
+    expect(loggedJson<{ error: string }>()).toEqual({
       error: expect.stringContaining('--global or --project-dir'),
     });
 
@@ -303,8 +294,7 @@ describe('skill command', () => {
       'dry-run': true,
       json: true,
     });
-    expect(loggedJson<{ kind: string; error: string }>()).toMatchObject({
-      kind: 'octocode.toolError',
+    expect(loggedJson<{ error: string }>()).toEqual({
       error: expect.stringContaining('--global or --project-dir'),
     });
 
@@ -314,8 +304,7 @@ describe('skill command', () => {
       'dry-run': true,
       json: true,
     });
-    expect(loggedJson<{ kind: string; error: string }>()).toMatchObject({
-      kind: 'octocode.toolError',
+    expect(loggedJson<{ error: string }>()).toEqual({
       error:
         'Unknown option for skill install: --workspace (it applies to skill check)',
     });
@@ -511,8 +500,8 @@ describe('skill command', () => {
   it('rejects unknown skill names on install', () => {
     run(['install', 'not-a-real-skill'], { json: true });
     expect(process.exitCode).toBe(EXIT.GENERAL);
-    const parsed = loggedJson<{ kind: string; error: string }>();
-    expect(parsed.kind).toBe('octocode.toolError');
+    const parsed = loggedJson<{ error: string }>();
+    expect(Object.keys(parsed)).toEqual(['error']);
     expect(parsed.error).toContain('not-a-real-skill');
   });
 
@@ -563,15 +552,15 @@ describe('skill command', () => {
   it('rejects unknown skill names on check', () => {
     run(['check', 'not-a-real-skill'], { json: true });
     expect(process.exitCode).toBe(EXIT.GENERAL);
-    const parsed = loggedJson<{ kind: string; error: string }>();
-    expect(parsed.kind).toBe('octocode.toolError');
+    const parsed = loggedJson<{ error: string }>();
+    expect(Object.keys(parsed)).toEqual(['error']);
     expect(parsed.error).toContain('not-a-real-skill');
   });
 
   it('requires a target for remove', () => {
     run(['remove'], { json: true });
     expect(process.exitCode).toBe(EXIT.GENERAL);
-    expect(loggedJson<{ kind: string }>().kind).toBe('octocode.toolError');
+    expect(Object.keys(loggedJson())).toEqual(['error']);
   });
 
   it('dry-runs remove without deleting installed locations', () => {

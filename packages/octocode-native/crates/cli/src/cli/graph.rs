@@ -36,7 +36,7 @@ OUTPUT
   Readable text on a terminal; one JSON object on a pipe or with --json. Errors follow the
   output (JSON on stdout, else text on stderr). Lists carry total and results; a cut adds
   truncated plus next, a paste-ready command. Exit: 0 ok, 1 empty, 2 bad input or ambiguous,
-  3 no graph or node, 5 error, 6 more pages (run next).
+  3 no graph or node, 5 error. A cut result is still 0: run next for more.
 
 STORAGE
   <workspace>/.octocode/graph/<UTC time>-<scope>/{graph.bin, manifest.json}; latest names the

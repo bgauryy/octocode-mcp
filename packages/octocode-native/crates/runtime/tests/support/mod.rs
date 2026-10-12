@@ -312,7 +312,7 @@ impl Respond for LocateTopPassage {
     }
 }
 
-/// Entries of the shared D1 retired-name deny-list
+/// Entries of the shared retired-name deny-list
 /// (`skills-dev/octocode-dev/scripts/retired-names.json`) in one of `scopes`;
 /// with `tool`, only the entries that apply to it (no `tools` list, or one
 /// naming it).
@@ -339,4 +339,21 @@ pub fn retired_names(scopes: &[&str], tool: Option<&str>) -> Vec<Value> {
         })
         .cloned()
         .collect()
+}
+
+/// Changed-file rows in a patch-free inventory: a `"M +1 -1 path"` row is
+/// one, a `{"dir/": [rows]}` group is its rows.
+pub fn inventory_len(files: &Value) -> usize {
+    files.as_array().map_or(0, |rows| {
+        rows.iter()
+            .map(|row| match row {
+                Value::Object(group) => group
+                    .values()
+                    .filter_map(Value::as_array)
+                    .map(Vec::len)
+                    .sum(),
+                _ => 1,
+            })
+            .sum()
+    })
 }

@@ -8,7 +8,7 @@ use base64::engine::general_purpose::STANDARD;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use support::{ALL_EXTRAS, Workspace, call, row_data, row_status};
+use support::{ALL_EXTRAS, Workspace, call, inventory_len, row_data, row_status};
 use wiremock::matchers::{method, path, path_regex, query_param};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
@@ -58,6 +58,33 @@ async fn malformed_remote_regex_keeps_original_error_and_required_file_path() {
         assert_eq!(data["path"], "README.md", "{data}");
         assert!(data.to_string().contains("Invalid regex pattern"), "{data}");
     }
+    // A list with one unclosed call: the error names the item, and the one
+    // lead is the same GitHub read with that item escaped; no static text.
+    let out = call(&runtime, "ghGetFileContent", json!({"owner":"a","repo":"b","path":"README.md","ref":sha,"matchString":["^example","source("],"regex":"rust"})).await.expect("error row");
+    let data = row_data(&out);
+    assert_eq!(data["errorCode"], "invalidPattern", "{data}");
+    assert!(
+        data["error"].to_string().contains("matchString[1]"),
+        "{data}"
+    );
+    let repair = &data["hints"]["repair"];
+    assert_eq!(repair["tool"], "ghGetFileContent", "{data}");
+    let row = &repair["query"]["queries"][0];
+    assert_eq!(
+        row["matchString"],
+        json!(["^example", "source\\("]),
+        "{data}"
+    );
+    assert_eq!(
+        (
+            row["owner"].as_str(),
+            row["repo"].as_str(),
+            row["ref"].as_str()
+        ),
+        (Some("a"), Some("b"), Some(sha)),
+        "{data}"
+    );
+    assert!(data["hints"].get("text").is_none(), "{data}");
     runtime.close().await;
 }
 
@@ -114,7 +141,7 @@ async fn github_file_read_goes_through_execute_and_redacts() {
         content.contains("[REDACTED"),
         "expected secret redaction, got {content}"
     );
-    assert!(file["next"]["continue"]["query"].is_object());
+    assert!(file["next"]["continueWindow"]["query"].is_object());
     runtime.close().await;
 }
 
@@ -202,7 +229,7 @@ async fn github_tree_materialize_is_accepted_and_emits_location() {
         .map(String::as_str)
         .collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["complete", "localPath"], "{data}");
+    assert_eq!(keys, ["coverage", "localPath"], "{data}");
     let exhausted = call(&runtime, "ghStructure", json!({"owner":"a","repo":"b","ref":sha,"pageSize":1,"materialize":true,"materializeOffset":1})).await.expect("boundary offset");
     let boundary = row_data(&exhausted);
     assert_eq!(boundary["pagination"]["hasMore"], true, "{boundary}");
@@ -216,12 +243,15 @@ async fn github_tree_materialize_is_accepted_and_emits_location() {
     .await
     .expect("mid-page offset");
     let resumed = row_data(&resumed);
-    assert!(resumed.get("entries").is_none(), "{resumed}");
+    assert!(resumed.get("files").is_none(), "{resumed}");
     assert!(
         resumed["location"]["localPath"].as_str().is_some(),
         "{resumed}"
     );
-    assert_eq!(resumed["location"]["complete"], true, "{resumed}");
+    assert_eq!(
+        resumed["location"]["coverage"]["state"], "complete",
+        "{resumed}"
+    );
     let next = &boundary["next"]["continueMaterialize"]["query"]["queries"][0];
     assert_eq!(next["ref"], sha, "{boundary}");
     assert_eq!(next["page"], 2, "{boundary}");
@@ -230,11 +260,14 @@ async fn github_tree_materialize_is_accepted_and_emits_location() {
         .await
         .expect("replay boundary continuation");
     let completed = row_data(&last);
-    assert_eq!(completed["location"]["complete"], true, "{completed}");
+    assert_eq!(
+        completed["location"]["coverage"]["state"], "complete",
+        "{completed}"
+    );
     runtime.close().await;
 }
 
-/// E8: a materialize that lists folders below its depth without writing
+/// A materialize that lists folders below its depth without writing
 /// them is not complete, and `next.expandDepth` writes them.
 #[tokio::test]
 async fn github_tree_materialize_with_unwritten_folders_is_not_complete() {
@@ -278,7 +311,7 @@ async fn github_tree_materialize_with_unwritten_folders_is_not_complete() {
     .await
     .expect("tree materialize");
     let data = row_data(&outcome);
-    assert_eq!(data["location"]["complete"], false, "{data}");
+    assert_eq!(data["location"]["coverage"]["state"], "partial", "{data}");
     assert_eq!(data["isPartial"], true, "{data}");
     assert!(
         data["partialReasons"]
@@ -295,7 +328,7 @@ async fn github_tree_materialize_with_unwritten_folders_is_not_complete() {
     runtime.close().await;
 }
 
-/// E21/D4: ghSearchCode on a repository that does not exist is notFound
+/// ghSearchCode on a repository that does not exist is notFound
 /// (exit 3), not an empty partial search.
 #[tokio::test]
 async fn gh_search_code_on_a_missing_repository_is_not_found() {
@@ -685,9 +718,9 @@ async fn gh_get_history_item_commit_fetches_via_rest() {
         rendered.contains("critical regression"),
         "expected commit message in {rendered}"
     );
-    // D9: a SHA ref is not restated beside the same sha.
+    // A SHA ref is not restated beside the same sha.
     let data = row_data(&outcome);
-    assert_eq!(data["sha"], sha, "{data}");
+    assert_eq!(data["commitSha"], sha, "{data}");
     assert!(data.get("ref").is_none(), "{data}");
     assert_eq!(
         data["hints"]["findPullRequest"]["query"]["queries"][0]["keywords"],
@@ -697,7 +730,7 @@ async fn gh_get_history_item_commit_fetches_via_rest() {
     runtime.close().await;
 }
 
-/// D9: a squash-merge headline names its pull request: read it directly
+/// A squash-merge headline names its pull request: read it directly
 /// instead of searching by SHA.
 #[tokio::test]
 async fn squash_merge_commit_reads_its_pull_request_directly() {
@@ -1151,8 +1184,15 @@ async fn history_repository_without_owner_is_rejected_before_provider_requests()
     );
     assert!(issues[0].message.contains("repo requires owner"));
     let payload = outcome.payload.as_ref().expect("transport error payload");
-    assert_eq!(payload["kind"], "octocode.toolError");
-    assert_eq!(payload["tool"], "ghSearchHistory");
+    for frame in ["kind", "version", "tool"] {
+        assert!(payload.get(frame).is_none(), "{frame}: {payload}");
+    }
+    assert!(
+        payload["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("repo requires owner")),
+        "{payload}"
+    );
     assert_eq!(payload["errorCode"], "invalidInput");
     assert!(
         server
@@ -1382,7 +1422,7 @@ async fn gh_get_file_content_on_directory_returns_tree_recovery() {
     runtime.close().await;
 }
 
-/// D7: a binary file is a request the text read cannot serve: it names the
+/// A binary file is a request the text read cannot serve: it names the
 /// size and blob SHA under an invalid-input code, not a decode failure.
 #[tokio::test]
 async fn gh_file_read_of_binary_content_reports_size_and_blob() {
@@ -1422,7 +1462,7 @@ async fn gh_file_read_of_binary_content_reports_size_and_blob() {
     runtime.close().await;
 }
 
-/// D4: a wrong-case path recovers to the case-corrected file, and a missing
+/// A wrong-case path recovers to the case-corrected file, and a missing
 /// file to its nearest existing directory, never to another missing path.
 #[tokio::test]
 async fn gh_file_read_of_a_missing_path_recovers_to_what_exists() {
@@ -1489,10 +1529,8 @@ async fn gh_file_read_of_a_missing_path_recovers_to_what_exists() {
         data["hints"]["read"]["query"]["queries"][0]["ref"], "main",
         "{data}"
     );
-    assert_eq!(
-        data["hints"]["viewTree"]["query"]["queries"][0]["path"], "tokio/src",
-        "{data}"
-    );
+    // The case-fixed read is the one repair; no listing beside it.
+    assert!(data["hints"].get("viewTree").is_none(), "{data}");
     let outcome = call(&runtime, "ghGetFileContent", read("tokio/src/nope.rs"))
         .await
         .expect("error row");
@@ -1502,7 +1540,7 @@ async fn gh_file_read_of_a_missing_path_recovers_to_what_exists() {
         data["hints"]["viewTree"]["query"]["queries"][0]["path"], "tokio/src",
         "{data}"
     );
-    // R4: a hint is not proof, so no continuation carries confidence:"exact".
+    // A hint is not proof, so no continuation carries confidence:"exact".
     assert!(
         data["hints"]["viewTree"].get("confidence").is_none(),
         "{data}"
@@ -1510,7 +1548,7 @@ async fn gh_file_read_of_a_missing_path_recovers_to_what_exists() {
     runtime.close().await;
 }
 
-/// D9: a ghStructure listing of a missing path recovers like
+/// A ghStructure listing of a missing path recovers like
 /// ghGetFileContent: `next.viewTree` lists the nearest existing directory
 /// (case-corrected), never another missing path.
 #[tokio::test]
@@ -1578,7 +1616,7 @@ async fn gh_structure_of_a_missing_path_recovers_to_the_nearest_directory() {
             data["hints"]["viewTree"]["query"]["queries"][0]["ref"], "main",
             "{data}"
         );
-        // R4: a hint is not proof, so no continuation carries confidence:"exact".
+        // A hint is not proof, so no continuation carries confidence:"exact".
         assert!(
             data["hints"]["viewTree"].get("confidence").is_none(),
             "{data}"
@@ -1595,7 +1633,7 @@ async fn gh_structure_of_a_missing_path_recovers_to_the_nearest_directory() {
 }
 
 #[tokio::test]
-async fn gh_search_concise_repositories_are_contract_valid() {
+async fn gh_search_picked_repositories_are_contract_valid() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/search/repositories"))
@@ -1608,14 +1646,19 @@ async fn gh_search_concise_repositories_are_contract_valid() {
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
+    // A pick keeps the row's id (owner+repo) beside the picked keys, so the
+    // picked row still satisfies the output contract.
     let outcome = call(
         &runtime,
         "ghSearchRepo",
-        json!({"keywords":["x"],"concise":true}),
+        json!({"keywords":["x"],"fields":["stars"]}),
     )
     .await
-    .expect("concise repositories");
-    assert_eq!(row_data(&outcome)["repositories"], json!(["o/r"]));
+    .expect("picked repositories");
+    assert_eq!(
+        row_data(&outcome)["repositories"],
+        json!([{"owner":"o","repo":"r","stars":0}])
+    );
     // The top repository's tree lead is a hint, not a page.
     let lead = &row_data(&outcome)["hints"]["viewRepo"];
     assert_eq!(lead["tool"], "ghStructure", "{}", row_data(&outcome));
@@ -1684,7 +1727,7 @@ async fn gh_primary_rate_limit_is_contract_valid_and_persisted_for_other_process
         assert_eq!(data["errorCode"], "rateLimited", "{data}");
         assert_eq!(data["rateLimit"]["resetEpochSeconds"], reset, "{data}");
         assert_eq!(data["rateLimit"]["resource"], "core", "{data}");
-        // D6: an authenticated caller is not told to authenticate.
+        // An authenticated caller is not told to authenticate.
         assert!(!data.to_string().contains("auth login"), "{data}");
     }
     // The second read was refused before sending (mock expects one hit).
@@ -1702,7 +1745,7 @@ async fn gh_primary_rate_limit_is_contract_valid_and_persisted_for_other_process
     runtime.close().await;
 }
 
-/// D6: only an anonymous caller is told that authenticating raises quota.
+/// Only an anonymous caller is told that authenticating raises quota.
 #[tokio::test]
 async fn anonymous_rate_limit_advises_authentication() {
     let server = MockServer::builder().start().await;
@@ -1772,7 +1815,7 @@ async fn gh_get_history_item_capped_file_scan_is_not_a_complete_count() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation": "commit", "owner": "a", "repo": "b", "ref": sha, "path": "wanted/"}),
+        json!({"operation": "commit", "owner": "a", "repo": "b", "ref": sha, "include": ["wanted/"]}),
     )
     .await
     .expect("capped commit scan");
@@ -1810,7 +1853,7 @@ fn all_hints(value: &serde_json::Value) -> Vec<String> {
     out
 }
 
-/// D7: authentication and binary-file hints arrive whole, never cut
+/// Authentication and binary-file hints arrive whole, never cut
 /// mid-sentence with an ellipsis.
 #[tokio::test]
 async fn github_recovery_hints_are_never_cut_mid_sentence() {
@@ -1852,7 +1895,7 @@ async fn github_recovery_hints_are_never_cut_mid_sentence() {
     runtime.close().await;
 }
 
-/// D8: a repository-level 404 (the ref resolution itself 404s) says the
+/// A repository-level 404 (the ref resolution itself 404s) says the
 /// repository is missing, private, or inaccessible to the token; it does not
 /// blame path case, offer a viewTree of the same missing repository, or echo
 /// GitHub's unrelated commits documentation link.
@@ -1923,7 +1966,7 @@ async fn gh_file_error_keeps_provider_diagnostics_for_the_diagnostics_extra() {
         let data = row_data(&outcome);
         assert_eq!(data["errorCode"], "notFound", "{data}");
         assert_eq!(data.get("httpStatus").is_some(), debug, "{data}");
-        // N7: a 404 is not retryable, so no mode states `retryable`.
+        // A 404 is not retryable, so no mode states `retryable`.
         assert!(data.get("retryable").is_none(), "{data}");
         assert_eq!(data.get("requestId").is_some(), debug, "{data}");
         assert_eq!(data.get("documentationUrl").is_some(), debug, "{data}");
@@ -1931,7 +1974,7 @@ async fn gh_file_error_keeps_provider_diagnostics_for_the_diagnostics_extra() {
     runtime.close().await;
 }
 
-/// D11: a pull-request read of a number that is an issue offers the issue
+/// A pull-request read of a number that is an issue offers the issue
 /// read instead of a generic not-found.
 #[tokio::test]
 async fn gh_pull_request_read_of_an_issue_number_offers_read_issue() {
@@ -2002,7 +2045,7 @@ async fn mount_capped_compare(server: &MockServer) {
     }
 }
 
-/// D4/D5: a comparison resolves `head` to the commit it read and pins its
+/// A comparison resolves `head` to the commit it read and pins its
 /// continuations to it; its 300-file list is not a complete count; a file
 /// page carries only files, and a commit page only commits.
 #[tokio::test]
@@ -2014,31 +2057,72 @@ async fn compare_pages_carry_one_collection_each_and_pin_both_refs() {
     let first = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","pageSize":100,"extras":["hints"]}),
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","pageSize":100,"extras":["hints","stats"]}),
     )
     .await
     .expect("compare");
     let data = row_data(&first).clone();
-    assert_eq!(data["head"], HEAD_SHA, "{data}");
-    assert_eq!(data["base"], BASE_SHA, "{data}");
-    assert_ne!(data["filePagination"]["countScope"], "complete", "{data}");
-    // HI12(a): the commit list names each commit by its headline; the
+    assert_eq!(data["headSha"], HEAD_SHA, "{data}");
+    assert_eq!(data["baseSha"], BASE_SHA, "{data}");
+    // The cap is one marker; the echoes and duplicate markers the response
+    // would drop are never built.
+    assert_eq!(
+        data["partialReasons"],
+        json!(["providerFileLimit"]),
+        "{data}"
+    );
+    for absent in [
+        "owner",
+        "repo",
+        "terminalLimit",
+        "providerLimit",
+        "changedFilesCountScope",
+    ] {
+        assert!(data.get(absent).is_none(), "{absent}: {data}");
+    }
+    assert_eq!(data["filePagination"]["countScope"], "partial", "{data}");
+    // The files past the cap are reached through the range's commits: a
+    // 100-commit page lists them in batch-sized pages.
+    let list = &data["hints"]["listCommits"]["query"]["queries"][0];
+    assert_eq!(list["sections"], json!(["commits"]), "{data}");
+    assert_eq!(list["head"], HEAD_SHA, "{data}");
+    assert!(
+        list["pageSize"].as_u64().is_some_and(|size| size <= 5),
+        "{data}"
+    );
+    // It starts where this page ends: the 100 commits shown are never listed
+    // again, and the commits after them are each reached once.
+    assert_eq!(
+        list["pageSize"].as_u64().unwrap_or(0) * (list["page"].as_u64().unwrap_or(1) - 1),
+        100,
+        "{data}"
+    );
+    // The commit list names each commit by its headline; the
     // first one with more message leads to its whole-message read.
     assert_eq!(data["commits"][0]["messageHeadline"], "c0", "{data}");
     assert!(data["commits"][0].get("message").is_none(), "{data}");
     assert_eq!(
-        data["hints"]["readCommit"]["query"]["queries"][0]["ref"], data["commits"][0]["sha"],
+        data["hints"]["readCommit"]["query"]["queries"][0]["ref"], data["commits"][0]["commitSha"],
         "{data}"
     );
-    // P6: the commit list is count-cut with a known total (`totalCommits`):
+    // The commit list is count-cut with a known total (`totalCommits`):
     // its page states the total and the page count.
     assert_eq!(data["pagination"]["totalItems"], 150, "{data}");
     assert_eq!(data["pagination"]["totalPages"], 2, "{data}");
-    let commit_page = data["next"]["nextPage"]["query"]["queries"][0].clone();
-    assert!(commit_page.get("filePage").is_none(), "{commit_page}");
+    // The comparison answers what changed first: its files lead its commits.
+    let order = |key: &str| {
+        data.as_object()
+            .and_then(|row| row.keys().position(|k| k == key))
+    };
+    assert!(order("files") < order("commits"), "files lead: {data}");
+    // One `page` cursor: each continuation names the one section it pages.
+    let commit_page = data["next"]["nextCommitPage"]["query"]["queries"][0].clone();
+    assert_eq!(commit_page["sections"], json!(["commits"]), "{commit_page}");
+    assert_eq!(commit_page["page"], 2, "{commit_page}");
     assert_eq!(commit_page["head"], HEAD_SHA, "{commit_page}");
     let file_page = data["next"]["nextFilePage"]["query"]["queries"][0].clone();
     assert_eq!(file_page["head"], HEAD_SHA, "{file_page}");
+    assert_eq!(file_page["sections"], json!(["files"]), "{file_page}");
 
     let files = call(&runtime, "ghGetHistoryItem", file_page)
         .await
@@ -2048,11 +2132,8 @@ async fn compare_pages_carry_one_collection_each_and_pin_both_refs() {
         files.get("commits").is_none(),
         "file page repeats commits: {files}"
     );
-    assert_eq!(
-        files["files"].as_array().map(Vec::len),
-        Some(100),
-        "{files}"
-    );
+    // Patch-free files read as the inventory (rows grouped by directory).
+    assert_eq!(inventory_len(&files["files"]), 100, "{files}");
 
     let commits = call(&runtime, "ghGetHistoryItem", commit_page)
         .await
@@ -2064,6 +2145,27 @@ async fn compare_pages_carry_one_collection_each_and_pin_both_refs() {
         Some(50),
         "{commits}"
     );
+    // Page 2 continues page 1: no commit repeats.
+    let shas = |rows: &serde_json::Value| {
+        rows.as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|row| row["commitSha"].as_str().map(str::to_owned))
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let (first_shas, second_shas) = (shas(&data["commits"]), shas(&commits["commits"]));
+    assert_eq!(first_shas.len(), 100, "{data}");
+    assert!(first_shas.is_disjoint(&second_shas), "{commits}");
+    // The commits section alone lists the same first page as the summary.
+    let section = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
+            "pageSize":100,"sections":["commits"]}),
+    )
+    .await
+    .expect("commits section");
+    assert_eq!(shas(&row_data(&section)["commits"]), first_shas);
     runtime.close().await;
 }
 
@@ -2078,7 +2180,7 @@ async fn capped_compare_with_a_path_leads_to_the_path_history() {
     let out = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","path":"lib/late.rs","extras":[]}),
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2","include":["lib/late.rs"],"extras":[]}),
     )
     .await
     .expect("compare");
@@ -2102,7 +2204,7 @@ async fn capped_compare_with_a_path_leads_to_the_path_history() {
     runtime.close().await;
 }
 
-/// E17: a commit's patch view names the commit by its headline once; the
+/// A commit's patch view names the commit by its headline once; the
 /// full message is one `readCommit` lead away.
 #[tokio::test]
 async fn commit_patch_view_carries_the_headline_not_the_whole_message() {
@@ -2138,10 +2240,17 @@ async fn commit_patch_view_carries_the_headline_not_the_whole_message() {
         lead["query"]["queries"][0].get("sections").is_none(),
         "{data}"
     );
+    // The pull request the headline names stays a lead beside it: a commit
+    // view reads the same discussion route, one file or many.
+    assert_eq!(
+        data["hints"]["readPullRequest"]["query"],
+        json!({"queries":[{"operation":"pullRequest","owner":"a","repo":"b","number":42,"extras":["hints"]}]}),
+        "{data}"
+    );
     runtime.close().await;
 }
 
-/// E18: an issue comment page fits one response page: the comments that
+/// An issue comment page fits one response page: the comments that
 /// fit are shown, and the one comment cursor resumes exactly at the first
 /// unshown comment (no second, response-level cursor).
 #[tokio::test]
@@ -2188,7 +2297,7 @@ async fn issue_comment_pages_fit_the_response_with_one_cursor() {
     assert!((1..30).contains(&shown), "{shown}: {data}");
     let next = &data["next"]["nextCommentPage"]["query"]["queries"][0];
     let (page, size) = (
-        next["commentPage"].as_u64().expect("page"),
+        next["page"].as_u64().expect("page"),
         next["pageSize"].as_u64().expect("size"),
     );
     assert_eq!((page - 1) * size, shown as u64, "{data}");
@@ -2197,7 +2306,7 @@ async fn issue_comment_pages_fit_the_response_with_one_cursor() {
     runtime.close().await;
 }
 
-/// P4 (issue twin of D9): a comment-body continuation hop lists only the
+/// A comment-body continuation hop lists only the
 /// bodies it continues, and pages exactly the comments its first window
 /// showed. The first window reads the issue body beside the discussion, so
 /// its comments get less of the page than a comments-only hop would: the
@@ -2241,7 +2350,7 @@ async fn issue_comment_body_hops_list_only_unfinished_bodies() {
         ("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", "20000".into()),
     ]);
     let first = json!({"queries":[{"operation":"issue","owner":"a","repo":"b","number":7,
-        "sections":["body","comments"],"length":6000,"extras":[]}]});
+        "sections":["body","comments"],"length":6000,"extras":["stats"]}]});
     let mut queue = std::collections::VecDeque::from([first]);
     let mut followed = std::collections::HashSet::<String>::new();
     let mut read = std::collections::BTreeMap::<u64, String>::new();
@@ -2363,7 +2472,7 @@ async fn compare_patch_windows_do_not_resend_the_commit_list() {
     runtime.close().await;
 }
 
-/// HI6 (was D6): a path-scoped commit read keeps the whole commit's counts
+/// A path-scoped commit read keeps the whole commit's counts
 /// at the top level; the scope's own count is its file page's.
 #[tokio::test]
 async fn path_scoped_commit_labels_whole_commit_totals() {
@@ -2387,7 +2496,7 @@ async fn path_scoped_commit_labels_whole_commit_totals() {
     let outcome = call(
         &runtime,
         "ghGetHistoryItem",
-        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"path":"src/","extras":[]}),
+        json!({"operation":"commit","owner":"a","repo":"b","ref":sha,"include":["src/"],"extras":[]}),
     )
     .await
     .expect("commit");
@@ -2395,7 +2504,7 @@ async fn path_scoped_commit_labels_whole_commit_totals() {
     assert_eq!(data["changedFilesCount"], 2, "{data}");
     assert_eq!(data["additions"], 30, "{data}");
     assert!(data.get("commitTotals").is_none(), "{data}");
-    assert_eq!(data["files"].as_array().map(Vec::len), Some(1), "{data}");
+    assert_eq!(inventory_len(&data["files"]), 1, "{data}");
     runtime.close().await;
 }
 
@@ -2433,7 +2542,7 @@ async fn gh_full_content_first_page_stays_under_the_host_output_cap() {
         rendered.chars().count()
     );
     assert!(
-        rendered.contains("\"continue\"") || rendered.contains("responsePagination"),
+        rendered.contains("\"continueWindow\"") || rendered.contains("responsePagination"),
         "no continuation: {}",
         &rendered[..rendered.len().min(2000)]
     );
@@ -2578,22 +2687,28 @@ async fn issue_body_windows_keep_closing_reference_coverage() {
             reasons.contains(&json!("closingReferenceLimit")),
             "window {window}: {data}"
         );
-        assert_eq!(
-            reasons.contains(&json!("contentPagination")),
-            window < 2,
+        // `next.continueBody` holds the rest: no separate reason restates it.
+        assert!(
+            !reasons.contains(&json!("contentPagination")),
             "window {window}: {data}"
         );
         let warning = data["warnings"][0].as_str().unwrap_or_default();
         assert!(warning.contains("25 of 31"), "window {window}: {data}");
         if window < 2 {
-            // `partialReasons` say why the row is partial; the page line
-            // still names the continuation that reaches the remaining body.
+            // `partialReasons` say why the row is partial; the visible
+            // body pagination and `next.continueBody` reach the remaining
+            // body (no page-note warning restates them).
             assert!(
                 data["next"]["continueBody"].is_object(),
                 "window {window}: {data}"
             );
+            assert_eq!(
+                data["issues"][0]["contentPagination"]["body"]["hasMore"],
+                json!(true),
+                "window {window}: {data}"
+            );
             assert!(
-                data["warnings"].to_string().contains("(next.continueBody)"),
+                !data["warnings"].to_string().contains("(next.continueBody)"),
                 "window {window}: {data}"
             );
         }
@@ -2678,7 +2793,7 @@ async fn pinned_ref_code_search_warns_and_leads_to_the_ref_listing() {
     let warnings = data["warnings"].to_string();
     assert!(
         warnings.contains("default-branch index at fedcba9, not dev")
-            && warnings.contains("list them with ghStructure at dev."),
+            && !warnings.contains("ghStructure"),
         "{data}"
     );
     let lead = &data["hints"]["viewRepo"];
@@ -2775,9 +2890,54 @@ async fn bad_commit_sha_is_not_found() {
     assert!(
         data["error"]
             .as_str()
-            .is_some_and(|e| e.contains("Commit not found")),
+            .is_some_and(|e| e == "Commit \"deadbeef\" not found in a/b"),
         "{data}"
     );
+    // A missed commit leads to a commit search in the repository,
+    // never to a refs listing (a SHA-shaped ref names no branch).
+    let lead = &data["hints"]["findCommit"];
+    assert_eq!(lead["tool"], "ghSearchHistory", "{data}");
+    assert_eq!(lead["query"]["queries"][0]["operation"], "commit", "{data}");
+    assert!(data["hints"].get("viewRefs").is_none(), "{data}");
+    runtime.close().await;
+}
+
+/// A compare with an unresolvable ref says "ref" (a branch, tag, or SHA),
+/// never GitHub's "No commit found for SHA", and names both refs asked for.
+#[tokio::test]
+async fn bad_compare_ref_names_refs_not_a_sha() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/v1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(BASE_SHA))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/no-such-tag"))
+        .respond_with(
+            ResponseTemplate::new(404)
+                .set_body_json(json!({"message":"No commit found for SHA: no-such-tag"})),
+        )
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
+    let outcome = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"no-such-tag","extras":[]}),
+    )
+    .await
+    .expect("compare row");
+    let data = row_data(&outcome);
+    assert_eq!(data["errorCode"], "notFound", "{data}");
+    let message = data["error"].as_str().expect("message");
+    assert!(!message.contains("No commit found"), "{data}");
+    assert!(
+        message.contains("v1") && message.contains("no-such-tag"),
+        "{data}"
+    );
+    assert!(message.contains("branch, tag, or SHA"), "{data}");
     runtime.close().await;
 }
 
@@ -2794,7 +2954,7 @@ async fn compare_include_scopes_files_and_capped_scope_leads_to_path_history() {
         &runtime,
         "ghGetHistoryItem",
         json!({"operation":"compare","owner":"a","repo":"b","base":"v1","head":"v2",
-               "include":["src/f001.rs","src/f2*.rs"],"extras":[]}),
+               "include":["src/f001.rs","src/f2*.rs"],"extras":["stats"]}),
     )
     .await
     .expect("compare include");
@@ -2806,7 +2966,7 @@ async fn compare_include_scopes_files_and_capped_scope_leads_to_path_history() {
         "{data}"
     );
     assert!(!files.contains("f002.rs"), "{data}");
-    // HI6: the top-level count is the comparison's; the scope's is its page's.
+    // The top-level count is the comparison's; the scope's is its page's.
     assert_eq!(data["changedFilesCount"], 300, "{data}");
     assert_eq!(data["filePagination"]["totalItems"], 101, "{data}");
     let beyond = call(
@@ -2833,7 +2993,8 @@ async fn compare_include_scopes_files_and_capped_scope_leads_to_path_history() {
 }
 
 /// A comparison's patch view reads its top file at the head and at the
-/// merge base (the old side of a three-dot diff).
+/// merge base (the old side of a three-dot diff). Two files: a complete
+/// one-file answer offers one lead only.
 #[tokio::test]
 async fn compare_patch_view_reads_head_and_merge_base() {
     let server = MockServer::builder().start().await;
@@ -2844,7 +3005,9 @@ async fn compare_patch_view_reads_head_and_merge_base() {
             "base_commit":{"sha":BASE_SHA},"merge_base_commit":{"sha":"3333333ccccccccccccccccccccccccccccccccc"},
             "commits":[{"sha":HEAD_SHA,"commit":{"message":"m","author":{"name":"a","date":"2024-01-01T00:00:00Z"}}}],
             "files":[{"filename":"src/a.rs","status":"modified","additions":1,"deletions":1,
-                      "patch":"@@ -5,1 +7,1 @@\n-x\n+y"}]
+                      "patch":"@@ -5,1 +7,1 @@\n-x\n+y"},
+                     {"filename":"docs/b.md","status":"modified","additions":1,"deletions":0,
+                      "patch":"@@ -1,0 +1,1 @@\n+z"}]
         })))
         .mount(&server)
         .await;
@@ -2915,11 +3078,10 @@ impl Respond for CommentList {
 }
 
 /// A 105-comment issue thread (two bot comments) walked by its own
-/// cursor: every human comment arrives once, hidden bots are counted with
-/// an `includeBots` lead, each page's remainder count is exact, and pages
-/// fill the response budget (few calls).
+/// cursor: every comment, bots included, arrives once, each page's
+/// remainder count is exact, and pages fill the response budget (few calls).
 #[tokio::test]
-async fn issue_comment_walk_discloses_bots_and_counts_the_rest() {
+async fn issue_comment_walk_reads_every_comment_and_counts_the_rest() {
     let server = MockServer::builder().start().await;
     Mock::given(method("GET"))
         .and(path("/api/v3/repos/a/b/issues/7"))
@@ -2949,7 +3111,7 @@ async fn issue_comment_walk_discloses_bots_and_counts_the_rest() {
     ]);
     let mut query = json!({"operation":"issue","owner":"a","repo":"b","number":7,"sections":["comments"],"extras":[]});
     let mut ids = Vec::new();
-    let (mut bots, mut calls, mut bot_lead) = (0, 0, false);
+    let mut calls = 0;
     loop {
         calls += 1;
         assert!(calls <= 20, "walk did not finish");
@@ -2973,17 +3135,18 @@ async fn issue_comment_walk_discloses_bots_and_counts_the_rest() {
             assert!(comment.get("updatedAt").is_none(), "{comment}");
             ids.push(comment["id"].as_str().expect("id").to_owned());
         }
-        let page = &issue["contentPagination"]["comments"];
-        bots += page["botsHidden"].as_u64().unwrap_or(0);
-        bot_lead |= data["hints"]["includeBots"]["query"]["queries"][0]["includeBots"] == true;
-        let consumed = ids.len() as u64 + bots;
+        let consumed = ids.len() as u64;
         match data["next"]["nextCommentPage"]["query"]["queries"][0].as_object() {
             Some(next) => {
-                let left = 105 - consumed;
+                // The page position is the visible comment pagination, not a
+                // warning line.
+                assert_eq!(
+                    issue["contentPagination"]["comments"]["hasMore"],
+                    json!(true),
+                    "consumed {consumed}: {data}"
+                );
                 assert!(
-                    data["warnings"]
-                        .to_string()
-                        .contains(&format!("{left} more comments")),
+                    !data["warnings"].to_string().contains("more comments"),
                     "consumed {consumed}: {data}"
                 );
                 query = serde_json::Value::Object(next.clone());
@@ -2992,8 +3155,7 @@ async fn issue_comment_walk_discloses_bots_and_counts_the_rest() {
         }
     }
     let unique = ids.iter().collect::<std::collections::BTreeSet<_>>();
-    assert_eq!((ids.len(), unique.len(), bots), (103, 103, 2));
-    assert!(bot_lead, "no includeBots lead");
+    assert_eq!((ids.len(), unique.len()), (105, 105));
     // ~73 KB of comments at a 20k page: budget-filled pages. The resume
     // grid follows the contract's default pageSize (10 since 2026-10-09),
     // so page cuts land one call later than at 30.
@@ -3043,7 +3205,7 @@ async fn pr_summary_previews_the_body() {
     runtime.close().await;
 }
 
-/// X13: a ref that does not resolve is `notFound` (not `invalidInput`) on
+/// A ref that does not resolve is `notFound` (not `invalidInput`) on
 /// both GitHub read tools, with one runnable lead to the repository's refs.
 #[tokio::test]
 async fn gh_bad_ref_is_not_found_with_a_refs_lead() {
@@ -3088,7 +3250,7 @@ async fn gh_bad_ref_is_not_found_with_a_refs_lead() {
     runtime.close().await;
 }
 
-/// QA2: a full 40-hex SHA that GitHub does not have skips ref resolution, so
+/// A full 40-hex SHA that GitHub does not have skips ref resolution, so
 /// the listing's tree read is a bare 404. ghStructure must still name the
 /// ref and lead to the repository's refs, as ghGetFileContent does, instead
 /// of the generic "Repository, resource, or path not found".
@@ -3140,7 +3302,7 @@ async fn gh_missing_full_sha_is_named_with_a_refs_lead() {
     runtime.close().await;
 }
 
-/// QA2: GitHub answers a missing pull request, issue, or comparison ref
+/// GitHub answers a missing pull request, issue, or comparison ref
 /// with a bare 404. The error row must name what was asked for (the number
 /// or the compared refs), not the generic "Repository, resource, or path not
 /// found"; a comparison also leads to the repository's refs.
@@ -3201,7 +3363,7 @@ async fn gh_history_item_not_found_names_the_item() {
     runtime.close().await;
 }
 
-/// QA2: a commit listing GitHub answers with a bare 404 (missing repository
+/// A commit listing GitHub answers with a bare 404 (missing repository
 /// or ref) names the repository and ref it listed.
 #[tokio::test]
 async fn gh_search_history_commit_not_found_names_the_scope() {
@@ -3229,7 +3391,7 @@ async fn gh_search_history_commit_not_found_names_the_scope() {
     runtime.close().await;
 }
 
-/// QA2: an owner-only ghSearchRepo listing of a login GitHub does not know
+/// An owner-only ghSearchRepo listing of a login GitHub does not know
 /// (bare 404) names the owner instead of "Repository, resource, or path".
 #[tokio::test]
 async fn gh_search_repo_missing_owner_is_named() {
@@ -3251,7 +3413,7 @@ async fn gh_search_repo_missing_owner_is_named() {
     runtime.close().await;
 }
 
-// ── history lane A: PR/commit/compare/issue views ───────────────────────────
+// ── history: PR/commit/compare/issue views ───────────────────────────
 
 const HISTORY_A_HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 const HISTORY_A_BASE: &str = "89abcdef0123456789abcdef0123456789abcdef";
@@ -3296,8 +3458,9 @@ async fn history_a_mount_pr(server: &MockServer, merged: bool, files: serde_json
         .await;
 }
 
-/// HI4: every PR view names the head, the recorded target-branch tip and
-/// (merged) the merge commit: patch, file-list, and matchString views.
+/// Every PR view names the head and (merged) the merge commit: patch,
+/// file-list, and matchString views; the summary also names the recorded
+/// target-branch tip.
 #[tokio::test]
 async fn history_a_every_pr_view_carries_source_target_and_merge_commits() {
     let server = MockServer::builder().start().await;
@@ -3332,9 +3495,10 @@ async fn history_a_every_pr_view_carries_source_target_and_merge_commits() {
         let data = row_data(&outcome);
         assert_eq!(row_status(&outcome), "success", "{extra}: {data}");
         let pr = &data["pullRequests"][0];
-        assert_eq!(pr["sourceSha"], HISTORY_A_HEAD, "{extra}: {data}");
-        assert_eq!(pr["targetSha"], HISTORY_A_BASE, "{extra}: {data}");
+        assert_eq!(pr["headSha"], HISTORY_A_HEAD, "{extra}: {data}");
         assert_eq!(pr["mergeCommitSha"], HISTORY_A_MERGE, "{extra}: {data}");
+        // The target-branch tip rides the summary read only.
+        assert!(pr.get("baseSha").is_none(), "{extra}: {data}");
         assert!(
             !outcome
                 .structured_content
@@ -3344,10 +3508,23 @@ async fn history_a_every_pr_view_carries_source_target_and_merge_commits() {
             outcome.structured_content
         );
     }
+    let outcome = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"pullRequest","owner":"a","repo":"b","number":9,"extras":[]}),
+    )
+    .await
+    .expect("summary read");
+    let data = row_data(&outcome);
+    assert_eq!(row_status(&outcome), "success", "summary: {data}");
+    let pr = &data["pullRequests"][0];
+    assert_eq!(pr["headSha"], HISTORY_A_HEAD, "summary: {data}");
+    assert_eq!(pr["baseSha"], HISTORY_A_BASE, "summary: {data}");
+    assert_eq!(pr["mergeCommitSha"], HISTORY_A_MERGE, "summary: {data}");
     runtime.close().await;
 }
 
-/// HI8: a patch read whose page holds a file GitHub sent without a patch
+/// A patch read whose page holds a file GitHub sent without a patch
 /// reads that file at both sides (its change is in no response), even on a
 /// merged PR whose merge read stands for the patched file's new side.
 #[tokio::test]
@@ -3382,7 +3559,7 @@ async fn history_a_unpatched_file_gets_head_and_parent_reads() {
     let head = &data["hints"]["readAtCommit"]["query"]["queries"][0];
     assert_eq!(head["path"], "src/huge.rs", "{data}");
     assert_eq!(head["ref"], HISTORY_A_HEAD, "{data}");
-    // HI11: the merge read locates the patched file's hunks by text.
+    // The merge read locates the patched file's hunks by text.
     let merge = &data["hints"]["readAtMerge"]["query"]["queries"][0];
     assert_eq!(merge["ref"], HISTORY_A_MERGE, "{data}");
     assert_eq!(
@@ -3394,8 +3571,10 @@ async fn history_a_unpatched_file_gets_head_and_parent_reads() {
     runtime.close().await;
 }
 
-/// HI4/HI7: the GraphQL read carries `targetSha` from `baseRefOid` on every
-/// view, and a metadata view the commit and review-thread totals.
+/// The GraphQL read reads `baseSha` from `baseRefOid` and the
+/// commit and review-thread totals; the full header (`extras:["details"]`)
+/// carries them, while a plain section read keeps only the identity and the
+/// commits code is read at (`headSha`, `mergeCommitSha`).
 #[tokio::test]
 async fn history_a_graphql_pr_reads_target_sha_and_totals() {
     let server = MockServer::builder().start().await;
@@ -3427,15 +3606,20 @@ async fn history_a_graphql_pr_reads_target_sha_and_totals() {
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
-    for (sections, totals) in [
+    for (sections, details) in [
         (json!(["body", "reviews"]), true),
         (json!(["body", "files"]), false),
     ] {
+        let extras = if details {
+            json!(["details"])
+        } else {
+            json!([])
+        };
         let outcome = call(
             &runtime,
             "ghGetHistoryItem",
             json!({"operation":"pullRequest","owner":"a","repo":"b","number":7,
-                "sections":sections,"extras":[]}),
+                "sections":sections,"extras":extras}),
         )
         .await
         .expect("GraphQL read");
@@ -3443,11 +3627,16 @@ async fn history_a_graphql_pr_reads_target_sha_and_totals() {
         assert_eq!(row_status(&outcome), "success", "{data}");
         assert!(data.get("graphqlFallback").is_none(), "{data}");
         let pr = &data["pullRequests"][0];
-        assert_eq!(pr["targetSha"], HISTORY_A_BASE, "{sections}: {data}");
+        assert_eq!(pr["headSha"], HISTORY_A_HEAD, "{sections}: {data}");
         assert_eq!(pr["mergeCommitSha"], HISTORY_A_MERGE, "{sections}: {data}");
-        if totals {
+        if details {
+            assert_eq!(pr["baseSha"], HISTORY_A_BASE, "{sections}: {data}");
             assert_eq!(pr["commitsCount"], 4, "{data}");
             assert_eq!(pr["reviewThreadsCount"], 2, "{data}");
+        } else {
+            for dropped in ["baseSha", "commitsCount", "reviewThreadsCount"] {
+                assert!(pr.get(dropped).is_none(), "{dropped}: {data}");
+            }
         }
     }
     let documents = server
@@ -3461,7 +3650,7 @@ async fn history_a_graphql_pr_reads_target_sha_and_totals() {
     runtime.close().await;
 }
 
-/// HI7: an issue summary counts its comments and offers the discussion
+/// An issue summary counts its comments and offers the discussion
 /// read; an issue without comments offers neither.
 #[tokio::test]
 async fn history_a_issue_summary_counts_comments_and_offers_the_discussion() {
@@ -3505,7 +3694,7 @@ async fn history_a_issue_summary_counts_comments_and_offers_the_discussion() {
     }
 }
 
-/// HI6 + N5: an `include` that matches none of a commit's files keeps the
+/// An `include` that matches none of a commit's files keeps the
 /// whole commit's counts and names the changed directories nearest it.
 #[tokio::test]
 async fn history_a_commit_include_matching_nothing_warns_with_nearest_dirs() {
@@ -3539,7 +3728,7 @@ async fn history_a_commit_include_matching_nothing_warns_with_nearest_dirs() {
         .expect("commit");
     let data = row_data(&outcome);
     assert_eq!(data["changedFilesCount"], 5, "{data}");
-    assert_eq!(data["files"].as_array().map(Vec::len), Some(2), "{data}");
+    assert_eq!(inventory_len(&data["files"]), 2, "{data}");
     assert!(data.get("commitTotals").is_none(), "{data}");
     assert!(
         !data["warnings"].to_string().contains("matched 0"),
@@ -3558,7 +3747,7 @@ async fn history_a_commit_include_matching_nothing_warns_with_nearest_dirs() {
     runtime.close().await;
 }
 
-/// HI12(a) + X5: a comparison lists commit headlines (login first) and
+/// A comparison lists commit headlines (login first) and
 /// one `readCommit` lead for the first commit with more message.
 #[tokio::test]
 async fn history_a_compare_commits_are_headlines_with_login_authors() {
@@ -3611,7 +3800,7 @@ async fn history_a_compare_commits_are_headlines_with_login_authors() {
     runtime.close().await;
 }
 
-/// X9: a read of a renamed repository (GitHub answers 301 to
+/// A read of a renamed repository (GitHub answers 301 to
 /// `/repositories/<id>`) warns once and names the canonical repository; a
 /// later process reading from the immutable cache (no request, so no
 /// redirect) still knows the rename from the memo.
@@ -3706,7 +3895,7 @@ async fn gh_file_read_of_a_renamed_repository_names_the_canonical_repository() {
     second.close().await;
 }
 
-/// X9: a repository GitHub never redirected costs no metadata request.
+/// A repository GitHub never redirected costs no metadata request.
 #[tokio::test]
 async fn gh_file_read_of_a_standing_repository_reads_no_metadata() {
     let server = MockServer::builder().start().await;
@@ -3736,5 +3925,49 @@ async fn gh_file_read_of_a_standing_repository_reads_no_metadata() {
     .expect("read");
     let data = row_data(&outcome);
     assert!(!data.to_string().contains("renamed"), "{data}");
+    runtime.close().await;
+}
+
+/// A compare patch grep keeps the files whose patch it hits, each narrowed
+/// to its hits, like a pull-request grep; the internal narrowed-view marker
+/// stays off the rows.
+#[tokio::test]
+async fn compare_match_string_keeps_only_hit_files() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path_regex(format!("^/api/v3/repos/a/b/compare/{BASE_SHA}\\.\\.\\.{HEAD_SHA}$")))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "status":"ahead","ahead_by":1,"behind_by":0,"total_commits":1,
+            "base_commit":{"sha":BASE_SHA},"merge_base_commit":{"sha":BASE_SHA},
+            "commits":[{"sha":HEAD_SHA,"commit":{"message":"m","author":{"name":"a","date":"2024-01-01T00:00:00Z"}}}],
+            "files":[
+                {"filename":"src/a.rs","status":"modified","additions":1,"deletions":1,
+                 "patch":"@@ -1,3 +1,3 @@\n a\n-old needle\n+new needle\n b"},
+                {"filename":"docs/b.md","status":"modified","additions":1,"deletions":0,
+                 "patch":"@@ -1,0 +1,1 @@\n+unrelated"}
+            ]
+        })))
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))]);
+    let outcome = call(
+        &runtime,
+        "ghGetHistoryItem",
+        json!({"operation":"compare","owner":"a","repo":"b","base":BASE_SHA,"head":HEAD_SHA,
+               "sections":["patches"],"matchString":"needle","contextLines":0,"extras":[]}),
+    )
+    .await
+    .expect("compare grep");
+    let data = row_data(&outcome);
+    let files = data["files"].as_array().expect("files");
+    assert_eq!(files.len(), 1, "{data}");
+    assert_eq!(files[0]["path"], "src/a.rs", "{data}");
+    assert!(files[0].get("fullPatchChars").is_none(), "{data}");
+    let patch = files[0]["patch"].as_str().expect("patch");
+    assert!(
+        patch.contains("needle") && !patch.contains("\n a\n"),
+        "{patch}"
+    );
     runtime.close().await;
 }

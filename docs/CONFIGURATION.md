@@ -66,8 +66,8 @@ EXA_API_KEY=...           # neural/category search — https://dashboard.exa.ai/
 
 - A non-empty key in the shell or MCP client environment wins over both files. The workspace file wins over the global file; missing or blank workspace values fall back to global.
 - CLI and MCP load both files. Node helpers load the supplied workspace by default; an embedding host can opt out with `trusted: false`. Native `trustedProject` controls executable language-server configuration, not dotenv loading.
-- **Home-only keys** are skipped in a workspace `.env` and listed under `skippedProtected` in `npx octocode config --json`: `GITHUB_API_URL`, `OCTOCODE_BETA`, `ALLOWED_PATHS`, `WORKSPACE_ROOT`, `OCTOCODE_ALLOW_PRIVATE_REGISTRY`, `OCTOCODE_LSP_CONFIG`, `OCTOCODE_LSP_AUTO_INSTALL`, `OCTOCODE_LSP_CACHE_DIR`, `OCTOCODE_TRUST_PROJECT_LSP_CONFIG`, `OCTOCODE_STORAGE_MODE`, `OCTOCODE_CLASSIFICATION_API_HOST`, and `OCTOCODE_CARGO`. GitHub tokens and the classification key are accepted in either file.
-- `OCTOCODE_STORAGE_MODE` (and `storage.mode`) from a workspace may only be `memory`, which opts that project out of persistence; a workspace `persistent` value is ignored with a `workspace_config_protected` warning.
+- **Home-only keys** are skipped in a workspace `.env` and listed under `skippedProtected` in `npx octocode config --json`: `GITHUB_API_URL`, `OCTOCODE_BETA`, `ALLOWED_PATHS`, `WORKSPACE_ROOT`, `OCTOCODE_ALLOW_PRIVATE_REGISTRY`, `OCTOCODE_LSP_CONFIG`, `OCTOCODE_LSP_AUTO_INSTALL`, `OCTOCODE_LSP_CACHE_DIR`, `OCTOCODE_LSP_MAX_MEMORY_MB`, `OCTOCODE_TRUST_PROJECT_LSP_CONFIG`, `OCTOCODE_STORAGE_MODE`, `OCTOCODE_CLASSIFICATION_API_HOST`, `OCTOCODE_CARGO`, and `OCTOCODE_AST_REWRITE_STATE_DIR`. GitHub tokens and the classification key are accepted in either file.
+- `storage.mode` in a workspace `.octocoderc` may only be `memory`, which opts that project out of persistence; a `persistent` value there is ignored with a `workspace_config_protected` warning. `OCTOCODE_STORAGE_MODE` in a workspace `.env` is a home-only key: skipped and listed under `skippedProtected`, with no warning.
 - Empty values normally allow fallback. A present-but-blank `OCTOCODE_CLASSIFICATION_API` disables classification and blocks file fallback.
 - Both files always block these OS and runtime keys; set them in the shell, CI, or the MCP `env` block: `PATH`, `HOME`, `SHELL`, `USER`, `LOGNAME`, `PWD`, `TMPDIR`, `NODE_OPTIONS`, `PYTHON`, `OCTOCODE_HOME`.
 - Credential aliases resolve by source first, then by [alias priority](AUTHENTICATION.md#token-environment-variables). Metadata shows names and source files, never values. Keep credential files out of version control.
@@ -114,12 +114,14 @@ A bad value is skipped and reported once per process on **stderr** (stdout carri
 octocode: config warning: /repo/.octocode/.octocoderc: network.maxRetries: Must be a number; value ignored [invalid_config]
 octocode: config warning: /repo/.octocode/.octocoderc: Failed to parse config file: …; the whole file is ignored [config_load_error]
 octocode: config warning: /Users/me/.octocode/.env: REQUEST_TIMEOUT is not a valid integer for network.timeout; value ignored [invalid_env_value]
+octocode: config warning: REQUEST_TIMEOUT 2000 is below the minimum 5000; using 5000 [value_clamped]
 ```
 
 | Problem | Effect |
 |---|---|
 | Unreadable file, invalid JSON, or non-object root | That file is ignored; other layers apply. |
 | Invalid field (type, range, relative path, non-http URL, unknown enum) | That field falls back to the next layer or the default. |
+| An environment number outside its range (for example `REQUEST_TIMEOUT` below 5000) | The nearest bound applies, and the clamp is reported (`value_clamped`). |
 | A section that is not an object (`"network": 5`) | That section is dropped. |
 | Unknown key | Warning only. |
 | Invalid nonblank env value | Skipped, without printing the value. |
@@ -164,8 +166,9 @@ Any env var can go in the client config instead of a shell profile:
 Defaults, ranges, enums, and env mappings: [generated settings](generated/CONFIG_SETTINGS.md). Notes that the table does not carry:
 
 - **Storage:** `storage.stats` and the `ghCloneRepo` cache (`storage.cloneCache.ttl`, `.maxSize`, `.maxClones`) are overridden by `storage.mode: "memory"`.
-- **Language servers:** `~/.octocode/lsp-servers.json` (or the `lsp.configPath` / `OCTOCODE_LSP_CONFIG` file) maps an extension to a server, replacing the built-in one: `{"languageServers":{".ts":{"command":"tsgo","args":["--lsp","-stdio"],"languageId":"typescript"}}}`. Assembly servers come only from this file. `lsp.trustProjectConfig` also trusts a project `.octocode/lsp-servers.json`; `lsp.autoInstall` governs `npx octocode lsp-server install`; `lsp.cacheDir` moves managed installs; `lsp.prewarm` controls background starts. See [LSP server lifecycle](../packages/octocode-native/docs/engine/LSP_SERVER_LIFECYCLE.md).
+- **Language servers:** `~/.octocode/lsp-servers.json` (or the `lsp.configPath` / `OCTOCODE_LSP_CONFIG` file) maps an extension to a server, replacing the built-in one: `{"languageServers":{".ts":{"command":"tsgo","args":["--lsp","-stdio"],"languageId":"typescript"}}}`. Assembly servers come only from this file. `lsp.trustProjectConfig` also trusts a project `.octocode/lsp-servers.json`; `lsp.autoInstall` governs `npx octocode lsp-server install`; `lsp.cacheDir` moves managed installs; `lsp.maxMemoryMb` caps each server tree's resident memory; `lsp.prewarm` controls background starts. See [LSP server lifecycle](../packages/octocode-native/docs/engine/LSP_SERVER_LIFECYCLE.md).
 - **Fixed internally:** response-cache sizes and per-surface tool-call timeouts (the CLI allows longer for LSP cold starts). Network timeout and retries use `REQUEST_TIMEOUT` / `MAX_RETRIES`.
+- **GitHub rate limits:** a call waits out a primary or secondary limit, search spacing, or a full code-search window (10 searches a minute) for up to `network.maxRateLimitWait` (`OCTOCODE_MAX_RATE_LIMIT_WAIT`) and then sends; a longer wait fails at once with `rateLimited` and `retryAfter`. Waiting does not spend `network.timeout`, but the tool call's own deadline still bounds it. Processes sharing a token reserve search slots under one lock on `tmp/ratelimit/`, so they never take the same slot. Lower the wait when an MCP host gives tool calls less time than it plus the request (some hosts allow 60 s).
 - **Classification gate:** one process-wide gate per provider endpoint allows `OCTOCODE_CLASSIFICATION_CONCURRENCY` (`classification.maxConcurrency`) requests in flight; one tool call may use up to three quarters. Throttling (429/503/529) halves the gate, `Retry-After` pauses every caller, and the gate recovers gradually.
 
 ## GitHub Enterprise
@@ -184,6 +187,7 @@ Start with `npx octocode auth status --json` (token source, identity), `npx octo
 | Local tools off | Neither `OCTOCODE_ENABLE_LOCAL` nor `local.enabled` may be `false`. |
 | A tool is missing | `npx octocode schema <name>`; check `TOOLS_TO_RUN` / `tools.enabled` and `DISABLE_TOOLS` / `tools.disabled`. |
 | Slow or timeouts | Raise `REQUEST_TIMEOUT` (max `300000` ms). |
+| `rateLimited` on GitHub tools | Wait for `retryAfter`, or raise `OCTOCODE_MAX_RATE_LIMIT_WAIT` so calls wait longer before failing. |
 | `clasify` returns `classificationQuotaExhausted` | The provider account has no credit (HTTP 402); add credit and rerun. |
 | `clasify` returns `classificationRateLimited` | Wait for the reported retry time, or lower `OCTOCODE_CLASSIFICATION_CONCURRENCY` when agents share a key. |
 | A skill's web search is unavailable | Follow that skill's provider instructions; the catalog has no general web-search tool. |

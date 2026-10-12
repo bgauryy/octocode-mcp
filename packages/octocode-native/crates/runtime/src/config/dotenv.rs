@@ -37,10 +37,9 @@ pub fn parse_env(text: Option<&str>) -> BTreeMap<String, String> {
         if key.is_empty() {
             continue;
         }
-        // Strip at most ONE leading and ONE trailing quote, independently, to
-        // match the JS resolver's `/^["']|["']$/g`. `trim_*_matches` stripped
-        // all/mismatched quotes and corrupted values like `"'v'"` differently
-        // from JS (Rust -> `v`, JS -> `'v'`).
+        // Strip at most ONE leading and ONE trailing quote, independently:
+        // `trim_*_matches` would strip all or mismatched quotes and corrupt a
+        // value like `"'v'"` (it keeps `'v'`).
         let trimmed_value = normalized[eq + 1..].trim();
         let trimmed_value = trimmed_value
             .strip_prefix(['"', '\''])
@@ -170,24 +169,11 @@ pub fn parse_boolean_env(value: Option<&str>) -> Option<bool> {
         _ => None,
     }
 }
+/// The integer a variable holds: the whole trimmed value, with an optional
+/// sign. Anything else (a unit, an exponent, a fraction, an overflow) is not a
+/// number the setting can take, and is reported by the caller.
 pub fn parse_int_env(value: Option<&str>) -> Option<i64> {
-    let s = value?.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let (sign, rest) = if let Some(x) = s.strip_prefix('-') {
-        (-1, x)
-    } else if let Some(x) = s.strip_prefix('+') {
-        (1, x)
-    } else {
-        (1, s)
-    };
-    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-    if digits.is_empty() {
-        None
-    } else {
-        digits.parse::<i64>().ok().map(|n| n * sign)
-    }
+    value?.trim().parse().ok()
 }
 pub fn parse_string_array_env(value: Option<&str>) -> Option<Vec<String>> {
     let s = value?.trim();

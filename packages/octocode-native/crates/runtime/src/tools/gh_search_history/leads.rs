@@ -1,7 +1,7 @@
 //! Continuations: the read of a likely row, the next page, and the
 //! recovery from an empty search.
+use super::GhSearchHistoryQuery;
 use super::rows::{is_completed, is_merged, item_number, item_repo, read_target};
-use super::{GhSearchHistoryQuery, HistoryOperation};
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, remove_null_fields};
 use serde_json::{Value, json};
@@ -55,13 +55,14 @@ pub(super) fn read_pull_request(q: &GhSearchHistoryQuery, items: &[Value]) -> Op
 }
 
 /// The PR a commit row's `(#N)` headline names: the first such row's read,
-/// scoped to the listed path (any other row's `prNumber` runs the same
-/// read).
+/// scoped to the listed path (any other row's `(#N)` runs the same read).
 pub(super) fn read_commit_pull_request(q: &GhSearchHistoryQuery, rows: &[Value]) -> Option<Value> {
     let (owner, repo) = q.owner().zip(q.repo())?;
-    let number = rows
-        .iter()
-        .find_map(|row| row.get("prNumber").and_then(Value::as_u64))?;
+    let number = rows.iter().find_map(|row| {
+        row.get("messageHeadline")
+            .and_then(Value::as_str)
+            .and_then(crate::tools::gh_shared::commit::headline_pull_request)
+    })?;
     let mut read = pr_read_query(owner, repo, number);
     if let Some(path) = q.path() {
         read["include"] = json!([path]);
@@ -139,6 +140,27 @@ fn same_query(q: &GhSearchHistoryQuery) -> Value {
     row
 }
 
+/// The search again without its person qualifiers: the way on when GitHub
+/// cannot find a login they name (`None` when the query names none).
+pub(super) fn without_users(q: &GhSearchHistoryQuery) -> Option<Value> {
+    let qualifiers = q.qualifiers()?;
+    let kept = super::filters::without_person_terms(qualifiers);
+    if kept == qualifiers.split_whitespace().collect::<Vec<_>>().join(" ") {
+        return None;
+    }
+    let mut row = same_query(q);
+    if kept.is_empty() {
+        row.as_object_mut()?.remove("qualifiers");
+    } else {
+        row["qualifiers"] = json!(kept);
+    }
+    Some(
+        Continuation::new(ToolId::GhSearchHistory, row)
+            .confidence("medium")
+            .build(),
+    )
+}
+
 /// The next result page, at the page size this one used.
 pub(super) fn next_page(q: &GhSearchHistoryQuery, page: usize, page_size: usize) -> Value {
     let mut next = same_query(q);
@@ -149,60 +171,53 @@ pub(super) fn next_page(q: &GhSearchHistoryQuery, page: usize, page_size: usize)
         .build()
 }
 
-/// Drop-one-keyword variants at most: one search per left-out keyword.
+/// Broadened variants at most: one call's batch.
 const BROADEN_VARIANTS: usize = 5;
 
-/// An empty search, broadened: with several keywords, one variant per
-/// left-out keyword (the junk term is unknown, so each is dropped once),
-/// the last keyword first: the first keyword usually names the subject and
-/// later ones qualify it. A single keyword of a repository-scoped search is
-/// dropped; else the `qualifiers`, else a commit listing's date window.
+/// An empty search, broadened: one variant per narrowing filter, run as one
+/// batch, so the variant that returns rows names the filter that emptied
+/// the search. Several keywords drop one at a time (the last first: the
+/// first usually names the subject); a repository-scoped search drops a
+/// lone keyword; `qualifiers` and the `since`/`until` window drop whole.
 pub(super) fn broaden_search(q: &GhSearchHistoryQuery) -> Option<Value> {
-    let keywords = q.keywords();
-    if keywords.len() >= 2 {
-        let base = same_query(q);
-        let queries = (0..keywords.len())
-            .rev()
-            .take(BROADEN_VARIANTS)
-            .map(|dropped| {
-                let mut row = base.clone();
-                row["keywords"] = json!(
-                    keywords
-                        .iter()
-                        .enumerate()
-                        .filter(|(index, _)| *index != dropped)
-                        .map(|(_, keyword)| *keyword)
-                        .collect::<Vec<_>>()
-                );
-                row
-            })
-            .collect::<Vec<_>>();
-        return Some(
-            Continuation::input(ToolId::GhSearchHistory, json!({"queries": queries}))
-                .confidence("low")
-                .build(),
-        );
-    }
-    let mut row = same_query(q);
-    let object = row.as_object_mut()?;
-    let scoped = q.owner().is_some() && q.repo().is_some();
-    let dropped = if scoped && !keywords.is_empty() {
-        vec!["keywords"]
-    } else if q.qualifiers().is_some() {
-        vec!["qualifiers"]
-    } else if q.operation() == HistoryOperation::Commit
-        && (q.since().is_some() || q.until().is_some())
-    {
-        vec!["since", "until"]
-    } else {
-        return None;
+    let base = same_query(q);
+    let without = |keys: &[&str]| {
+        let mut row = base.clone();
+        if let Some(object) = row.as_object_mut() {
+            for key in keys {
+                object.remove(*key);
+            }
+        }
+        row
     };
-    for key in dropped {
-        object.remove(key);
+    let keywords = q.keywords();
+    let mut variants = Vec::new();
+    if keywords.len() >= 2 {
+        variants.extend((0..keywords.len()).rev().map(|dropped| {
+            let mut row = base.clone();
+            row["keywords"] = json!(
+                keywords
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, _)| *index != dropped)
+                    .map(|(_, keyword)| *keyword)
+                    .collect::<Vec<_>>()
+            );
+            row
+        }));
+    } else if !keywords.is_empty() && q.owner().is_some() && q.repo().is_some() {
+        variants.push(without(&["keywords"]));
     }
-    Some(
-        Continuation::new(ToolId::GhSearchHistory, row)
+    if q.qualifiers().is_some() {
+        variants.push(without(&["qualifiers"]));
+    }
+    if q.since().is_some() || q.until().is_some() {
+        variants.push(without(&["since", "until"]));
+    }
+    variants.truncate(BROADEN_VARIANTS);
+    (!variants.is_empty()).then(|| {
+        Continuation::input(ToolId::GhSearchHistory, json!({ "queries": variants }))
             .confidence("low")
-            .build(),
-    )
+            .build()
+    })
 }

@@ -9,6 +9,7 @@ const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
 
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
+const { sessionOutputDir } = await import('../src/shared/home.js');
 
 type Result = { content: Array<{ type: string; text?: string }> };
 type Tool = { execute: (id: string, params: Record<string, unknown>, signal?: AbortSignal, onUpdate?: unknown, ctx?: { cwd: string }) => Promise<Result> };
@@ -124,37 +125,83 @@ describe('browser dialogs', () => {
 describe('browser upload', () => {
   it('sets files on a file input, or through the chooser an upload button opens', async () => {
     const { cdp, cwd, run, text } = await setup(handler());
+    // Chrome gets the real path (the temp dir itself sits behind a symlink on macOS).
+    const real = fs.realpathSync(cwd);
     fs.writeFileSync(path.join(cwd, 'a.txt'), 'a');
     await expect(run({ action: 'upload', ref: 1 })).rejects.toThrow(/upload needs files/);
-    await expect(run({ action: 'upload', ref: 1, files: ['missing.txt'] })).rejects.toThrow(`No such file: ${path.join(cwd, 'missing.txt')}`);
+    await expect(run({ action: 'upload', ref: 1, files: ['missing.txt'] })).rejects.toThrow(`No such file: ${path.join(real, 'missing.txt')}`);
 
     expect(await text({ action: 'upload', ref: 1, files: ['a.txt'] })).toBe('Attached to [1]: a.txt');
-    expect(cdp.commands.find((command) => command.method === 'DOM.setFileInputFiles')?.params).toEqual({ files: [path.join(cwd, 'a.txt')], objectId: 'obj-1' });
+    expect(cdp.commands.find((command) => command.method === 'DOM.setFileInputFiles')?.params).toEqual({ files: [path.join(real, 'a.txt')], objectId: 'obj-1' });
 
     expect(await text({ action: 'upload', ref: 2, files: [path.join(cwd, 'a.txt')] })).toBe('Attached to [2]: a.txt');
     const methods = cdp.commands.map((command) => command.method);
     expect(methods).toContain('Page.setInterceptFileChooserDialog');
-    expect(cdp.commands.filter((command) => command.method === 'DOM.setFileInputFiles').at(-1)?.params).toEqual({ files: [path.join(cwd, 'a.txt')], backendNodeId: 77 });
+    expect(cdp.commands.filter((command) => command.method === 'DOM.setFileInputFiles').at(-1)?.params).toEqual({ files: [path.join(real, 'a.txt')], backendNodeId: 77 });
     // Interception is turned back off.
     expect(cdp.commands.filter((command) => command.method === 'Page.setInterceptFileChooserDialog').map((command) => command.params['enabled'])).toEqual([true, false]);
   }, 20_000);
 });
 
+describe('browser private-address guard', () => {
+  it('checks every page load the page starts, not only the typed URL, and fails a private one', async () => {
+    const PRIVATE = 'http://169.254.169.254/latest/meta-data';
+    let answer: (method: string) => void = () => undefined;
+    const navigate: CdpHandler = (method, params, page) => {
+      if (method === 'Page.navigate') {
+        // The server redirects `/to-private` to the cloud metadata address: Chrome pauses that hop too.
+        const url = String(params['url']).endsWith('/to-private') ? PRIVATE : String(params['url']);
+        page.emit('Fetch.requestPaused', { requestId: 'r', request: { url }, resourceType: 'Document', frameId: 'f' });
+        return new Promise((resolve) => {
+          answer = (reply) => {
+            if (reply === 'Fetch.failRequest') return resolve({ frameId: 'f', loaderId: 'l', errorText: 'net::ERR_BLOCKED_BY_CLIENT' });
+            setTimeout(() => page.emit('Page.loadEventFired'), 5);
+            resolve({ frameId: 'f', loaderId: 'l' });
+          };
+        });
+      }
+      if (method === 'Fetch.failRequest' || method === 'Fetch.continueRequest') answer(method);
+      return {};
+    };
+    // Clicking [2] follows a link to a private address.
+    const click = (ref: string, page: Parameters<CdpHandler>[2]) => {
+      if (ref === '2') page.emit('Fetch.requestPaused', { requestId: 'c', request: { url: 'http://10.0.0.1/admin' }, resourceType: 'Document', frameId: 'f' });
+      return { result: { value: true } };
+    };
+    const { cdp, run, text } = await setup(handler(click, navigate));
+    vi.stubEnv('OCTOCODE_WEB_ALLOW_PRIVATE', '');
+    expect(await text({ action: 'navigate', url: 'https://93.184.216.34/' })).toContain('# Stub');
+    expect(cdp.commands.find((command) => command.method === 'Fetch.enable')?.params).toEqual({ patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Request' }] });
+    expect(cdp.commands.find((command) => command.method === 'Fetch.continueRequest')?.params).toEqual({ requestId: 'r' });
+
+    await expect(run({ action: 'navigate', url: 'https://93.184.216.34/to-private' })).rejects.toThrow(`Navigation failed: net::ERR_BLOCKED_BY_CLIENT (blocked ${PRIVATE}: Blocked private or local address: 169.254.169.254.`);
+    expect(cdp.commands.find((command) => command.method === 'Fetch.failRequest')?.params).toEqual({ requestId: 'r', errorReason: 'BlockedByClient' });
+    expect(await text({ action: 'console' })).toContain(`[blocked] ${PRIVATE}: Blocked private or local address`);
+
+    // A link the agent clicks is checked the same way, and the result says what was refused.
+    expect(await text({ action: 'click', ref: 2 })).toMatch(/^Blocked a page load: http:\/\/10\.0\.0\.1\/admin: Blocked private or local address: 10\.0\.0\.1\./);
+    expect(cdp.commands.filter((command) => command.method === 'Fetch.failRequest').at(-1)?.params).toEqual({ requestId: 'c', errorReason: 'BlockedByClient' });
+  }, 20_000);
+});
+
 describe('browser download', () => {
-  it('turns downloads on, clicks, waits for the file and lists it', async () => {
+  it('turns downloads on in the session\'s private folder, clicks, waits for the file and lists it with its path', async () => {
+    const dir = path.join(sessionOutputDir('output'), 'downloads');
+    const file = path.join(dir, 'report.csv');
     const { cdp, cwd, text } = await setup(
       handler((_ref, page) => {
         setTimeout(() => page.emit('Browser.downloadWillBegin', { guid: 'g1', suggestedFilename: 'report.csv', url: 'https://example.com/r' }), 5);
         setTimeout(() => page.emit('Browser.downloadProgress', { guid: 'g1', state: 'inProgress', receivedBytes: 4, totalBytes: 12 }), 10);
-        setTimeout(() => page.emit('Browser.downloadProgress', { guid: 'g1', state: 'completed', receivedBytes: 12, totalBytes: 12 }), 150);
+        setTimeout(() => (fs.writeFileSync(file, 'a,b\n'), page.emit('Browser.downloadProgress', { guid: 'g1', state: 'completed', receivedBytes: 12, totalBytes: 12, filePath: file })), 150);
         return { result: { value: true } };
       }),
     );
-    const dir = path.join(cwd, 'downloads');
     expect(await text({ action: 'download' })).toBe(`No downloads yet (saving to ${dir}). Pass ref to click a download link.`);
     expect(cdp.commands.find((command) => command.method === 'Browser.setDownloadBehavior')?.params).toEqual({ behavior: 'allow', downloadPath: dir, eventsEnabled: true });
     expect(fs.existsSync(dir)).toBe(true);
-    expect(await text({ action: 'download', ref: 2 })).toBe(`Downloads in ${dir}:\n- report.csv · 12 bytes · saved`);
+    // Nothing lands in the workspace.
+    expect(fs.readdirSync(cwd)).toEqual([]);
+    expect(await text({ action: 'download', ref: 2 })).toBe(`Downloads in ${dir}:\n- report.csv · 12 bytes · saved · ${file}`);
     // Turned on once per session.
     expect(cdp.commands.filter((command) => command.method === 'Browser.setDownloadBehavior')).toHaveLength(1);
   }, 20_000);
@@ -194,8 +241,8 @@ describe('visible mode (webLive)', () => {
     await handlers.get('session_shutdown')!();
     expect(kill).not.toHaveBeenCalled();
     expect(unref).toHaveBeenCalled();
-    // Chrome writes DevToolsActivePort only for port 0, so the launch records it for the next run.
-    expect(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8')).toBe(`${chrome.port}\n`);
+    // Chrome writes DevToolsActivePort only for port 0, so the launch records it (port, then browser path) for the next run.
+    expect(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8')).toBe(`${chrome.port}\n${chrome.browserPath}\n`);
 
     // The next session reuses that window; an explicit close quits it.
     await text({ action: 'snapshot' });
@@ -227,7 +274,7 @@ describe('visible mode (webLive)', () => {
     stubs.push(running);
     const profile = path.join(home, 'pi-browser-profile');
     fs.mkdirSync(profile, { recursive: true });
-    fs.writeFileSync(path.join(profile, 'DevToolsActivePort'), `${running.port}\n/devtools/browser/x\n`);
+    fs.writeFileSync(path.join(profile, 'DevToolsActivePort'), `${running.port}\n${running.browserPath}\n`);
     vi.stubEnv('OCTOCODE_HOME', home);
     vi.stubEnv('OCTOCODE_BROWSER_VISIBLE', '1');
     vi.stubEnv('OCTOCODE_CHROME_PORT', String(await deadPort()));
@@ -239,6 +286,26 @@ describe('visible mode (webLive)', () => {
     expect(running.requests).toContain('PUT /json/new?about:blank');
     await handlers.get('session_shutdown')!();
     expect(running.requests.some((request) => request.startsWith('GET /json/close'))).toBe(false);
+  }, 20_000);
+
+  it('drops a DevToolsActivePort whose port now answers as another browser, and launches on the profile', async () => {
+    const home = tmp();
+    const other = await startCdpStub({ handle: handler() });
+    const chrome = await startCdpStub({ handle: handler() });
+    stubs.push(other, chrome);
+    launch.mockResolvedValue({ port: chrome.port, kill: vi.fn(async () => undefined), process: { unref: vi.fn() } });
+    const profile = path.join(home, 'pi-browser-profile');
+    fs.mkdirSync(profile, { recursive: true });
+    // Our Chrome quit; the port it recorded now belongs to some other browser.
+    fs.writeFileSync(path.join(profile, 'DevToolsActivePort'), `${other.port}\n/devtools/browser/gone\n`);
+    vi.stubEnv('OCTOCODE_HOME', home);
+    vi.stubEnv('OCTOCODE_BROWSER_VISIBLE', '1');
+    vi.stubEnv('OCTOCODE_CHROME_PORT', String(await deadPort()));
+    const { text } = register();
+    await text({ action: 'snapshot' });
+    expect(launch).toHaveBeenCalledTimes(1);
+    expect(other.commands).toEqual([]);
+    expect(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8')).toBe(`${chrome.port}\n${chrome.browserPath}\n`);
   }, 20_000);
 
   it('refuses a profile another Chrome holds without DevTools', async () => {
@@ -274,6 +341,7 @@ describe('browser actions without a browser', async () => {
     return { session, page: session.page, sent, listeners };
   }
   const element = 'document.body';
+  const downloadsDir = () => path.join(sessionOutputDir('output'), 'downloads');
 
   afterEach(() => vi.useRealTimers());
 
@@ -290,9 +358,9 @@ describe('browser actions without a browser', async () => {
     const dir = tmp();
     fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
     const { page } = fakeSession(() => ({ result: {} }));
-    await expect(uploadFiles(page, 1, element, [], dir)).rejects.toThrow('upload needs files');
-    await expect(uploadFiles(page, 1, element, ['missing.txt'], dir)).rejects.toThrow(`No such file: ${path.join(dir, 'missing.txt')}`);
-    await expect(uploadFiles(page, 1, element, ['a.txt'], dir)).rejects.toThrow('No element [1] — take a new snapshot.');
+    await expect(uploadFiles(page, 1, element, [])).rejects.toThrow('upload needs files');
+    await expect(uploadFiles(page, 1, element, [path.join(dir, 'missing.txt')])).rejects.toThrow(`No such file: ${path.join(dir, 'missing.txt')}`);
+    await expect(uploadFiles(page, 1, element, [path.join(dir, 'a.txt')])).rejects.toThrow('No element [1] — take a new snapshot.');
   });
 
   /** A non-input element: clicking it may or may not open a file chooser. */
@@ -303,7 +371,7 @@ describe('browser actions without a browser', async () => {
     fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
     const { page, sent } = fakeSession(button);
     vi.useFakeTimers();
-    const upload = expect(uploadFiles(page, 2, element, ['a.txt'], dir)).rejects.toThrow('Clicking [2] opened no file chooser; use the file input instead.');
+    const upload = expect(uploadFiles(page, 2, element, [path.join(dir, 'a.txt')])).rejects.toThrow('Clicking [2] opened no file chooser; use the file input instead.');
     await vi.advanceTimersByTimeAsync(5_000);
     await upload;
     expect(sent.filter((item) => item.method === 'Page.setInterceptFileChooserDialog').map((item) => item.params['enabled'])).toEqual([true, false]);
@@ -315,36 +383,42 @@ describe('browser actions without a browser', async () => {
     const before = new AbortController();
     before.abort(new Error('already stopped'));
     const first = fakeSession(button);
-    await expect(uploadFiles(first.page, 2, element, ['a.txt'], dir, before.signal)).rejects.toThrow('already stopped');
+    await expect(uploadFiles(first.page, 2, element, [path.join(dir, 'a.txt')], before.signal)).rejects.toThrow('already stopped');
     const during = new AbortController();
     const second = fakeSession((method) => {
       if (method === 'Runtime.callFunctionOn' && second.sent.filter((item) => item.method === method).length === 2) setTimeout(() => during.abort(), 5);
       return button(method);
     });
-    await expect(uploadFiles(second.page, 2, element, ['a.txt'], dir, during.signal)).rejects.toThrow(/aborted/i);
+    await expect(uploadFiles(second.page, 2, element, [path.join(dir, 'a.txt')], during.signal)).rejects.toThrow(/aborted/i);
     expect(second.listeners.size).toBe(0);
     expect(second.sent.at(-1)).toEqual({ method: 'Page.setInterceptFileChooserDialog', params: { enabled: false } });
   });
 
-  it('turns downloads on once and says when there are none yet', async () => {
-    const cwd = tmp();
+  it('turns downloads on once, into the session\'s private folder, and says when there are none yet', async () => {
+    const dir = downloadsDir();
     const { session, sent } = fakeSession();
-    expect(await download(session, cwd, undefined)).toBe(`No downloads yet (saving to ${path.join(cwd, 'downloads')}). Pass ref to click a download link.`);
-    expect(fs.statSync(path.join(cwd, 'downloads')).isDirectory()).toBe(true);
-    expect(session.downloadDir).toBe(path.join(cwd, 'downloads'));
-    await download(session, cwd, undefined);
+    expect(await download(session, undefined)).toBe(`No downloads yet (saving to ${dir}). Pass ref to click a download link.`);
+    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    expect(session.downloadDir).toBe(dir);
+    await download(session, undefined);
     expect(sent.map((item) => item.method)).toEqual(['Browser.setDownloadBehavior']);
   });
 
-  it('stops waiting for a running download when aborted, and lists what finished', async () => {
-    const cwd = tmp();
+  it('stops waiting for a running download when aborted, and lists what finished with its path', async () => {
+    const dir = downloadsDir();
     const { session } = fakeSession();
     session.downloads.set('g', { name: 'big.zip', state: 'inProgress', bytes: 1 });
     const controller = new AbortController();
     setTimeout(() => controller.abort(new Error('enough')), 20);
-    await expect(download(session, cwd, undefined, controller.signal)).rejects.toThrow('enough');
+    await expect(download(session, undefined, controller.signal)).rejects.toThrow('enough');
     session.downloads.set('g', { name: 'big.zip', state: 'canceled', bytes: 1 });
+    fs.writeFileSync(path.join(dir, 'ok.csv'), 'a,b\n');
     session.downloads.set('h', { name: 'ok.csv', state: 'completed', bytes: 12 });
-    expect(await download(session, cwd, undefined)).toBe(`Downloads in ${path.join(cwd, 'downloads')}:\n- big.zip · 1 bytes · canceled\n- ok.csv · 12 bytes · saved`);
+    // Chrome's reported path wins over the suggested name (taken names get a suffix).
+    fs.writeFileSync(path.join(dir, 'ok (1).csv'), 'a,b\n');
+    session.downloads.set('i', { name: 'ok.csv', state: 'completed', bytes: 4, path: path.join(dir, 'ok (1).csv') });
+    expect(await download(session, undefined)).toBe(
+      `Downloads in ${dir}:\n- big.zip · 1 bytes · canceled\n- ok.csv · 12 bytes · saved · ${path.join(dir, 'ok.csv')}\n- ok.csv · 4 bytes · saved · ${path.join(dir, 'ok (1).csv')}`,
+    );
   });
 });

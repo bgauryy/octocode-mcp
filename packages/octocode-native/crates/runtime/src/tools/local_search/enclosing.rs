@@ -6,10 +6,11 @@
 //! so a caller can cite or address the function a hit sits in without
 //! reading it: `symbolName` + `line` anchor lspSearch, `line`–`endLine` is a
 //! localFetch range. A hit on a declaration's own name line names the
-//! declaration around that one. Consecutive hits in one declaration name it
-//! once, on the first. A
-//! declaration search (`fn foo`) names the owners of declaring hits only. A searched symbol whose declaration is among the
-//! hits also yields a ready lspSearch references lead.
+//! declaration around that one. Every hit row inside a declaration names
+//! it, so no row reads as having none. A declaration search (`fn foo`)
+//! names the owners of declaring hits only. A searched symbol whose
+//! declaration is among the hits also yields a ready lspSearch references
+//! lead.
 
 /// One declaration of a file's outline, 1-based lines.
 struct Declaration {
@@ -62,12 +63,9 @@ struct Position {
 impl Outline {
     /// The outline of `source`; `None` when no extractor supports the file.
     pub(super) fn of(source: &str, canonical_path: &str) -> Option<Self> {
-        let raw = crate::tools::ast_search::declarations_cache::extract(
-            source,
-            canonical_path,
-            false,
-            || octocode_engine::portable::extract_declarations(source, canonical_path),
-        )?;
+        let raw = crate::tools::declarations_cache::extract(source, canonical_path, false, || {
+            octocode_engine::portable::extract_declarations(source, canonical_path)
+        })?;
         // Only the declarations' names, kinds and lines are read; every
         // other fact (and every other declaration field) is skipped
         // unparsed rather than built into a JSON tree.
@@ -218,7 +216,7 @@ fn free() {\n\
                 )
             })
         };
-        // X2: the enclosing declaration's full kind, name, name line and
+        // The enclosing declaration's full kind, name, name line and
         // last line (a single-line one ends where it starts).
         assert_eq!(
             named(5),
@@ -229,6 +227,26 @@ fn free() {\n\
         assert_eq!(outline.enclosing(8), None);
         assert!(outline.declares("try_read_output", 3));
         assert!(!outline.declares("try_read_output", 10));
+    }
+
+    /// A `#define` owns its line terminator; its range still ends on its
+    /// own line, so a hit on the next macro is not attributed to it.
+    #[test]
+    fn consecutive_c_macros_end_on_their_own_line() {
+        let source = "#define OBJ_ENCODING_STREAM 10\n#define OBJ_ENCODING_LISTPACK 11\nint use(void) {\n    return OBJ_ENCODING_LISTPACK;\n}\n";
+        let outline = Outline::of(source, "enclosing-test/object.h").expect("c outline");
+        assert_eq!(outline.enclosing(2), None);
+        assert!(outline.declares("OBJ_ENCODING_LISTPACK", 2));
+        assert_eq!(
+            outline.declaration("OBJ_ENCODING_STREAM", 1),
+            Some(("macro", 1, 1))
+        );
+        assert_eq!(
+            outline
+                .enclosing(4)
+                .map(|e| (e.symbol_name, e.line, e.end_line)),
+            Some(("use".into(), 3, 5))
+        );
     }
 
     /// One declaration: kind, name, name line, first and last line.

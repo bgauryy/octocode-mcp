@@ -21,10 +21,7 @@
         "src/tools/clasify/compact.rs"
       ],
       "variants": [
-        "fileChunks",
-        "locate",
-        "scout",
-        "state"
+        "clasify"
       ],
       "discriminators": {
         "questions[].type": [
@@ -105,10 +102,6 @@
         "resources[].query": [
           "consumed"
         ],
-        "resources[].resumePageSize": [
-          "consumed",
-          "continuation"
-        ],
         "resources[].query.owner": [
           "forwarded"
         ],
@@ -124,6 +117,10 @@
         "resources[].query.repo": [
           "forwarded"
         ],
+        "resources[].resumePageSize": [
+          "consumed",
+          "continuation"
+        ],
         "resources[].tool": [
           "consumed"
         ],
@@ -137,22 +134,24 @@
         "src/tools/gh_search_repo/mod.rs",
         "tests/runtime_github.rs"
       ],
-      "variants": [],
+      "variants": [
+        "ghSearchRepo"
+      ],
       "discriminators": {},
       "fields": {
-        "archived": [
-          "forwarded"
-        ],
-        "concise": [
-          "forwarded",
-          "output-control"
-        ],
         "created": [
           "forwarded"
         ],
         "extras": [
           "output-control",
           "continuation"
+        ],
+        "fields": [
+          "consumed",
+          "output-control"
+        ],
+        "includeArchived": [
+          "forwarded"
         ],
         "keywords": [
           "forwarded"
@@ -166,7 +165,7 @@
         "mainGoal": [
           "workflow-metadata"
         ],
-        "match": [
+        "matchIn": [
           "forwarded"
         ],
         "owner": [
@@ -190,6 +189,9 @@
         "reasoning": [
           "workflow-metadata"
         ],
+        "repo": [
+          "forwarded"
+        ],
         "sort": [
           "forwarded"
         ],
@@ -206,19 +208,21 @@
         "src/tools/gh_search_code/query.rs",
         "tests/runtime_github.rs"
       ],
-      "variants": [],
+      "variants": [
+        "ghSearchCode"
+      ],
       "discriminators": {},
       "fields": {
-        "concise": [
-          "forwarded",
-          "output-control"
+        "extensions": [
+          "forwarded"
         ],
         "extras": [
           "output-control",
           "continuation"
         ],
-        "extensions": [
-          "forwarded"
+        "fields": [
+          "consumed",
+          "output-control"
         ],
         "filename": [
           "forwarded"
@@ -226,13 +230,10 @@
         "keywords": [
           "forwarded"
         ],
-        "language": [
-          "forwarded"
-        ],
         "mainGoal": [
           "workflow-metadata"
         ],
-        "match": [
+        "matchIn": [
           "forwarded"
         ],
         "owner": [
@@ -268,7 +269,9 @@
         "tests/runtime_github.rs",
         "tests/runtime_gh_structure.rs"
       ],
-      "variants": [],
+      "variants": [
+        "tree/refs/languages"
+      ],
       "discriminators": {
         "operation": [
           "tree",
@@ -336,7 +339,9 @@
         "src/tools/local_fetch/block.rs",
         "tests/runtime_github.rs"
       ],
-      "variants": [],
+      "variants": [
+        "ghGetFileContent"
+      ],
       "discriminators": {
         "regex": [
           "literal",
@@ -351,10 +356,6 @@
         ],
         "caseMode": [
           "forwarded"
-        ],
-        "contextBytes": [
-          "forwarded",
-          "output-control"
         ],
         "contextLines": [
           "forwarded",
@@ -416,6 +417,9 @@
         "unit": [
           "forwarded",
           "output-control"
+        ],
+        "wholeWord": [
+          "forwarded"
         ]
       }
     },
@@ -437,13 +441,13 @@
         ]
       },
       "fields": {
-        "concise": [
-          "forwarded",
-          "output-control"
-        ],
         "extras": [
           "output-control",
           "continuation"
+        ],
+        "fields": [
+          "consumed",
+          "output-control"
         ],
         "keywords": [
           "forwarded"
@@ -452,9 +456,6 @@
           "workflow-metadata"
         ],
         "operation": [
-          "forwarded"
-        ],
-        "order": [
           "forwarded"
         ],
         "owner": [
@@ -522,16 +523,6 @@
         "base": [
           "forwarded"
         ],
-        "commentPage": [
-          "forwarded",
-          "output-control",
-          "continuation"
-        ],
-        "commitPage": [
-          "forwarded",
-          "output-control",
-          "continuation"
-        ],
         "contextLines": [
           "forwarded",
           "output-control"
@@ -540,19 +531,10 @@
           "output-control",
           "continuation"
         ],
-        "filePage": [
-          "forwarded",
-          "output-control",
-          "continuation"
-        ],
         "head": [
           "forwarded"
         ],
         "include": [
-          "forwarded",
-          "output-control"
-        ],
-        "includeBots": [
           "forwarded",
           "output-control"
         ],
@@ -597,14 +579,6 @@
           "forwarded",
           "output-control"
         ],
-        "patchRanges": [
-          "forwarded",
-          "output-control"
-        ],
-        "path": [
-          "forwarded",
-          "security-policy"
-        ],
         "reasoning": [
           "workflow-metadata"
         ],
@@ -613,11 +587,6 @@
         ],
         "repo": [
           "forwarded"
-        ],
-        "reviewPage": [
-          "forwarded",
-          "output-control",
-          "continuation"
         ],
         "sections": [
           "forwarded",
@@ -635,7 +604,12 @@
         "src/providers/artifact/registries.rs",
         "src/tools/artifact_search/mod.rs"
       ],
-      "variants": [],
+      "variants": [
+        "npm:discovery",
+        "npm:exact",
+        "registry:discovery",
+        "registry:exact"
+      ],
       "discriminators": {
         "ecosystem": [
           "npm",
@@ -649,12 +623,12 @@
         ]
       },
       "fields": {
+        "ecosystem": [
+          "forwarded"
+        ],
         "extras": [
           "output-control",
           "continuation"
-        ],
-        "ecosystem": [
-          "forwarded"
         ],
         "keywords": [
           "forwarded"
@@ -691,7 +665,9 @@
         "src/tools/gh_clone_repo/tests.rs",
         "src/tools/gh_clone_repo/cache.rs"
       ],
-      "variants": [],
+      "variants": [
+        "ghCloneRepo"
+      ],
       "discriminators": {},
       "fields": {
         "extras": [
@@ -731,7 +707,7 @@
         "tests/runtime_local.rs"
       ],
       "variants": [
-        "lexical"
+        "localSearch"
       ],
       "discriminators": {
         "regex": [
@@ -748,15 +724,15 @@
           "consumed",
           "output-control"
         ],
-        "extras": [
-          "output-control",
-          "continuation"
-        ],
         "defaultExcludes": [
           "consumed"
         ],
         "exclude": [
           "consumed"
+        ],
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "fileHas": [
           "consumed"
@@ -764,10 +740,13 @@
         "fileLacks": [
           "consumed"
         ],
-        "hidden": [
+        "include": [
           "consumed"
         ],
-        "include": [
+        "includeHidden": [
+          "consumed"
+        ],
+        "includeIgnored": [
           "consumed"
         ],
         "invertMatch": [
@@ -798,9 +777,6 @@
           "consumed"
         ],
         "multiline": [
-          "consumed"
-        ],
-        "noIgnore": [
           "consumed"
         ],
         "page": [
@@ -865,14 +841,7 @@
           "consumed",
           "security-policy"
         ],
-        "extras": [
-          "output-control",
-          "continuation"
-        ],
         "defaultExcludes": [
-          "consumed"
-        ],
-        "detail": [
           "consumed"
         ],
         "empty": [
@@ -887,10 +856,17 @@
         "extensions": [
           "consumed"
         ],
-        "hidden": [
-          "consumed"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "include": [
+          "consumed"
+        ],
+        "includeHidden": [
+          "consumed"
+        ],
+        "includeIgnored": [
           "consumed"
         ],
         "mainGoal": [
@@ -907,9 +883,6 @@
           "consumed"
         ],
         "nameRegex": [
-          "consumed"
-        ],
-        "noIgnore": [
           "consumed"
         ],
         "operation": [
@@ -978,7 +951,8 @@
         "tests/runtime_local.rs"
       ],
       "variants": [
-        "match",
+        "match:pattern",
+        "match:rule",
         "symbols",
         "syntaxTree"
       ],
@@ -993,20 +967,23 @@
         "captureText": [
           "consumed"
         ],
-        "extras": [
-          "output-control",
-          "continuation"
-        ],
         "defaultExcludes": [
           "consumed"
         ],
         "exclude": [
           "consumed"
         ],
-        "hidden": [
-          "consumed"
+        "extras": [
+          "output-control",
+          "continuation"
         ],
         "include": [
+          "consumed"
+        ],
+        "includeHidden": [
+          "consumed"
+        ],
+        "includeIgnored": [
           "consumed"
         ],
         "kinds": [
@@ -1041,9 +1018,6 @@
           "consumed"
         ],
         "namedOnly": [
-          "consumed"
-        ],
-        "noIgnore": [
           "consumed"
         ],
         "operation": [
@@ -1130,14 +1104,7 @@
           "consumed",
           "security-policy"
         ],
-        "extras": [
-          "output-control",
-          "continuation"
-        ],
         "defaultExcludes": [
-          "consumed"
-        ],
-        "depth": [
           "consumed"
         ],
         "diagnosticPage": [
@@ -1158,6 +1125,13 @@
           "consumed"
         ],
         "exclude": [
+          "consumed"
+        ],
+        "extras": [
+          "output-control",
+          "continuation"
+        ],
+        "graphDepth": [
           "consumed"
         ],
         "includeTests": [
@@ -1212,8 +1186,8 @@
         "src/tools/ast_rewrite/tests.rs"
       ],
       "variants": [
-        "apply",
-        "preview"
+        "pattern",
+        "rule"
       ],
       "discriminators": {},
       "fields": {
@@ -1222,10 +1196,6 @@
         ],
         "constraints": [
           "consumed"
-        ],
-        "extras": [
-          "output-control",
-          "continuation"
         ],
         "defaultExcludes": [
           "consumed"
@@ -1236,10 +1206,20 @@
         "expectedHashes": [
           "consumed"
         ],
+        "extras": [
+          "output-control",
+          "continuation"
+        ],
         "fix": [
           "consumed"
         ],
         "include": [
+          "consumed"
+        ],
+        "includeHidden": [
+          "consumed"
+        ],
+        "includeIgnored": [
           "consumed"
         ],
         "language": [
@@ -1316,7 +1296,9 @@
         "src/tools/local_fetch/executor.rs",
         "tests/runtime_local.rs"
       ],
-      "variants": [],
+      "variants": [
+        "localFetch"
+      ],
       "discriminators": {
         "regex": [
           "literal",
@@ -1331,10 +1313,6 @@
         ],
         "caseMode": [
           "consumed"
-        ],
-        "contextBytes": [
-          "consumed",
-          "output-control"
         ],
         "contextLines": [
           "consumed",
@@ -1389,6 +1367,9 @@
         "unit": [
           "consumed",
           "output-control"
+        ],
+        "wholeWord": [
+          "consumed"
         ]
       }
     },
@@ -1428,7 +1409,7 @@
           "output-control",
           "continuation"
         ],
-        "depth": [
+        "graphDepth": [
           "consumed"
         ],
         "groupByFile": [
@@ -1442,7 +1423,7 @@
         "includeDeclaration": [
           "consumed"
         ],
-        "lineHint": [
+        "line": [
           "consumed"
         ],
         "mainGoal": [

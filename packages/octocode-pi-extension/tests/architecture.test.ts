@@ -40,7 +40,7 @@ const ALLOWED: Record<string, string[]> = {
   ui: ['shared'],
   subagents: ['shared', 'mcp', 'team'],
   agentdb: ['shared'],
-  sessions: ['shared', 'agentdb'],
+  sessions: ['shared', 'agentdb', 'files', 'subagents'],
   backlog: ['shared', 'agentdb'],
   memory: ['shared', 'agentdb'],
 };
@@ -124,12 +124,15 @@ describe('source layout', () => {
     );
     expect(bare.filter(({ name }) => !runtime.has(name)).map(({ file, name }) => `${file}: ${name}`)).toEqual([]);
     expect(bare.filter(({ name }) => name === '@octocodeai/config').map(({ file }) => file)).toEqual([]);
-    // Pi provides its own packages at runtime; bundling a second copy would split its module state.
+    // Pi provides these packages at runtime (its docs/packages.md); bundling a second copy would split its module state.
+    // Any other Pi package, such as the MCP client, is ours to install: Pi suppresses peer installs, so it is a dependency.
+    const hostProvided = new Set(['@earendil-works/pi-ai', '@earendil-works/pi-agent-core', '@earendil-works/pi-coding-agent', '@earendil-works/pi-tui']);
     const piPackages = [...new Set(bare.map(({ name }) => name).filter((name) => name.startsWith('@earendil-works/pi-')))];
     expect(piPackages.length).toBeGreaterThan(0);
     for (const name of piPackages) {
-      expect(manifest['peerDependencies']?.[name], `${name} is a peer dependency`).toBeDefined();
-      expect(manifest['dependencies']?.[name], `${name} is not a runtime dependency`).toBeUndefined();
+      const [declared, other] = hostProvided.has(name) ? (['peerDependencies', 'dependencies'] as const) : (['dependencies', 'peerDependencies'] as const);
+      expect(manifest[declared]?.[name], `${name} is in ${declared}`).toBeDefined();
+      expect(manifest[other]?.[name], `${name} is not in ${other}`).toBeUndefined();
     }
   });
 

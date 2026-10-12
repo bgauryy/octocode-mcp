@@ -69,6 +69,26 @@ pub(super) fn validate_ast_rewrite_rules(input: &Value) -> Result<(), ContractVa
     Ok(())
 }
 
+/// Batch-level half of the `ast_rewrite_apply` opcode: one request commits at
+/// most one transaction, so a batch carries at most one `apply` row. Per-row
+/// rules see a one-row batch, so this runs on the whole request.
+pub(super) fn validate_ast_rewrite_batch(input: &Value) -> Result<(), ContractValidationError> {
+    let applies = input["queries"].as_array().map_or(0, |queries| {
+        queries
+            .iter()
+            .filter(|query| query.get("apply") == Some(&Value::Bool(true)))
+            .count()
+    });
+    if applies > 1 {
+        return Err(issue(
+            "ast-rewrite.apply-bulk",
+            vec!["queries".into()],
+            "a bulk request may contain at most one apply transaction",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn validate_ast_rewrite_queries(input: &Value) -> Result<(), ContractValidationError> {
     let Some(queries) = input["queries"].as_array() else {
         return Ok(());
@@ -110,4 +130,42 @@ pub(super) fn validate_ast_rewrite_queries(input: &Value) -> Result<(), Contract
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::contracts::validate::validate;
+    use serde_json::{Value, json};
+
+    fn apply_row(path: &str) -> Value {
+        let hash = "a".repeat(64);
+        json!({
+            "path": path,
+            "language": "typescript",
+            "pattern": "old($A)",
+            "rewrite": "neu($A)",
+            "apply": true,
+            "expectedHashes": {path: hash},
+            "snapshot": hash,
+        })
+    }
+
+    #[test]
+    fn a_batch_carries_at_most_one_apply() {
+        validate("astRewrite", json!({"queries":[apply_row("a.ts")]})).expect("one apply passes");
+        let error = validate(
+            "astRewrite",
+            json!({"queries":[apply_row("a.ts"), apply_row("b.ts")]}),
+        )
+        .expect_err("two applies are rejected");
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.rule_id == "ast-rewrite.apply-bulk"
+                    && issue.path == ["queries"]
+                    && issue.message == "a bulk request may contain at most one apply transaction"),
+            "{error:?}"
+        );
+    }
 }

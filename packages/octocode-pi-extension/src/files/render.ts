@@ -22,7 +22,7 @@ export interface BashDetails {
 }
 
 const BASH_STATUS = /^Command (?:exited with code (-?\d+)|timed out after (\d+) seconds|aborted|(terminated without an exit code))\.?$/;
-const TRUNCATION_NOTICE = /^\[Showing .*Full output: \S+\]$/;
+const TRUNCATION_NOTICE = /^\[Showing .*Full output: .+\]$/;
 
 /**
  * The `⎿` summary and body of a bash result: `exit 0 · 12 lines`, `exit 1 · 3 lines` (drawn as an error),
@@ -43,7 +43,7 @@ function bashOutcome(text: string, isError: boolean, running = false): { summary
     if (TRUNCATION_NOTICE.test(trimmed)) {
       const of = /\bof (\d+)\b/.exec(trimmed);
       if (of) total = Number(of[1]);
-      spill = /Full output: (\S+)\]$/.exec(trimmed)?.[1];
+      spill = /Full output: (.+?)\]$/.exec(trimmed)?.[1];
       continue;
     }
     if (trimmed.startsWith('If it needs longer, rerun it with background: true')) continue;

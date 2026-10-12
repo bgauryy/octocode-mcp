@@ -16,6 +16,9 @@ pub(crate) const ROW_FIELDS: &[&str] = &["commitSha"];
 fn can_share_field(key: &str, value: &Value) -> bool {
     const EXCLUDED: &[&str] = &[
         "path",
+        // A row's file, like its path, says what the row is about: it stays
+        // on every row so no row is read against a trailing `shared` map.
+        "file",
         "dir",
         "uri",
         "absolutePath",
@@ -158,6 +161,23 @@ mod tests {
         assert_eq!(rows[0]["data"]["files"][0]["matchedLineCount"], 9);
     }
 
+    /// A row's `file` is the identity of what it names, like `path` and
+    /// `name`: rows of one page that all sit in the same file (a dead-code
+    /// page of one module, a callers page) each keep it, so no row has to be
+    /// read against a trailing `shared` map to know which file it is in.
+    #[test]
+    fn a_rows_file_is_never_hoisted() {
+        let mut rows = vec![json!({"index":0,"data":{"nodes":[
+            {"file":"a.ts","name":"one","distance":1},
+            {"file":"a.ts","name":"two","distance":1}
+        ]}})];
+        let shared = super::hoist(&mut rows).expect("an identical non-identity field still hoists");
+        assert!(!shared.contains_key("file"), "{shared:?}");
+        assert_eq!(shared["distance"], 1);
+        assert_eq!(rows[0]["data"]["nodes"][0]["file"], "a.ts");
+        assert_eq!(rows[0]["data"]["nodes"][1]["file"], "a.ts");
+    }
+
     /// The checked-out head is a row field stated once in `shared`; it never
     /// belongs on nested entries such as localFetch `blocks`.
     #[test]
@@ -200,10 +220,10 @@ mod tests {
             (
                 "lspSearch",
                 false,
-                json!({"path":"a.ts","payload":{"kind":"callees","files":[
+                json!({"path":"a.ts","kind":"callees","files":[
                 {"path":"a.ts","matches":[{"symbolName":"b","kind":"function","line":4,"endLine":6,"sites":[{"line":2,"column":1}]}]}
-            ],"builtinLib":["map","filter"]},
-                "hints":{"didYouMean":{"tool":"lspSearch","query":{"queries":[{"path":"a.ts","symbolName":"a","lineHint":2,"operation":"callees"}]}}}}),
+            ],"builtinLib":["map","filter"],
+                "hints":{"findSimilar":{"tool":"lspSearch","query":{"queries":[{"path":"a.ts","symbolName":"a","line":2,"operation":"callees"}]}}}}),
             ),
             (
                 "astSearch",
@@ -233,21 +253,21 @@ mod tests {
             (
                 "ghStructure",
                 false,
-                json!({"entries":[{"dir":"lib","files":["a.js","b.js"]},{"dir":"lib/x","files":["c.js"]}],"commitSha":sha}),
+                json!({"files":[{"dir":"lib","files":["a.js","b.js"]},{"dir":"lib/x","files":["c.js"]}],"commitSha":sha}),
             ),
             (
                 "ghSearchHistory",
                 false,
                 json!({"commits":[
-                    {"sha":sha,"date":"2026-10-06T21:16:14Z","messageHeadline":"a (#1)","author":"x","prNumber":1},
-                    {"sha":"abc","date":"2026-10-06T21:16:14Z","messageHeadline":"b (#2)","author":"x","prNumber":2}
+                    {"commitSha":sha,"date":"2026-10-06T21:16:14Z","messageHeadline":"a (#1)","author":"x"},
+                    {"commitSha":"abc","date":"2026-10-06T21:16:14Z","messageHeadline":"b (#2)","author":"x"}
                 ]}),
             ),
             (
                 "ghGetHistoryItem",
                 false,
                 json!({"pullRequests":[{"number":1,"title":"t","state":"merged","author":"x","createdAt":"2026-10-06T21:16:14Z",
-                "targetBranch":"main","sourceBranch":"f","sourceSha":sha,"targetSha":sha,"mergeCommitSha":sha,
+                "baseBranch":"main","headBranch":"f","headSha":sha,"baseSha":sha,"mergeCommitSha":sha,
                 "commitsCount":1,"changedFilesCount":2,"additions":2,"deletions":2}]}),
             ),
             (

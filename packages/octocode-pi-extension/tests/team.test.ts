@@ -7,6 +7,7 @@ import { toolHint } from '../src/shared/util.js';
 import { describeMembers, mutatedPaths, newId, resolveTarget } from '../src/team/routing.js';
 import { octocodePrompt } from '../src/prompt.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
+import { registerAgentTool } from '../src/subagents/tool.js';
 import { DatabaseSync } from 'node:sqlite';
 import { AGENT_APPLICATION_ID as TEAM_APPLICATION_ID, AGENT_SCHEMA_VERSION as TEAM_SCHEMA_VERSION, AgentDbError as TeamSchemaError } from '../src/agentdb/db.js';
 import type { Member } from '../src/team/model.js';
@@ -224,13 +225,12 @@ describe('agents view', () => {
 
 describe('collaboration prompt', () => {
   it('assigns parent handoff ownership and routes child blockers to the parent', () => {
-    const parent = octocodePrompt({ octocode: false, profiles: [], canDelegate: true });
-    expect(parent).toContain('You own user communication, missing approvals, review and integration');
-    expect(parent).toContain('`coordinate list`');
-    const child = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, identity: { id: 'researcher-1234', parentId: 'main-aaaaaa' } });
-    expect(child).toContain('`researcher-1234`');
-    expect(child).toContain('`main-aaaaaa`');
-    expect(child).toContain('sendMessage');
+    expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: true })).toContain('You own user communication, missing approvals, review and integration');
+    const tools: Array<{ parameters: { properties: Record<string, { description?: string }> } }> = [];
+    registerAgentTool({ registerTool: (tool: never) => tools.push(tool), registerCommand: () => undefined, registerMessageRenderer: () => undefined, on: () => undefined } as never, () => new Map(), { view: { members: [], traffic: [] }, members: () => [] } as never);
+    expect(tools[0]!.parameters.properties['collaborate']?.description).toMatch(/subagents on one goal teammates that coordinate directly/);
+    // A child names its parent generically: its own id and parent arrive in its task.
+    expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: false, collaborate: true })).toMatch(/your parent[^]*sendMessage/);
   });
 });
 
@@ -255,7 +255,10 @@ describe('Team', () => {
       child.onToolStart();
       child.setActivity('Running localSearch foo');
       child.onUsage({ input: 60, cacheRead: 30, cacheWrite: 10, output: 20, cost: { total: 0.01 } });
+      // Activity, tool counts and usage are written with the 5-second heartbeat, not on every tick.
       vi.advanceTimersByTime(1_000);
+      expect(main.members().find((m) => m.id === 'researcher-1234')).toMatchObject({ toolCalls: 0 });
+      vi.advanceTimersByTime(4_000);
       expect(main.members().find((m) => m.id === 'researcher-1234')).toMatchObject({ status: 'working', task: 'Find X', activity: 'Running localSearch foo', toolCalls: 1, input: 100, output: 20, parentId: parent.id });
 
       const asked = main.send('researcher-1234', 'also check tests');
@@ -376,8 +379,8 @@ describe('team database schema', () => {
     const file = path.join(tmp(), 'team.sqlite');
     const parent = repo();
     const worktree = repo();
-    expect(TeamStore.open(worktree, file, { [TEAM_WORKSPACE_ENV]: parent }).workspace).toBe(path.resolve(parent));
-    expect(TeamStore.open(worktree, file, {}).workspace).not.toBe(path.resolve(parent));
+    expect(TeamStore.open(worktree, file, { [TEAM_WORKSPACE_ENV]: parent }).workspace).toBe(fs.realpathSync(parent));
+    expect(TeamStore.open(worktree, file, {}).workspace).toBe(fs.realpathSync(worktree));
   });
 });
 
@@ -440,6 +443,7 @@ describe('Team safety', () => {
     const edit = async (team: InstanceType<typeof Team>, from: string, to: string) => {
       const guard = new FileGuard();
       guard.reservedBy = (file) => team.reservation(file, file);
+      guard.record(target);
       let tool: { execute: (...args: unknown[]) => Promise<unknown> } | undefined;
       registerFileTool({ registerTool: (t: typeof tool) => (tool = t), on: () => undefined } as never, guard);
       return tool!.execute('c', { queries: [{ reasoning: 'r', type: 'edit', path: 'a.ts', edits: [{ oldText: from, newText: to }] }] }, undefined, undefined, { cwd, hasUI: false });

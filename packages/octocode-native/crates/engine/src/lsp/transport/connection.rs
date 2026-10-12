@@ -80,7 +80,7 @@ struct Shared {
     failed: AtomicBool,
     /// Why the connection failed (the first reason wins), so requests made
     /// after the failure report it instead of a generic "closed".
-    failure_reason: StdMutex<Option<String>>,
+    failure_reason: StdMutex<Option<Error>>,
     outbound: mpsc::Sender<Outbound>,
     push_diagnostics: Arc<PushDiagnosticsStore>,
     partial_results: PartialResultStore,
@@ -121,10 +121,16 @@ impl Shared {
     /// Marks the connection failed and fails every pending request with
     /// `reason`. Idempotent; the first reason wins for the drained waiters.
     fn fail(&self, reason: &str) {
+        self.fail_with(Error::connection_closed(reason));
+    }
+
+    /// [`Self::fail`] with the typed cause every drained or later request
+    /// reports.
+    fn fail_with(&self, error: Error) {
         if let Ok(mut slot) = self.failure_reason.lock()
             && slot.is_none()
         {
-            *slot = Some(reason.to_owned());
+            *slot = Some(error.clone());
         }
         self.failed.store(true, Ordering::Release);
         let drained = self
@@ -133,7 +139,7 @@ impl Shared {
             .ok()
             .and_then(|mut pending| pending.take());
         for sender in drained.into_iter().flat_map(HashMap::into_values) {
-            let _ = sender.send(Err(Error::connection_closed(reason)));
+            let _ = sender.send(Err(error.clone()));
         }
     }
 
@@ -192,7 +198,7 @@ impl Shared {
             .ok()
             .and_then(|slot| slot.clone())
         {
-            Some(reason) => Error::connection_closed(reason),
+            Some(error) => error,
             None => closed_error(),
         }
     }
@@ -319,12 +325,13 @@ impl JsonRpcConnection {
         self.shared.is_alive()
     }
 
-    /// Retire the connection: every pending and later request fails with
-    /// `reason` (used when the server is killed for exceeding its memory
-    /// cap). Idempotent; the first reason wins.
+    /// Retire the connection because the server was killed for exceeding its
+    /// memory cap: every pending and later request fails with `reason` as
+    /// [`crate::error::ErrorKind::ResourceExhausted`]. Idempotent; the first
+    /// reason wins.
     #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))] // Wired on macOS and Linux only.
-    pub(crate) fn fail(&self, reason: &str) {
-        self.shared.fail(reason);
+    pub(crate) fn fail_resource_exhausted(&self, reason: &str) {
+        self.shared.fail_with(Error::resource_exhausted(reason));
     }
 
     pub(crate) fn clear_push_diagnostics(&self, uri: &str) {

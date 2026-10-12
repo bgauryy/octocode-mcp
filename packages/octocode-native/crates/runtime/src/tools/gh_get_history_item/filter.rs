@@ -1,28 +1,25 @@
-//! Changed-file selection: `include`/`status`/`minChanges` filters, the
-//! commit/compare path scope, and patch-range selection.
+//! Changed-file selection: `include`/`status`/`minChanges` filters and the
+//! commit/compare path scope.
 use super::HistoryItemRequest;
 use super::inventory::*;
 use super::util::{str_at, usize_at};
 use globset::{GlobBuilder, GlobMatcher};
-use serde_json::{Map, Value};
-use std::collections::HashMap;
+use serde_json::Value;
 
 /// Changed-file selection shared by the provider scan and output shaping.
 #[derive(Clone, Copy)]
 pub(super) struct FileFilter<'a> {
-    pub(super) selected: &'a [String],
     pub(super) needle: Option<&'a str>,
     pub(super) scope: Option<&'a InventoryFilter>,
 }
 
 impl FileFilter<'_> {
     pub(super) fn is_trivial(&self) -> bool {
-        self.selected.is_empty() && self.needle.is_none() && self.scope.is_none()
+        self.needle.is_none() && self.scope.is_none()
     }
     pub(super) fn matches(&self, file: &Value) -> bool {
         let path = str_at(file, "/filename").unwrap_or("");
-        (self.selected.is_empty() || self.selected.iter().any(|selected| selected == path))
-            && self.scope.is_none_or(|scope| scope.matches(file))
+        self.scope.is_none_or(|scope| scope.matches(file))
             && self.needle.is_none_or(|n| {
                 path.to_lowercase().contains(n)
                     || str_at(file, "/patch").is_some_and(|v| v.to_lowercase().contains(n))
@@ -95,8 +92,6 @@ impl InventoryFilter {
         else {
             return Ok(None);
         };
-        // With `patchRanges`, `include` names the selected files instead.
-        let include = include.as_ref().filter(|_| query.patch_ranges().is_empty());
         if include.is_none() && status.is_none() && min_changes.is_none() {
             return Ok(None);
         }
@@ -138,44 +133,6 @@ impl InventoryFilter {
     }
 }
 
-pub(super) type PatchRanges = HashMap<String, (Option<Vec<i64>>, Option<Vec<i64>>)>;
-
-/// Selected file names (files plus range targets) and per-file line ranges.
-pub(super) fn patch_selection(selector: Option<&Map<String, Value>>) -> (Vec<String>, PatchRanges) {
-    let mut selected_names = selector
-        .and_then(|v| v.get("files"))
-        .and_then(Value::as_array)
-        .map(|v| {
-            v.iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let lines = |range: &Value, key: &str| {
-        range
-            .get(key)
-            .and_then(Value::as_array)
-            .map(|lines| lines.iter().filter_map(Value::as_i64).collect::<Vec<_>>())
-    };
-    let ranges = selector
-        .and_then(|v| v.get("ranges"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|range| {
-            let file = range.get("file")?.as_str()?.to_owned();
-            Some((file, (lines(range, "additions"), lines(range, "deletions"))))
-        })
-        .collect::<HashMap<_, _>>();
-    for file in ranges.keys() {
-        if !selected_names.contains(file) {
-            selected_names.push(file.clone());
-        }
-    }
-    (selected_names, ranges)
-}
-
 /// Scanned files a patch search skipped: selected and in scope, but GitHub
 /// sent no patch (too large, or omitted past the diff budget) and the path
 /// itself does not match. Binary files hold no text to search. Only REST
@@ -202,20 +159,18 @@ pub(super) fn unsearched_files(
         .collect()
 }
 
-/// A commit or comparison file scope: the `path` prefix and the `include`
-/// paths/globs (any-of). A rename matches by its new or previous path.
+/// A commit or comparison file scope: the `include` paths, `dir/`
+/// prefixes and globs (any-of). A rename matches by its new or previous
+/// path.
 pub(super) struct PathScope(Vec<PathPattern>);
 
 impl PathScope {
     pub(super) fn from_query(query: &HistoryItemRequest) -> Result<Option<Self>, String> {
-        let mut patterns = query
-            .path()
-            .map(|path| PathPattern::Scope(path.to_owned()))
-            .into_iter()
-            .collect::<Vec<_>>();
-        for pattern in &query.file_scope {
-            patterns.push(PathPattern::parse(pattern)?);
-        }
+        let patterns = query
+            .file_scope
+            .iter()
+            .map(|pattern| PathPattern::parse(pattern))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok((!patterns.is_empty()).then_some(Self(patterns)))
     }
 

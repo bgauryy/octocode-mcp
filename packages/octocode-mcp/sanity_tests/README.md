@@ -24,8 +24,8 @@ These run with `npx vitest run` and gate every change:
 | Package and topology executable page unions | `packages/octocode-native/crates/runtime/src/tools/artifact_search`, `packages/octocode-native/crates/runtime/src/tools/ast_graph` |
 
 The markdown here covers what a unit test can't cheaply assert: **live** cursor
-walks to completion, real-result quality spot-checks, and concise-vs-basic token
-comparisons.
+walks to completion, real-result quality spot-checks, and default-vs-`fields`
+row-size comparisons.
 
 ## Tools
 

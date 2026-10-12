@@ -31,12 +31,14 @@ This reference is generated from [`packages/octocode-config/config-contract.json
   "network": {
     "timeout": 30000,
     "maxRetries": 3,
+    "maxRateLimitWait": 45000,
     "allowPrivateRegistry": false
   },
   "lsp": {
     "configPath": null,
     "autoInstall": "prompt",
     "cacheDir": null,
+    "maxMemoryMb": null,
     "trustProjectConfig": false,
     "prewarm": "targeted"
   },
@@ -83,10 +85,12 @@ Environment values take precedence over `.octocoderc`. Aliases are listed in pri
 | `mcp.deferred` | `OCTOCODE_DEFER_TOOLS` | unset | string array | Available tools left out of tools/list; one run({tool, query}) tool executes them and next/hints leads that name them. |
 | `network.timeout` | `REQUEST_TIMEOUT` | `30000` | integer (5000–300000) | Request timeout in milliseconds. |
 | `network.maxRetries` | `MAX_RETRIES` | `3` | integer (0–10) | Maximum retries after a failed request. |
+| `network.maxRateLimitWait` | `OCTOCODE_MAX_RATE_LIMIT_WAIT` | `45000` | integer (0–300000) | Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter. Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply. |
 | `network.allowPrivateRegistry` | `OCTOCODE_ALLOW_PRIVATE_REGISTRY` | `false` | boolean | Allow private, loopback, or link-local artifact registries. Security-sensitive SSRF escape hatch; opt in only for trusted enterprise registries. OCTOCODE_ALLOW_PRIVATE_REGISTRY: shell or trusted home .env |
 | `lsp.configPath` | `OCTOCODE_LSP_CONFIG` | unset | string | Optional path to a custom lsp-servers.json. OCTOCODE_LSP_CONFIG: shell or trusted home .env |
 | `lsp.autoInstall` | `OCTOCODE_LSP_AUTO_INSTALL` | `"prompt"` | `prompt` or `off` or `auto` | Whether `octocode lsp-server install` may download a managed language server: prompt (ask), off, or auto. OCTOCODE_LSP_AUTO_INSTALL: shell or trusted home .env |
 | `lsp.cacheDir` | `OCTOCODE_LSP_CACHE_DIR` | unset | path | Directory for managed language-server installs; default <octocode home>/lsp. OCTOCODE_LSP_CACHE_DIR: shell or trusted home .env |
+| `lsp.maxMemoryMb` | `OCTOCODE_LSP_MAX_MEMORY_MB` | unset | string | Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable). OCTOCODE_LSP_MAX_MEMORY_MB: shell or trusted home .env |
 | `lsp.trustProjectConfig` | `OCTOCODE_TRUST_PROJECT_LSP_CONFIG` | `false` | boolean | Trust a project .octocode/lsp-servers.json. Security-sensitive: a trusted project config can launch server binaries. OCTOCODE_TRUST_PROJECT_LSP_CONFIG: shell or trusted home .env |
 | `lsp.prewarm` | `OCTOCODE_LSP_PREWARM` | `"targeted"` | `targeted` or `all` or `off` | Language-server prewarm: targeted starts the server an offered lspSearch call names; all also warms the file a read or search names; off disables it. |
 | `output.format` | `OCTOCODE_OUTPUT_FORMAT` | `"yaml"` | `yaml` or `json` | Encoding of rendered text content (the MCP text channel): yaml or json. Structured content and CLI stdout are always JSON. |

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -139,10 +139,46 @@ describe('project trust', () => {
   });
 
   it('trusts a project Pi resolved trust for (it holds Pi-protected resources) without asking', async () => {
-    const cwd = project({ '.codex/hooks.json': MCP, '.pi/settings.json': '{}' });
+    const cwd = project({ '.pi/agents/a.md': '# agent', '.pi/settings.json': '{}' });
     const piTrusted = ctx(cwd);
     expect(await projectTrust(piTrusted)).toBe(true);
     expect(piTrusted.ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it('does not extend Pi\'s trust to hooks that start commands: they wait for /octocode trust, which shows them', async () => {
+    const cwd = project({ '.codex/hooks.json': MCP, '.pi/settings.json': '{}' });
+    const piTrusted = ctx(cwd);
+    expect(projectTrustNow(piTrusted)).toBeUndefined();
+    expect(await projectTrust(piTrusted)).toBe(false);
+    expect(piTrusted.ui.notify).toHaveBeenCalledWith(expect.stringMatching(/\/octocode trust/), 'warning');
+    expect(describeProjectConfig(cwd)).toMatch(/hooks\.json:/);
+  });
+
+  it('keeps both decisions when two sessions save to the store at once', async () => {
+    const store = path.join(process.env['OCTOCODE_HOME']!, 'pi-trust.json');
+    fs.writeFileSync(store, '{}\n');
+    // Another session holds the store lock while it reads, changes and writes the store.
+    const other = `
+      const fs = require('node:fs');
+      fs.writeFileSync(process.argv[1] + '.lock', '');
+      const before = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+      fs.writeFileSync(process.argv[1], JSON.stringify({ ...before, other: { sha: 'sha-two', trusted: true } }));
+      fs.rmSync(process.argv[1] + '.lock');`;
+    const child = spawn(process.execPath, ['-e', other, store], { stdio: 'ignore' });
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    while (!fs.existsSync(`${store}.lock`)) await new Promise((resolve) => setTimeout(resolve, 5));
+    saveDecision(project({ '.pi/agents/a.md': '# a' }), 'sha-one', true);
+    await exited;
+    const saved = JSON.parse(fs.readFileSync(store, 'utf8')) as Record<string, { sha: string }>;
+    expect(Object.values(saved).map((entry) => entry.sha).sort()).toEqual(['sha-one', 'sha-two']);
+    expect(fs.existsSync(`${store}.lock`)).toBe(false);
+    // A crashed holder's lock does not block a save.
+    fs.writeFileSync(`${store}.lock`, '');
+    const old = new Date(Date.now() - 60_000);
+    fs.utimesSync(`${store}.lock`, old, old);
+    saveDecision(project({ '.pi/agents/b.md': '# b' }), 'sha-three', true);
+    expect(Object.keys(JSON.parse(fs.readFileSync(store, 'utf8')))).toHaveLength(3);
   });
 
   it('gates agents and skills too, and /octocode trust [off] records the decision and reloads', async () => {

@@ -92,7 +92,7 @@ Test only controls the public operation supports.
 | Surface | Supported content controls | Required comparisons |
 |---|---|---|
 | Local / GitHub file fetch | `none`, `standard`, `symbols`; selectors; line or UTF-8 byte windows. | Exact source, matched text, outline, fallback metadata, continuation union; GitHub: pinned commit, parity, distinct offsets. |
-| GitHub code search, PR/issue discovery | `concise`; no `minify`. | Snippets keep matched evidence and positions; list continuations; unsupported controls rejected. |
+| GitHub code search, PR/issue discovery | `fields` (keeps each row's id); no `minify`. | Snippets keep matched evidence and positions; list continuations; unsupported controls rejected. |
 | PR detail | `none`, `standard`; bodies, patches, comments, reviews, commits. | Exact text with `none`; every content surface and continuation. |
 | Issue detail | Body/comment selectors, character windows; no `minify`. | Selected text; all reachable comment/body windows. |
 | Commit/compare | `sections:["patches"]`, `include` path selection, file and character windows; no `minify`. | Diff lines, immutable identity; absent/omitted patch vs empty change. |

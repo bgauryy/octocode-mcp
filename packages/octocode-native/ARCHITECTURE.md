@@ -55,6 +55,7 @@ Nested context supports the available read tools; recursive semantic assessment,
 | `tools` | Public operations composed from shared runtime services and engine primitives | Independent config, auth, or response systems |
 | `response` | Contract-checked rows, compression, pagination, continuations, and sanitized rendering | Tool execution |
 | `tools/lsp_search` + `runtime/domain_dispatch` | Runtime composition around the engine language-server pool (pool owned by the runtime engine, dispatched and prewarmed through `domain_dispatch`) | A second lifecycle implementation |
+| `tools/<shared>` (the list and each module's purpose live in `tools/module_boundaries.rs` `SHARED_MODULES`) | Logic two or more tools use: for example `empty_walk` (why an empty local walk is empty and the minimal flags that lift it), `leads` (follow-up queries one tool offers into another), `page_windows` (byte-budget page sizing), `declarations_cache`, `gh_shared` | Tool-specific behavior. A tool never imports another tool's module; the guard test fails on a new edge, and its `ALLOWED_EDGES` names the one exception (`gh_get_file_content` → `local_fetch`, one view engine) |
 | `tools/ast_graph/store` | CLI-only persisted code graph (`npx octocode graph ingest` / `graph query`): immutable snapshots under `<workspace>/.octocode/graph/` | A public tool contract or MCP surface |
 | `crates/runtime-napi` | Host conversion and native runtime lifecycle | An alternate execution path |
 | `crates/cli` | Arguments, human output, and shell exits | Node, N-API, or duplicated tools |
@@ -69,6 +70,8 @@ persistent, and there is no process-global cache. `crates/cli` owns `octocode` a
 `octocode-regex-worker`; `crates/runtime-napi` owns the runtime `cdylib` and its
 Node conversions. All five crates inherit one workspace version and remain
 unpublished Cargo packages.
+
+The engine's `scan_budget` holds the time and walk budget of an unbounded scan (no caller `maxFiles`): it stops at a chunk boundary past the budget and returns the walk-order index to resume from, and `lsp/module_path` anchors bundled language-server lookup at the loaded module (the N-API addon or the CLI binary), not at `current_exe()`, which is `node` under MCP.
 
 `crates/engine` is consumed as a Rust library with its default grammar set. PCRE2 and embedded ast-grep rewrite are unconditional; only `tree-sitter-cuda` is outside the default build. It exposes reusable algorithms, not public policy, and has no N-API surface; `crates/runtime-napi` does not depend on it. Engine errors carry a `reason` and an `ErrorKind`.
 
@@ -140,10 +143,10 @@ Generic text search, reads, minification, file recognition, GitHub/history opera
 - Every completed row is checked against its generated tool output contract.
 - Pagination and continuations retain the query identity needed to resume safely.
 - Search classification handoffs preserve the search brief and scope, screen snippets for relevance and sufficiency, and keep remaining candidates reachable through `next.clasify`.
-- `localFetch` and `ghGetFileContent` share extraction: literal and regex matches use original byte coordinates and include every source line touched by a multiline match. Case-insensitive Unicode normalization never supplies offsets for slicing original content.
+- `localFetch` and `ghGetFileContent` share extraction: literal and regex matches use original byte coordinates and include every source line touched by a multiline match. Case-insensitive Unicode normalization never supplies offsets for slicing original content. `regex:"rust"` is the Rust regex engine `localSearch` also runs, so one pattern has one verdict and reason in both tools at any file size; backreferences and lookaround need `regex:"pcre2"`.
 - Structural rewrite uses embedded engine primitives while the tool layer retains locks, hashes, path policy, selection, postconditions, transactions, and recovery.
 - Public rewrite paths (rows, patch headers, `expectedHashes` keys) are workspace-relative like every local tool's rows; guarded apply resolves relative keys against the workspace root and also accepts absolute keys. Match ids stay keyed on the scanned-directory path, and the snapshot carries a contract version, so a preview from an older path form fails closed with `staleSnapshot` and `next.restart`.
-- No external search, AST, rewrite, or provider executable is used. Intentional subprocesses are limited to system Git cloning, configured language servers, the bounded regex worker, and supported credential discovery.
+- No external search, AST, rewrite, or provider executable is used. Intentional subprocesses are limited to system Git cloning, configured language servers, and supported credential discovery.
 
 ## Contract generation
 

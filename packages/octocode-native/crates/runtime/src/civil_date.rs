@@ -2,16 +2,7 @@
 //! `civil_from_days`), shared by every timestamp parser and formatter so the
 //! runtime needs no date crate.
 
-/// Days since 1970-01-01 for a proleptic Gregorian date. `month` is 1-based.
-pub(crate) fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
-    let year = year - i64::from(month <= 2);
-    let era = year.div_euclid(400);
-    let year_of_era = year - era * 400;
-    let month_prime = month + if month > 2 { -3 } else { 9 };
-    let day_of_year = (153 * month_prime + 2) / 5 + day - 1;
-    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
-    era * 146_097 + day_of_era - 719_468
-}
+pub(crate) use octocode_github::days_from_civil;
 
 /// `(year, month, day)` for a count of days since 1970-01-01; month and day
 /// are 1-based.

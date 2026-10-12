@@ -7,7 +7,9 @@ use crate::types::{
     TextSearchOptions, TextSearchResult, YamlConversionConfig,
 };
 
-pub use crate::search::text_pattern::{TextPatternValidationResult, validate_text_pattern};
+pub use crate::search::text_pattern::{
+    TextPatternValidationResult, matches_line_break, validate_text_pattern,
+};
 pub use crate::signatures::{
     extract_declarations, extract_graph_facts, extract_graph_facts_with_extension,
 };
@@ -34,7 +36,7 @@ pub fn apply_content_view_minification(content: &str, file_path: &str) -> String
 
 /// Run a content transform on the deep-stack pool. A panic or an unavailable
 /// pool yields `None` there, so the caller gets the original content rather
-/// than `String::default()`, an empty view (review L13).
+/// than `String::default()`, an empty view.
 fn transform_on_deep_stack(
     content: &str,
     transform: impl FnOnce(&str) -> String + Send + 'static,
@@ -53,7 +55,6 @@ pub fn query_file_system_filtered(
 ) -> Result<FileSystemQueryResult> {
     guard_panic("filesystem query", || {
         crate::search::fs_query::query_file_system_filtered_inner(options, allow_path)
-            .map_err(Error::new)
     })
 }
 
@@ -70,7 +71,6 @@ pub fn query_file_system_typed(
 ) -> Result<FileSystemQueryResult> {
     guard_panic("filesystem query", || {
         crate::search::fs_query::query_file_system_typed_inner(options, allow_path)
-            .map_err(Error::new)
     })
 }
 
@@ -84,6 +84,7 @@ pub fn scan_typed_graph_facts_filtered(
 }
 
 pub use crate::search::pcre2_ranges::{Pcre2RangesError, pcre2_find_ranges};
+pub use crate::search::rust_ranges::{RustRangesError, rust_find_ranges};
 pub use crate::search::text_search::TextSearchPathFilter;
 
 /// Text search restricted by `path_filter` that stops walking at the next
@@ -101,6 +102,15 @@ pub fn search_text_cancellable(
 
 pub fn sanitize_content(content: &str, file_path: Option<&str>) -> Result<SanitizationResult> {
     std::panic::catch_unwind(|| crate::security::sanitizer::sanitize_content(content, file_path))
+        .map_err(|_| Error::new("content sanitization failed on pathological input"))
+}
+
+/// [`sanitize_content`] for a string leaf of a result about the file at
+/// `source_path`: the path tells the language only, so source code is not
+/// mistaken for configuration syntax while every other pattern applies exactly
+/// as in the pathless output net.
+pub fn sanitize_leaf(content: &str, source_path: &str) -> Result<SanitizationResult> {
+    std::panic::catch_unwind(|| crate::security::sanitizer::sanitize_leaf(content, source_path))
         .map_err(|_| Error::new("content sanitization failed on pathological input"))
 }
 
@@ -213,7 +223,7 @@ pub fn json_to_yaml_string(
 mod tests {
     use super::*;
 
-    /// Review L13: a transform that panics (or a pool that cannot run it)
+    /// A transform that panics (or a pool that cannot run it)
     /// yields the original content, never an empty content view.
     #[test]
     fn failed_deep_stack_transform_returns_the_original_content() {

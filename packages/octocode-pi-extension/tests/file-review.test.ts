@@ -54,7 +54,9 @@ describe('file change review', () => {
     fs.writeFileSync(path.join(cwd, 'a.ts'), 'const a = 1;\n');
     let tool: { execute: Function } | undefined;
     const review = { on: true };
-    registerFileTool({ registerTool: (definition: never) => (tool = definition), on: () => undefined } as never, new FileGuard(), review);
+    const guard = new FileGuard();
+    guard.record(path.join(cwd, 'a.ts'));
+    registerFileTool({ registerTool: (definition: never) => (tool = definition), on: () => undefined } as never, guard, review);
     const batch = { queries: [{ type: 'edit', path: 'a.ts', reasoning: 'bump', edits: [{ oldText: '1', newText: '2' }] }, { type: 'write', path: 'b.ts', reasoning: 'add', content: 'x' }] };
     const dialog = ui({ select: 'Review one by one', confirms: [true, false] });
     const ctx = { cwd, hasUI: true, ui: (dialog.ctx as { ui: unknown }).ui };

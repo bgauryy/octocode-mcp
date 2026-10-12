@@ -247,6 +247,13 @@ pub struct GraphFactsTypedScanResult {
     pub skipped: Vec<crate::types::GraphFactsScanDiagnostic>,
     pub files_skipped: u32,
     pub truncated: bool,
+    /// Where a truncated scan resumes: the walk-order index of the first
+    /// unread file (pass it back as `skip_files`). `None` when the scan is
+    /// complete, or was cut by an explicit `max_files`.
+    pub scan_resume: Option<u32>,
+    /// Root-relative paths of the directories `exclude_dir` pruned, in walk
+    /// order: what an outline of the scope did not cover.
+    pub pruned_dirs: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq, Ord, PartialOrd)]

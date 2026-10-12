@@ -1,5 +1,5 @@
 import type { AgentDb } from '../agentdb/db.js';
-import { processAlive } from '../shared/process.js';
+import { sessionRunningPid } from '../agentdb/liveness.js';
 import { sanitizeTerminalText, secretProblem, storedText } from '../shared/sanitize.js';
 
 /**
@@ -289,13 +289,8 @@ export class BacklogStore {
 
   /** `assignee` when it is a session whose process still runs, else undefined (a finished session's claim can be taken over). */
   liveHolder(assignee: string): string | undefined {
-    const row = this.db.prepare('SELECT pid FROM sessions WHERE id = ?').get(assignee) as { pid: number | null } | undefined;
-    return row && processAlive(row.pid) && row.pid !== process.pid ? assignee : undefined;
-  }
-
-  /** Sessions run by process `pid` (a subagent's parent Pi is its parent process). */
-  sessionsOf(pid: number): string[] {
-    return (this.db.prepare('SELECT id FROM sessions WHERE pid = ?').all(pid) as Array<{ id: string }>).map((row) => row.id);
+    const pid = sessionRunningPid(this.db, assignee);
+    return pid !== undefined && pid !== process.pid ? assignee : undefined;
   }
 }
 

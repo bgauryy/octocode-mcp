@@ -369,10 +369,9 @@ fn deeply_nested_iife_outline_stays_inside_the_deadline() {
         ));
     }
     source.push_str(&"})();\n".repeat(depth));
-    let started = std::time::Instant::now();
-    let outline =
-        crate::signatures::extract_signatures_inner(&source, "nested.js").expect("outline");
-    let elapsed = started.elapsed();
+    let (outline, elapsed) = crate::test_cpu::cpu_time_of(|| {
+        crate::signatures::extract_signatures_inner(&source, "nested.js").expect("outline")
+    });
     assert!(outline.contains("function helper0(n)"), "{outline}");
     assert!(outline.contains("function helper399(n)"), "{outline}");
     assert!(!outline.contains("SECRET_BODY_LINE"), "{outline}");

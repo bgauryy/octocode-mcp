@@ -1,4 +1,5 @@
 import { dim } from './utils/colors.js';
+import { reportCrash } from './cli/crash.js';
 import { terminateForSignal } from './cli/process-lifecycle.js';
 
 async function main(): Promise<void> {
@@ -18,29 +19,11 @@ function isExitPromptError(error: unknown): boolean {
   );
 }
 
-function wantsJsonOutput(): boolean {
-  return process.argv.slice(2).includes('--json');
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 main().catch((err: unknown) => {
   if (isExitPromptError(err)) {
     console.log();
     console.log(dim('  Goodbye! 👋'));
     process.exit(0);
   }
-  if (wantsJsonOutput()) {
-    console.log(
-      JSON.stringify({
-        success: false,
-        error: errorMessage(err),
-      })
-    );
-    process.exit(1);
-  }
-  console.error('Error:', err);
-  process.exit(1);
+  process.exit(reportCrash(err, process.argv.slice(2)));
 });

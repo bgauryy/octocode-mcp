@@ -5,9 +5,9 @@ use super::leads::ENCLOSING_MAX_FILES;
 use super::types::*;
 use super::{cursor::*, layout::*};
 use crate::security::ContentSecurity;
-use crate::tools::ast_search::MAX_PARSE_SOURCE_BYTES;
 use crate::tools::cancel::CancellationCheck;
 use crate::tools::result::ToolError;
+use octocode_engine::signatures::MAX_PARSE_SIZE;
 use sha2::{Digest, Sha256};
 
 /// Upper bound (bytes) on a file re-read for the private-key block scan.
@@ -94,7 +94,7 @@ pub(super) fn redact_scan(
             file.path = relative.to_string_lossy().into_owned();
         }
         let source_path = output_root.join(&file.path);
-        let key_ranges = if file
+        let key_source = if file
             .matches
             .iter()
             .any(|m| crate::security::snippet_may_hold_key_material(&m.value))
@@ -112,22 +112,31 @@ pub(super) fn redact_scan(
             }
             bytes
                 .map(|bytes| {
-                    crate::security::private_key_block_line_ranges(&String::from_utf8_lossy(&bytes))
+                    let text = String::from_utf8_lossy(&bytes).into_owned();
+                    (crate::security::private_key_block_line_ranges(&text), text)
                 })
-                .unwrap_or_default()
+                .filter(|(ranges, _)| !ranges.is_empty())
         } else {
-            Vec::new()
+            None
         };
+        let key_lines = key_source
+            .as_ref()
+            .map(|(ranges, text)| (ranges, text.lines().collect::<Vec<_>>()));
         for (match_index, matched) in file.matches.iter_mut().enumerate() {
             cancel.check().map_err(ToolError::cancelled)?;
-            let changed = if !key_ranges.is_empty()
+            let changed = if let Some((ranges, lines)) = &key_lines
                 && crate::security::match_window_intersects_key_block(
                     matched.line,
                     &matched.value,
-                    &key_ranges,
+                    ranges,
                 ) {
-                matched.value = crate::security::key_fragment_placeholder();
-                true
+                let kept = redact_key_block_lines(matched.line, &matched.value, ranges, |n| {
+                    lines.get((n as usize).checked_sub(1)?).copied()
+                });
+                let sanitized = security.sanitize_text(&kept, Some(&source_path));
+                let changed = sanitized.content != matched.value;
+                matched.value = sanitized.content;
+                changed
             } else {
                 let sanitized = security.sanitize_text(&matched.value, Some(&source_path));
                 let changed = sanitized.content != matched.value;
@@ -143,6 +152,80 @@ pub(super) fn redact_scan(
         }
     }
     Ok((redacted, record))
+}
+
+/// `value` (a match row whose `line` is the match) with each of its lines
+/// that lies inside a private-key block replaced by the key placeholder,
+/// so context lines beside a block stay readable. The value's first source
+/// line is found by aligning its lines with `source` (1-based lines); a
+/// line is redacted when any alignment puts it inside a block. A value no
+/// alignment fits is redacted whole: fail closed.
+fn redact_key_block_lines<'a>(
+    line: u32,
+    value: &str,
+    ranges: &[(u32, u32)],
+    source: impl Fn(u32) -> Option<&'a str>,
+) -> String {
+    let placeholder = crate::security::key_fragment_placeholder();
+    let value_lines: Vec<&str> = value.lines().collect();
+    let in_block = |n: u32| ranges.iter().any(|&(s, e)| s <= n && n <= e);
+    // A line a sanitizer already redacted fits where its unredacted
+    // segments do.
+    let fits = |value_line: &str, n: u32| {
+        let core = strip_clip_markers(value_line).trim();
+        source(n).is_some_and(|source| {
+            redaction_placeholder()
+                .split(core)
+                .map(str::trim)
+                .all(|segment| segment.is_empty() || source.contains(segment))
+        })
+    };
+    let mut redact = vec![false; value_lines.len()];
+    let mut aligned = false;
+    for offset in 0..value_lines.len().max(1) as u32 {
+        let Some(first) = line.checked_sub(offset).filter(|first| *first >= 1) else {
+            break;
+        };
+        if !value_lines
+            .iter()
+            .enumerate()
+            .all(|(i, value_line)| fits(value_line, first + i as u32))
+        {
+            continue;
+        }
+        aligned = true;
+        for (i, flag) in redact.iter_mut().enumerate() {
+            *flag |= in_block(first + i as u32);
+        }
+    }
+    if !aligned {
+        return placeholder;
+    }
+    let mut out = value_lines
+        .iter()
+        .zip(&redact)
+        .map(|(value_line, redact)| {
+            if *redact {
+                placeholder.as_str()
+            } else {
+                value_line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    if value.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// A redaction placeholder (`[REDACTED-GITHUBTOKENS]`).
+fn redaction_placeholder() -> &'static regex::Regex {
+    static PLACEHOLDER: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        #[allow(clippy::expect_used)]
+        regex::Regex::new(r"\[(?:CONTENT-)?REDACTED-[A-Z0-9_-]+\]").expect("static pattern")
+    });
+    &PLACEHOLDER
 }
 
 /// The bytes a key-block scan reads: the whole file within
@@ -278,7 +361,7 @@ pub(super) fn verify_shown(
         let outlined = shows_rows && files_with_rows < ENCLOSING_MAX_FILES;
         files_with_rows += usize::from(shows_rows);
         let bytes = outlined
-            .then(|| crate::tools::source::read_bounded(&source, MAX_PARSE_SOURCE_BYTES).ok())
+            .then(|| crate::tools::source::read_bounded(&source, MAX_PARSE_SIZE).ok())
             .flatten();
         let match_only = query.result_view == LocalSearchQueryResultView::MatchOnly;
         let expected = expected_digest(&source);
@@ -469,7 +552,11 @@ pub(super) fn guard_read<R: std::io::Read>(
                 &read.key_ranges,
             )
         {
-            matched.value = crate::security::key_fragment_placeholder();
+            let kept =
+                redact_key_block_lines(matched.line, &matched.value, &read.key_ranges, |n| {
+                    read.retained.get(&(n as usize)).map(String::as_str)
+                });
+            matched.value = security.sanitize_text(&kept, Some(source)).content;
             continue;
         }
         let line = matched.line as usize;
@@ -746,6 +833,7 @@ mod verification_tests {
         octocode_engine::types::TextSearchMatch {
             line,
             column: 0,
+            byte_offset: 0,
             value: value.into(),
             count: None,
             kind: None,
@@ -945,5 +1033,35 @@ mod verification_tests {
         )
         .expect_err("cancelled during the stream");
         assert_eq!(reason, "Cancelled");
+    }
+
+    /// Context lines beside a key block stay readable; only the lines
+    /// inside the block are redacted.
+    #[test]
+    fn key_block_redaction_is_line_precise() {
+        let source = [
+            "const filler393 = \"match_me 393\";",
+            "const filler394 = \"match_me 394\";",
+            "-----BEGIN RSA PRIVATE KEY-----",
+            "MIIEowIBAAKCAQEAexamplebodyexamplebodyexample",
+            "-----END RSA PRIVATE KEY-----",
+        ];
+        let at = |n: u32| source.get((n as usize).checked_sub(1)?).copied();
+        let ranges = [(3, 5)];
+        let placeholder = crate::security::key_fragment_placeholder();
+        // Match on line 2 with one context line each side (lines 1-3).
+        let value = format!("{}\n{}\n{}", source[0], source[1], source[2]);
+        assert_eq!(
+            redact_key_block_lines(2, &value, &ranges, at),
+            format!("{}\n{}\n{placeholder}", source[0], source[1])
+        );
+        // An already-redacted value still aligns.
+        let redacted = format!("{}\n{placeholder}\n{placeholder}", source[1]);
+        assert_eq!(redact_key_block_lines(3, &redacted, &ranges, at), redacted);
+        // A value no alignment fits fails closed.
+        assert_eq!(
+            redact_key_block_lines(2, "not in the source\nMIIEowIB", &ranges, at),
+            placeholder
+        );
     }
 }

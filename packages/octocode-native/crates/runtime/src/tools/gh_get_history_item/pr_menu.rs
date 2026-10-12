@@ -1,5 +1,6 @@
 //! The pull-request read menu: the public query a continuation starts from,
 //! the section menu, and the merge-commit read.
+use super::patch::hunks::DIFF_CONTEXT_LINES;
 use super::util::{content_flag, merge};
 use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, ItemOperation};
 use crate::tools::id::ToolId;
@@ -9,15 +10,13 @@ use serde_json::{Map, Value, json};
 /// The caller's query as a working query for `operation`: the public fields,
 /// with the pull-request/issue selection held as the internal `content`
 /// selector (builders edit it); [`flatten_selectors`] turns it back into the
-/// public `sections`/`include`/`patchRanges`/`includeBots` on emission.
+/// public `sections` on emission.
 pub(super) fn base_public_query(q: &HistoryItemRequest, operation: ItemOperation) -> Value {
     let mut v = serde_json::to_value(&q.query).unwrap_or_default();
     remove_nulls(&mut v);
     if let Some(m) = v.as_object_mut() {
         if matches!(operation, ItemOperation::PullRequest | ItemOperation::Issue) {
-            for key in ["sections", "patchRanges", "includeBots"] {
-                m.remove(key);
-            }
+            m.remove("sections");
             if let Some(content) = q.content_value() {
                 m.insert("content".into(), content);
             }
@@ -48,7 +47,6 @@ pub(super) fn base_public_query(q: &HistoryItemRequest, operation: ItemOperation
             }
             ItemOperation::Compare => {
                 m.insert("page".into(), json!(q.page().unwrap_or(1)));
-                m.insert("filePage".into(), json!(q.file_page().unwrap_or(1)));
                 m.insert(
                     "pageSize".into(),
                     json!(q.page_size().unwrap_or(DEFAULT_PAGE_SIZE)),
@@ -90,8 +88,7 @@ pub(super) const PR_SECTION_ORDER: [&str; 8] = [
 ];
 
 /// Rewrite a working pull-request or issue query's internal `content` into
-/// the public `sections`, `include` (selected patch files), `patchRanges`
-/// and `includeBots`. Lossless: every internal selector has one public
+/// the public `sections`. Lossless: every internal selector has one public
 /// spelling.
 pub(super) fn flatten_selectors(query: &mut Value) {
     let Some(fields) = query.as_object_mut() else {
@@ -106,9 +103,7 @@ pub(super) fn flatten_selectors(query: &mut Value) {
     let Some(content) = fields.remove("content") else {
         return;
     };
-    for key in ["sections", "patchRanges", "includeBots"] {
-        fields.remove(key);
-    }
+    fields.remove("sections");
     let flag = |key: &str| content.get(key).and_then(Value::as_bool) == Some(true);
     let mut sections = Vec::new();
     if flag("body") {
@@ -121,22 +116,6 @@ pub(super) fn flatten_selectors(query: &mut Value) {
         && patches.get("mode").and_then(Value::as_str) != Some("none")
     {
         sections.push("patches");
-        if patches.get("mode").and_then(Value::as_str) == Some("selected") {
-            if let Some(files) = patches
-                .get("files")
-                .and_then(Value::as_array)
-                .filter(|files| !files.is_empty())
-            {
-                fields.insert("include".into(), Value::Array(files.clone()));
-            }
-            if let Some(ranges) = patches
-                .get("ranges")
-                .and_then(Value::as_array)
-                .filter(|ranges| !ranges.is_empty())
-            {
-                fields.insert("patchRanges".into(), Value::Array(ranges.clone()));
-            }
-        }
     }
     if let Some(comments) = content.get("comments").and_then(Value::as_object) {
         let set = |key: &str| comments.get(key).and_then(Value::as_bool) == Some(true);
@@ -145,9 +124,6 @@ pub(super) fn flatten_selectors(query: &mut Value) {
         }
         if set("reviewInline") {
             sections.push("reviewComments");
-        }
-        if set("includeBots") {
-            fields.insert("includeBots".into(), json!(true));
         }
     }
     if flag("reviews") {
@@ -186,17 +162,7 @@ pub(super) const INVENTORY_ALL_PATCHES_FILES: u64 = 30;
 pub(super) fn fresh_pr_query(query: &HistoryItemRequest) -> Value {
     let mut target = base_public_query(query, ItemOperation::PullRequest);
     if let Some(object) = target.as_object_mut() {
-        for key in [
-            "content",
-            "offset",
-            "length",
-            "commentPage",
-            "commitPage",
-            "reviewPage",
-            "filePage",
-            "page",
-            "matchString",
-        ] {
+        for key in ["content", "offset", "length", "page", "matchString"] {
             object.remove(key);
         }
     }
@@ -273,7 +239,10 @@ pub(super) fn pr_next_menu(
         if !review.is_empty() && !covers_all {
             // The query is exact; which files answer the question is a
             // ranking guess (source files by churn, packed to one budget).
-            let mut selected = call(json!({"patches":{"mode":"selected","files":review}}));
+            let mut selected = menu_read(merge(
+                target.clone(),
+                json!({"include": review, "sections": ["patches"]}),
+            ));
             selected["confidence"] = json!("high");
             next.insert("readSelectedPatches".into(), selected);
             if changed_files.is_none_or(|files| files <= INVENTORY_ALL_PATCHES_FILES) {
@@ -335,7 +304,7 @@ const DISTINCTIVE_LINE_MAX: usize = 200;
 /// its most-changed code file (not a test) at the merge commit, searched for
 /// one distinctive added line per hunk (at most [`MERGE_MATCH_LINES`]), so
 /// the fix is checked in the code that shipped. The diff's line numbers
-/// belong to `sourceSha`; the target branch may have moved the lines by the
+/// belong to `headSha`; the target branch may have moved the lines by the
 /// merge, so the read locates them by text, never by number. `files` is
 /// every loaded provider file (`filename`, `additions`, `deletions`,
 /// `patch`), not only the patch window shown. `None` for unmerged pull
@@ -591,9 +560,6 @@ pub(super) fn change_reads(
     reads
 }
 
-/// Context lines a unified diff keeps around each change.
-pub(super) const DIFF_CONTEXT_LINES: usize = 3;
-
 /// The `(start, count)` of a hunk header's `mark` side (`-` or `+`).
 fn hunk_side(header: &str, mark: char) -> Option<(usize, usize)> {
     let side = header.split(' ').find_map(|part| part.strip_prefix(mark))?;
@@ -616,7 +582,7 @@ pub(super) fn remove_key(value: &mut Value, key: &str) {
 mod tests {
     use super::*;
 
-    /// HI8: a file GitHub sent without a readable patch (tooLarge, omitted)
+    /// A file GitHub sent without a readable patch (tooLarge, omitted)
     /// is read at both sides, whole, ahead of the most-changed patched
     /// file; a binary file or a GraphQL node (no blob sha) never is.
     #[test]

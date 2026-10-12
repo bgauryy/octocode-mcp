@@ -1,5 +1,5 @@
-// Response sensors shared by the competitor harness (RFC tool-quality-efficiency
-// S1): continuation (hint) walking, schema-error counting, the verbose-field
+// Response sensors shared by the competitor harness (RFC tool-quality-efficiency):
+// continuation (hint) walking, schema-error counting, the verbose-field
 // report, body hash + key byte shares, and the byte-regression gate (pinned
 // anchor plus rolling baseline). Pure functions only; `--self-test` runs them
 // on synthetic responses.
@@ -46,7 +46,7 @@ export function leadEntries(holder, tool = '') {
   if (!holder || typeof holder !== 'object' || Array.isArray(holder)) return [];
   return [...hintEntries(holder.hints), ...hintEntries(holder.next).filter(e => !isPageName(e.name, tool))];
 }
-/** Largest lead menu (the R2 cap applies to leads; `next` pages are uncapped) under a node. */
+/** Largest lead menu (the cap applies to leads; `next` pages are uncapped) under a node. */
 export function maxLeadEntries(node, tool = responseTool(node)) {
   let max = 0;
   const walk = n => {

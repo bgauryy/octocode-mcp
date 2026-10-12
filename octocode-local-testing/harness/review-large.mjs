@@ -13,7 +13,7 @@ try {
   const pr=rowData(e)?.pullRequests?.[0];
   check('page '+(pages+1)+' has file metadata',Array.isArray(pr?.files)&&pr.files.length>0);
   check('page '+(pages+1)+' excludes patches',inventoryRows(pr?.files).every(f=>f.path&&!Object.hasOwn(f,'patch')));
-  check('page '+(pages+1)+' preserves head SHA',pr?.sourceSha===m.sourceSha);
+  check('page '+(pages+1)+' preserves head SHA',pr?.headSha===m.headSha);
   files.push(...inventoryRows(pr?.files));
   const next=nextHints(e.sc).find(h=>h.path.endsWith('.next.nextFilePage'));
   e=next?await run('inventory page '+(pages+2),null,next):null;
@@ -31,7 +31,7 @@ try {
  if(!res.ok)throw Error('independent GitHub files oracle HTTP '+res.status);
  apiFiles.push(...await res.json());
  }
- // HI8: an `omitted` row (no counts) must be a file GitHub sent with 0/0 and no patch; every other row's counts equal the API's.
+ // An `omitted` row (no counts) must be a file GitHub sent with 0/0 and no patch; every other row's counts equal the API's.
  const statsMatch=(row,f)=>row.patchUnavailable==='omitted'?row.additions===undefined&&f.additions===0&&f.deletions===0&&!Object.hasOwn(f,'patch'):row.additions===f.additions&&row.deletions===f.deletions;
  check('inventory paths and stats equal independent API',apiFiles.length===files.length&&apiFiles.every((f,i)=>files[i].path===f.filename&&statsMatch(files[i],f)),files.filter(r=>r.patchUnavailable==='omitted').length+' omitted');
 } catch(error){check('audit completes',false,error.stack)} finally {const result=summary();writeResults('review-large',{at:new Date().toISOString(),...result,calls});console.table(calls.map(({label,ms,bytes})=>({label,ms,bytes})));c.close();process.exitCode=result.failed.length?1:0;}

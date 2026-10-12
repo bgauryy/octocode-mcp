@@ -20,7 +20,7 @@ fn numbered_file(tag: &str, lines: usize) -> String {
 fn numbered_lines(content: &str, into: &mut BTreeMap<usize, String>) {
     for record in content.lines() {
         let Some((number, text)) = record.split_once('\t') else {
-            assert!(record.starts_with("... ["), "unnumbered line {record:?}");
+            assert_eq!(record, "--", "unnumbered line {record:?}");
             continue;
         };
         let number: usize = number.parse().expect("line number");
@@ -35,7 +35,7 @@ fn row_file(row: &Value) -> &Value {
     &row["data"]
 }
 
-/// Follow a row's `next.continue` chain to the end, collecting every line.
+/// Follow a row's `next.continueWindow` chain to the end, collecting every line.
 async fn walk(
     runtime: &octocode_native::runtime::ToolRuntime,
     tool: &str,
@@ -43,7 +43,7 @@ async fn walk(
 ) -> BTreeMap<usize, String> {
     let mut lines = BTreeMap::new();
     numbered_lines(row_file(first)["content"].as_str().unwrap(), &mut lines);
-    let mut next = row_file(first)["next"]["continue"]["query"].clone();
+    let mut next = row_file(first)["next"]["continueWindow"]["query"].clone();
     let mut hops = 0;
     while next.is_object() {
         hops += 1;
@@ -58,7 +58,7 @@ async fn walk(
             .expect("continuation runs unchanged");
         let row = &page.structured_content["results"][0];
         numbered_lines(row_file(row)["content"].as_str().unwrap(), &mut lines);
-        next = row_file(row)["next"]["continue"]["query"].clone();
+        next = row_file(row)["next"]["continueWindow"]["query"].clone();
     }
     lines
 }
@@ -104,7 +104,7 @@ async fn a_batch_of_reads_shares_the_window_and_every_row_returns_content() {
     assert_eq!(rows.len(), 4);
     assert_eq!(rows[0]["data"]["content"], "1\tone\n2\ttwo\n");
     // No envelope banner restates the partial rows: each row's own
-    // `next.continue` discloses its unread rest.
+    // `next.continueWindow` discloses its unread rest.
     assert!(
         envelope.get("warnings").is_none(),
         "{}",
@@ -113,7 +113,7 @@ async fn a_batch_of_reads_shares_the_window_and_every_row_returns_content() {
     let text = mcp["content"][0]["text"].as_str().unwrap();
     assert!(!text.contains("incomplete — "), "{text:.200}");
     for (row, path) in rows[1..].iter().zip(&files) {
-        let next = &row["data"]["next"]["continue"]["query"]["queries"][0];
+        let next = &row["data"]["next"]["continueWindow"]["query"]["queries"][0];
         assert!(
             next.get("length").is_none(),
             "continues at the default page: {next}"
@@ -173,10 +173,14 @@ async fn a_budget_cut_range_continues_exactly_the_rest_of_the_requested_spans() 
         .expect("read");
     let row = &outcome.structured_content["results"][0];
     let content = row["data"]["content"].as_str().unwrap();
-    // One gap marker between the spans; none inside a span.
-    assert_eq!(content.matches("... [").count(), 1, "{content:.400}");
+    // One `--` gap line between the spans; none inside a span.
+    assert_eq!(
+        content.lines().filter(|line| *line == "--").count(),
+        1,
+        "{content:.400}"
+    );
     assert!(
-        row["data"]["next"]["continue"].is_object(),
+        row["data"]["next"]["continueWindow"].is_object(),
         "the page is cut"
     );
     let lines = walk(&runtime, "localFetch", row).await;

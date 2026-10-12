@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from 'node:timers/promises';
+import { errorMessage } from '../shared/util.js';
 import { openTab, pageTargets, switchTo, type BrowserSession, type PageTarget } from './cdp.js';
 
 /**
@@ -27,7 +29,7 @@ async function whenLoaded(session: BrowserSession, timeoutMs = 10_000, signal?: 
   while (Date.now() < deadline) {
     const state = await session.page.evaluate<string>('document.readyState', signal).catch(() => 'loading');
     if (state === 'complete') return;
-    await new Promise((resolve) => setTimeout(resolve, 150));
+    await sleep(150, undefined, signal ? { signal } : undefined);
   }
 }
 
@@ -40,9 +42,12 @@ export async function selectTab(session: BrowserSession, index: number | undefin
   await whenLoaded(session, 10_000, signal);
 }
 
-/** Opens `url` in a new tab and drives it. */
+/** Opens `url` in a new tab and drives it. The tab opens blank, so the session's guard sees the first load too. */
 export async function newTab(session: BrowserSession, url: string, signal?: AbortSignal): Promise<void> {
-  await switchTo(session, await openTab(session.port, url));
+  await switchTo(session, await openTab(session.port, 'about:blank'));
+  delete session.blocked;
+  const result = await session.page.send<{ errorText?: string }>('Page.navigate', { url }, signal);
+  if (result.errorText) throw new Error(`Navigation failed: ${result.errorText}${session.blocked ? ` (blocked ${session.blocked})` : ''}`);
   await whenLoaded(session, 20_000, signal);
 }
 
@@ -64,5 +69,22 @@ export async function followNewTab(session: BrowserSession, before: Set<string> 
   if (!opened) return undefined;
   await switchTo(session, opened);
   await whenLoaded(session, 10_000, signal);
+  await guardOpenedPage(session, signal);
   return opened;
+}
+
+/**
+ * A tab the page opened started loading before the session drove it, so the guard has not seen its first load: its
+ * address is checked once it is loaded, and a refused page is replaced by a blank one.
+ */
+async function guardOpenedPage(session: BrowserSession, signal?: AbortSignal): Promise<void> {
+  if (!session.guard) return;
+  const url = await session.page.evaluate<string>('location.href', signal).catch(() => '');
+  if (!/^https?:/i.test(url)) return;
+  try {
+    await session.guard(url);
+  } catch (error) {
+    session.blocked = `${url}: ${errorMessage(error)}`;
+    await session.page.send('Page.navigate', { url: 'about:blank' }, signal);
+  }
 }

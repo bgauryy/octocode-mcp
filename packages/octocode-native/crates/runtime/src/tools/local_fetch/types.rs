@@ -1,7 +1,7 @@
+use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 use crate::tools::num::{usize_of, usize_of_signed};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 pub use crate::contracts::tool_types::{
     LocalFetchQuery, MatchString, MinifyMode, ReadCaseMode, ReadRegex, WindowUnit,
@@ -57,15 +57,17 @@ impl LocalFetchQuery {
     pub(crate) fn context_lines(&self) -> Option<usize> {
         self.context_lines.map(usize_of_signed)
     }
-    pub(crate) fn context_bytes(&self) -> Option<usize> {
-        self.context_bytes.map(usize_of_signed)
-    }
     pub(crate) fn offset(&self) -> Option<usize> {
         self.offset.map(usize_of_signed)
     }
     pub(crate) fn window_length(&self) -> Option<usize> {
         self.length.map(|n| usize_of(n.get()))
     }
+    /// Whether `matchString` hits must stand alone as words.
+    pub(crate) fn whole_word(&self) -> bool {
+        self.whole_word == Some(true)
+    }
+
     /// Every `matchString` entry (a list matches any of them).
     pub(crate) fn match_strings(&self) -> Vec<&str> {
         match &self.match_string {
@@ -110,11 +112,8 @@ impl LocalFetchQuery {
 /// bounds each page, so short-line files are not split into many tiny calls.
 pub const DEFAULT_LINE_CHUNK: usize = 2000;
 
-/// Lines from which a file counts as large: a read of it with no anchor
-/// returns [`HEAD_LINES`] and a locate handoff instead of a full first page.
-pub const LARGE_READ_LINES: usize = 2_000;
-
-/// Lines an unanchored read of a large file returns before paging on.
+/// Lines an unanchored read of a view longer than one line page returns
+/// before paging on.
 pub const HEAD_LINES: usize = 50;
 
 /// Encodes an engine `usize` as a positive wire integer.
@@ -130,7 +129,7 @@ pub(crate) fn wire_count(value: usize) -> i64 {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LineRange {
-    /// First line (1-based), named like every span's start (X1).
+    /// First line (1-based), named like every span's start.
     #[serde(rename = "line")]
     pub start: usize,
     /// Last line (1-based, inclusive).
@@ -158,24 +157,20 @@ pub struct Pagination {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Continuation {
     pub query: LocalFetchQuery,
-    pub reason: Option<String>,
 }
 impl Serialize for Continuation {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::Error;
         let row = serde_json::to_value(&self.query).map_err(S::Error::custom)?;
-        let mut call =
-            crate::tools::result::Continuation::new(crate::tools::id::ToolId::LocalFetch, row);
-        if let Some(why) = &self.reason {
-            call = call.why(why.clone());
-        }
-        call.build().serialize(serializer)
+        crate::tools::result::Continuation::new(crate::tools::id::ToolId::LocalFetch, row)
+            .build()
+            .serialize(serializer)
     }
 }
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct NextCalls {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub r#continue: Option<Continuation>,
+    #[serde(rename = "continueWindow", skip_serializing_if = "Option::is_none")]
+    pub continue_window: Option<Continuation>,
     #[serde(rename = "readBoundedLines", skip_serializing_if = "Option::is_none")]
     pub read_bounded_lines: Option<Continuation>,
     /// Offset-zero recovery for a page requested past the end of the view.
@@ -212,11 +207,7 @@ pub struct NextCalls {
     #[serde(rename = "findFile", skip_serializing_if = "Option::is_none", default)]
     pub find_file: Option<serde_json::Value>,
     /// A localSearch for a missed matchString in the file's directory.
-    #[serde(
-        rename = "textSearch",
-        skip_serializing_if = "Option::is_none",
-        default
-    )]
+    #[serde(rename = "findText", skip_serializing_if = "Option::is_none", default)]
     pub text_search: Option<serde_json::Value>,
     /// The same read matched case-insensitively, after a case-sensitive
     /// matchString selected no line.
@@ -226,13 +217,16 @@ pub struct NextCalls {
         default
     )]
     pub ignore_case: Option<Continuation>,
+    /// The same read with each regex item that does not compile repaired.
+    #[serde(rename = "repair", skip_serializing_if = "Option::is_none", default)]
+    pub repair: Option<Continuation>,
 }
 
 impl NextCalls {
     /// Add every continuation `other` carries; `self` keeps its own on a clash.
     pub fn absorb(&mut self, other: NextCalls) {
         let NextCalls {
-            r#continue,
+            continue_window,
             read_bounded_lines,
             restart,
             whole_lines,
@@ -243,9 +237,10 @@ impl NextCalls {
             find_file,
             text_search,
             ignore_case,
+            repair,
         } = other;
         for (mine, theirs) in [
-            (&mut self.r#continue, r#continue),
+            (&mut self.continue_window, continue_window),
             (&mut self.read_bounded_lines, read_bounded_lines),
             (&mut self.restart, restart),
             (&mut self.whole_lines, whole_lines),
@@ -253,6 +248,7 @@ impl NextCalls {
             (&mut self.read_block, read_block),
             (&mut self.expand_context, expand_context),
             (&mut self.ignore_case, ignore_case),
+            (&mut self.repair, repair),
         ] {
             if mine.is_none() {
                 *mine = theirs;
@@ -301,8 +297,8 @@ pub fn line_read(q: &LocalFetchQuery, ranges: &[LineRange]) -> Option<LocalFetch
     query.match_string = None;
     query.regex = None;
     query.case_mode = None;
+    query.whole_word = None;
     query.context_lines = None;
-    query.context_bytes = None;
     query.full_content = None;
     query.offset = None;
     query.unit = None;
@@ -312,7 +308,7 @@ pub fn line_read(q: &LocalFetchQuery, ranges: &[LineRange]) -> Option<LocalFetch
         start: first.start,
         end: last.end,
     }];
-    let ranges = if ranges.len() > MAX_READ_RANGES {
+    let ranges = if ranges.len() > RANGES_MAX_ITEMS {
         &span[..]
     } else {
         ranges
@@ -323,9 +319,6 @@ pub fn line_read(q: &LocalFetchQuery, ranges: &[LineRange]) -> Option<LocalFetch
         .collect();
     Some(query)
 }
-
-/// Most `ranges` one localFetch read accepts: the contract's `maxItems`.
-pub const MAX_READ_RANGES: usize = crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 
 /// `wanted` minus every line in `shown`: the sorted, disjoint ranges of
 /// `wanted` lines a view did not return.
@@ -405,6 +398,8 @@ pub struct LocalFetchResult {
     pub source_line_ranges: Vec<LineRange>,
     pub match_ranges: Vec<LineRange>,
     pub matched_lines: Vec<usize>,
+    /// JSON and TOML sources: each matched line's key path (`matchKeys`).
+    pub match_keys: Vec<(usize, String)>,
     /// The declarations a `block:true` match read widened hits to.
     pub blocks: Vec<DeclaredBlock>,
     pub selected_match_count: Option<usize>,
@@ -445,6 +440,7 @@ impl LocalFetchResult {
             source_line_ranges: vec![],
             match_ranges: vec![],
             matched_lines: vec![],
+            match_keys: vec![],
             blocks: vec![],
             selected_match_count: None,
             modified: None,
@@ -544,9 +540,9 @@ impl Serialize for PaginationWire<'_> {
         map.serialize_entry("length", &page.length)?;
         match page.unit {
             WindowUnit::Lines if self.source_lines != Some(page.total_lines) => {
-                map.serialize_entry("totalLines", &page.total_lines)?
+                map.serialize_entry("total", &page.total_lines)?
             }
-            WindowUnit::Bytes => map.serialize_entry("totalBytes", &page.total_bytes)?,
+            WindowUnit::Bytes => map.serialize_entry("total", &page.total_bytes)?,
             _ => {}
         }
         map.serialize_entry("hasMore", &page.has_more)?;
@@ -598,6 +594,12 @@ impl LocalFetchResult {
             list(map, "matchRanges", &match_ranges)?;
         }
         list(map, "matchedLines", &self.matched_lines)?;
+        if !self.match_keys.is_empty() {
+            map.serialize_entry(
+                "matchKeys",
+                &crate::tools::match_keys::MatchKeys(&self.match_keys),
+            )?;
+        }
         if self.selected_match_count != Some(self.matched_lines.len()) {
             opt(map, "selectedMatchCount", &self.selected_match_count)?;
         }
@@ -666,8 +668,11 @@ pub struct SourceFacts {
     /// The file's modification time (ISO 8601), when the caller has one.
     pub modified: Option<String>,
     /// The configured response window: a whole-file view larger than it
-    /// returns its first page and `next.continue`.
+    /// returns its first page and `next.continueWindow`.
     pub window: Option<usize>,
+    /// Bytes the first page of a selected view (matches, ranges) holds;
+    /// `None` keeps the line page budget. Continuations use that budget.
+    pub first_page_bytes: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -707,54 +712,83 @@ pub trait RegexMatch {
         pattern: &str,
         case_sensitive: bool,
         input: &str,
-    ) -> Result<RegexSpans, String>;
+    ) -> Result<RegexSpans, ExtractionError>;
 }
 
-#[derive(Clone, Default)]
-pub struct LocalFetchRegex {
-    isolated: Option<Arc<crate::regex::IsolatedRegexEngine>>,
+/// Why a view selection failed; it picks the row's `errorCode`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtractionErrorKind {
+    /// A `matchString` pattern does not compile.
+    InvalidPattern,
+    /// The regex engine the pattern needs cannot run it.
+    ExecutionFailed,
+    /// The request selects nothing the file has (ranges past its end).
+    InvalidInput,
 }
-impl LocalFetchRegex {
-    pub fn new(isolated: Option<Arc<crate::regex::IsolatedRegexEngine>>) -> Self {
-        Self { isolated }
+
+impl ExtractionErrorKind {
+    pub fn error_code(self) -> &'static str {
+        match self {
+            Self::InvalidPattern => "invalidPattern",
+            Self::ExecutionFailed => "executionFailed",
+            Self::InvalidInput => "invalidInput",
+        }
     }
 }
+
+/// A failed view selection: its kind and the reason the message carries
+/// after the kind's lead (`Invalid regex pattern: <detail>`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExtractionError {
+    pub kind: ExtractionErrorKind,
+    pub detail: String,
+}
+
+impl ExtractionError {
+    pub fn new(kind: ExtractionErrorKind, detail: impl Into<String>) -> Self {
+        Self {
+            kind,
+            detail: detail.into(),
+        }
+    }
+
+    /// The row's error message.
+    pub fn message(&self) -> String {
+        match self.kind {
+            ExtractionErrorKind::InvalidPattern => {
+                format!("Invalid regex pattern: {}", self.detail)
+            }
+            ExtractionErrorKind::ExecutionFailed => {
+                format!("Regex execution unavailable: {}", self.detail)
+            }
+            ExtractionErrorKind::InvalidInput => self.detail.clone(),
+        }
+    }
+}
+
+/// `regex:"rust"`: the Rust regex engine `localSearch` runs, so a pattern has
+/// one verdict and one reason in both tools, whatever the source's size.
+#[derive(Clone, Copy, Default)]
+pub struct LocalFetchRegex;
+
 impl RegexMatch for LocalFetchRegex {
     fn matching_ranges(
         &self,
-        source: &str,
+        pattern: &str,
         case_sensitive: bool,
         input: &str,
-    ) -> Result<RegexSpans, String> {
-        use crate::regex::{EcmaPattern, RegexExecutionClass, RegexLimits};
-        // Matches select lines, so `^`/`$` must anchor per line.
-        let flags = if case_sensitive { "gm" } else { "gim" };
-        let limits = RegexLimits {
-            max_pattern_bytes: 4_096,
-            max_input_bytes: 10 * 1024 * 1024,
-            max_matches: super::extraction::MAX_REGEX_MATCHES,
-        };
-        let pattern = EcmaPattern::compile(source, flags, limits)
-            .map_err(|error| format!("Invalid regex pattern: {}", error.message))?;
-        let found = match pattern.execution_class() {
-            RegexExecutionClass::LinearInProcess => pattern.find_ranges(input),
-            RegexExecutionClass::RequiresIsolatedEngine => self
-                .isolated
-                .as_ref()
-                .ok_or_else(|| {
-                    "Regex execution unavailable: pattern requires the configured isolated ECMAScript worker".to_owned()
-                })?
-                .find_ranges(source, flags, input),
-        }
-        .map_err(|error| format!("Invalid regex pattern: {}", error.message))?;
-        Ok(RegexSpans {
-            spans: found
-                .ranges
-                .into_iter()
-                .map(|range| (range.start, range.end))
-                .collect(),
-            truncated: found.truncated,
-        })
+    ) -> Result<RegexSpans, ExtractionError> {
+        use octocode_engine::portable::{RustRangesError, rust_find_ranges};
+        let limit = super::extraction::MAX_REGEX_MATCHES;
+        // One probe past the limit tells a capped prefix from the whole set.
+        let mut spans = rust_find_ranges(pattern, !case_sensitive, input, limit + 1).map_err(
+            |RustRangesError::InvalidPattern(reason)| {
+                ExtractionError::new(ExtractionErrorKind::InvalidPattern, reason)
+            },
+        )?;
+        let truncated = spans.len() > limit;
+        spans.truncate(limit);
+        Ok(RegexSpans { spans, truncated })
     }
 }
 
@@ -816,7 +850,8 @@ impl LocalFetchQuery {
 
 #[cfg(test)]
 mod line_read_tests {
-    use super::{LineRange, LocalFetchQuery, MAX_READ_RANGES, line_read};
+    use super::{LineRange, LocalFetchQuery, line_read};
+    use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 
     /// Every lead `line_read` builds (readBlock, continueBlock,
     /// readBoundedLines) spells lines with the published `ranges`, never
@@ -832,7 +867,7 @@ mod line_read_tests {
             one.get("startLine").is_none() && one.get("endLine").is_none(),
             "{one}"
         );
-        let many = (0..=MAX_READ_RANGES)
+        let many = (0..=RANGES_MAX_ITEMS)
             .map(|i| LineRange {
                 start: 10 * i + 1,
                 end: 10 * i + 2,
@@ -852,6 +887,6 @@ mod line_read_tests {
             "maxItems",
         )
         .expect("localFetch ranges declares maxItems");
-        assert_eq!(MAX_READ_RANGES as u64, declared);
+        assert_eq!(RANGES_MAX_ITEMS as u64, declared);
     }
 }

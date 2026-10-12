@@ -433,7 +433,7 @@ const COLUMN_CHUNK: usize = 16_384;
 /// also reachable through another successor of `u`. One post-order pass per
 /// chunk of target columns builds each node's descendant bitset for those
 /// columns, so the whole check costs O(edges × nodes / 64) instead of one
-/// graph search per edge (review L14: the old search fallback above 16,384
+/// graph search per edge (the old search fallback above 16,384
 /// components did not finish on large graphs).
 pub fn transitive_edges(edges: &BTreeMap<usize, BTreeSet<usize>>) -> BTreeSet<(usize, usize)> {
     transitive_edges_chunked(edges, COLUMN_CHUNK)
@@ -691,7 +691,7 @@ mod tests {
         assert_eq!(transitive_edges(&edges), BTreeSet::from([(0, 3)]));
     }
 
-    /// Review L14: a condensation above the old 16,384-component bitset
+    /// A condensation above the old 16,384-component bitset
     /// limit stays near-linear instead of one graph search per edge. Before
     /// the column-chunked pass this chain-with-shortcuts graph took a full
     /// downstream walk per chain edge.

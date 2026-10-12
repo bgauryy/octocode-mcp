@@ -18,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use super::relevance;
 use super::walk::{WalkFlags, build_overrides, walk_builder};
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use grep_matcher::Matcher;
 use grep_pcre2::RegexMatcherBuilder as Pcre2MatcherBuilder;
 use grep_regex::RegexMatcherBuilder;
@@ -65,10 +65,11 @@ pub(crate) const DEFAULT_MAX_LINE_SEARCH_FILE_BYTES: u64 = 512 * 1024 * 1024;
 /// exceeding it fails that file (recorded as an error), never the whole search.
 const SEARCH_HEAP_LIMIT_BYTES: usize = 64 * 1024 * 1024;
 
-/// Cap on emitted spans per line in only-matching mode, so a pathological
-/// minified line with a huge number of hits can't blow up the result. The true
-/// submatch count is still reported in stats.
-const MAX_ONLY_MATCHING_PER_LINE: u32 = 1000;
+/// Cap on emitted spans per file in only-matching mode, so a pathological
+/// file with a huge number of hits can't blow up the result. A long line is
+/// reachable whole below it; the true submatch count is still reported in
+/// stats.
+const MAX_ONLY_MATCHING_PER_FILE: u32 = 200_000;
 
 /// Cap on PCRE2's JIT stack (1 MiB). A user `-P` pattern with catastrophic
 /// backtracking (`(a+)+$`-class) exhausts this cap and fails fast per file
@@ -390,7 +391,7 @@ struct CollectResult {
     submatches: u64,
     matched_lines: u64,
     elapsed: Duration,
-    /// A per-line only-matching span cap was hit (`maxOnlyMatchingPerLine`).
+    /// A per-file only-matching span cap was hit (`maxOnlyMatchingPerFile`).
     span_capped: bool,
     /// The PCRE2 wall-clock deadline was hit (`pcre2Deadline`).
     timed_out: bool,
@@ -410,6 +411,7 @@ struct CollectResult {
     cancelled: bool,
     error_count: u32,
     first_error: Option<String>,
+    pattern_error_count: u32,
 }
 
 /// Shared accumulation state for one search. Walk workers write finished files
@@ -438,6 +440,9 @@ struct CollectState {
     stop: AtomicBool,
     error_count: AtomicU64,
     first_error: Mutex<Option<String>>,
+    /// Errors raised by the matcher on a readable file (see
+    /// [`TextSearchStats::pattern_error_count`]).
+    pattern_error_count: AtomicU64,
 }
 
 impl CollectState {
@@ -463,6 +468,7 @@ impl CollectState {
             stop: AtomicBool::new(false),
             error_count: AtomicU64::new(0),
             first_error: Mutex::new(None),
+            pattern_error_count: AtomicU64::new(0),
         }
     }
 
@@ -597,6 +603,7 @@ impl CollectState {
             cancelled: self.cancelled.load(Ordering::Relaxed),
             error_count: saturate_u32(self.error_count.load(Ordering::Relaxed)),
             first_error,
+            pattern_error_count: saturate_u32(self.pattern_error_count.load(Ordering::Relaxed)),
         }
     }
 }
@@ -698,13 +705,14 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                 .find_iter(bytes, |m| {
                     count = count.saturating_add(1);
                     first_start.get_or_insert(m.start());
-                    if count <= MAX_ONLY_MATCHING_PER_LINE {
+                    if om.len() < MAX_ONLY_MATCHING_PER_FILE as usize {
                         let (start, end) = (columns.lossy(m.start()), columns.lossy(m.end()));
                         let value = span_value(&line_text, start, end);
                         let column = columns.column(start) as u32;
                         om.push(TextSearchMatch {
                             line: line_number,
                             column,
+                            byte_offset: start as u32,
                             value,
                             count: None,
                             kind: None,
@@ -725,6 +733,7 @@ impl<M: Matcher> Sink for CollectSink<'_, M> {
                 self.om_matches.push(TextSearchMatch {
                     line: line_number,
                     column: 0,
+                    byte_offset: 0,
                     value: line_text,
                     count: None,
                     kind: None,
@@ -820,7 +829,10 @@ fn build_walk_builder(opts: &TextSearchOptions) -> Result<WalkBuilder> {
         let mut tb = TypesBuilder::new();
         tb.add_defaults();
         tb.select(lang);
-        wb.types(tb.build().map_err(to_engine_err)?);
+        wb.types(
+            tb.build()
+                .map_err(|error| Error::with_kind(ErrorKind::InvalidInput, error.to_string()))?,
+        );
     }
 
     let has_globs = opts.include.as_ref().is_some_and(|v| !v.is_empty())
@@ -832,7 +844,7 @@ fn build_walk_builder(opts: &TextSearchOptions) -> Result<WalkBuilder> {
                 opts.include.as_deref().unwrap_or_default(),
                 opts.exclude.as_deref().unwrap_or_default(),
             )
-            .map_err(Error::new)?,
+            .map_err(|error| Error::with_kind(ErrorKind::InvalidInput, error))?,
         );
     }
 
@@ -1522,7 +1534,20 @@ fn collect<M: Matcher + Sync>(
             let outcome = match files.search(&file, file_len) {
                 Ok(outcome) => outcome,
                 Err(error) => {
-                    state.record_error(format!("{}: {error}", path.display()));
+                    // The file opened; std never reports a read failure as
+                    // `Other`, which carries the matcher's own errors (the
+                    // searcher's and this sink's `io::Error::other`).
+                    if error.kind() == std::io::ErrorKind::Other {
+                        state.pattern_error_count.fetch_add(1, Ordering::Relaxed);
+                    }
+                    // Root-relative, or the file's name when it is the root.
+                    let shown = path
+                        .strip_prefix(&opts.path)
+                        .ok()
+                        .filter(|relative| !relative.as_os_str().is_empty())
+                        .or_else(|| path.file_name().map(Path::new))
+                        .unwrap_or(path);
+                    state.record_error(format!("{}: {error}", shown.display()));
                     return WalkState::Continue;
                 }
             };
@@ -1740,6 +1765,7 @@ fn build_result(
         cancelled,
         error_count,
         first_error,
+        pattern_error_count,
     } = collected;
     // Workers retain a bounded, order-independent candidate set; the final
     // sort + truncate keeps the first `max_collected_files` in result order.
@@ -1753,7 +1779,7 @@ fn build_result(
         cap_reasons.push("maxCollectedFiles");
     }
     if span_capped {
-        cap_reasons.push("maxOnlyMatchingPerLine");
+        cap_reasons.push("maxOnlyMatchingPerFile");
     }
     if timed_out {
         cap_reasons.push("pcre2Deadline");
@@ -1852,6 +1878,7 @@ fn build_result(
         cap_reason,
         error_count: Some(error_count),
         first_error,
+        pattern_error_count: (pattern_error_count > 0).then_some(pattern_error_count),
         binary_files: (!binary_files.is_empty()).then_some(binary_files),
         binary_file_count: binary_quit.then_some(binary_file_count),
         skipped_binary_count: (skipped_binary_count > 0).then_some(skipped_binary_count),

@@ -79,8 +79,8 @@ pub(super) async fn page_dates<C: crate::providers::github::ConditionalCache>(
         Some(error) => {
             let missing = paths.len() - dates.entries.len();
             dates.warning = Some(format!(
-                "Last-commit dates (updated) are missing for {missing} {}: {}. Rerun the same query to retry.",
-                if missing == 1 { "entry" } else { "entries" },
+                "Last-commit dates are missing for {missing} {}: {}.",
+                if missing == 1 { "entry" } else { "files" },
                 error.message
             ));
         }
@@ -132,16 +132,12 @@ pub(super) fn expand(
         row["pageSize"] = json!(DATED_PER_PAGE);
         rows.push(row);
     }
-    let warning = json!(format!(
-        "Dates cover the first {DATED_PER_PAGE} entries; {undated} more are undated."
-    ));
-    match value.get_mut("warnings").and_then(Value::as_array_mut) {
-        Some(warnings) => warnings.push(warning),
-        None => value["warnings"] = json!([warning]),
-    }
+    crate::tools::gh_shared::push_warning(
+        value,
+        format!("Dates cover the first {DATED_PER_PAGE} entries; {undated} more are undated."),
+    );
     value["next"]["expandDates"] =
         crate::tools::result::Continuation::input(ToolId::GhStructure, json!({ "queries": rows }))
-            .why("Date the rest of this page's entries.")
             .confidence("exact")
             .build();
     Ok(())
@@ -172,15 +168,12 @@ pub(super) fn attach(value: &mut Value, dates: PageDates) {
         value["commitDate"] = json!(commit);
     }
     if let Some(warning) = dates.warning {
-        match value.get_mut("warnings").and_then(Value::as_array_mut) {
-            Some(warnings) => warnings.push(json!(warning)),
-            None => value["warnings"] = json!([warning]),
-        }
+        crate::tools::gh_shared::push_warning(value, warning);
     }
     if dates.entries.is_empty() {
         return;
     }
-    let Some(rows) = value.get_mut("entries").and_then(Value::as_array_mut) else {
+    let Some(rows) = value.get_mut("files").and_then(Value::as_array_mut) else {
         return;
     };
     for row in rows {
@@ -211,7 +204,7 @@ mod tests {
 
     #[test]
     fn rows_map_each_listed_name_to_its_repo_relative_date() {
-        let mut value = json!({"entries": [
+        let mut value = json!({"files": [
             {"dir": "src", "files": ["a.rs"], "folders": ["sub"]},
             {"dir": "src/sub", "files": ["b.rs"]}
         ]});
@@ -231,21 +224,18 @@ mod tests {
         attach(&mut value, dates);
         assert_eq!(value["commitDate"], "2026-02-03");
         assert_eq!(
-            value["entries"][0]["updated"],
+            value["files"][0]["updated"],
             json!({"a.rs": "2025-01-01", "sub": "2025-02-02"})
         );
-        assert_eq!(
-            value["entries"][1]["updated"],
-            json!({"b.rs": "2025-03-03"})
-        );
+        assert_eq!(value["files"][1]["updated"], json!({"b.rs": "2025-03-03"}));
         assert!(value.get("warnings").is_none());
     }
 
-    /// B7: each name is written once: the day joins the size inside the
+    /// Each name is written once: the day joins the size inside the
     /// entry's fields, and the row keeps no `updated` map.
     #[test]
     fn dates_fold_into_the_entries_after_their_size() {
-        let mut value = json!({"entries": [
+        let mut value = json!({"files": [
             {"dir": "src", "files": ["a.rs", "b (1).rs"], "folders": ["sub", "old"]}
         ]});
         let dates = PageDates {
@@ -267,7 +257,7 @@ mod tests {
         });
         super::super::listing::attach_fields(&mut value, &entries);
         assert_eq!(
-            value["entries"][0],
+            value["files"][0],
             json!({"dir": "src", "files": ["a.rs (12, 2025-01-01)", "b (1).rs (3)"],
                 "folders": ["sub (2025-02-02)", "old"]})
         );
@@ -275,7 +265,7 @@ mod tests {
 
     #[test]
     fn a_warning_joins_existing_row_warnings() {
-        let mut value = json!({"entries": [], "warnings": ["first"]});
+        let mut value = json!({"files": [], "warnings": ["first"]});
         let dates = PageDates {
             warning: Some("dates missing".into()),
             ..PageDates::default()

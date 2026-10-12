@@ -53,7 +53,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - Each tool's input schema, description, and output schema is authored once in `@octocodeai/octocode-core` (Zod). `@octocodeai/config` generates the JSON contract and the Rust and TypeScript types, and the native runtime embeds them.
 - MCP and the CLI run the same native code, so their output is the same.
 - If the core and native contract fingerprints differ, the MCP server refuses to start.
-- Hosts resend every tool definition on every request, so `tools/list` shows a slim view of the same contract (`publishedInputSchema`): merged operation variants, full descriptions only on primary fields, and no validation-only bounds or fields agents copy from `next.*` and `hints.*`. The canonical schema still validates every call, and its errors list every valid field. `npx octocode schema` shows it.
+- Zod is the only schema source and the only form passed around. Hosts resend every tool definition on every request, so `tools/list` shows a slim view derived in Zod from the same contract (`publishedQuerySchema`): merged operation variants, the primary fields, and no fields agents copy from `next.*` and `hints.*`. JSON Schema is emitted once at each edge (`z.toJSONSchema`: MCP `tools/list`, the CLI presentation, the native contract). The canonical schema still validates every call, and its errors list every valid field. `npx octocode schema` shows it.
 - Why: agents learn one shape per tool, and drift is caught before it reaches a user.
 
 ### 3.2 Optional brief for multi-call research
@@ -62,10 +62,10 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - Rules: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#briefs-maingoal-and-reasoning).
 
 ### 3.3 Context engineering: instructions, descriptions, schemas
-- **Instructions:** one prompt for MCP and CLI, one line per section, at most 2,000 characters (1,600 bytes) because hosts truncate longer ones. The prompt is the same for every tool subset. The lines: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#research-flow-graph).
-- **Tool descriptions** are triggers: use when, not when, continue with. An agent picks the right tool from the description alone.
-- **Schemas** stay lean: descriptions only where a field is not self-explanatory, enums instead of prose, and examples that validate.
-- Core tests keep the instructions plus every default tool definition within 15,000 bytes.
+- **Instructions:** one prompt for MCP and CLI, one line per section, at most 2,000 characters because hosts truncate longer ones; the `<flow>` line states the whole research loop. The prompt is the same for every tool subset. The lines: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#research-flow-graph).
+- **Tool descriptions** follow one grammar: prose (what the tool does, when it is right), an optional `<empty>` (the repair when a result is empty or a literal misses), then one `<workflow>` (where its output goes next). A rule test enforces it; no tool name appears outside `<workflow>`.
+- **Field descriptions** are the one text of each field (its Zod `.describe()`): what the value is, and, for a value another tool's output fills, a `<workflow>` note naming that output (`ref`: a search row's `commitSha` or a PR `headSha`; `line`: a hit's line). Self-explanatory fields carry none. The tools connect through their inputs and outputs, so the flow is read where the value is typed.
+- Core tests keep the instructions plus every default tool definition within 19,899 bytes, the instructions within 1,978.
 
 ### 3.4 Batching
 - One call carries 1–5 independent queries of the same tool. Rows run concurrently, keep input order, and fail alone. Rules: [OCTOCODE_WORKFLOWS.md](OCTOCODE_WORKFLOWS.md#make-a-call).
@@ -77,7 +77,7 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 
 ### 3.6 Minification
 - `minify:"none"` gives exact source (the `localFetch` default), `"standard"` (the `ghGetFileContent` default) drops comments and indentation and compacts blank runs and minified bundles, and `"symbols"` gives an outline of signatures and headings. Strategies follow the format: code, JSON, Markdown, web.
-- A minified single-line file is clipped to windows around matches, with `truncated` and the original size reported.
+- A minified single-line file is clipped to windows around matches, with `originalChars` and `returnedChars` reported.
 - A transformed view keeps source line numbers in its gutter. Cite source or diff lines by number; quote only verbatim text (`none` reads, `matchString` reads, search hits).
 
 ### 3.7 Smart pagination everywhere
@@ -88,8 +88,8 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 ### 3.8 Pages, leads, and failure hints
 - Follow-up calls use two channels. Both hold executable queries that run unchanged, and the runtime removes follow-ups the current surface cannot run.
   - **`next.*` = pages:** more of the same result, or coverage it still lacks. The response is incomplete without them.
-  - **`hints.*` = optional guidance:** `hints.text` holds prose tips; every other entry is a lead, such as read the top match or read the fix PR. A successful row shows leads only with `extras:["hints"]`, except a few default leads (`includeIgnored`, `countFiles`, `apply`, …).
-- An empty result carries repair tips in `hints.text`. It is not an absence claim until scope, spelling, ref, and index limits are checked.
+  - **`hints.*` = optional leads:** ready calls named by purpose (`read` the top match, `readPullRequest` the fix, `viewTree` the scope); `hints.text` adds a sentence only for a per-call fact. A lead carries no prose: the tool description says what each lead kind is for. A successful row shows leads only with `extras:["hints"]`, except a few default leads (`includeIgnored`, `countFiles`, `apply`, …).
+- An empty result keeps its leads. It is not an absence claim until scope, spelling, ref, and index limits are checked; the general repairs are stated once in each tool's description.
 - Errors are typed (`invalidInput`, `notFound`, `authentication`, `rateLimited`, …) and carry `retryable: true` only when a retry can help. Each class has its own CLI exit code; see the [CLI guide](../packages/octocode/docs/OCTOCODE_CLI.md#exit-codes).
 - GitHub tools follow a renamed repository to its canonical name and add a warning that names it.
 - Channels and fields: [TOOL_DATA_CONTRACT.md](TOOL_DATA_CONTRACT.md#executable-continuations).
@@ -128,7 +128,7 @@ Earlier scripted tool-level comparisons measured single tool calls, not agent ou
 |---|---|
 | Large PRs | 9.6k against 45k characters over 4 PRs (37–656 files), all answers correct. `gh pr view --json files` stops at 100 files and `gh pr diff` fails above 300; Octocode filters a 656-file PR in one call and flags files sent without a patch. |
 | Honest completeness | It reports GitHub's 300-file compare cap (true count 339) and follows renamed repositories where `gh` returns 0. |
-| Reproducible evidence | Reads return `commitSha`, pages stay pinned to it, and PRs carry `sourceSha` and `mergeCommitSha`. |
+| Reproducible evidence | Reads return `commitSha`, pages stay pinned to it, and PRs carry `headSha` and `mergeCommitSha`. |
 | Precision | LSP references are exact (`rg -w`: 0.26–0.62). Symbols were exact on 6 of 6 files (regexes and ctags: 0.81–0.98). Codemods matched ast-grep on 5 of 5; sed was wrong on 4 of 5. |
 | Hostile input | 0 of 5 fake secrets leaked (rg: 3 of 3). A 3.2 MB file costs 18k characters, and a 2 MB minified line costs 710. |
 | `clasify` on how and where questions | Whole-file locate: 10 of 10 (rg: 9 of 10), with 43% fewer files opened. |

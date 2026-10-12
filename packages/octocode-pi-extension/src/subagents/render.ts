@@ -23,6 +23,10 @@ export interface RunDetails {
   seconds?: number;
   /** running: foreground, still working; background: returned at once, the report arrives as a message. */
   status: 'running' | 'background' | 'done' | 'failed';
+  /** The `provider/id` it runs on (with any `:thinking` suffix); absent when it runs on the parent's model. */
+  model?: string;
+  /** The profile's preferred model, unavailable here: the run fell back to the parent's model. */
+  fallback?: string;
   /** The subagent's latest screenshot, saved to this path. */
   shot?: string;
 }
@@ -40,9 +44,15 @@ export interface ResultDetails {
   task?: string;
 }
 
-/** `Done (4 tool calls · 12k tokens · 38s)`. */
-export function doneSummary(details: Pick<RunDetails, 'toolCalls' | 'input' | 'output'>, durationMs: number | undefined): string {
-  return `Done (${[plural(details.toolCalls, 'tool call'), `${formatTokens(details.input + details.output)} tokens`, durationMs === undefined ? '' : formatDuration(durationMs, true)].filter(Boolean).join(' · ')})`;
+/** The model a run is on: its `provider/id`, marked as the parent's when the profile's preference was unavailable. */
+export function modelLabel(details: Pick<RunDetails, 'model' | 'fallback'>): string {
+  if (!details.fallback) return details.model ?? '';
+  return `${details.model ?? 'parent model'} (${details.fallback} unavailable)`;
+}
+
+/** `Done (4 tool calls · 12k tokens · 38s · provider/id)`. */
+export function doneSummary(details: Pick<RunDetails, 'toolCalls' | 'input' | 'output' | 'model' | 'fallback'>, durationMs: number | undefined): string {
+  return `Done (${[plural(details.toolCalls, 'tool call'), `${formatTokens(details.input + details.output)} tokens`, durationMs === undefined ? '' : formatDuration(durationMs, true), modelLabel(details)].filter(Boolean).join(' · ')})`;
 }
 
 interface AgentArgs {
@@ -89,7 +99,7 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
   if (isPartial) {
     // Live progress: counts, then the latest steps (the header carries the running clock).
     const lines = [...details.activity.slice(-3).map((line) => theme.fg('dim', clip(line, 200))), ...(details.shot ? [theme.fg('dim', `📷 ${clip(shortPath(details.shot), 200)}`)] : [])];
-    return resultBlock(theme, context, { summary: `${details.id} · ${plural(details.toolCalls, 'tool call')} · ↑${formatTokens(details.input)} ↓${formatTokens(details.output)}`, lines, max: lines.length, prefaceLabel: 'prompt', preface: promptPreface(theme, task, lines.length > 0 ? 'Progress' : undefined) });
+    return resultBlock(theme, context, { summary: [details.id, plural(details.toolCalls, 'tool call'), `↑${formatTokens(details.input)} ↓${formatTokens(details.output)}`, modelLabel(details)].filter(Boolean).join(' · '), lines, max: lines.length, prefaceLabel: 'prompt', preface: promptPreface(theme, task, lines.length > 0 ? 'Progress' : undefined) });
   }
   if (details.status === 'background') {
     // The first line is for the model; only a later note (an isolation warning) is worth expanding to.

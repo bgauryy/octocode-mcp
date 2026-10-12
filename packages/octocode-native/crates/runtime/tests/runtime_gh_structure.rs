@@ -59,7 +59,7 @@ fn github(workspace: &Workspace, server: &MockServer) -> octocode_native::runtim
     workspace.runtime(&[("GITHUB_API_URL", format!("{}/api/v3", server.uri()))])
 }
 
-/// A3: octocode-mcp 19.x rewrites `tmp/tree/<owner>/<repo>/<sha>/`; a
+/// octocode-mcp 19.x rewrites `tmp/tree/<owner>/<repo>/<sha>/`; a
 /// materialize never shares it, and a directory in its own layout that has
 /// no manifest (foreign or partial) is cleared, not trusted.
 #[tokio::test]
@@ -92,7 +92,7 @@ async fn materialize_never_trusts_a_foreign_directory() {
     let local =
         std::path::PathBuf::from(data["location"]["localPath"].as_str().expect("localPath"));
     assert_eq!(local, own, "{data}");
-    assert_eq!(data["location"]["complete"], true, "{data}");
+    assert_eq!(data["location"]["coverage"]["state"], "complete", "{data}");
     assert_eq!(
         std::fs::read_to_string(local.join("one.rs")).expect("one"),
         "// one.rs\n"
@@ -186,7 +186,10 @@ async fn materialize_reuses_only_recorded_files_at_their_size() {
         "{}",
         second.structured_content
     );
-    assert_eq!(row_data(&second)["location"]["complete"], true);
+    assert_eq!(
+        row_data(&second)["location"]["coverage"]["state"],
+        "complete"
+    );
     assert_eq!(
         std::fs::read_to_string(local.join("one.rs")).expect("one"),
         "// one.rs\n"
@@ -353,7 +356,48 @@ async fn refs_default_page_is_thirty() {
     runtime.close().await;
 }
 
-/// Tree-only fields are rejected on refs and languages.
+/// refs + ref resolves that one ref to its commit and says what kind of ref
+/// it is: no tag or branch pages.
+#[tokio::test]
+async fn refs_with_ref_resolves_one_ref() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/commits/v1.0.0"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("7".repeat(40)))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/git/ref/tags/v1.0.0"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"object":{"sha":"7".repeat(40)}})),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/a/b/git/ref/heads/v1.0.0"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message":"Not Found"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let runtime = github(&workspace, &server);
+    let outcome = call(
+        &runtime,
+        "ghStructure",
+        json!({"owner": "a", "repo": "b", "operation": "refs", "ref": "v1.0.0"}),
+    )
+    .await
+    .expect("one ref");
+    assert_eq!(
+        row_data(&outcome),
+        &json!({"commitSha": "7".repeat(40), "refKind": "tag"})
+    );
+    runtime.close().await;
+}
+
+/// Tree-only fields are rejected on refs and languages (ref also on languages).
 #[tokio::test]
 async fn refs_and_languages_reject_tree_fields() {
     let workspace = Workspace::new();
@@ -373,7 +417,7 @@ async fn refs_and_languages_reject_tree_fields() {
             Err(error) => format!("{error:?}"),
         };
         assert!(
-            text.contains(&format!("only applies to tree; remove it from {operation}")),
+            text.contains(&format!("; remove it from {operation}")),
             "{operation} {field}: {text}"
         );
     }
@@ -554,7 +598,7 @@ async fn a_tree_page_dates_every_entry_and_the_listed_commit() {
     .expect("listing");
     let data = row_data(&plain);
     assert!(data.get("commitDate").is_none(), "{data}");
-    assert!(updated(&data["entries"][0]).is_empty(), "{data}");
+    assert!(updated(&data["files"][0]).is_empty(), "{data}");
     assert!(
         graphql_requests(&server).await.is_empty(),
         "no dating request"
@@ -575,7 +619,7 @@ async fn a_tree_page_dates_every_entry_and_the_listed_commit() {
     let data = row_data(&outcome);
     assert_eq!(data["commitDate"], "2026-01-31", "{data}");
     assert_eq!(
-        json!(updated(&data["entries"][0])),
+        json!(updated(&data["files"][0])),
         json!({"one.rs": "2025-03-07", "src": "2025-03-04", "a \"q\"\\b.md": "2025-03-11"}),
         "{data}"
     );
@@ -607,10 +651,10 @@ async fn a_page_past_one_hundred_entries_dates_the_first_hundred_and_expands_the
         .await
         .expect("listing");
     let data = row_data(&outcome);
-    let dates = updated(&data["entries"][0]);
+    let dates = updated(&data["files"][0]);
     assert_eq!(dates.len(), 100, "{data}");
     assert!(dates.contains_key("f000.rs") && dates.contains_key("f099.rs"));
-    assert!(data["entries"][0].get("updated").is_none(), "{data}");
+    assert!(data["files"][0].get("updated").is_none(), "{data}");
     assert_eq!(
         graphql_requests(&server).await.len(),
         1,
@@ -654,7 +698,7 @@ async fn a_page_past_one_hundred_entries_dates_the_first_hundred_and_expands_the
                     .is_none_or(|next| next.get("expandDates").is_none()),
                 "{page}"
             );
-            updated(&page["entries"][0]).len()
+            updated(&page["files"][0]).len()
         })
         .collect::<Vec<_>>();
     assert_eq!(dated, [100, 50], "{}", replay.structured_content);
@@ -703,24 +747,70 @@ async fn a_listing_states_each_file_size() {
         .expect("listing");
     let data = row_data(&outcome);
     assert_eq!(
-        undated(&data["entries"][0], "files"),
+        undated(&data["files"][0], "files"),
         json!(["big (1).bin (400000)", "small.rs (10)"]),
         "{data}"
     );
     assert_eq!(
-        undated(&data["entries"][0], "folders"),
+        undated(&data["files"][0], "folders"),
         json!(["src"]),
         "{data}"
     );
     // The size comes first, then the day: each name is written once.
-    let dates = updated(&data["entries"][0]);
+    let dates = updated(&data["files"][0]);
     assert!(
         dates.contains_key("small.rs")
             && dates.contains_key("big (1).bin")
             && dates.contains_key("src"),
         "{data}"
     );
-    assert!(data["entries"][0].get("updated").is_none(), "{data}");
+    assert!(data["files"][0].get("updated").is_none(), "{data}");
+    runtime.close().await;
+}
+
+/// A page past the end names the page count and leads back to page 1, on a
+/// multi-page listing and on a single-page one (which shows no pagination
+/// otherwise); an in-range last page leads nowhere.
+#[tokio::test]
+async fn a_page_past_the_end_leads_back_to_the_first_page() {
+    let entries = [
+        ("a.rs".to_owned(), "file"),
+        ("b.rs".to_owned(), "file"),
+        ("c.rs".to_owned(), "file"),
+    ];
+    let server = listing_server(&entries).await;
+    let workspace = Workspace::new();
+    let runtime = github(&workspace, &server);
+    for (size, page, of) in [(2, 9, 2), (10, 3, 1)] {
+        let outcome = call(
+            &runtime,
+            "ghStructure",
+            json!({"owner": "a", "repo": "b", "page": page, "pageSize": size}),
+        )
+        .await
+        .expect("listing");
+        let data = row_data(&outcome);
+        assert_eq!(row_status(&outcome), "empty", "{data}");
+        assert_eq!(data["pagination"]["outOfRange"], true, "{data}");
+        assert_eq!(data["reason"], format!("page {page} of {of}"), "{data}");
+        let restart = &data["next"]["restart"]["query"]["queries"][0];
+        assert_eq!(restart["owner"], "a", "{data}");
+        assert!(restart.get("page").is_none(), "restart is page 1: {data}");
+        assert!(
+            !data.to_string().contains("Check ref and path"),
+            "an out-of-range page is not a path problem: {data}"
+        );
+    }
+    let last = call(
+        &runtime,
+        "ghStructure",
+        json!({"owner": "a", "repo": "b", "page": 2, "pageSize": 2}),
+    )
+    .await
+    .expect("last page");
+    let data = row_data(&last);
+    assert!(data["pagination"].get("outOfRange").is_none(), "{data}");
+    assert!(data["next"].get("restart").is_none(), "{data}");
     runtime.close().await;
 }
 
@@ -753,22 +843,23 @@ async fn a_graphql_failure_keeps_the_listing_and_warns_once() {
         outcome.structured_content
     );
     let data = row_data(&outcome);
-    assert_eq!(
-        data["entries"][0]["files"],
-        json!(["one.rs (10)"]),
-        "{data}"
-    );
-    assert_eq!(data["entries"][0]["folders"], json!(["src"]), "{data}");
-    assert!(updated(&data["entries"][0]).is_empty(), "{data}");
+    assert_eq!(data["files"][0]["files"], json!(["one.rs (10)"]), "{data}");
+    assert_eq!(data["files"][0]["folders"], json!(["src"]), "{data}");
+    assert!(updated(&data["files"][0]).is_empty(), "{data}");
     assert!(data.get("commitDate").is_none(), "{data}");
     let warnings = data["warnings"].as_array().expect("warnings");
     assert_eq!(warnings.len(), 1, "{data}");
     assert!(
         warnings[0]
             .as_str()
-            .is_some_and(|text| text.contains("2 entries")),
+            .is_some_and(|text| text.contains("2 files")),
         "{data}"
     );
+    // The repair is the same page, pinned to the listed commit.
+    let retry = &data["next"]["retry"]["query"]["queries"][0];
+    assert_eq!(retry["ref"], SHA, "{data}");
+    assert!(retry.get("page").is_none_or(|page| page == 1), "{data}");
+    assert_eq!(retry["extras"], json!(["details"]), "{data}");
     runtime.close().await;
 }
 
@@ -786,7 +877,7 @@ async fn materialize_sends_no_date_request() {
     .await
     .expect("materialize");
     let data = row_data(&outcome);
-    assert!(updated(&data["entries"][0]).is_empty(), "{data}");
+    assert!(updated(&data["files"][0]).is_empty(), "{data}");
     assert!(graphql_requests(&server).await.is_empty());
     runtime.close().await;
 }
@@ -824,7 +915,7 @@ async fn a_scoped_listing_names_repo_relative_dirs_and_dates_every_name() {
     .await
     .expect("listing");
     let data = row_data(&outcome);
-    let entries = data["entries"].as_array().expect("entries");
+    let entries = data["files"].as_array().expect("files");
     assert_eq!(entries[0]["dir"], "pkg", "{data}");
     assert_eq!(undated(&entries[0], "files"), json!(["a.rs (1)"]), "{data}");
     assert_eq!(undated(&entries[0], "folders"), json!(["src"]), "{data}");
@@ -844,7 +935,7 @@ async fn a_scoped_listing_names_repo_relative_dirs_and_dates_every_name() {
     runtime.close().await;
 }
 
-/// X9: a listing of a renamed repository at a ref (GitHub answers 301 to
+/// A listing of a renamed repository at a ref (GitHub answers 301 to
 /// `/repositories/<id>`) lists the canonical repository after one metadata
 /// read, warns once, and leads under the canonical name.
 #[tokio::test]
@@ -916,7 +1007,7 @@ async fn a_renamed_repository_is_listed_and_continued_under_its_canonical_name()
     runtime.close().await;
 }
 
-/// X9: without a ref, the default-branch lookup already names the
+/// Without a ref, the default-branch lookup already names the
 /// canonical repository: no extra metadata request.
 #[tokio::test]
 async fn a_renamed_repository_without_a_ref_costs_no_extra_metadata_read() {

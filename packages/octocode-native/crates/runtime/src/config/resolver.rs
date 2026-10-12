@@ -36,6 +36,29 @@ fn normalize_string(value: &str, normalize: Option<ConfigNormalize>) -> String {
     }
 }
 
+/// The integer a number setting was given, before its range applies.
+fn given_number(raw: &Value, from_environment: bool) -> Option<f64> {
+    if from_environment {
+        parse_int_env(raw.as_str()).map(|value| value as f64)
+    } else {
+        // Config number fields are integers: a file's `maxRetries: 2.5`
+        // resolves to 2.
+        raw.as_f64().map(f64::trunc)
+    }
+}
+
+/// A number setting a value outside its range clamps to: the value as given
+/// and the bound it was raised or lowered to.
+fn clamp_of(field: &ConfigFieldSpec, raw: &Value, from_environment: bool) -> Option<(f64, f64)> {
+    if field.kind != ConfigFieldKind::Number {
+        return None;
+    }
+    let given = given_number(raw, from_environment)?;
+    let (minimum, maximum) = (field.minimum?, field.maximum?);
+    let used = given.max(minimum).min(maximum);
+    (used != given).then_some((given, used))
+}
+
 pub(super) fn parse_candidate(
     field: &ConfigFieldSpec,
     raw: &Value,
@@ -56,15 +79,7 @@ pub(super) fn parse_candidate(
             Some(Value::Bool(value))
         }
         ConfigFieldKind::Number => {
-            let value = if from_environment {
-                parse_int_env(raw.as_str()).map(|value| value as f64)
-            } else {
-                // Truncate file-sourced numbers toward zero to match the JS
-                // resolver's `Math.trunc`; config number fields are integers, so
-                // `.octocoderc` `maxRetries: 2.5` must resolve to 2 on both
-                // engines, not 2 (JS) vs 2.5 (Rust).
-                raw.as_f64().map(f64::trunc)
-            }?;
+            let value = given_number(raw, from_environment)?;
             let clamped = value.max(field.minimum?).min(field.maximum?);
             Number::from_f64(clamped).map(Value::Number)
         }
@@ -124,16 +139,20 @@ pub(crate) fn resolve_sections(
     files: &[&Value],
     environment: &BTreeMap<String, String>,
 ) -> Result<ResolvedConfig, String> {
-    resolve_fields(files, environment, &mut |_, _| {})
+    resolve_fields(files, environment, &mut |_, _| {}, &mut |_, _, _, _| {})
 }
 
 /// `on_invalid_env(field, variable)` fires for a nonblank environment value
 /// that the field rejects; the value is skipped (or reset to the default when
-/// the binding says so), never fatal.
+/// the binding says so), never fatal. `on_clamped(field, name, given, used)`
+/// fires when the environment value that wins is outside the field's range
+/// and is clamped to `used` (a file value out of range is rejected by layer
+/// validation, not clamped).
 fn resolve_fields(
     files: &[&Value],
     environment: &BTreeMap<String, String>,
     on_invalid_env: &mut dyn FnMut(&ConfigFieldSpec, &str),
+    on_clamped: &mut dyn FnMut(&ConfigFieldSpec, &str, f64, f64),
 ) -> Result<ResolvedConfig, String> {
     let mut resolved: Value = serde_json::from_str(DEFAULT_RESOLVED_CONFIG_JSON)
         .map_err(|error| format!("generated config defaults are invalid: {error}"))?;
@@ -148,6 +167,9 @@ fn resolve_fields(
             };
             let raw = Value::String(raw.clone());
             if let Some(value) = parse_candidate(field, &raw, true, binding.normalize) {
+                if let Some((given, used)) = clamp_of(field, &raw, true) {
+                    on_clamped(field, binding.name, given, used);
+                }
                 selected = Some(value);
                 break;
             }
@@ -402,25 +424,43 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
         }
     };
     let mut env_warnings = vec![];
-    let resolved = match resolve_fields(&files, &effective, &mut |field, name| {
-        let source_path = env_source(name);
-        env_warnings.push(ConfigDiagnostic {
-            severity: Severity::Warning,
-            code: "invalid_env_value".into(),
-            field_path: Some(field.path.into()),
-            message: format!(
-                "{name}{} is not a valid {} for {}; value ignored",
-                if source_path.is_none() {
-                    " (process environment)"
-                } else {
-                    ""
-                },
-                expected_kind(field),
-                field.path
-            ),
-            source_path,
-        })
-    }) {
+    let mut clamp_warnings = vec![];
+    let resolved = match resolve_fields(
+        &files,
+        &effective,
+        &mut |field, name| {
+            let source_path = env_source(name);
+            env_warnings.push(ConfigDiagnostic {
+                severity: Severity::Warning,
+                code: "invalid_env_value".into(),
+                field_path: Some(field.path.into()),
+                message: format!(
+                    "{name}{} is not a valid {} for {}; value ignored",
+                    if source_path.is_none() {
+                        " (process environment)"
+                    } else {
+                        ""
+                    },
+                    expected_kind(field),
+                    field.path
+                ),
+                source_path,
+            })
+        },
+        &mut |field, name, given, used| {
+            let bound = if given < used { "minimum" } else { "maximum" };
+            clamp_warnings.push(ConfigDiagnostic {
+                severity: Severity::Warning,
+                code: "value_clamped".into(),
+                field_path: Some(field.path.into()),
+                message: format!(
+                    "{name} {given:.0} is {} the {bound} {used:.0}; using {used:.0}",
+                    if given < used { "below" } else { "above" },
+                ),
+                source_path: env_source(name),
+            });
+        },
+    ) {
         Ok(config) => config,
         Err(message) => {
             diagnostics.push(ConfigDiagnostic {
@@ -434,6 +474,7 @@ pub fn resolve_config(input: &ConfigInput) -> ConfigOutput {
         }
     };
     diagnostics.extend(env_warnings);
+    diagnostics.extend(clamp_warnings);
     let token = resolve_env_token(&effective);
     let config_path =
         (global_state != LayerState::Absent).then(|| input.config_file.path().clone());

@@ -3,7 +3,7 @@
 //! Hosts show agents the `structuredContent` JSON, so a read's `content`
 //! carries its own source line numbers there, `cat -n`-like:
 //! `<line>\t<text>` per line, no padding. Line-omission markers between
-//! non-adjacent windows (`... [lines A-B not requested] ...`) stay unnumbered.
+//! non-adjacent windows are separated by one `--` line.
 //! Only views whose lines map one-to-one onto original source lines are
 //! numbered; transformed views (`contentView`), byte windows, and content
 //! whose lines do not align with `sourceLineRanges` stay verbatim.
@@ -14,6 +14,18 @@ use serde_json::Value;
 /// Separator between the line number and the source text.
 pub const SEPARATOR: char = '\t';
 
+/// Append one gutter line: `<line>\t<record>` (`record` keeps its own
+/// line ending, if any).
+pub(crate) fn push_numbered(output: &mut String, line: impl std::fmt::Display, record: &str) {
+    use std::fmt::Write as _;
+    let _ = write!(output, "{line}{SEPARATOR}");
+    output.push_str(record);
+}
+
+/// The line between two non-adjacent numbered windows (grep's group
+/// separator): the numbers on either side state the lines it skips.
+pub const GAP: &str = "--\n";
+
 /// Number `content` whose lines are exactly the 1-based inclusive source
 /// `ranges`, in order, with one line-omission marker between non-adjacent
 /// windows. `None` when the content does not map onto the ranges.
@@ -22,7 +34,21 @@ fn number_lines(content: &str, ranges: &[(u64, u64)]) -> Option<String> {
     if ranges.is_empty() {
         return None;
     }
-    let records: Vec<&str> = content.split_inclusive('\n').collect();
+    let mut records: Vec<&str> = content.split_inclusive('\n').collect();
+    // A page cut at a gap starts or ends on its marker: the gutter shows
+    // the jump, so the edge marker carries nothing.
+    while records
+        .first()
+        .is_some_and(|record| omission_span(record).is_some())
+    {
+        records.remove(0);
+    }
+    while records
+        .last()
+        .is_some_and(|record| omission_span(record).is_some())
+    {
+        records.pop();
+    }
     let mut output = String::with_capacity(content.len() + records.len() * 6);
     let mut index = 0;
     let mut prev_end: Option<u64> = None;
@@ -35,7 +61,7 @@ fn number_lines(content: &str, ranges: &[(u64, u64)]) -> Option<String> {
                 .get(index)
                 .is_some_and(|record| omission_span(record).is_some())
         {
-            output.push_str(records[index]);
+            output.push_str(GAP);
             index += 1;
         }
         prev_end = Some(end);
@@ -45,9 +71,7 @@ fn number_lines(content: &str, ranges: &[(u64, u64)]) -> Option<String> {
             if record.starts_with("... [") && record.contains(" omitted] ...") {
                 return None;
             }
-            output.push_str(&line.to_string());
-            output.push(SEPARATOR);
-            output.push_str(record);
+            push_numbered(&mut output, line, record);
             index += 1;
         }
     }
@@ -69,87 +93,20 @@ fn omission_span(record: &str) -> Option<(u64, u64)> {
     }
 }
 
-/// `(gaps, start, end)` of a gap-run marker
-/// `... [N gaps in lines A-B not requested] ...`: N line-omission gaps, each
-/// between two numbered lines, all inside lines A-B.
-fn gap_run_span(record: &str) -> Option<(u64, u64, u64)> {
-    let inner = record
-        .trim_end_matches(['\n', '\r'])
-        .strip_prefix("... [")?
-        .strip_suffix(" not requested] ...")?;
-    let (gaps, span) = inner.split_once(" gaps in lines ")?;
-    let (start, end) = span.split_once('-')?;
-    Some((gaps.parse().ok()?, start.parse().ok()?, end.parse().ok()?))
-}
-
-/// Collapse each run of two or more line-omission markers that only single
-/// numbered lines separate into one gap-run marker at the run's first gap
-/// (`... [N gaps in lines A-B not requested] ...`). Every line keeps its number,
-/// so each gap is still exactly the span between two numbers.
-#[must_use]
-fn collapse_gap_runs(numbered: &str) -> String {
-    let records: Vec<&str> = numbered.split_inclusive('\n').collect();
-    let mut output = String::with_capacity(numbered.len());
-    let mut index = 0;
-    while index < records.len() {
-        let Some((start, mut end)) = omission_span(records[index]) else {
-            output.push_str(records[index]);
-            index += 1;
-            continue;
-        };
-        // Extend over `single line, marker` pairs.
-        let mut gaps = 1u64;
-        let mut cursor = index + 1;
-        while cursor + 1 < records.len()
-            && records[cursor].ends_with('\n')
-            && omission_span(records[cursor]).is_none()
-            && let Some((_, next_end)) = omission_span(records[cursor + 1])
-        {
-            end = next_end;
-            gaps += 1;
-            cursor += 2;
-        }
-        if gaps < 2 {
-            output.push_str(records[index]);
-            index += 1;
-            continue;
-        }
-        output.push_str(&format!(
-            "... [{gaps} gaps in lines {start}-{end} not requested] ...\n"
-        ));
-        for line in (index + 1..cursor).step_by(2) {
-            output.push_str(records[line]);
-        }
-        index = cursor;
-    }
-    output
-}
-
-/// Whether `content` is already in numbered form: consecutive `N\t` lines,
-/// with only line-omission markers between runs, each skipping exactly the
-/// lines it names, or gap-run markers whose lines jump exactly N times
-/// inside the named span.
+/// Whether `content` is already in numbered form: `N\t` lines in ascending
+/// order, consecutive except across a [`GAP`] line, which stands for the
+/// lines between its neighbours' numbers.
 #[must_use]
 fn is_numbered(content: &str) -> bool {
     let mut expected: Option<u64> = None;
+    let mut gap = false;
     let mut numbered = 0usize;
-    // An open gap run: gaps left to see, and the last omitted line.
-    let mut run: Option<(u64, u64)> = None;
     for record in content.split_inclusive('\n') {
-        if run.is_none()
-            && let Some((gaps, start, end)) = gap_run_span(record)
-        {
-            if expected.is_some_and(|next| next != start) || end < start || gaps < 2 {
+        if record.trim_end_matches(['\n', '\r']) == GAP.trim_end() {
+            if gap {
                 return false;
             }
-            run = Some((gaps, end));
-            continue;
-        }
-        if let Some((start, end)) = omission_span(record) {
-            if run.is_some() || expected.is_some_and(|next| next != start) || end < start {
-                return false;
-            }
-            expected = Some(end + 1);
+            gap = true;
             continue;
         }
         let Some((number, _)) = record.split_once(SEPARATOR) else {
@@ -161,24 +118,16 @@ fn is_numbered(content: &str) -> bool {
         if line == 0 || number.starts_with('0') {
             return false;
         }
-        match (expected, run) {
-            (Some(next), Some((gaps, end))) if line > next => {
-                // A jump is one gap of the run; the last one lands on end + 1.
-                if gaps == 0 || line - 1 > end {
-                    return false;
-                }
-                run = (gaps > 1).then_some((gaps - 1, end));
-                if run.is_none() && line != end + 1 {
-                    return false;
-                }
-            }
-            (Some(next), _) if next != line => return false,
+        match expected {
+            Some(next) if gap && line <= next => return false,
+            Some(next) if !gap && line != next => return false,
             _ => {}
         }
+        gap = false;
         expected = Some(line + 1);
         numbered += 1;
     }
-    numbered > 0 && run.is_none()
+    numbered > 0
 }
 
 fn ranges_of(value: &Value) -> Option<Vec<(u64, u64)>> {
@@ -251,6 +200,35 @@ fn number_file_row(data: &mut Value) -> bool {
     true
 }
 
+/// A view that already carries its source gutter (the compact view, which
+/// skips the lines it drops): every kept line states its number, in
+/// ascending order. A byte page stays verbatim.
+fn gutter_numbered(data: &Value) -> bool {
+    if data.pointer("/pagination/unit").and_then(Value::as_str) == Some("bytes") {
+        return false;
+    }
+    let Some(content) = data.get("content").and_then(Value::as_str) else {
+        return false;
+    };
+    let mut last = 0u64;
+    let mut numbered = false;
+    for record in content.split_inclusive('\n') {
+        if record.trim_end_matches(['\n', '\r']) == GAP.trim_end() {
+            continue;
+        }
+        let Some(line) = record
+            .split_once(SEPARATOR)
+            .and_then(|(number, _)| number.parse::<u64>().ok())
+            .filter(|line| *line > last)
+        else {
+            return false;
+        };
+        last = line;
+        numbered = true;
+    }
+    numbered
+}
+
 /// Number every source-line read in a public `{results}` envelope:
 /// localFetch and ghGetFileContent rows each carry one inline file.
 pub fn number_read_rows(tool: ToolId, structured: &mut Value) {
@@ -259,17 +237,14 @@ pub fn number_read_rows(tool: ToolId, structured: &mut Value) {
         .and_then(Value::as_array_mut)
         .into_iter()
         .flatten();
-    if !matches!(tool, ToolId::LocalFetch | ToolId::GhGetFileContent) {
+    if tool.output().text_shape() != crate::tools::output::TextShape::FileText {
         return;
     }
     for row in rows {
         if let Some(data) = row.get_mut("data")
-            && number_file_row(data)
+            && (number_file_row(data) || gutter_numbered(data))
             && let Some(map) = data.as_object_mut()
         {
-            if let Some(Value::String(content)) = map.get_mut("content") {
-                *content = collapse_gap_runs(content);
-            }
             // The gutter states the first, last and every returned
             // line, so the window fields repeat it.
             for key in ["startLine", "endLine", "returnedLines"] {
@@ -287,11 +262,12 @@ const VIEW_ALIGN_WINDOW: usize = 1_000;
 /// text the view was made from; `source_lines` gives each of its lines' 1-based
 /// source number (`0` marks a line-omission marker), or `None` when `source`
 /// starts at line 1. Lines align in order on their non-whitespace text: a view
-/// line is the start of a source line's remaining text, else inside it, else
-/// the start of a run of source lines it joins. Omission markers stay
-/// unnumbered; a line with no alignment takes the current source line.
+/// line is the start of a source line's remaining text, else inside it. A
+/// view line that joins several source lines, or aligns with none, has no
+/// single citable number: `None`, and the caller keeps lines whole
+/// ([`line_faithful_view`]). Omission markers stay unnumbered.
 #[must_use]
-pub fn number_view(source: &str, source_lines: Option<&[usize]>, view: &str) -> String {
+pub fn number_view(source: &str, source_lines: Option<&[usize]>, view: &str) -> Option<String> {
     let squash = |text: &str| -> String { text.chars().filter(|c| !c.is_whitespace()).collect() };
     let lines: Vec<(u64, String)> = source
         .lines()
@@ -305,23 +281,51 @@ pub fn number_view(source: &str, source_lines: Option<&[usize]>, view: &str) -> 
         })
         .collect();
     if lines.is_empty() {
-        return view.to_owned();
+        return Some(view.to_owned());
     }
     let mut aligner = ViewAligner {
         lines: &lines,
         cur: 0,
         pos: 0,
+        faithful: true,
     };
     let mut output = String::with_capacity(view.len() + view.len() / 8);
     for record in view.split_inclusive('\n') {
-        if omission_span(record).is_some() || gap_run_span(record).is_some() {
-            output.push_str(record);
+        if omission_span(record).is_some() {
+            output.push_str(GAP);
             continue;
         }
         let number = aligner.align(&squash(record));
-        output.push_str(&number.to_string());
-        output.push(SEPARATOR);
-        output.push_str(record);
+        if !aligner.faithful {
+            return None;
+        }
+        push_numbered(&mut output, number, record);
+    }
+    Some(output)
+}
+
+/// The compact view when the transformed one is not line-faithful: every
+/// source line whole under its own number, trailing whitespace trimmed and
+/// blank lines left out (the gutter's jump shows them). Omission markers
+/// stay unnumbered.
+#[must_use]
+pub fn line_faithful_view(source: &str, source_lines: Option<&[usize]>) -> String {
+    let mut output = String::with_capacity(source.len());
+    for (index, record) in source.lines().enumerate() {
+        let line = match source_lines {
+            Some(numbers) => numbers.get(index).copied().unwrap_or(0),
+            None => index + 1,
+        };
+        if line == 0 {
+            output.push_str(GAP);
+            continue;
+        }
+        let text = record.trim_end();
+        if text.trim().is_empty() {
+            continue;
+        }
+        push_numbered(&mut output, line, text);
+        output.push('\n');
     }
     output
 }
@@ -332,6 +336,8 @@ struct ViewAligner<'a> {
     lines: &'a [(u64, String)],
     cur: usize,
     pos: usize,
+    /// Every view line so far is one source line's text (or part of it).
+    faithful: bool,
 }
 
 impl ViewAligner<'_> {
@@ -390,17 +396,21 @@ impl ViewAligner<'_> {
                     if matched == key.len() {
                         let line = self.lines[index].0;
                         self.take(next, text.len());
+                        self.faithful = false;
                         return line;
                     }
                 } else if text.starts_with(need) {
                     let line = self.lines[index].0;
                     self.take(next, need.len());
+                    self.faithful = false;
                     return line;
                 } else {
                     break;
                 }
             }
         }
+        // No source line holds this text: its number would be a guess.
+        self.faithful = false;
         self.current()
     }
 
@@ -441,8 +451,8 @@ mod tests {
         let source = "// c\n\nimport { a } from 'a';\nlet x = {a: 1, b: 2}; // t\n}\n";
         let view = "import{a}from 'a';\nlet x ={a:1,\nb:2};\n}\n";
         assert_eq!(
-            number_view(source, None, view),
-            "3\timport{a}from 'a';\n4\tlet x ={a:1,\n4\tb:2};\n5\t}\n"
+            number_view(source, None, view).as_deref(),
+            Some("3\timport{a}from 'a';\n4\tlet x ={a:1,\n4\tb:2};\n5\t}\n")
         );
         // A window and its omission marker keep their own numbers.
         let window = "a();\n... [lines 3-8 not requested] ...\nb();\n";
@@ -451,13 +461,26 @@ mod tests {
                 window,
                 Some(&[2, 0, 9]),
                 "a();\n... [lines 3-8 not requested] ...\nb();\n"
-            ),
-            "2\ta();\n... [lines 3-8 not requested] ...\n9\tb();\n"
+            )
+            .as_deref(),
+            Some("2\ta();\n--\n9\tb();\n")
         );
-        // Joined lines cite their first line.
+        // Joined lines have no single citable number: the view is refused
+        // and the line-faithful view keeps each line under its own number.
         assert_eq!(
             number_view("f(a,\n  b);\nc;\n", None, "f(a,b);\nc;\n"),
-            "1\tf(a,b);\n3\tc;\n"
+            None
+        );
+        assert_eq!(
+            line_faithful_view("f(a,\n  b);  \n\nc;\n", None),
+            "1\tf(a,\n2\t  b);\n4\tc;\n"
+        );
+        assert_eq!(
+            line_faithful_view(
+                "a();\n... [lines 3-8 not requested] ...\nb();\n",
+                Some(&[2, 0, 9])
+            ),
+            "2\ta();\n--\n9\tb();\n"
         );
     }
 
@@ -481,7 +504,7 @@ mod tests {
                 &[(2, 2), (9, 9)]
             )
             .as_deref(),
-            Some("2\ta\n... [lines 3-8 not requested] ...\n9\tb\n")
+            Some("2\ta\n--\n9\tb\n")
         );
         // Last line without a trailing newline keeps that shape.
         assert_eq!(
@@ -507,37 +530,46 @@ mod tests {
     #[test]
     fn recognizes_numbered_content_only() {
         assert!(is_numbered("4\ta\n5\tb\n"));
-        assert!(is_numbered(
-            "2\ta\n... [lines 3-8 not requested] ...\n9\tb\n"
-        ));
+        assert!(is_numbered("2\ta\n--\n9\tb\n"));
         assert!(is_numbered("7\t"));
         assert!(!is_numbered("4\ta\n6\tb\n"));
         assert!(!is_numbered("a\tb\n"));
         assert!(!is_numbered("0\ta\n"));
         assert!(!is_numbered(""));
-        assert!(!is_numbered(
-            "2\ta\n... [lines 4-8 not requested] ...\n9\tb\n"
-        ));
+        // A gap must skip at least one line, and gaps never stack.
+        assert!(!is_numbered("2\ta\n--\n3\tb\n"));
+        // A page cut at a gap still numbers: its edge markers drop.
+        assert_eq!(
+            number_lines(
+                "... [lines 1-9 not requested] ...\nten\n... [lines 11-19 not requested] ...\ntwenty\n... [lines 21-29 not requested] ...\n",
+                &[(10, 10), (20, 20)]
+            )
+            .as_deref(),
+            Some("10\tten\n--\n20\ttwenty\n")
+        );
+        // The compact view skips the lines it drops: still a source gutter.
+        let compact = |content: &str| gutter_numbered(&serde_json::json!({"content": content}));
+        assert!(compact("4\ta\n9\tb\n--\n20\tc\n"));
+        assert!(!compact("4\ta\n3\tb\n"));
+        assert!(!compact("plain\n"));
+        assert!(!is_numbered("2\ta\n--\n--\n9\tb\n"));
     }
 
-    /// A grep map of single lines carries one gap-run marker, not one marker
-    /// per gap; every line keeps its number, so the omitted spans and the
-    /// returned lines round-trip exactly.
+    /// A grep map of single lines separates its windows with one `--` line
+    /// each; the numbers state every skipped span, so the returned lines and
+    /// ranges round-trip exactly.
     #[test]
-    fn single_line_windows_share_one_gap_marker_and_round_trip() {
+    fn single_line_windows_use_one_gap_line_and_round_trip() {
         let ranges = [(3, 3), (10, 10), (20, 23), (40, 40), (50, 50)];
         let content = "c\n... [lines 4-9 not requested] ...\nj\n... [lines 11-19 not requested] ...\nt\nu\nv\nw\n... [lines 24-39 not requested] ...\nN\n... [lines 41-49 not requested] ...\nX\n";
         let numbered = number_lines(content, &ranges).expect("numbered");
-        let collapsed = collapse_gap_runs(&numbered);
         assert_eq!(
-            collapsed,
-            "3\tc\n... [2 gaps in lines 4-19 not requested] ...\n10\tj\n20\tt\n21\tu\n22\tv\n23\tw\n... [2 gaps in lines 24-49 not requested] ...\n40\tN\n50\tX\n"
+            numbered,
+            "3\tc\n--\n10\tj\n--\n20\tt\n21\tu\n22\tv\n23\tw\n--\n40\tN\n--\n50\tX\n"
         );
-        assert!(collapsed.len() < numbered.len());
-        assert!(is_numbered(&collapsed));
-        // Round trip: the numbers restore every returned line and range.
+        assert!(is_numbered(&numbered));
         let mut restored: Vec<(u64, u64)> = Vec::new();
-        for record in collapsed.lines() {
+        for record in numbered.lines() {
             let Some((number, _)) = record.split_once(SEPARATOR) else {
                 continue;
             };
@@ -548,27 +580,10 @@ mod tests {
             }
         }
         assert_eq!(restored, ranges);
-        // A lone gap keeps its own marker; nothing to collapse.
-        let lone = number_lines(
-            "a\n... [lines 3-8 not requested] ...\nb\n",
-            &[(2, 2), (9, 9)],
-        )
-        .expect("lone");
-        assert_eq!(collapse_gap_runs(&lone), lone);
-        // A miscounted or misplaced run is not numbered content.
-        assert!(!is_numbered(
-            "3\tc\n... [3 gaps in lines 4-19 not requested] ...\n10\tj\n20\tt\n"
-        ));
-        assert!(!is_numbered(
-            "3\tc\n... [2 gaps in lines 5-19 not requested] ...\n10\tj\n20\tt\n"
-        ));
-        assert!(!is_numbered(
-            "3\tc\n... [2 gaps in lines 4-19 not requested] ...\n10\tj\n21\tt\n"
-        ));
     }
 
-    /// A localFetch grep map (single-line matchString windows) shares one
-    /// gap-run marker per run of gaps, and its numbers restore every line.
+    /// A localFetch grep map (single-line matchString windows) gets one
+    /// `--` line per gap between windows, and its numbers restore every line.
     #[test]
     fn local_fetch_single_line_windows_share_gap_markers_and_round_trip() {
         let mut local = json!({"results":[{"index":0,"data":{
@@ -580,10 +595,7 @@ mod tests {
         let content = local["results"][0]["data"]["content"]
             .as_str()
             .expect("content");
-        assert_eq!(
-            content,
-            "3\tc\n... [2 gaps in lines 4-19 not requested] ...\n10\tj\n20\tt\n"
-        );
+        assert_eq!(content, "3\tc\n--\n10\tj\n--\n20\tt\n");
         assert!(is_numbered(content));
         let lines = content
             .lines()
@@ -615,7 +627,7 @@ mod tests {
         number_read_rows(ToolId::LocalFetch, &mut windows);
         assert_eq!(
             windows["results"][0]["data"],
-            json!({"content":"7\tx\n... [lines 8-9 not requested] ...\n10\ty\n","totalLines":12})
+            json!({"content":"7\tx\n--\n10\ty\n","totalLines":12})
         );
         let mut remote = json!({"results":[
             {"index":0,"data":{"owner":"o","repo":"r","path":"a.py","content":"x\n",

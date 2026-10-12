@@ -8,7 +8,7 @@ use octocode_engine::lsp::uri::uri_to_path as engine_uri_to_path;
 use serde_json::{Value, json};
 
 /// One flattened document symbol: `name`, `kind`, one-based `line` (the
-/// name line, a usable `lineHint`) and `endLine` (the full extent), the
+/// name line, a usable `line`) and `endLine` (the full extent), the
 /// one-based name `character`, and `parent`/`parentLine` for a nested
 /// symbol (a member, or a function's local). Every symbol is listed.
 pub(super) fn flatten_document_symbol(
@@ -41,7 +41,7 @@ pub(super) fn flatten_document_symbol(
             "name": name,
             "kind": kind,
             "line": start,
-            // 1-based, like every public column (D2).
+            // 1-based, like every public column.
             "character": anchor.pointer("/start/character").and_then(Value::as_u64).unwrap_or(0) + 1,
             "endLine": range.pointer("/end/line").and_then(Value::as_u64).unwrap_or(0) + 1,
         });
@@ -177,17 +177,46 @@ pub(super) fn symbol_kind_name(kind: Option<&Value>) -> String {
     .to_owned()
 }
 
-/// One page of `items` ([`crate::response::pages::slice_page`]), with the
-/// `nextPage` cursor the response stage moves to `next`.
-pub(super) fn paginate(items: &[Value], page: u32, page_size: u32) -> (Vec<Value>, Value) {
-    let page = page.max(1);
-    let (page_items, facts) =
-        crate::response::pages::slice_page(items, page as usize, page_size as usize);
-    let mut pagination = facts.to_value();
-    if pagination["hasMore"] == true {
+/// How one page is cut: the caller's explicit `pageSize` (a row count), else
+/// as many rows as fit `budget` characters, each row costing its `sizes`
+/// entry.
+pub(super) struct PageCut<'a> {
+    pub(super) page_size: Option<u32>,
+    pub(super) budget: usize,
+    pub(super) sizes: &'a [usize],
+}
+
+/// One page of `items` with the `nextPage` cursor the response stage moves to
+/// `next`. A page past the end is empty, terminal and flagged `outOfRange`,
+/// never clamped to the last page, which would repeat rows the caller has.
+pub(super) fn paginate(items: &[Value], page: u32, cut: &PageCut<'_>) -> (Vec<Value>, Value) {
+    use crate::response::pages::PageFacts;
+    use crate::tools::page_windows::Paging;
+    let page = (page.max(1)) as usize;
+    let paging = Paging::of(cut.page_size.map(|size| size as usize), cut.budget);
+    let windows = paging.windows(cut.sizes);
+    let range = windows
+        .get(page - 1)
+        .cloned()
+        .unwrap_or(items.len()..items.len());
+    let more = page < windows.len();
+    let facts = match paging {
+        Paging::Count(size) => PageFacts::counted(page, size, items.len()),
+        Paging::Chars(_) => PageFacts::sized(page, windows.len(), items.len(), more),
+    };
+    let mut pagination = facts.out_of_range(page > windows.len().max(1)).to_value();
+    if more {
         pagination["nextPage"] = json!(page + 1);
     }
-    (page_items, pagination)
+    (items[range].to_vec(), pagination)
+}
+
+/// Characters each row costs a page when it prints as its own JSON.
+pub(super) fn plain_sizes(items: &[Value]) -> Vec<usize> {
+    items
+        .iter()
+        .map(|item| crate::tools::stream_page::json_chars(item) + 1)
+        .collect()
 }
 
 pub(super) fn as_array(value: &Value) -> Vec<Value> {

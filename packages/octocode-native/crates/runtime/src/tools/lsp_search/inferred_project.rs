@@ -68,7 +68,7 @@ pub(super) fn annotate(
     // later windows left was flagged by `Importers::annotate`, which names
     // the window and its `next.nextImporterPage`.
     let (reason, warning) = match row
-        .pointer("/payload/coverage/importerScan")
+        .pointer("/coverage/importerScan")
         .and_then(Value::as_str)
     {
         Some(SCAN_COMPLETE | SCAN_CAPPED) => return,
@@ -123,7 +123,7 @@ pub(super) fn annotate_compile_database(
         return;
     }
     let empty = row.get("status").and_then(Value::as_str) == Some("empty")
-        || row.pointer("/payload/kind").and_then(Value::as_str) == Some("empty");
+        || row.pointer("/kind").and_then(Value::as_str) == Some("empty");
     if empty {
         row["hints"] = json!([COMPILE_DATABASE_HINT]);
     } else if is_incoming(&query.operation()) {
@@ -144,14 +144,13 @@ mod tests {
     fn refs_query(uri: &str) -> LspSearchQuery {
         serde_json::from_value(json!({
             "operation":"references","mainGoal": "test", "reasoning":"test","path":uri,
-            "symbolName":"greet","lineHint":1
+            "symbolName":"greet","line":1
         }))
         .expect("references query")
     }
 
     fn refs_row() -> Value {
-        json!({"payload":{"kind":"references","matches":[],
-            "coverage":{"scope":"languageServer","exhaustive":false}}})
+        json!({"kind":"references","matches":[],"coverage":{}})
     }
 
     #[test]
@@ -178,17 +177,14 @@ mod tests {
         assert_eq!(row["isPartial"], true, "{row}");
         // The reason is stated once, in partialReasons.
         assert_eq!(row["partialReasons"], json!([REASON]));
-        assert!(
-            row["payload"].pointer("/coverage/reason").is_none(),
-            "{row}"
-        );
+        assert!(row.pointer("/coverage/reason").is_none(), "{row}");
         assert!(
             row["warnings"][0]
                 .as_str()
                 .is_some_and(|w| w.contains("tsconfig.json")),
             "{row}"
         );
-        let next = &row["next"]["textSearch"];
+        let next = &row["next"]["findText"];
         assert_eq!(next["tool"], "localSearch");
         assert_eq!(next["query"]["queries"][0]["path"], root.as_str());
         assert_eq!(next["query"]["queries"][0]["matchString"], "\\bgreet\\b");
@@ -231,7 +227,7 @@ mod tests {
 
         let definition: LspSearchQuery = serde_json::from_value(json!({
             "operation":"definition","mainGoal": "test", "reasoning":"test",
-            "path":format!("file://{}", file.display()),"symbolName":"greet","lineHint":1
+            "path":format!("file://{}", file.display()),"symbolName":"greet","line":1
         }))
         .expect("definition query");
         let mut row = refs_row();
@@ -256,12 +252,12 @@ mod tests {
         let query = refs_query(&format!("file://{}", file.display()));
         let root = Scope::new(dir.path().to_string_lossy().into_owned(), Vec::new());
         let path = file.to_string_lossy();
-        let mut row = json!({"status":"empty","payload":{"kind":"empty"},"hints":["generic"]});
+        let mut row = json!({"status":"empty","kind":"empty","hints":["generic"]});
         annotate_compile_database(&mut row, &query, Some("cpp"), &path, &root);
         assert_eq!(row["hints"][0], COMPILE_DATABASE_HINT);
         // References found only in the opened file look complete: flag them.
         let mut found = refs_row();
-        found["payload"]["matches"] = json!([{"path":"a.hpp","line":1}]);
+        found["matches"] = json!([{"path":"a.hpp","line":1}]);
         annotate_compile_database(&mut found, &query, Some("cpp"), &path, &root);
         assert_eq!(
             found["partialReasons"],
@@ -274,12 +270,12 @@ mod tests {
                 .is_some_and(|warning| warning.contains("compile_commands.json")),
             "{found}"
         );
-        assert_eq!(found["next"]["textSearch"]["tool"], "localSearch");
+        assert_eq!(found["next"]["findText"]["tool"], "localSearch");
         std::fs::write(dir.path().join("compile_commands.json"), "[]").expect("db");
-        let mut row = json!({"status":"empty","payload":{"kind":"empty"},"hints":["generic"]});
+        let mut row = json!({"status":"empty","kind":"empty","hints":["generic"]});
         annotate_compile_database(&mut row, &query, Some("cpp"), &path, &root);
         assert_eq!(row["hints"][0], "generic");
-        let mut rust = json!({"status":"empty","payload":{"kind":"empty"},"hints":["generic"]});
+        let mut rust = json!({"status":"empty","kind":"empty","hints":["generic"]});
         annotate_compile_database(&mut rust, &query, Some("rust"), &path, &root);
         assert_eq!(rust["hints"][0], "generic");
     }

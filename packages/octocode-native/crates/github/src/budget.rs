@@ -14,6 +14,7 @@ mod circuit;
 mod classify;
 mod persist;
 
+pub(crate) use circuit::CircuitCause;
 pub(crate) use classify::{is_primary_rate_limit, is_secondary_rate_limit};
 
 use super::{
@@ -107,9 +108,6 @@ pub struct ExecutorConfig {
     pub graphql_spacing: Duration,
     pub write_spacing: Duration,
     pub code_search_per_minute: usize,
-    /// Longest wait for a code-search window slot taken inside the request
-    /// (the 10/min window spans 60 s, beyond the general retry-after cap).
-    pub code_search_wait: Duration,
     /// Added to a primary reset before retrying (Octokit waits reset + 1s).
     pub reset_grace: Duration,
     /// Secondary-limit wait when GitHub sends no `retry-after`.
@@ -127,7 +125,6 @@ impl ExecutorConfig {
             graphql_spacing: Duration::from_millis(1000),
             write_spacing: Duration::from_millis(1000),
             code_search_per_minute: 10,
-            code_search_wait: Duration::from_secs(20),
             reset_grace: Duration::from_secs(1),
             secondary_default: Duration::from_secs(60),
             circuit_failures: 5,
@@ -228,6 +225,9 @@ struct KeyFacts {
     circuit_failures: u32,
     #[serde(skip)]
     circuit_open_until_ms: u64,
+    /// What the last counted failure was: the open circuit reports it.
+    #[serde(skip)]
+    circuit_cause: Option<CircuitCause>,
 }
 
 impl KeyFacts {
@@ -258,7 +258,8 @@ pub(crate) struct Block {
     pub resource: String,
     pub remaining: Option<u64>,
     pub reset: Option<u64>,
-    pub circuit: bool,
+    /// Set when the block is an open circuit: the failure that opened it.
+    pub circuit: Option<CircuitCause>,
 }
 
 impl Block {
@@ -267,8 +268,34 @@ impl Block {
     }
 
     pub fn error(&self, now_ms: u64) -> ProviderError {
-        let message = if self.circuit {
-            "GitHub host circuit is open after repeated failures; wait and retry."
+        let retry_after_seconds = Some(ceil_secs(self.wait(now_ms)));
+        if let Some(cause) = self
+            .circuit
+            .filter(|cause| *cause != CircuitCause::Secondary)
+        {
+            // An outage is not a rate limit: name the real cause, retryable
+            // once the circuit closes.
+            let (kind, message) = match cause {
+                CircuitCause::Transport => (
+                    ProviderErrorKind::Transport,
+                    "GitHub is unavailable after repeated connection failures; request not sent until the circuit closes.",
+                ),
+                _ => (
+                    ProviderErrorKind::Server,
+                    "GitHub is unavailable after repeated server errors; request not sent until the circuit closes.",
+                ),
+            };
+            let mut error = ProviderError::new(kind, message);
+            error.rate_limit = Some(Box::new(RateLimit {
+                remaining: None,
+                reset_epoch_seconds: None,
+                retry_after_seconds,
+                resource: None,
+            }));
+            return error;
+        }
+        let message = if self.circuit.is_some() {
+            "GitHub secondary rate limits repeated; requests are paused, wait and retry."
         } else if self.reset.is_some() {
             "GitHub API rate limit exhausted; request not sent until the limit resets."
         } else {
@@ -279,7 +306,7 @@ impl Block {
             RateLimit {
                 remaining: self.remaining,
                 reset_epoch_seconds: self.reset,
-                retry_after_seconds: Some(ceil_secs(self.wait(now_ms))),
+                retry_after_seconds,
                 resource: Some(self.resource.as_str().into()),
             },
         )
@@ -288,7 +315,7 @@ impl Block {
 
 pub(crate) fn rate_limited_error(message: &str, rate_limit: RateLimit) -> ProviderError {
     let mut error = ProviderError::new(ProviderErrorKind::RateLimited, message);
-    error.rate_limit = Some(rate_limit);
+    error.rate_limit = Some(Box::new(rate_limit));
     error.retryable = true;
     error
 }
@@ -403,7 +430,7 @@ impl KeyState {
                 resource: resource.to_owned(),
                 remaining: None,
                 reset: None,
-                circuit: true,
+                circuit: Some(facts.circuit_cause.unwrap_or(CircuitCause::Server)),
             });
         }
         if facts.circuit_open_until_ms != 0 {
@@ -417,7 +444,7 @@ impl KeyState {
                 resource: resource.to_owned(),
                 remaining: None,
                 reset: None,
-                circuit: false,
+                circuit: None,
             });
         }
         if let Some(bucket) = facts.buckets.get(resource)
@@ -433,7 +460,7 @@ impl KeyState {
                     resource: resource.to_owned(),
                     remaining: Some(0),
                     reset: Some(bucket.reset),
-                    circuit: false,
+                    circuit: None,
                 });
             }
         }
@@ -457,7 +484,7 @@ impl KeyState {
             };
             let now = now_ms();
             let wait = block.wait(now);
-            if block.circuit || wait > cap || Instant::now() + wait >= deadline {
+            if block.circuit.is_some() || wait > cap || Instant::now() + wait >= deadline {
                 return Err(block.error(now));
             }
             pause(wait, deadline, cancellation).await?;
@@ -470,7 +497,9 @@ impl KeyState {
 
     /// Admit one attempt: group permit, group spacing (minTime), optional
     /// code-search window slot (counted once per logical request), then the
-    /// per-key global permit.
+    /// per-key global permit. A limit that landed while this attempt queued
+    /// is re-checked before it is sent: the reservation is handed back and
+    /// the attempt waits the block out, or fails fast like the gate before it.
     pub async fn admit(
         &self,
         group: Option<Group>,
@@ -480,6 +509,52 @@ impl KeyState {
         deadline: Instant,
         cancellation: &CancellationToken,
     ) -> Result<Admission, ProviderError> {
+        let resource = match group {
+            Some(Group::Auth) => "auth",
+            Some(group) => group.bucket(),
+            None => "core",
+        };
+        for _ in 0..4 {
+            if let Some(admission) = self
+                .try_admit(
+                    group,
+                    resource,
+                    config,
+                    count_code_search,
+                    cap,
+                    deadline,
+                    cancellation,
+                )
+                .await?
+            {
+                return Ok(admission);
+            }
+            self.wait_unblocked(resource, config, cap, deadline, cancellation)
+                .await?;
+        }
+        match self.blocked(resource, config) {
+            None => Err(ProviderError::new(
+                ProviderErrorKind::RateLimited,
+                "GitHub request admission kept being blocked; request not sent.",
+            )),
+            Some(block) => Err(block.error(now_ms())),
+        }
+    }
+
+    /// One admission pass; `None` when a block landed while it queued, after
+    /// the reservation and permits were handed back.
+    #[allow(clippy::too_many_arguments)]
+    async fn try_admit(
+        &self,
+        group: Option<Group>,
+        resource: &str,
+        config: &ExecutorConfig,
+        count_code_search: bool,
+        cap: Duration,
+        deadline: Instant,
+        cancellation: &CancellationToken,
+    ) -> Result<Option<Admission>, ProviderError> {
+        let mut reservation = None;
         let mut permits = Vec::with_capacity(2);
         if let Some(group) = group {
             if let Some(semaphore) = self.groups.get(group.name()) {
@@ -488,9 +563,12 @@ impl KeyState {
             let spacing = config.spacing(group).as_millis() as u64;
             let window = count_code_search && config.code_search_per_minute != usize::MAX;
             if spacing > 0 || window {
-                let now = now_ms();
-                let start = {
-                    let mut facts = self.facts();
+                // Take the start slot (and window slot) from this key's
+                // facts: the spacing after the group's last start, and the
+                // window's oldest stamp when the window is full. One cap,
+                // `cap`, bounds every wait, the code-search window's too.
+                let reserve = |facts: &mut KeyFacts| {
+                    let now = now_ms();
                     let mut start = now;
                     if let Some(last) = facts.last_start_ms.get(group.name()) {
                         start = start.max(last.saturating_add(spacing));
@@ -510,13 +588,7 @@ impl KeyState {
                         }
                     }
                     let wait = Duration::from_millis(start.saturating_sub(now));
-                    let limit = if window {
-                        cap.max(config.code_search_wait)
-                    } else {
-                        cap
-                    };
-                    if wait > limit.max(config.spacing(group)) || Instant::now() + wait >= deadline
-                    {
+                    if wait > cap.max(config.spacing(group)) || Instant::now() + wait >= deadline {
                         // Label the wait by its cause: the code-search window,
                         // or this group's own spacing (review L10).
                         let message = if window {
@@ -541,13 +613,19 @@ impl KeyState {
                     if window {
                         facts.code_search_ms.push_back(start);
                     }
-                    (start, previous)
+                    Ok((start, previous))
                 };
-                let (start, previous) = start;
+                // Mirrored groups reserve under the cross-process file lock,
+                // against every process's slots (review: two processes took
+                // the same slot when each reserved from its own view).
                 let persisted = matches!(group, Group::Search | Group::CodeSearch | Group::Graphql);
-                if persisted {
-                    self.persist();
-                }
+                let (start, previous) = if persisted {
+                    self.reserve_shared(deadline, cancellation, reserve)
+                        .await??
+                } else {
+                    reserve(&mut self.facts())?
+                };
+                reservation = Some((group, start, previous, window, persisted));
                 if let Err(error) = pause(
                     Duration::from_millis(start.saturating_sub(now_ms())),
                     deadline,
@@ -562,8 +640,27 @@ impl KeyState {
                 }
             }
         }
-        permits.push(acquire(&self.global, deadline, cancellation).await?);
-        Ok(Admission { _permits: permits })
+        let global = acquire(&self.global, deadline, cancellation).await;
+        let global = match global {
+            Ok(permit) => permit,
+            Err(error) => {
+                if let Some((group, start, previous, window, persisted)) = reservation {
+                    self.release_reservation(group, start, previous, window, persisted);
+                }
+                return Err(error);
+            }
+        };
+        // The sleeps above can span a response that set a cooldown or
+        // exhausted the bucket: never send into a block learned meanwhile.
+        self.refresh_from_disk();
+        if self.blocked(resource, config).is_some() {
+            if let Some((group, start, previous, window, persisted)) = reservation {
+                self.release_reservation(group, start, previous, window, persisted);
+            }
+            return Ok(None);
+        }
+        permits.push(global);
+        Ok(Some(Admission { _permits: permits }))
     }
 
     /// Hand back a reservation in memory and, when mirrored, on disk: the
@@ -603,6 +700,20 @@ impl KeyState {
         if remaining == 0 {
             self.persist();
         }
+    }
+
+    /// Code searches the 60 s window still has room for, counting what other
+    /// processes on this key reserved.
+    pub fn code_search_room(&self, config: &ExecutorConfig) -> usize {
+        self.refresh_from_disk();
+        let now = now_ms();
+        let used = self
+            .facts()
+            .code_search_ms
+            .iter()
+            .filter(|stamp| stamp.saturating_add(60_000) > now)
+            .count();
+        config.code_search_per_minute.saturating_sub(used)
     }
 
     /// Mark a resource exhausted until `reset` (epoch seconds).
@@ -652,7 +763,7 @@ impl KeyState {
             if let Some(block) = block {
                 let now = now_ms();
                 let wait = block.wait(now);
-                if block.circuit || wait > cap || Instant::now() + wait >= deadline {
+                if block.circuit.is_some() || wait > cap || Instant::now() + wait >= deadline {
                     return Err(block.error(now));
                 }
                 std::thread::sleep(wait.min(TICK));
@@ -910,8 +1021,8 @@ mod tests {
             code_search_per_minute: 2,
             ..ExecutorConfig::relaxed()
         });
-        // The window is full, and its oldest slot frees in ~1.5 s: longer
-        // than the 1 s retry-after cap, inside the code-search wait.
+        // The window is full, and its oldest slot frees in ~1.5 s: inside
+        // the 2 s rate-limit cap.
         {
             let now = now_ms();
             let mut facts = state.facts();
@@ -924,13 +1035,84 @@ mod tests {
                 Some(Group::CodeSearch),
                 budget.config(),
                 true,
-                Duration::from_secs(1),
+                Duration::from_secs(2),
                 Instant::now() + Duration::from_secs(10),
                 &CancellationToken::new(),
             )
             .await;
         assert!(admitted.is_ok(), "{:?}", admitted.err());
         assert!(started.elapsed() >= Duration::from_millis(1_000));
+    }
+
+    /// One cap bounds every wait: a window slot that frees after the cap
+    /// fails fast with its retry-after, as a rate-limit block would.
+    #[tokio::test]
+    async fn a_window_wait_past_the_cap_fails_fast() {
+        let (budget, state) = full_code_search_window();
+        let started = Instant::now();
+        let error = state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(1),
+                Instant::now() + Duration::from_secs(10),
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .expect("window wait past the cap");
+        assert_eq!(error.kind, ProviderErrorKind::RateLimited);
+        assert_eq!(
+            error.rate_limit.and_then(|limit| limit.retry_after_seconds),
+            Some(2)
+        );
+        assert!(started.elapsed() < Duration::from_millis(500));
+    }
+
+    /// Two processes sharing the state directory reserve under its lock: the
+    /// second sees the first's window slot before it reserves, so the
+    /// window never admits more than its limit.
+    #[tokio::test]
+    async fn processes_reserve_window_slots_against_each_other() {
+        let dir = tempfile::tempdir().expect("state directory");
+        let config = ExecutorConfig {
+            code_search_per_minute: 1,
+            ..ExecutorConfig::relaxed()
+        };
+        let key = LimiterKey::new("h", None);
+        let first = GitHubBudget::with_config(config.clone());
+        let second = GitHubBudget::with_config(config);
+        let (one, two) = (
+            first.key_state(&key, Some(dir.path())),
+            second.key_state(&key, Some(dir.path())),
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let token = CancellationToken::new();
+        let taken = one
+            .admit(
+                Some(Group::CodeSearch),
+                first.config(),
+                true,
+                Duration::from_secs(1),
+                deadline,
+                &token,
+            )
+            .await;
+        assert!(taken.is_ok(), "{:?}", taken.err());
+        let error = two
+            .admit(
+                Some(Group::CodeSearch),
+                second.config(),
+                true,
+                Duration::from_secs(1),
+                deadline,
+                &token,
+            )
+            .await
+            .err()
+            .expect("the other process holds the only slot");
+        assert_eq!(error.kind, ProviderErrorKind::RateLimited);
     }
 
     /// Seed a full 2/min window whose oldest slot frees in ~1.5 s.
@@ -962,7 +1144,7 @@ mod tests {
                         Some(Group::CodeSearch),
                         budget.config(),
                         true,
-                        Duration::from_secs(1),
+                        Duration::from_secs(2),
                         deadline,
                         &token,
                     )
@@ -1006,7 +1188,7 @@ mod tests {
                 Some(Group::CodeSearch),
                 budget.config(),
                 true,
-                Duration::from_secs(1),
+                Duration::from_secs(2),
                 Instant::now() + Duration::from_secs(10),
                 &token,
             )
@@ -1023,6 +1205,89 @@ mod tests {
                 .is_none_or(|start| *start <= now_ms()),
             "no phantom spacing reservation"
         );
+    }
+
+    /// A peer process that holds the state file's lock must not hold this
+    /// request past its deadline or its cancellation, and the request goes
+    /// through as soon as the lock is released.
+    #[tokio::test]
+    async fn a_held_state_lock_cannot_block_admission_past_its_deadline() {
+        let dir = tempfile::tempdir().expect("state directory");
+        let config = || ExecutorConfig {
+            code_search_per_minute: 2,
+            ..ExecutorConfig::relaxed()
+        };
+        let key = LimiterKey::new("h", None);
+        let budget = GitHubBudget::with_config(config());
+        let state = budget.key_state(&key, Some(dir.path()));
+        let mut sidecar = dir.path().join(key.file_name()).into_os_string();
+        sidecar.push(".lock");
+        let peer = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&sidecar)
+            .expect("lock file");
+        peer.lock().expect("peer takes the lock");
+
+        let started = Instant::now();
+        let error = state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(2),
+                Instant::now() + Duration::from_millis(300),
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .expect("the held lock times the request out");
+        assert_eq!(error.kind, ProviderErrorKind::Timeout);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "waited {:?}",
+            started.elapsed()
+        );
+
+        let token = CancellationToken::new();
+        let canceller = token.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            canceller.cancel();
+        });
+        let started = Instant::now();
+        let error = state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(2),
+                Instant::now() + Duration::from_secs(60),
+                &token,
+            )
+            .await
+            .err()
+            .expect("cancellation ends the lock wait");
+        assert_eq!(error.kind, ProviderErrorKind::Cancelled);
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "waited {:?}",
+            started.elapsed()
+        );
+
+        peer.unlock().expect("peer releases the lock");
+        state
+            .admit(
+                Some(Group::CodeSearch),
+                budget.config(),
+                true,
+                Duration::from_secs(2),
+                Instant::now() + Duration::from_secs(10),
+                &CancellationToken::new(),
+            )
+            .await
+            .expect("admitted once the lock is free");
     }
 
     /// The reservation is mirrored to disk before the wait, so the release
@@ -1050,18 +1315,19 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
             canceller.cancel();
         });
-        state
+        let error = state
             .admit(
                 Some(Group::CodeSearch),
                 budget.config(),
                 true,
-                Duration::from_secs(1),
+                Duration::from_secs(2),
                 Instant::now() + Duration::from_secs(10),
                 &token,
             )
             .await
             .err()
             .expect("cancelled");
+        assert_eq!(error.kind, ProviderErrorKind::Cancelled);
         let other_process = GitHubBudget::with_config(config());
         let seen = other_process.key_state(&key, Some(dir.path()));
         let facts = seen.facts();

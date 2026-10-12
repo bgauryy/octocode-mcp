@@ -303,6 +303,7 @@ mod tests {
                 matches: vec![TextSearchMatch {
                     line,
                     column: 0,
+                    byte_offset: 0,
                     value: value.into(),
                     count: None,
                     kind: None,

@@ -2,11 +2,12 @@ mod content;
 pub(crate) mod scan;
 mod walk;
 
-pub use content::{ContentSecurity, ValidationResult};
 pub(crate) use content::{
-    KeyBlockTracker, key_fragment_placeholder, match_window_intersects_key_block,
-    private_key_block_line_ranges, redact_private_key_blocks, snippet_may_hold_key_material,
+    BlockLine, KeyBlockState, KeyBlockTracker, LineShape, LineShapeScan, is_key_header_prefix,
+    key_fragment_placeholder, match_window_intersects_key_block, private_key_block_line_ranges,
+    redact_private_key_blocks, snippet_may_hold_key_material,
 };
+pub use content::{ContentSecurity, ValidationResult};
 pub use walk::sanitize_json;
 
 /// Secret-scrubbed host-boundary error text. A secret echoed by a remote
@@ -20,7 +21,7 @@ pub fn scrub_error_text(text: &str) -> String {
 
 /// [`scrub_error_text`] over every string leaf of an error payload.
 pub fn scrub_error_payload(payload: &mut serde_json::Value) {
-    let _ = sanitize_json(payload, &mut |text: &str| {
+    let _ = sanitize_json(payload, &mut |text: &str, _: Option<&str>| {
         Ok::<_, std::convert::Infallible>(scrub_error_text(text))
     });
 }

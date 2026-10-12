@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { num, type Row } from './rows.js';
 
 /**
  * The agent database's schema: durable sessions, backlog and memories, and the team's transient state (presence,
@@ -6,15 +7,13 @@ import type { DatabaseSync } from 'node:sqlite';
  * is not ours, or was written by a newer Octocode, is refused and never dropped.
  */
 
-type Row = Record<string, unknown>;
-const num = (value: unknown) => (typeof value === 'number' ? value : 0);
 
 /** The file is not an agent database this code may use (another app's file, or a newer schema). Not retried. */
 export class AgentDbError extends Error {}
 
 /** Marks the file as an Octocode for Pi agent database ("OcPg"); a file with another id is never touched. */
 export const AGENT_APPLICATION_ID = 0x4f635067;
-export const AGENT_SCHEMA_VERSION = 1;
+export const AGENT_SCHEMA_VERSION = 2;
 
 /** v1, the first published schema: sessions, backlog, memories and the team tables. */
 const V1 = `
@@ -75,7 +74,11 @@ CREATE INDEX edits_recent ON edits(workspace, at);
 `;
 
 /** Step `i` moves a file from `user_version` i to i + 1. Append only once published; never edit a shipped step. */
-const MIGRATIONS: ReadonlyArray<(db: DatabaseSync) => void> = [(db) => db.exec(V1)];
+const MIGRATIONS: ReadonlyArray<(db: DatabaseSync) => void> = [
+  (db) => db.exec(V1),
+  // v2: the start time of the session's process, so a reused pid is not taken for it (null in rows from before).
+  (db) => db.exec('ALTER TABLE sessions ADD COLUMN pid_started TEXT'),
+];
 
 const FTS = `
 CREATE VIRTUAL TABLE memories_fts USING fts5(title, keywords, body, content='memories', content_rowid='id', tokenize='porter unicode61');

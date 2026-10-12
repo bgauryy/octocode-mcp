@@ -1,7 +1,8 @@
 //! Bounded, deterministic questions over a published snapshot.
 //!
 //! Every list operation pages with `limit`/`offset`, reports `total`, and on
-//! a cut emits `truncated` plus a paste-ready `next` command (exit 6).
+//! a cut emits `truncated` plus a paste-ready `next` command; paging is
+//! success, so the exit stays 0.
 use super::format::{
     Confidence, EdgeKind, EdgeRec, FLAG_EXPORTED, GraphTables, NONE, NodeKind, decode,
 };
@@ -503,14 +504,13 @@ fn run_page(
         out.insert("offset".into(), json!(offset));
     }
     out.insert("results".into(), Value::Array(rows));
-    let mut exit = if total == 0 { 1 } else { 0 };
+    let exit = if total == 0 { 1 } else { 0 };
     if offset + shown < total {
         out.insert("truncated".into(), json!(true));
         out.insert(
             "next".into(),
             json!(next_command(options, &graph.id, offset + shown)),
         );
-        exit = 6;
     }
     GraphOutput {
         value: Value::Object(out),

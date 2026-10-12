@@ -552,7 +552,7 @@ mod env_and_scrub_tests {
         assert_eq!(get("GITHUB_TOKEN"), None);
     }
 
-    /// L7: git may echo the injected header value without its
+    /// Git may echo the injected header value without its
     /// `Authorization:` prefix; the bare base64 form is reversible.
     #[test]
     fn scrub_redacts_the_bare_basic_credential() {

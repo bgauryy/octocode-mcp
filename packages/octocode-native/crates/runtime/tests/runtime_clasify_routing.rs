@@ -8,7 +8,7 @@ use support::{LocateTopPassage, Workspace, provider_runtime};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-/// A provider stub answering `expected_calls` requests. B4: a bare (never
+/// A provider stub answering `expected_calls` requests. It is a bare (never
 /// pooled) server: the process-wide judgment cache keys on the endpoint, so
 /// a pooled server reused by another test that judged the same evidence
 /// replayed its answer, the provider saw no call, and `expect` failed. The
@@ -40,7 +40,7 @@ fn steps(workspace: &Workspace) -> String {
 
 /// A locate target whose only content is one identifier or quoted literal
 /// (bare, or in a lookup sentence) is a literal lookup: the call routes to an
-/// executable `hints.textSearch` without reading the file or asking the
+/// executable `hints.findText` without reading the file or asking the
 /// provider, and it is not a failure.
 #[tokio::test]
 async fn literal_locate_targets_route_to_local_search_without_provider_work() {
@@ -72,12 +72,13 @@ async fn literal_locate_targets_route_to_local_search_without_provider_work() {
         let query = &output["queries"][0];
         assert_eq!(query["resources"], json!([]), "nothing was read: {query}");
         assert!(query.get("best").is_none(), "{query}");
+        // The fact names the literal; the findText lead is the route.
         let hint = query["hints"]["text"][0].as_str().unwrap_or_default();
         assert!(
-            hint.contains(literal) && hint.contains("localSearch"),
+            hint.contains(literal) && !hint.contains("hints."),
             "{query}"
         );
-        let search = &query["hints"]["textSearch"];
+        let search = &query["hints"]["findText"];
         assert_eq!(search["tool"], "localSearch", "{query}");
         assert_eq!(
             search["query"]["queries"][0]["matchString"], literal,
@@ -95,7 +96,7 @@ async fn literal_locate_targets_route_to_local_search_without_provider_work() {
                 search["query"].clone(),
             )
             .await
-            .expect("hints.textSearch executes");
+            .expect("hints.findText executes");
         assert!(
             found
                 .structured_content
@@ -138,7 +139,7 @@ async fn several_literal_targets_route_to_one_search_that_reaches_each() {
         tips.contains("step_17") && tips.contains("step_23"),
         "{query}"
     );
-    let search = &query["hints"]["textSearch"];
+    let search = &query["hints"]["findText"];
     assert_eq!(
         search["query"]["queries"][0]["matchString"], "step_17|step_23",
         "{query}"
@@ -150,7 +151,7 @@ async fn several_literal_targets_route_to_one_search_that_reaches_each() {
             search["query"].clone(),
         )
         .await
-        .expect("hints.textSearch executes")
+        .expect("hints.findText executes")
         .structured_content
         .to_string();
     assert!(
@@ -184,7 +185,7 @@ async fn a_described_target_that_names_an_identifier_is_still_located() {
     assert!(query["resources"][0].get("coverage").is_none(), "{query}");
     assert!(query["best"]["def"][0]["line"].is_u64(), "{query}");
     assert!(query["hints"].get("text").is_none(), "{query}");
-    assert!(query["hints"].get("textSearch").is_none(), "{query}");
+    assert!(query["hints"].get("findText").is_none(), "{query}");
     runtime.close().await;
 }
 
@@ -231,23 +232,32 @@ async fn an_open_walk_says_its_best_ranks_only_the_pages_judged_so_far() {
         let output = &outcome.structured_content;
         octocode_native::contracts::validate_output("clasify", output).expect("output contract");
         let query = &output["queries"][0];
-        let tip = query["hints"]["text"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .any(|text| text.contains("pages judged so far") && text.contains("next.clasify"));
+        // No prose beside the walk: the continuation carries the ranking
+        // (`carry`), and `best` ranks what was judged so far.
+        assert!(
+            query["hints"]["text"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .all(|text| !text.contains("next.")),
+            "{query}"
+        );
         request = query.pointer("/next/clasify").cloned();
-        if request.is_some() {
+        if let Some(walk) = &request {
             assert!(
                 query["best"]["t"][0]["line"].is_u64(),
                 "best stays: {query}"
             );
-            assert_eq!(query["resources"][0]["coverage"], "partial", "{query}");
-            assert!(tip, "open walk: {query}");
+            assert_eq!(
+                query["resources"][0]["coverage"]["state"], "partial",
+                "{query}"
+            );
+            assert!(
+                walk["queries"][0]["carry"].is_object(),
+                "open walk: {query}"
+            );
             open_tips += 1;
-        } else {
-            assert!(!tip, "finished walk: {query}");
         }
     }
     assert!(open_tips >= 1, "the file spans more than one call");
@@ -285,7 +295,15 @@ async fn a_page_read_never_repeats_a_best_row_read() {
         json!([format!("{}-{}", row["line"], row["endLine"])]),
         "{query}"
     );
-    for page in query["resources"][0]["pages"].as_array().unwrap() {
+    // The one whole-file page only restated the best window's `exists`: it
+    // folds away, leaving the file's coordinates on the resource.
+    assert!(query["resources"][0].get("pages").is_none(), "{query}");
+    assert_eq!(query["resources"][0]["path"], "src/steps.rs", "{query}");
+    for page in query["resources"][0]["pages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
         assert_ne!(
             page.pointer("/hints/read"),
             Some(best_read),

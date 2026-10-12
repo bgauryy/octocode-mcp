@@ -21,7 +21,7 @@ pub(crate) struct Declared {
 /// The multi-line declarations the engine outlines, in outline order.
 pub(crate) fn declarations(content: &str, path: &str) -> Option<Vec<Declared>> {
     // Shared with outline pages and search hits: one parse per file version.
-    let raw = crate::tools::ast_search::declarations_cache::extract(content, path, false, || {
+    let raw = crate::tools::declarations_cache::extract(content, path, false, || {
         octocode_engine::portable::extract_declarations(content, path)
     })?;
     let facts: serde_json::Value = serde_json::from_str(&raw).ok()?;
@@ -48,6 +48,33 @@ pub(crate) fn declarations(content: &str, path: &str) -> Option<Vec<Declared>> {
         })
         .collect();
     (!declared.is_empty()).then_some(declared)
+}
+
+/// Why the outline may miss a declaration: the parser recovered from syntax
+/// errors (Flow types, a newer syntax), named with the skipped line spans.
+fn recovered_parse(content: &str, path: &str) -> Option<String> {
+    let raw = crate::tools::declarations_cache::extract(content, path, false, || {
+        octocode_engine::portable::extract_declarations(content, path)
+    })?;
+    let facts: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let spans = facts["errorLines"]
+        .as_array()?
+        .iter()
+        .filter_map(|span| Some((span.get(0)?.as_u64()?, span.get(1)?.as_u64()?)))
+        .map(|(start, end)| {
+            if start == end {
+                start.to_string()
+            } else {
+                format!("{start}-{end}")
+            }
+        })
+        .collect::<Vec<_>>();
+    (!spans.is_empty()).then(|| {
+        format!(
+            " The parser could not parse lines {} of this file (syntax its grammar lacks, e.g. Flow types) and recovered, so the outline may miss the enclosing declaration.",
+            spans.join(", ")
+        )
+    })
 }
 
 /// 1-based inclusive spans of the multi-line declarations the engine outlines.
@@ -107,9 +134,10 @@ fn innermost(spans: &[(usize, usize)], line: usize) -> Option<(usize, usize)> {
         .copied()
 }
 
-fn no_outline(path: &str) -> String {
+fn no_outline(content: &str, path: &str) -> String {
     format!(
-        "block: no declaration outline for {path}; returned the requested lines. Read on with ranges."
+        "block: no declaration outline for {path}; returned the requested lines.{}",
+        recovered_parse(content, path).unwrap_or_default()
     )
 }
 
@@ -139,7 +167,7 @@ pub fn widen_ranges(
     rest: &mut Vec<LineRange>,
 ) -> Vec<LineRange> {
     let Some(spans) = block_spans(content, path) else {
-        warnings.push(no_outline(path));
+        warnings.push(no_outline(content, path));
         return ranges;
     };
     ranges
@@ -147,8 +175,9 @@ pub fn widen_ranges(
         .map(|range| {
             let Some((first, last)) = innermost(&spans, range.start) else {
                 warnings.push(format!(
-                    "block: no declaration encloses line {}; returned the requested lines.",
-                    range.start
+                    "block: no declaration encloses line {}; returned the requested lines.{}",
+                    range.start,
+                    recovered_parse(content, path).unwrap_or_default()
                 ));
                 return range;
             };
@@ -160,7 +189,7 @@ pub fn widen_ranges(
             let end = range.end.max(last.min(range.start + BLOCK_MAX_LINES - 1));
             if end < last {
                 warnings.push(format!(
-                    "block: declaration {first}-{last} exceeds {BLOCK_MAX_LINES} lines; returned {}-{end}. next.continueBlock reads through line {last}.",
+                    "block: declaration {first}-{last} exceeds {BLOCK_MAX_LINES} lines; returned {}-{end}.",
                     range.start,
                 ));
                 rest.push(LineRange {
@@ -206,7 +235,7 @@ pub fn widen_matches(
     blocks: &mut Vec<super::types::DeclaredBlock>,
 ) -> Vec<LineRange> {
     let Some(declared) = declarations(content, path) else {
-        warnings.push(no_outline(path));
+        warnings.push(no_outline(content, path));
         return windows;
     };
     let spans: Vec<(usize, usize)> = declared.iter().map(|d| (d.start, d.end)).collect();
@@ -262,12 +291,13 @@ pub fn widen_matches(
     }
     if unenclosed > 0 {
         warnings.push(format!(
-            "block: {unenclosed} match(es) sit outside any declaration; those keep their match context window. Read on with ranges."
+            "block: {unenclosed} match(es) sit outside any declaration; those keep their match context window.{}",
+            recovered_parse(content, path).unwrap_or_default()
         ));
     }
     if oversized > 0 {
         warnings.push(format!(
-            "block: {oversized} match(es) sit in declarations over {BLOCK_MAX_LINES} lines; those keep their context window; read the rest of each with ranges."
+            "block: {oversized} match(es) sit in declarations over {BLOCK_MAX_LINES} lines; those keep their context window."
         ));
     }
     widened
@@ -278,6 +308,16 @@ mod tests {
     use super::*;
 
     const PY: &str = "import os\n\ndef first(a):\n    x = 1\n    return a\n\n\ndef second(b):\n    if b:\n        return 1\n    return 2\n";
+
+    /// A recovered parse is named in block warnings with the lines the
+    /// parser skipped; a clean parse adds nothing.
+    #[test]
+    fn a_recovered_parse_is_named_with_its_skipped_lines() {
+        let flow = "// @flow\ntype Dispatch<A> = A => void;\nexport function useState<S>(init: S): [S, Dispatch<S>] {\n  return [init, () => {}];\n}\n";
+        let note = recovered_parse(flow, "Hooks.js").expect("Flow types force a recovered parse");
+        assert!(note.contains("could not parse lines"), "{note}");
+        assert!(recovered_parse(PY, "m.py").is_none());
+    }
 
     #[test]
     fn ranges_widen_to_the_enclosing_declaration() {

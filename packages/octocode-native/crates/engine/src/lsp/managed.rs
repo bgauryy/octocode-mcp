@@ -194,10 +194,16 @@ pub fn platform_id() -> String {
     )
 }
 
+/// The Node-style `{platform}-{arch}` id (no musl suffix) that npm platform
+/// packages are named by, such as `@typescript/native-preview-darwin-arm64`.
+pub(crate) fn npm_platform_id() -> String {
+    platform_id_for(std::env::consts::OS, std::env::consts::ARCH, false)
+}
+
 fn platform_id_for(os: &str, arch: &str, musl: bool) -> String {
     // Only the two shipped architectures get their npm-style names; any other
     // keeps its Rust name, so manifest lookup reports it unsupported instead
-    // of selecting an arm64 binary (review L12).
+    // of selecting an arm64 binary.
     let arch = match arch {
         "x86_64" => "x64",
         "aarch64" => "arm64",
@@ -293,7 +299,7 @@ pub fn resolve_cached_server(root: &Path, name: &str, platform: &str) -> Option<
     let bin_path = cached_server_bin_path(root, name, platform)?;
     let marker = read_cache_marker(&marker_path(&bin_path))?;
     // A binary from another asset (manifest bumped at the same release-tag
-    // path) is stale, even when its own hash still matches (review L15).
+    // path) is stale, even when its own hash still matches.
     if !marker.asset_sha256.eq_ignore_ascii_case(pinned_asset) {
         return None;
     }
@@ -383,7 +389,7 @@ mod tests {
         ))
     }
 
-    /// Review L15: a binary installed from a different asset than the one the
+    /// A binary installed from a different asset than the one the
     /// manifest now pins (same release-tag path) is not trusted.
     #[test]
     fn resolve_rejects_marker_for_a_different_asset() {
@@ -442,7 +448,7 @@ mod tests {
         );
     }
 
-    /// Review L12: an architecture the manifest does not ship must not be
+    /// An architecture the manifest does not ship must not be
     /// mapped onto another architecture's binary.
     #[test]
     fn platform_id_keeps_unknown_architectures_distinct() {

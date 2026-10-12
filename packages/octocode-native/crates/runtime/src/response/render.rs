@@ -1,6 +1,8 @@
 use crate::tools::id::ToolId;
 use crate::tools::output::TextShape;
 use serde_json::{Value, json};
+use std::borrow::Cow;
+use std::fmt::Write as _;
 
 /// Encoding of the rendered text channel, selected by `output.format`.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -59,16 +61,49 @@ pub fn render_tool(tool: ToolId, response: &Value, query: &Value, format: TextFo
             TextShape::Structured => render_structured(body, format),
         }
     };
-    let Some(warnings) = warnings else {
-        return text;
+    let text = match warnings {
+        None => text,
+        Some(warnings) => match format {
+            TextFormat::Yaml => format!("{}{text}", yaml(json!({"warnings": warnings}), &[])),
+            TextFormat::Json => match text.strip_prefix('{') {
+                Some(rest) if rest != "}" => format!("{{\"warnings\":{warnings},{rest}"),
+                _ => text,
+            },
+        },
     };
     match format {
-        TextFormat::Yaml => format!("{}{text}", yaml(json!({"warnings": warnings}), &[])),
-        TextFormat::Json => match text.strip_prefix('{') {
-            Some(rest) if rest != "}" => format!("{{\"warnings\":{warnings},{rest}"),
-            _ => text,
+        TextFormat::Yaml => match terminal_safe(&text) {
+            Cow::Borrowed(_) => text,
+            Cow::Owned(escaped) => escaped,
         },
+        TextFormat::Json => text,
     }
+}
+
+/// The YAML text channel is printed to terminals and hosts verbatim, and its
+/// source, patch and outline blocks carry file bytes unquoted. Escape every
+/// C0 control except tab and line feed (a CR only when it does not end a
+/// CRLF line), DEL, and C1 controls as `\u{..}`, so a crafted file cannot
+/// recolour, hide or overwrite what a reader sees. YAML scalars are already
+/// escaped by the emitter; structured content and JSON text keep exact bytes.
+fn terminal_safe(text: &str) -> Cow<'_, str> {
+    let unsafe_char = |(index, ch): (usize, char)| match ch {
+        '\t' | '\n' => false,
+        '\r' => text.as_bytes().get(index + 1) != Some(&b'\n'),
+        _ => ch.is_control(),
+    };
+    if !text.char_indices().any(unsafe_char) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 16);
+    for (index, ch) in text.char_indices() {
+        if unsafe_char((index, ch)) {
+            let _ = write!(out, "\\u{{{:x}}}", u32::from(ch));
+        } else {
+            out.push(ch);
+        }
+    }
+    Cow::Owned(out)
 }
 
 fn render_inline_file(response: &Value, format: TextFormat) -> String {
@@ -156,8 +191,8 @@ fn render_search_hits(mut response: Value, query: &Value, format: TextFormat) ->
                             "invertMatch",
                             "include",
                             "exclude",
-                            "noIgnore",
-                            "hidden",
+                            "includeIgnored",
+                            "includeHidden",
                             "contextLines",
                             "matchContentLength",
                             "matchPageSize",
@@ -331,7 +366,7 @@ fn take_patches(value: &mut Value, label: &str, out: &mut Vec<(String, String)>)
 
 /// Patch-window fields a span header restates (`chars a-b of T`); the rest
 /// derive from the shown patch length.
-const SPAN_FIELDS: [&str; 5] = ["offset", "length", "totalChars", "hasMore", "nextOffset"];
+const SPAN_FIELDS: [&str; 6] = ["unit", "offset", "length", "total", "hasMore", "nextOffset"];
 
 /// The `(header, patch)` section of a changed-file row with a non-empty
 /// patch, plus the row's fields the header does not carry (with its path),
@@ -389,7 +424,7 @@ fn patch_section(row: &Value, label: &str) -> Option<((String, String), Option<V
     let span = match (row.get("patchPagination"), count("fullPatchChars")) {
         (Some(page), _) => {
             let from = page.get("offset").and_then(Value::as_u64).unwrap_or(0);
-            let total = page.get("totalChars").and_then(Value::as_u64).unwrap_or(0);
+            let total = page.get("total").and_then(Value::as_u64).unwrap_or(0);
             if let Some(Value::Object(window)) = rest.get_mut("patchPagination") {
                 for key in SPAN_FIELDS {
                     window.shift_remove(key);
@@ -480,7 +515,7 @@ fn yaml(mut value: Value, keys: &[&str]) -> String {
         return text;
     }
     // Each placeholder is a plain scalar on its own list item; the flow
-    // mapping replaces that whole item (X1: one line per row object). The
+    // mapping replaces that whole item (one line per row object). The
     // tag never occurs in the value, so only placeholder items match.
     let mut out = String::with_capacity(text.len() + rows.iter().map(String::len).sum::<usize>());
     for line in text.split_inclusive('\n') {
@@ -560,7 +595,7 @@ fn is_flow_row(value: &Value) -> bool {
         .is_some_and(|map| !map.is_empty() && map.len() <= FLOW_MAX_KEYS && map.values().all(flat))
 }
 
-/// List keys whose rows are location rows (X1): hits, matches, declarations.
+/// List keys whose rows are location rows: hits, matches, declarations.
 const FLOW_KEYS: [&str; 2] = ["matches", "symbols"];
 
 /// Replace every item of a location-row list (see [`FLOW_KEYS`]) that is a
@@ -721,6 +756,7 @@ fn order_read_metadata(data: &mut Value) {
         "matchRanges",
         "selectedMatchCount",
         "matchedLines",
+        "matchKeys",
         "modified",
         "warnings",
         "sourceChars",
@@ -777,7 +813,43 @@ mod tests {
         assert_eq!(TextFormat::from_config("yaml"), TextFormat::Yaml);
     }
 
-    /// H2: a matched value that spells the internal flow-row placeholder is
+    /// File bytes in the YAML text channel (content and patch blocks)
+    /// cannot drive a terminal: C0 controls other than tab/LF, a lone CR,
+    /// DEL and C1 render escaped; CRLF line ends and tabs stay; JSON text
+    /// and the structured response keep the exact bytes.
+    #[test]
+    fn yaml_text_escapes_terminal_control_bytes_in_verbatim_blocks() {
+        let content = "ctrl \u{1b}[31mRED\u{1b}[0m\tbell \u{7}\r\nCR\rX del\u{7f} c1\u{9b}2J\n";
+        let fetch = json!({"results":[{"index":0,"data":{"path":"a.txt","content":content}}]});
+        let tool = ToolId::from_name("localFetch").expect("known tool");
+        let text = render_tool(tool, &fetch, &json!({}), TextFormat::Yaml);
+        assert!(
+            !text
+                .chars()
+                .any(|ch| ch.is_control() && !matches!(ch, '\t' | '\n' | '\r')),
+            "{text:?}"
+        );
+        assert!(
+            text.contains("ctrl \\u{1b}[31mRED\\u{1b}[0m\tbell \\u{7}\r\n"),
+            "{text:?}"
+        );
+        assert!(
+            text.contains("CR\\u{d}X del\\u{7f} c1\\u{9b}2J"),
+            "{text:?}"
+        );
+        let json_text = render_tool(tool, &fetch, &json!({}), TextFormat::Json);
+        let parsed: Value = serde_json::from_str(&json_text).expect("json text");
+        assert_eq!(parsed, fetch);
+
+        let history = json!({"results":[{"index":0,"data":{"files":[
+            {"path":"a.rs","status":"modified","additions":1,"deletions":0,
+             "patch":"@@ -1 +1 @@\n+evil \u{1b}]0;title\u{7}\n"}]}}]});
+        let tool = ToolId::from_name("ghGetHistoryItem").expect("known tool");
+        let text = render_tool(tool, &history, &json!({}), TextFormat::Yaml);
+        assert!(text.contains("+evil \\u{1b}]0;title\\u{7}\n"), "{text:?}");
+    }
+
+    /// A matched value that spells the internal flow-row placeholder is
     /// evidence; it must render verbatim, never as another row's text.
     #[test]
     fn flow_placeholder_text_in_content_renders_verbatim() {
@@ -842,7 +914,7 @@ mod tests {
             {"path":"a.go","stat":"M +1 -1","patch":"+x"},
             {"path":"b.go","additions":3,"deletions":1,"patch":"+y"},
             {"path":"c.go","status":"modified","additions":1,"deletions":0,"patch":"+z",
-             "sha":"abc123","patchPagination":{"offset":0,"totalChars":2,"hasMore":false,"note":"kept"}}
+             "sha":"abc123","patchPagination":{"unit":"chars","offset":0,"total":2,"hasMore":false,"note":"kept"}}
         ]}}]});
         let text = render_tool(
             ToolId::GhGetHistoryItem,
@@ -876,7 +948,7 @@ mod tests {
                 {"path":"src/b.ts","status":"renamed","previousPath":"old/b.ts","additions":2,"deletions":0,
                  "fullPatchChars":900,"patch":"+b"},
                 {"path":"src/c.ts","status":"added","additions":9,"deletions":0,"patch":"+c",
-                 "patchPagination":{"offset":10,"length":2,"totalChars":30,"hasMore":true,"nextOffset":12}},
+                 "patchPagination":{"unit":"chars","offset":10,"length":2,"total":30,"hasMore":true,"nextOffset":12}},
                 {"path":"src/moved.ts","status":"renamed","patch":""},
                 {"path":"big.ts","patchUnavailable":"tooLarge"}
             ]}],

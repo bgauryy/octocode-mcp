@@ -31,29 +31,33 @@ pub(super) fn project_match(
             line: matched.line,
             column: Some(crate::tools::num::one_based_column(matched.column)),
             value: matched.value[..byte].into(),
+            byte_offset: matched.byte_offset,
             match_lines: None,
             count: matched.count,
-            truncated: true,
+            clipped: true,
             original_chars: Some(matched.value.chars().count()),
             returned_chars: Some(chars),
             enclosing: None,
+            enclosing_line: None,
             declaration: None,
         };
     }
     // Content-view path: the engine already clipped the assembled snippet to
     // maxSnippetChars and reported the pre-truncation length via
     // `original_chars`; surface it as the same truncation indicator.
-    let truncated = matched.original_chars.is_some();
+    let clipped = matched.original_chars.is_some();
     SearchMatch {
         line: matched.line,
         column: Some(crate::tools::num::one_based_column(matched.column)),
         value: matched.value.clone(),
+        byte_offset: matched.byte_offset,
         match_lines: None,
         count: matched.count,
-        truncated,
+        clipped,
         original_chars: matched.original_chars.map(|chars| chars as usize),
-        returned_chars: truncated.then(|| matched.value.chars().count()),
+        returned_chars: clipped.then(|| matched.value.chars().count()),
         enclosing: None,
+        enclosing_line: None,
         // The engine's lexical rank 3 is a declared name: the row an
         // lspSearch anchor takes. Only those rows carry the mark.
         declaration: (matched.rank == Some(3)).then_some(true),
@@ -66,7 +70,7 @@ pub(super) fn project_match(
 /// The engine joins up to `context` contiguous lines on each side of the match
 /// line, clamped at the file start/end.
 pub(super) fn context_window(matched: &SearchMatch, context: u32) -> Option<(u32, Vec<&str>)> {
-    if matched.truncated || matched.count.is_some() || matched.line == 0 {
+    if matched.clipped || matched.count.is_some() || matched.line == 0 {
         return None;
     }
     let lines: Vec<&str> = matched.value.split('\n').collect();
@@ -100,13 +104,14 @@ pub(super) fn merge_context_windows(
         let mut head = block.head;
         // One number per window line, blank lines included (a window can end
         // on an empty line, which a split-based numberer would drop).
-        head.value = block
-            .lines
-            .iter()
-            .zip(block.start..)
-            .map(|(line, number)| format!("{number}{}{line}", crate::tools::numbered::SEPARATOR))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let mut value = String::new();
+        for (index, (line, number)) in block.lines.iter().zip(block.start..).enumerate() {
+            if index > 0 {
+                value.push('\n');
+            }
+            crate::tools::numbered::push_numbered(&mut value, number, line);
+        }
+        head.value = value;
         if block.match_lines.len() > 1 {
             head.match_lines = Some(block.match_lines);
         }
@@ -175,12 +180,14 @@ mod merge_tests {
             line,
             column: None,
             value: value.into(),
+            byte_offset: 0,
             match_lines: None,
             count: None,
-            truncated: false,
+            clipped: false,
             original_chars: None,
             returned_chars: None,
             enclosing: None,
+            enclosing_line: None,
             declaration: None,
         }
     }

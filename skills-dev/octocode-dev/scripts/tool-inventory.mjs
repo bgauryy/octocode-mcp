@@ -30,9 +30,6 @@ const coverage = JSON.parse(readFileSync(join(runtime, 'src/contracts/field-effe
 // Native module dirs whose names do not follow camel→snake of the tool name.
 const DIR_OVERRIDES = {
   astTopology: 'ast_graph',
-  ghSearchRepo: 'gh_search',
-  ghSearchCode: 'gh_search',
-  ghStructure: 'gh_search',
 };
 const snake = s => s.replace(/[A-Z]/g, c => `_${c.toLowerCase()}`);
 

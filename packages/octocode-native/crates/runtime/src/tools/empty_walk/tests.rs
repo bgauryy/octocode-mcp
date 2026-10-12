@@ -1,0 +1,363 @@
+use super::{Cause, FileProbe, Globs, Hits, PruneMode, Verdict, Walk, diagnose, ignore_rule, lift};
+use crate::tools::test_support::Fixture;
+use std::cell::Cell;
+use std::path::{Path, PathBuf};
+
+const DEFAULTS: Walk = Walk {
+    ignored: false,
+    hidden: false,
+    default_excludes: true,
+};
+
+/// `root` with a git marker, the `.gitignore` text, and one `needle.ts` under
+/// each of `dirs`.
+fn repo(gitignore: &str, dirs: &[&str]) -> Fixture {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+    std::fs::write(root.0.join(".gitignore"), gitignore).expect("gitignore");
+    std::fs::write(root.0.join("visible.md"), "x\n").expect("visible");
+    for dir in dirs {
+        std::fs::create_dir_all(root.0.join(dir)).expect("dir");
+        std::fs::write(root.0.join(dir).join("needle.ts"), "x\n").expect("file");
+    }
+    root
+}
+
+/// The probe a file-walking tool supplies: `.ts` files under the relaxed walk.
+fn typescript(root: &Path) -> impl FnMut(Walk) -> Result<Hits, String> + '_ {
+    let probe = typescript_probe(root);
+    move |walk| probe.find(walk)
+}
+
+fn typescript_probe(root: &Path) -> FileProbe<'_> {
+    FileProbe::new(
+        root,
+        PruneMode::SyntaxVisible,
+        1_000,
+        &|_| Ok(true),
+        &|path| path.extension().is_some_and(|ext| ext == "ts"),
+    )
+}
+
+fn skipped(root: &Path, walk: Walk) -> super::Diagnosis {
+    match diagnose(root, PruneMode::SyntaxVisible, walk, typescript(root)).expect("probe") {
+        Verdict::Skipped(diagnosis) => diagnosis,
+        other => panic!("expected skipped matches: {other:?}"),
+    }
+}
+
+#[test]
+fn each_cause_alone_is_named_and_lifted_alone() {
+    for (gitignore, dir, cause, reason) in [
+        ("gen/\n", "gen", Cause::Ignored, ".gitignore:1 'gen/'"),
+        ("", ".cfg", Cause::Hidden, "hidden .cfg/"),
+        (
+            "",
+            "node_modules/pkg",
+            Cause::DefaultExcluded,
+            "node_modules/",
+        ),
+    ] {
+        let root = repo(gitignore, &[dir]);
+        let diagnosis = skipped(&root.0, DEFAULTS);
+        assert_eq!(diagnosis.causes(), [cause], "{dir}");
+        assert_eq!(diagnosis.because(), reason, "{dir}");
+        let mut lead = serde_json::json!({"path": "."});
+        lift(&mut lead, diagnosis.causes());
+        let (field, value) = cause.flag();
+        assert_eq!(
+            lead,
+            serde_json::json!({"path": ".", field: value}),
+            "{dir}"
+        );
+    }
+}
+
+#[test]
+fn the_entry_is_the_topmost_skipped_path() {
+    let root = repo("gen/\n", &["gen/deep/er"]);
+    let diagnosis = skipped(&root.0, DEFAULTS);
+    assert_eq!(diagnosis.skips()[0].entry, root.0.join("gen"));
+    let root = repo("", &["pkg/.cfg/inner"]);
+    let diagnosis = skipped(&root.0, DEFAULTS);
+    assert_eq!(diagnosis.skips()[0].entry, root.0.join("pkg/.cfg"));
+    assert_eq!(diagnosis.because(), "hidden pkg/.cfg/");
+}
+
+/// A directory two causes hide needs both lifted; one alone finds nothing.
+#[test]
+fn a_match_behind_two_causes_lifts_exactly_those_two() {
+    for (gitignore, dir, causes) in [
+        (".gen/\n", ".gen", vec![Cause::Ignored, Cause::Hidden]),
+        (
+            "build/\n",
+            "build/out",
+            vec![Cause::Ignored, Cause::DefaultExcluded],
+        ),
+        (
+            "",
+            ".cache/node_modules",
+            vec![Cause::Hidden, Cause::DefaultExcluded],
+        ),
+    ] {
+        let root = repo(gitignore, &[dir]);
+        let diagnosis = skipped(&root.0, DEFAULTS);
+        assert_eq!(diagnosis.causes(), causes, "{dir}");
+        assert!(!diagnosis.because().is_empty(), "{dir}");
+    }
+}
+
+/// Matches behind different causes in different directories lift each
+/// cause that holds some, and never one that holds none.
+#[test]
+fn separate_causes_are_unioned_and_an_empty_cause_stays_out() {
+    let root = repo("gen/\n", &["gen", ".cfg"]);
+    std::fs::create_dir_all(root.0.join("node_modules/pkg")).expect("pruned");
+    std::fs::write(root.0.join("node_modules/pkg/other.md"), "x\n").expect("other");
+    let diagnosis = skipped(&root.0, DEFAULTS);
+    assert_eq!(diagnosis.causes(), [Cause::Ignored, Cause::Hidden]);
+    assert_eq!(diagnosis.found().count, 2);
+    let reasons = diagnosis.because();
+    assert!(
+        reasons.contains(".gitignore:1 'gen/'") && reasons.contains("hidden .cfg/"),
+        "{reasons}"
+    );
+}
+
+/// A walk that lists `.gitignore`d entries once the default prune is off
+/// reaches the same file by either cause: the first, in cause order, is the
+/// whole lead.
+#[test]
+fn causes_that_reach_the_same_files_are_alternatives() {
+    let root = repo("gen/\n", &["gen"]);
+    let reach = root.0.join("gen/needle.ts");
+    let verdict = diagnose(&root.0, PruneMode::SyntaxVisible, DEFAULTS, |walk| {
+        // Lifting the ignore files or the default prune each finds it.
+        let found = walk.ignored || !walk.default_excludes;
+        Ok::<_, String>(Hits {
+            count: usize::from(found),
+            sample: if found {
+                vec![reach.clone()]
+            } else {
+                Vec::new()
+            },
+            cut: false,
+        })
+    });
+    let Ok(Verdict::Skipped(diagnosis)) = verdict else {
+        panic!("{verdict:?}")
+    };
+    assert_eq!(diagnosis.causes(), [Cause::Ignored]);
+}
+
+#[test]
+fn nothing_behind_the_skipped_paths_is_absent() {
+    let root = repo("gen/\n", &[]);
+    std::fs::create_dir_all(root.0.join("gen")).expect("gen");
+    std::fs::write(root.0.join("gen/a.md"), "x\n").expect("file");
+    let verdict = diagnose(
+        &root.0,
+        PruneMode::SyntaxVisible,
+        DEFAULTS,
+        typescript(&root.0),
+    );
+    assert!(matches!(verdict, Ok(Verdict::Absent)), "{verdict:?}");
+}
+
+#[test]
+fn a_walk_that_skips_nothing_is_not_probed() {
+    let calls = Cell::new(0);
+    let walk = Walk {
+        ignored: true,
+        hidden: true,
+        default_excludes: false,
+    };
+    let verdict = diagnose(
+        Path::new("/nowhere"),
+        PruneMode::SyntaxVisible,
+        walk,
+        |_| {
+            calls.set(calls.get() + 1);
+            Ok::<_, String>(Hits::default())
+        },
+    );
+    assert!(matches!(verdict, Ok(Verdict::Absent)));
+    assert_eq!(calls.get(), 0);
+}
+
+/// A probe cut before it found anything proves nothing: say so, do not
+/// claim absence.
+#[test]
+fn a_cut_probe_that_found_nothing_is_unproven() {
+    let verdict = diagnose(
+        Path::new("/nowhere"),
+        PruneMode::SyntaxVisible,
+        DEFAULTS,
+        |_| {
+            Ok::<_, String>(Hits {
+                cut: true,
+                ..Hits::default()
+            })
+        },
+    );
+    assert!(matches!(verdict, Ok(Verdict::Unproven)), "{verdict:?}");
+}
+
+/// The cheap exit and the minimal search cost few walks: one when a single
+/// cause is off, one when nothing is found, and a single cause revealing
+/// stops at the singles.
+#[test]
+fn probes_are_few() {
+    let found = |walk: Walk| {
+        // Only a hidden file exists.
+        Ok::<_, String>(if walk.hidden {
+            Hits {
+                count: 1,
+                sample: vec![PathBuf::from("/r/.cfg/a.ts")],
+                cut: false,
+            }
+        } else {
+            Hits::default()
+        })
+    };
+    for (walk, calls) in [
+        (
+            Walk {
+                ignored: true,
+                hidden: false,
+                default_excludes: false,
+            },
+            1,
+        ),
+        (DEFAULTS, 4),
+    ] {
+        let count = Cell::new(0);
+        let verdict = diagnose(Path::new("/r"), PruneMode::SyntaxVisible, walk, |walk| {
+            count.set(count.get() + 1);
+            found(walk)
+        });
+        match verdict {
+            Ok(Verdict::Skipped(diagnosis)) => assert_eq!(diagnosis.causes(), [Cause::Hidden]),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(count.get(), calls, "{walk:?}");
+    }
+}
+
+/// More reasons than a hint names collapse to a count, not silence.
+#[test]
+fn reasons_beyond_the_named_few_are_counted() {
+    let dirs = [".a", ".b", ".c", ".d", ".e"];
+    let root = repo("", &dirs);
+    let diagnosis = skipped(&root.0, DEFAULTS);
+    assert_eq!(diagnosis.skips().len(), 5);
+    assert!(
+        diagnosis.because().ends_with(", +2 more"),
+        "{}",
+        diagnosis.because()
+    );
+}
+
+/// A rule above the search root reads root-relative; a `!` re-include ends
+/// the search.
+#[test]
+fn ignore_rules_read_root_relative_and_honor_reincludes() {
+    let root = Fixture::new();
+    std::fs::create_dir(root.0.join(".git")).expect("repository marker");
+    std::fs::write(root.0.join(".gitignore"), "*.log\n").expect("gitignore");
+    std::fs::create_dir_all(root.0.join("sub")).expect("sub");
+    let sub = root.0.join("sub");
+    assert_eq!(
+        ignore_rule(&sub, &sub.join("x.log"), false).as_deref(),
+        Some("../.gitignore:1 '*.log'")
+    );
+    std::fs::write(sub.join(".gitignore"), "!x.log\n").expect("nested");
+    assert_eq!(ignore_rule(&sub, &sub.join("x.log"), false), None);
+}
+
+/// Files the request's own walk reached are not behind a skipped path: a probe
+/// that is told the walk counts only what relaxing adds.
+#[test]
+fn a_probe_counts_only_files_the_requested_walk_did_not_reach() {
+    let root = repo("", &["src", ".cfg"]);
+    let all = typescript_probe(&root.0)
+        .find(DEFAULTS.lifting(&[Cause::Hidden]))
+        .expect("probe");
+    assert_eq!(all.count, 2, "both directories, with no baseline");
+    let behind = typescript_probe(&root.0)
+        .beyond(DEFAULTS)
+        .find(DEFAULTS.lifting(&[Cause::Hidden]))
+        .expect("probe");
+    assert_eq!(behind.count, 1, "only the hidden directory's file");
+    assert!(
+        behind.sample[0].starts_with(root.0.join(".cfg")),
+        "{behind:?}"
+    );
+}
+
+/// A walk that skips paths but whose probe finds nothing new is absent: the
+/// diagnosis never claims a skipped cause for files the scan reached.
+#[test]
+fn nothing_behind_skipped_paths_is_absent_even_when_files_were_reached() {
+    let root = repo("", &["src"]);
+    let probe = typescript_probe(&root.0).beyond(DEFAULTS);
+    let verdict = diagnose(&root.0, PruneMode::SyntaxVisible, DEFAULTS, |walk| {
+        probe.find(walk)
+    })
+    .expect("probe");
+    assert!(matches!(verdict, Verdict::Absent), "{verdict:?}");
+}
+
+/// The probe applies the request's `include` and `exclude` globs, like the
+/// scan it stands for.
+#[test]
+fn a_probe_stays_within_the_request_globs() {
+    let root = repo("", &[".github", ".spin", "src"]);
+    let include = vec![".github/**".to_owned()];
+    let probe = typescript_probe(&root.0)
+        .within(Globs {
+            include: &include,
+            exclude: &[],
+        })
+        .beyond(DEFAULTS);
+    let found = probe
+        .find(DEFAULTS.lifting(&[Cause::Hidden]))
+        .expect("probe");
+    assert_eq!(found.count, 1, "{found:?}");
+    assert!(
+        found.sample[0].starts_with(root.0.join(".github")),
+        "{found:?}"
+    );
+    let exclude = vec!["**/.github/**".to_owned()];
+    let excluded = typescript_probe(&root.0).within(Globs {
+        include: &[],
+        exclude: &exclude,
+    });
+    let found = excluded
+        .find(DEFAULTS.lifting(&[Cause::Hidden]))
+        .expect("probe");
+    assert_eq!(found.count, 2, "{found:?}");
+}
+
+/// A glob anchored at the scan root keeps its meaning under a narrowed root:
+/// literal leading segments that name the entry are dropped, a glob that
+/// cannot match inside the entry is dropped, and position-independent globs
+/// (a bare name, a leading `**/`, a leading wildcard) stay as written.
+#[test]
+fn rebased_globs_match_the_same_files_from_the_entry() {
+    let globs = |items: &[&str]| items.iter().map(|g| (*g).to_owned()).collect::<Vec<_>>();
+    let rebase = |items: &[&str]| super::rebase_globs(&globs(items), Path::new(".cfg/in"));
+    assert_eq!(rebase(&[".cfg/in/skip/**"]), globs(&["skip/**"]));
+    assert_eq!(rebase(&[".cfg/in/**/*.h"]), globs(&["**/*.h"]));
+    assert_eq!(rebase(&["src/**", ".cfg/other/**"]), Vec::<String>::new());
+    assert_eq!(
+        rebase(&["*.min.js", "**/skip/**", "*/gen/**"]),
+        globs(&["*.min.js", "**/skip/**", "*/gen/**"])
+    );
+    // The entry itself is the root of the narrowed scan: a glob naming it
+    // leaves nothing to rebase, and a leading `./` is the same as none.
+    assert_eq!(
+        rebase(&[".cfg/in", ".cfg/in/", "./.cfg/in/*"]),
+        globs(&["*"])
+    );
+}

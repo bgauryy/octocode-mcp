@@ -6,6 +6,7 @@ import { registerHooks, registerHooksCommand } from '../src/hooks/register.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { capContext, HOOK_CONTEXT_MAX_BYTES, interpret, runHook } from '../src/hooks/runner.js';
 import { fakePi, rendered, theme } from './fake-pi.js';
+import { fingerprint, projectConfigFiles, saveDecision } from '../src/shared/trust.js';
 import { tmp } from './helpers.js';
 
 function project(hooks: unknown, file = path.join('.codex', 'hooks.json')): string {
@@ -13,13 +14,12 @@ function project(hooks: unknown, file = path.join('.codex', 'hooks.json')): stri
   fs.mkdirSync(path.join(dir, '.git'));
   fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
   fs.writeFileSync(path.join(dir, file), JSON.stringify({ hooks }));
-  // A Pi-protected resource: Pi itself resolved trust for this project, so Octocode asks nothing more.
-  fs.mkdirSync(path.join(dir, '.pi'), { recursive: true });
-  fs.writeFileSync(path.join(dir, '.pi', 'settings.json'), '{}');
+  // The user trusted these hooks (`/octocode trust`): Pi's own trust never covers commands it did not show.
+  saveDecision(dir, fingerprint(projectConfigFiles(dir)), true);
   return dir;
 }
 
-// Pi-protected projects record their first trust decision: keep it out of the developer's own store.
+// Trust decisions go to a per-test store, out of the developer's own.
 beforeEach(() => {
   vi.stubEnv('OCTOCODE_HOME', tmp('octocode-hooks-home-'));
 });
@@ -314,7 +314,12 @@ describe('Stop, Notification and hook timing', () => {
     expect(inputs[0]).toMatchObject({ hook_event_name: 'Stop', last_assistant_message: 'final answer' });
     // A prompt resets the guard.
     await fire('before_agent_start', {}, ctx);
-    expect(((await fire('agent_before_settle', settle(), ctx)) as { continue: boolean }).continue).toBe(true);
+    // Pi replaces the boundary's entries with a handler's: entries earlier handlers proposed are kept.
+    const earlier = { type: 'custom', customType: 'other-extension', data: 1 };
+    const next = (await fire('agent_before_settle', { ...settle(), entries: [earlier] }, ctx)) as { entries: unknown[]; continue: boolean };
+    expect(next.continue).toBe(true);
+    expect(next.entries[0]).toEqual(earlier);
+    expect(next.entries).toHaveLength(2);
   }, 10_000);
 
   it('draws Stop feedback as a sanitized, collapsible block under a ⚑ header, even with hooks off', () => {
@@ -357,8 +362,10 @@ describe('Stop, Notification and hook timing', () => {
     const { pi, fire } = fakePi();
     const hooks = registerHooks(pi, { OCTOCODE_HOOKS: '1' }, tmp());
     await fire('session_start', { reason: 'startup' }, context(cwd));
-    hooks.notification({ type: 'idle_prompt', message: 'idle' }, context(cwd) as never);
-    hooks.notification({ type: 'permission_prompt', message: 'Save?', title: 'Pi: waiting for you' }, context(cwd) as never);
+    // Background: an aborted run (its signal) does not cancel the hook.
+    const aborted = { ...context(cwd), signal: AbortSignal.abort() };
+    hooks.notification({ type: 'idle_prompt', message: 'idle' }, aborted as never);
+    hooks.notification({ type: 'permission_prompt', message: 'Save?', title: 'Pi: waiting for you' }, aborted as never);
     await vi.waitFor(() => expect(fs.existsSync(path.join(cwd, 'note.json')) && fs.readFileSync(path.join(cwd, 'note.json'), 'utf8')).toBeTruthy());
     expect(JSON.parse(fs.readFileSync(path.join(cwd, 'note.json'), 'utf8'))).toMatchObject({ hook_event_name: 'Notification', message: 'Save?', title: 'Pi: waiting for you', notification_type: 'permission_prompt' });
   }, 10_000);

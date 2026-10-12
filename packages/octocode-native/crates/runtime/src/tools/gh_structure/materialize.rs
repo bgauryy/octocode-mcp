@@ -1,6 +1,6 @@
 //! `materialize`: write a listing page's files under the Octocode home.
 use super::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Write this page's files under `location.localPath` (the listed
 /// directory) and return where a continuation resumes, if anywhere.
@@ -40,12 +40,10 @@ pub(super) async fn materialize_page<C: crate::providers::github::ConditionalCac
         Some(offset) => Some(MaterializeResume {
             page: page.current,
             offset,
-            reason: outcome.reason,
         }),
         None => page.has_more().then_some(MaterializeResume {
             page: page.current + 1,
             offset: 0,
-            reason: "listing",
         }),
     };
     let mut warnings = outcome.warnings;
@@ -63,7 +61,8 @@ pub(super) async fn materialize_page<C: crate::providers::github::ConditionalCac
     let mut location = outcome.location;
     // The checkout is complete only when this listing wrote everything it
     // names: no later page or offset, no folder below the depth, no skip.
-    location["complete"] = json!(resume.is_none() && unwritten.is_empty() && !outcome.skipped);
+    let finished = resume.is_none() && unwritten.is_empty() && !outcome.skipped;
+    location["coverage"] = json!({"state": if finished { "complete" } else { "partial" }});
     value["location"] = location;
     if !unwritten.is_empty() {
         value["isPartial"] = json!(true);
@@ -111,11 +110,7 @@ pub(super) fn expand_depth(
         fields.remove("page");
         fields.remove("materializeOffset");
     }
-    Ok(continuation(
-        next,
-        "Write the folders this depth listed but did not write.",
-        "exact",
-    ))
+    Ok(continuation(next, "exact"))
 }
 
 pub(super) fn push_partial_reason(value: &mut Value, reason: &str) {
@@ -136,7 +131,6 @@ pub(super) fn push_partial_reason(value: &mut Value, reason: &str) {
 pub(super) struct MaterializeResume {
     pub(super) page: usize,
     pub(super) offset: usize,
-    pub(super) reason: &'static str,
 }
 
 /// A materialized checkout that misses files the listing names leaves the
@@ -158,7 +152,6 @@ pub(super) const MATERIALIZE_TOTAL_BYTES: usize = 5 * 1024 * 1024;
 pub(super) struct MaterializeOutcome {
     pub(super) location: Value,
     pub(super) next_offset: Option<usize>,
-    pub(super) reason: &'static str,
     pub(super) warnings: Vec<String>,
     /// Files the page could not write (`location.skipped`).
     pub(super) skipped: bool,
@@ -179,6 +172,14 @@ pub(super) const MATERIALIZE_CONCURRENCY: usize = 8;
 /// versioned and apart from `tmp/tree`, which octocode-mcp 19.x directory
 /// fetches rewrite: a shared path let one writer replace the other's files.
 pub(super) const MATERIALIZE_LAYOUT: [&str; 3] = ["tmp", "materialize", "v2"];
+
+/// Root of every materialized checkout under the cache home; local tools may
+/// read it.
+pub(crate) fn materialize_root(home: &Path) -> PathBuf {
+    MATERIALIZE_LAYOUT
+        .iter()
+        .fold(home.to_path_buf(), |path, segment| path.join(segment))
+}
 
 /// The manifest beside a checkout directory (`<commit>.manifest.json`), so the
 /// checkout holds only repository files. It names the files this layout
@@ -300,7 +301,6 @@ pub(super) async fn materialize_tree<C: crate::providers::github::ConditionalCac
         written: 0,
         total_bytes: 0,
         cursor: offset,
-        reason: "listing",
         skips: MaterializeSkips::default(),
         recorded: Vec::new(),
     };
@@ -360,11 +360,11 @@ pub(super) async fn materialize_tree<C: crate::providers::github::ConditionalCac
     } else {
         root.join(listed)
     };
-    // The snapshot is the commit segment of `localPath`; `complete` (set
+    // The snapshot is the commit segment of `localPath`; `coverage` (set
     // by the page) is the only coverage flag.
     let mut location = json!({
         "localPath": local.to_string_lossy(),
-        "complete": !has_more,
+        "coverage": {"state": if has_more { "partial" } else { "complete" }},
     });
     let warnings = writer.skips.warnings();
     let skipped = !writer.skips.is_empty();
@@ -374,7 +374,6 @@ pub(super) async fn materialize_tree<C: crate::providers::github::ConditionalCac
     Ok(Some(MaterializeOutcome {
         location,
         next_offset: has_more.then_some(writer.cursor),
-        reason: writer.reason,
         warnings,
         skipped,
     }))
@@ -409,7 +408,6 @@ pub(super) struct MaterializeWriter<'a> {
     pub(super) written: usize,
     pub(super) total_bytes: usize,
     pub(super) cursor: usize,
-    pub(super) reason: &'static str,
     pub(super) skips: MaterializeSkips,
     /// Files this page wrote completely, for the manifest.
     pub(super) recorded: Vec<(String, u64)>,
@@ -424,11 +422,9 @@ impl MaterializeWriter<'_> {
         read: Acquired,
     ) -> Result<bool, ProviderError> {
         if self.written >= MATERIALIZE_FILE_CAP {
-            self.reason = "writeCap";
             return Ok(false);
         }
         if self.total_bytes >= MATERIALIZE_TOTAL_BYTES {
-            self.reason = "totalSize";
             return Ok(false);
         }
         self.cursor += 1;
@@ -460,7 +456,6 @@ impl MaterializeWriter<'_> {
             return Ok(true);
         }
         if self.total_bytes.saturating_add(acquired.bytes.len()) > MATERIALIZE_TOTAL_BYTES {
-            self.reason = "totalSize";
             self.cursor -= 1;
             return Ok(false);
         }
@@ -520,7 +515,7 @@ impl MaterializeSkips {
         let mut warnings = Vec::new();
         if !self.oversized.is_empty() {
             warnings.push(format!(
-                "Skipped {} file(s) larger than the {} KiB materialize per-file limit (location.skipped); read them with ghGetFileContent.",
+                "Skipped {} file(s) larger than the {} KiB materialize per-file limit (location.skipped).",
                 self.oversized.len(),
                 MATERIALIZE_FILE_BYTES / 1024
             ));

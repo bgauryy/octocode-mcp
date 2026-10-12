@@ -8,6 +8,7 @@ use super::rows::{
 use super::shape::mark_empty;
 use super::*;
 use crate::providers::github::{GitHubTransport, ProviderError};
+use crate::tools::gh_shared::pick_fields;
 use crate::tools::gh_shared::test_support::mount_json;
 use serde_json::{Value, json};
 
@@ -51,7 +52,9 @@ async fn execute(
     context: &RequestContext,
     security: &impl ContentScan,
 ) -> Result<Value, ProviderError> {
-    super::execute(transport, query.clone(), context, security).await
+    super::execute(transport, query.clone(), context, security)
+        .await
+        .map_err(|failure| failure.error)
 }
 
 #[test]
@@ -180,7 +183,7 @@ fn commit_search_uses_email_and_committer_date() {
     assert!(query.contains("committer-date:>=2026-01-01T00:00:00Z"));
 }
 
-/// A10: commit people filters ride `qualifiers` (one name per purpose);
+/// Commit people filters ride `qualifiers` (one name per purpose);
 /// issue/PR keys are refused on commits, and `committer:` on PR/issue.
 #[test]
 fn commit_qualifiers_take_author_and_committer_only() {
@@ -411,30 +414,42 @@ fn qualifiers_set_the_search_filters() {
     );
 }
 
-/// The published schema admits exactly the negated qualifiers native
-/// runs (a pull request's `-is:draft`); every other negation fails
-/// contract preparation, before any provider work.
+/// A leading `-` excludes on any pull-request or issue key: the schema
+/// admits it, native runs it on the search route, and a typed flag keeps
+/// its own spelling (`-is:draft`); commit qualifiers take no negation.
 #[test]
-fn schema_negation_matches_native_execution() {
+fn negated_qualifiers_exclude_on_the_search_route() {
     let row = |operation: &str, qualifiers: &str| {
         json!({"operation":operation,"mainGoal":"g","reasoning":"r","owner":"o","repo":"r",
             "qualifiers":qualifiers})
     };
-    let prepared =
-        crate::contracts::validate_query("ghSearchHistory", row("pullRequest", "-is:draft"))
-            .expect("-is:draft is published");
-    let filters = Filters::parse(&serde_json::from_value(prepared).expect("typed"))
-        .expect("native runs -is:draft");
-    assert_eq!(filters.draft, Some(false));
+    let parse = |operation: &str, qualifiers: &str| {
+        let prepared =
+            crate::contracts::validate_query("ghSearchHistory", row(operation, qualifiers))
+                .expect(qualifiers);
+        Filters::parse(&serde_json::from_value(prepared).expect("typed"))
+    };
+    let draft = parse("pullRequest", "-is:draft").expect("native runs -is:draft");
+    assert_eq!(draft.draft, Some(false));
+    let excluded = parse(
+        "pullRequest",
+        "label:bug -label:wontfix -author:dependabot[bot]",
+    )
+    .expect("negated labels and people run");
+    assert_eq!(excluded.label, vec!["bug".to_owned()]);
+    assert_eq!(
+        excluded.excluded,
+        vec![
+            ("label".to_owned(), "wontfix".to_owned()),
+            ("author".to_owned(), "dependabot[bot]".to_owned())
+        ]
+    );
+    let issue = parse("issue", "-label:bug").expect("issue negation runs");
+    assert_eq!(issue.excluded, vec![("label".to_owned(), "bug".to_owned())]);
+    let state = parse("pullRequest", "-is:open").expect_err("state is the field's");
+    assert!(state.message.contains("set state instead"), "{state:?}");
     for (operation, qualifiers, message) in [
-        (
-            "pullRequest",
-            "label:bug -label:wontfix",
-            "\"-label:wontfix\": negation is not supported",
-        ),
-        ("pullRequest", "-is:open", "\"-is:open\": negation"),
-        ("issue", "-label:bug", "\"-label:bug\": negation"),
-        ("issue", "-is:draft", "\"-is:draft\": negation"),
+        ("commit", "-author:x", "negation is not supported"),
         (
             "issue",
             r#"label:"good first issue" repo:x/y"#,
@@ -502,12 +517,16 @@ async fn cap_is_terminal_only_after_the_last_reachable_page() {
             "{data}"
         );
         assert_eq!(data["next"]["nextPage"].is_object(), page < 1000, "{data}");
-        // QA2: a capped page states GitHub's full match count.
+        // A capped page states GitHub's full match count.
         assert!(data["warnings"].to_string().contains("1001"), "{data}");
-        // A search beyond one repository names each row's repository,
-        // and the read targets it: a bare number is unreadable.
+        // A search beyond one repository names each row's owner and repo
+        // (the read's own inputs), and the read targets it.
         assert_eq!(
-            data["pullRequests"][0]["repository"], "acme/widget",
+            (
+                &data["pullRequests"][0]["owner"],
+                &data["pullRequests"][0]["repo"]
+            ),
+            (&json!("acme"), &json!("widget")),
             "{data}"
         );
         let read = &data["next"]["readPullRequest"]["query"]["queries"][0];
@@ -548,6 +567,281 @@ async fn search_of_a_missing_repository_is_not_found() {
             .expect_err("missing repository");
         assert_eq!(error.kind, ProviderErrorKind::NotFound, "{row}: {error:?}");
     }
+}
+
+/// GitHub answers a search naming a missing user (`author:ghost`) with a
+/// 422 "The listed users cannot be searched…", without "repositories": the
+/// repository is fine. That is a missing user, with the same query minus its
+/// person qualifiers as the way on; a repository 422 stays a repository.
+#[tokio::test]
+async fn search_naming_a_missing_user_is_not_a_missing_repository() {
+    use crate::providers::github::ProviderErrorReason;
+    use wiremock::MockServer;
+
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/search/issues",
+        422,
+        json!({
+            "message": "Validation Failed",
+            "errors": [{"message": "The listed users cannot be searched either because the users do not exist or you do not have permission to view the users.",
+                "resource": "Search", "field": "q", "code": "invalid"}]
+        }),
+    )
+    .await;
+    let transport = transport(&server);
+    let query: GhSearchHistoryQuery = serde_json::from_value(json!({
+        "operation":"pullRequest","owner":"o","repo":"r",
+        "qualifiers":"author:ghost -reviewed-by:bot label:bug"
+    }))
+    .expect("query");
+    let failure = super::execute(&transport, query, &context(), &Passthrough)
+        .await
+        .expect_err("missing user");
+    assert_eq!(failure.error.kind, ProviderErrorKind::NotFound);
+    assert_eq!(
+        failure.error.reason,
+        Some(ProviderErrorReason::UserNotFound)
+    );
+    let (message, hint) = history_failure(&failure.error, true);
+    assert!(
+        message.contains("user") && !message.contains("Repository"),
+        "{message}"
+    );
+    assert!(
+        message.contains("cannot be searched"),
+        "GitHub's words stay: {message}"
+    );
+    let hint = hint.expect("a hint");
+    assert!(
+        hint.contains("author") && hint.contains("ghSearchRepo"),
+        "{hint}"
+    );
+    let lead = failure
+        .next
+        .expect("a lead")
+        .pointer("/withoutUsers/query/queries/0")
+        .cloned();
+    let lead = lead.expect("withoutUsers is a ghSearchHistory query");
+    assert_eq!(lead["qualifiers"], "label:bug", "{lead}");
+    assert_eq!(
+        (lead["owner"].as_str(), lead["repo"].as_str()),
+        (Some("o"), Some("r"))
+    );
+
+    // Person qualifiers only: the lead drops `qualifiers` altogether.
+    let only: GhSearchHistoryQuery = serde_json::from_value(json!({
+        "operation":"pullRequest","owner":"o","repo":"r","qualifiers":"author:ghost"
+    }))
+    .expect("query");
+    let failure = super::execute(&transport, only, &context(), &Passthrough)
+        .await
+        .expect_err("missing user");
+    let lead = failure.next.expect("a lead");
+    assert!(
+        lead["withoutUsers"]["query"]["queries"][0]
+            .get("qualifiers")
+            .is_none(),
+        "{lead}"
+    );
+}
+
+/// A commit list (no keywords) answers an unknown author with no rows, which
+/// reads as a true empty. Only an empty list confirms the login: a missing
+/// one is the typed missing-user failure with its `withoutUsers` lead, and a
+/// list with rows never pays for the lookup.
+#[tokio::test]
+async fn an_empty_commit_list_naming_a_missing_author_is_the_missing_user_failure() {
+    use crate::providers::github::ProviderErrorReason;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/ghost"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message": "Not Found"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/dev"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"login": "dev"})))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r/commits"))
+        .and(query_param("author", "ghost"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r/commits"))
+        .and(query_param("author", "dev"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([{
+            "sha": "aaa", "commit": {"message": "Fix cache",
+            "committer": {"date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}
+        }])))
+        .mount(&server)
+        .await;
+    let transport = transport(&server);
+    let list = |login: &str| -> GhSearchHistoryQuery {
+        serde_json::from_value(json!({
+            "operation":"commit","owner":"o","repo":"r","qualifiers": format!("author:{login}")
+        }))
+        .expect("query")
+    };
+    let failure = super::execute(&transport, list("ghost"), &context(), &Passthrough)
+        .await
+        .expect_err("missing user");
+    assert_eq!(
+        failure.error.reason,
+        Some(ProviderErrorReason::UserNotFound),
+        "{:?}",
+        failure.error
+    );
+    assert!(
+        failure
+            .next
+            .as_ref()
+            .and_then(|next| next.pointer("/withoutUsers/query/queries/0"))
+            .is_some_and(|lead| lead.get("qualifiers").is_none()),
+        "{:?}",
+        failure.next
+    );
+    assert!(
+        super::execute(&transport, list("dev"), &context(), &Passthrough)
+            .await
+            .is_ok(),
+        "a list with rows"
+    );
+}
+
+/// GitHub's commit search drops an unknown `author:`/`committer:` login
+/// without error and answers the unfiltered total. A named login is
+/// confirmed once per call (`GET /users/{login}`): a missing one is the same
+/// typed missing-user failure and `withoutUsers` lead that issue and PR
+/// search return, and the search never runs.
+#[tokio::test]
+async fn commit_search_naming_a_missing_user_fails_before_the_search() {
+    use crate::providers::github::ProviderErrorReason;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/ghost"))
+        .respond_with(ResponseTemplate::new(404).set_body_json(json!({"message": "Not Found"})))
+        .expect(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/dev"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"login": "dev"})))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/commits"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                json!({"total_count": 1498, "incomplete_results": false, "items": []}),
+            ),
+        )
+        .expect(0)
+        .mount(&server)
+        .await;
+    let transport = transport(&server);
+    // The missing login may be the author or the committer, next to a real one.
+    for qualifiers in ["author:ghost", "author:dev committer:ghost"] {
+        let query: GhSearchHistoryQuery = serde_json::from_value(json!({
+            "operation":"commit","owner":"o","repo":"r","keywords":["fix"],
+            "qualifiers": qualifiers
+        }))
+        .expect("query");
+        let failure = super::execute(&transport, query, &context(), &Passthrough)
+            .await
+            .expect_err("missing user");
+        assert_eq!(
+            failure.error.kind,
+            ProviderErrorKind::NotFound,
+            "{qualifiers}"
+        );
+        assert_eq!(
+            failure.error.reason,
+            Some(ProviderErrorReason::UserNotFound),
+            "{qualifiers}"
+        );
+        let (message, hint) = history_failure(&failure.error, true);
+        assert!(
+            message.contains("user")
+                && message.contains("ghost")
+                && !message.contains("Repository"),
+            "{message}"
+        );
+        assert!(hint.expect("a hint").contains("ghSearchRepo"));
+        let lead = failure
+            .next
+            .expect("a lead")
+            .pointer("/withoutUsers/query/queries/0")
+            .cloned()
+            .expect("withoutUsers is a ghSearchHistory query");
+        assert!(lead.get("qualifiers").is_none(), "{lead}");
+        assert_eq!(lead["keywords"], json!(["fix"]), "{lead}");
+    }
+}
+
+/// A login is confirmed once per call however many qualifiers name it, and
+/// not at all when no qualifier (or only an email, which has no profile)
+/// names a user. A failed confirmation never blocks the search.
+#[tokio::test]
+async fn commit_search_confirms_each_named_login_once_and_only_then() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/Dev"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"login": "dev"})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/flaky"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(json!({"message": "boom"})))
+        .mount(&server)
+        .await;
+    mount_json(
+        &server,
+        "/api/v3/search/commits",
+        200,
+        json!({"total_count": 0, "incomplete_results": false, "items": []}),
+    )
+    .await;
+    let transport = transport(&server);
+    let run = |qualifiers: Option<&str>| {
+        let mut row = json!({"operation":"commit","owner":"o","repo":"r","keywords":["fix"]});
+        if let Some(qualifiers) = qualifiers {
+            row["qualifiers"] = json!(qualifiers);
+        }
+        let query: GhSearchHistoryQuery = serde_json::from_value(row).expect("query");
+        let transport = &transport;
+        async move {
+            super::execute(transport, query, &context(), &Passthrough)
+                .await
+                .expect("search runs")
+        }
+    };
+    // One login named as author and committer (case aside): one request.
+    run(Some("author:Dev committer:dev")).await;
+    // No user qualifier, or an email: no /users request (an unmounted route
+    // would 404 as a missing user and fail the search).
+    run(None).await;
+    run(Some("author:dev@example.com")).await;
+    // Any failure but 404 does not block; the search says it was unchecked.
+    let data = run(Some("author:flaky")).await;
+    let warnings = data["warnings"].to_string();
+    assert!(warnings.contains("flaky"), "{data}");
 }
 
 #[tokio::test]
@@ -621,7 +915,7 @@ async fn commit_listing_rows_are_typed_commits() {
             .await
             .expect("commit listing");
         assert!(data.get("type").is_none(), "{scope}: {data}");
-        assert_eq!(data["commits"][0]["sha"], "aaa", "{data}");
+        assert_eq!(data["commits"][0]["commitSha"], "aaa", "{data}");
         // The listed path is the caller's own input: not restated.
         assert!(data.get("path").is_none(), "{scope}: {data}");
         // The commit read scopes its patches with the published `include`.
@@ -635,7 +929,7 @@ async fn commit_listing_rows_are_typed_commits() {
     }
 }
 
-/// D4: a plain issue listing pages `is:issue` search results, so every
+/// A plain issue listing pages `is:issue` search results, so every
 /// page holds up to pageSize real issues (the REST /issues list
 /// interleaves PRs) and page numbers advance by one. An empty or PR-only
 /// repository is a clean empty row.
@@ -746,7 +1040,7 @@ fn pull_request_search_allows_cross_repo_and_owner_scopes() {
     );
 }
 
-/// E21: an unparseable `since`/`until` is invalid input, never a silently
+/// An unparseable `since`/`until` is invalid input, never a silently
 /// unfiltered listing (search or REST list).
 #[test]
 fn commit_window_with_an_invalid_date_is_rejected() {
@@ -847,11 +1141,10 @@ async fn rename_lookup_runs_only_when_the_search_finds_nothing() {
         .await
         .expect("renamed search");
     assert_eq!(data["pullRequests"][0]["number"], 7, "{data}");
-    assert!(
-        data["warnings"][0]
-            .as_str()
-            .is_some_and(|warning| warning.contains("renamed to new/r")),
-        "{data}"
+    assert_eq!(
+        data["warnings"][0],
+        crate::tools::gh_shared::renamed_warning("old", "r", &("new".into(), "r".into())),
+        "one shared rename wording: {data}"
     );
     let read = &data["next"]["readPullRequest"]["query"]["queries"][0];
     assert_eq!(
@@ -881,9 +1174,9 @@ fn row_dates_are_utc() {
     assert_eq!(issue["updatedAt"], "2024-01-01T09:00:00Z", "{issue}");
 }
 
-/// An empty search offers one runnable recovery: the same search without
-/// its keywords, else without its qualifiers, else a commit listing
-/// without its date window.
+/// An empty search offers one runnable batch: the same search once without
+/// each narrowing filter (keywords, qualifiers, the date window; commits,
+/// pull requests and issues all take `since`/`until`).
 #[test]
 fn empty_searches_offer_a_broader_search() {
     let broadened = |row: Value| {
@@ -896,6 +1189,17 @@ fn empty_searches_offer_a_broader_search() {
     assert!(keywords.get("keywords").is_none(), "{keywords}");
     assert!(keywords.get("page").is_none(), "{keywords}");
     assert_eq!(keywords["qualifiers"], "author:x", "{keywords}");
+    // Every narrowing filter gets its own variant: a scoped keyword search
+    // that is empty because of its date window is recoverable too.
+    let both: GhSearchHistoryQuery = serde_json::from_value(json!({"operation":"pullRequest",
+        "owner":"o","repo":"r","keywords":["fix"],"since":"2030-01-01"}))
+    .expect("query");
+    let both = super::leads::broaden_search(&both).expect("lead")["query"]["queries"].clone();
+    assert_eq!(both.as_array().map(Vec::len), Some(2), "{both}");
+    assert!(
+        both[1].get("since").is_none() && both[1]["keywords"] == json!(["fix"]),
+        "{both}"
+    );
     let qualifiers = broadened(json!({"operation":"issue","owner":"o","repo":"r",
         "qualifiers":"label:bug"}))
     .expect("qualifiers dropped");
@@ -905,6 +1209,13 @@ fn empty_searches_offer_a_broader_search() {
     .expect("window dropped");
     assert!(window.get("since").is_none(), "{window}");
     assert_eq!(window["path"], "src", "{window}");
+    for operation in ["pullRequest", "issue"] {
+        let window = broadened(json!({"operation":operation,"owner":"o","repo":"r",
+            "since":"2026-10-01","until":"2026-10-03"}))
+        .expect("window dropped");
+        assert!(window.get("since").is_none(), "{operation}: {window}");
+        assert!(window.get("until").is_none(), "{operation}: {window}");
+    }
     assert!(broadened(json!({"operation":"commit","owner":"o","repo":"r"})).is_none());
 }
 
@@ -946,7 +1257,7 @@ fn branch_and_label_filters_come_from_qualifiers() {
 /// SH1: a commit row whose headline ends in `(#N)` names the PR; only the
 /// trailing suffix counts (a revert names the reverting PR).
 #[test]
-fn commit_rows_name_the_pull_request_of_a_squash_headline() {
+fn a_squash_headline_names_its_pull_request_once() {
     let commit =
         |message: &str| json!({"sha":"abc","commit":{"message":message,"author":{"name":"Dev"}}});
     for (message, number) in [
@@ -959,8 +1270,11 @@ fn commit_rows_name_the_pull_request_of_a_squash_headline() {
             map_commit(commit(message)),
             map_commit_list(commit(message)),
         ] {
+            // The headline states the number; the row adds no copy of it.
+            assert!(row.get("prNumber").is_none(), "{row}");
+            let headline = row["messageHeadline"].as_str().unwrap_or_default();
             assert_eq!(
-                row.get("prNumber").and_then(Value::as_u64),
+                crate::tools::gh_shared::commit::headline_pull_request(headline),
                 number,
                 "{message}: {row}"
             );
@@ -1037,7 +1351,7 @@ fn pull_request_read_targets_the_best_match_unless_sorted() {
     );
     assert_eq!(
         read(
-            json!({"operation":"pullRequest","owner":"o","repo":"r","keywords":["x"],"sort":"updated"})
+            json!({"operation":"pullRequest","owner":"o","repo":"r","keywords":["x"],"sort":"updated:desc"})
         ),
         11
     );
@@ -1082,8 +1396,7 @@ async fn commit_listing_leads_to_the_squash_pull_request() {
     let data = execute(&transport, &query, &context(), &Passthrough)
         .await
         .expect("commit listing");
-    assert!(data["commits"][0].get("prNumber").is_none(), "{data}");
-    assert_eq!(data["commits"][1]["prNumber"], 9, "{data}");
+    assert!(data["commits"][1].get("prNumber").is_none(), "{data}");
     let read = &data["next"]["readPullRequest"]["query"]["queries"][0];
     assert_eq!(read["number"], 9, "{data}");
     assert_eq!(read["include"], json!(["src/lib.rs"]), "{data}");
@@ -1105,6 +1418,46 @@ async fn commit_listing_leads_to_the_squash_pull_request() {
     );
     assert_eq!(data["issues"][0]["commentsCount"], 4, "{data}");
     assert!(data["pagination"].get("totalPages").is_none(), "{data}");
+}
+
+/// GitHub's commit list reports no total, so a page with more behind it
+/// says why `pagination.totalItems` is absent; a counted search keeps its total.
+#[tokio::test]
+async fn a_commit_list_page_with_more_says_why_it_has_no_total() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    let commit = |sha: &str| {
+        json!({"sha": sha, "commit": {"message": "Fix cache",
+            "author": {"name": "Dev", "date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}})
+    };
+    let next = format!(
+        "{}/api/v3/repos/o/r/commits?per_page=1&page=2",
+        server.uri()
+    );
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r/commits"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("link", format!("<{next}>; rel=\"next\"").as_str())
+                .set_body_json(json!([commit("aaa")])),
+        )
+        .mount(&server)
+        .await;
+    let query =
+        serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r","pageSize":1}))
+            .expect("query");
+    let data = execute(&transport(&server), &query, &context(), &Passthrough)
+        .await
+        .expect("commit listing");
+    assert_eq!(data["pagination"]["hasMore"], true, "{data}");
+    assert!(data["pagination"].get("totalItems").is_none(), "{data}");
+    let warning = data["warnings"][0].as_str().expect("a warning");
+    assert!(
+        warning.contains("no total") && warning.contains("hasMore"),
+        "{data}"
+    );
 }
 
 /// SH3: a resolved window is one range value: both bounds `a..b`, one bound
@@ -1138,13 +1491,555 @@ fn rows_drop_the_filtered_state_and_a_merged_rows_created_at() {
         }))
     };
     let mut row = merged();
-    super::rows::drop_implied(&mut row, Some("merged"), false);
+    super::rows::drop_implied(&mut row, Some("merged"), false, &[]);
     assert!(row.get("state").is_none(), "{row}");
     assert!(row.get("createdAt").is_none(), "{row}");
     assert_eq!(row["mergedAt"], "2026-09-20T10:00:00Z");
-    // `closed` also lists merged PRs: their state stays.
+    // A key the caller picked is what they asked for: it stays.
     let mut row = merged();
-    super::rows::drop_implied(&mut row, Some("closed"), true);
+    let picked = ["state", "createdAt"].map(String::from);
+    super::rows::drop_implied(&mut row, Some("merged"), false, &picked);
     assert_eq!(row["state"], "merged");
     assert_eq!(row["createdAt"], "2026-09-19T10:00:00Z");
+    // `closed` also lists merged PRs: their state stays.
+    let mut row = merged();
+    super::rows::drop_implied(&mut row, Some("closed"), true, &[]);
+    assert_eq!(row["state"], "merged");
+    assert_eq!(row["createdAt"], "2026-09-19T10:00:00Z");
+}
+
+#[test]
+fn fields_keep_the_row_id_then_the_picked_keys_in_request_order() {
+    let row = json!({"number": 1, "title": "t", "state": "open", "author": "a"});
+    let keys = ["title", "state", "missing"].map(String::from);
+    let picked = pick_fields(row.clone(), &["number"], &keys);
+    assert_eq!(picked, json!({"number": 1, "title": "t", "state": "open"}));
+    assert_eq!(
+        picked
+            .as_object()
+            .map(|row| row.keys().cloned().collect::<Vec<_>>()),
+        Some(vec![
+            "number".to_owned(),
+            "title".to_owned(),
+            "state".to_owned()
+        ])
+    );
+    // No pick keeps the row whole.
+    assert_eq!(
+        pick_fields(row, &["number"], &[]),
+        json!({"number": 1, "title": "t", "state": "open", "author": "a"})
+    );
+}
+
+#[test]
+fn fields_reach_the_query_without_changing_the_search() {
+    let plain =
+        r#"{"operation":"pullRequest","mainGoal":"test","reasoning":"test","keywords":["x"]}"#;
+    let picked = r#"{"operation":"pullRequest","mainGoal":"test","reasoning":"test","keywords":["x"],"fields":["number","title"]}"#;
+    assert_eq!(
+        search(&parse(picked)).expect("search").fields(),
+        vec!["number".to_string(), "title".to_string()]
+    );
+    assert!(search(&parse(plain)).expect("search").fields().is_empty());
+    assert_eq!(
+        build_query(&parse(picked)).expect("query"),
+        build_query(&parse(plain)).expect("query")
+    );
+}
+
+#[tokio::test]
+async fn fields_project_listed_commits_end_to_end() {
+    use wiremock::MockServer;
+
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/repos/o/r/commits",
+        200,
+        json!([{
+            "sha": "aaa", "commit": {"message": "Fix cache",
+            "committer": {"date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}
+        }]),
+    )
+    .await;
+    let query = serde_json::from_value(
+        json!({"operation":"commit","owner":"o","repo":"r","fields":["commitSha"]}),
+    )
+    .expect("query");
+    let data = execute(&transport(&server), &query, &context(), &Passthrough)
+        .await
+        .expect("commit listing");
+    // The pick keeps the commit's id (commitSha) beside the picked keys.
+    assert_eq!(data["commits"][0], json!({"commitSha": "aaa"}), "{data}");
+}
+
+/// PR and issue `since`/`until` reach the search as a `created:` window
+/// (they were accepted and silently ignored).
+#[test]
+fn pull_request_and_issue_windows_reach_the_search() {
+    for operation in ["pullRequest", "issue"] {
+        let terms = build_query(&parse(&format!(
+            r#"{{"operation":"{operation}","owner":"a","repo":"b","since":"2026-10-01","until":"2026-10-03"}}"#
+        )))
+        .expect("query");
+        assert!(
+            terms.contains("created:2026-10-01..2026-10-03"),
+            "{operation}: {terms}"
+        );
+    }
+}
+
+/// `since`/`until` filter pull requests on their created date, so the rows
+/// show it beside `mergedAt`: otherwise a merged row dated outside the window
+/// looks like a filter bug.
+#[test]
+fn rows_filtered_on_the_created_window_keep_created_at() {
+    let window = parse(
+        r#"{"operation":"pullRequest","owner":"a","repo":"b","state":"merged","since":"2026-09-01"}"#,
+    );
+    assert!(super::shape::keeps_created(
+        &search(&window).expect("query")
+    ));
+    let plain = parse(r#"{"operation":"pullRequest","owner":"a","repo":"b","state":"merged"}"#);
+    assert!(!super::shape::keeps_created(
+        &search(&plain).expect("query")
+    ));
+    let qualifier = parse(
+        r#"{"operation":"pullRequest","owner":"a","repo":"b","qualifiers":"created:>2026-01-01"}"#,
+    );
+    assert!(super::shape::keeps_created(
+        &search(&qualifier).expect("query")
+    ));
+}
+
+/// A picked key no row carries (here a typo) still answers, with one
+/// per-call warning instead of rows that silently lack the key.
+#[tokio::test]
+async fn an_absent_picked_key_is_named_once() {
+    use wiremock::MockServer;
+
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/repos/o/r/commits",
+        200,
+        json!([{
+            "sha": "aaa", "commit": {"message": "Fix cache",
+            "committer": {"date": "2026-01-01T00:00:00Z"}}, "author": {"login": "dev"}
+        }]),
+    )
+    .await;
+    let query = serde_json::from_value(
+        json!({"operation":"commit","owner":"o","repo":"r","fields":["messageHedline"]}),
+    )
+    .expect("query");
+    let data = execute(&transport(&server), &query, &context(), &Passthrough)
+        .await
+        .expect("commit listing");
+    assert_eq!(data["commits"][0], json!({"commitSha": "aaa"}), "{data}");
+    assert_eq!(
+        data["warnings"],
+        json!(["No row has messageHedline."]),
+        "{data}"
+    );
+}
+
+/// `fields:["state","createdAt"]` on merged rows of a `state:"merged"`
+/// search returns both keys: the pick names what the query implies, so it
+/// is not dropped as implied (and no "No row has" warning fires).
+#[tokio::test]
+async fn picked_keys_survive_the_implied_drop() {
+    use wiremock::MockServer;
+
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/search/issues",
+        200,
+        json!({"total_count": 1, "incomplete_results": false, "items": [{
+            "number": 7, "title": "t", "state": "closed",
+            "pull_request": {"merged_at": "2026-09-20T10:00:00Z"},
+            "user": {"login": "dev"}, "created_at": "2026-09-19T10:00:00Z",
+            "repository_url": "https://api.github.com/repos/o/r"
+        }]}),
+    )
+    .await;
+    let query = serde_json::from_value(json!({
+        "operation":"pullRequest","owner":"o","repo":"r","keywords":["x"],
+        "state":"merged","fields":["state","createdAt"]
+    }))
+    .expect("query");
+    let data = execute(&transport(&server), &query, &context(), &Passthrough)
+        .await
+        .expect("pull request search");
+    assert_eq!(
+        data["pullRequests"][0],
+        json!({"number": 7, "state": "merged", "createdAt": "2026-09-19T10:00:00Z"}),
+        "{data}"
+    );
+    assert!(data.get("warnings").is_none(), "{data}");
+}
+
+/// `since`/`until` reach the provider request on every operation and
+/// route: PR and issue searches as a `created:` window (a PR window routes
+/// a REST-listable query to search), commit search as `committer-date:`,
+/// and the REST commit listing (with `path`) as `since`/`until` params,
+/// a date-only `until` covering its whole day.
+#[tokio::test]
+async fn since_until_reach_the_request_of_every_operation() {
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path, query_param, query_param_contains},
+    };
+
+    let server = MockServer::start().await;
+    let empty = json!({"total_count": 0, "incomplete_results": false, "items": []});
+    for (route, scope) in [
+        ("/api/v3/search/issues", "is:pr repo:o/r"),
+        ("/api/v3/search/issues", "is:issue repo:o/r"),
+    ] {
+        Mock::given(method("GET"))
+            .and(path(route))
+            .and(query_param_contains("q", scope))
+            .and(query_param_contains("q", "created:2026-10-01..2026-10-03"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(empty.clone()))
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/commits"))
+        .and(query_param_contains(
+            "q",
+            "committer-date:2026-10-01..2026-10-03",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(empty.clone()))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r/commits"))
+        .and(query_param("since", "2026-10-01"))
+        .and(query_param("until", "2026-10-03T23:59:59Z"))
+        .and(query_param("path", "src"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let transport = transport(&server);
+    for row in [
+        json!({"operation":"pullRequest","owner":"o","repo":"r"}),
+        json!({"operation":"issue","owner":"o","repo":"r"}),
+        json!({"operation":"commit","owner":"o","repo":"r","keywords":["fix"]}),
+        json!({"operation":"commit","owner":"o","repo":"r","path":"src"}),
+    ] {
+        let mut row = row;
+        row["since"] = json!("2026-10-01");
+        row["until"] = json!("2026-10-03");
+        let query = serde_json::from_value(row.clone()).expect("query");
+        let data = execute(&transport, &query, &context(), &Passthrough)
+            .await
+            .unwrap_or_else(|error| panic!("{row}: the window missed the request: {error:?}"));
+        assert_eq!(data["status"], "empty", "{row}: {data}");
+        // An empty window states no static note; the broadened search
+        // without the window is the per-call repair.
+        assert!(data.get("warnings").is_none(), "{row}: {data}");
+        let broader = &data["next"]["broadenSearch"]["query"]["queries"];
+        assert!(
+            broader
+                .as_array()
+                .is_some_and(|rows| rows.iter().any(|row| row.get("since").is_none())),
+            "{row}: {data}"
+        );
+    }
+}
+
+/// The happy-path anchors of each operation's row: the id the next hop
+/// reads (`number`, or `commitSha` as its `ref`), `state` (absent only when
+/// the query fixes it), `author`, and exactly one date.
+#[tokio::test]
+async fn happy_path_rows_carry_the_next_hop_anchors() {
+    use wiremock::MockServer;
+
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/repos/o/r/pulls",
+        200,
+        json!([
+            {"number": 1, "title": "a", "state": "closed", "merged_at": "2026-09-02T00:00:00Z",
+                "created_at": "2026-09-01T00:00:00Z", "user": {"login": "dev"}},
+            {"number": 2, "title": "b", "state": "open",
+                "created_at": "2026-09-03T00:00:00Z", "user": {"login": "dev"}}
+        ]),
+    )
+    .await;
+    mount_json(
+        &server,
+        "/api/v3/search/issues",
+        200,
+        json!({"total_count": 1, "incomplete_results": false, "items": [
+            {"number": 9, "title": "bug", "state": "open", "created_at": "2026-09-04T00:00:00Z",
+                "user": {"login": "dev"}}
+        ]}),
+    )
+    .await;
+    mount_json(
+        &server,
+        "/api/v3/repos/o/r/commits",
+        200,
+        json!([{"sha": "c0ffee", "author": {"login": "dev"},
+            "commit": {"message": "fix (#1)\n\nbody", "author": {"name": "Dev", "date": "2026-09-05T00:00:00Z"}}}]),
+    )
+    .await;
+    mount_json(
+        &server,
+        "/api/v3/search/commits",
+        200,
+        json!({"total_count": 1, "incomplete_results": false, "items": [
+            {"sha": "beef", "author": {"login": "dev"},
+                "commit": {"message": "fix", "author": {"name": "Dev", "date": "2026-09-06T00:00:00Z"}}}
+        ]}),
+    )
+    .await;
+    let transport = transport(&server);
+    let run = |row: Value| {
+        let transport = &transport;
+        async move {
+            let query = serde_json::from_value(row.clone()).expect("query");
+            execute(transport, &query, &context(), &Passthrough)
+                .await
+                .unwrap_or_else(|error| panic!("{row}: {error:?}"))
+        }
+    };
+    let keys = |row: &Value| {
+        row.as_object()
+            .expect("row")
+            .keys()
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+
+    let prs = run(json!({"operation":"pullRequest","owner":"o","repo":"r"})).await;
+    assert_eq!(
+        keys(&prs["pullRequests"][0]),
+        ["number", "title", "state", "mergedAt", "author"],
+        "{prs}"
+    );
+    assert_eq!(
+        keys(&prs["pullRequests"][1]),
+        ["number", "title", "state", "author", "createdAt"],
+        "{prs}"
+    );
+    // A state the query fixes is not restated per row.
+    let open = run(json!({"operation":"pullRequest","owner":"o","repo":"r","state":"open"})).await;
+    assert!(open["pullRequests"][1].get("state").is_none(), "{open}");
+
+    let issues = run(json!({"operation":"issue","owner":"o","repo":"r"})).await;
+    assert_eq!(
+        keys(&issues["issues"][0]),
+        ["number", "title", "state", "author", "createdAt"],
+        "{issues}"
+    );
+
+    let listed = run(json!({"operation":"commit","owner":"o","repo":"r"})).await;
+    let searched =
+        run(json!({"operation":"commit","owner":"o","repo":"r","keywords":["fix"]})).await;
+    for data in [&listed, &searched] {
+        assert_eq!(
+            keys(&data["commits"][0]),
+            ["commitSha", "date", "messageHeadline", "author"],
+            "{data}"
+        );
+        // The commit-search window is the default branch (the description
+        // says so once): no per-response scope label.
+        assert!(data.get("scope").is_none(), "{data}");
+    }
+    // A complete list states it (`hasMore:false`) as a search does; the
+    // response stage hides a finished single page unless `echo` asks.
+    for data in [&listed, &searched] {
+        assert_eq!(data["pagination"]["hasMore"], false, "{data}");
+        assert!(data["next"].get("nextPage").is_none(), "{data}");
+    }
+}
+
+/// A commit listing pages by the provider's Link header: page 2's request
+/// is the provider's page 2 at the same size, so it shares no row with
+/// page 1, and the continuation carries the whole query.
+#[tokio::test]
+async fn commit_listing_page_two_is_the_providers_next_page() {
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path, query_param},
+    };
+
+    let server = MockServer::start().await;
+    let commit = |sha: &str| json!({"sha": sha, "commit": {"message": sha, "author": {"date": "2026-09-01T00:00:00Z"}}});
+    for (page, shas, link) in [
+        (
+            "1",
+            ["a1", "a2"],
+            Some(format!(
+                "<{}/api/v3/repos/o/r/commits?page=2&per_page=2>; rel=\"next\"",
+                server.uri()
+            )),
+        ),
+        ("2", ["b1", "b2"], None),
+    ] {
+        let mut response = ResponseTemplate::new(200).set_body_json(json!(
+            shas.iter().map(|sha| commit(sha)).collect::<Vec<_>>()
+        ));
+        if let Some(link) = link {
+            response = response.insert_header("link", link.as_str());
+        }
+        Mock::given(method("GET"))
+            .and(path("/api/v3/repos/o/r/commits"))
+            .and(query_param("page", page))
+            .and(query_param("per_page", "2"))
+            .and(query_param("path", "src"))
+            .respond_with(response)
+            .mount(&server)
+            .await;
+    }
+    let transport = transport(&server);
+    let first: GhSearchHistoryQuery = serde_json::from_value(json!({
+        "operation":"commit","owner":"o","repo":"r","path":"src","pageSize":2,"since":"2026-01-01"
+    }))
+    .expect("query");
+    let one = execute(&transport, &first, &context(), &Passthrough)
+        .await
+        .expect("page 1");
+    let next = one["next"]["nextPage"]["query"]["queries"][0].clone();
+    for key in ["owner", "repo", "path", "pageSize", "since"] {
+        assert_eq!(
+            next[key],
+            serde_json::to_value(&first).expect("wire")[key],
+            "{key}: {next}"
+        );
+    }
+    assert_eq!(next["page"], 2, "{next}");
+    let two = execute(
+        &transport,
+        &serde_json::from_value(next).expect("next query"),
+        &context(),
+        &Passthrough,
+    )
+    .await
+    .expect("page 2");
+    let shas = |data: &Value| {
+        data["commits"]
+            .as_array()
+            .expect("commits")
+            .iter()
+            .map(|row| row["commitSha"].as_str().unwrap_or_default().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(shas(&one), ["a1", "a2"]);
+    assert_eq!(shas(&two), ["b1", "b2"]);
+    assert!(two["next"].get("nextPage").is_none(), "{two}");
+}
+
+/// A cross-repository PR search names each row's repository as the
+/// ghGetHistoryItem inputs (`owner`, `repo`); an owner-scoped search names
+/// only `repo` (the owner is the query's own).
+#[test]
+fn cross_repository_rows_name_owner_and_repo() {
+    let item = json!({"number": 3, "repository_url": "https://api.github.com/repos/acme/widget"});
+    for ((owner, repo), expected) in [
+        ((None, None), json!({"owner":"acme","repo":"widget"})),
+        ((Some("Acme"), None), json!({"repo":"widget"})),
+        (
+            (Some("other"), None),
+            json!({"owner":"acme","repo":"widget"}),
+        ),
+        ((Some("acme"), Some("widget")), json!({})),
+    ] {
+        let mut row = json!({});
+        rows::name_repository(&mut row, &item, owner, repo);
+        assert_eq!(row, expected, "{owner:?}/{repo:?}");
+    }
+}
+
+/// A commit listing's bare 404 at a `ref` leads to the refs listing (the
+/// one repair); without a ref the repository did not resolve.
+#[tokio::test]
+async fn a_missing_listing_scope_names_its_repair() {
+    use wiremock::MockServer;
+
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/repos/o/r/commits",
+        404,
+        json!({"message": "Not Found"}),
+    )
+    .await;
+    let transport = transport(&server);
+    let at_ref: GhSearchHistoryQuery =
+        serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r","ref":"nope"}))
+            .expect("query");
+    let failure = super::execute(&transport, at_ref, &context(), &Passthrough)
+        .await
+        .expect_err("missing ref");
+    assert!(failure.error.message.contains("\"nope\""), "{failure:?}");
+    let next = failure.next.expect("refs lead");
+    assert_eq!(next["viewRefs"]["tool"], "ghStructure", "{next}");
+    assert_eq!(
+        next["viewRefs"]["query"]["queries"][0]["operation"], "refs",
+        "{next}"
+    );
+
+    let plain: GhSearchHistoryQuery =
+        serde_json::from_value(json!({"operation":"commit","owner":"o","repo":"r"}))
+            .expect("query");
+    let failure = super::execute(&transport, plain, &context(), &Passthrough)
+        .await
+        .expect_err("missing repository");
+    assert!(failure.next.is_none(), "{failure:?}");
+    assert!(failure.error.message.contains("o/r"), "{failure:?}");
+}
+
+/// A page past the last one is out of range on a search (rows exist on
+/// earlier pages: `totalItems` says so, and no rename lookup runs) and on a
+/// REST list (an empty page after the first); the first page of a search with
+/// no results is still just empty.
+#[tokio::test]
+async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
+    use wiremock::MockServer;
+
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/search/issues",
+        200,
+        json!({"total_count": 12, "incomplete_results": false, "items": []}),
+    )
+    .await;
+    mount_json(&server, "/api/v3/repos/o/r/commits", 200, json!([])).await;
+    for (row, rows_key) in [
+        (
+            json!({"operation":"pullRequest","owner":"o","repo":"r","keywords":["fix"],
+                "page":9,"pageSize":5}),
+            "pullRequests",
+        ),
+        (
+            json!({"operation":"issue","owner":"o","repo":"r","keywords":["fix"],
+                "page":9,"pageSize":5}),
+            "issues",
+        ),
+        (
+            json!({"operation":"commit","owner":"o","repo":"r","page":9,"pageSize":5}),
+            "commits",
+        ),
+    ] {
+        let query = serde_json::from_value(row).expect("query");
+        let data = execute(&transport(&server), &query, &context(), &Passthrough)
+            .await
+            .expect("page past the end");
+        assert_eq!(data["pagination"]["outOfRange"], true, "{data}");
+        assert_eq!(data["status"], "empty", "{data}");
+        assert_eq!(data[rows_key], json!([]), "{data}");
+        assert!(data["next"].get("broadenSearch").is_none(), "{data}");
+        assert!(data.get("warnings").is_none(), "no rename lookup: {data}");
+    }
 }

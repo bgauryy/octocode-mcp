@@ -80,9 +80,10 @@ describe.skipIf(!ready)('launcher → native binary e2e', () => {
   it('reports errors as the JSON envelope on a pipe', () => {
     const typo = runLauncher(['lokalSearch', '{}']);
     expect(typo.status).toBe(2);
-    expect(JSON.parse(typo.stdout)).toMatchObject({
-      kind: 'octocode.toolError',
-    });
+    // The envelope is the error itself: no kind/version/tool frame.
+    const envelope = JSON.parse(typo.stdout);
+    expect(envelope.error).toContain('lokalSearch');
+    expect(envelope).not.toHaveProperty('kind');
     const badJson = runLauncher(['localSearch', '{"queries":[']);
     expect(badJson.status).toBe(2);
     expect(JSON.parse(badJson.stdout).error).toContain('Invalid JSON query');

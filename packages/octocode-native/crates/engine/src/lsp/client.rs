@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{
     Arc, Mutex as StdMutex,
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicU64, AtomicUsize, Ordering},
 };
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, ChildStderr};
@@ -393,6 +393,9 @@ struct NativeLspClientInner {
     /// macOS and Linux: the RSS watchdog enforcing `max_memory_mb` on the
     /// server tree. Dropped (aborted) by `stop` before the child is reaped.
     memory_watchdog: StdMutex<Option<spawn_limits::AbortOnDrop>>,
+    /// The server tree's resident bytes at the watchdog's last sample; `0`
+    /// before the first one or without a watchdog.
+    resident_bytes: Arc<AtomicU64>,
     /// Query responses (generation + `method` + params) from this server,
     /// reused only inside a [`RESPONSE_SCOPE`] that allows it.
     responses: moka::sync::Cache<String, CachedResponse>,
@@ -484,6 +487,7 @@ impl NativeLspClient {
                 open_docs: StdMutex::new(OpenDocuments::new(MAX_OPEN_DOCUMENTS)),
                 memory_cap_guard: StdMutex::new(None),
                 memory_watchdog: StdMutex::new(None),
+                resident_bytes: Arc::new(AtomicU64::new(0)),
                 responses: response_cache(),
             }),
         }
@@ -603,7 +607,12 @@ impl NativeLspClient {
         // RLIMIT_AS bounds one process, not the tree). Armed before
         // `initialize` (indexing can start there); dropping the guard on any
         // failed-start path aborts it.
-        let memory_watchdog = memory_watchdog_for(&child, memory_cap, &connection);
+        let memory_watchdog = memory_watchdog_for(
+            &child,
+            memory_cap,
+            &connection,
+            Arc::clone(&self.inner.resident_bytes),
+        );
         let initialize_result = match initialize(&connection, &self.inner.config).await {
             Ok(value) => value,
             Err(error) => {
@@ -707,6 +716,11 @@ impl NativeLspClient {
             Some(connection) => connection.is_alive(),
             None => false,
         }
+    }
+
+    /// See [`crate::lsp::config::serves_requests_concurrently`].
+    pub fn serves_requests_concurrently(&self) -> bool {
+        crate::lsp::config::serves_requests_concurrently(&self.inner.config)
     }
 
     pub fn has_capability(&self, capability: String) -> bool {
@@ -1092,6 +1106,11 @@ impl NativeLspClient {
     /// outstanding on this client (or a clone of it).
     pub(crate) fn is_busy(&self) -> bool {
         self.inner.activity.load(Ordering::Acquire) > 0
+    }
+
+    /// The server tree's resident bytes at the last watchdog sample.
+    pub(crate) fn last_resident_bytes(&self) -> u64 {
+        self.inner.resident_bytes.load(Ordering::Relaxed)
     }
 
     /// Definition, references, type-definition, or implementation locations
@@ -1712,6 +1731,7 @@ fn memory_watchdog_for(
     child: &Child,
     memory_cap: Option<u64>,
     connection: &Arc<JsonRpcConnection>,
+    resident: Arc<AtomicU64>,
 ) -> Option<spawn_limits::AbortOnDrop> {
     let (cap_bytes, pid) = memory_cap.zip(child.id())?;
     let alive = Arc::downgrade(connection);
@@ -1721,6 +1741,7 @@ fn memory_watchdog_for(
             pid,
             cap_bytes,
             spawn_limits::MEMORY_WATCHDOG_INTERVAL,
+            resident,
             move || {
                 alive
                     .upgrade()
@@ -1728,7 +1749,9 @@ fn memory_watchdog_for(
             },
             move |rss| {
                 if let Some(connection) = failed.upgrade() {
-                    connection.fail(&spawn_limits::memory_cap_exceeded_message(rss, cap_bytes));
+                    connection.fail_resource_exhausted(&spawn_limits::memory_cap_exceeded_message(
+                        rss, cap_bytes,
+                    ));
                 }
             },
         ),
@@ -1740,6 +1763,7 @@ fn memory_watchdog_for(
     _child: &Child,
     _memory_cap: Option<u64>,
     _connection: &Arc<JsonRpcConnection>,
+    _resident: Arc<AtomicU64>,
 ) -> Option<spawn_limits::AbortOnDrop> {
     None
 }

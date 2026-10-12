@@ -51,39 +51,44 @@ fn opts(path: String, pattern: &str) -> TextSearchOptions {
     }
 }
 
+/// A line of many matches is reachable whole: spans are bounded per file, not
+/// per line, so a minified file's one long line yields every match.
 #[test]
-fn span_collection_reports_dropped_matches_as_incomplete() {
+fn a_long_line_yields_every_span() {
     let t = TmpDir::new();
-    t.write("many.txt", &"needle ".repeat(1001));
+    let total = 14_024;
+    t.write("many.txt", &"needle ".repeat(total));
     for count_unique in [false, true] {
         let mut options = opts(t.path(), "needle");
         options.only_matching = Some(true);
         options.count_unique = Some(count_unique);
         let result = search(options).expect("search ok");
-        assert_eq!(result.stats.match_count, Some(1001));
-        assert_eq!(result.stats.capped, Some(true));
-        assert_eq!(
-            result.stats.cap_reason.as_deref(),
-            Some("maxOnlyMatchingPerLine")
-        );
+        assert_eq!(result.stats.match_count, Some(total as u32));
+        assert_eq!(result.stats.capped, Some(false));
+        assert_eq!(result.stats.cap_reason, None);
         if count_unique {
-            assert_eq!(result.files[0].matches[0].count, Some(1000));
+            assert_eq!(result.files[0].matches[0].count, Some(total as u32));
         } else {
-            assert_eq!(result.files[0].matches.len(), 1000);
+            assert_eq!(result.files[0].matches.len(), total);
         }
     }
 }
 
 #[test]
-fn span_collection_at_the_bound_remains_complete() {
+fn span_collection_past_the_per_file_bound_reports_incomplete() {
     let t = TmpDir::new();
-    t.write("many.txt", &"needle ".repeat(1000));
+    let bound = MAX_ONLY_MATCHING_PER_FILE as usize;
+    t.write("many.txt", &"needle ".repeat(bound + 1));
     let mut options = opts(t.path(), "needle");
     options.only_matching = Some(true);
     let result = search(options).expect("search ok");
-    assert_eq!(result.files[0].matches.len(), 1000);
-    assert_eq!(result.stats.capped, Some(false));
-    assert_eq!(result.stats.cap_reason, None);
+    assert_eq!(result.stats.match_count, Some(bound as u32 + 1));
+    assert_eq!(result.stats.capped, Some(true));
+    assert_eq!(
+        result.stats.cap_reason.as_deref(),
+        Some("maxOnlyMatchingPerFile")
+    );
+    assert_eq!(result.files[0].matches.len(), bound);
 }
 
 #[test]

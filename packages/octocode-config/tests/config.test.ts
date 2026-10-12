@@ -105,6 +105,7 @@ describe('PROTECTED_KEYS', () => {
       'WORKSPACE_ROOT',
       'OCTOCODE_BETA',
       'OCTOCODE_CARGO',
+      'OCTOCODE_AST_REWRITE_STATE_DIR',
       'OCTOCODE_LSP_AUTO_INSTALL',
       'OCTOCODE_LSP_CACHE_DIR',
     ]) {
@@ -139,10 +140,14 @@ describe('PROTECTED_KEYS', () => {
       // sandbox, or pick or download executables.
       'OCTOCODE_LSP_AUTO_INSTALL',
       'OCTOCODE_LSP_CACHE_DIR',
+      // Home-only: a workspace .env must not raise the language-server memory cap.
+      'OCTOCODE_LSP_MAX_MEMORY_MB',
       'OCTOCODE_TRUST_PROJECT_LSP_CONFIG',
       // Storage mode decides what persists on disk: home-trusted only.
       'OCTOCODE_STORAGE_MODE',
       'OCTOCODE_CARGO',
+      // astRewrite journals are replayed by a later apply: a workspace .env must not choose where.
+      'OCTOCODE_AST_REWRITE_STATE_DIR',
       'GITHUB_API_URL',
       'OCTOCODE_BETA',
       'ALLOWED_PATHS',

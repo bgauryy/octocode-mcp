@@ -21,6 +21,9 @@ pub struct TextSearchMatch {
     pub line: u32,
     /// 0-based column offset of the first submatch.
     pub column: u32,
+    /// 0-based byte offset of the first submatch within its line (UTF-8): where
+    /// a byte-window read of a long line starts at the match.
+    pub byte_offset: u32,
     /// Assembled match + context window, truncated to `max_snippet_chars`.
     pub value: String,
     /// Frequency for this value when `count_unique` is enabled.
@@ -79,6 +82,9 @@ pub struct TextSearchStats {
     pub error_count: Option<u32>,
     /// Bounded first failure detail. Counts include every observed failure.
     pub first_error: Option<String>,
+    /// The share of `error_count` where a readable file failed in the regex
+    /// matcher (a PCRE2 match or JIT-stack limit), not in reading it.
+    pub pattern_error_count: Option<u32>,
     /// Files searched only up to their first NUL byte (`binaryQuit`) after
     /// real text, every one in path order; `binary_file_count` counts them.
     pub binary_files: Option<Vec<String>>,

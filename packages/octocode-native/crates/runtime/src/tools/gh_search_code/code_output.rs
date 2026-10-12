@@ -1,15 +1,44 @@
-use super::{GhSearchCodeQuery, GhSearchCodeQueryMatch};
+use super::leads::{declaration_read, hits_read, line_read, read_top_match, scoped_fragment_read};
+use super::{GhSearchCodeQuery, GhSearchCodeQueryMatchIn};
 use crate::providers::github::{
     GitHubTransport, ProviderErrorKind, ProviderErrorReason, RequestContext,
 };
+use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
-use crate::tools::result::{Continuation, continuation_row_mut};
+use crate::tools::result::Continuation;
 use crate::{
     providers::github::{CodeSearchItem, ProviderError},
     security::scan::ContentScan,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
+
+/// GitHub answers a code search of a login that does not exist with an empty,
+/// incomplete page. An empty, incomplete owner-wide search therefore checks
+/// the login: a missing one is a not-found failure, not an empty search.
+pub(super) async fn owner_exists(
+    owner: &str,
+    transport: &GitHubTransport,
+    context: &RequestContext,
+) -> Result<(), ProviderError> {
+    match transport
+        .list_owner_repositories(owner, "pushed", 1, 1, context)
+        .await
+    {
+        Err(error) if error.kind == ProviderErrorKind::NotFound => {
+            Err(error.with_reason(ProviderErrorReason::UserNotFound))
+        }
+        Err(error)
+            if matches!(
+                error.kind,
+                ProviderErrorKind::Cancelled | ProviderErrorKind::Timeout
+            ) =>
+        {
+            Err(error)
+        }
+        _ => Ok(()),
+    }
+}
 
 pub(super) async fn empty_scope(
     value: &mut Value,
@@ -27,7 +56,7 @@ pub(super) async fn empty_scope(
         return Ok(());
     };
     let metadata = transport.repository_metadata(owner, repo, context).await;
-    let (name, tool, mut next_query, why, confidence, code) = match metadata {
+    let (name, tool, mut next_query, confidence, code) = match metadata {
         Err(error)
             if matches!(
                 error.kind,
@@ -45,27 +74,43 @@ pub(super) async fn empty_scope(
             "viewTree",
             ToolId::GhStructure,
             json!({"owner":owner,"repo":repo,"path":""}),
-            "Inspect the archived repository outside the code-search index.",
             "exact",
             "ghRepoArchived",
         ),
-        // The repository exists: only a scoped path is left to verify.
+        // The repository exists: only a scoped path is left to verify (a
+        // root listing cannot show a keyword is absent).
         _ => {
             let hint = "No indexed matches is unproven absence; verify the repo structure and search a bounded local copy before concluding.";
             diagnostics.add("ghScopedZeroUnproven", hint, false);
-            let scope = query.path.as_deref().map_or("", |path| path.as_str());
+            let Some(scope) = query.path.as_deref().map(|path| path.as_str()) else {
+                add_clone_lead(value, query, owner.as_str(), repo.as_str());
+                return Ok(());
+            };
+            // `path` is a directory prefix: list the directory, or for a
+            // file's path its parent, and read the file for the keywords.
+            let listed = match file_scope(scope) {
+                Some(file) => {
+                    ensure_next(value);
+                    if let Some(read) = super::leads::file_scope_read(query, file.path) {
+                        value["next"]["read"] = read;
+                    }
+                    file.parent
+                }
+                None => scope.trim_matches('/'),
+            };
             (
                 "viewTree",
                 ToolId::GhStructure,
-                json!({"owner":owner,"repo":repo,"path":scope}),
-                "Verify the structure the search covered before concluding absence.",
+                json!({"owner":owner,"repo":repo,"path":listed}),
                 "exact",
                 "ghScopedZeroUnproven",
             )
         }
     };
     let hint = match code {
-        "ghRepoArchived" => Some("The repository is archived, so its code-search index may lag; verify its structure and search locally.".to_owned()),
+        "ghRepoArchived" => {
+            Some("The repository is archived; its code-search index may lag.".to_owned())
+        }
         _ => None,
     };
     // Structure checks inspect the ref the caller asked about, not the
@@ -82,67 +127,36 @@ pub(super) async fn empty_scope(
         value["hints"] = json!([hint]);
     }
     value["next"][name] = Continuation::new(tool, next_query)
-        .why(why)
         .confidence(confidence)
         .build();
     Ok(())
 }
 
+/// The index proves nothing about absence: a local clone of the searched ref
+/// is the check that does. Offered for a repository-wide search only: a path
+/// scope already leads to its listing, and a row shows two leads at most, so
+/// a third would push `broadenSearch` out.
+fn add_clone_lead(value: &mut Value, query: &GhSearchCodeQuery, owner: &str, repo: &str) {
+    let mut clone = json!({"owner":owner,"repo":repo});
+    if let Some(reference) = requested_ref(query) {
+        clone["ref"] = json!(reference);
+    }
+    ensure_next(value);
+    value["next"]["cloneRepo"] = Continuation::new(ToolId::GhCloneRepo, clone)
+        .confidence("exact")
+        .build();
+}
+
 /// A `match:"path"` search whose keywords read as code (spaces or syntax
 /// characters) rather than path segments.
 pub(super) fn path_mode_given_code(query: &GhSearchCodeQuery) -> bool {
-    query.match_ == GhSearchCodeQueryMatch::Path
+    query.match_in == GhSearchCodeQueryMatchIn::Path
         && query.keywords.iter().any(|keyword| {
             keyword
                 .trim()
                 .chars()
                 .any(|c| !(c.is_alphanumeric() || matches!(c, '.' | '_' | '-' | '/')))
         })
-}
-
-/// Code-search fragments carry no line numbers. Point the top hit at an exact
-/// ghGetFileContent match read, whose sourceLineRanges carry line numbers.
-/// Only a code hit (not docs, changelogs, or tests, which GitHub often ranks
-/// first) earns the lead.
-fn read_top_match(top: &Value) -> Option<Value> {
-    let file = top.as_object()?;
-    let matched = file.get("matches")?.as_array()?.first()?;
-    let anchor = &matched["matchIndices"][0];
-    let start = usize::try_from(anchor["start"].as_u64()?).ok()?;
-    let end = usize::try_from(anchor["end"].as_u64()?).ok()?;
-    let token = crate::content::utf16_slice(matched["value"].as_str()?, start, end)?;
-    if token.trim().is_empty() {
-        return None;
-    }
-    let path = file.get("path")?.as_str()?;
-    if !code_hit(path) {
-        return None;
-    }
-    // A cross-tool read states its reason in `why`; its query carries only
-    // the brief the caller sent, which the response stage copies.
-    Some(
-        Continuation::new(
-            ToolId::GhGetFileContent,
-            json!({
-                "owner": file.get("owner")?,
-                "repo": file.get("repo")?,
-                "path": file.get("path")?,
-                "matchString": token,
-                "contextLines": 5,
-            }),
-        )
-        .why("Read the top hit's matched region; its content is numbered with source lines.")
-        .confidence("medium")
-        .build(),
-    )
-}
-
-/// A source file outside tests: the only hit a top-match read is worth.
-fn code_hit(path: &str) -> bool {
-    matches!(
-        crate::content::classify_file_type(path),
-        Some(crate::content::FileType::Code)
-    ) && !crate::content::is_test_path(path)
 }
 
 /// Line hits for the files of a `match:"file"` page: a repo-scoped page is
@@ -152,14 +166,14 @@ pub(super) struct Resolution {
     /// The one commit every row was read at; `None` when rows differ (each
     /// row then names its own `commitSha`).
     pub(super) sha: Option<String>,
-    reference: Option<String>,
+    pub(super) reference: Option<String>,
     /// Per row: the commit it was read at, and its hits.
-    hits: Vec<(String, super::lines::FileHits)>,
+    pub(super) hits: Vec<(String, super::lines::FileHits)>,
 }
 
 /// The owner and repository a row's reads target: the query's when it is
 /// repo-scoped, else the row's own.
-fn row_repo<'a>(
+pub(super) fn row_repo<'a>(
     query: &'a GhSearchCodeQuery,
     row: &'a serde_json::Map<String, Value>,
 ) -> Option<(&'a str, &'a str)> {
@@ -181,7 +195,7 @@ fn indexed_commit(html_url: &str) -> Option<String> {
 }
 
 /// The ref hits are verified at; `None` is the default branch.
-fn requested_ref(query: &GhSearchCodeQuery) -> Option<&str> {
+pub(super) fn requested_ref(query: &GhSearchCodeQuery) -> Option<&str> {
     query
         .ref_
         .as_deref()
@@ -191,14 +205,14 @@ fn requested_ref(query: &GhSearchCodeQuery) -> Option<&str> {
 
 /// The commit a page's hit lines are read at, resolved while the index
 /// search runs (`None`: the page lists no lines — owner-wide, path-only,
-/// or concise).
+/// or a `fields` pick without `lines`).
 pub(super) async fn line_commit<C: crate::providers::github::ConditionalCache>(
     provider: &crate::providers::github::GitHubProvider<C>,
     query: &GhSearchCodeQuery,
     context: &RequestContext,
 ) -> Option<Result<String, ProviderError>> {
     let repo = query.repo.as_deref()?;
-    if query.match_ != GhSearchCodeQueryMatch::File || query.concise == Some(true) {
+    if !reads_lines(query) {
         return None;
     }
     Some(
@@ -272,7 +286,7 @@ async fn owner_wide_lines<C: crate::providers::github::ConditionalCache>(
     context: &RequestContext,
     security: &impl ContentScan,
 ) -> Result<Option<Resolution>, ProviderError> {
-    if query.match_ != GhSearchCodeQueryMatch::File || query.concise == Some(true) {
+    if !reads_lines(query) {
         return Ok(None);
     }
     let commits: HashMap<(&str, &str), String> = found
@@ -380,17 +394,15 @@ pub(super) async fn disclose_index_ref<C: crate::providers::github::ConditionalC
         format!(" at {}", &sha[..sha.len().min(7)])
     });
     let lines = if resolved_sha_shown(value) {
-        format!("; only `lines` were read at {reference}")
+        format!("; `lines` read at {reference}")
     } else {
         String::new()
     };
-    let warning = format!(
-        "Results come from the default-branch index{index}, not {reference}{lines}. Files only at {reference} are missing: list them with ghStructure at {reference}."
-    );
-    match value.get_mut("warnings").and_then(Value::as_array_mut) {
-        Some(warnings) => warnings.push(json!(warning)),
-        None => value["warnings"] = json!([warning]),
-    }
+    // The per-call facts only: the index commit and the ref. That files
+    // only at the ref are missing is the description's, and `viewRepo`
+    // lists them.
+    let warning = format!("Files from the default-branch index{index}, not {reference}{lines}.");
+    crate::tools::gh_shared::push_warning(value, warning);
     let mut listing = json!({
         "owner": owner,
         "repo": repo.as_str(),
@@ -406,12 +418,8 @@ pub(super) async fn disclose_index_ref<C: crate::providers::github::ConditionalC
             listing.shift_remove("path");
         }
     }
-    let lead = Continuation::new(ToolId::GhStructure, listing)
-        .why("List the requested ref; the code index covers only the default branch.")
-        .build();
-    if !value.get("next").is_some_and(Value::is_object) {
-        value["next"] = json!({});
-    }
+    let lead = Continuation::new(ToolId::GhStructure, listing).build();
+    ensure_next(value);
     if let Some(next) = value.get_mut("next").and_then(Value::as_object_mut) {
         next.shift_insert(0, "viewRepo".to_owned(), lead);
     }
@@ -472,6 +480,13 @@ pub(super) struct PageReads {
 /// fragments; fragment `matchIndices` are verbose (core field class); a repo-scoped
 /// page names owner/repo once. The top read is a line range of the top
 /// resolved hit, else `fragment_read` kept inside the verified source scope.
+/// Hit lines are read for content matches unless a `fields` pick leaves
+/// them out (then the page is paths, with no line reads).
+fn reads_lines(query: &GhSearchCodeQuery) -> bool {
+    query.match_in == GhSearchCodeQueryMatchIn::File
+        && (query.fields.is_empty() || query.fields.iter().any(|field| field.as_str() == "lines"))
+}
+
 pub(super) fn shape_files(
     value: &mut Value,
     items: &mut [Value],
@@ -479,22 +494,6 @@ pub(super) fn shape_files(
     resolution: Option<Resolution>,
 ) -> PageReads {
     let mut hit_reads = Vec::new();
-    if query.concise == Some(true) {
-        return PageReads {
-            top: None,
-            hits: hit_reads,
-        };
-    }
-    let reference = requested_ref(query);
-    if query.repo.is_some() {
-        value["owner"] = json!(query.owner.as_str());
-        value["repo"] = json!(query.repo.as_deref().map(|repo| repo.as_str()));
-    }
-    if reference.is_some() {
-        // Candidates come from the default-branch index; only `lines` were
-        // read at the requested ref.
-        value["indexRef"] = json!("defaultBranch");
-    }
     // One read lead: the top resolved hit's lines; only without them, the
     // index fragment (computed from the top row before it is reshaped).
     let fragment = items.first().cloned();
@@ -524,6 +523,7 @@ pub(super) fn shape_files(
                     total,
                     line_count,
                     declaration,
+                    resume_after,
                 } => {
                     if !query
                         .extras
@@ -533,10 +533,15 @@ pub(super) fn shape_files(
                     }
                     row.insert("lines".into(), json!(lines));
                     if *total > lines.len() {
-                        row.insert("hitCount".into(), json!(total));
+                        row.insert("matchCount".into(), json!(total));
                     }
                     if (*total > lines.len() || *clipped)
-                        && let Some(read) = hits_read(query, row, sha)
+                        && let Some(read) = hits_read(
+                            query,
+                            row,
+                            sha,
+                            resume_after.map(|after| (after, *line_count)),
+                        )
                     {
                         hit_reads.push(read);
                     }
@@ -560,7 +565,7 @@ pub(super) fn shape_files(
                     // lead to the keyword lines at the ref.
                     row.shift_remove("matches");
                     row.insert("lineResolved".into(), json!(false));
-                    if let Some(read) = hits_read(query, row, sha) {
+                    if let Some(read) = hits_read(query, row, sha, None) {
                         hit_reads.push(read);
                     }
                 }
@@ -655,199 +660,65 @@ pub(super) fn merge_identical(items: &mut Vec<Value>) {
     *items = kept;
 }
 
-/// ghGetFileContent read of every keyword line of one file at the resolved
-/// commit, whole and numbered: the lossless continuation of a hit list that
-/// was capped or cut to keyword windows. The same case-insensitive literal
-/// any-of match as the listing.
-fn hits_read(
-    query: &GhSearchCodeQuery,
-    row: &serde_json::Map<String, Value>,
-    sha: &str,
-) -> Option<Value> {
-    let path = row.get("path")?.as_str()?;
-    let (owner, repo) = row_repo(query, row)?;
-    let keywords: Vec<&str> = query
-        .keywords
-        .iter()
-        .map(|keyword| keyword.trim())
-        .filter(|keyword| !keyword.is_empty())
-        .collect();
-    let max = crate::tools::id::query_limits::gh_get_file_content::MATCH_STRING_MAX_ITEMS;
-    let mut read = json!({
-        "owner": owner,
-        "repo": repo,
-        "path": path,
-        "ref": sha,
-        "contextLines": 0,
-    });
-    match keywords.as_slice() {
-        [] => return None,
-        [one] => read["matchString"] = json!(one),
-        many if many.len() <= max => read["matchString"] = json!(many),
-        // More keywords than a matchString list holds: one escaped
-        // alternation matches the same lines.
-        many => {
-            read["matchString"] = json!(
-                many.iter()
-                    .map(|keyword| regex::escape(keyword))
-                    .collect::<Vec<_>>()
-                    .join("|")
-            );
-            read["regex"] = json!("rust");
-        }
-    }
-    Some(
-        Continuation::new(ToolId::GhGetFileContent, read)
-            .why("Read every keyword line of this file whole.")
-            .build(),
-    )
+/// A `path` scope that names one file rather than a directory.
+pub(super) struct FileScope<'a> {
+    /// The scope without surrounding slashes.
+    pub(super) path: &'a str,
+    pub(super) parent: &'a str,
+    pub(super) name: &'a str,
 }
 
-/// The index-fragment read of the top file, kept inside the verified source
-/// scope: pinned to the resolved commit, dropped when the file is absent
-/// there, and naming the requested ref when nothing was resolved. It never
-/// silently reads the default branch for a requested ref.
-fn scoped_fragment_read(
-    read: Option<Value>,
-    query: &GhSearchCodeQuery,
-    resolution: Option<&Resolution>,
-) -> Option<Value> {
-    let mut read = read?;
-    let branch = match resolution {
-        Some(resolution) => match resolution.hits.first() {
-            Some((_, super::lines::FileHits::Missing)) => return None,
-            // At a ref, an unmatched or unread top file has no fragment read:
-            // its fragment is default-branch text.
-            Some((_, super::lines::FileHits::Unmatched | super::lines::FileHits::Unavailable))
-                if resolution.reference.is_some() =>
-            {
-                return None;
+/// The index matches `path` as a directory prefix, so a scope whose last
+/// segment looks like a file (an extension that holds a letter, or a known
+/// extensionless or dot file such as `Makefile` or `.gitignore`) matches
+/// nothing. A dotted directory such as `docs/v1.2` is not a file.
+pub(super) fn file_scope(scope: &str) -> Option<FileScope<'_>> {
+    let path = scope.trim_matches('/');
+    let (parent, name) = path.rsplit_once('/').unwrap_or(("", path));
+    let has_extension = name.rsplit_once('.').is_some_and(|(stem, extension)| {
+        !stem.is_empty()
+            && (1..=8).contains(&extension.len())
+            && extension.chars().all(|c| c.is_ascii_alphanumeric())
+            && extension.chars().any(|c| c.is_ascii_alphabetic())
+    });
+    let known = matches!(
+        crate::content::classify_file_type(name),
+        Some(crate::content::FileType::Config | crate::content::FileType::Lock)
+    );
+    (has_extension || known).then_some(FileScope { path, parent, name })
+}
+
+/// What an empty code search says in its default hint: a requested ref the
+/// default-branch index did not cover, and for a `path` scope why that proves
+/// nothing (a file's path matches no directory; a directory's index can lag).
+/// The leads carry the routes that verify it.
+pub(super) fn empty_hint(query: &GhSearchCodeQuery) -> Option<String> {
+    let reference = requested_ref(query).map(|reference| {
+        format!("Code search indexes only the default branch; `{reference}` was not searched.")
+    });
+    let scope = query.repo.as_ref().and_then(|_| {
+        let scope = query.path.as_deref()?.as_str();
+        Some(match file_scope(scope) {
+            Some(file) => {
+                let under = if file.parent.is_empty() {
+                    String::new()
+                } else {
+                    format!(" with `path:\"{}\"`", file.parent)
+                };
+                format!(
+                    "`path` is a directory prefix and `{}` looks like a file: search it by `filename:\"{}\"`{under}, or read it with matchString.",
+                    file.path, file.name
+                )
             }
-            // An owner-wide row without an indexed commit reads the
-            // default branch.
-            Some((sha, _)) if sha.is_empty() => return Some(read),
-            Some((sha, _)) => sha.as_str(),
-            None => return Some(read),
-        },
-        None => match requested_ref(query) {
-            Some(reference) => reference,
-            None => return Some(read),
-        },
-    };
-    if let Some(row) = continuation_row_mut(&mut read) {
-        row["ref"] = json!(branch);
-    }
-    Some(read)
-}
-
-/// ghGetFileContent read of the whole declaration the best hit names: its
-/// unique head line as `matchString` with `block`, at the resolved commit.
-/// A fixed line window would cut a function longer than the window.
-fn declaration_read(
-    query: &GhSearchCodeQuery,
-    row: &serde_json::Map<String, Value>,
-    head: &str,
-    sha: &str,
-) -> Option<Value> {
-    let path = row.get("path")?.as_str()?;
-    let (owner, repo) = row_repo(query, row)?;
-    if !code_hit(path) {
-        return None;
-    }
-    let read = json!({
-        "owner": owner,
-        "repo": repo,
-        "path": path,
-        "matchString": head,
-        "block": true,
-        "ref": sha,
+            None => format!(
+                "No indexed match under `{}`: unproven absence (the index can lag); ghCloneRepo the path, localSearch it.",
+                scope.trim_matches('/')
+            ),
+        })
     });
-    Some(
-        Continuation::new(ToolId::GhGetFileContent, read)
-            .why("Read the top hit's whole declaration.")
-            .confidence("medium")
-            .build(),
-    )
-}
-
-/// ghGetFileContent read of a resolved file's best hit for the goal (5 lines
-/// before it); a read anchored on the first hit widens to the last hit when
-/// that is close.
-fn line_read(
-    query: &GhSearchCodeQuery,
-    row: &serde_json::Map<String, Value>,
-    (first, last, best): (u32, u32, u32),
-    line_count: usize,
-    sha: &str,
-) -> Option<Value> {
-    let path = row.get("path")?.as_str()?;
-    let (owner, repo) = row_repo(query, row)?;
-    let anchor = if best == 0 { first } else { best };
-    let start = anchor.saturating_sub(5).max(1);
-    let mut end = anchor.saturating_add(17);
-    if anchor == first && last.saturating_sub(first) <= 40 {
-        end = end.max(last.saturating_add(3));
-    }
-    let end = end.min(u32::try_from(line_count).unwrap_or(u32::MAX).max(start));
-    if !code_hit(path) {
-        return None;
-    }
-    let read = json!({
-        "owner": owner,
-        "repo": repo,
-        "path": path,
-        // The published line-span spelling (startLine/endLine are accepted
-        // but not published).
-        "ranges": [format!("{start}-{end}")],
-        // The commit the lines were read at: a branch push cannot shift
-        // the window before the read runs.
-        "ref": sha,
-    });
-    Some(
-        Continuation::new(ToolId::GhGetFileContent, read)
-            .why("Read the top hit's lines in context.")
-            .confidence("medium")
-            .build(),
-    )
-}
-
-/// The cause of an empty code search: the index scope (default branch),
-/// path matching, qualifiers, or owner-wide scope.
-pub(super) fn empty_hint(query: &GhSearchCodeQuery) -> String {
-    if let Some(reference) = requested_ref(query) {
-        return format!(
-            "Code search indexes only the default branch; `{reference}` was not searched. Read it with ghGetFileContent."
-        );
-    }
-    if query.match_ == GhSearchCodeQueryMatch::Path {
-        return "No path contains every keyword; use fewer keywords, or match:\"file\" for contents."
-            .into();
-    }
-    let qualifiers = [
-        ("path", query.path.is_some()),
-        ("extensions", !query.extensions.is_empty()),
-        ("filename", query.filename.is_some()),
-        ("language", query.language.is_some()),
-    ]
-    .into_iter()
-    .filter_map(|(name, set)| set.then_some(name))
-    .collect::<Vec<_>>();
-    if !qualifiers.is_empty() {
-        return format!(
-            "No indexed match with {}; drop a qualifier or a keyword to broaden.",
-            qualifiers.join("/")
-        );
-    }
-    match query.repo.as_deref() {
-        Some(repo) => format!(
-            "No indexed match in {}/{}; try fewer or shorter keywords.",
-            query.owner.as_str(),
-            repo.as_str()
-        ),
-        None => format!(
-            "No indexed match in any {} repository; check spelling, or set repo.",
-            query.owner.as_str()
-        ),
+    match (reference, scope) {
+        (Some(reference), Some(scope)) => Some(format!("{reference} {scope}")),
+        (one, other) => one.or(other),
     }
 }
 
@@ -857,12 +728,9 @@ pub(super) fn files(
     security: &impl ContentScan,
 ) -> Result<Vec<Value>, ProviderError> {
     let GhSearchCodeQuery {
-        match_,
-        concise,
-        keywords,
-        ..
+        match_in, keywords, ..
     } = query;
-    let path_only = *match_ == GhSearchCodeQueryMatch::Path;
+    let path_only = *match_in == GhSearchCodeQueryMatchIn::Path;
     let terms = super::ranking::terms(keywords)?;
     let mut groups: Vec<super::ranking::Group> = Vec::new();
     let mut group_indices = HashMap::new();
@@ -903,12 +771,6 @@ pub(super) fn files(
         }
     }
     super::ranking::sort(&mut groups)?;
-    let mut timestamps = HashMap::new();
-    for item in items {
-        timestamps
-            .entry((item.repository.full_name.clone(), item.path.clone()))
-            .or_insert_with(|| item.last_modified_at.clone());
-    }
     let mut files: Vec<Value> = Vec::new();
     let mut indices = HashMap::new();
     for group in groups {
@@ -934,34 +796,16 @@ pub(super) fn files(
                 if !path_only {
                     row["matches"] = json!(values);
                 }
-                if let Some(stamp) = timestamps
-                    .get(&(group.id.clone(), matched.path.clone()))
-                    .and_then(|value| value.as_ref())
-                {
-                    row["lastModifiedAt"] = json!(stamp);
-                }
                 files.push(row);
             }
         }
-    }
-    if *concise == Some(true) {
-        return Ok(files
-            .iter()
-            .map(|file| {
-                json!(format!(
-                    "{}/{}:{}",
-                    file["owner"].as_str().unwrap_or_default(),
-                    file["repo"].as_str().unwrap_or_default(),
-                    file["path"].as_str().unwrap_or_default()
-                ))
-            })
-            .collect());
     }
     Ok(files)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::leads::unsearched_ref_read;
     use super::*;
 
     /// An owner-wide page whose rows share a repository and commit names
@@ -988,15 +832,45 @@ mod tests {
         assert_eq!(items[2], json!({"repo":"s","path":"c.rs"}));
     }
 
+    /// A repo-scoped page names no owner/repo: they are the query's, and the
+    /// shared minimizer would drop the echo.
     #[test]
-    fn top_hit_reads_its_matched_token() {
-        let top = json!({"owner": "o", "repo": "r", "path": "src/a.rs",
-            "matches": [{"value": "x\nfn find_all() {}", "matchIndices": [{"start": 5, "end": 13, "lineOffset": 1}]}]});
-        let read = read_top_match(&top).expect("continuation");
-        assert_eq!(read["tool"], "ghGetFileContent");
-        assert_eq!(read["query"]["queries"][0]["matchString"], "find_all");
-        assert_eq!(read["query"]["queries"][0]["path"], "src/a.rs");
-        assert!(read_top_match(&json!("o/r:src/a.rs")).is_none());
+    fn repo_scoped_pages_carry_no_owner_repo_echo() {
+        let query: GhSearchCodeQuery = serde_json::from_value(json!({
+            "mainGoal":"test","reasoning":"test","owner":"o","repo":"r","keywords":["x"],"ref":"dev"
+        }))
+        .expect("query");
+        let mut value = json!({});
+        let mut items = vec![json!({"owner":"o","repo":"r","path":"src/a.rs","matches":[]})];
+        shape_files(&mut value, &mut items, &query, None);
+        assert!(value.get("owner").is_none(), "{value}");
+        assert!(value.get("repo").is_none(), "{value}");
+        // The index is always the default branch (the description says
+        // so): no constant `indexRef` echo.
+        assert!(value.get("indexRef").is_none(), "{value}");
+        assert!(items[0].get("owner").is_none(), "{:?}", items[0]);
+        // The empty row's one fact is the ref the index did not cover; a
+        // named file at that ref is read there.
+        assert_eq!(
+            empty_hint(&query).as_deref(),
+            Some("Code search indexes only the default branch; `dev` was not searched.")
+        );
+        assert!(unsearched_ref_read(&query).is_none());
+        let mut named = query.clone();
+        named.filename = Some("Cargo.toml".parse().expect("filename"));
+        named.path = Some("crates/x".parse().expect("path"));
+        let read = unsearched_ref_read(&named).expect("read at the ref");
+        assert_eq!(read["tool"], "ghGetFileContent", "{read}");
+        assert_eq!(
+            read["query"]["queries"][0]["path"], "crates/x/Cargo.toml",
+            "{read}"
+        );
+        assert_eq!(read["query"]["queries"][0]["ref"], "dev", "{read}");
+        let plain: GhSearchCodeQuery = serde_json::from_value(json!({
+            "mainGoal":"test","reasoning":"test","owner":"o","keywords":["x"]
+        }))
+        .expect("query");
+        assert!(empty_hint(&plain).is_none());
     }
 
     /// Files whose listed evidence is identical are listed once, naming
@@ -1008,7 +882,7 @@ mod tests {
             json!({"path": "a/README.md", "lines": header}),
             json!({"path": "src/x.rs", "lines": ["3\tfn octocode()"]}),
             json!({"path": "b/README.md", "lines": header}),
-            json!({"path": "c/README.md", "lines": header, "hitCount": 40}),
+            json!({"path": "c/README.md", "lines": header, "matchCount": 40}),
             json!({"path": "d/README.md", "lines": header}),
             json!({"path": "p1"}),
             json!({"path": "p2"}),
@@ -1019,30 +893,10 @@ mod tests {
             vec![
                 json!({"path": "a/README.md", "alsoAt": ["b/README.md", "d/README.md"], "lines": header}),
                 json!({"path": "src/x.rs", "lines": ["3\tfn octocode()"]}),
-                json!({"path": "c/README.md", "lines": header, "hitCount": 40}),
+                json!({"path": "c/README.md", "lines": header, "matchCount": 40}),
                 json!({"path": "p1"}),
                 json!({"path": "p2"}),
             ]
         );
-    }
-
-    /// Only a source hit earns the top-match read; docs, changelogs, tests
-    /// and manifests (often ranked first) get none.
-    #[test]
-    fn read_top_match_is_offered_for_code_hits_only() {
-        let top = |path: &str| {
-            read_top_match(&json!({"owner": "o", "repo": "r", "path": path,
-                "matches": [{"value": "needle", "matchIndices": [{"start": 0, "end": 6}]}]}))
-        };
-        assert!(top("src/a.rs").is_some());
-        for path in [
-            "GUIDE.md",
-            "CHANGELOG.md",
-            "tests/a.rs",
-            "src/a.test.ts",
-            "package.json",
-        ] {
-            assert!(top(path).is_none(), "{path}");
-        }
     }
 }

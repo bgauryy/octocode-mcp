@@ -43,11 +43,12 @@ pub(super) fn should_use_search_for_prs(q: &HistorySearch) -> bool {
         || f.draft.is_some()
         || f.reviewed_by.is_some()
         || f.review_requested.is_some()
-        || f.checks.is_some()
+        || f.status.is_some()
         || f.review.is_some()
         || q.head().is_some()
         || q.base().is_some()
-        || f.merged_at.is_some()
+        || f.merged.is_some()
+        || !f.excluded.is_empty()
         || q.state().as_deref() == Some("merged")
         // The pulls list cannot filter on repository archive state.
         || f.archived.is_some()
@@ -186,6 +187,17 @@ fn commit_terms(
     Ok(())
 }
 
+/// A date-only `until` as the end of that day: the REST commit listing reads
+/// a bare date as its midnight, which would drop the day search's
+/// `committer-date:<=` range keeps. A timestamp stays as given.
+pub(super) fn inclusive_until(until: &str) -> String {
+    if until.len() == "2026-01-01".len() {
+        format!("{until}T23:59:59Z")
+    } else {
+        until.to_owned()
+    }
+}
+
 /// A resolved `since`/`until` window as one search range value.
 pub(super) fn window_range(since: Option<&str>, until: Option<&str>) -> Option<String> {
     match (since, until) {
@@ -198,7 +210,7 @@ pub(super) fn window_range(since: Option<&str>, until: Option<&str>) -> Option<S
 
 /// The `created:` range a pull-request or issue `since`/`until` window
 /// maps to. Search has no generic date, so the window is the creation date
-/// and a warning names the mapping (never a guessed `merged:`); a
+/// (never a guessed `merged:`); a
 /// `created:` qualifier set too is a conflict, never silently overridden.
 fn created_window(
     q: &HistorySearch,
@@ -213,14 +225,9 @@ fn created_window(
             "since/until set the created: window; remove created: from qualifiers, or drop since/until.",
         ));
     }
+    // The published `since` names the creation date, so no per-call note.
     let (since, until) = resolve_commit_window(q, warnings)?;
-    let range = window_range(since.as_deref(), until.as_deref());
-    if let Some(range) = &range {
-        warnings.push(format!(
-            "since/until → created:{range}; for the merge date use qualifiers merged:{range}"
-        ));
-    }
-    Ok(range)
+    Ok(window_range(since.as_deref(), until.as_deref()))
 }
 
 fn issue_terms(
@@ -260,7 +267,7 @@ fn issue_terms(
             ("base", q.base()),
             ("created", created.as_deref()),
             ("updated", f.updated.as_deref()),
-            ("merged", f.merged_at.as_deref()),
+            ("merged", f.merged.as_deref()),
             ("closed", f.closed.as_deref()),
             ("comments", f.comments.as_deref()),
             ("reactions", f.reactions.as_deref()),
@@ -284,7 +291,13 @@ fn issue_terms(
     if let Some(archived) = f.archived {
         out.push(format!("archived:{archived}"));
     }
-    push_qualifier(out, "status", f.checks.as_deref())
+    push_qualifier(out, "status", f.status.as_deref())?;
+    for (key, value) in &f.excluded {
+        let mut term = Vec::new();
+        push_qualifier(&mut term, key, Some(value))?;
+        out.extend(term.into_iter().map(|term| format!("-{term}")));
+    }
+    Ok(())
 }
 
 /// The search terms and the invalid-value warnings collected on the way.

@@ -51,7 +51,7 @@ The agent's context never receives the bodies clasify judged, only the scores an
 
 | I want to… | Flow | Wrap this read | Ask | Then |
 |---|---|---|---|---|
-| find **which** of many files, PRs, or packages is the one | **Scout** | `localSearch`, `ghSearchCode`, `ghSearchHistory`, … | `relevant` + `sufficient` | read the top pages' `hints.read` |
+| find **which** of many files, PRs, or packages is the one | **Scout** | `localSearch`, `ghSearchCode`, `ghSearchHistory`, … | `relevant` + `sufficient` | read the `rank` 1 page's `hints.read` |
 | find **where** in one large file | **Locate** | `localFetch`, `ghGetFileContent` | `locate` | run `hints.read`; if it misses, run `next.clasify` |
 | know whether a large fetch is **worth reading** | **Gate** | the fetch | `sufficient` | read the bounded `hints.read`, not the whole fetch |
 | get a **label** for facts I already hold | **Judge** | a `value` | `yesno`, `choice`, or `score` | use the label, only when the label is the deliverable |
@@ -62,7 +62,7 @@ Clasify ranks attention. It never proves identity, reachability, absence, or edi
 
 - **Resource:** the read clasify runs for you (`tool` + `query`), or a `value` you already hold.
 - **Page:** one judged unit: one file of a search, one PR, or one window of a file.
-- **`relevant` / `sufficient`:** "is this the right area?" / "does this page alone answer?"
+- **`relevant` / `sufficient`:** "is this the right area?" / "does this page alone answer?" With 2+ judged pages, each page carries `rank` (1 = best, by relevant, else the first yes/no question, then sufficient). Read ranks 1–3 and pages with sufficient ≥ 0.7: by `hints.read`, or for a local page, whose read is implied, by its own `path` + `line`–`endLine`. Any other page is read the same way.
 - **`hints.read`:** the exact read to run next; copy it unchanged.
 - **`next.clasify`:** the same call, continued over the candidates not judged yet.
 - **`coverage:"partial"`:** more candidates remain; never read it as "not found".
@@ -143,7 +143,7 @@ The following table rates each source tool, measured on ast-grep (`crates/`, 156
 | `astSearch`, `lspSearch` | Scout | low | short lists are cheap to read | only for long lists (dozens of rows) |
 | `artifactSearch`, `structureSearch`, `ghStructure` | Scout, `choice` | low | names usually decide | when names carry the meaning |
 
-With a provider key, `localSearch`, `localFetch`, `ghSearchCode`, `ghGetFileContent`, and `ghSearchHistory` add one clasify handoff sentence to their descriptions.
+Other tools' descriptions never name clasify. Its own `resources[].tool` field says what feeds it (a search or history list for Scout, a file read for Locate), and a wide result offers a ready `hints.clasify` call.
 
 ## Let the tools hand off: goal-first
 
@@ -414,7 +414,7 @@ A page over its limit fails with `classificationContextTooLarge` and keeps its `
 
 Results run `queries[] → resources[] → pages[] → answers[questionId]` and never hold source bodies.
 
-- A resource states a shared `path`, `ref`, and `totalLines` once. A page is `{path?, line, endLine, answers}`; `scope` appears only on a page that judged part of its file, and an uncertain choice or score keeps its `probabilities`.
+- A resource states a shared `path`, `ref`, and `totalLines` once. A page is `{path?, line, endLine, totalLines?, answers, rank?}` (`totalLines` only when the resource does not state it); `scope` appears only for a byte or disjoint-line span, and an uncertain choice or score keeps its `probabilities`.
 - A page carries `hints.read` unless that read is `localFetch {path, ranges:["line-endLine"]}` of the page itself.
 - `coverage` appears only as `partial` (more remains: never read it as absence) or `error`.
 - A failed page or answer carries `error:{errorCode, error, hints?}`. A page with neither `answers` nor `error` was not judged, for the reason the resource states.
@@ -447,7 +447,7 @@ npx octocode schema clasify --view query
 npx octocode clasify --input request.json
 ```
 
-CLI exit codes: `0` judged; `6` a continuation remains; `2` invalid input; `3`/`4`/`7`/`5` when every read failed with not-found, auth, rate-limit, or another error; `5` also covers a missing key. Full table: [OCTOCODE_PROTOCOL.md](OCTOCODE_PROTOCOL.md#38-pages-leads-and-failure-hints).
+CLI exit codes: `0` judged (a `next.clasify` continuation that remains is still `0`); `2` invalid input; `3`/`4`/`7`/`5` when every read failed with not-found, auth, rate-limit, or another error; `5` also covers a missing key. Full table: [OCTOCODE_PROTOCOL.md](OCTOCODE_PROTOCOL.md#38-pages-leads-and-failure-hints).
 
 #### Usage stats
 

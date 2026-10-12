@@ -1,9 +1,8 @@
 //! `schema` and the input section of `<tool> --help`, served from the
-//! embedded CLI presentation (`octocode-config` projects it from the same
-//! core contract MCP uses). Only runtime availability is joined here: the
-//! catalog lists enabled tools, a tool's clasify handoff joins its
-//! description when clasify is enabled, clasify uses the rendering for the
-//! enabled context tools, and per-tool views carry `availability` and `run`.
+//! embedded CLI presentation (`octocode-config` emits it from the same core
+//! Zod contract MCP uses). Only runtime availability is joined here: the
+//! catalog lists enabled tools, and per-tool views carry `availability` and
+//! `run`.
 use serde_json::{Value, json};
 
 /// A usage error (exit 2) or an execution error (exit 5).
@@ -100,24 +99,13 @@ pub(super) fn tool_view(
         return Err(usage(format!("Unknown tool: {name}. Known tools: {known}")));
     };
     let view = view.unwrap_or("full");
-    let (source, narrow) = rendering(presentation, tool, machine);
     let mut value = match select {
-        None => source["views"][view].clone(),
+        None => tool["views"][view].clone(),
         Some(_) if view != "query" => {
             return Err(usage("--select requires --view query and a tool name"));
         }
-        Some(selection) => selected(tool, source, selection)?.clone(),
+        Some(selection) => selected(tool, selection)?.clone(),
     };
-    if let Some(enabled_tools) = narrow {
-        narrow_tool_enums(&mut value, &enabled_tools);
-    }
-    if let (true, Some(handoff), Some(description)) = (
-        enabled(machine, "clasify"),
-        tool["handoff"].as_str(),
-        value["description"].as_str(),
-    ) {
-        value["description"] = Value::String(format!("{description} {handoff}"));
-    }
     value["availability"] = machine_entry(machine, name)
         .map(|entry| entry["availability"].clone())
         .unwrap_or_else(|| json!({ "enabled": false }));
@@ -125,113 +113,32 @@ pub(super) fn tool_view(
     Ok(value)
 }
 
-/// The views and selections to serve. clasify carries one rendering per
-/// pre-rendered set of context tools: an exact match is served as is; any
-/// other set uses the smallest superset, narrowed to the enabled tools.
-fn rendering<'a>(
-    presentation: &'a Value,
-    tool: &'a Value,
-    machine: &Value,
-) -> (&'a Value, Option<Vec<&'a str>>) {
-    let Some(renderings) = tool["renderings"].as_array() else {
-        return (tool, None);
-    };
-    let enabled_tools: Vec<&str> = presentation["clasifyContextTools"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .filter(|name| enabled(machine, name))
-        .collect();
-    let tools_of = |candidate: &'a Value| -> Vec<&'a str> {
-        candidate["contextTools"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .collect()
-    };
-    if let Some(exact) = renderings
-        .iter()
-        .find(|candidate| tools_of(candidate) == enabled_tools)
-    {
-        return (exact, None);
-    }
-    let superset = renderings
-        .iter()
-        .filter(|candidate| {
-            let tools = tools_of(candidate);
-            enabled_tools.iter().all(|name| tools.contains(name))
-        })
-        .min_by_key(|candidate| tools_of(candidate).len())
-        .or_else(|| renderings.last())
-        .unwrap_or(tool);
-    (superset, Some(enabled_tools))
-}
-
-/// Keep only enabled tools in every `tool` enum that names context tools.
-fn narrow_tool_enums(value: &mut Value, enabled_tools: &[&str]) {
-    match value {
-        Value::Object(map) => {
-            for (key, child) in map.iter_mut() {
-                if key == "tool"
-                    && let Some(items) = child.get_mut("enum").and_then(Value::as_array_mut)
-                {
-                    items.retain(|item| {
-                        item.as_str()
-                            .is_some_and(|name| enabled_tools.contains(&name))
-                    });
-                    continue;
-                }
-                narrow_tool_enums(child, enabled_tools);
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                narrow_tool_enums(item, enabled_tools);
-            }
-        }
-        _ => {}
-    }
-}
-
-/// The rendered `--select FIELD=VALUE` view, keyed like the generator: a
-/// string value bare, any other JSON value as JSON text.
-fn selected<'a>(
-    tool: &Value,
-    source: &'a Value,
-    selection: &str,
-) -> Result<&'a Value, SchemaError> {
+/// The `--select operation=X` view: that operation's row. A JSON-quoted
+/// value selects the same row as the bare one.
+fn selected<'a>(tool: &'a Value, selection: &str) -> Result<&'a Value, SchemaError> {
     let (field, raw) = selection.split_once('=').unwrap_or(("", ""));
-    if field.trim().is_empty() || raw.trim().is_empty() {
-        return Err(usage("--select expects FIELD=VALUE, e.g. operation=code"));
+    if field.trim() != "operation" || raw.trim().is_empty() {
+        return Err(usage(
+            "--select expects operation=VALUE, e.g. operation=commit",
+        ));
     }
-    let value =
-        serde_json::from_str::<Value>(raw).unwrap_or_else(|_| Value::String(raw.to_owned()));
-    let key = match &value {
-        Value::String(text) => format!("{field}={text}"),
-        other => format!("{field}={other}"),
-    };
-    let variants: Vec<&str> = tool["variantNames"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect();
-    if field == "variant" && !value.as_str().is_some_and(|name| variants.contains(&name)) {
-        let shown = value
-            .as_str()
-            .map_or_else(|| value.to_string(), str::to_owned);
-        return Err(usage(format!(
-            "Unknown variant: {shown}. Known variants: {}",
-            variants.join(", ")
-        )));
-    }
-    source["selections"].get(&key).ok_or_else(|| {
-        usage(format!(
-            "--select \"{selection}\" matched 0 top-level oneOf/anyOf branches; choose a variant name or const/enum field value identifying a branch in --view query."
-        ))
-    })
+    let operation = serde_json::from_str::<String>(raw).unwrap_or_else(|_| raw.to_owned());
+    tool["selections"]
+        .get(format!("operation={operation}"))
+        .ok_or_else(|| {
+            let known = tool["variantNames"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+            usage(if known.is_empty() {
+                "This tool has no operations to select.".to_owned()
+            } else {
+                format!("Unknown operation: {operation}. Operations: {known}")
+            })
+        })
 }
 
 /// The input section printed after clap's help for `<tool> --help`.
@@ -334,7 +241,7 @@ fn grammar_instruction(capabilities: &Value) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{catalog, grammar_instruction, narrow_tool_enums, tool_view};
+    use super::{catalog, grammar_instruction, tool_view};
     use serde_json::{Value, json};
 
     /// A machine catalog with every presentation tool enabled except `off`.
@@ -375,55 +282,11 @@ mod tests {
     }
 
     #[test]
-    fn handoff_joins_the_description_only_when_clasify_is_enabled() {
-        let with = tool_view(&machine(&[]), "localSearch", Some("query"), None).expect("view");
-        let without =
-            tool_view(&machine(&["clasify"]), "localSearch", Some("query"), None).expect("view");
-        let with = with["description"].as_str().expect("description");
-        let without = without["description"].as_str().expect("description");
-        assert!(with.starts_with(without) && with.len() > without.len());
-        assert!(with.contains("clasify") && !without.contains("clasify"));
-    }
-
-    #[test]
-    fn clasify_uses_the_rendering_for_the_enabled_context_tools() {
-        let tool_enum = |off: &[&str]| -> Vec<String> {
-            let view = tool_view(&machine(off), "clasify", Some("query"), None).expect("view");
-            view["querySchema"]["properties"]["resources"]["items"]["anyOf"][1]["properties"]
-                ["tool"]["enum"]
-                .as_array()
-                .expect("tool enum")
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        };
-        // Exact renderings: beta off (default) and beta on.
-        assert!(!tool_enum(&["astTopology", "astRewrite"]).contains(&"astTopology".to_owned()));
-        assert!(tool_enum(&[]).contains(&"astTopology".to_owned()));
-        // Any other set narrows the smallest superset rendering.
-        let narrowed = tool_enum(&["astTopology", "astRewrite", "ghSearchCode"]);
-        assert!(
-            !narrowed.contains(&"ghSearchCode".to_owned())
-                && narrowed.contains(&"localSearch".to_owned())
-        );
-    }
-
-    #[test]
-    fn selection_errors_match_core() {
+    fn select_reads_one_operation_row() {
         let m = machine(&[]);
         assert!(
             message(tool_view(&m, "lspSearch", Some("query"), Some("x")))
-                .starts_with("--select expects FIELD=VALUE")
-        );
-        assert!(
-            message(tool_view(
-                &m,
-                "lspSearch",
-                Some("query"),
-                Some("variant=nope")
-            ))
-            .starts_with("Unknown variant: nope. Known variants: anchored")
+                .starts_with("--select expects operation=VALUE")
         );
         assert!(
             message(tool_view(
@@ -432,13 +295,13 @@ mod tests {
                 Some("query"),
                 Some("operation=nope")
             ))
-            .contains("matched 0 top-level")
+            .starts_with("Unknown operation: nope. Operations: ")
         );
         assert_eq!(
             message(tool_view(&m, "lspSearch", None, Some("operation=callers"))),
             "--select requires --view query and a tool name"
         );
-        // A JSON-quoted string selects the same branch as the bare value.
+        // A JSON-quoted string selects the same row as the bare value.
         let bare =
             tool_view(&m, "astSearch", Some("query"), Some("operation=symbols")).expect("bare");
         let quoted = tool_view(
@@ -449,17 +312,11 @@ mod tests {
         )
         .expect("quoted");
         assert_eq!(bare, quoted);
+        assert!(
+            bare["querySchema"]["properties"]["symbolName"].is_object(),
+            "{bare}"
+        );
     }
-
-    #[test]
-    fn narrowing_keeps_only_enabled_tools_in_tool_enums() {
-        let mut value =
-            json!({ "a": { "tool": { "enum": ["x", "y", "z"] } }, "tool": { "type": "string" } });
-        narrow_tool_enums(&mut value, &["x", "z"]);
-        assert_eq!(value["a"]["tool"]["enum"], json!(["x", "z"]));
-        assert_eq!(value["tool"], json!({ "type": "string" }));
-    }
-
     #[test]
     fn grammar_line_states_the_common_feature_set_once() {
         let capabilities = json!([

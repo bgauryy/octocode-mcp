@@ -188,6 +188,7 @@ async fn provider(server: &MockServer) -> GitHubProvider<MemoryCache> {
             max_attempts: 2,
             base_delay: Duration::from_millis(1),
             max_retry_after: Duration::from_secs(1),
+            max_rate_limit_wait: Duration::from_secs(1),
         },
     )
     .expect("transport");
@@ -391,6 +392,7 @@ async fn retries_secondary_rate_limit_without_remaining_zero() {
             max_attempts: 3,
             base_delay: Duration::from_millis(1),
             max_retry_after: Duration::from_secs(5),
+            max_rate_limit_wait: Duration::from_secs(5),
         },
         GitHubBudget::relaxed(),
     )
@@ -432,12 +434,12 @@ async fn projects_rate_limit_metadata_without_retrying_long_delays() {
     assert_eq!(error.kind, ProviderErrorKind::RateLimited);
     assert_eq!(
         error.rate_limit,
-        Some(RateLimit {
+        Some(Box::new(RateLimit {
             remaining: Some(0),
             reset_epoch_seconds: Some(1_900_000_000),
             retry_after_seconds: Some(60),
             resource: Some("core".into()),
-        })
+        }))
     );
 }
 
@@ -740,6 +742,7 @@ async fn retries_transient_server_failure_once() {
             max_attempts: 2,
             base_delay: Duration::from_millis(1),
             max_retry_after: Duration::from_secs(1),
+            max_rate_limit_wait: Duration::from_secs(1),
         },
     )
     .expect("transport");
@@ -789,6 +792,7 @@ fn short_retry() -> RetryPolicy {
         max_attempts: 3,
         base_delay: Duration::from_millis(1),
         max_retry_after: Duration::from_secs(5),
+        max_rate_limit_wait: Duration::from_secs(5),
     }
 }
 
@@ -835,6 +839,49 @@ async fn primary_limit_waits_for_a_short_reset_then_retries() {
         .expect("retried after reset");
     assert_eq!(page.status, 200);
     assert!(epoch_secs() >= reset, "retried before the reset");
+}
+
+/// A rate-limit wait runs on the call's time, not the request's: a 1.5 s
+/// request budget survives a 2–3 s reset wait, and the retried request still
+/// gets its own time. Without a call deadline past the request's, the same
+/// wait fails fast.
+#[tokio::test]
+async fn rate_limit_waits_do_not_spend_the_request_timeout() {
+    let server = MockServer::start().await;
+    let hits = Arc::new(AtomicUsize::new(0));
+    let reset = epoch_secs() + 3;
+    Mock::given(method("GET"))
+        .respond_with(PrimaryThenOk(hits.clone(), reset))
+        .mount(&server)
+        .await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    let mut context = with_token("t", Duration::from_millis(1_500), 1024);
+    context.budget.wait_until = std::time::Instant::now() + Duration::from_secs(10);
+    let page = transport
+        .execute(
+            RequestSpec::get(endpoint.rest(&["repos", "a", "b"]).expect("route")),
+            &context,
+        )
+        .await
+        .expect("waited for the reset on the call's time");
+    assert_eq!(page.status, 200);
+    assert!(context.budget.effective_deadline() > context.budget.deadline);
+
+    let reset = epoch_secs() + 3;
+    let other = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(PrimaryThenOk(Arc::new(AtomicUsize::new(0)), reset))
+        .mount(&other)
+        .await;
+    let (transport, endpoint) = executor_transport(&other, GitHubBudget::relaxed(), short_retry());
+    let error = transport
+        .execute(
+            RequestSpec::get(endpoint.rest(&["repos", "a", "b"]).expect("route")),
+            &with_token("t", Duration::from_millis(1_500), 1024),
+        )
+        .await
+        .expect_err("no call time past the request's");
+    assert_eq!(error.kind, ProviderErrorKind::RateLimited);
 }
 
 #[tokio::test]
@@ -1387,6 +1434,60 @@ async fn code_search_cache_is_scoped_to_the_request_credential() {
     }
 }
 
+/// `confirm_user` reads `/users/{login}` through the response cache: one
+/// request per credential and login; a 404 is the typed missing user, and a
+/// failure of any other kind keeps its own kind.
+#[tokio::test]
+async fn confirm_user_is_cached_per_credential_and_types_a_missing_login() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/dev"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"login": "dev"})))
+        .expect(2)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/ghost"))
+        .respond_with(
+            ResponseTemplate::new(404).set_body_json(serde_json::json!({"message": "Not Found"})),
+        )
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/users/flaky"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let (mut transport, _) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    transport.cache = Arc::new(PartitionedCache::default());
+    let context = |token: &str| {
+        RequestContext::new(
+            RequestBudget::with_timeout(Duration::from_secs(5), 1 << 20),
+            Some(ResolvedCredential::new(token, CredentialSource::Storage)),
+        )
+    };
+    // alice twice (one request), bob once (his own partition): two requests.
+    for token in ["alice", "alice", "bob"] {
+        transport
+            .confirm_user("dev", &context(token))
+            .await
+            .expect("user exists");
+    }
+    let missing = transport
+        .confirm_user("ghost", &context("alice"))
+        .await
+        .expect_err("missing user");
+    assert_eq!(missing.kind, ProviderErrorKind::NotFound);
+    assert_eq!(missing.reason, Some(ProviderErrorReason::UserNotFound));
+    assert!(missing.message.contains("ghost"), "{missing:?}");
+    let flaky = transport
+        .confirm_user("flaky", &context("alice"))
+        .await
+        .expect_err("server failure");
+    assert_eq!(flaky.reason, None, "{flaky:?}");
+    assert_ne!(flaky.kind, ProviderErrorKind::NotFound);
+}
+
 #[tokio::test]
 async fn a_resolved_full_sha_is_cached_per_credential() {
     let server = MockServer::start().await;
@@ -1689,7 +1790,7 @@ async fn missing_ref_is_not_found_with_a_ref_reason() {
     assert_eq!(error.reason, Some(ProviderErrorReason::RepositoryNotFound));
 }
 
-/// X9: a followed `/repos/a/b/…` → `/repositories/<id>/…` redirect marks
+/// A followed `/repos/a/b/…` → `/repositories/<id>/…` redirect marks
 /// `a/b` renamed; other repositories and plain reads stay unmarked.
 #[tokio::test]
 async fn a_followed_repository_redirect_marks_the_name_renamed() {
@@ -1729,4 +1830,605 @@ async fn a_followed_repository_redirect_marks_the_name_renamed() {
     assert!(!provider.transport.followed_rename("x", "y"));
     // Clones share what was learned.
     assert!(provider.transport.clone().followed_rename("a", "b"));
+}
+
+// ── Throttling fixes (docs: .octocode/octocode-roast/2026-10-10-github-throttling.md) ──
+
+fn secondary_limit_response(retry_after: Option<&str>) -> ResponseTemplate {
+    let mut response = ResponseTemplate::new(403)
+        .insert_header("x-ratelimit-remaining", "4000")
+        .insert_header("x-ratelimit-reset", (epoch_secs() + 3600).to_string().as_str())
+        .insert_header("x-ratelimit-resource", "search")
+        .set_body_json(serde_json::json!({
+            "message": "You have exceeded a secondary rate limit. Please wait a few minutes before you try again."
+        }));
+    if let Some(retry_after) = retry_after {
+        response = response.insert_header("retry-after", retry_after);
+    }
+    response
+}
+
+async fn get_status(
+    transport: &GitHubTransport,
+    endpoint: &GitHubEndpoint,
+    segments: &[&str],
+) -> Result<ResponsePage, ProviderError> {
+    transport
+        .execute(
+            RequestSpec::get(endpoint.rest(segments).expect("route")),
+            &with_token("t", Duration::from_secs(5), 1024),
+        )
+        .await
+}
+
+/// Issue 1: a row queued behind the search spacing must re-check the block
+/// that landed while it slept, not send into a 120 s secondary cooldown.
+#[tokio::test]
+async fn a_queued_request_is_not_sent_after_a_cooldown_lands_while_it_waits() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/issues"))
+        .respond_with(secondary_limit_response(Some("120")))
+        .mount(&server)
+        .await;
+    let budget = Arc::new(GitHubBudget::with_config(ExecutorConfig {
+        search_spacing: Duration::from_millis(300),
+        ..ExecutorConfig::relaxed()
+    }));
+    let (transport, endpoint) = executor_transport(&server, budget, short_retry());
+    let rows = futures_util::future::join_all((0..2).map(|_| {
+        let transport = transport.clone();
+        let endpoint = endpoint.clone();
+        async move { get_status(&transport, &endpoint, &["search", "issues"]).await }
+    }))
+    .await;
+    for row in &rows {
+        let error = row.as_ref().expect_err("cooldown");
+        assert_eq!(error.kind, ProviderErrorKind::RateLimited);
+        assert_eq!(
+            error
+                .rate_limit
+                .as_ref()
+                .and_then(|r| r.retry_after_seconds)
+                .map(|s| s >= 100),
+            Some(true)
+        );
+    }
+    assert_eq!(
+        server.received_requests().await.expect("requests").len(),
+        1,
+        "the queued row was sent into the cooldown"
+    );
+}
+
+#[derive(Clone)]
+struct Hits(Arc<AtomicUsize>);
+impl Hits {
+    fn new() -> Self {
+        Self(Arc::new(AtomicUsize::new(0)))
+    }
+    fn count(&self) -> usize {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+async fn mount_bad_gateway(server: &MockServer, hits: &Hits) {
+    let hits = hits.clone();
+    Mock::given(method("GET"))
+        .respond_with(move |_: &Request| {
+            hits.0.fetch_add(1, Ordering::SeqCst);
+            ResponseTemplate::new(502).set_body_json(serde_json::json!({"message": "Server Error"}))
+        })
+        .mount(server)
+        .await;
+}
+
+fn breaker_budget(circuit_failures: u32) -> Arc<GitHubBudget> {
+    Arc::new(GitHubBudget::with_config(ExecutorConfig {
+        circuit_failures,
+        circuit_open: Duration::from_secs(30),
+        ..ExecutorConfig::relaxed()
+    }))
+}
+
+/// Issue 2: an outage trips the breaker, and the open breaker names the real
+/// cause (a server failure) rather than a rate limit.
+#[tokio::test]
+async fn an_open_circuit_reports_a_server_outage_not_a_rate_limit() {
+    let server = MockServer::start().await;
+    let hits = Hits::new();
+    mount_bad_gateway(&server, &hits).await;
+    let (transport, endpoint) = executor_transport(&server, breaker_budget(2), short_retry());
+    for _ in 0..2 {
+        let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+            .await
+            .expect_err("502");
+        assert_eq!(error.kind, ProviderErrorKind::Server);
+    }
+    let sent = hits.count();
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("circuit open");
+    assert_eq!(hits.count(), sent, "an open circuit must not send");
+    assert_eq!(error.kind, ProviderErrorKind::Server, "{error:?}");
+    assert!(error.retryable);
+    assert!(error.message.contains("unavailable"), "{}", error.message);
+    assert!(
+        error
+            .rate_limit
+            .as_ref()
+            .and_then(|r| r.retry_after_seconds)
+            .is_some(),
+        "the wait is still reported"
+    );
+}
+
+/// Issue 2: retries of one logical request are one failure, not one each.
+#[tokio::test]
+async fn the_circuit_counts_one_failure_per_logical_request() {
+    let server = MockServer::start().await;
+    let hits = Hits::new();
+    mount_bad_gateway(&server, &hits).await;
+    // 3 attempts per request: per-attempt counting opens at the first
+    // request's third attempt; per-request counting needs 3 requests.
+    let (transport, endpoint) = executor_transport(&server, breaker_budget(3), short_retry());
+    for _ in 0..2 {
+        let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+            .await
+            .expect_err("502");
+        assert_eq!(error.kind, ProviderErrorKind::Server, "{error:?}");
+    }
+    assert_eq!(hits.count(), 6, "both requests ran all their attempts");
+}
+
+/// Issue 2: a success closes the breaker's count.
+#[tokio::test]
+async fn a_success_resets_the_circuit_count() {
+    let server = MockServer::start().await;
+    let hits = Hits::new();
+    let flip = hits.clone();
+    Mock::given(method("GET"))
+        .respond_with(move |_: &Request| {
+            // 502 for requests 1 and 3 (single attempts), 200 for the rest.
+            let n = flip.0.fetch_add(1, Ordering::SeqCst);
+            if n == 0 || n == 2 {
+                ResponseTemplate::new(502)
+            } else {
+                ResponseTemplate::new(200).set_body_bytes(b"ok")
+            }
+        })
+        .mount(&server)
+        .await;
+    let single = RetryPolicy {
+        max_attempts: 1,
+        ..short_retry()
+    };
+    let (transport, endpoint) = executor_transport(&server, breaker_budget(2), single);
+    for expected in [false, true, false, true, true] {
+        let result = get_status(&transport, &endpoint, &["repos", "a", "b"]).await;
+        assert_eq!(result.is_ok(), expected, "{result:?}");
+    }
+}
+
+/// Issue 2: transport outages carry their own cause too.
+#[tokio::test]
+async fn an_open_circuit_after_connection_failures_reports_transport() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    drop(listener);
+    let endpoint = GitHubEndpoint::new(
+        url::Url::parse(&format!("http://127.0.0.1:{port}/api/v3")).expect("URL"),
+    )
+    .expect("endpoint");
+    let transport = GitHubTransport::with_budget(
+        endpoint.clone(),
+        RetryPolicy {
+            max_attempts: 1,
+            ..short_retry()
+        },
+        breaker_budget(1),
+    )
+    .expect("transport");
+    let first = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("refused");
+    assert_eq!(first.kind, ProviderErrorKind::Transport);
+    let second = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("circuit open");
+    assert_eq!(second.kind, ProviderErrorKind::Transport, "{second:?}");
+    assert!(second.retryable);
+    assert!(second.message.contains("unavailable"), "{}", second.message);
+}
+
+/// Issue 2: repeated secondary limits still report a rate limit.
+#[tokio::test]
+async fn an_open_circuit_after_secondary_limits_reports_a_rate_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(secondary_limit_response(Some("1")))
+        .mount(&server)
+        .await;
+    let single = RetryPolicy {
+        max_attempts: 1,
+        ..short_retry()
+    };
+    let (transport, endpoint) = executor_transport(&server, breaker_budget(1), single);
+    let first = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("secondary");
+    assert_eq!(first.kind, ProviderErrorKind::RateLimited);
+    let second = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("blocked");
+    assert_eq!(second.kind, ProviderErrorKind::RateLimited);
+}
+
+/// Issue 6: a secondary limit's `resetEpochSeconds` is the cooldown end, not
+/// the unrelated primary window reset an hour away.
+#[tokio::test]
+async fn secondary_limit_reset_is_the_cooldown_end() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(secondary_limit_response(Some("120")))
+        .mount(&server)
+        .await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    let before = epoch_secs();
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("secondary");
+    let rate = error.rate_limit.expect("rate limit");
+    assert_eq!(rate.retry_after_seconds, Some(120));
+    let reset = rate.reset_epoch_seconds.expect("reset");
+    assert!(
+        (before + 119..=before + 123).contains(&reset),
+        "reset {reset} is not the cooldown end near {}",
+        before + 120
+    );
+}
+
+/// Issue 8: a 5xx `Retry-After` beyond the retry cap is surfaced, not dropped.
+#[tokio::test]
+async fn a_long_server_retry_after_is_surfaced() {
+    let server = MockServer::start().await;
+    let hits = Hits::new();
+    let counter = hits.clone();
+    Mock::given(method("GET"))
+        .respond_with(move |_: &Request| {
+            counter.0.fetch_add(1, Ordering::SeqCst);
+            ResponseTemplate::new(503).insert_header("retry-after", "30")
+        })
+        .mount(&server)
+        .await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("503");
+    assert_eq!(error.kind, ProviderErrorKind::Server);
+    assert_eq!(hits.count(), 1, "a long retry-after fails fast");
+    assert_eq!(
+        error.rate_limit.and_then(|rate| rate.retry_after_seconds),
+        Some(30)
+    );
+}
+
+/// Issue 7: the SAML SSO authorization URL travels with the failure.
+#[tokio::test]
+async fn a_saml_sso_403_carries_the_authorization_url() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(403)
+                .insert_header(
+                    "x-github-sso",
+                    "required; url=https://github.com/orgs/acme/sso?authorization_request=ABC",
+                )
+                .set_body_json(serde_json::json!({
+                    "message": "Resource protected by organization SAML enforcement."
+                })),
+        )
+        .mount(&server)
+        .await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("sso");
+    assert_eq!(error.kind, ProviderErrorKind::Permission);
+    assert_eq!(
+        error.sso_url.as_deref(),
+        Some("https://github.com/orgs/acme/sso?authorization_request=ABC")
+    );
+}
+
+/// Issue 7: `partial-results` names the organizations that withheld results.
+#[tokio::test]
+async fn partial_sso_results_name_the_withheld_organizations() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header(
+                    "x-github-sso",
+                    "partial-results; organizations=21955855,20582480",
+                )
+                .set_body_json(serde_json::json!({"items": []})),
+        )
+        .mount(&server)
+        .await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    let page = get_status(&transport, &endpoint, &["search", "issues"])
+        .await
+        .expect("ok");
+    assert_eq!(page.sso_partial_organizations(), vec![21955855, 20582480]);
+    let plain = ResponsePage {
+        status: 200,
+        headers: reqwest::header::HeaderMap::new(),
+        body: bytes::Bytes::new(),
+        next: None,
+    };
+    assert!(plain.sso_partial_organizations().is_empty());
+}
+
+/// Issue 5: rate-limit bodies without `x-ratelimit-*` headers (proxies, GHES).
+#[tokio::test]
+async fn a_headerless_rate_limit_body_is_a_primary_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(403).set_body_json(
+            serde_json::json!({"message": "API rate limit exceeded for user ID 1."}),
+        ))
+        .mount(&server)
+        .await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("limited");
+    assert_eq!(error.kind, ProviderErrorKind::RateLimited);
+    assert!(error.retryable);
+    assert!(error.rate_limit.is_some());
+}
+
+/// Issue 5: the legacy abuse-detection 403 is a secondary limit.
+#[tokio::test]
+async fn an_abuse_detection_403_is_a_secondary_limit() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(ResponseTemplate::new(403).set_body_json(serde_json::json!({
+            "message": "You have triggered an abuse detection mechanism. Please wait a few minutes before you try again."
+        })))
+        .mount(&server)
+        .await;
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("limited");
+    assert_eq!(error.kind, ProviderErrorKind::RateLimited);
+    assert_eq!(
+        error.message.as_ref(),
+        "GitHub secondary rate limit exceeded"
+    );
+}
+
+/// Issue 5: an HTTP-date `Retry-After` is honored instead of the 60 s default.
+#[tokio::test]
+async fn an_http_date_retry_after_is_honored() {
+    let server = MockServer::start().await;
+    let date = httpdate_after(3);
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", date.as_str())
+                .set_body_json(serde_json::json!({"message": "Too Many Requests"})),
+        )
+        .mount(&server)
+        .await;
+    let single = RetryPolicy {
+        max_attempts: 1,
+        ..short_retry()
+    };
+    let (transport, endpoint) = executor_transport(&server, GitHubBudget::relaxed(), single);
+    let error = get_status(&transport, &endpoint, &["repos", "a", "b"])
+        .await
+        .expect_err("limited");
+    let seconds = error
+        .rate_limit
+        .and_then(|rate| rate.retry_after_seconds)
+        .expect("retry after");
+    assert!((1..=4).contains(&seconds), "{seconds} is not ~3 s");
+}
+
+/// An RFC 9110 IMF-fixdate `seconds` from now.
+fn httpdate_after(seconds: u64) -> String {
+    let at = epoch_secs() + seconds;
+    let days = (at / 86_400) as i64;
+    let (year, month, day) = civil_from_days_for_test(days);
+    let rem = at % 86_400;
+    let weekday = ["Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed"][(days % 7) as usize];
+    let month_name = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ][(month - 1) as usize];
+    format!(
+        "{weekday}, {day:02} {month_name} {year} {:02}:{:02}:{:02} GMT",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
+fn civil_from_days_for_test(days: i64) -> (i64, i64, i64) {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    (yoe + era * 400 + i64::from(month <= 2), month, day)
+}
+
+#[tokio::test]
+async fn concurrent_repository_metadata_reads_share_one_request() {
+    let server = MockServer::start().await;
+    let hits = Arc::new(AtomicUsize::new(0));
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r"))
+        .respond_with(CountedRepository(hits.clone()))
+        .mount(&server)
+        .await;
+    let endpoint = mock_endpoint(&server);
+    let transport = anonymous_transport(&endpoint);
+    let context = with_token("t", Duration::from_secs(5), 1 << 20);
+    let (a, b, c) = tokio::join!(
+        transport.repository_metadata("o", "r", &context),
+        transport.canonical_owner_repo("o", "r", &context),
+        transport.repository("o", "r", &context),
+    );
+    assert_eq!(a.expect("metadata").default_branch, "main");
+    assert_eq!(b.expect("canonical"), None);
+    assert_eq!(c.expect("repository").full_name, "o/r");
+    assert_eq!(hits.load(Ordering::SeqCst), 1, "one GET /repos/o/r");
+    // A later read in the same batch window is served from the memo.
+    transport
+        .repository_metadata("o", "r", &context)
+        .await
+        .expect("memo");
+    assert_eq!(hits.load(Ordering::SeqCst), 1, "memoized");
+    // Another credential never reads this one's answer.
+    let other = with_token("other", Duration::from_secs(5), 1 << 20);
+    transport
+        .repository_metadata("o", "r", &other)
+        .await
+        .expect("other credential");
+    assert_eq!(hits.load(Ordering::SeqCst), 2, "memo is per credential");
+}
+
+#[derive(Clone)]
+struct CountedRepository(Arc<AtomicUsize>);
+impl Respond for CountedRepository {
+    fn respond(&self, _: &Request) -> ResponseTemplate {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        ResponseTemplate::new(200)
+            .set_delay(Duration::from_millis(150))
+            .set_body_json(serde_json::json!({
+                "full_name": "o/r", "name": "r", "html_url": "https://github.com/o/r",
+                "default_branch": "main"
+            }))
+    }
+}
+
+#[tokio::test]
+async fn a_failed_repository_read_is_not_memoized() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/repos/o/r"))
+        .respond_with(
+            ResponseTemplate::new(404).set_body_json(serde_json::json!({"message":"Not Found"})),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let transport = anonymous_transport(&mock_endpoint(&server));
+    let context = with_token("t", Duration::from_secs(5), 1 << 20);
+    for _ in 0..2 {
+        let error = transport
+            .repository_metadata("o", "r", &context)
+            .await
+            .expect_err("missing");
+        assert_eq!(error.reason, Some(ProviderErrorReason::RepositoryNotFound));
+    }
+}
+
+#[tokio::test]
+async fn code_search_room_counts_the_searches_the_window_has_left() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/code"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(
+            serde_json::json!({"total_count":0,"incomplete_results":false,"items":[]}),
+        ))
+        .mount(&server)
+        .await;
+    let budget = Arc::new(GitHubBudget::with_config(ExecutorConfig {
+        code_search_per_minute: 3,
+        ..ExecutorConfig::relaxed()
+    }));
+    let (transport, _) = executor_transport(&server, budget, short_retry());
+    let context = with_token("t", Duration::from_secs(5), 1 << 20);
+    assert_eq!(transport.code_search_room(&context), 3);
+    for keyword in ["one", "two"] {
+        transport
+            .search_code(
+                &CodeSearchRequest {
+                    query: keyword.into(),
+                    page: 1,
+                    per_page: 5,
+                    include_fragments: false,
+                },
+                &context,
+            )
+            .await
+            .expect("search");
+    }
+    assert_eq!(transport.code_search_room(&context), 1);
+    assert_eq!(
+        transport.code_search_room(&with_token("fresh", Duration::from_secs(5), 1 << 20)),
+        3,
+        "another credential has its own window"
+    );
+}
+
+/// Issue 7: a search the token only partly covered says so, and is not
+/// cached (a cached copy would hide the authorization that fixes it).
+#[tokio::test]
+async fn a_search_partly_withheld_by_saml_names_the_organizations_and_is_not_cached() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header(
+                    "x-github-sso",
+                    "partial-results; organizations=21955855,20582480",
+                )
+                .set_body_json(serde_json::json!({
+                    "total_count": 0, "incomplete_results": false, "items": []
+                })),
+        )
+        .expect(4)
+        .mount(&server)
+        .await;
+    let (mut transport, _) = executor_transport(&server, GitHubBudget::relaxed(), short_retry());
+    transport.cache = Arc::new(PartitionedCache::default());
+    let context = with_token("t", Duration::from_secs(5), 1 << 20);
+    for _ in 0..2 {
+        let page = transport
+            .search_code(&code_search_request(), &context)
+            .await
+            .expect("code search");
+        assert_eq!(page.sso_partial_organizations, vec![21955855, 20582480]);
+    }
+    for _ in 0..2 {
+        let history = transport
+            .search_issues(
+                &HistoryRequest {
+                    query: "repo:o/r".into(),
+                    page: 1,
+                    per_page: 10,
+                    sort: None,
+                    order: None,
+                },
+                &context,
+            )
+            .await
+            .expect("issues");
+        assert!(
+            history
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("SAML")),
+            "{:?}",
+            history.warnings
+        );
+    }
 }

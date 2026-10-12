@@ -1,13 +1,16 @@
 import http from 'node:http';
-import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
-import { assertPublicUrl, isBlockedIp, publicFetch, type HostLookup } from '../src/web/guard.js';
-import { fetchUrl, isBinaryType } from '../src/web/fetch.js';
-import { collapseLinkRuns, htmlToText, mainContent } from '../src/web/html.js';
+import zlib from 'node:zlib';
+import type { AddressInfo, LookupFunction } from 'node:net';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { classifyHost, isBlockedIp, publicFetch, type HostLookup } from '../src/web/guard.js';
+import { clearFetchCache, decodeBody, fetchUrl, isBinaryType } from '../src/web/fetch.js';
+import { collapseLinkRuns, describeHtml, htmlToText, mainContent } from '../src/web/html.js';
 import { parseDuckDuckGo } from '../src/web/search.js';
 
 const servers: http.Server[] = [];
 afterEach(async () => {
+  clearFetchCache();
+  vi.restoreAllMocks();
   await Promise.all(servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))));
 });
 
@@ -20,6 +23,21 @@ async function serve(handler: http.RequestListener): Promise<number> {
 }
 
 const publicLookup: HostLookup = async () => [{ address: '93.184.216.34' }];
+
+/**
+ * Lets requests to a pretend-public host reach the local server: each `http.request` connects to 127.0.0.1 whatever
+ * address it was pinned to, and records the addresses its lookup would have answered.
+ */
+function connectLocally(): string[][] {
+  const pinned: string[][] = [];
+  const request = http.request;
+  vi.spyOn(http, 'request').mockImplementation(((url: URL, options: http.RequestOptions, callback: (response: http.IncomingMessage) => void) => {
+    options.lookup?.('', { all: true }, (_error, addresses) => pinned.push((addresses as Array<{ address: string }>).map(({ address }) => address)));
+    const local: LookupFunction = (_hostname, lookupOptions, done) => (lookupOptions.all ? done(null, [{ address: '127.0.0.1', family: 4 }]) : done(null, '127.0.0.1', 4));
+    return request(url, { ...options, lookup: local }, callback);
+  }) as typeof http.request);
+  return pinned;
+}
 
 describe('web private-address guard', () => {
   it.each([
@@ -35,7 +53,7 @@ describe('web private-address guard', () => {
     ['2001:0:7f00:1::', true], ['2001:0:4136:e378:8000:63bf:80ff:fffe', true], ['2001:0:4136:e378:8000:63bf:f7f7:f7f7', false],
     ['0.1.2.3', true], ['0:0:0:0:0:0:0:0', true], ['2130706433', true], ['0177.0.0.1', true], ['0x7f.1', true], ['127.1', true],
     ['8.8.8.8', false], ['93.184.216.34', false], ['172.32.0.1', false], ['100.128.0.1', false], ['2606:4700::1111', false], ['::ffff:8.8.8.8', false],
-    ['::ffff:0:8.8.8.8', false], ['64:ff9b::8.8.8.8', false], ['2002:0808:0808::1', false],
+    ['::ffff:0:8.8.8.8', false], ['64:ff9b::8.8.8.8', false], ['2002:0808:0808::1', false], ['100::1', true], ['100::ffff:ffff:ffff:ffff', true], ['100:0:0:1::1', false],
   ])('%s blocked=%s', (ip, blocked) => {
     expect(isBlockedIp(ip)).toBe(blocked);
   });
@@ -46,17 +64,81 @@ describe('web private-address guard', () => {
     ['http://2130706433/', '127.0.0.1'], ['http://0177.0.0.1/', '127.0.0.1'], ['http://0x7f.1/', '127.0.0.1'], ['http://127.1/', '127.0.0.1'], ['http://0/', '0.0.0.0'],
   ])('WHATWG URL parsing normalizes %s to %s, which is blocked', async (href, hostname) => {
     expect(new URL(href).hostname).toBe(hostname);
-    await expect(assertPublicUrl(href, publicLookup)).rejects.toThrow('Blocked private');
+    await expect(classifyHost(new URL(href), publicLookup)).resolves.toEqual({ kind: 'private' });
   });
 
-  it('checks literal hosts, encoded IPv4 forms and every resolved address', async () => {
-    await expect(assertPublicUrl('http://169.254.169.254/latest/meta-data')).rejects.toThrow('Blocked private');
-    await expect(assertPublicUrl('http://[::1]:8080/')).rejects.toThrow('Blocked private');
-    await expect(assertPublicUrl('http://2130706433/')).rejects.toThrow('Blocked private');
-    await expect(assertPublicUrl('http://0x7f.1/')).rejects.toThrow('Blocked private');
-    await expect(assertPublicUrl('file:///etc/passwd')).rejects.toThrow('http(s) URLs only');
-    await expect(assertPublicUrl('https://mixed.test/', async () => [{ address: '8.8.8.8' }, { address: '10.0.0.1' }])).rejects.toThrow('Blocked private');
-    await expect(assertPublicUrl('https://example.test/', publicLookup)).resolves.toBeInstanceOf(URL);
+  it('classifies literal hosts, encoded IPv4 forms and every resolved address', async () => {
+    const kind = async (href: string, lookup?: HostLookup) => (await classifyHost(new URL(href), lookup)).kind;
+    expect(await kind('http://169.254.169.254/latest/meta-data')).toBe('private');
+    expect(await kind('http://[::1]:8080/')).toBe('private');
+    expect(await kind('http://2130706433/')).toBe('private');
+    expect(await kind('http://0x7f.1/')).toBe('private');
+    expect(await kind('https://mixed.test/', async () => [{ address: '8.8.8.8' }, { address: '10.0.0.1' }])).toBe('private');
+    expect(await classifyHost(new URL('https://example.test/'), publicLookup)).toEqual({ kind: 'public', addresses: ['93.184.216.34'] });
+    expect(await classifyHost(new URL('https://[2606:4700::1111]/'))).toEqual({ kind: 'public', addresses: ['2606:4700::1111'] });
+    // A name that does not resolve here may still resolve elsewhere (a browser's own DNS): neither public nor private.
+    expect(await kind('https://gone.test/', async () => Promise.reject(new Error('ENOTFOUND')))).toBe('unresolved');
+    expect(await kind('https://empty.test/', async () => [])).toBe('unresolved');
+    await expect(publicFetch('file:///etc/passwd', {})).rejects.toThrow('http(s) URLs only');
+    await expect(publicFetch('https://gone.test/', {}, { env: {}, lookup: async () => Promise.reject(new Error('getaddrinfo ENOTFOUND gone.test')) })).rejects.toThrow('ENOTFOUND');
+  });
+
+  it('connects to the checked addresses, not to a second DNS answer (rebinding)', async () => {
+    const port = await serve((_request, response) => void response.writeHead(200, { 'content-type': 'text/plain' }).end('page'));
+    const pinned = connectLocally();
+    const lookups: string[] = [];
+    const lookup: HostLookup = async (hostname) => (lookups.push(hostname), [{ address: '93.184.216.34' }, { address: '2606:4700::1111' }]);
+    const response = await publicFetch(`http://rebind.test:${port}/`, {}, { env: {}, lookup });
+    expect(await response.text()).toBe('page');
+    expect(response.url).toBe(`http://rebind.test:${port}/`);
+    // The check resolved the name once; the connection may use only what it approved.
+    expect(lookups).toEqual(['rebind.test']);
+    expect(pinned).toEqual([['93.184.216.34', '2606:4700::1111']]);
+  });
+
+  it('keeps redirects to http(s), even with private addresses allowed', async () => {
+    const port = await serve((_request, response) => void response.writeHead(302, { location: 'file:///etc/passwd' }).end());
+    await expect(publicFetch(`http://127.0.0.1:${port}/`, {}, { env: { OCTOCODE_WEB_ALLOW_PRIVATE: '1' } })).rejects.toThrow('web fetches http(s) URLs only, not file:');
+  });
+
+  it('decodes compressed bodies and the declared charset, and cuts at a whole character', async () => {
+    const port = await serve((request, response) => {
+      if (request.url === '/gzip') return void response.writeHead(200, { 'content-type': 'text/plain', 'content-encoding': 'gzip' }).end(zlib.gzipSync('packed text'));
+      if (request.url === '/br') return void response.writeHead(200, { 'content-type': 'text/plain', 'content-encoding': 'br' }).end(zlib.brotliCompressSync('brotli text'));
+      if (request.url === '/latin1') return void response.writeHead(200, { 'content-type': 'text/plain; charset=ISO-8859-1' }).end(Buffer.from('caf\xe9', 'latin1'));
+      if (request.url === '/meta') return void response.writeHead(200, { 'content-type': 'text/html' }).end(Buffer.from('<html><head><meta charset="windows-1252"><title>Na\xefve</title></head><body><p>\x93quoted\x94</p></body></html>', 'latin1'));
+      response.writeHead(200, { 'content-type': 'text/plain; charset=x-unknown' }).end('caf\u00e9');
+    });
+    const env = { OCTOCODE_WEB_ALLOW_PRIVATE: '1' };
+    const base = `http://127.0.0.1:${port}`;
+    expect(await fetchUrl(`${base}/gzip`, undefined, env)).toBe('packed text');
+    expect(await fetchUrl(`${base}/br`, undefined, env)).toBe('brotli text');
+    expect(await fetchUrl(`${base}/latin1`, undefined, env)).toBe('caf\u00e9');
+    const meta = await fetchUrl(`${base}/meta`, undefined, env);
+    expect(meta).toMatch(/^# Na\u00efve\n/);
+    expect(meta).toContain('\u201cquoted\u201d');
+    expect(await fetchUrl(`${base}/unknown`, undefined, env)).toBe('caf\u00e9');
+    const bytes = Buffer.from('ab\u00e9');
+    expect(decodeBody(bytes.subarray(0, 3), 'text/plain', true)).toBe('ab');
+    expect(decodeBody(Buffer.from([0xff, 0xfe, 0x68, 0x00, 0x69, 0x00]), 'text/plain; charset=utf-8')).toBe('hi');
+  });
+
+  it('shares one fetch between callers asking for the same page at once', async () => {
+    let hits = 0;
+    const port = await serve((_request, response) => {
+      hits += 1;
+      setTimeout(() => response.writeHead(200, { 'content-type': 'text/plain' }).end(`visit ${hits}`), 100);
+    });
+    const env = { OCTOCODE_WEB_ALLOW_PRIVATE: '1' };
+    const url = `http://127.0.0.1:${port}/same`;
+    const leaving = new AbortController();
+    const first = fetchUrl(url, leaving.signal, env);
+    const second = fetchUrl(url, undefined, env);
+    leaving.abort(new Error('caller left'));
+    await expect(first).rejects.toThrow('caller left');
+    // One caller leaving does not abort the fetch the other still waits for.
+    expect(await second).toBe('visit 1');
+    expect(hits).toBe(1);
   });
 
   it('refuses a local URL, and a redirect from a public host to a private one', async () => {
@@ -65,7 +147,10 @@ describe('web private-address guard', () => {
       response.writeHead(200, { 'content-type': 'text/plain' }).end('secret');
     });
     await expect(fetchUrl(`http://127.0.0.1:${port}/secret`, undefined, {})).rejects.toThrow('OCTOCODE_WEB_ALLOW_PRIVATE=1');
-    await expect(publicFetch(`http://localhost:${port}/hop`, {}, { env: {}, lookup: publicLookup })).rejects.toThrow(`Blocked private or non-public address: 127.0.0.1:${port}`);
+    const pinned = connectLocally();
+    await expect(publicFetch(`http://public.test:${port}/hop`, {}, { env: {}, lookup: publicLookup })).rejects.toThrow(`Blocked private or non-public address: 127.0.0.1:${port}`);
+    expect(pinned).toEqual([['93.184.216.34']]);
+    vi.restoreAllMocks();
     // The opt-out restores plain fetching, redirects included.
     expect(await fetchUrl(`http://127.0.0.1:${port}/secret`, undefined, { OCTOCODE_WEB_ALLOW_PRIVATE: '1' })).toBe('secret');
     const followed = await publicFetch(`http://localhost:${port}/hop`, {}, { env: { OCTOCODE_WEB_ALLOW_PRIVATE: '1' } });
@@ -108,6 +193,25 @@ describe('web', () => {
     );
   });
 
+  it.each([
+    ['unclosed links', '<a href="x">t'.repeat(80_000)],
+    ['an unclosed nav', `<nav>${'word '.repeat(200_000)}`],
+    ['unclosed navs', '<nav>w'.repeat(170_000)],
+    ['lone <', '<'.repeat(1_000_000)],
+    ['one tag of opening links', `${'<a '.repeat(330_000)}>`],
+    ['unclosed hidden elements', '<div hidden>'.repeat(85_000)],
+    ['unclosed headings, list items and scripts', '<h1<li<script'.repeat(75_000)],
+    ['unclosed quotes', '<a x="'.repeat(170_000)],
+    ['unclosed comments and empty links', '<!--[]('.repeat(140_000)],
+    ['tags searched for role=main', '<a'.repeat(500_000)],
+  ])('reads a 1 MB page of %s in linear time', (_, html) => {
+    const started = performance.now();
+    describeHtml(html, 'https://example.com/');
+    // About 100 ms alone; a pattern that rescans to the end per unclosed tag takes minutes. The bound leaves room for
+    // a loaded machine running test files in parallel.
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
   it('recognises binary content types', () => {
     expect(isBinaryType('application/pdf')).toBe(true);
     expect(isBinaryType('image/png')).toBe(true);
@@ -143,9 +247,15 @@ describe('web page helpers', () => {
   it('notes a JavaScript shell or app, and stays quiet for a plain page', async () => {
     const { staticHtmlNote } = await import('../src/web/html.js');
     const long = 'words '.repeat(200);
-    expect(staticHtmlNote('<div id="root"></div><script src="a.js"></script>', '')).toMatch(/little text; the page is probably built by JavaScript/);
+    expect(staticHtmlNote('<div id="root"></div><script src="a.js"></script>', '')).toMatch(/the page is probably built by JavaScript/);
     expect(staticHtmlNote('<noscript>Please enable JavaScript</noscript>', 'x')).toMatch(/asks for JavaScript or a bot check/);
     expect(staticHtmlNote('<p>tiny page</p>', 'tiny page')).toBeUndefined();
+    // example.com: a small static page whose only script is analytics (text is ~30% of the HTML).
+    const small = 'This domain is for use in documentation examples without needing permission. This is not a service; avoid relying on it.';
+    expect(staticHtmlNote(`<title>Example Domain</title><body><p>${small}</p><script src=/s.js></script></body>`, small)).toBeUndefined();
+    // A shell: a little text, but an empty mount point, or almost no text against heavy markup.
+    expect(staticHtmlNote('<div id="app"></div><p>Loading</p><script src="a.js"></script>', 'Loading')).toMatch(/empty app mount point/);
+    expect(staticHtmlNote(`<script src="a.js"></script><span>Menu</span>${'<div class="x"></div>'.repeat(200)}`, 'Menu')).toMatch(/little text/);
     expect(staticHtmlNote(`<script id="__NEXT_DATA__">{}</script><p>${long}</p>`, long)).toMatch(/static HTML of a JavaScript app/);
     expect(staticHtmlNote(`<script>${'x'.repeat(5000)}</script><p>${long}</p>`, long)).toMatch(/JavaScript app/);
     expect(staticHtmlNote(`<p>${long}</p>`, long)).toBeUndefined();

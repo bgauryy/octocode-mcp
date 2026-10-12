@@ -40,8 +40,8 @@ scen('minified-rg-naive', 'Search in 2MB single-line minified JS (naive rg print
   { path: S('src/vendor.min.js'), searchText: 'function f12345\\b' }, (s, o) => ({ rgChars: s.chars, ocChars: o.length, ocHasHit: has(o, 'f12345') }));
 scen('minified-rg-expert', 'Same, expert rg -o with a ±60 char window', `rg -n -o '.{0,60}function f12345\\b.{0,60}' src/vendor.min.js`, 'localSearch',
   { path: S('src/vendor.min.js'), searchText: 'function f12345\\b', resultView: 'matchOnly', matchWindow: 60 }, (s, o) => ({ rgChars: s.chars, ocChars: o.length }));
-scen('minified-fetch', 'Read around a match in minified JS (grep -o window vs localFetch contextBytes)', `grep -o '.\\{0,80\\}function f12345(.\\{0,80\\}' src/vendor.min.js`, 'localFetch',
-  { path: S('src/vendor.min.js'), matchString: 'function f12345(', matchStringCaseSensitive: true, contextBytes: 80 }, (s, o) => ({ ocChars: o.length, ocHasHit: has(o, 'f12345') }));
+scen('minified-fetch', 'Read around a match in minified JS (grep -o window vs localFetch auto byte window)', `grep -o '.\\{0,80\\}function f12345(.\\{0,80\\}' src/vendor.min.js`, 'localFetch',
+  { path: S('src/vendor.min.js'), matchString: 'function f12345(', caseMode: 'sensitive' }, (s, o) => ({ ocChars: o.length, ocHasHit: has(o, 'f12345') }));
 
 // ---------- binary
 scen('binary-search', 'Text search hitting a binary file', `rg -n NEEDLE_BIN src`, 'localSearch', { path: S('src'), searchText: 'NEEDLE_BIN' },

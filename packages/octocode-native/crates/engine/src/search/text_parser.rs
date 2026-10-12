@@ -135,6 +135,7 @@ pub(crate) fn assemble_file(
             .map(|m| {
                 let chars = m.line_text.chars().count();
                 let rank = line_rank_at(&m.line_text, m.column);
+                let byte_offset = utf16_to_byte_offset(&m.line_text, m.column);
                 let value = if chars <= max_snippet
                     && !clips_to_window(&m.line_text, m.column, max_snippet)
                 {
@@ -145,6 +146,7 @@ pub(crate) fn assemble_file(
                 TextSearchMatch {
                     line: m.line_number,
                     column: m.column,
+                    byte_offset,
                     value,
                     count: None,
                     kind: None,
@@ -231,6 +233,7 @@ pub(crate) fn assemble_file(
             TextSearchMatch {
                 line: m.line_number,
                 column: m.column,
+                byte_offset: utf16_to_byte_offset(&m.line_text, m.column),
                 value,
                 count: None,
                 kind: None,
@@ -251,6 +254,19 @@ pub(crate) fn assemble_file(
 }
 
 // ── unit tests ────────────────────────────────────────────────────────────────
+
+/// Byte offset of UTF-16 `column` within `line` (clamped to the line): where
+/// a byte-window read of the line starts at the match.
+fn utf16_to_byte_offset(line: &str, column: u32) -> u32 {
+    let mut units = 0usize;
+    for (offset, ch) in line.char_indices() {
+        if units >= column as usize {
+            return offset as u32;
+        }
+        units += ch.len_utf16();
+    }
+    line.len() as u32
+}
 
 #[cfg(test)]
 mod tests {
@@ -277,6 +293,37 @@ mod tests {
             }
         }
         assemble_file("f.ts".to_owned(), entry, context_lines, max_snippet)
+    }
+
+    /// A match's byte offset locates it in the line for a byte-window read,
+    /// whatever the width of the characters before it.
+    #[test]
+    fn a_match_carries_its_byte_offset_in_its_line() {
+        // "é" is 2 bytes and 1 UTF-16 unit; "😀" is 4 bytes and 2 units.
+        let line = format!("{}😀needle{}", "é".repeat(300), "x".repeat(300));
+        let column = 300 + 2;
+        for context_lines in [0, 1] {
+            let f = assemble_file(
+                "f.ts".to_owned(),
+                {
+                    let mut entry = FileEntry::new();
+                    entry.raw_matches.push(RawMatch {
+                        line_text: line.clone(),
+                        line_number: 1,
+                        column,
+                    });
+                    entry
+                },
+                context_lines,
+                40,
+            );
+            let offset = f.matches[0].byte_offset as usize;
+            assert_eq!(offset, 600 + 4, "context {context_lines}");
+            assert!(
+                line[offset..].starts_with("needle"),
+                "context {context_lines}"
+            );
+        }
     }
 
     #[test]

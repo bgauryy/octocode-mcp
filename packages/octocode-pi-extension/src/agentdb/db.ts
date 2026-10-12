@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -42,7 +41,11 @@ export function openAgentDb(file?: string, env: NodeJS.ProcessEnv = process.env)
       db.exec('COMMIT');
       return result;
     } catch (error) {
-      db.exec('ROLLBACK');
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        // SQLite already rolled back (some errors do); the failure to report is the original.
+      }
       throw error;
     } finally {
       depth -= 1;
@@ -115,41 +118,3 @@ export function closeSharedAgentDb(): void {
   shared = undefined;
   refused.clear();
 }
-
-interface RepoKey {
-  /** realpath of the git common dir (worktrees share their main repo's key), else realpath of cwd. */
-  key: string;
-  /** The git toplevel, else cwd. */
-  root: string;
-  name: string;
-}
-
-const repoCache = new Map<string, RepoKey>();
-
-const real = (file: string): string => {
-  try {
-    return fs.realpathSync(file);
-  } catch {
-    return path.resolve(file);
-  }
-};
-
-/** Which repository `cwd` belongs to, for scoping backlog items, memories and sessions. Cached per cwd; never throws. */
-export function repoKey(cwd: string): RepoKey {
-  const cached = repoCache.get(cwd);
-  if (cached) return cached;
-  let result: RepoKey;
-  try {
-    const out = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir', '--show-toplevel'], { cwd, encoding: 'utf8', timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
-    const [common, top] = out.split(/\r?\n/).map((line) => line.trim());
-    if (!common || !top) throw new Error('not a work tree');
-    const root = real(top);
-    result = { key: real(common), root, name: path.basename(root) };
-  } catch {
-    const root = real(cwd);
-    result = { key: root, root, name: path.basename(root) };
-  }
-  repoCache.set(cwd, result);
-  return result;
-}
-

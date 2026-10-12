@@ -1,7 +1,8 @@
 //! One resource's capture walk: read, split into candidate or item pages,
 //! follow in-document continuations, and stop at the budget or page limit.
 use super::evidence::{
-    candidate_state, fallback_context, file_read_template, is_file_read, provider_state,
+    candidate_state, fallback_context, file_read_template, is_file_read, pin_local_snapshot,
+    provider_state,
 };
 use super::hydrate::{
     bounded_search_source, file_chunks, host_read, hydrate_candidates, is_candidate_search,
@@ -513,8 +514,9 @@ impl PageWalk<'_> {
         }
         let mut context = receipt.unwrap_or_else(|| fallback_context(&self.source));
         if context.get("read").is_none()
-            && let Some(template) = file_read_template(&self.source, &context)
+            && let Some(mut template) = file_read_template(&self.source, &context)
         {
+            pin_local_snapshot(&mut template, &self.reader.dispatcher.paths);
             context["fileRead"] = template;
         }
         // Never classify an arbitrary prefix with the full page's source

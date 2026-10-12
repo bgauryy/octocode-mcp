@@ -3,7 +3,7 @@ import { EXIT, toolErrorJson } from '../../../exit-codes.js';
 
 /**
  * Report a skill command failure in the caller's output mode: the CLI-wide
- * `octocode.toolError` envelope on stdout with `--json`, else a human line.
+ * `{error}` envelope on stdout with `--json`, else a human line.
  */
 export function reportFailure(
   message: string,

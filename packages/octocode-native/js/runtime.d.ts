@@ -10,7 +10,6 @@ export interface NativeRuntimeOptions {
   /** Runtime surface, e.g. `mcp` (config `RuntimeSurface`). */
   surface?: string;
   cwd?: string;
-  regexWorkerPath?: string;
   /** Explicit host environment; standalone surfaces fall back to process env. */
   env?: Record<string, string>;
   trustedProject?: boolean;

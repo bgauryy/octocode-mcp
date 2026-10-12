@@ -198,6 +198,11 @@ fn full_preview(root: &Path, policy: &PathPolicy, security: &ContentSecurity) ->
     (preview_query, preview)
 }
 
+/// The state directory the tests share when no options name another.
+fn default_state() -> PathBuf {
+    state_base_dir(&AstRewriteRuntimeOptions::default())
+}
+
 /// Runtime options that permit writes.
 fn apply_options() -> AstRewriteRuntimeOptions {
     AstRewriteRuntimeOptions {
@@ -252,6 +257,71 @@ fn an_unparseable_pattern_is_an_invalid_pattern_in_every_form() {
     }
 }
 
+/// astRewrite reaches `.gitignore`d and hidden directories like the other
+/// walking tools: an empty preview that skipped them leads to the same
+/// preview with them included, and that preview finds the matches.
+#[test]
+fn ignored_and_hidden_directories_are_reachable_and_an_empty_preview_leads_there() {
+    let (root, policy, security) = fixture();
+    fs::create_dir_all(root.join(".git")).expect("git dir");
+    fs::write(root.join(".gitignore"), "gen/\n").expect("gitignore");
+    let pkg = root.join("pkg");
+    fs::create_dir_all(pkg.join("gen")).expect("gen dir");
+    fs::write(pkg.join("gen/b.ts"), "oldCall(3);\n").expect("ignored file");
+    fs::create_dir_all(pkg.join(".cfg")).expect("hidden dir");
+    fs::write(pkg.join(".cfg/c.ts"), "oldCall(4);\n").expect("hidden file");
+    for (dir, flag) in [("gen", "includeIgnored"), (".cfg", "includeHidden")] {
+        let mut preview = query(&pkg);
+        preview["pageSize"] = json!(10);
+        let empty = rewrite_row(
+            preview.clone(),
+            &policy,
+            &security,
+            &NeverCancel,
+            &Default::default(),
+        );
+        assert_eq!(empty["status"], "empty", "{dir}: {empty}");
+        assert!(!empty.to_string().contains("Broaden"), "{dir}: {empty}");
+        let retry = &empty["next"]["includeIgnored"]["query"]["queries"][0];
+        assert_eq!(retry[flag], true, "{dir}: {empty}");
+
+        preview[flag] = json!(true);
+        let found = rewrite_row(
+            preview,
+            &policy,
+            &security,
+            &NeverCancel,
+            &Default::default(),
+        );
+        assert_eq!(found["matchCount"], 1, "{dir}: {found}");
+    }
+}
+
+/// An empty preview states what it covered, the files read in which
+/// grammar, like astSearch's empty answer, so a zero is not mistaken for an
+/// empty walk.
+#[test]
+fn an_empty_preview_states_the_files_it_scanned() {
+    let (root, policy, security) = fixture();
+    fs::write(root.join("b.ts"), "const third = other(3);\n").expect("second file");
+    let mut preview = query(&root);
+    preview["pattern"] = json!("absentCall($A)");
+    let empty = rewrite_row(
+        preview,
+        &policy,
+        &security,
+        &NeverCancel,
+        &Default::default(),
+    );
+    assert_eq!(empty["status"], "empty", "{empty}");
+    let hint = empty["hints"][0].as_str().unwrap_or_default();
+    assert!(
+        hint.starts_with("0 matches in 2 typescript files."),
+        "{empty}"
+    );
+    assert!(hint.contains("syntaxTree"), "the shape lead stays: {empty}");
+}
+
 /// Each matched file is parsed once by the scan and once staged; the
 /// syntax check and the postcondition reuse those trees, and the rule is
 /// validated by compiling it rather than parsing an empty probe.
@@ -298,14 +368,8 @@ fn preview_and_apply_parse_each_file_twice() {
     );
     assert_eq!(first["matchCount"], 3, "{first}");
     assert_eq!(staged::take_parses(), 4, "2 files × (scan + staged)");
-    // The lead that writes says so, and carries no preview paging.
+    // The lead that writes carries no preview paging.
     let lead = &first["next"]["apply"];
-    assert!(
-        lead["why"]
-            .as_str()
-            .is_some_and(|why| why.starts_with("Writes")),
-        "{first}"
-    );
     assert!(
         lead["query"]["queries"][0].get("pageSize").is_none(),
         "{first}"
@@ -615,7 +679,7 @@ fn preview_pages_carry_only_their_files_with_one_based_lines() {
     let first_files = first["files"].as_array().expect("files");
     assert_eq!(first_files.len(), 1, "page 1 touches only a.ts: {first}");
     // Rows carry the absolute path; the response stage names it relative
-    // to the workspace root (D4).
+    // to the workspace root.
     assert_eq!(
         first_files[0]["path"],
         json!(
@@ -671,12 +735,8 @@ fn preview_pages_carry_only_their_files_with_one_based_lines() {
         mismatch["next"]["restart"]["query"]["queries"][0].is_object(),
         "{mismatch}"
     );
-    assert!(
-        mismatch["hints"][0]
-            .as_str()
-            .is_some_and(|hint| hint.contains("next.restart")),
-        "{mismatch}"
-    );
+    // The restart lead is the next step; no prose repeats it.
+    assert!(mismatch.get("hints").is_none(), "{mismatch}");
 
     let applied = rewrite_row(apply, &policy, &security, &NeverCancel, &options);
     assert_eq!(applied["transaction"]["committed"], true, "{applied}");
@@ -973,7 +1033,7 @@ fn interrupted_multi_file_transaction_is_rolled_back_from_journal() {
     for (target, bytes) in targets.iter().zip(&before) {
         fs::write(target, bytes).expect("write original");
     }
-    let journal_dir = journal_directory(&root);
+    let journal_dir = journal_directory(&default_state(), &root);
     fs::create_dir_all(&journal_dir).expect("journal directory");
     let journal_path = journal_dir.join(format!("{JOURNAL_PREFIX}{id}.json"));
     let mut journal = Journal {
@@ -1012,7 +1072,7 @@ fn interrupted_multi_file_transaction_is_rolled_back_from_journal() {
     }
     persist_journal(&journal_path, &journal).expect("persist interruption");
 
-    recover_transactions(&root, &NeverCancel).expect("recover");
+    recover_transactions(&default_state(), &root, &NeverCancel).expect("recover");
     for index in 0..2 {
         assert_eq!(fs::read(&targets[index]).expect("restored"), before[index]);
         assert!(!journal.files[index].stage.exists());
@@ -1047,7 +1107,7 @@ fn single_file_journal(
         after_hash: file.after_hash.clone(),
         state,
     };
-    let journal_dir = journal_directory(root);
+    let journal_dir = journal_directory(&default_state(), root);
     fs::create_dir_all(&journal_dir).expect("journal directory");
     let journal_path = journal_dir.join(format!("{JOURNAL_PREFIX}{id}.json"));
     let journal = Journal {
@@ -1076,7 +1136,8 @@ fn recovery_keeps_an_external_edit_to_a_target_that_was_never_backed_up() {
     fs::write(&file.stage, b"new\n").expect("stage");
     fs::write(&file.target, b"edited elsewhere\n").expect("external edit");
 
-    let warnings = recover_transactions(&root, &NeverCancel).expect("recovery settles");
+    let warnings =
+        recover_transactions(&default_state(), &root, &NeverCancel).expect("recovery settles");
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert_eq!(
         fs::read(&file.target).expect("target"),
@@ -1084,7 +1145,8 @@ fn recovery_keeps_an_external_edit_to_a_target_that_was_never_backed_up() {
     );
     assert!(!file.stage.exists());
     assert!(!journal_path.exists());
-    recover_transactions(&root, &NeverCancel).expect("later applies are not blocked");
+    recover_transactions(&default_state(), &root, &NeverCancel)
+        .expect("later applies are not blocked");
     fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -1103,7 +1165,8 @@ fn recovery_retires_a_committed_journal_whose_target_was_edited_after_commit() {
     fs::write(&file.backup, b"old\n").expect("backup");
     fs::write(&file.target, b"edited after commit\n").expect("external edit");
 
-    let warnings = recover_transactions(&root, &NeverCancel).expect("recovery settles");
+    let warnings =
+        recover_transactions(&default_state(), &root, &NeverCancel).expect("recovery settles");
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert_eq!(
         fs::read(&file.target).expect("target"),
@@ -1135,8 +1198,9 @@ fn an_edit_between_prepare_and_verify_fails_once_and_leaves_no_journal() {
         before_errors: 0,
         after_facts: None,
     };
-    let error = super::journal::commit_transaction(&root, &[prepared], &NeverCancel)
-        .expect_err("verify fails");
+    let error =
+        super::journal::commit_transaction(&default_state(), &root, &[prepared], &NeverCancel)
+            .expect_err("verify fails");
     assert_eq!(error.code, "transactionFailed");
     let rollback = &error.details.as_ref().expect("details")["rollback"];
     assert_eq!(rollback["restored"], true, "{rollback}");
@@ -1146,7 +1210,8 @@ fn an_edit_between_prepare_and_verify_fails_once_and_leaves_no_journal() {
         "{rollback}"
     );
     assert_eq!(fs::read(&target).expect("target"), b"edited elsewhere\n");
-    recover_transactions(&root, &NeverCancel).expect("no journal blocks the next apply");
+    recover_transactions(&default_state(), &root, &NeverCancel)
+        .expect("no journal blocks the next apply");
     fs::remove_dir_all(root).expect("cleanup");
 }
 
@@ -1176,11 +1241,12 @@ fn invalid_recovery_journal_cannot_touch_an_outside_file() {
             state: FileState::Planned,
         }],
     };
-    let journal_dir = journal_directory(&root);
+    let journal_dir = journal_directory(&default_state(), &root);
     fs::create_dir_all(&journal_dir).expect("journal directory");
     let path = journal_dir.join(format!("{JOURNAL_PREFIX}{id}.json"));
     persist_journal(&path, &journal).expect("journal");
-    let error = recover_transactions(&root, &NeverCancel).expect_err("reject journal");
+    let error =
+        recover_transactions(&default_state(), &root, &NeverCancel).expect_err("reject journal");
     assert_eq!(error.code, "recoveryFailed");
     assert_eq!(fs::read(&outside).expect("outside preserved"), b"keep\n");
     fs::remove_file(outside).expect("outside cleanup");
@@ -1213,7 +1279,7 @@ fn embedded_engine_supports_inline_rules_without_an_executable() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// B11: preview page 2 of an unchanged scope reuses page 1's prepared files
+/// Preview page 2 of an unchanged scope reuses page 1's prepared files
 /// (no second scan, rewrite, or syntax check) and shows the same result a
 /// fresh prepare would.
 #[test]
@@ -1245,7 +1311,7 @@ fn preview_page_two_reuses_prepared_files() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// B11: a file edited between pages is never served from the memo: the
+/// A file edited between pages is never served from the memo: the
 /// page re-prepares and the changed snapshot restarts the preview.
 #[test]
 fn edited_file_between_preview_pages_restarts() {
@@ -1270,7 +1336,45 @@ fn edited_file_between_preview_pages_restarts() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// B11: apply never uses the preview memo; it prepares under its lock.
+/// The lock and journal live under the directory the runtime options name,
+/// not wherever the process environment points.
+#[test]
+fn apply_keeps_its_lock_and_journal_under_the_configured_state_dir() {
+    let (root, policy, security) = fixture();
+    let (_, preview) = full_preview(&root, &policy, &security);
+    let apply = preview["next"]["apply"]["query"]["queries"][0].clone();
+    let state = std::env::temp_dir().join(format!(
+        "octocode-rewrite-state-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&state).expect("state dir");
+    let options = AstRewriteRuntimeOptions {
+        allow_apply: true,
+        state_dir: Some(state.clone()),
+        ..Default::default()
+    };
+    let applied = rewrite_row(apply, &policy, &security, &NeverCancel, &options);
+    assert_eq!(applied["mode"], "apply", "{applied}");
+    let suffix = state_dir_uid_suffix();
+    assert!(
+        state
+            .join(format!("octocode-ast-rewrite-locks-v1-{suffix}"))
+            .is_dir()
+    );
+    assert!(
+        state
+            .join(format!("octocode-ast-rewrite-transactions-v1-{suffix}"))
+            .is_dir()
+    );
+    fs::remove_dir_all(state).expect("cleanup");
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Apply never uses the preview memo; it prepares under its lock.
 #[test]
 fn apply_always_reprepares() {
     let (root, policy, security) = fixture();
@@ -1287,7 +1391,7 @@ fn apply_always_reprepares() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// L3: an overlapping root lock that is released within the wait window is
+/// An overlapping root lock that is released within the wait window is
 /// waited for, not failed at once under a `lockTimeout` label.
 #[test]
 fn overlapping_root_lock_is_waited_for_until_released() {
@@ -1301,10 +1405,12 @@ fn overlapping_root_lock_is_waited_for_until_released() {
     ));
     let nested = root.join("nested");
     fs::create_dir_all(&nested).expect("roots");
-    let held = super::lock::RootLock::acquire(&root).expect("first lock");
+    let held = super::lock::RootLock::acquire(&default_state(), &root).expect("first lock");
     let waiter = {
         let nested = nested.clone();
-        std::thread::spawn(move || super::lock::RootLock::acquire(&nested).map(drop))
+        std::thread::spawn(move || {
+            super::lock::RootLock::acquire(&default_state(), &nested).map(drop)
+        })
     };
     std::thread::sleep(std::time::Duration::from_millis(300));
     drop(held);
@@ -1315,7 +1421,7 @@ fn overlapping_root_lock_is_waited_for_until_released() {
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// L4: an interrupted transaction on a nested root (`/ws/sub`) is recovered
+/// An interrupted transaction on a nested root (`/ws/sub`) is recovered
 /// by a later apply on the enclosing root (`/ws`): the lock on `/ws` covers it.
 #[test]
 fn recovery_on_a_root_settles_journals_of_nested_roots() {
@@ -1331,14 +1437,15 @@ fn recovery_on_a_root_settles_journals_of_nested_roots() {
     fs::write(&file.backup, b"old\n").expect("backup");
     fs::write(&file.stage, b"new\n").expect("stage");
     // The crash left the target moved to its backup: it is missing now.
-    let warnings = recover_transactions(&root, &NeverCancel).expect("recovery settles");
+    let warnings =
+        recover_transactions(&default_state(), &root, &NeverCancel).expect("recovery settles");
     assert!(warnings.is_empty(), "{warnings:?}");
     assert_eq!(fs::read(&file.target).expect("restored"), b"old\n");
     assert!(!journal_path.exists(), "nested journal retired");
     fs::remove_dir_all(root).expect("cleanup");
 }
 
-/// L4: a pending journal of an enclosing root is not this lock's to touch,
+/// A pending journal of an enclosing root is not this lock's to touch,
 /// but the apply says so instead of staying silent.
 #[test]
 fn recovery_names_a_pending_journal_of_an_enclosing_root() {
@@ -1352,7 +1459,8 @@ fn recovery_names_a_pending_journal_of_an_enclosing_root() {
         FileState::BackedUp,
     );
     fs::write(&file.backup, b"old\n").expect("backup");
-    let warnings = recover_transactions(&nested, &NeverCancel).expect("not blocked");
+    let warnings =
+        recover_transactions(&default_state(), &nested, &NeverCancel).expect("not blocked");
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
         warnings[0].contains(&root.display().to_string()),
@@ -1367,4 +1475,103 @@ fn recovery_names_a_pending_journal_of_an_enclosing_root() {
         "outer files are left to the outer root"
     );
     fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// Previews `pattern` -> `rewrite` over one file of `source` named `name`.
+fn rename_preview(name: &str, language: &str, source: &str) -> Value {
+    let root = make_temp_dir("octocode-rename-test-").expect("create fixture");
+    fs::write(root.join(name), source).expect("write fixture");
+    let policy = crate::tools::test_support::workspace_policy(&root);
+    rewrite_row(
+        json!({
+            "path":root,"language":language,"pattern":"Name","rewrite":"Renamed","pageSize":100
+        }),
+        &policy,
+        &ContentSecurity::new(),
+        &NeverCancel,
+        &Default::default(),
+    )
+}
+
+#[test]
+fn renaming_a_symbol_reaches_its_type_field_and_impl_positions() {
+    let preview = rename_preview(
+        "a.rs",
+        "rust",
+        "struct Name { inner: Name }\nimpl Name {\n    fn new(a: &Name) -> Name { Name { inner: todo!() } }\n}\n",
+    );
+    // struct, field type, impl, parameter, return type, struct expression.
+    assert_eq!(preview["matchCount"], 6, "{preview}");
+    assert!(preview.get("warnings").is_none(), "{preview}");
+    assert_eq!(preview["isPartial"], false, "{preview}");
+    assert_eq!(preview["next"]["apply"]["confidence"], "exact");
+}
+
+#[test]
+fn renaming_names_the_comment_and_string_mentions_it_leaves() {
+    let preview = rename_preview(
+        "a.rs",
+        "rust",
+        "// Name stays in this comment\nstruct Name;\nconst S: &str = \"Name\";\n",
+    );
+    assert_eq!(preview["matchCount"], 1, "{preview}");
+    let warnings = preview["warnings"].as_array().expect("warnings");
+    assert_eq!(warnings.len(), 1, "{preview}");
+    let warning = warnings[0].as_str().expect("text");
+    assert!(
+        warning.contains("2 comment or string mention(s)")
+            && warning.contains("a.rs: 1, 3")
+            && warning.contains("unchanged"),
+        "{warning}"
+    );
+    // Text is outside what a syntax rewrite claims: still a complete preview.
+    assert_eq!(preview["isPartial"], false, "{preview}");
+    assert_eq!(preview["next"]["apply"]["confidence"], "exact");
+}
+
+#[test]
+fn a_code_position_the_rewrite_missed_lowers_the_apply_and_is_named() {
+    // A Go label is `label_name`, not an identifier kind.
+    let preview = rename_preview(
+        "a.go",
+        "go",
+        "package p\nvar Name int\nfunc f() {\nName:\n\tfor {\n\t\tgoto Name\n\t}\n}\n",
+    );
+    assert_eq!(preview["matchCount"], 1, "{preview}");
+    assert_eq!(preview["isPartial"], true, "{preview}");
+    assert_eq!(
+        preview["partialReasons"],
+        json!(["uncoveredCodePositions"]),
+        "{preview}"
+    );
+    let warnings = preview["warnings"].as_array().expect("warnings");
+    assert!(
+        warnings
+            .iter()
+            .any(|warning| warning.as_str().is_some_and(|text| {
+                text.contains("2 code position(s)") && text.contains("a.go: 4, 6")
+            })),
+        "{preview}"
+    );
+    assert_eq!(preview["next"]["apply"]["confidence"], "medium");
+}
+
+#[test]
+fn a_non_identifier_pattern_reports_no_word_mentions() {
+    let root = make_temp_dir("octocode-rename-test-").expect("create fixture");
+    fs::write(
+        root.join("a.rs"),
+        "// Name::new()\nfn f() { Name::new(); }\n",
+    )
+    .expect("write");
+    let policy = crate::tools::test_support::workspace_policy(&root);
+    let preview = rewrite_row(
+        json!({"path":root,"language":"rust","pattern":"Name::new()","rewrite":"x()"}),
+        &policy,
+        &ContentSecurity::new(),
+        &NeverCancel,
+        &Default::default(),
+    );
+    assert_eq!(preview["matchCount"], 1, "{preview}");
+    assert!(preview.get("warnings").is_none(), "{preview}");
 }

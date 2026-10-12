@@ -788,7 +788,7 @@ impl FileLink<'_, '_> {
         {
             PackageLink::Files(files) => files,
             PackageLink::UnresolvedInternal => {
-                self.b.imports[2] += 1;
+                self.b.count_import(2, &self.file, i.line, &i.specifier);
                 self.b.diagnostics.push(Diagnostic {
                     file: self.file.clone(),
                     line: Some(i.line),
@@ -801,13 +801,13 @@ impl FileLink<'_, '_> {
                 Vec::new()
             }
             PackageLink::External => {
-                self.b.imports[1] += 1;
+                self.b.count_import(1, &self.file, i.line, &i.specifier);
                 external = true;
                 Vec::new()
             }
         };
         if !targets.is_empty() {
-            self.b.imports[0] += 1;
+            self.b.count_import(0, &self.file, i.line, &i.specifier);
         }
         let mut linked_targets = Vec::new();
         for target in targets {
@@ -981,15 +981,13 @@ impl FileLink<'_, '_> {
 
     fn common_js(&mut self, c: octocode_engine::graph::GraphFactCommonJs) -> Result<(), ToolError> {
         let Some(spec) = c.specifier else {
-            self.b.imports[3] += 1;
+            let reason = c.reason.as_deref().unwrap_or("missing-native-provenance");
+            self.b.count_import(3, &self.file, c.line, reason);
             self.b.diagnostics.push(Diagnostic {
                 file: self.file.clone(),
                 line: Some(c.line),
                 code: "unsupported-linking".into(),
-                message: format!(
-                    "CommonJS require cannot be linked ({}).",
-                    c.reason.as_deref().unwrap_or("missing-native-provenance")
-                ),
+                message: format!("CommonJS require cannot be linked ({reason})."),
             });
             return Ok(());
         };
@@ -1119,9 +1117,9 @@ fn record_resolution(
     security: &ContentSecurity,
 ) -> bool {
     if target.is_some() {
-        b.imports[0] += 1
+        b.count_import(0, file, line, spec)
     } else if unsupported {
-        b.imports[3] += 1;
+        b.count_import(3, file, line, spec);
         b.diagnostics.push(Diagnostic {
             file: file.into(),
             line: Some(line),
@@ -1135,13 +1133,13 @@ fn record_resolution(
         && (spec.starts_with('.') || spec.starts_with('/') || internal_bare)
         && is_non_code_specifier(spec)
     {
-        b.imports[4] += 1
+        b.count_import(4, file, line, spec)
     } else if spec.starts_with('.')
         || spec.starts_with('/')
         || (ext == "rs" && rust_internal_specifier(spec))
         || internal_bare
     {
-        b.imports[2] += 1;
+        b.count_import(2, file, line, spec);
         b.diagnostics.push(Diagnostic {
             file: file.into(),
             line: Some(line),
@@ -1152,7 +1150,7 @@ fn record_resolution(
             ),
         })
     } else {
-        b.imports[1] += 1;
+        b.count_import(1, file, line, spec);
         return true;
     }
     false
@@ -1205,7 +1203,7 @@ fn resolve(
             return None;
         }
         if quoted
-            && let Some(p) = join_within_root(dirname(importer), spec)
+            && let Some(p) = ctx.join_relative(dirname(importer), spec)
             && known.contains(&p)
         {
             return Some(p);
@@ -1230,7 +1228,7 @@ fn resolve(
     if !spec.starts_with('.') {
         return ctx.resolve_bare_js(spec, importer, known);
     }
-    probe_js(&join_within_root(dirname(importer), spec)?, known)
+    probe_js(&ctx.join_relative(dirname(importer), spec)?, known)
 }
 /// The directory holding the importer's child modules: `foo/` for
 /// `foo/mod.rs` (and crate roots), `foo/bar/` for `foo/bar.rs`.
@@ -1620,7 +1618,7 @@ fn admit_scope(
     let mut error = ToolError::new(
         "scopeTooBroad",
         format!(
-            "More than {SCOPE_ADMISSION_FILES} parseable files under this root; a full parse can exhaust the call deadline before analysis. Admissible roots by file count: {}.",
+            "More than {SCOPE_ADMISSION_FILES} parseable files under this root; a full parse can exhaust the call deadline before analysis. Raising maxFiles scans them all and keeps the answer complete. Re-rooting at a narrower directory changes the answer: it covers only the files under that root. Admissible roots by file count: {}.",
             if listed.is_empty() {
                 "none below the bound"
             } else {
@@ -1628,8 +1626,6 @@ fn admit_scope(
             }
         ),
     );
-    // Response shaping keeps one concise hint per row.
-    error.hints = vec!["Run hints.narrowScope, pick another listed root, or set maxFiles (next.expandScan) to opt in.".into()];
     let continuation = |path: String, max_files: Option<u32>| {
         let mut query = serde_json::to_value(q).unwrap_or_default();
         if let Some(object) = query.as_object_mut() {
@@ -1641,7 +1637,17 @@ fn admit_scope(
         }
         query
     };
+    // The complete route leads; re-rooting changes the answer and follows.
     let mut next = serde_json::Map::new();
+    next.insert(
+        "expandScan".into(),
+        Continuation::new(
+            ToolId::AstTopology,
+            continuation(root_display.clone(), Some(20_000)),
+        )
+        .confidence("low")
+        .build(),
+    );
     if let Some((dir, _)) = narrower.first() {
         let mut query = continuation(format!("{root_display}/{dir}"), None);
         if anchored.is_some() {
@@ -1671,15 +1677,6 @@ fn admit_scope(
                 .build(),
         );
     }
-    next.insert(
-        "expandScan".into(),
-        Continuation::new(
-            ToolId::AstTopology,
-            continuation(root_display, Some(20_000)),
-        )
-        .confidence("low")
-        .build(),
-    );
     error.next = Some(Box::new(serde_json::Value::Object(next)));
     Err(error)
 }

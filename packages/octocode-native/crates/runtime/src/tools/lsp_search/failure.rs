@@ -16,7 +16,15 @@ pub struct LspFailure {
     pub message: String,
     pub retryable: bool,
     pub hint: &'static str,
+    /// The language server cannot answer this scope at all (it was stopped
+    /// for its memory), so the row leads to an unverified text search
+    /// instead of a retry.
+    pub lexical_fallback: bool,
 }
+
+/// A timed-out request: the retry is the row's own query (the server keeps
+/// loading between calls); the rest of the tip works without the server.
+const TIMEOUT_TIP: &str = "Retry once (the server keeps indexing between calls); if it persists, locate candidates with astSearch or localSearch and read exact lines with localFetch.";
 
 const RETRY_OR_FALL_BACK: &str =
     "Retry once; if it persists, re-anchor from localFetch source or use astSearch/localSearch.";
@@ -28,6 +36,19 @@ impl LspFailure {
             message: message.into(),
             retryable: false,
             hint: "Correct the lspSearch fields (see `octocode schema lspSearch`), then retry.",
+            lexical_fallback: false,
+        }
+    }
+
+    /// A request left unanswered past the time a cheaper labelled answer
+    /// was willing to wait for it.
+    pub(super) fn overdue(message: String) -> Self {
+        Self {
+            code: "timeout",
+            message,
+            retryable: true,
+            hint: TIMEOUT_TIP,
+            lexical_fallback: false,
         }
     }
 
@@ -39,6 +60,7 @@ impl LspFailure {
             message,
             retryable: false,
             hint: "The request was cancelled or exceeded its deadline.",
+            lexical_fallback: false,
         }
     }
 
@@ -57,6 +79,7 @@ impl LspFailure {
             message: error.message,
             retryable: false,
             hint,
+            lexical_fallback: false,
         }
     }
 
@@ -71,13 +94,22 @@ impl LspFailure {
                 code: "timeout",
                 message,
                 retryable: true,
-                hint: "Retry once after indexing settles; narrow workspaceRoot if the timeout persists.",
+                hint: TIMEOUT_TIP,
+                lexical_fallback: false,
             },
             ErrorKind::ConnectionClosed => Self {
                 code: "serverCrashed",
                 message,
                 retryable: true,
                 hint: "The language server exited or its connection failed; retry once (it restarts), then fall back to astSearch/localSearch.",
+                lexical_fallback: false,
+            },
+            ErrorKind::ResourceExhausted => Self {
+                code: "serverCrashed",
+                message,
+                retryable: false,
+                hint: "Server hit its memory limit; a retry repeats it. Use the unverified text lead, or astSearch, then localFetch the lines.",
+                lexical_fallback: true,
             },
             ErrorKind::Rpc(rpc) => match rpc.code {
                 ErrorCode::MethodNotFound => Self {
@@ -85,6 +117,7 @@ impl LspFailure {
                     message,
                     retryable: false,
                     hint: "Use the advertised LSP operations, or fall back to astSearch/localSearch and exact source reads.",
+                    lexical_fallback: false,
                 },
                 ErrorCode::ContentModified
                 | ErrorCode::ServerCancelled
@@ -94,6 +127,7 @@ impl LspFailure {
                     message,
                     retryable: true,
                     hint: RETRY_OR_FALL_BACK,
+                    lexical_fallback: false,
                 },
                 ErrorCode::InvalidParams | ErrorCode::InvalidRequest | ErrorCode::ParseError => {
                     Self {
@@ -101,6 +135,7 @@ impl LspFailure {
                         message,
                         retryable: false,
                         hint: "The language server rejected the request; re-anchor from localFetch source or use astSearch/localSearch.",
+                        lexical_fallback: false,
                     }
                 }
                 _ => Self::request_failed(message),
@@ -109,12 +144,26 @@ impl LspFailure {
         }
     }
 
+    /// The row a failure the server cannot recover from becomes: the error,
+    /// its one hint, and the leads the failed row offers (never a retry).
+    pub(super) fn row(&self, query: &LspSearchQuery, canonical_uri: &str) -> Value {
+        let mut value = failure(query, canonical_uri, self.code, &self.message, false);
+        value["hints"] = json!([self.hint]);
+        if query.operation() == "callers" {
+            let mut references = query_value(query);
+            references["operation"] = json!("references");
+            value["next"]["findReferences"] = continuation(references);
+        }
+        value
+    }
+
     fn request_failed(message: String) -> Self {
         Self {
             code: "requestFailed",
             message,
             retryable: true,
             hint: RETRY_OR_FALL_BACK,
+            lexical_fallback: false,
         }
     }
 }
@@ -125,11 +174,16 @@ impl From<EngineError> for LspFailure {
     }
 }
 
-pub(super) fn failure_hint(query: &LspSearchQuery, code: &str) -> &'static str {
-    match code {
+/// The static tip of a failure code; `None` when the row's leads and
+/// per-call notes say it all (`anchorUnresolved`: `findSimilar`/`read`).
+pub(super) fn failure_hint(query: &LspSearchQuery, code: &str) -> Option<&'static str> {
+    Some(match code {
         "serverUnavailable" if query.operation() == "workspaceSymbol" && query.path().is_none() => {
             "Provide path for a representative workspace source file so Octocode can select its language server."
         }
+        // The row's `next.read` (and `next.findText` for a symbol) is the
+        // fallback; no static tip repeats it.
+        "serverUnavailable" if query.path().is_some() => return None,
         "serverUnavailable" => {
             "Use astSearch symbols/match or localSearch for candidates, then localFetch exact source."
         }
@@ -141,17 +195,13 @@ pub(super) fn failure_hint(query: &LspSearchQuery, code: &str) -> &'static str {
         "capabilityUnavailable" => {
             "Use the advertised LSP operations, or fall back to astSearch/localSearch and exact source reads."
         }
-        "anchorUnresolved" => {
-            "Read the source, then pass the exact symbolName with its 1-based lineHint (orderHint for a repeat)."
-        }
-        "timeout" => {
-            "Retry once after indexing settles; narrow workspaceRoot if the timeout persists."
-        }
+        "timeout" => TIMEOUT_TIP,
         "fileTooLarge" => {
             "Use localSearch or astSearch to locate a bounded region, then read that exact source range."
         }
+        "anchorUnresolved" => return None,
         _ => "Use astSearch or localSearch to locate candidates, then localFetch exact source.",
-    }
+    })
 }
 
 pub(super) fn empty_hint(category: &str) -> &'static str {
@@ -185,16 +235,55 @@ pub(super) fn failure(
         "errorCode": code,
         "error": message,
         "lsp": { "serverAvailable": server_available },
-        "hints": [failure_hint(query, code)]
+        "hints": failure_hint(query, code).into_iter().collect::<Vec<_>>()
     });
-    value["path"] = json!(super::render::uri_to_path(canonical_uri));
+    if !canonical_uri.is_empty() {
+        value["path"] = json!(super::render::uri_to_path(canonical_uri));
+    }
     if code == "timeout" {
         value["next"]["retry"] = continuation(query_value(query));
     }
     if query.path().is_some() {
         attach_recovery_next(&mut value, query);
+        match code {
+            "serverUnavailable" => attach_text_search(&mut value, query, None),
+            // Whatever the server held is lost: the lexical check is all
+            // that is left, and no verification stands behind it.
+            "serverCrashed" => attach_text_search(&mut value, query, Some("low")),
+            _ => {}
+        }
     }
     value
+}
+
+/// With no language server, the lexical check of a named symbol: a
+/// whole-word, case-sensitive localSearch over the workspace (else the
+/// file's directory).
+fn attach_text_search(value: &mut Value, query: &LspSearchQuery, confidence: Option<&str>) {
+    let Some(symbol) = query.symbol_name().filter(|name| !name.trim().is_empty()) else {
+        return;
+    };
+    let path = query.path().map(uri_to_path).unwrap_or_default();
+    let file = std::path::Path::new(&path);
+    if file.is_dir() {
+        return; // `next.read` already searches the directory.
+    }
+    let Some(scope) = query
+        .workspace_root()
+        .map(uri_to_path)
+        .or_else(|| file.parent().map(|dir| dir.to_string_lossy().into_owned()))
+    else {
+        return;
+    };
+    let lead = crate::tools::result::Continuation::new(
+        ToolId::LocalSearch,
+        json!({"path": scope, "matchString": symbol, "regex": "literal", "wholeWord": true, "caseMode": "sensitive"}),
+    );
+    value["next"]["findText"] = match confidence {
+        Some(confidence) => lead.confidence(confidence),
+        None => lead,
+    }
+    .build();
 }
 
 pub(super) fn empty(
@@ -203,13 +292,19 @@ pub(super) fn empty(
     reason: &str,
     server_available: bool,
 ) -> Value {
-    json!({
+    let mut row = json!({
         "status": "empty",
-        "path": query.path(),
+        "kind": "empty",
+        "category": category,
+        "reason": reason,
         "lsp": { "serverAvailable": server_available },
-        "payload": { "kind": "empty", "category": category, "reason": reason },
         "hints": [empty_hint(category)]
-    })
+    });
+    // A workspaceRoot-only query has no file: the row names none.
+    if let Some(path) = query.path() {
+        row["path"] = json!(path);
+    }
+    row
 }
 
 pub(super) fn query_value(query: &LspSearchQuery) -> Value {
@@ -225,6 +320,20 @@ pub(super) fn continuation(query: Value) -> Value {
 
 /// Mark a row partial with `reason` and warnings, without a continuation
 /// (the caller attaches its own `next.*`).
+/// Append one line to the row's `warnings`; a non-object row is left alone.
+pub(super) fn push_warning(row: &mut Value, warning: String) {
+    let Some(object) = row.as_object_mut() else {
+        return;
+    };
+    if let Some(existing) = object
+        .entry("warnings")
+        .or_insert_with(|| json!([]))
+        .as_array_mut()
+    {
+        existing.push(json!(warning));
+    }
+}
+
 pub(super) fn push_reason(row: &mut Value, reason: &str, warnings: &[String]) {
     let Some(object) = row.as_object_mut() else {
         return;
@@ -247,6 +356,39 @@ pub(super) fn push_reason(row: &mut Value, reason: &str, warnings: &[String]) {
     {
         existing.extend(warnings.iter().map(|warning| json!(warning)));
     }
+}
+
+/// Name the row's coverage state where the row reports coverage details
+/// (`importerScan`, `textOnlyFiles`, …): `error` for a failure row, `partial`
+/// for a row flagged incomplete or carrying a coverage reason, else `complete`.
+/// A row without coverage details states no coverage object.
+pub(super) fn stamp_coverage(row: &mut Value) {
+    let state = if row.get("status").and_then(Value::as_str) == Some("error") {
+        "error"
+    } else if row.get("isPartial").and_then(Value::as_bool) == Some(true)
+        || row.pointer("/coverage/reason").is_some()
+    {
+        "partial"
+    } else {
+        "complete"
+    };
+    if let Some(coverage) = row.get_mut("coverage").and_then(Value::as_object_mut) {
+        coverage.entry("state").or_insert_with(|| json!(state));
+    }
+}
+
+/// An empty diagnostics row whose server pushed nothing within `wait_ms`: the
+/// document may still have diagnostics, so the row is partial with a retry.
+pub(super) fn mark_diagnostics_unpublished(row: &mut Value, query: &LspSearchQuery, wait_ms: u32) {
+    if row.pointer("/kind").and_then(Value::as_str) != Some("empty") {
+        return;
+    }
+    row["category"] = json!("diagnosticsNotPublished");
+    row["reason"] = json!(format!(
+        "The language server published no diagnostics for this document within {wait_ms} ms."
+    ));
+    row["hints"] = json!([empty_hint("diagnosticsNotPublished")]);
+    mark_partial(row, query, "diagnosticsNotPublished", &[]);
 }
 
 /// Flag a row as incomplete with a machine-readable reason, human warnings,
@@ -301,17 +443,17 @@ pub(super) fn with_next(query: &LspSearchQuery, mut value: Value) -> Value {
         }
         value["next"]["nextPage"] = continuation(next_query);
         // The continuation states the next page and the snapshot; `pageSize`
-        // stays a page fact, so every page has one key set (B12).
+        // stays a page fact, so every page has one key set.
         if let Some(pagination) = value.get_mut("pagination").and_then(Value::as_object_mut) {
             for key in ["nextPage", "snapshot"] {
                 pagination.shift_remove(key);
             }
         }
-    } else if value.pointer("/payload/kind").and_then(Value::as_str) == Some("empty") {
+    } else if value.pointer("/kind").and_then(Value::as_str) == Some("empty") {
         value["status"] = json!("empty");
         // A workspaceRoot-only query has no file to fall back to reading, and
         // reading source cannot stand in for missing diagnostics.
-        let category = value.pointer("/payload/category").and_then(Value::as_str);
+        let category = value.pointer("/category").and_then(Value::as_str);
         if query.path().is_some()
             && !matches!(category, Some("noDiagnostics" | "diagnosticsNotPublished"))
         {
@@ -338,7 +480,6 @@ pub(super) fn attach_recovery_next(value: &mut Value, query: &LspSearchQuery) {
             ToolId::LocalSearch,
             json!({ "path": path, "matchString": symbol }),
         )
-        .why("Search the directory for the symbol's text.")
         .confidence("exact")
         .build();
         return;
@@ -350,43 +491,25 @@ pub(super) fn attach_recovery_next(value: &mut Value, query: &LspSearchQuery) {
         read["contextLines"] = json!(3);
     }
     value["next"]["read"] = crate::tools::result::Continuation::new(ToolId::LocalFetch, read)
-        .why("Read the source directly to confirm the symbol and its anchor.")
         .confidence("exact")
         .build();
 }
 
-/// Lines read on each side of `lineHint` when the symbol is not there.
+/// Lines read on each side of `line` when the symbol is not there.
 const ANCHOR_READ_RADIUS: u32 = 5;
-/// Lines scanned on each side of `lineHint` for a near-miss name.
+/// Lines scanned on each side of `line` for a near-miss name.
 const SUGGESTION_RADIUS: usize = 20;
 
-/// Recovery for a `symbolName` that did not resolve: read the lines around
-/// `lineHint` (a `matchString` of the missing name cannot match), and offer
-/// the closest identifier near the hint as an executable `next.didYouMean`.
+/// Recovery for a `symbolName` that did not resolve: the name elsewhere in
+/// the file or the closest identifier near `line` as an executable
+/// `next.findSimilar`; without any candidate, a read of the lines around
+/// `line` (a `matchString` of the missing name cannot match).
 pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source: Option<&str>) {
     let (Some(name), Some(path)) = (query.symbol_name(), query.path().map(uri_to_path)) else {
         return;
     };
-    let hint = query.line_hint().filter(|line| *line > 0);
-    if let Some(line) = hint {
-        value["next"]["read"] = crate::tools::result::Continuation::new(
-            ToolId::LocalFetch,
-            json!({
-                "path": path,
-                "ranges": [format!(
-                    "{}-{}",
-                    line.saturating_sub(ANCHOR_READ_RADIUS).max(1),
-                    line.saturating_add(ANCHOR_READ_RADIUS)
-                )]
-            }),
-        )
-        .why(format!(
-            "`{name}` was not found near line {line}; read the lines around it."
-        ))
-        .confidence("exact")
-        .build();
-    }
-    // The name itself elsewhere in the file (a stale `lineHint`) first,
+    let hint = query.anchor_line().filter(|line| *line > 0);
+    // The name itself elsewhere in the file (a stale `line`) first,
     // declarations before uses; then near-miss spellings.
     let exact = source
         .map(|source| name_lines(source, name, hint))
@@ -403,32 +526,66 @@ pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source:
         )
         .take(MAX_ANCHOR_LEADS)
         .collect::<Vec<_>>();
+    if let Some(object) = value["next"].as_object_mut() {
+        object.remove("read");
+    }
+    if leads.is_empty()
+        && let Some(line) = hint
+    {
+        // A `line` past the end reads the file's last lines: a range wholly
+        // past the end is an error, not a read.
+        let last = source.map_or(u32::MAX, |source| {
+            u32::try_from(source.lines().count().max(1)).unwrap_or(u32::MAX)
+        });
+        let line = line.min(last);
+        value["next"]["read"] = crate::tools::result::Continuation::new(
+            ToolId::LocalFetch,
+            json!({
+                "path": path,
+                "ranges": [format!(
+                    "{}-{}",
+                    line.saturating_sub(ANCHOR_READ_RADIUS).max(1),
+                    line.saturating_add(ANCHOR_READ_RADIUS).min(last)
+                )]
+            }),
+        )
+        .confidence("exact")
+        .build();
+    }
     for (index, (symbol, line, confidence)) in leads.iter().enumerate() {
         let mut retry = query_value(query);
         if let Some(object) = retry.as_object_mut() {
             object.insert("symbolName".into(), json!(symbol));
-            object.insert("lineHint".into(), json!(line));
+            object.insert("line".into(), json!(line));
             object.remove("orderHint");
         }
         let key = match index {
-            0 => "didYouMean".to_owned(),
-            n => format!("didYouMean{}", n + 1),
+            0 => "findSimilar".to_owned(),
+            n => format!("findSimilar{}", n + 1),
         };
         value["next"][key] = crate::tools::result::Continuation::new(ToolId::LspSearch, retry)
             .confidence(*confidence)
             .build();
     }
+    // Candidates the leads already carry are not repeated; only lines and
+    // names beyond the lead cap are stated.
+    let offered = leads.len();
     let mut notes = Vec::new();
-    if !exact.is_empty() {
-        let lines = exact
+    let uncovered_exact = exact.iter().skip(offered).collect::<Vec<_>>();
+    if !uncovered_exact.is_empty() {
+        let lines = uncovered_exact
             .iter()
-            .map(usize::to_string)
+            .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join(", ");
         notes.push(format!("`{name}` appears on line {lines}."));
     }
-    if !near.is_empty() {
-        let listed = near
+    let uncovered_near = near
+        .iter()
+        .skip(offered.saturating_sub(exact.len()))
+        .collect::<Vec<_>>();
+    if !uncovered_near.is_empty() {
+        let listed = uncovered_near
             .iter()
             .map(|(name, line)| format!("`{name}` (line {line})"))
             .collect::<Vec<_>>()
@@ -440,8 +597,9 @@ pub(super) fn anchor_recovery(value: &mut Value, query: &LspSearchQuery, source:
     }
 }
 
-/// Re-anchor leads one unresolved anchor offers.
-const MAX_ANCHOR_LEADS: usize = 3;
+/// Re-anchor leads one unresolved anchor offers: the hint channel's lead
+/// cap, so no offered lead is dropped after the text skipped its line.
+const MAX_ANCHOR_LEADS: usize = crate::tools::id::continuation_channels::MAX_HINT_LEADS;
 
 /// Declaration keywords that may precede a declared name on its line.
 const DECLARATION_WORDS: &[&str] = &[
@@ -467,7 +625,8 @@ const DECLARATION_WORDS: &[&str] = &[
 
 /// One-based lines that spell `name` as a word: declaration lines first
 /// (a declaration keyword just before the name), then the rest, each
-/// group nearest `hint` first; at most [`MAX_ANCHOR_LEADS`].
+/// group nearest `hint` first. The first [`MAX_ANCHOR_LEADS`] become leads;
+/// the rest are stated as line numbers.
 fn name_lines(source: &str, name: &str, hint: Option<u32>) -> Vec<usize> {
     if name.trim().is_empty() {
         return Vec::new();
@@ -496,15 +655,11 @@ fn name_lines(source: &str, name: &str, hint: Option<u32>) -> Vec<usize> {
         }
     }
     found.sort_unstable();
-    found
-        .into_iter()
-        .take(MAX_ANCHOR_LEADS)
-        .map(|(_, _, line)| line)
-        .collect()
+    found.into_iter().map(|(_, _, line)| line).collect()
 }
 
 /// Up to three distinct identifiers within a small edit distance of `name`,
-/// nearest `lineHint` first (the whole file without a hint).
+/// nearest `line` first (the whole file without a hint).
 fn near_names(source: &str, name: &str, hint: Option<u32>) -> Vec<(String, usize)> {
     let hint = hint.map(|line| line as usize);
     let limit = (name.chars().count() / 4).max(1);
@@ -553,7 +708,7 @@ const CAPPED_REASONS: [&str; 1] = ["aliasScanCapped"];
 const LISTED_TEXT_FILES: usize = 5;
 
 /// Mark an incoming-direction row partial: coverage reason, a warning, and
-/// (when the query names its symbol) a lexical `textSearch` lead over the
+/// (when the query names its symbol) a lexical `findText` lead over the
 /// request's search scope. `coverage.textOnlyFiles` counts the files that
 /// spell the name but are not in the answer; up to five are the lead's rows.
 pub(super) fn flag_partial(
@@ -566,7 +721,7 @@ pub(super) fn flag_partial(
     let name = query.symbol_name().filter(|name| !name.trim().is_empty());
     let text_only = name.and_then(|name| scope.text_only_files(name));
     let agrees = text_only.as_ref().is_some_and(Vec::is_empty);
-    if let Some(payload) = row.get_mut("payload").and_then(Value::as_object_mut) {
+    if let Some(payload) = row.as_object_mut() {
         if let Some(files) = &text_only {
             payload.entry("coverage").or_insert_with(|| json!({}))["textOnlyFiles"] =
                 json!(files.len());
@@ -586,7 +741,7 @@ pub(super) fn flag_partial(
         // Partial only with an executable recovery.
         Some(name) => {
             push_reason(row, reason, &warnings);
-            row["next"]["textSearch"] = text_search_lead(name, scope, text_only.as_deref());
+            row["next"]["findText"] = text_search_lead(name, scope, text_only.as_deref());
             if CAPPED_REASONS.contains(&reason) {
                 // A fixed per-request cap: no page or retry reaches the
                 // unchecked files, only the lexical lead above.
@@ -606,7 +761,7 @@ pub(super) fn flag_partial(
 /// Whether [`flag_partial`] already flagged `row` with `reasons`' reason:
 /// the coverage reason of an unnamed row, or a `partialReasons` entry.
 pub(super) fn flagged_with(row: &Value, reasons: &[&str]) -> bool {
-    row.pointer("/payload/coverage/reason").is_some()
+    row.pointer("/coverage/reason").is_some()
         || row
             .get("partialReasons")
             .and_then(Value::as_array)
@@ -618,12 +773,15 @@ pub(super) fn flagged_with(row: &Value, reasons: &[&str]) -> bool {
             })
 }
 
-/// How a coverage warning names the lexical check: the `textSearch` lead is
-/// opt-in (`extras: ["hints"]`), so the warning names the search itself.
+/// How a coverage warning names the lexical check: by the search itself (the
+/// `findText` lead, which a partial row without a page always keeps, names
+/// the files).
 pub(super) const TEXT_CHECK: &str = "a localSearch of the name";
 
 /// The lexical lead: one row per text-only file when there are a few,
-/// otherwise the whole scope with the language family's globs.
+/// otherwise the whole scope with the language family's globs. The
+/// word-bounded pattern is a `rust` regex: an unset `regex` would search its
+/// `\b` spelling as literal text.
 fn text_search_lead(
     name: &str,
     scope: &super::scope::Scope,
@@ -633,22 +791,76 @@ fn text_search_lead(
     if let Some(files) = text_only.filter(|files| (1..=LISTED_TEXT_FILES).contains(&files.len())) {
         let rows = files
             .iter()
-            .map(|file| json!({ "path": file, "matchString": pattern }))
+            .map(|file| json!({ "path": file, "matchString": pattern, "regex": "rust" }))
             .collect::<Vec<_>>();
         return crate::tools::result::Continuation::input(
             ToolId::LocalSearch,
             json!({ "queries": rows }),
         )
-        .why("Search the files that spell the name but are missing from the language server's answer.")
         .confidence("high")
         .build();
     }
-    let mut search = json!({ "path": scope.root, "matchString": pattern });
+    let mut search = json!({ "path": scope.root, "matchString": pattern, "regex": "rust" });
     if !scope.include.is_empty() {
         search["include"] = json!(scope.include);
     }
     crate::tools::result::Continuation::new(ToolId::LocalSearch, search)
-        .why("Find textual uses the language server's project cannot see.")
         .confidence("medium")
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::ContentSecurity;
+    use crate::tools::cancel::NeverCancel;
+    use crate::tools::local_search::{LocalSearchQuery, execute_local_search};
+
+    /// The lexical lead is a call as given: each of its rows runs through
+    /// localSearch and finds the whole word, not the word's `\b` spelling.
+    fn run_rows(lead: &Value, root: &std::path::Path) -> Vec<usize> {
+        let policy = crate::tools::test_support::workspace_policy(root);
+        lead["query"]["queries"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .map(|row| {
+                let query: LocalSearchQuery =
+                    serde_json::from_value(row.clone()).expect("lead row is a localSearch query");
+                execute_local_search(
+                    &query,
+                    &policy,
+                    &ContentSecurity::new(),
+                    &NeverCancel,
+                    None,
+                    None,
+                )
+                .expect("lead runs")
+                .files
+                .iter()
+                .map(|file| file.matches.as_ref().map_or(0, Vec::len))
+                .sum()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_text_lead_finds_the_word_in_a_scope_and_in_listed_files() {
+        let root = tempfile::tempdir().expect("root");
+        let file = root.path().join("a.py");
+        std::fs::write(&file, "get(1)\ngetter = 2\nx.get\n").expect("source");
+        let scope = super::super::scope::Scope::new(
+            root.path().to_string_lossy().into_owned(),
+            vec!["*.py".into()],
+        );
+        let wide = text_search_lead("get", &scope, None);
+        assert_eq!(run_rows(&wide, root.path()), vec![2], "{wide}");
+        let files = vec![file.to_string_lossy().into_owned()];
+        let listed = text_search_lead("get", &scope, Some(&files));
+        assert_eq!(run_rows(&listed, root.path()), vec![2], "{listed}");
+        // A name whose edge is not a word character has no `\b` there.
+        std::fs::write(&file, "$store = 1\n$stored = 2\n").expect("source");
+        let dollar = text_search_lead("$store", &scope, None);
+        assert_eq!(run_rows(&dollar, root.path()), vec![1], "{dollar}");
+    }
 }

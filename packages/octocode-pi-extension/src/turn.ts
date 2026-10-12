@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { configuredOctocodeServer, isOctocodeTool, octocodeMcpEnabled, octocodeToolsDeferred } from './mcp/octocode.js';
+import { isOctocodeTool, type OctocodeMcp } from './mcp/octocode.js';
 import { envFlag } from './shared/env.js';
 import { octocodePrompt } from './prompt.js';
 import type { AgentProfile } from './subagents/profiles.js';
-import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_SCRATCH_ENV, PARENT_ID_ENV } from './team/store.js';
+import { AGENT_COLLABORATE_ENV } from './team/store.js';
 
 /** Pi tools that `file` covers. */
 const FILE_COVERS = ['edit', 'write'];
@@ -21,63 +21,63 @@ export function explicitTools(argv: readonly string[], defaultTools: readonly st
   return names;
 }
 
+/** Whether a subagent started with this profile gets the `browser` tool. */
+export function profileHasBrowser(profile: AgentProfile): boolean {
+  const listed = (value: string | undefined) => (value ?? '').split(',').map((name) => name.trim());
+  if (listed(profile.excludeTools).includes('browser')) return false;
+  return profile.tools === undefined || listed(profile.tools).includes('browser');
+}
+
 /**
- * The active set with `file` in place of Pi's edit/write, or undefined when nothing changes: `file` must itself be
- * active (an allowlist may leave it out, and the agent never loses editing), and edit/write the user enabled on purpose
- * stay.
+ * The session's starting tool set, or undefined when nothing changes. `file` takes the place of Pi's edit/write when
+ * it is itself active (an allowlist may leave it out, and the agent never loses editing). A main session also leaves
+ * `browser` (the largest schema, paid on every request) to the subagent profiles that carry it, when any does. Tools
+ * the user named on purpose stay.
  */
-export function withFileTool(active: readonly string[], explicit: ReadonlySet<string>): string[] | undefined {
-  if (!active.includes('file')) return undefined;
-  const drop = FILE_COVERS.filter((name) => active.includes(name) && !explicit.has(name));
+export function sessionTools(active: readonly string[], explicit: ReadonlySet<string>, delegateBrowser: boolean): string[] | undefined {
+  const covered = active.includes('file') ? FILE_COVERS : [];
+  const drop = [...covered, ...(delegateBrowser ? ['browser'] : [])].filter((name) => active.includes(name) && !explicit.has(name));
   return drop.length > 0 ? active.filter((name) => !drop.includes(name)) : undefined;
 }
 
-function identityFromEnv(env: NodeJS.ProcessEnv) {
-  const id = env[AGENT_ID_ENV];
-  if (!id) return undefined;
-  return {
-    id,
-    ...(env[PARENT_ID_ENV] ? { parentId: env[PARENT_ID_ENV] } : {}),
-    ...(envFlag(env, AGENT_COLLABORATE_ENV) ? { collaborate: true } : {}),
-    ...(env[AGENT_SCRATCH_ENV] ? { scratch: env[AGENT_SCRATCH_ENV] } : {}),
-  };
-}
-
 /**
- * At session start, `file` takes the place of Pi's edit/write (once; later tool changes are the user's). Each turn
+ * At session start the tool set is settled once (see sessionTools; later tool changes are the user's). Each turn
  * adds the `octocode` prompt section, rebuilt only when its inputs change so the provider cache holds. The active
  * tool set is Pi's: it is never rewritten per turn.
  */
-export function registerTurnSetup(pi: ExtensionAPI, options: { isSubagent: boolean; profiles: () => Map<string, AgentProfile> }): { reset(): void } {
+export function registerTurnSetup(pi: ExtensionAPI, options: { isSubagent: boolean; profiles: () => Map<string, AgentProfile>; octocode: Pick<OctocodeMcp, 'owner' | 'ready' | 'instructions'> }): { reset(): void; settleTools(): void } {
   let prompt: string | undefined;
   let promptKey: string | undefined;
-  /** Once Octocode is known to be here it stays, so the section does not flip (and break the cache) mid-session. */
+  /** Once Octocode is known to be here it stays for the session, so the section does not flip (and break the cache). */
   let octocodeSeen = false;
-
-  pi.on('session_start', async () => {
-    const next = withFileTool(pi.getActiveTools(), explicitTools(process.argv, pi.getSettings().defaultTools));
-    if (next) pi.setActiveTools(next);
+  /** Why the session started. A `/reload` keeps Pi's active tools (the user may have changed them), so it settles nothing. */
+  let startReason: string | undefined;
+  pi.on('session_start', async (event) => {
+    startReason = event.reason;
   });
 
   pi.on('before_agent_start', async (event, ctx) => {
     const selected = event.systemPromptOptions.selectedTools ?? pi.getActiveTools();
-    // Pi snapshots selectedTools before this hook runs, and its MCP host connects servers inside the same hook, so on
-    // the first prompt (the only one of most subagents) Octocode's tools are not there yet. Decide from the
-    // registration instead (an `octocode` entry in Pi's mcp.json replaces it), or from the tools once they appear.
-    const configured = configuredOctocodeServer(ctx.cwd ?? process.cwd(), ctx.isProjectTrusted?.() ?? false);
-    const builtIn = !configured && octocodeMcpEnabled();
-    octocodeSeen ||= builtIn || (configured !== undefined && configured.enabled !== false) || selected.some(isOctocodeTool) || pi.getAllTools().some((tool) => isOctocodeTool(tool.name));
+    // Pi snapshots selectedTools before this hook runs, so the Octocode tools the extension's own client registers are
+    // not in it yet: ask the client. The first prompt waits (bounded) for its connect; a failed connect leaves Octocode
+    // out of the prompt and a later prompt asks again (the client retries once). A user's own `octocode` server (an
+    // entry in Pi's mcp.json) is Pi's: the section follows its tools.
+    if (!octocodeSeen) {
+      const owner = options.octocode.owner(ctx);
+      octocodeSeen = (owner.by === 'extension' && (await options.octocode.ready(ctx))) || (owner.by === 'user' && owner.enabled) || selected.some(isOctocodeTool);
+    }
     const octocode = octocodeSeen;
+    const instructions = octocode ? options.octocode.instructions : undefined;
     const canWrite = ['file', 'write', 'edit'].some((name) => selected.includes(name));
-    const identity = identityFromEnv(process.env);
     const inputs = {
       octocode,
       profiles: [...options.profiles().values()].map(({ name, description }) => ({ name, description })),
       canDelegate: !options.isSubagent,
       canUseAgent: selected.includes('agent'),
       canWrite,
-      octocodeDeferred: builtIn && octocodeToolsDeferred(),
-      ...(identity ? { identity } : {}),
+      ...(octocode && instructions ? { octocodeInstructions: instructions } : {}),
+      // Subagent-only, and the same for every child of one run mode: nothing per-child may enter the prompt.
+      ...(options.isSubagent && envFlag(process.env, AGENT_COLLABORATE_ENV) ? { collaborate: true } : {}),
     };
     const key = JSON.stringify(inputs);
     if (prompt === undefined || key !== promptKey) {
@@ -93,6 +93,14 @@ export function registerTurnSetup(pi: ExtensionAPI, options: { isSubagent: boole
     reset() {
       prompt = undefined;
       promptKey = undefined;
+      octocodeSeen = false;
+    },
+    /** Once per session (not on a reload), after its profiles load: settle the starting tool set. */
+    settleTools() {
+      if (startReason === 'reload') return;
+      const delegateBrowser = !options.isSubagent && [...options.profiles().values()].some(profileHasBrowser);
+      const next = sessionTools(pi.getActiveTools(), explicitTools(process.argv, pi.getSettings().defaultTools), delegateBrowser);
+      if (next) pi.setActiveTools(next);
     },
   };
 }

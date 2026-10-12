@@ -148,7 +148,7 @@ export function rawPatch(view) {
 
 /**
  * Whether a patch view numbers each line on its sign's side (native `number_patch`,
- * HI3 both-side numbering): kept and added lines carry their new-file line number,
+ * both-side numbering): kept and added lines carry their new-file line number,
  * removed lines their old-file number (both counted from the `@@ -a,b +c,d @@`
  * header), and a `\ No newline` marker a bare tab. With `oldLines`/`newLines`
  * (the file at the parent / at the change), each numbered line must also equal
@@ -222,8 +222,8 @@ export function inventoryRows(items = []) {
  * structureSearch rows (tree and files) in one object shape. Every row is a
  * {dir, files: [...]} group whose `dir` is workspace-relative (like a row
  * path; "." is the workspace root). Entries ("<name>[/][ (<fields>)]";
- * fields: size in bytes, "symlink", "lineCount=N", "modifiedMs=N"; "/" marks
- * a directory) expand in order to {path: dir/name, size?, type?, lineCount?,
+ * fields: size in bytes, "symlink", "totalLines=N", "modifiedMs=N"; "/" marks
+ * a directory) expand in order to {path: dir/name, size?, type?, totalLines?,
  * modifiedMs?}, `path` resolving against the response `root`. Object rows
  * pass through.
  */
@@ -237,7 +237,7 @@ export function structureFiles(items = []) {
     row.path = name === '.' ? dir : join(dir, name);
     for (const field of m ? m[2].split(', ') : []) {
       if (field === 'symlink') row.type = 'symlink';
-      else if (field.startsWith('lineCount=')) row.lineCount = Number(field.slice(10));
+      else if (field.startsWith('totalLines=')) row.totalLines = Number(field.slice(11));
       else if (field.startsWith('modifiedMs=')) row.modifiedMs = Number(field.slice(11));
       else row.size = Number(field);
     }
@@ -259,13 +259,13 @@ export function sourcePath(entry, location, fallback) {
 }
 
 /**
- * lspSearch location rows in one shape: flat `payload.matches` location
- * objects, or the compact per-file `payload.files[].matches` reference rows
+ * lspSearch location rows in one shape: flat `data.matches` location
+ * objects, or the compact per-file `data.files[].matches` reference rows
  * {line, column, endLine?, value?} long reference lists default to,
  * expanded to {path, displayRange, content}.
  */
 export function lspLocations(entry, index = 0) {
-  const payload = rowData(entry, index)?.payload;
+  const payload = rowData(entry, index);
   if (Array.isArray(payload?.matches)) return payload.matches;
   return (payload?.files ?? []).flatMap(file => (file.matches ?? []).filter(ref => ref && typeof ref.line === 'number' && !ref.sites).map(ref => ({
     path: file.path,
@@ -275,7 +275,7 @@ export function lspLocations(entry, index = 0) {
 }
 
 /**
- * One symbols outline entry string (P1, a declaration without members):
+ * One symbols outline entry string (a declaration without members):
  * `<symbolName> (<line>[-<endLine>][, <kind>][, doc <docStartLine>][, exported][, <key>=<value>]…)`.
  * The last ` (` opens the fields; a `<key>=<value>` value is bare words or
  * JSON. Returns the declaration's fields ({symbolName, line, endLine?, kind?,
@@ -346,7 +346,7 @@ export function declarations(entry, index = 0) {
   return [...outlineRows(data.symbols), ...(data.files ?? []).flatMap(file => outlineRows(file.symbols, { path: file.path }))];
 }
 
-/** One astSearch match row {line, column, endLine?, value, ...}. */
+/** One astSearch match row {line, endLine?, value, metavarRanges? (captureText only)}. */
 export function matchRow(row) {
   return row && typeof row === 'object' ? row : { raw: row };
 }
@@ -358,15 +358,15 @@ export function astMatchRows(entry, index = 0) {
 
 /**
  * lspSearch callers as {name, kind, detail?, path, lines, declLine?, via?}:
- * flat `payload.matches` call-hierarchy edges, or the compact per-file call
+ * flat `data.matches` call-hierarchy edges, or the compact per-file call
  * rows {symbolName, kind, line, endLine?, sites, detail?, via?} of a
- * `callers` payload (a `callees` payload lists no callers).
+ * `callers` data (a `callees` result lists no callers).
  */
 export function lspCallers(entry, index = 0) {
-  const payload = rowData(entry, index)?.payload;
+  const payload = rowData(entry, index);
   if (Array.isArray(payload?.matches)) {
     return payload.matches.filter(item => item.from).map(item => ({
-      name: item.from.name, kind: item.from.kind, detail: item.from.detail, path: item.from.path,
+      name: item.from.symbolName, kind: item.from.kind, detail: item.from.detail, path: item.from.path,
       lines: (item.fromRanges ?? []).map(range => range.startLine), declLine: item.from.displayRange?.startLine,
     }));
   }
@@ -382,16 +382,19 @@ export function lspCallers(entry, index = 0) {
  * A file-read row's source view. Reads number source lines in `content`
  * (`<line>\t<text>`, omission markers unnumbered; docs/TOOL_DATA_CONTRACT.md
  * "Numbered source content") and then omit `sourceLineRanges`: `text` strips
- * the gutter and `ranges` comes from the numbers. Verbatim views pass through.
+ * the gutter and `ranges` comes from the numbers; `--` separators stay in
+ * `text` as their own lines. Verbatim views pass through.
  */
 export function sourceView(file) {
   const content = file?.content ?? '';
   const records = content.split('\n');
   const trailing = records.at(-1) === '' ? records.pop() : undefined;
-  // A gap marker, or one gap-run marker for single lines (ghGetFileContent).
-  const marker = /^\.\.\. \[(?:lines? \d+(?:-\d+)?|\d+ gaps in lines \d+-\d+) (?:omitted|not requested)\] \.\.\.$/;
+  // Non-adjacent windows are separated by one unnumbered `--` line (grep's
+  // group separator, TOOL_DATA_CONTRACT "Numbered source content"); older
+  // views used `... [lines N-M omitted] ...` markers.
+  const marker = /^(?:--|\.\.\. \[(?:lines? \d+(?:-\d+)?|\d+ gaps in lines \d+-\d+) (?:omitted|not requested)\] \.\.\.)$/;
   const numbered = records.length > 0 && records.some(l => /^\d+\t/.test(l)) && records.every(l => /^\d+\t/.test(l) || marker.test(l));
-  // Verbatim views keep `sourceLineRanges` as `{line, endLine}` (X1); the
+  // Verbatim views keep `sourceLineRanges` as `{line, endLine}`; the
   // view's ranges are `{start, end}` in both branches.
   if (!numbered) return { text: content, ranges: (file?.sourceLineRanges ?? []).map(r => ({ start: r.line, end: r.endLine })), numbered: false };
   const ranges = [];
@@ -487,16 +490,20 @@ export function cli(tool, input, { cwd = ROOT, env = {}, timeout, maxBuffer = 64
 /**
  * A CLI-only tool (contract `cliOnly`, e.g. astTopology) called through the
  * built CLI, returned in the `call`/`follow` entry shape. `args` is the
- * complete input, so a `next.*` query runs verbatim. Exit 6 is a partial row.
+ * complete input, so a `next.*` query runs verbatim. A next page is still exit 0.
  */
 export function cliEntry(tool, args, { env = {}, label = '', ...options } = {}) {
   const run = cli(tool, args, { env: { OCTOCODE_BETA: 'true', ...env }, ...options });
   let parsed;
   try { parsed = JSON.parse(run.stdout); } catch {}
   const sc = expandShared(parsed);
+  // Exit 1 is the empty class (every row `status:"empty"`, as a grep with no
+  // match): a complete answer, not a failed call.
+  const rows = parsed?.results ?? [];
+  const emptyAnswer = run.status === 1 && rows.length > 0 && rows.every(r => r.status === 'empty');
   return {
     label, tool, args, ms: Math.round(run.ms), bytes: Buffer.byteLength(run.stdout, 'utf8'), text: run.stdout + run.stderr, sc,
-    isError: !!run.error || !parsed || (run.status !== 0 && run.status !== 6),
+    isError: !!run.error || !parsed || (run.status !== 0 && !emptyAnswer),
     rowErrors: collect(sc, r => r.status === 'error').length,
   };
 }

@@ -3,10 +3,10 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { getAgentDir } from '@earendil-works/pi-coding-agent';
 import { DEFAULT_BASH_TIMEOUT, bashTimeoutLimit, effectiveTimeout, registerBashTool } from '../src/files/bash.js';
-import { BashJobs, capLog, jobReport, logTail, prefixed, shellSettings, type ShellSettings } from '../src/files/bash-jobs.js';
+import { BashJobs, jobReport, logTail, prefixed, shellSettings, type ShellSettings } from '../src/files/bash-jobs.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { setCurrentSession } from '../src/shared/home.js';
-import { processAlive } from '../src/shared/process.js';
+import { groupAlive, processAlive } from '../src/shared/process.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
@@ -53,8 +53,12 @@ describe('bash tool', () => {
     const { tool } = setup();
     expect(tool.name).toBe('bash');
     expect(Object.keys(tool.parameters.properties)).toEqual(['command', 'timeout', 'background']);
-    expect(tool.promptGuidelines.join('\n')).toContain('stops after at most 15m');
-    expect(tool.promptGuidelines.join('\n')).toMatch(/background: true/);
+    expect(tool.promptGuidelines).toEqual([]);
+    expect(tool.parameters.properties.timeout.description).toContain('foreground at most 900s');
+    expect(tool.parameters.properties.background.description).toContain('long builds');
+    // Pi's bash output, or a background start: codemode scripts get structuredContent only when this is declared.
+    const variants = tool.outputSchema.anyOf.map((variant: { properties: object }) => Object.keys(variant.properties));
+    expect(variants).toEqual([expect.arrayContaining(['output', 'exit_code']), ['job', 'pid', 'log']]);
   });
 
   it('runs a foreground command in the session cwd and returns its output', async () => {
@@ -111,20 +115,30 @@ describe('bash tool', () => {
     expect(prefixed('ls')).toBe('ls');
   });
 
-  it('caps a background job log, keeping its latest output', async () => {
+  it('keeps every rotated log within its cap when one chunk is larger than the cap', async () => {
+    const jobs = new BashJobs(tmp());
+    let exited = false;
+    // One 40 KB burst of short lines, then one 20 KB line: both arrive in chunks larger than the 8 KB cap.
+    const job = await jobs.start("awk 'BEGIN { for (i = 0; i < 2000; i++) printf \"line %05d padding\\n\", i; s = sprintf(\"%20000s\", \"\"); gsub(/ /, \"x\", s); print s; print \"end\" }'", tmp(), undefined, () => (exited = true), { maxLogBytes: 8 * 1024 });
+    await until(() => exited);
+    for (const file of [job.log, `${job.log}.1`]) expect(fs.statSync(file).size).toBeLessThanOrEqual(8 * 1024);
+    expect(fs.readFileSync(job.log, 'utf8')).toMatch(/end\n$/);
+  });
+
+  it('rotates a background job log at its cap without losing or reordering output', async () => {
     const jobs = new BashJobs(tmp());
     let exited = false;
     const job = await jobs.start('i=0; while [ $i -lt 3000 ]; do echo "line $i padding padding padding"; i=$((i+1)); done', tmp(), undefined, () => (exited = true), { maxLogBytes: 8 * 1024 });
     await until(() => exited);
     const log = fs.readFileSync(job.log, 'utf8');
-    expect(log.length).toBeLessThan(16 * 1024);
-    expect(log).toMatch(/^\[earlier output dropped/);
-    expect(log).toContain('line 2999');
-    const small = path.join(tmp(), 'small.log');
-    fs.writeFileSync(small, 'ok\n');
-    capLog(small, 1024);
-    expect(fs.readFileSync(small, 'utf8')).toBe('ok\n');
-    capLog(path.join(tmp(), 'missing.log'));
+    const previous = fs.readFileSync(`${job.log}.1`, 'utf8');
+    expect(Buffer.byteLength(log)).toBeLessThanOrEqual(8 * 1024);
+    expect(log).toMatch(new RegExp(`^\\[earlier output is in ${path.basename(job.log)}\\.1; older output was dropped\\]`));
+    // Whatever both files keep is one unbroken run of lines ending at the last one.
+    const numbers = [...`${previous}${log}`.matchAll(/^line (\d+) /gm)].map((match) => Number(match[1]));
+    expect(numbers.at(-1)).toBe(2999);
+    expect(numbers.every((n, i) => i === 0 || n === numbers[i - 1]! + 1)).toBe(true);
+    expect(numbers.length).toBeGreaterThan(100);
   });
 
   it('keeps job logs in the current session folder under the Octocode home by default', () => {
@@ -157,6 +171,7 @@ describe('bash tool', () => {
     const text = result.content[0].text as string;
     expect(text).toMatch(/^Started bash-1 in the background \(pid \d+\)/);
     expect(text).toMatch(/Stop: kill -- -\d+/);
+    expect(result.structuredContent).toEqual({ job: 'bash-1', pid: expect.any(Number), log: expect.stringMatching(/bash-1-\d+\.log$/) });
     expect(jobs.jobs.size).toBe(1);
     expect(ctx.ui.statuses.get('octocode-bash')).toBe('1 bash job');
     await until(() => sent.length === 1);
@@ -235,8 +250,29 @@ describe('bash tool', () => {
     const { tool, jobs } = setup();
     const result = await tool.execute('t1', { command: 'sleep 30', background: true }, undefined, undefined, fakeCtx({ cwd: process.cwd() }));
     expect(result.content[0].text).toMatch(/background/);
-    jobs.stopAll('session end');
+    await jobs.stopAll('session end');
     await Promise.all([...jobs.jobs.values()].map((job) => job.done));
+  });
+
+  it('keeps a job running while children its shell left behind still run, so they stay stoppable', async () => {
+    const jobs = new BashJobs(tmp());
+    let exited = false;
+    const job = await jobs.start('sleep 30 & echo started', tmp(), undefined, () => (exited = true));
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    // The shell is gone, its `sleep 30` is not: the job is still listed and stop() reaches it.
+    expect(exited).toBe(false);
+    expect(jobs.jobs.has(job.id)).toBe(true);
+    expect(jobs.stop(job.id, 'user')).toBe(true);
+    await job.done;
+    expect(groupAlive(job.pid)).toBe(false);
+  });
+
+  it('escalates to SIGKILL before stopAll resolves, for a job that ignores SIGTERM', async () => {
+    const jobs = new BashJobs(tmp());
+    const job = await jobs.start("trap '' TERM; echo ready; while :; do sleep 0.05; done", tmp(), undefined, () => undefined);
+    await until(() => fs.readFileSync(job.log, 'utf8').includes('ready'));
+    await jobs.stopAll('session end');
+    expect(groupAlive(job.pid)).toBe(false);
   });
 
   it('settles its jobs for a headless run: waits for timed ones, stops untimed ones, reports both', async () => {
@@ -258,7 +294,7 @@ describe('bash tool', () => {
     const cwd = tmp();
     for (let index = 0; index < 8; index++) await jobs.start('sleep 30', cwd, undefined, () => undefined);
     await expect(jobs.start('sleep 30', cwd, undefined, () => undefined)).rejects.toThrow(/limit is 8/);
-    jobs.stopAll('session end');
+    await jobs.stopAll('session end');
     await Promise.all([...jobs.jobs.values()].map((job) => job.done));
   });
 

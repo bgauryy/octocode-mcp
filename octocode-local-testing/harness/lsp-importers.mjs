@@ -42,11 +42,11 @@ try {
     },
     timeoutMs: 60_000,
   });
-  // LP8: coverage.importerScan / verifiedImporterFiles are verbose (stats) fields, listed only under extras:["stats"].
+  // coverage.importerScan / verifiedImporterFiles are verbose (stats) fields, listed only under extras:["stats"].
   const entry = await client.call('lspSearch', {
     path: source,
     symbolName: name,
-    lineHint: 1,
+    line: 1,
     operation: 'references',
     includeDeclaration: false,
     extras: ['stats'],
@@ -57,19 +57,19 @@ try {
     !entry.isError && !entry.rowErrors,
     data?.errorCode ?? entry.text
   );
-  const consumer = data?.payload?.files?.find(
+  const consumer = data?.files?.find(
     file => path.basename(file.path) === 'consumer.cjs'
   );
   check(
     'call after five comment mentions is included',
-    // X1: a hit row is an object `{line, column, value}`, not a packed "7:…" string.
+    // A hit row is an object `{line, column, value}`, not a packed "7:…" string.
     consumer?.matches?.some(ref => ref?.line === 7 && /lateImporterTarget\(\)/.test(ref.value ?? '')),
-    JSON.stringify(data?.payload)
+    JSON.stringify(data)
   );
   check(
     'recovery records a complete scan with a verified importer (extras stats)',
-    data?.payload?.coverage?.importerScan === 'complete' && data?.payload?.coverage?.verifiedImporterFiles >= 1,
-    JSON.stringify(data?.payload?.coverage)
+    data?.coverage?.importerScan === 'complete' && data?.coverage?.verifiedImporterFiles >= 1,
+    JSON.stringify(data?.coverage)
   );
   const result = summary();
   writeResults('lsp-importers', { ...result, calls: client.log });

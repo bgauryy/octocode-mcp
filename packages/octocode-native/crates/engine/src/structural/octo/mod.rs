@@ -12,6 +12,7 @@ mod pattern;
 mod rule;
 
 pub(super) use matching::{ExecutionError, named_children, node_text, parse_tree_with_deadline};
+pub use rule::EXAMPLE_RULE;
 pub(super) use rule::{RawRule, parse_rule};
 
 #[cfg(test)]

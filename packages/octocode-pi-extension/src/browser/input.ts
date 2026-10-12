@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { errorMessage, withTimeout } from '../shared/util.js';
 import { abortError, type BrowserSession } from './cdp.js';
 
@@ -134,7 +135,7 @@ export async function drag(page: Page, from: number, to: number, signal?: AbortS
       const at = { x: start.x + ((end.x - start.x) * step) / DRAG_STEPS, y: start.y + ((end.y - start.y) * step) / DRAG_STEPS };
       await mouse(page, 'mouseMoved', at, { button: 'left', buttons: 1 }, signal);
       // Paced like a hand: Chrome starts an HTML5 drag (and reports it) only across separate frames.
-      await new Promise((resolve) => setTimeout(resolve, DRAG_STEP_MS));
+      await sleep(DRAG_STEP_MS, undefined, signal ? { signal } : undefined);
     }
     // An HTML5 drag is reported shortly after the moves; a pointer drag never is.
     if (data === undefined) await new Promise<void>((resolve) => ((intercepted = resolve), setTimeout(resolve, DRAG_INTERCEPT_WAIT_MS)));

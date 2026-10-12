@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
 import {
   DIRECT_TOOL_DEFINITIONS,
   isCliOnlyTool,
@@ -23,13 +22,9 @@ describe('advertised input schema', () => {
   )('%s advertises core’s published view', async name => {
     const definition = DIRECT_TOOL_DEFINITIONS.find(d => d.name === name)!;
     const schema = toolInputSchema(definition) as Standard;
-    const canonical = z.toJSONSchema(definition.inputSchema, {
-      io: 'input',
-      unrepresentable: 'any',
-    }) as Record<string, unknown>;
     expect(
       schema['~standard'].jsonSchema.input({ target: 'draft-2020-12' })
-    ).toEqual(publishedInputSchema(name, canonical));
+    ).toEqual(publishedInputSchema(definition.inputSchema));
   });
 
   it('passes every input through: native is the only validator', () => {

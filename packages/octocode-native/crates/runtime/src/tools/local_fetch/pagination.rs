@@ -1,6 +1,7 @@
 use super::extraction::line_count;
 use super::types::*;
 use crate::security::scan::ContentScan;
+use octocode_engine::security::REDACTION_PREFIX;
 pub struct Page {
     pub text: String,
     pub pagination: Pagination,
@@ -12,7 +13,7 @@ pub struct Page {
 }
 /// Bytes one line page may hold; a single longer line is read in byte
 /// chunks of this size.
-const LINE_PAGE_BYTES: usize = 16_384;
+pub(crate) const LINE_PAGE_BYTES: usize = 16_384;
 
 /// Where a byte page that reaches past the end of an oversized line (one
 /// over [`LINE_PAGE_BYTES`], the only reason a line read pages by bytes)
@@ -29,6 +30,15 @@ fn oversized_line_end(content: &str, offset: usize, end: usize) -> Option<(usize
 }
 
 pub fn page(content: &str, q: &LocalFetchQuery) -> Result<Page, String> {
+    page_within(content, q, LINE_PAGE_BYTES)
+}
+
+/// [`page`] with a line page of at most `line_page_bytes`.
+pub(super) fn page_within(
+    content: &str,
+    q: &LocalFetchQuery,
+    line_page_bytes: usize,
+) -> Result<Page, String> {
     let kind = q.unit.unwrap_or(if q.full_content == Some(true) {
         WindowUnit::Bytes
     } else {
@@ -90,13 +100,18 @@ pub fn page(content: &str, q: &LocalFetchQuery) -> Result<Page, String> {
                 || q.has_ranges()
                 || (q.start_line().is_some() && q.end_line().is_some());
             let requested_limit = q.window_length().unwrap_or(if selected {
-                lines.len().clamp(1, 50_000)
+                // A selected view pages whole, up to the contract's
+                // `length` maximum; the byte budget still bounds the page.
+                lines.len().clamp(
+                    1,
+                    crate::tools::id::query_limits::local_fetch::LENGTH_MAXIMUM,
+                )
             } else {
                 DEFAULT_LINE_CHUNK
             });
             let mut end = (offset + requested_limit).min(lines.len());
             let mut bytes: usize = lines[offset..end].iter().map(|s| s.len()).sum();
-            while bytes > LINE_PAGE_BYTES && end > offset {
+            while bytes > line_page_bytes && end > offset {
                 end -= 1;
                 bytes -= lines[end].len()
             }
@@ -233,7 +248,6 @@ pub fn sanitize_byte_page(
 /// A redacted line longer than this is sliced to the page instead of being
 /// emitted whole.
 const LONG_REDACTED_LINE_BYTES: usize = 64 * 1024;
-const PLACEHOLDER_PREFIX: &str = "[REDACTED";
 /// Unchanged text after a placeholder used to find where its span ends.
 const ANCHOR_BYTES: usize = 32;
 
@@ -246,10 +260,10 @@ const ANCHOR_BYTES: usize = 32;
 fn clean_offset(raw: &str, clean: &str, raw_at: usize) -> usize {
     let (mut i, mut j) = (0usize, 0usize);
     while i < raw_at && j < clean.len() {
-        if clean[j..].starts_with(PLACEHOLDER_PREFIX) {
+        if clean[j..].starts_with(REDACTION_PREFIX) {
             let placeholder_end = clean[j..].find(']').map_or(clean.len(), |at| j + at + 1);
             let anchor_end = clean[placeholder_end..]
-                .find(PLACEHOLDER_PREFIX)
+                .find(REDACTION_PREFIX)
                 .map_or(clean.len(), |at| placeholder_end + at)
                 .min(placeholder_end + ANCHOR_BYTES);
             let mut anchor_end = anchor_end;
@@ -339,21 +353,26 @@ fn map_clean_window(
 pub fn continuation(q: &LocalFetchQuery, p: &Pagination) -> Option<NextCalls> {
     p.next_offset.map(|offset| {
         let mut query = q.clone();
+        // Line pages are the default unit; a line page the caller did not
+        // size takes the line page budget again.
+        let default_lines =
+            |unit: WindowUnit| unit == WindowUnit::Lines && q.full_content != Some(true);
         if let Some(line) = p.resume_line {
             // Past the oversized line, paging is by lines again.
             query.offset = Some(wire_count(line));
-            query.unit = Some(WindowUnit::Lines);
+            query.unit = (!default_lines(WindowUnit::Lines)).then_some(WindowUnit::Lines);
             query.length = None;
         } else {
             query.offset = Some(wire_count(offset));
-            query.unit = Some(p.unit);
-            query.length = wire_positive(p.window);
+            query.unit = (!default_lines(p.unit)).then_some(p.unit);
+            query.length = if default_lines(p.unit) {
+                q.length
+            } else {
+                wire_positive(p.window)
+            };
         }
         NextCalls {
-            r#continue: Some(Continuation {
-                query,
-                reason: None,
-            }),
+            continue_window: Some(Continuation { query }),
             read_bounded_lines: None,
             restart: None,
             ..NextCalls::default()

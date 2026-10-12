@@ -39,11 +39,11 @@ The `read` query passes the input security policy first: a rejected query is dro
 - Relative paths resolve against the process working directory, not `WORKSPACE_ROOT`; pass absolute paths.
 - Relative traversal and paths outside the allowed roots fail with `outsideAllowedRoots` on every local tool.
 - System directories such as `/etc` stay denied even when listed in `ALLOWED_PATHS`.
-- Sensitive names and directories are pruned during discovery and denied again before reads: environment files, private keys and certificates, credential stores, cloud configuration, shell history, browser login stores, infrastructure state, wallets, and application secret files.
+- Sensitive names are withheld by file name and by content, never by a folder's name: a `src/private/` or `secrets/` source folder is read, searched and listed like any other. Discovery prunes and every read denies credential-store directories (`.ssh`, `.aws`, `.kube`, `.gnupg`, …) and credential-named files: environment files (`.env*`), private keys and certificates (`*.pem`, `id_rsa*`), keystores, credential files, shell history, browser login stores, infrastructure state and wallets. A file such as `secrets/prod.env` or `private/key.pem` stays withheld by its own name; any other file's secret-shaped text is redacted by the content scanner.
 - Symlinks are revalidated against their canonical targets; escaped descendants are rejected.
 - File type, size, mutation, and snapshot checks run before evidence is returned.
 
-Denial messages name the path as requested or relative to `~`; outside-root denials list the allowed roots. With `extras:["echo"]`, a `localFetch` row's `resolvedPath` holds the resolved path, which can be absolute.
+Denial messages name the path as requested or relative to `~`; outside-root denials list the allowed roots.
 
 `OCTOCODE_ENABLE_LOCAL=false` disables local tools. `OCTOCODE_BETA=true` (or `local.beta: true`; shell or home config only; default off) gates the CLI-only `astTopology` and `astRewrite`, including the `astRewrite` hash-guarded apply path. MCP never exposes them.
 
@@ -57,8 +57,7 @@ Search, AST, rewrite, providers, response shaping, and bulk orchestration are em
 
 - system Git for `ghCloneRepo`: HTTPS-only remotes, bounded arguments and output, process-group cancellation, staged publication, no token in argv;
 - configured language servers, launched without a shell and owned by the native LSP pool;
-- `gh auth token`, the last GitHub credential source;
-- the packaged bounded regex worker for JavaScript-regex features that Rust regex does not implement.
+- `gh auth token`, the last GitHub credential source.
 
 Language-server provisioning accepts only pinned assets from allowed HTTPS hosts, verifies SHA-256 before extraction, uses per-target locks, and publishes atomically.
 
@@ -75,7 +74,7 @@ GitHub endpoint, credential, session, and cache identities are partitioned. Pagi
 
 ## Cancellation and lifecycle
 
-Requests enter through bounded queues. Cancellation and timeouts propagate through provider requests, filesystem work, regex workers, Git, and LSP. A dropped caller releases its admission and resources; shutdown joins workers and ends pooled processes. Partial or capped evidence is never labeled complete without an executable continuation or an explicit terminal diagnostic.
+Requests enter through bounded queues. Cancellation and timeouts propagate through provider requests, filesystem work, Git, and LSP. A dropped caller releases its admission and resources; shutdown joins workers and ends pooled processes. Partial or capped evidence is never labeled complete without an executable continuation or an explicit terminal diagnostic.
 
 ## Reporting vulnerabilities
 

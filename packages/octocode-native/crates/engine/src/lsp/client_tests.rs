@@ -703,9 +703,21 @@ fn rust_analyzer_client_starts_headless_unless_the_caller_overrides() {
     );
     assert_eq!(options.pointer("/procMacro/enable"), Some(&json!(false)));
 
-    // Other servers are untouched.
+    // typescript-language-server runs headless too (see
+    // `typescript_headless_options`); servers with no defaults are untouched.
+    let ts = NativeLspClient::new(ts_config());
+    assert_eq!(
+        ts.inner
+            .config
+            .initialization_options
+            .as_ref()
+            .and_then(|options| options.get("disableAutomaticTypingAcquisition")),
+        Some(&json!(true))
+    );
+    let mut other = ts_config();
+    other.command = "gopls".into();
     assert!(
-        NativeLspClient::new(ts_config())
+        NativeLspClient::new(other)
             .inner
             .config
             .initialization_options
@@ -1235,7 +1247,7 @@ fn stop_overlapping_a_slow_start_waits_then_tears_it_down() {
     let _ = std::fs::remove_dir_all(root);
 }
 
-/// On macOS and Linux a server whose resident memory passes `maxMemoryMb` is
+/// On macOS and Linux a server whose resident memory passes its memory cap is
 /// killed by the RSS watchdog and its requests fail with a clear "exceeded
 /// memory cap" error.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -1265,6 +1277,10 @@ fn server_over_its_memory_cap_is_killed_with_a_clear_error() {
             .await
             .expect_err("the connection was failed");
         assert!(error.to_string().contains("exceeded memory cap"), "{error}");
+        // A typed cause (callers branch on it, never on the text), and the
+        // text names no setting a caller cannot pass.
+        assert_eq!(*error.kind(), crate::error::ErrorKind::ResourceExhausted);
+        assert!(!error.to_string().contains("maxMemoryMb"), "{error}");
         let _ = client.stop().await;
     });
     let _ = std::fs::remove_dir_all(root);
@@ -1295,11 +1311,12 @@ fn memory_watchdog_is_armed_and_fires_on_macos_and_linux() {
             ProgressTracker::new(),
         ));
         assert!(
-            memory_watchdog_for(&child, None, &connection).is_none(),
+            memory_watchdog_for(&child, None, &connection, Default::default()).is_none(),
             "no cap, no watchdog"
         );
         // A 1-byte cap: the first sample is over it.
-        let _watchdog = memory_watchdog_for(&child, Some(1), &connection).expect("watchdog armed");
+        let _watchdog = memory_watchdog_for(&child, Some(1), &connection, Default::default())
+            .expect("watchdog armed");
         let status = tokio::time::timeout(Duration::from_secs(30), child.wait())
             .await
             .expect("the watchdog kills the tree")

@@ -1,6 +1,7 @@
 //! Result rows: provider items mapped to the published row shapes.
-use crate::providers::github::{ProviderError, utc_timestamp};
+use crate::providers::github::ProviderError;
 use crate::security::scan::{ContentScan, sanitize_provider_text};
+use crate::tools::gh_shared::commit::{commit_date, person, utc_date};
 use crate::tools::result::remove_null_fields;
 use serde_json::{Value, json};
 use std::path::Path;
@@ -29,7 +30,7 @@ pub(super) fn sanitize_items(
 /// stays as sent.
 fn utc(value: Option<&Value>) -> Value {
     match value {
-        Some(Value::String(text)) => json!(utc_timestamp(text).unwrap_or_else(|| text.clone())),
+        Some(Value::String(text)) => json!(utc_date(Some(text))),
         Some(value) => value.clone(),
         None => Value::Null,
     }
@@ -81,25 +82,24 @@ pub(super) fn map_pr(v: Value) -> Value {
 
 /// Drop what the query or the row already says: a `state` equal to the
 /// query's `state` filter, and a merged row's `createdAt` (its `mergedAt`
-/// dates it) unless the rows are sorted by creation (`keep_created`).
-pub(super) fn drop_implied(row: &mut Value, state: Option<&str>, keep_created: bool) {
+/// dates it) unless the rows are sorted by creation (`keep_created`). A key
+/// the caller `picked` (`fields`) is what they asked for: it stays.
+pub(super) fn drop_implied(
+    row: &mut Value,
+    state: Option<&str>,
+    keep_created: bool,
+    picked: &[String],
+) {
     let Some(fields) = row.as_object_mut() else {
         return;
     };
-    if state.is_some() && fields.get("state").and_then(Value::as_str) == state {
+    let named = |key: &str| picked.iter().any(|field| field == key);
+    if state.is_some() && !named("state") && fields.get("state").and_then(Value::as_str) == state {
         fields.shift_remove("state");
     }
-    if !keep_created && fields.contains_key("mergedAt") {
+    if !keep_created && !named("createdAt") && fields.contains_key("mergedAt") {
         fields.shift_remove("createdAt");
     }
-}
-
-pub(super) fn concise_row(v: &Value) -> Value {
-    json!(format!(
-        "#{} {}",
-        v.get("number").and_then(Value::as_u64).unwrap_or(0),
-        v.get("title").and_then(Value::as_str).unwrap_or("")
-    ))
 }
 
 /// An issue row: `updatedAt` only when the rows are sorted by it; labels
@@ -120,19 +120,6 @@ pub(super) fn map_issue(v: Value, by_update: bool) -> Value {
     row
 }
 
-/// A commit person as one string: the GitHub login, else the git name
-/// (emails stay out of default rows).
-pub(crate) fn person(v: &Value, kind: &str) -> Value {
-    v.pointer(&format!("/{kind}/login"))
-        .and_then(Value::as_str)
-        .filter(|login| !login.is_empty())
-        .or_else(|| {
-            v.pointer(&format!("/commit/{kind}/name"))
-                .and_then(Value::as_str)
-        })
-        .map_or(Value::Null, |name| json!(name))
-}
-
 fn headline(v: &Value) -> &str {
     v.pointer("/commit/message")
         .and_then(Value::as_str)
@@ -142,31 +129,12 @@ fn headline(v: &Value) -> &str {
         .unwrap_or("")
 }
 
-/// The pull request a squash-merge headline ends with: `subject (#123)`.
-/// Only the trailing suffix counts, so a revert names the reverting PR.
-pub(crate) fn headline_pull_request(headline: &str) -> Option<u64> {
-    let digits = headline.trim_end().strip_suffix(')')?.rsplit_once("(#")?.1;
-    digits.parse().ok().filter(|number| *number > 0)
-}
-
-/// `prNumber` on a commit row whose headline ends in `(#N)`.
-fn with_pull_request(mut row: Value) -> Value {
-    if let Some(number) = row
-        .get("messageHeadline")
-        .and_then(Value::as_str)
-        .and_then(headline_pull_request)
-    {
-        row["prNumber"] = json!(number);
-    }
-    row
-}
-
 /// A commit-search row. No per-row html_url: it is owner/repo/commit/sha,
 /// all already in the row and its envelope (issue and PR rows omit it too).
 pub(super) fn map_commit(v: Value) -> Value {
-    let mut row = json!({"sha":v["sha"],"messageHeadline":headline(&v),"date":utc(v.pointer("/commit/author/date")),"author":person(&v, "author")});
+    let mut row = json!({"commitSha":v["sha"],"date":commit_date(&v),"messageHeadline":headline(&v),"author":person(&v, "author")});
     remove_null_fields(&mut row);
-    with_pull_request(row)
+    row
 }
 
 /// A commit-list row: headline, date and the author's login; the full
@@ -180,8 +148,8 @@ pub(super) fn map_commit_list(v: Value) -> Value {
         || v.pointer("/committer/login").and_then(Value::as_str) == Some("web-flow")
         || v.pointer("/commit/committer/name") == v.pointer("/commit/author/name");
     let mut row = json!({
-        "sha": v["sha"],
-        "date": utc(v.pointer("/commit/author/date")),
+        "commitSha": v["sha"],
+        "date": commit_date(&v),
         "messageHeadline": headline(&v),
         "author": author,
     });
@@ -189,7 +157,7 @@ pub(super) fn map_commit_list(v: Value) -> Value {
         row["committer"] = committer;
     }
     remove_null_fields(&mut row);
-    with_pull_request(row)
+    row
 }
 
 /// The row a default read targets: the first readable row `prefer` picks
@@ -205,6 +173,27 @@ pub(super) fn read_target(items: &[Value], prefer: fn(&Value) -> bool) -> Option
 
 pub(super) fn item_number(item: &Value) -> Option<u64> {
     item.get("number").and_then(Value::as_u64)
+}
+
+/// The repository a cross-repository row reads from, as the ghGetHistoryItem
+/// inputs it feeds: `repo` when the query fixed only the owner, `owner` and
+/// `repo` when it fixed neither; a repository-scoped row names neither.
+pub(super) fn name_repository(
+    row: &mut Value,
+    item: &Value,
+    owner: Option<&str>,
+    repo: Option<&str>,
+) {
+    if repo.is_some() {
+        return;
+    }
+    let Some((item_owner, item_repo)) = item_repo(item) else {
+        return;
+    };
+    if owner.is_none_or(|owner| !owner.eq_ignore_ascii_case(&item_owner)) {
+        row["owner"] = json!(item_owner);
+    }
+    row["repo"] = json!(item_repo);
 }
 
 /// `owner`/`repo` of a search item, from its `repository_url`

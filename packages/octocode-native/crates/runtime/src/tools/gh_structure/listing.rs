@@ -1,6 +1,7 @@
 //! One listing page: the pinned ref, the page window, the entries and
 //! their continuations.
 use super::*;
+use crate::tools::root_read::read_rank;
 
 /// Pin the listing to one commit: an explicit ref that does not resolve is
 /// an error (like ghGetFileContent), never a silent default-branch listing,
@@ -109,25 +110,44 @@ impl<'a> ListingPage<'a> {
         self.current < self.total_pages
     }
 
+    /// The requested page lies past the last page of the listing.
+    pub(super) fn past_end(&self) -> bool {
+        self.current > self.total_pages
+    }
+
+    /// The `pagination` block: shown when the listing has more than one page,
+    /// and on a page past the end of any listing (the response layer words
+    /// the page count and leads back to page 1).
     pub(super) fn paginate(&self, value: &mut Value) {
-        if self.total_pages > 1 {
+        if self.total_pages > 1 || self.past_end() {
             value["pagination"] = crate::response::pages::PageFacts::counted(
                 self.current,
                 self.per_page,
                 self.total_entries,
             )
+            .out_of_range(self.past_end())
             .to_value();
         }
     }
 }
 
-/// File and folder counts of one page.
+/// File and folder counts of the whole listing (never one page's share), and
+/// the bytes of the files whose size the provider states.
 pub(super) fn summary(entries: &[TreeEntry]) -> Value {
     let files = entries
         .iter()
         .filter(|entry| entry.kind == EntryKind::File)
         .count();
-    json!({"totalFiles": files, "totalFolders": entries.len() - files})
+    let mut summary = json!({"files": files, "dirs": entries.len() - files});
+    let bytes = entries
+        .iter()
+        .filter(|entry| entry.kind == EntryKind::File)
+        .map(|entry| entry.size)
+        .collect::<Option<Vec<_>>>();
+    if let Some(sizes) = bytes {
+        summary["bytes"] = json!(sizes.iter().sum::<u64>());
+    }
+    summary
 }
 
 /// Provider limits and skipped entries of the walk, stated on the page.
@@ -138,12 +158,13 @@ pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: 
         value["terminalLimit"] = json!(true);
         value["providerLimit"] = json!({
             "reason": "providerContentsLimit",
-            "maxEntriesPerDirectory": CONTENTS_LIMIT,
-            "completeness": "unknown"
+            "maxEntriesPerDirectory": CONTENTS_LIMIT
         });
         output.diagnostics.add(
             "terminalLimitReached",
-            "A GitHub Contents directory reached the 1000-entry provider limit; completeness is unknown.",
+            &format!(
+                "A GitHub Contents directory reached the {CONTENTS_LIMIT}-entry provider limit; completeness is unknown."
+            ),
             true,
         );
     }
@@ -152,8 +173,7 @@ pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: 
         value["terminalLimit"] = json!(true);
         value["providerLimit"] = json!({
             "reason": "treeFetchLimit",
-            "maxDirectoryFetches": MAX_DIRECTORY_FETCHES,
-            "completeness": "partial"
+            "maxDirectoryFetches": MAX_DIRECTORY_FETCHES
         });
         output.diagnostics.add(
             "terminalLimitReached",
@@ -164,12 +184,9 @@ pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: 
         );
     }
     if !traversal.omitted.is_empty() {
-        // Dependency/VCS/build directories are skipped by design; say so
-        // instead of silently dropping them.
-        value["omitted"] = json!({
-            "reason": "ignoredEntries",
-            "entries": traversal.omitted,
-        });
+        // Dependency/VCS/build directories are skipped by design; name each
+        // skipped name with its count instead of silently dropping them.
+        value["omitted"] = json!(traversal.omitted);
     }
     if traversal.failed_subtrees > 0 {
         partial_reasons.push("partialTreeFailures");
@@ -185,10 +202,27 @@ pub(super) fn disclose_limits(traversal: &Traversal, value: &mut Value, output: 
     }
 }
 
+/// A directory past GitHub's Contents listing limit is complete only in a
+/// checkout: the clone of the listed path at the listed commit.
+pub(super) fn clone_lead(query: &GhStructureQuery, scope: &Scope, commit_sha: &str) -> Value {
+    let mut clone = json!({
+        "owner": query.owner.as_str(),
+        "repo": query.repo.as_str(),
+        "ref": commit_sha,
+    });
+    if !scope.path.is_empty() {
+        clone["path"] = json!(scope.path);
+    }
+    crate::tools::result::Continuation::new(ToolId::GhCloneRepo, clone)
+        .confidence("exact")
+        .build()
+}
+
 /// The read a listing leads to on its first page: the best-ranked listed
-/// file ([`read_rank`]): a source file a bare-word `include` names, else the
-/// shallowest code entry file, other source, a manifest, then a README. A
-/// small listing falls back to its first file. Source and docs are outlined
+/// file ([`read_rank`](crate::tools::root_read::read_rank), the ranking
+/// structureSearch shares): a source file a bare-word `include` names, else
+/// the shallowest code entry file, a manifest, a README, a guide, then other
+/// source. A small listing falls back to its first file. Source and docs are outlined
 /// (`minify:"symbols"`).
 pub(super) fn entry_read(
     query: &GhStructureQuery,
@@ -200,15 +234,16 @@ pub(super) fn entry_read(
         .filter(|entry| entry.kind == EntryKind::File)
         .collect::<Vec<_>>();
     let words = bare_words(query.include.iter().map(|word| word.as_str()));
+    let base_depth = query.path.as_deref().map_or(0, |path| {
+        path.split('/').filter(|part| !part.is_empty()).count()
+    });
     let small = files.len() <= crate::tools::OUTLINE_LEAD_MAX_FILES;
     let path = files
         .iter()
         .filter_map(|entry| {
-            let rank = read_rank(&entry.path, &words).or(small.then_some(RANK_ANY))?;
-            Some((
-                (rank, entry.path.matches('/').count(), entry.path.as_str()),
-                entry,
-            ))
+            let depth = entry.path.matches('/').count().saturating_sub(base_depth);
+            let rank = read_rank(&entry.path, depth, &words).or(small.then_some(RANK_ANY))?;
+            Some(((rank, depth, entry.path.as_str()), entry))
         })
         .min_by(|left, right| left.0.cmp(&right.0))
         .map(|(_, entry)| entry.path.clone())?;
@@ -229,7 +264,7 @@ pub(super) fn entry_read(
 }
 
 /// Rank of a file no tier names; only a small listing reads it.
-const RANK_ANY: u8 = 5;
+const RANK_ANY: u8 = 6;
 
 /// `include` entries that are bare words (no glob metacharacter or `/`),
 /// lowercased: a file whose stem equals one is the file the caller named.
@@ -240,60 +275,6 @@ fn bare_words<'a>(include: impl IntoIterator<Item = &'a str>) -> Vec<String> {
         .filter(|word| !word.is_empty() && !word.contains(['/', '*', '?', '[', '{']))
         .map(str::to_lowercase)
         .collect()
-}
-
-/// A listed file's read rank (lower reads first): 0 a non-test source file
-/// whose stem a bare-word `include` names; 1 a code entry file (package
-/// init, index, mod/lib root, main); 2 other non-test source; 3 a manifest;
-/// 4 a README. `None` for anything else (tests, data, config).
-fn read_rank(path: &str, words: &[String]) -> Option<u8> {
-    let name = file_name(path);
-    let lower = name.to_ascii_lowercase();
-    let code = matches!(
-        crate::content::classify_file_type(path),
-        Some(crate::content::FileType::Code)
-    ) && !crate::content::is_test_path(path);
-    let stem = lower
-        .rsplit_once('.')
-        .map_or(lower.as_str(), |(stem, _)| stem);
-    if code && words.iter().any(|word| word == stem) {
-        return Some(0);
-    }
-    if code
-        && CODE_ENTRY_FILES
-            .iter()
-            .any(|wanted| entry_matches(name, wanted))
-    {
-        return Some(1);
-    }
-    if code {
-        return Some(2);
-    }
-    if MANIFEST_FILES.contains(&lower.as_str()) {
-        return Some(3);
-    }
-    if lower.starts_with("readme") {
-        return Some(4);
-    }
-    None
-}
-
-/// Code entry files: package init, index, module root, main.
-const CODE_ENTRY_FILES: &[&str] = &["__init__.py", "index.*", "mod.rs", "lib.rs", "main.*"];
-
-/// Package manifests a read can lead to when a listing has no source.
-const MANIFEST_FILES: &[&str] = &["package.json", "cargo.toml", "pyproject.toml", "go.mod"];
-
-pub(super) fn entry_matches(name: &str, wanted: &str) -> bool {
-    let name = name.to_ascii_lowercase();
-    match wanted.strip_suffix('*') {
-        Some(stem) => name.starts_with(stem),
-        None => name == wanted,
-    }
-}
-
-pub(super) fn file_name(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
 }
 
 /// Listing rows grouped by directory. `dir` is repo-relative (the same base
@@ -309,7 +290,7 @@ pub(super) fn attach_fields(value: &mut Value, entries: &[TreeEntry]) {
         .filter(|entry| entry.kind == EntryKind::File)
         .filter_map(|entry| Some((entry.path.as_str(), entry.size?)))
         .collect::<std::collections::HashMap<_, _>>();
-    let Some(rows) = value.get_mut("entries").and_then(Value::as_array_mut) else {
+    let Some(rows) = value.get_mut("files").and_then(Value::as_array_mut) else {
         return;
     };
     for row in rows {
@@ -430,7 +411,6 @@ pub(super) fn attach_continuations(
         (has_more && materialize).then_some(MaterializeResume {
             page: current + 1,
             offset: 0,
-            reason: "listing",
         })
     });
     let last_page = crate::tools::id::query_limits::gh_structure::PAGE_MAXIMUM;
@@ -445,34 +425,19 @@ pub(super) fn attach_continuations(
         next_query["pageSize"] = json!(page.per_page);
         next_query["materialize"] = json!(true);
         next_query["materializeOffset"] = json!(resume.offset);
-        value["next"]["continueMaterialize"] = continuation(
-            next_query,
-            format!(
-                "Continue writing tree files from listing offset {} ({})",
-                resume.offset, resume.reason
-            ),
-            "exact",
-        );
+        value["next"]["continueMaterialize"] = continuation(next_query, "exact");
         mark_materialize_partial(value);
     } else if has_more && !materialize {
         let mut next_query = public_query(query)?;
         next_query["page"] = json!(current + 1);
         next_query["pageSize"] = json!(page.per_page);
-        value["next"]["nextPage"] = continuation(
-            next_query,
-            format!("Continue tree results on page {}.", current + 1),
-            "exact",
-        );
+        value["next"]["nextPage"] = continuation(next_query, "exact");
     }
     if retry_tree {
         let mut retry = public_query(query)?;
         retry["page"] = json!(current);
         retry["pageSize"] = json!(page.per_page);
-        value["next"]["retry"] = continuation(
-            retry,
-            "Retry the same tree provider page because the provider reported incomplete results.",
-            "exact",
-        );
+        value["next"]["retry"] = continuation(retry, "exact");
     }
     Ok(())
 }
@@ -484,20 +449,15 @@ pub(super) fn public_query(query: &GhStructureQuery) -> Result<Value, ProviderEr
     Ok(query)
 }
 
-pub(super) fn continuation(
-    query: Value,
-    why: impl Into<String>,
-    confidence: &'static str,
-) -> Value {
+pub(super) fn continuation(query: Value, confidence: &'static str) -> Value {
     crate::tools::result::Continuation::new(ToolId::GhStructure, query)
-        .why(why)
         .confidence(confidence)
         .build()
 }
 
 pub(super) fn structure_is_empty(value: &Value) -> bool {
     value
-        .get("entries")
+        .get("files")
         .and_then(Value::as_array)
         .is_none_or(Vec::is_empty)
 }
@@ -547,6 +507,20 @@ mod read_lead_tests {
         assert_eq!(
             lead(&["README.md", "Cargo.toml"], &[]).as_deref(),
             Some("Cargo.toml")
+        );
+        // A root with loose scripts reads its manifest, not a script (zod's
+        // `mm.mjs`); a nested README does not outrank source.
+        assert_eq!(
+            lead(&["README.md", "AGENTS.md", "mm.mjs", "package.json"], &[]).as_deref(),
+            Some("package.json")
+        );
+        assert_eq!(
+            lead(&["README.md", "download-latest.sh"], &[]).as_deref(),
+            Some("README.md")
+        );
+        assert_eq!(
+            lead(&["examples/a/README.md", "src/util.ts"], &[]).as_deref(),
+            Some("src/util.ts")
         );
         // A large listing never leads to a file no tier names.
         let data = (0..8).map(|n| format!("data/{n}.csv")).collect::<Vec<_>>();

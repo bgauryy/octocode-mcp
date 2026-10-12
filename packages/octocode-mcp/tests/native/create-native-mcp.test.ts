@@ -82,6 +82,8 @@ class FakeRuntime implements NativeRuntime {
 
   readonly cancelled: string[] = [];
   hang = false;
+  /** When set, `executeMcp` rejects with it. */
+  failure: unknown;
 
   cancel(requestId: string): boolean {
     this.cancelled.push(requestId);
@@ -94,6 +96,7 @@ class FakeRuntime implements NativeRuntime {
     input: unknown
   ): Promise<unknown> {
     this.executions.push({ requestId, tool, input });
+    if (this.failure !== undefined) throw this.failure;
     if (this.hang) {
       await new Promise<void>(resolve => {
         const poll = setInterval(() => {
@@ -513,6 +516,118 @@ describe('createNativeMcp registration + execution', () => {
     expect(runtime.cancelled[0]).toMatch(/^\d+$/);
     await client.close();
     await instance.close();
+  });
+
+  describe('native execution errors', () => {
+    /** The addon's rejection: a scrubbed, typed `octocode.nativeError`. */
+    const nativeError = (
+      code: string,
+      message: string,
+      payload: unknown = null
+    ) =>
+      new Error(
+        JSON.stringify({ kind: 'octocode.nativeError', code, message, payload })
+      );
+
+    async function callFailing(failure: unknown) {
+      const stderr = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => true);
+      const instance = await createNativeMcp({
+        env: {},
+        binding: bindingFor(() => ({
+          fingerprint: getNativeContractFingerprint(),
+          tools: [tool('localFetch', true)],
+        })),
+      });
+      const client = new Client({ name: 'native-errors', version: '1' });
+      const [serverTransport, clientTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        instance.server.connect(serverTransport),
+        client.connect(clientTransport),
+      ]);
+      FakeRuntime.last!.failure = failure;
+      try {
+        return await client.callTool({
+          name: 'localFetch',
+          arguments: {
+            queries: [{ mainGoal: 'g', reasoning: 'r', path: '.' }],
+          },
+        });
+      } finally {
+        stderr.mockRestore();
+        await client.close();
+        await instance.close();
+      }
+    }
+
+    it.each([
+      ['timeout', 'Request timed out after 300 s.'],
+      ['busy', 'The runtime is at its concurrency limit.'],
+      [
+        'toolUnavailable',
+        'Tool clasify is not available in this native runtime: needs classification.api (OCTOCODE_CLASSIFICATION_API)',
+      ],
+    ])(
+      'returns a typed %s tool error with the native message, not "see the server logs"',
+      async (code, message) => {
+        const result = await callFailing(nativeError(code, message));
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toEqual({
+          error: message,
+          errorCode: code,
+        });
+        expect(result.content).toEqual([
+          { type: 'text', text: `${message} (errorCode: ${code})` },
+        ]);
+      }
+    );
+
+    it('carries the payload repair details like the CLI envelope', async () => {
+      const result = await callFailing(
+        nativeError('timeout', 'Timeout', {
+          error: 'Timeout',
+          details: ['Retry with a narrower path.'],
+        })
+      );
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error: 'Timeout',
+        details: ['Retry with a narrower path.'],
+        errorCode: 'timeout',
+      });
+      expect(result.content).toEqual([
+        {
+          type: 'text',
+          text: 'Timeout; Retry with a narrower path. (errorCode: timeout)',
+        },
+      ]);
+    });
+
+    it.each([
+      ['a non-native error', new Error('ENOENT /Users/me/.ssh/id_rsa')],
+      ['a non-error value', 'boom'],
+      ['unparseable JSON', new Error('{"kind":')],
+      ['a foreign JSON kind', new Error('{"kind":"other","code":"x"}')],
+      [
+        'a native error without a code',
+        new Error('{"kind":"octocode.nativeError","message":"m"}'),
+      ],
+    ])(
+      'keeps %s generic and out of the client text',
+      async (_name, failure) => {
+        const result = await callFailing(failure);
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toBeUndefined();
+        expect(result.content).toEqual([
+          {
+            type: 'text',
+            text: 'Tool localFetch failed to execute; see the server logs for detail.',
+          },
+        ]);
+      }
+    );
   });
 
   it('never registers CLI-only tools even when native reports them available', async () => {

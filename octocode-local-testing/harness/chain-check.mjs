@@ -67,15 +67,15 @@ const REF_TARGET = {
   ghSearchRepo: 3, ghSearchCode: 3, ghStructure: 3, ghGetFileContent: 3, ghSearchHistory: 3, ghGetHistoryItem: 5,
   artifactSearch: 3, ghCloneRepo: 3, clasify: 3,
 };
-/** Duplicate fields for one purpose (PLAN A5, A8, A9, A10): [kept, duplicate, decision]. */
+/** Duplicate fields for one purpose: [kept, duplicate, decision]. */
 const DUPLICATES = [
-  ['exclude', 'excludeDir', 'A5'], ['matchContentLength', 'matchWindow', 'A9'], ['commentPage', 'commentOffset', 'A8'],
+  ['exclude', 'excludeDir', 'A5'], ['matchContentLength', 'matchWindow', 'A9'], ['page', 'commentOffset', 'A8'],
   ['qualifiers', 'author', 'A10'], ['qualifiers', 'committer', 'A10'], ['qualifiers', 'label', 'A10'], ['qualifiers', 'branch', 'A10'],
 ];
-/** Same-name behavior notes (ratings/MCP-WHOLE.md §4, PLAN A1–A12). `check` = schema-verifiable alignment. */
+/** Same-name behavior notes (ratings/MCP-WHOLE.md §4). `check` = schema-verifiable alignment. */
 const BEHAVIOR = {
   matchString: { note: 'localSearch: search pattern (regex default rust); fetch tools: literal anchor (string or ≤10 list); ghGetHistoryItem: literal hunk filter (string only)', decision: 'A1/A2: keep; docs say so' },
-  symbolName: { note: 'astSearch: substring or list, exact-first; lspSearch: exact identifier at lineHint', decision: 'A3: astSearch string behaves like a list (exact-first)' },
+  symbolName: { note: 'astSearch: substring or list, exact-first; lspSearch: exact identifier at line', decision: 'A3: astSearch string behaves like a list (exact-first)' },
   include: { note: 'localSearch/ghGetHistoryItem: path glob; structureSearch: ORed globs; ghStructure: globs or a bare word, raises maxDepth', decision: 'A4: bare word → **/*word* in every tool; include searches recursively in every listing tool' },
   maxDepth: { note: 'ghStructure default 1 (20 with include); structureSearch default 2; localSearch/astSearch hidden recursion', decision: 'A6: 1 = direct children; listing tools default 1' },
   extensions: { note: 'ghSearchCode max 1; structureSearch up to 100', decision: 'A7: ghSearchCode fans out several extensions',
@@ -99,9 +99,9 @@ const NATURAL_NEXT = {
   ghGetHistoryItem: ['ghGetHistoryItem', 'ghGetFileContent'],
   localFetch: null, ghGetFileContent: null, // final reads
 };
-/** Withheld evidence must be a `next` page, never a `hints` lead (PLAN C7, PG6). */
+/** Withheld evidence must be a `next` page, never a `hints` lead. */
 const WITHHELD = /^(readHits\d*|readDeclaration\d*|wholeLines|readBoundedLines|readFullPatches\d*|readUntrimmed)$/;
-/** Counters that belong under an `extras` kind (PLAN B5). */
+/** Counters that belong under an `extras` kind. */
 const DEBUG_COUNTERS = ['sourceChars', 'returnedChars', 'returnedLines', 'returnedBytes', 'sourceBytes', 'httpStatus', 'retryable'];
 /** Fixed live samples: competitor task ids (first matching step); `drop` removes fields the sample does not need. */
 const SAMPLES = {
@@ -121,7 +121,7 @@ const PROBES = {
   localFetch: { empty: { path: 'README.md', matchString: NEVER }, error: { path: 'nope.ts' } },
   structureSearch: { empty: { path: CFG, operation: 'files', nameRegex: NEVER }, error: { path: 'nope/dir' } },
   astSearch: { empty: { operation: 'symbols', path: CFG, symbolName: NEVER }, error: { operation: 'symbols', path: 'nope/dir', symbolName: 'x' } },
-  lspSearch: { empty: null, error: { path: 'nope/x.ts', symbolName: 'foo', lineHint: 1, operation: 'definition' } },
+  lspSearch: { empty: null, error: { path: 'nope/x.ts', symbolName: 'foo', line: 1, operation: 'definition' } },
   astTopology: { empty: null, error: { operation: 'cycles', path: 'nope/dir' } },
   astRewrite: { empty: { path: CFG, language: 'typescript', pattern: `${NEVER}($A)`, rewrite: 'x($A)' }, error: { path: 'nope/dir', language: 'typescript', pattern: 'f($A)', rewrite: 'g($A)' } },
   ghSearchRepo: { empty: { keywords: [NEVER] }, error: null },
@@ -136,7 +136,7 @@ const PROBES = {
 };
 
 /** Walk order: a page reached through a continuation of rank r offers only continuations of rank ≥ r. */
-const WALK_ORDER = ['nextPage', 'nextFilePage', 'nextCommitPage', 'nextCommentPage', 'nextReviewPage', 'nextContributorPage', 'nextBranchPage', 'nextTagPage', 'nextLanguagePage', 'nextDiagnosticPage', 'nextMatchPage', 'continuePatch', 'continueBody', 'continueReviewBody', 'continueCommentBody', 'continueBlock', 'continueWalk', 'continueMaterialize', 'continue', 'responsePagination.next'];
+const WALK_ORDER = ['nextPage', 'nextFilePage', 'nextCommitPage', 'nextCommentPage', 'nextReviewPage', 'nextContributorPage', 'nextBranchPage', 'nextTagPage', 'nextLanguagePage', 'nextDiagnosticPage', 'nextMatchPage', 'continuePatch', 'continueBody', 'continueReviewBody', 'continueCommentBody', 'continueBlock', 'continueWalk', 'continueMaterialize', 'continueWindow', 'responsePagination.next'];
 const walkRank = name => { const i = WALK_ORDER.indexOf(name); return i < 0 ? WALK_ORDER.length : i; };
 
 // ---------- small helpers ----------
@@ -510,7 +510,7 @@ async function liveChecks(tools, contract, tasks) {
         const label = `${sample.id} p${i + 1}${i ? ` (${via})` : ''}`;
         const se = schemaErrors(e);
         if (se.count) { res.output.ok = false; res.output.reasons.push(`${label}: schema error ${se.codes.join(',')} ${short(se.detail, 120)}`); }
-        // Output: verbose fields (contract verbosePaths + harness rules + B5 counters).
+        // Output: verbose fields (contract verbosePaths + harness rules + debug counters).
         const ct = contract.tools.find(x => x.name === tool);
         const queries = e.args?.queries ?? [];
         if (!queries.some(q => q?.extras?.length) && e.raw) {
@@ -623,7 +623,7 @@ const listed = Object.fromEntries(list.tools.map(t => [t.name, t]));
 const toolsListBytes = JSON.stringify(list.tools).length;
 const instructionsBytes = (list.init?.instructions ?? '').length;
 list.close();
-// B8 measures the default surface: beta off, no classification key. clasify
+// The surface budget measures the default surface: beta off, no classification key. clasify
 // is opt-in (a key registers it), so its addition has its own budget.
 const surfaceOf = async env => {
   const server = await startServer({ cwd: ROOT, env: { OCTOCODE_BETA: 'false', ...env } });

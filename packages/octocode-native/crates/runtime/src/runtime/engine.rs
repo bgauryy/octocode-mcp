@@ -2,7 +2,6 @@ use super::{ExecutionContext, ExecutionError, RequestRuntime, RuntimeLimits};
 use crate::config::{self, ConfigInput, ConfigOutput, RuntimeSurface};
 use crate::contracts;
 use crate::policy::path::{PathPolicy, PathPolicyConfig};
-use crate::regex::{IsolatedRegexEngine, IsolatedRegexLimits};
 use crate::response::pager::{ResponsePageOptions, TextContent};
 use crate::response::{continuations, extras, read_share, render, rows, stage};
 use crate::security::{ContentSecurity, ValidationResult};
@@ -31,7 +30,6 @@ const LOCAL_DISABLED: &str =
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct HostOptions {
     pub cwd: Option<PathBuf>,
-    pub regex_worker_path: Option<PathBuf>,
     /// Explicit host environment. Embedders use this to keep configuration
     /// injection deterministic; standalone surfaces fall back to process env.
     pub env: Option<BTreeMap<String, String>>,
@@ -72,7 +70,6 @@ pub struct ToolRuntime {
     config: Arc<ConfigOutput>,
     paths: Arc<PathPolicy>,
     security: Arc<ContentSecurity>,
-    regex: Option<Arc<IsolatedRegexEngine>>,
     github_cache: super::github_cache::GitHubContentCache,
     github_services: Arc<
         std::sync::OnceLock<
@@ -197,7 +194,6 @@ pub struct ToolOutcome {
     pub source_digest: Option<String>,
     pub failure: Option<FailureKind>,
     pub all_failed: bool,
-    pub(crate) tool: ToolId,
 }
 
 /// An invalid row of an isolated batch, shaped like any other error row.
@@ -206,25 +202,22 @@ fn rejected_row(
     index: usize,
     raw: Value,
     error: &contracts::ContractValidationError,
-    mcp: bool,
 ) -> (usize, Value) {
-    let formatted = contracts::format_input_error(tool.as_str(), error, mcp);
-    let data = json!({
+    let formatted = contracts::format_input_error(tool.as_str(), error);
+    let mut data = json!({
         "error": formatted["error"],
         "errorCode": "invalidInput",
-        "hints": formatted["details"],
     });
+    if let Some(details) = formatted.get("details") {
+        data["hints"] = details.clone();
+    }
     let mut row = rows::result_row(tool, index, &raw, data, Some("error"));
     extras::prune_row(&mut row, tool, &raw);
     (index, row)
 }
 
-fn invalid_input_error(
-    tool: &str,
-    error: contracts::ContractValidationError,
-    mcp: bool,
-) -> RuntimeError {
-    let mut payload = contracts::format_input_error(tool, &error, mcp);
+fn invalid_input_error(tool: &str, error: contracts::ContractValidationError) -> RuntimeError {
+    let mut payload = contracts::format_input_error(tool, &error);
     payload["errorCode"] = json!("invalidInput");
     RuntimeError {
         code: "invalidInput".into(),
@@ -461,18 +454,6 @@ impl ToolRuntime {
             })
             .map_err(|e| RuntimeError::new("runtime", format!("{e:?}")))?;
         }
-        let worker_path = options.regex_worker_path.or_else(|| {
-            (options.surface == RuntimeSurface::Cli)
-                .then(|| std::env::current_exe().ok())
-                .flatten()
-                .and_then(|exe| regex_worker_beside(&exe))
-        });
-        if let Some(path) = worker_path {
-            runtime.regex = Some(Arc::new(IsolatedRegexEngine::new(
-                path,
-                IsolatedRegexLimits::default(),
-            )));
-        }
         Ok(runtime)
     }
 
@@ -482,11 +463,15 @@ impl ToolRuntime {
         let octocode_home = config.home.clone();
         let mut additional_roots: Vec<PathBuf> =
             local.allowed_paths.iter().map(PathBuf::from).collect();
-        additional_roots.push(octocode_home.clone());
+        // Local tools read the GitHub checkouts (clones, materialized trees)
+        // under the cache home, never the rest of it (credentials, logs).
+        additional_roots.extend([
+            crate::tools::gh_clone_repo::cache::clones_root(&octocode_home),
+            crate::tools::gh_structure::materialize::materialize_root(&octocode_home),
+        ]);
         // Default sandbox: the configured workspace, or the process cwd when
-        // unconfigured — never all of $HOME. octocode_home stays an additional
-        // root for cache. Broad $HOME access is opt-in only, via an explicit
-        // workspaceRoot or an allowedPaths entry.
+        // unconfigured — never all of $HOME. Broad $HOME access is opt-in
+        // only, via an explicit workspaceRoot or an allowedPaths entry.
         let workspace_root = local
             .workspace_root
             .as_ref()
@@ -539,7 +524,6 @@ impl ToolRuntime {
             config,
             paths: Arc::new(paths),
             security: Arc::new(security),
-            regex: None,
             github_cache,
             github_services: Arc::new(std::sync::OnceLock::new()),
             lsp_pool: Arc::new(octocode_engine::lsp::pool::LspClientPool::default()),
@@ -565,9 +549,6 @@ impl ToolRuntime {
         &self.config
     }
     pub fn begin_close(&self) {
-        if let Some(regex) = &self.regex {
-            regex.shutdown();
-        }
         self.requests.begin_close();
     }
     pub async fn close(&self) {
@@ -718,6 +699,61 @@ impl ToolRuntime {
             "code": error.code,
             "message": error.message,
         })
+    }
+
+    /// What keeps `tool` off this runtime, naming the setting (and its
+    /// environment variables) that disabled it.
+    fn unavailable_reason(&self, tool: &str) -> String {
+        let setting = |path: &str| {
+            let env = crate::config::CONFIG_FIELDS
+                .iter()
+                .find(|field| field.path == path)
+                .map(|field| {
+                    field
+                        .env
+                        .iter()
+                        .map(|binding| binding.name)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if env.is_empty() {
+                path.to_owned()
+            } else {
+                format!("{path} ({})", env.join(" | "))
+            }
+        };
+        let tools = &self.config.resolved.tools;
+        if tools
+            .disabled
+            .as_ref()
+            .is_some_and(|names| names.iter().any(|name| name == tool))
+        {
+            return format!("{} lists it.", setting("tools.disabled"));
+        }
+        if tools
+            .enabled
+            .as_ref()
+            .is_some_and(|names| !names.iter().any(|name| name == tool))
+        {
+            return format!("{} does not list it.", setting("tools.enabled"));
+        }
+        let Some(id) = ToolId::from_name(tool) else {
+            return "no such tool.".into();
+        };
+        if id.is_local() && !self.config.resolved.local.enabled {
+            return format!("local tools are off by {}.", setting("local.enabled"));
+        }
+        if id == CLASSIFICATION_TOOL
+            && self
+                .classification_unreachable
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return "the classification provider failed the startup probe.".into();
+        }
+        match id.availability_config_path() {
+            Some(path) => format!("it needs {}.", setting(path)),
+            None => "this surface does not run it.".into(),
+        }
     }
 
     fn resolve_available(&self, id: ToolId) -> bool {
@@ -930,7 +966,21 @@ impl ToolRuntime {
         mcp: bool,
         render_text: bool,
     ) -> Result<ToolOutcome, RuntimeError> {
-        let id = self.admit_tool(&tool, mcp)?;
+        let id = match self.admit_tool(&tool, mcp) {
+            Ok(id) => id,
+            // A setting the call lacks is reported after its input: an
+            // invalid query fails as invalidInput whatever is configured.
+            Err(error) => {
+                if error.code == "missingConfiguration"
+                    && let Some(id) = ToolId::from_name(&tool)
+                    && let Err(invalid) = self.admit_queries(id, &input)
+                    && invalid.code == "invalidInput"
+                {
+                    return Err(invalid);
+                }
+                return Err(error);
+            }
+        };
         let clasify = if id.is_clasify() {
             crate::tools::clasify::reject_response_pagination(&input)?;
             Some(self.clasify_settings())
@@ -940,7 +990,7 @@ impl ToolRuntime {
         // Parse response-paging options before contract validation.
         let mut options = ResponsePageOptions::deserialize(&input).unwrap_or_default();
         options.render_text = Some(render_text);
-        let (queries, rejected_rows) = self.admit_queries(id, &input, mcp)?;
+        let (queries, rejected_rows) = self.admit_queries(id, &input)?;
         let response_query = if queries.len() == 1 {
             queries[0].clone()
         } else {
@@ -1016,7 +1066,10 @@ impl ToolRuntime {
         let unavailable = || {
             RuntimeError::new(
                 "toolUnavailable",
-                format!("Tool {tool} is not available in this native runtime"),
+                format!(
+                    "Tool {tool} is not available in this native runtime: {}",
+                    self.unavailable_reason(tool)
+                ),
             )
         };
         if self.is_available(tool) {
@@ -1042,8 +1095,8 @@ impl ToolRuntime {
             return Err(RuntimeError::new(
                 "missingConfiguration",
                 format!(
-                    "clasify requires OCTOCODE_CLASSIFICATION_API (the {vendor} vendor's key). \
-                     Create a classification provider API key ({}) and set \
+                    "clasify requires OCTOCODE_CLASSIFICATION_API. Create a \
+                     classification provider API key ({}) and set \
                      OCTOCODE_CLASSIFICATION_API before retrying.",
                     p.docs_url(),
                 ),
@@ -1060,13 +1113,12 @@ impl ToolRuntime {
         &self,
         id: ToolId,
         input: &Value,
-        mcp: bool,
     ) -> Result<(Vec<Value>, Vec<(usize, Value)>), RuntimeError> {
         let tool = id.as_str();
-        let (prepared, mut invalid) = prepare_queries(tool, input, mcp)?;
+        let (prepared, mut invalid) = prepare_queries(tool, input)?;
         if id.is_clasify() {
             crate::tools::clasify::admission::check(prepared.iter().map(|(_, query)| query))
-                .map_err(|error| invalid_input_error(tool, error, mcp))?;
+                .map_err(|error| invalid_input_error(tool, error))?;
         }
         let bulk = input.is_array() || input.get("queries").is_some();
         let mut queries = Vec::with_capacity(prepared.len());
@@ -1100,7 +1152,6 @@ impl ToolRuntime {
             return Err(invalid_input_error(
                 tool,
                 contracts::ContractValidationError { issues },
-                mcp,
             ));
         }
         let raw_rows = input
@@ -1114,7 +1165,7 @@ impl ToolRuntime {
                     .and_then(|rows| rows.get(*index))
                     .cloned()
                     .unwrap_or(Value::Null);
-                rejected_row(id, *index, raw, error, mcp)
+                rejected_row(id, *index, raw, error)
             })
             .collect();
         Ok((queries, rejected))
@@ -1125,7 +1176,7 @@ impl ToolRuntime {
         super::domain_dispatch::DomainDispatcher {
             paths: self.paths.clone(),
             security: self.security.clone(),
-            regex: LocalFetchRegex::new(self.regex.clone()),
+            regex: LocalFetchRegex,
             github_services: self.github_services.clone(),
             github_cache: self.github_cache.clone(),
             config: self.config.clone(),
@@ -1147,7 +1198,6 @@ impl ToolRuntime {
 fn prepare_queries(
     tool: &str,
     input: &Value,
-    mcp: bool,
 ) -> Result<
     (
         Vec<(usize, Value)>,
@@ -1159,7 +1209,7 @@ fn prepare_queries(
         Ok(prepared) => Ok((prepared.into_iter().enumerate().collect(), Vec::new())),
         Err(error) => {
             let Some(rows) = contracts::prepare_rows(tool, input) else {
-                return Err(invalid_input_error(tool, error, mcp));
+                return Err(invalid_input_error(tool, error));
             };
             let mut prepared = Vec::with_capacity(rows.len());
             let mut invalid = Vec::new();
@@ -1471,6 +1521,7 @@ impl ChannelRun {
                 row["cache"] = json!(1);
             }
             rows::apply_hint_policy(&mut row, id, query);
+            crate::response::pages::note_remaining(&mut row, id);
             extras::prune_row(&mut row, id, query);
             rows::minimize_row(&mut row, id, query);
             rows.push(row);
@@ -1536,20 +1587,6 @@ fn runtime_execution_error(error: ExecutionError) -> RuntimeError {
     )
 }
 
-/// The regex worker shipped beside the CLI. macOS reports `current_exe` as
-/// the path it was launched through, so a package manager's `bin` symlink
-/// (Homebrew) would point at the link's directory; resolve the real binary
-/// first and fall back to the reported path.
-fn regex_worker_beside(exe: &std::path::Path) -> Option<PathBuf> {
-    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
-    let name = if cfg!(windows) {
-        "octocode-regex-worker.exe"
-    } else {
-        "octocode-regex-worker"
-    };
-    exe.parent().map(|parent| parent.join(name))
-}
-
 impl CancellationCheck for ExecutionContext {
     fn check(&self) -> Result<(), String> {
         ExecutionContext::check(self).map_err(|error| format!("{error:?}"))
@@ -1579,7 +1616,6 @@ mod output_recovery_tests {
             source_digest: None,
             failure: Some(FailureKind::Execution),
             all_failed,
-            tool: ToolId::GhCloneRepo,
         })
         .expect("MCP response")
     }
@@ -1607,11 +1643,11 @@ mod output_recovery_tests {
         let result = mcp_from_rows(json!({"results":[
             {"index":0,"data":{"owner":"a"}},
             {"index":1,"data":{
-                "owner":"a","repo":"b","totalSize":0,
+                "owner":"a","repo":"b","bytes":0,
                 "location":{
                     "kind":"repo","localPath":"/tmp/repo","source":"clone",
                     "cached":false,"commitSha":"abc","verified":true,
-                    "complete":true,"resolvedRef":"main"
+                    "resolvedRef":"main"
                 }
             }}
         ]}));
@@ -1704,35 +1740,6 @@ mod security_issue_tests {
     }
 }
 
-#[cfg(all(test, unix))]
-mod regex_worker_path_tests {
-    use super::regex_worker_beside;
-
-    #[test]
-    fn worker_is_found_beside_the_real_binary_behind_a_symlink() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let cellar = root.path().join("cellar/libexec");
-        let bin = root.path().join("bin");
-        std::fs::create_dir_all(&cellar).expect("cellar");
-        std::fs::create_dir_all(&bin).expect("bin");
-        let exe = cellar.join("octocode");
-        std::fs::write(&exe, b"").expect("exe");
-        let link = bin.join("octocode");
-        std::os::unix::fs::symlink(&exe, &link).expect("symlink");
-        let real = std::fs::canonicalize(&cellar).expect("real cellar");
-        assert_eq!(
-            regex_worker_beside(&link),
-            Some(real.join("octocode-regex-worker"))
-        );
-        // A path that cannot be resolved still yields its own sibling.
-        let missing = root.path().join("gone/octocode");
-        assert_eq!(
-            regex_worker_beside(&missing),
-            Some(root.path().join("gone/octocode-regex-worker"))
-        );
-    }
-}
-
 #[cfg(test)]
 mod construction_tests {
     use super::*;
@@ -1766,7 +1773,7 @@ mod construction_tests {
         .expect("runtime")
     }
 
-    /// L18: catalog `lspServers` resolve against the runtime's workspace
+    /// Catalog `lspServers` resolve against the runtime's workspace
     /// (host cwd or configured workspaceRoot), not the process cwd.
     #[test]
     fn lsp_server_root_is_the_runtime_workspace_not_the_process_cwd() {
@@ -1813,5 +1820,63 @@ mod construction_tests {
     fn replay_bytes_are_the_serialized_length() {
         let value = json!({"a": "é😀\n\"", "b": [1, 2.5, null]});
         assert_eq!(json_bytes(&value), value.to_string().len());
+    }
+
+    /// Local tools reach only the GitHub checkouts under the cache home
+    /// (clones, materialized trees), never the rest of it: credentials and
+    /// logs stay outside every root.
+    #[test]
+    fn cache_home_exposes_only_checkout_trees() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let os_home = tempfile::tempdir().expect("os home");
+        let home = os_home.path().join(".octocode");
+        let credentials = home.join("credentials.json");
+        let log = home.join("logs").join("x.log");
+        let clone = crate::tools::gh_clone_repo::cache::clones_root(&home).join("o/r/main/f.rs");
+        let tree =
+            crate::tools::gh_structure::materialize::materialize_root(&home).join("o/r/sha/f.rs");
+        for file in [&credentials, &log, &clone, &tree] {
+            std::fs::create_dir_all(file.parent().expect("parent")).expect("dir");
+            std::fs::write(file, "x").expect("file");
+        }
+        let mut vars = BTreeMap::new();
+        vars.insert(
+            "OCTOCODE_HOME".to_owned(),
+            home.to_string_lossy().into_owned(),
+        );
+        let runtime = ToolRuntime::new(crate::config::ConfigInput {
+            env: vars,
+            cwd: workspace.path().to_path_buf(),
+            os_home: os_home.path().to_path_buf(),
+            trusted_project: false,
+            global_env: FileInput::Missing {
+                path: os_home.path().join(".env"),
+            },
+            project_env: FileInput::Missing {
+                path: workspace.path().join(".octocode/.env"),
+            },
+            config_file: FileInput::Missing {
+                path: os_home.path().join(".octocoderc"),
+            },
+            project_config_file: FileInput::Missing {
+                path: workspace.path().join(".octocode/.octocoderc"),
+            },
+            runtime_surface: RuntimeSurface::Mcp,
+        })
+        .expect("runtime");
+        for denied in [&credentials, &log, &home] {
+            assert!(
+                runtime.paths.validate(denied).is_err(),
+                "{}",
+                denied.display()
+            );
+        }
+        for allowed in [&clone, &tree] {
+            assert!(
+                runtime.paths.validate(allowed).is_ok(),
+                "{}",
+                allowed.display()
+            );
+        }
     }
 }

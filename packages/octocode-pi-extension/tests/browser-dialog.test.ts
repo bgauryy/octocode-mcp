@@ -7,9 +7,12 @@ import { NO_REPLY, startCdpStub, type CdpHandler, type CdpStub, type StubPage } 
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
+// Every name resolves to a public address, so the private-address guard needs no network here.
+vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] }));
 
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
 const { sharedChromePort } = await import('../src/browser/cdp.js');
+const { sessionOutputDir } = await import('../src/shared/home.js');
 
 type Result = { content: Array<{ type: string; text?: string }> };
 type Tool = { execute: (id: string, params: Record<string, unknown>, signal?: AbortSignal, onUpdate?: unknown, ctx?: { cwd: string }) => Promise<Result> };
@@ -141,13 +144,13 @@ describe('browser: an open dialog ends waits promptly', () => {
 describe('browser: every page the session switches to gets the same setup', () => {
   it('applies the download folder and the locale to a tab it opens', async () => {
     vi.stubEnv('OCTOCODE_BROWSER_LOCALE', 'de-DE');
-    const { cdp, cwd, text } = await setup(chrome().handle);
+    const { cdp, text } = await setup(chrome().handle);
     expect(await text({ action: 'download' })).toContain('No downloads yet');
     await text({ action: 'tab', url: 'https://example.com/other' });
     const onTab = cdp.commands.filter((command) => command.target === 'tab-2').map((command) => command.method);
     expect(onTab).toContain('Emulation.setLocaleOverride');
     const downloads = cdp.commands.filter((command) => command.target === 'tab-2' && command.method === 'Browser.setDownloadBehavior');
-    expect(downloads.map((command) => command.params)).toEqual([{ behavior: 'allow', downloadPath: path.join(cwd, 'downloads'), eventsEnabled: true }]);
+    expect(downloads.map((command) => command.params)).toEqual([{ behavior: 'allow', downloadPath: path.join(sessionOutputDir('output'), 'downloads'), eventsEnabled: true }]);
   }, 15_000);
 
   it('leaves downloads alone on a tab switch before download was used', async () => {

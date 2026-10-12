@@ -5,7 +5,7 @@ use serde_json::{Map, Value};
 
 use crate::tools::id::ToolId;
 
-/// One executable follow-up call, `{tool, query, why?, confidence?}`. The
+/// One executable follow-up call, `{tool, query, confidence?}`. The
 /// `query` is always the complete tool input (`{queries:[row]}` plus any
 /// response-window field), so MCP and the CLI run it verbatim. Every `next`
 /// page and `hints` lead is built here; debug builds and tests validate each
@@ -14,7 +14,6 @@ use crate::tools::id::ToolId;
 pub struct Continuation {
     tool: ToolId,
     input: Value,
-    why: Option<String>,
     confidence: Option<String>,
 }
 
@@ -29,14 +28,8 @@ impl Continuation {
         Self {
             tool,
             input,
-            why: None,
             confidence: None,
         }
-    }
-
-    pub fn why(mut self, why: impl Into<String>) -> Self {
-        self.why = Some(why.into());
-        self
     }
 
     /// `exact` (a replay), or `high`/`medium`/`low` for a judgment.
@@ -51,9 +44,6 @@ impl Continuation {
         let mut call = Map::new();
         call.insert("tool".into(), Value::from(self.tool.as_str()));
         call.insert("query".into(), self.input);
-        if let Some(why) = self.why {
-            call.insert("why".into(), Value::String(why));
-        }
         if let Some(confidence) = self.confidence {
             call.insert("confidence".into(), Value::String(confidence));
         }
@@ -92,6 +82,19 @@ fn assert_valid(tool: ToolId, input: &Value) {
             error.issues
         );
     }
+}
+
+/// Rows one `tool` call accepts: the contract's `queries.maxItems`, so a
+/// lead that batches rows stays within it.
+#[must_use]
+pub fn rows_per_call(tool: ToolId) -> usize {
+    crate::contracts::tool_contract(tool)
+        .ok()
+        .and_then(|contract| contract.pointer("/inputSchema/properties/queries/maxItems"))
+        .and_then(Value::as_u64)
+        .and_then(|rows| usize::try_from(rows).ok())
+        .unwrap_or(1)
+        .max(1)
 }
 
 /// The first row of a continuation call (`query.queries[0]`).
@@ -180,8 +183,9 @@ impl std::fmt::Display for ToolError {
 
 impl std::error::Error for ToolError {}
 
-/// Fields that steer how a call reports, never what it reads; a
-/// continuation inherits them from its source row.
+/// Fields that steer how a call reports, never what it reads: a row never
+/// echoes them, and a continuation inherits only `extras` from its source
+/// row (the brief is request-level).
 pub const INTENT_FIELDS: [&str; 3] = ["mainGoal", "reasoning", "extras"];
 
 #[derive(Debug, Default, Serialize)]

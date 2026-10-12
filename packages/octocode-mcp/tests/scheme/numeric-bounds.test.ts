@@ -1,13 +1,11 @@
 import { z } from 'zod';
 import { describe, expect, it } from 'vitest';
-import { FileContentQueryLocalSchema } from '@octocodeai/config/schema';
-import { GitHubCodeSearchQueryLocalSchema } from '@octocodeai/config/schema';
-import { GitHubReposSearchSingleQueryLocalSchema } from '@octocodeai/config/schema';
+import { FileContentQuerySchema } from '@octocodeai/config/schema';
 import {
-  GitHubGetHistoryItemQueryLocalSchema,
-  SearchPullRequestsLocalSchema,
+  GitHubSearchCodeQuerySchema,
+  GitHubSearchRepoQuerySchema,
+  GitHubStructureQuerySchema,
 } from '@octocodeai/config/schema';
-import { GitHubViewRepoStructureQueryLocalSchema } from '@octocodeai/config/schema';
 import { ArtifactSearchQueryLocalSchema } from '@octocodeai/config/schema';
 import { LocalFetchContentQuerySchema } from '@octocodeai/config/schema';
 import { StructureFilesQuerySchema } from '@octocodeai/config/schema';
@@ -19,11 +17,10 @@ import { LOCAL_MAX_DEPTH, LOCAL_MAX_LIMIT } from '@octocodeai/config/schema';
 const SENTINEL = 9007199254740991;
 
 const schemas: Record<string, z.ZodTypeAny> = {
-  'fileContent(remote)': FileContentQueryLocalSchema,
-  'code(remote)': GitHubCodeSearchQueryLocalSchema,
-  'repos(remote)': GitHubReposSearchSingleQueryLocalSchema,
-  'pullRequests(remote)': SearchPullRequestsLocalSchema,
-  'viewRepoStructure(remote)': GitHubViewRepoStructureQueryLocalSchema,
+  'fileContent(remote)': FileContentQuerySchema,
+  'code(remote)': GitHubSearchCodeQuerySchema,
+  'repos(remote)': GitHubSearchRepoQuerySchema,
+  'viewRepoStructure(remote)': GitHubStructureQuerySchema,
   'artifactSearch(remote)': ArtifactSearchQueryLocalSchema,
   'fetchContent(local)': LocalFetchContentQuerySchema,
   structureFiles: StructureFilesQuerySchema,
@@ -32,7 +29,7 @@ const schemas: Record<string, z.ZodTypeAny> = {
   lspSemantic: LspSearchQuerySchema,
 };
 
-describe('numeric schema fields are bounded (#C1)', () => {
+describe('numeric schema fields are bounded', () => {
   for (const [name, schema] of Object.entries(schemas)) {
     it(`${name}: result caps avoid sentinel bounds; view offsets use safe integers`, () => {
       const js = z.toJSONSchema(schema) as {
@@ -74,7 +71,7 @@ describe('numeric schema fields are bounded (#C1)', () => {
   });
 
   it('github.code rejects page 0 instead of rewriting caller input', () => {
-    const r = GitHubCodeSearchQueryLocalSchema.safeParse({
+    const r = GitHubSearchCodeQuerySchema.safeParse({
       keywords: ['x'],
       page: 0,
     });
@@ -91,18 +88,16 @@ describe('numeric schema fields are bounded (#C1)', () => {
       matchString: 'foo',
       contextLines,
     });
-    const contextLinesSchema = z.toJSONSchema(FileContentQueryLocalSchema)
-      .properties?.contextLines;
+    const contextLinesSchema = z.toJSONSchema(FileContentQuerySchema).properties
+      ?.contextLines;
     const maximum =
       typeof contextLinesSchema === 'object'
         ? contextLinesSchema.maximum
         : undefined;
     expect(maximum).toBe(100);
     if (typeof maximum !== 'number') return;
-    expect(FileContentQueryLocalSchema.safeParse(query(maximum)).success).toBe(
-      true
-    );
-    const r = FileContentQueryLocalSchema.safeParse(query(maximum + 1));
+    expect(FileContentQuerySchema.safeParse(query(maximum)).success).toBe(true);
+    const r = FileContentQuerySchema.safeParse(query(maximum + 1));
     expect(r.success).toBe(false);
     if (!r.success)
       expect(r.error.issues.map(i => i.path.join('.'))).toEqual([
@@ -115,37 +110,9 @@ describe('numeric schema fields are bounded (#C1)', () => {
       path: 'a.ts',
       operation: 'definition',
       symbolName: 'x',
-      lineHint: -5,
+      line: -5,
     });
     expect(r.success).toBe(false);
-  });
-
-  it('pullRequests: patchRanges line arrays are bounded (reject above the cap)', () => {
-    // The SENTINEL is above the 1e9 line-number cap -> rejected as too_big,
-    // and the cap is never the ±MAX_SAFE_INTEGER sentinel.
-    const read = (line: number) =>
-      GitHubGetHistoryItemQueryLocalSchema.safeParse({
-        mainGoal: 'test goal',
-        reasoning: 'exercise patch line bounds',
-        operation: 'pullRequest',
-        owner: 'o',
-        repo: 'r',
-        number: 1,
-        sections: ['patches'],
-        patchRanges: [{ file: 'a.ts', additions: [line], deletions: [line] }],
-      });
-    const r = read(SENTINEL);
-    expect(r.success).toBe(false);
-    if (!r.success) {
-      const tooBig = r.error.issues.filter(i => i.code === 'too_big');
-      expect(tooBig.length).toBeGreaterThan(0);
-      const paths = tooBig.map(i => i.path.join('.'));
-      expect(paths).toContain('patchRanges.0.additions.0');
-      expect(paths).toContain('patchRanges.0.deletions.0');
-    }
-
-    // A value exactly at the cap is accepted.
-    expect(read(1_000_000_000).success).toBe(true);
   });
 });
 
@@ -224,40 +191,30 @@ describe('structureSearch tree depth bounds', () => {
   );
 });
 
-describe('LspSearchQuerySchema depth bound', () => {
+describe('LspSearchQuerySchema has no depth field', () => {
   const base = {
     mainGoal: 'test goal',
-    reasoning: 'exercise depth bounds',
+    reasoning: 'exercise the removed depth field',
     path: '/tmp/x.ts',
     operation: 'callers',
     symbolName: 'x',
-    lineHint: 1,
+    line: 1,
   };
 
-  it('rejects depth above the advertised maximum', () => {
-    const result = LspSearchQuerySchema.safeParse({
-      ...base,
-      depth: LOCAL_MAX_DEPTH + 1,
-    });
-    expect(result.success).toBe(false);
+  it('accepts a callers query without depth', () => {
+    expect(LspSearchQuerySchema.safeParse(base).success).toBe(true);
   });
 
-  it('rejects negative depth', () => {
-    const result = LspSearchQuerySchema.safeParse({
-      ...base,
-      depth: -1,
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it('accepts depth at the max bound', () => {
-    const result = LspSearchQuerySchema.safeParse({
-      ...base,
-      depth: LOCAL_MAX_DEPTH,
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).toMatchObject({ depth: LOCAL_MAX_DEPTH });
+  it('rejects depth as an unrecognized key, at any value', () => {
+    for (const depth of [1, LOCAL_MAX_DEPTH]) {
+      const result = LspSearchQuerySchema.safeParse({ ...base, depth });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0]).toMatchObject({
+          code: 'unrecognized_keys',
+          keys: ['depth'],
+        });
+      }
     }
   });
 });

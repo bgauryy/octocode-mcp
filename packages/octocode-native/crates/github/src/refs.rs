@@ -21,6 +21,26 @@ impl RefKind {
     }
 }
 
+/// What a name resolves to, as far as GitHub's refs say.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefMatch {
+    Branch,
+    Tag,
+    /// Neither a branch nor a tag: a commit SHA (or a prefix of one).
+    Commit,
+}
+
+impl RefMatch {
+    /// The output spelling (`refKind`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Branch => "branch",
+            Self::Tag => "tag",
+            Self::Commit => "commit",
+        }
+    }
+}
+
 /// A branch or tag name and the commit it points at.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NamedRef {
@@ -85,6 +105,58 @@ impl GitHubTransport {
                 .collect(),
             has_more: response.next.is_some(),
         })
+    }
+
+    /// Whether `reference` names a branch, a tag, or neither (a commit),
+    /// given the `commit` it resolved to. A name that is both resolves to
+    /// the kind whose ref points at `commit`, a branch first.
+    pub async fn reference_kind(
+        &self,
+        owner: &str,
+        repo: &str,
+        reference: &str,
+        commit: &str,
+        context: &RequestContext,
+    ) -> Result<RefMatch, ProviderError> {
+        let (branch, tag) = tokio::try_join!(
+            self.named_ref_sha(owner, repo, "heads", reference, context),
+            self.named_ref_sha(owner, repo, "tags", reference, context),
+        )?;
+        Ok(match (branch, tag) {
+            (Some(sha), Some(_)) if sha != commit => RefMatch::Tag,
+            (Some(_), _) => RefMatch::Branch,
+            (None, Some(_)) => RefMatch::Tag,
+            (None, None) => RefMatch::Commit,
+        })
+    }
+
+    /// The object SHA of `refs/{namespace}/{name}`; `None` when it does not
+    /// exist (a ref name keeps its `/`, one path segment each).
+    async fn named_ref_sha(
+        &self,
+        owner: &str,
+        repo: &str,
+        namespace: &str,
+        name: &str,
+        context: &RequestContext,
+    ) -> Result<Option<String>, ProviderError> {
+        let mut segments = vec!["repos", owner, repo, "git", "ref", namespace];
+        segments.extend(name.split('/'));
+        let url = self.endpoint().rest(&segments)?;
+        match self.execute(RequestSpec::get(url), context).await {
+            Ok(response) => {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&response.body).map_err(|_| {
+                        ProviderError::new(ProviderErrorKind::Decode, "invalid GitHub ref response")
+                    })?;
+                Ok(value
+                    .pointer("/object/sha")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned))
+            }
+            Err(error) if error.status == Some(404) => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Bytes of code per language on the default branch, largest first.

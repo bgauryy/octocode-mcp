@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { repoKey, sharedAgentDb } from '../agentdb/db.js';
+import { sharedAgentDb } from '../agentdb/db.js';
+import { repoKey } from '../shared/home.js';
 import type { Subcommands } from '../shared/commands.js';
 import { envFlag, MEMORY_AUTO_ENV } from '../shared/env.js';
 import { projectTrustNow } from '../shared/trust.js';

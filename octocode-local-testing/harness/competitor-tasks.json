@@ -20,7 +20,10 @@
       "question": "Where is toValidURL defined in excalidraw?",
       "truth": {
         "hits": [
-          { "file": "packages/common/src/url.ts", "line": 21 }
+          {
+            "file": "packages/common/src/url.ts",
+            "line": 21
+          }
         ]
       },
       "truthSource": "rg -n -w toValidURL on tsx@f3d99c4: packages/common/src/url.ts:21 `export const toValidURL = (link: string) => {`",
@@ -91,9 +94,18 @@
       "question": "Which call sites call toValidURL?",
       "truth": {
         "exactHits": [
-          { "file": "packages/excalidraw/renderer/staticSvgScene.ts", "line": 359 },
-          { "file": "packages/excalidraw/data/library.ts", "line": 729 },
-          { "file": "packages/excalidraw/components/App.tsx", "line": 1981 }
+          {
+            "file": "packages/excalidraw/renderer/staticSvgScene.ts",
+            "line": 359
+          },
+          {
+            "file": "packages/excalidraw/data/library.ts",
+            "line": 729
+          },
+          {
+            "file": "packages/excalidraw/components/App.tsx",
+            "line": 1981
+          }
         ]
       },
       "truthSource": "rg -n 'toValidURL\\(' (imports excluded by construction): staticSvgScene.ts:359, library.ts:729, App.tsx:1981",
@@ -103,7 +115,7 @@
           "args": {
             "path": "{{T}}/tsx/packages/common/src/url.ts",
             "symbolName": "toValidURL",
-            "lineHint": 21,
+            "line": 21,
             "operation": "callers"
           }
         }
@@ -222,7 +234,10 @@
       "question": "Where does the runtime Builder reject zero worker threads (2,270-line builder.rs)?",
       "truth": {
         "hits": [
-          { "file": "tokio/src/runtime/builder.rs", "line": 583 }
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 583
+          }
         ],
         "text": [
           "Worker threads cannot be set to 0"
@@ -289,17 +304,50 @@
       "question": "All run_on_commit lines in django/db.",
       "truth": {
         "exactHits": [
-          { "file": "django/db/backends/base/base.py", "line": 102 },
-          { "file": "django/db/backends/base/base.py", "line": 261 },
-          { "file": "django/db/backends/base/base.py", "line": 341 },
-          { "file": "django/db/backends/base/base.py", "line": 347 },
-          { "file": "django/db/backends/base/base.py", "line": 416 },
-          { "file": "django/db/backends/base/base.py", "line": 418 },
-          { "file": "django/db/backends/base/base.py", "line": 732 },
-          { "file": "django/db/backends/base/base.py", "line": 751 },
-          { "file": "django/db/backends/base/base.py", "line": 752 },
-          { "file": "django/db/backends/base/base.py", "line": 753 },
-          { "file": "django/db/backends/base/base.py", "line": 754 }
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 102
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 261
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 341
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 347
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 416
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 418
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 732
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 751
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 752
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 753
+          },
+          {
+            "file": "django/db/backends/base/base.py",
+            "line": 754
+          }
         ]
       },
       "truthSource": "rg -n run_on_commit python/django/db@4fab678 (11 lines, all base.py)",
@@ -368,14 +416,38 @@
       "question": "Every whole-word try_read_output line in tokio.",
       "truth": {
         "exactHits": [
-          { "file": "tokio/src/runtime/task/harness.rs", "line": 281 },
-          { "file": "tokio/src/runtime/task/raw.rs", "line": 35 },
-          { "file": "tokio/src/runtime/task/raw.rs", "line": 66 },
-          { "file": "tokio/src/runtime/task/raw.rs", "line": 290 },
-          { "file": "tokio/src/runtime/task/raw.rs", "line": 292 },
-          { "file": "tokio/src/runtime/task/raw.rs", "line": 360 },
-          { "file": "tokio/src/runtime/task/raw.rs", "line": 368 },
-          { "file": "tokio/src/runtime/task/join.rs", "line": 346 }
+          {
+            "file": "tokio/src/runtime/task/harness.rs",
+            "line": 281
+          },
+          {
+            "file": "tokio/src/runtime/task/raw.rs",
+            "line": 35
+          },
+          {
+            "file": "tokio/src/runtime/task/raw.rs",
+            "line": 66
+          },
+          {
+            "file": "tokio/src/runtime/task/raw.rs",
+            "line": 290
+          },
+          {
+            "file": "tokio/src/runtime/task/raw.rs",
+            "line": 292
+          },
+          {
+            "file": "tokio/src/runtime/task/raw.rs",
+            "line": 360
+          },
+          {
+            "file": "tokio/src/runtime/task/raw.rs",
+            "line": 368
+          },
+          {
+            "file": "tokio/src/runtime/task/join.rs",
+            "line": 346
+          }
         ]
       },
       "truthSource": "rg -n -w try_read_output rust@facc6fc (8 lines)",
@@ -687,13 +759,34 @@
       "question": "Every $X.unwrap() call in tokio/src/fs.",
       "truth": {
         "exactHits": [
-          { "file": "tokio/src/fs/read_dir.rs", "line": 105 },
-          { "file": "tokio/src/fs/read_dir.rs", "line": 113 },
-          { "file": "tokio/src/fs/file.rs", "line": 395 },
-          { "file": "tokio/src/fs/file.rs", "line": 623 },
-          { "file": "tokio/src/fs/file.rs", "line": 691 },
-          { "file": "tokio/src/fs/file.rs", "line": 766 },
-          { "file": "tokio/src/fs/file.rs", "line": 846 }
+          {
+            "file": "tokio/src/fs/read_dir.rs",
+            "line": 105
+          },
+          {
+            "file": "tokio/src/fs/read_dir.rs",
+            "line": 113
+          },
+          {
+            "file": "tokio/src/fs/file.rs",
+            "line": 395
+          },
+          {
+            "file": "tokio/src/fs/file.rs",
+            "line": 623
+          },
+          {
+            "file": "tokio/src/fs/file.rs",
+            "line": 691
+          },
+          {
+            "file": "tokio/src/fs/file.rs",
+            "line": 766
+          },
+          {
+            "file": "tokio/src/fs/file.rs",
+            "line": 846
+          }
         ]
       },
       "truthSource": "ast-grep run -p '$X.unwrap()' -l rust tokio/src/fs (7 matches)",
@@ -723,22 +816,70 @@
       "question": "Every Pin::new_unchecked($A) call in tokio/src.",
       "truth": {
         "exactHits": [
-          { "file": "tokio/src/future/maybe_done.rs", "line": 110 },
-          { "file": "tokio/src/io/split.rs", "line": 63 },
-          { "file": "tokio/src/signal/reusable_box.rs", "line": 113 },
-          { "file": "tokio/src/runtime/tests/task_combinations.rs", "line": 278 },
-          { "file": "tokio/src/util/linked_list.rs", "line": 488 },
-          { "file": "tokio/src/runtime/task/core.rs", "line": 377 },
-          { "file": "tokio/src/sync/notify.rs", "line": 1041 },
-          { "file": "tokio/src/sync/notify.rs", "line": 1096 },
-          { "file": "tokio/src/sync/batch_semaphore.rs", "line": 677 },
-          { "file": "tokio/src/runtime/mod.rs", "line": 482 },
-          { "file": "tokio/src/runtime/mod.rs", "line": 503 },
-          { "file": "tokio/src/runtime/mod.rs", "line": 508 },
-          { "file": "tokio/src/runtime/mod.rs", "line": 519 },
-          { "file": "tokio/src/runtime/mod.rs", "line": 524 },
-          { "file": "tokio/src/runtime/mod.rs", "line": 541 },
-          { "file": "tokio/src/runtime/mod.rs", "line": 546 }
+          {
+            "file": "tokio/src/future/maybe_done.rs",
+            "line": 110
+          },
+          {
+            "file": "tokio/src/io/split.rs",
+            "line": 63
+          },
+          {
+            "file": "tokio/src/signal/reusable_box.rs",
+            "line": 113
+          },
+          {
+            "file": "tokio/src/runtime/tests/task_combinations.rs",
+            "line": 278
+          },
+          {
+            "file": "tokio/src/util/linked_list.rs",
+            "line": 488
+          },
+          {
+            "file": "tokio/src/runtime/task/core.rs",
+            "line": 377
+          },
+          {
+            "file": "tokio/src/sync/notify.rs",
+            "line": 1041
+          },
+          {
+            "file": "tokio/src/sync/notify.rs",
+            "line": 1096
+          },
+          {
+            "file": "tokio/src/sync/batch_semaphore.rs",
+            "line": 677
+          },
+          {
+            "file": "tokio/src/runtime/mod.rs",
+            "line": 482
+          },
+          {
+            "file": "tokio/src/runtime/mod.rs",
+            "line": 503
+          },
+          {
+            "file": "tokio/src/runtime/mod.rs",
+            "line": 508
+          },
+          {
+            "file": "tokio/src/runtime/mod.rs",
+            "line": 519
+          },
+          {
+            "file": "tokio/src/runtime/mod.rs",
+            "line": 524
+          },
+          {
+            "file": "tokio/src/runtime/mod.rs",
+            "line": 541
+          },
+          {
+            "file": "tokio/src/runtime/mod.rs",
+            "line": 546
+          }
         ]
       },
       "truthSource": "ast-grep run -p 'Pin::new_unchecked($A)' -l rust tokio/src (9 matches) + 7 in runtime/mod.rs inside macro bodies that ast-grep skips (rg -n 'Pin::new_unchecked' tokio/src/runtime/mod.rs; X14) = 16",
@@ -768,13 +909,34 @@
       "question": "Outline tokio named_pipe.rs: its top-level types with start lines and the NamedPipeServer methods.",
       "truth": {
         "hits": [
-          { "file": "named_pipe.rs", "line": 105 },
-          { "file": "named_pipe.rs", "line": 980 },
-          { "file": "named_pipe.rs", "line": 1738 },
-          { "file": "named_pipe.rs", "line": 2384 },
-          { "file": "named_pipe.rs", "line": 2613 },
-          { "file": "named_pipe.rs", "line": 2636 },
-          { "file": "named_pipe.rs", "line": 2656 }
+          {
+            "file": "named_pipe.rs",
+            "line": 105
+          },
+          {
+            "file": "named_pipe.rs",
+            "line": 980
+          },
+          {
+            "file": "named_pipe.rs",
+            "line": 1738
+          },
+          {
+            "file": "named_pipe.rs",
+            "line": 2384
+          },
+          {
+            "file": "named_pipe.rs",
+            "line": 2613
+          },
+          {
+            "file": "named_pipe.rs",
+            "line": 2636
+          },
+          {
+            "file": "named_pipe.rs",
+            "line": 2656
+          }
         ],
         "text": [
           "\\bdisconnect\\b",
@@ -808,8 +970,14 @@
       "question": "References of Harness::try_read_output (harness.rs:281) only, not the same-named RawTask/vtable symbols.",
       "truth": {
         "exactHits": [
-          { "file": "tokio/src/runtime/task/harness.rs", "line": 281 },
-          { "file": "tokio/src/runtime/task/raw.rs", "line": 368 }
+          {
+            "file": "tokio/src/runtime/task/harness.rs",
+            "line": 281
+          },
+          {
+            "file": "tokio/src/runtime/task/raw.rs",
+            "line": 368
+          }
         ]
       },
       "truthSource": "harness.rs:281 declaration + raw.rs:368 `harness.try_read_output(out, waker)`; the other 6 rg -w lines are RawTask/vtable symbols",
@@ -819,7 +987,7 @@
           "args": {
             "path": "{{T}}/rust/tokio/src/runtime/task/harness.rs",
             "symbolName": "try_read_output",
-            "lineHint": 281,
+            "line": 281,
             "operation": "references"
           }
         }
@@ -875,7 +1043,10 @@
       "mainGoal": "Find createApplication",
       "truth": {
         "hits": [
-          { "file": "lib/express.js", "line": 36 }
+          {
+            "file": "lib/express.js",
+            "line": 36
+          }
         ]
       },
       "truthSource": "gh api contents lib/express.js?ref=v5.1.0 (tag e9964989): line 36 `function createApplication() {`",
@@ -1034,7 +1205,10 @@
       "question": "At tokio facc6fc, on which line of builder.rs is the max_blocking_threads default set?",
       "truth": {
         "hits": [
-          { "file": "tokio/src/runtime/builder.rs", "line": 324 }
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 324
+          }
         ]
       },
       "truthSource": "local rust corpus is facc6fc; builder.rs:324 (byte-identical to gh api raw at that ref)",
@@ -1067,49 +1241,178 @@
       "question": "At tokio facc6fc, list every `pub fn` line of builder.rs with its line number.",
       "truth": {
         "exactHits": [
-          { "file": "tokio/src/runtime/builder.rs", "line": 278 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 293 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 398 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 450 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 485 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 526 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 582 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 633 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 657 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 684 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 713 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 743 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 769 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 797 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 878 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 916 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 966 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1016 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1066 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1115 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1146 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1182 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1225 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1267 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1308 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1374 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1425 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1458 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1506 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1516 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1547 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1646 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1682 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1719 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1847 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1875 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1921 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1947 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1971 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 1997 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 2041 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 2090 },
-          { "file": "tokio/src/runtime/builder.rs", "line": 2171 }
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 278
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 293
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 398
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 450
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 485
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 526
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 582
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 633
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 657
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 684
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 713
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 743
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 769
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 797
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 878
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 916
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 966
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1016
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1066
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1115
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1146
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1182
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1225
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1267
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1308
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1374
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1425
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1458
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1506
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1516
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1547
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1646
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1682
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1719
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1847
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1875
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1921
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1947
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1971
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 1997
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 2041
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 2090
+          },
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 2171
+          }
         ]
       },
       "truthSource": "grep -nE '^\\s*pub fn \\w+' on the local facc6fc builder.rs (43 lines)",
@@ -1144,7 +1447,10 @@
       "mainGoal": "redirect default status",
       "truth": {
         "hits": [
-          { "file": "lib/response.js", "line": 949 }
+          {
+            "file": "lib/response.js",
+            "line": 949
+          }
         ],
         "text": [
           "1faf2289",
@@ -1158,7 +1464,10 @@
           "args": {
             "ecosystem": "npm",
             "packageName": "express",
-            "version": "4.21.2"
+            "version": "4.21.2",
+            "extras": [
+              "hints"
+            ]
           }
         },
         {
@@ -1384,7 +1693,7 @@
               "tokio"
             ],
             "language": "rust",
-            "sort": "stars",
+            "sort": "stars:desc",
             "pageSize": 5
           }
         }
@@ -1588,7 +1897,10 @@
             "operation": "issue",
             "owner": "cli",
             "repo": "cli",
-            "number": 14404
+            "number": 14404,
+            "extras": [
+              "hints"
+            ]
           }
         },
         {
@@ -1825,7 +2137,10 @@
       "mainGoal": "Zero worker threads check",
       "truth": {
         "hits": [
-          { "file": "tokio/src/runtime/builder.rs", "line": 583 }
+          {
+            "file": "tokio/src/runtime/builder.rs",
+            "line": 583
+          }
         ]
       },
       "truthSource": "builder.rs:583",

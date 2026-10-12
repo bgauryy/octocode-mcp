@@ -33,25 +33,26 @@ function backlogSummary(op: unknown, details: BacklogToolDetails, text: string):
   return text.split('\n', 1)[0] ?? '';
 }
 
-/** What the model reads about `backlog`: the description owns ops and mechanics, the guidelines only when to use it. */
-function backlogPrompt(subagent: boolean): { description: string; promptSnippet: string; promptGuidelines: string[] } {
+/** What the model reads about `backlog`: the description says what it is, `op` owns the operations, the guidelines only when to use it. */
+function backlogPrompt(subagent: boolean): { description: string; ops: string; promptSnippet: string; promptGuidelines: string[] } {
   const description =
-    'Track repository work across sessions. States: backlog (proposed) → todo (accepted) → ongoing (claimed) → done. ' +
-    '`list`: items (default ongoing and todo; filter with `states`, `query`, `limit`). `get`: one item (`id`, e.g. "B12") with its notes. ' +
-    (subagent
-      ? '`add`: a new item (`title`, optional `body`, `priority`, `tags`). `update`: change an item (`id`); `note` alone appends progress. ' +
-        'As a subagent: add proposes a backlog item; update sets ongoing or done, or appends a note, only on items your parent has claimed. '
-      : '`add`: a new item (`title`, optional `body`, `priority`, `tags`); it lands in backlog unless `state` is given. ' +
-        "`update`: change an item (`id`); `state: ongoing` claims it for you; `note` alone appends progress. `remove`: delete an item and its notes (`id`); only a duplicate or one the user asked to drop. An item another running session holds takes only notes. ") +
+    'Track repository work across sessions. Item states: backlog = proposed, todo = accepted, ongoing = claimed, done. ' +
+    (subagent ? 'A subagent proposes items and updates only items its parent has claimed. ' : 'An item another running session holds takes only notes. ') +
     'Text that looks like a secret is refused.';
+  const ops =
+    'list: items (default ongoing+todo; filter with states, query, limit); get: one item with its notes; ' +
+    (subagent
+      ? 'add: propose an item (starts in state backlog); update: set state ongoing or done, or append a note (note alone appends progress)'
+      : 'add: new item (starts proposed, in state backlog, unless state is given); update: change an item (state ongoing claims it for you; note alone appends progress); remove: delete an item and its notes, only a duplicate or one the user asked to drop');
   return {
     description,
-    promptSnippet: subagent ? 'Record progress on backlog items your parent claimed and propose follow-ups' : 'Track repo tasks that outlive this turn: list, propose, claim and close them',
+    ops,
+    promptSnippet: subagent ? 'Record progress on claimed items; propose follow-ups' : 'Propose, claim and close repository tasks',
     promptGuidelines: subagent
       ? ['Use backlog to note progress on an item your parent gave you and to propose follow-ups you find instead of doing them; mark it done only after verifying the work, with a note saying what changed and how it was verified.']
       : [
-          'Use backlog for work that outlives this turn. Propose discovered follow-ups in backlog; put accepted work in todo and keep routine steps in the current task.',
-          'Set an item ongoing when you start it; mark it done only after verifying the work, with a note saying what changed and how it was verified.',
+          'Use backlog for work that outlives this turn: propose follow-ups you discover and claim an item when you start it; steps of the current task need no item.',
+          'Close an item only after verifying it, with a note on what changed and how it was verified.',
         ],
   };
 }
@@ -61,19 +62,20 @@ const SUBAGENT_STATES = ['ongoing', 'done'] as const;
 
 export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & { changed?: (ctx: ExtensionContext) => void }): void {
   const subagent = options.isSubagent;
+  const { ops, ...prompt } = backlogPrompt(subagent);
   pi.registerTool(timedTool({
     name: 'backlog',
     label: 'Backlog',
-    ...backlogPrompt(subagent),
+    ...prompt,
     parameters: Type.Object({
-      op: StringEnum(subagent ? ['list', 'get', 'add', 'update'] as const : ['list', 'get', 'add', 'update', 'remove'] as const, { description: 'Backlog operation' }),
+      op: StringEnum(subagent ? ['list', 'get', 'add', 'update'] as const : ['list', 'get', 'add', 'update', 'remove'] as const, { description: ops }),
       id: Type.Optional(Type.String({ description: `${subagent ? 'get/update' : 'get/update/remove'}: item id, e.g. "B12"` })),
       title: Type.Optional(Type.String({ maxLength: TITLE_MAX, description: `${subagent ? 'add' : 'add/update'}: one-line summary` })),
       body: Type.Optional(Type.String({ maxLength: BODY_MAX, description: `${subagent ? 'add' : 'add/update'}: details, acceptance criteria` })),
       state: Type.Optional(subagent ? StringEnum(SUBAGENT_STATES, { description: 'update: ongoing or done' }) : StringEnum(STATES, { description: 'add: initial state (default backlog); update: new state' })),
       priority: Type.Optional(StringEnum(PRIORITIES, { description: `${subagent ? 'add' : 'add/update'}: p0 urgent … p3 someday (default p2)` })),
       tags: Type.Optional(Type.Array(Type.String(), { maxItems: TAGS_MAX, description: `${subagent ? 'add' : 'add/update'}: short labels, e.g. ["docs"]` })),
-      note: Type.Optional(Type.String({ maxLength: NOTE_MAX, description: subagent ? 'update: progress or done note appended to the item log' : 'update (or add with state ongoing/done): progress or done note appended to the item log' })),
+      note: Type.Optional(Type.String({ maxLength: NOTE_MAX, description: subagent ? 'update: appended to the item log' : 'update, or add with state ongoing/done: appended to the item log' })),
       query: Type.Optional(Type.String({ description: 'list: text to find in titles, bodies and tags' })),
       states: Type.Optional(Type.Array(StringEnum(STATES), { description: 'list: states to show (default ongoing, todo)' })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: `list: most items (default ${DEFAULT_LIST_LIMIT})` })),
@@ -112,7 +114,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       if (lines.length === 0) lines.push(`No ${states.join('/')} items${params.query ? ` matching "${sanitizeTerminalText(params.query)}"` : ''}.`);
       if (total > items.length) lines.push(`… ${total - items.length} more (raise limit or narrow with query).`);
       const triage = states.includes('backlog') ? 0 : store.counts().backlog;
-      if (triage > 0) lines.push(`${triage} item(s) in backlog await triage (list with states: ["backlog"]).`);
+      if (triage > 0) lines.push(`${triage} proposed item(s) await triage (list with states: ["backlog"]).`);
       return textResult(lines.join('\n'), { shown: items.length, total } as BacklogToolDetails);
     }
     if (params.op === 'add') {

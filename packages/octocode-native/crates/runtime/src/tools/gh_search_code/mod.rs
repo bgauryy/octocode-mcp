@@ -1,6 +1,7 @@
 //! ghSearchCode: indexed default-branch code or path search.
 mod code_output;
 mod fragments;
+mod leads;
 mod lines;
 #[cfg(test)]
 mod provider_tests;
@@ -13,15 +14,30 @@ use crate::providers::github::{
 };
 use crate::security::scan::ContentScan;
 use crate::tools::gh_shared::{
-    GhFailure, SEARCH_RESULT_CAP, add_next, apply_partial, reject_window, search_failure,
-    with_ref_recovery,
+    GhFailure, SEARCH_RESULT_CAP, add_next, apply_partial, field_names, pick_rows,
+    push_warning_front, reject_window, search_failure, with_ref_recovery, with_search_repair,
 };
 use crate::tools::id::ToolId;
 use crate::tools::num::usize_of;
 use crate::tools::result::{Continuation, ToolData, remove_null_fields};
-use serde_json::{Value, json};
+use serde_json::json;
 
-pub use crate::contracts::tool_types::{GhSearchCodeQuery, GhSearchCodeQueryMatch};
+pub use crate::contracts::tool_types::{GhSearchCodeQuery, GhSearchCodeQueryMatchIn};
+
+/// What a `fields` pick always keeps of a code row: its identity (path, and
+/// repository on owner-wide pages) and the facts that qualify its lines
+/// (where else the same evidence sits, how many hits exist, whether the
+/// lines were read at the ref, and the commit they were read at).
+const CODE_ROW_ID: &[&str] = &[
+    "owner",
+    "repo",
+    "path",
+    "alsoAt",
+    "matchCount",
+    "atRef",
+    "lineResolved",
+    "commitSha",
+];
 
 /// Run one ghSearchCode row.
 pub async fn run<C: ConditionalCache>(
@@ -35,15 +51,44 @@ pub async fn run<C: ConditionalCache>(
         Err(error) => Err(error),
     };
     result.map_err(|error| {
-        let failure = search_failure(
-            error,
-            "Lower page, or narrow with path, extensions, or filename to reach deeper results.",
+        let repo = query.repo.as_deref().map(|repo| repo.as_str());
+        let failure = with_search_repair(
+            search_failure(error, None),
+            ToolId::GhSearchCode,
+            query,
+            page_size(query),
+            repo,
         );
-        match query.repo.as_deref() {
+        match repo {
             Some(repo) => with_ref_recovery(failure, &query.owner, repo),
+            // An owner-wide search that found no such login: the message
+            // names the login, and its one hint is the spelling.
+            None if failure.error.reason
+                == Some(crate::providers::github::ProviderErrorReason::UserNotFound) =>
+            {
+                GhFailure {
+                    message: format!(
+                        "Owner \"{}\" not found: no GitHub user or organization has this login",
+                        query.owner
+                    ),
+                    hints: vec![
+                        "Check the owner spelling: a user or organization login.".to_owned(),
+                    ],
+                    ..failure
+                }
+            }
             None => failure,
         }
     })
+}
+
+/// Files per page: the query's, within the contract maximum.
+fn page_size(query: &GhSearchCodeQuery) -> usize {
+    usize_of(query.page_size).min(crate::contracts::query_schema_max(
+        ToolId::GhSearchCode,
+        None,
+        "pageSize",
+    ))
 }
 
 pub(crate) async fn execute<C: ConditionalCache>(
@@ -53,18 +98,8 @@ pub(crate) async fn execute<C: ConditionalCache>(
     security: &impl ContentScan,
 ) -> Result<ToolData, ProviderError> {
     query::validate_code_scope(query)?;
-    if !query::code_has_narrowing_selector(query) {
-        return Err(ProviderError::new(
-            ProviderErrorKind::Validation,
-            "Code search requires non-empty keywords, path, extension, filename, or language; owner/repo alone is not a bounded code search.",
-        ));
-    }
     let current = usize_of(query.page);
-    let per = usize_of(query.page_size).min(crate::contracts::query_schema_max(
-        ToolId::GhSearchCode,
-        None,
-        "pageSize",
-    ));
+    let per = page_size(query);
     reject_window(current, per)?;
     // The commit hit lines are read at does not depend on the hits: resolve
     // it during the index search instead of after it.
@@ -76,15 +111,16 @@ pub(crate) async fn execute<C: ConditionalCache>(
     let data = data?;
     // GitHub code search does not follow renames: an empty scoped search
     // reruns once against the canonical name, as ghSearchHistory does.
+    // A page past the last holds no files of a search that has results.
+    let past_end = data.items.is_empty() && data.total > 0 && current > data.pages;
     if data.items.is_empty()
+        && !past_end
         && let Some((renamed, warnings)) = renamed_scope(provider, query, context).await?
     {
         let mut output = Box::pin(execute(provider, &renamed, context, security)).await?;
-        let mut all = warnings.into_iter().map(Value::String).collect::<Vec<_>>();
-        if let Some(Value::Array(rest)) = output.data.get_mut("warnings").map(Value::take) {
-            all.extend(rest);
+        for warning in warnings.into_iter().rev() {
+            push_warning_front(&mut output.data, warning);
         }
-        output.data["warnings"] = Value::Array(all);
         return Ok(output);
     }
     let more = current < data.pages;
@@ -106,18 +142,23 @@ pub(crate) async fn execute<C: ConditionalCache>(
     let reads = code_output::shape_files(&mut value, &mut items, query, resolution);
     code_output::merge_identical(&mut items);
     code_output::hoist_shared(&mut value, &mut items);
+    let fields = field_names(&query.fields);
     if !items.is_empty() {
         value["files"] = json!(items);
     }
-    if data.pages > 1 {
+    pick_rows(&mut value, "files", CODE_ROW_ID, &fields);
+    if data.pages > 1 || past_end {
         value["pagination"] = crate::response::pages::PageFacts::open(current, Some(per), more)
             .with_total(data.total)
+            .out_of_range(past_end)
             .to_value();
     }
     add_next(&mut value, ToolId::GhSearchCode, query, current, more);
     if let Some(read) = reads.top {
         value["next"]["read"] = read;
     }
+    // A file lists at most a few of its hit lines; `readHits` reads the rest.
+    let hits_unlisted = !reads.hits.is_empty();
     // `readHits`, `readHits2`, …: one per capped or cut file.
     for (position, read) in reads.hits.into_iter().enumerate() {
         let key = match position {
@@ -143,6 +184,18 @@ pub(crate) async fn execute<C: ConditionalCache>(
         more,
         "code",
     );
+    // A page with another page behind it states its remainder through
+    // `pagination`; a complete one has no other way to say why it is partial.
+    if hits_unlisted && !more {
+        value["isPartial"] = json!(true);
+        let reasons = value["partialReasons"].take();
+        let mut reasons = reasons.as_array().cloned().unwrap_or_default();
+        reasons.push(json!("hitLinesNotListed"));
+        value["partialReasons"] = json!(reasons);
+    }
+    if let Some(warning) = octocode_github::sso_partial_warning(&data.sso_partial) {
+        push_warning_front(&mut value, warning);
+    }
     let mut output = ToolData::from(value);
     if data.incomplete {
         output.diagnostics.add(
@@ -153,6 +206,11 @@ pub(crate) async fn execute<C: ConditionalCache>(
     }
     if data.items.is_empty() {
         output.status = Some("empty");
+    }
+    if data.items.is_empty() && data.incomplete && query.repo.is_none() {
+        code_output::owner_exists(&query.owner, &provider.transport, context).await?;
+    }
+    if data.items.is_empty() && !past_end {
         empty_page(provider, query, context, &mut output).await?;
     }
     Ok(output)
@@ -160,7 +218,9 @@ pub(crate) async fn execute<C: ConditionalCache>(
 
 /// One provider page, merged across `extensions`: GitHub ANDs repeated
 /// `extension:` qualifiers, so each extension is its own indexed search on
-/// the same page number, and the merged page lists every one.
+/// the same page number. The searches share `pageSize` (each lists
+/// `ceil(pageSize / k)`), so a merged page holds about `pageSize` files and
+/// page N of every search is page N of the merge: lossless.
 struct SearchPage {
     items: Vec<crate::providers::github::CodeSearchItem>,
     /// Reachable results (each search caps at 1,000).
@@ -170,6 +230,8 @@ struct SearchPage {
     /// GitHub's match counts, summed over the merged searches.
     matched: usize,
     incomplete: bool,
+    /// Organizations SAML enforcement withheld from the merged searches.
+    sso_partial: Vec<u64>,
 }
 
 async fn search_page<C: ConditionalCache>(
@@ -188,6 +250,7 @@ async fn search_page<C: ConditionalCache>(
         [_, _, ..] => extensions.iter().copied().map(Some).collect(),
         _ => vec![None],
     };
+    let per_search = per.div_ceil(scopes.len()).max(1);
     let mut page = SearchPage {
         items: Vec::new(),
         total: 0,
@@ -195,6 +258,7 @@ async fn search_page<C: ConditionalCache>(
         capped: false,
         matched: 0,
         incomplete: false,
+        sso_partial: Vec::new(),
     };
     for extension in scopes {
         let data = provider
@@ -203,18 +267,23 @@ async fn search_page<C: ConditionalCache>(
                 &CodeSearchRequest {
                     query: query::code(query, extension),
                     page: current,
-                    per_page: per,
-                    include_fragments: query.match_ != GhSearchCodeQueryMatch::Path,
+                    per_page: per_search,
+                    include_fragments: query.match_in != GhSearchCodeQueryMatchIn::Path,
                 },
                 context,
             )
             .await?;
         let reachable = data.total_count.min(SEARCH_RESULT_CAP);
         page.total += reachable;
-        page.pages = page.pages.max(reachable.div_ceil(per));
+        page.pages = page.pages.max(reachable.div_ceil(per_search));
         page.capped |= data.total_count > SEARCH_RESULT_CAP;
         page.matched += data.total_count;
         page.incomplete |= data.incomplete_results;
+        for organization in data.sso_partial_organizations {
+            if !page.sso_partial.contains(&organization) {
+                page.sso_partial.push(organization);
+            }
+        }
         page.items.extend(data.items);
     }
     Ok(page)
@@ -227,22 +296,27 @@ async fn renamed_scope<C: ConditionalCache>(
     query: &GhSearchCodeQuery,
     context: &RequestContext,
 ) -> Result<Option<(GhSearchCodeQuery, Vec<String>)>, ProviderError> {
-    let Some(repo) = query.repo.as_deref() else {
+    let Some(scoped) = query.repo.as_deref() else {
         return Ok(None);
     };
     match provider
         .transport
-        .canonical_owner_repo(&query.owner, repo, context)
+        .canonical_owner_repo(&query.owner, scoped, context)
         .await
     {
-        Ok((owner, repo, true, warnings)) => {
+        Ok(Some((owner, repo))) => {
+            let warning = crate::tools::gh_shared::renamed_warning(
+                query.owner.as_str(),
+                scoped,
+                &(owner.clone(), repo.clone()),
+            );
             let decode = |error: &dyn std::fmt::Display| {
                 ProviderError::new(ProviderErrorKind::Decode, error.to_string())
             };
             let mut renamed = query.clone();
             renamed.owner = owner.parse().map_err(|error| decode(&error))?;
             renamed.repo = Some(repo.parse().map_err(|error| decode(&error))?);
-            Ok(Some((renamed, warnings)))
+            Ok(Some((renamed, vec![warning])))
         }
         Err(error)
             if matches!(
@@ -277,17 +351,26 @@ async fn empty_page<C: ConditionalCache>(
         let mut content = serde_json::to_value(query)
             .map_err(|error| ProviderError::new(ProviderErrorKind::Decode, error.to_string()))?;
         remove_null_fields(&mut content);
-        content["match"] = json!("file");
+        content["matchIn"] = json!("file");
         content["page"] = json!(1);
-        value["next"]["searchCode"] = Continuation::new(ToolId::GhSearchCode, content)
+        value["next"]["findCode"] = Continuation::new(ToolId::GhSearchCode, content)
             .confidence("high")
             .build();
-        value["hints"] = json!([
-            "match:\"path\" matches file paths, not code; run searchCode to search file contents."
-        ]);
     }
-    if value.get("hints").is_none() {
-        value["hints"] = json!([code_output::empty_hint(query)]);
+    if value.get("hints").is_none()
+        && let Some(hint) = code_output::empty_hint(query)
+    {
+        value["hints"] = json!([hint]);
+        if value["next"].get("read").is_none()
+            && let Some(read) = leads::unsearched_ref_read(query)
+        {
+            value["next"]["read"] = read;
+        }
+    }
+    if let Some(broader) =
+        leads::broaden_search(query, provider.transport.code_search_room(context))
+    {
+        value["next"]["broadenSearch"] = broader;
     }
     Ok(())
 }
@@ -295,8 +378,20 @@ async fn empty_page<C: ConditionalCache>(
 /// This tool's output facts for the shared response stages.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
-    fn fallback_hint(&self, _query: &serde_json::Value) -> &'static str {
-        "Broaden keywords or remove filters."
+    fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {
+        use crate::tools::output::has_value;
+        if query["matchIn"] == "path" {
+            "Try a shorter name fragment, or ghStructure include to find paths by name."
+        } else if ["extensions", "filename", "path", "language"]
+            .iter()
+            .any(|key| has_value(query, key))
+        {
+            "Drop extensions/filename/path/language or use fewer keywords; only the default branch is indexed."
+        } else if query["keywords"].as_array().is_some_and(|k| k.len() > 1) {
+            "An empty index result is unproven absence: use fewer keywords, or ghCloneRepo the repository and localSearch the clone."
+        } else {
+            "An empty index result is unproven absence: ghCloneRepo the repository, then localSearch the clone to verify."
+        }
     }
     fn evidence_kind(&self, _query: &serde_json::Value, _data: &serde_json::Value) -> &'static str {
         "provider"

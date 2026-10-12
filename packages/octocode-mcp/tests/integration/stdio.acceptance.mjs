@@ -1,10 +1,16 @@
 /** Real built-server acceptance. Run after building CLI + MCP; no mocks or installs. */
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { z } from 'zod';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { createLocalAcceptanceFixture } from './local-acceptance-fixture.mjs';
@@ -37,7 +43,14 @@ const acceptanceEnv = {
   OCTOCODE_BETA: 'true',
   OCTOCODE_STORAGE_MODE: 'persistent',
 };
-const { DIRECT_TOOL_DEFINITIONS, TOOL_NAMES, continuationChannel, getDirectToolDefinitionsWithAddons, isCliOnlyTool } = await import('@octocodeai/config/schema');
+const {
+  DIRECT_TOOL_DEFINITIONS,
+  TOOL_NAMES,
+  continuationChannel,
+  getDirectToolDefinitionsWithAddons,
+  getPublicToolCatalogWithAddons,
+  isCliOnlyTool,
+} = await import('@octocodeai/config/schema');
 const { publishedInputSchema } = await import('@octocodeai/config/mcp');
 const canonicalTools = DIRECT_TOOL_DEFINITIONS.map(tool => tool.name);
 // CLI-only tools run only from the CLI; MCP never lists or executes them.
@@ -88,13 +101,38 @@ const invoke = async (name, args) => {
   const response = await client.callTool({ name, arguments: args });
   const durationMs = Number((performance.now() - startedAt).toFixed(2));
   const responseBytes = Buffer.byteLength(JSON.stringify(response));
-  receipt.calls.push({ name, arguments: args, durationMs, responseBytes, response });
+  receipt.calls.push({
+    name,
+    arguments: args,
+    durationMs,
+    responseBytes,
+    response,
+  });
   // Output channels: `next` holds pages only; `hints` holds prose `text`
   // (recovery rows only) and lead calls. Each entry is a runnable call.
   const runnable = (kind, call) => {
-    assert.ok(!['fetch', 'getLines', 'readSite', 'viewTree', 'viewStructure', 'cloneRepo', 'searchRepositoryCode', 'lspDefinition', 'lspReferences'].includes(kind), `${name}: unsolicited ${kind}`);
-    assert.ok(expectedTools.includes(call?.tool), `${name}: continuation ${kind} has no runnable tool`);
-    assert.ok(call?.query && typeof call.query === 'object', `${name}: continuation ${kind} has no executable query`);
+    assert.ok(
+      ![
+        'fetch',
+        'getLines',
+        'readSite',
+        'viewTree',
+        'viewStructure',
+        'cloneRepo',
+        'searchRepositoryCode',
+        'lspDefinition',
+        'lspReferences',
+      ].includes(kind),
+      `${name}: unsolicited ${kind}`
+    );
+    assert.ok(
+      expectedTools.includes(call?.tool),
+      `${name}: continuation ${kind} has no runnable tool`
+    );
+    assert.ok(
+      call?.query && typeof call.query === 'object',
+      `${name}: continuation ${kind} has no executable query`
+    );
     receipt.guidance.continuations += 1;
   };
   for (const row of response.structuredContent?.results ?? []) {
@@ -103,30 +141,66 @@ const invoke = async (name, args) => {
     const inspect = value => {
       if (!value || typeof value !== 'object') return;
       for (const [key, child] of Object.entries(value)) {
-        if (['query', 'content', 'body', 'patch', 'text', 'value', 'matches'].includes(key)) continue;
+        if (
+          [
+            'query',
+            'content',
+            'body',
+            'patch',
+            'text',
+            'value',
+            'matches',
+          ].includes(key)
+        )
+          continue;
         if (key === 'hints') {
-          assert.ok(child && typeof child === 'object' && !Array.isArray(child), `${name}: hints is not an object`);
+          assert.ok(
+            child && typeof child === 'object' && !Array.isArray(child),
+            `${name}: hints is not an object`
+          );
           const { text = [], ...leads } = child;
           assert.ok(Array.isArray(text), `${name}: hints.text is not a list`);
-          if (text.length) assert.ok(recovery, `${name}: hints.text on a successful result`);
+          if (text.length)
+            assert.ok(recovery, `${name}: hints.text on a successful result`);
           hintCount += text.length;
-          assert.ok(text.every(hint => hint.length <= 160), `${name}: long hint`);
+          assert.ok(
+            text.every(hint => hint.length <= 160),
+            `${name}: long hint`
+          );
           receipt.guidance.recoveryHints += text.length;
           receipt.guidance.maxHintChars = Math.max(
             receipt.guidance.maxHintChars,
             ...text.map(hint => hint.length)
           );
           for (const [kind, call] of Object.entries(leads)) {
-            assert.equal(continuationChannel(name, kind), 'lead', `${name}: hints.${kind} is a page`);
+            assert.equal(
+              continuationChannel(name, kind),
+              'lead',
+              `${name}: hints.${kind} is a page`
+            );
             runnable(kind, call);
-            if (!recovery) assert.equal(call.why, undefined, `${name}: success continuation prose`);
+            if (!recovery)
+              assert.equal(
+                call.why,
+                undefined,
+                `${name}: success continuation prose`
+              );
           }
         }
         if (key === 'next') {
           for (const [kind, call] of Object.entries(child)) {
-            assert.equal(continuationChannel(name, kind), 'page', `${name}: next.${kind} is a lead`);
+            assert.equal(
+              continuationChannel(name, kind),
+              'page',
+              `${name}: next.${kind} is a lead`
+            );
             runnable(kind, call);
-            if (!recovery) assert.equal(call.why, undefined, `${name}: success continuation prose`);
+            if (!recovery)
+              assert.equal(
+                call.why,
+                undefined,
+                `${name}: success continuation prose`
+              );
           }
         }
         if (key !== 'hints' && key !== 'next') inspect(child);
@@ -171,7 +245,11 @@ const listedPaths = (files, root) => {
 const nextCall = async continuation => {
   const row = await continuationRow(continuation);
   assert.notEqual(row.status, 'error', `${continuation.tool} result failed`);
-  assert.equal(row.data.error, undefined, `${continuation.tool} returned an error payload`);
+  assert.equal(
+    row.data.error,
+    undefined,
+    `${continuation.tool} returned an error payload`
+  );
   return row.data;
 };
 const continuationRow = async continuation => {
@@ -184,25 +262,35 @@ const continuationRow = async continuation => {
     'continuation has no query'
   );
   // A continuation is the complete input: run it verbatim.
-  assert.ok(Array.isArray(continuation.query.queries), 'continuation is not a complete input');
+  assert.ok(
+    Array.isArray(continuation.query.queries),
+    'continuation is not a complete input'
+  );
   const response = await invoke(continuation.tool, continuation.query);
   const row = response.structuredContent?.results?.[0];
   assert.ok(row?.data, `${continuation.tool} has no result data`);
   if (response.isError) assert.equal(row.status, 'error');
   return row;
 };
-const executeCliTool = (name, queries) => {
+const executeCliTool = (name, queries, expectedStatus = 0) => {
   const startedAt = performance.now();
   const child = spawnSync(
     values.node,
     [path.resolve(values.cli), name, JSON.stringify({ queries })],
-    { encoding: 'utf8', timeout: 120_000, maxBuffer: 8 * 1024 * 1024, cwd: acceptanceCwd, env: acceptanceEnv }
+    {
+      encoding: 'utf8',
+      timeout: 120_000,
+      maxBuffer: 8 * 1024 * 1024,
+      cwd: acceptanceCwd,
+      env: acceptanceEnv,
+    }
   );
   const durationMs = Number((performance.now() - startedAt).toFixed(2));
   cliCalls.push({ name, durationMs, status: child.status });
   if (child.error) throw child.error;
-  assert.ok(
-    child.status === 0 || child.status === 6,
+  assert.strictEqual(
+    child.status,
+    expectedStatus,
     `${name}: CLI exited ${child.status}: ${child.stderr.trim()}`
   );
   assert.ok(child.stdout.trim(), `${name}: CLI returned no JSON`);
@@ -218,7 +306,10 @@ const pages = async (first, nextKey, collect) => {
     const row = await continuationRow(current.next[nextKey]);
     if (row.status === 'error') {
       assert.equal(row.data.errorCode, 'staleSnapshot');
-      assert.ok(row.data.next?.restart, 'changed snapshot has no restart continuation');
+      assert.ok(
+        row.data.next?.restart,
+        'changed snapshot has no restart continuation'
+      );
       assert.ok(restarts++ < 5, 'snapshot did not stabilize');
       const restarted = await continuationRow(row.data.next.restart);
       assert.notEqual(restarted.status, 'error', 'snapshot restart failed');
@@ -235,12 +326,18 @@ const pages = async (first, nextKey, collect) => {
 const differingFields = (left, right, prefix = '', fields = []) => {
   if (fields.length >= 40) return fields;
   if (Object.is(left, right)) return fields;
-  if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
+  if (
+    !left ||
+    !right ||
+    typeof left !== 'object' ||
+    typeof right !== 'object'
+  ) {
     fields.push(prefix || '$');
     return fields;
   }
   const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-  for (const key of [...keys].sort()) differingFields(left[key], right[key], `${prefix}/${key}`, fields);
+  for (const key of [...keys].sort())
+    differingFields(left[key], right[key], `${prefix}/${key}`, fields);
   return fields;
 };
 
@@ -250,7 +347,9 @@ try {
   pid = transport.pid;
   transport.stderr?.on('data', chunk => {
     receipt.stderrBytes += chunk.length;
-    receipt.stderrTail = `${receipt.stderrTail}${chunk.toString('utf8')}`.slice(-65_536);
+    receipt.stderrTail = `${receipt.stderrTail}${chunk.toString('utf8')}`.slice(
+      -65_536
+    );
   });
   const list = await client.listTools();
   receipt.catalog = list.tools;
@@ -259,14 +358,18 @@ try {
   await check('initialize and list every available canonical direct tool', () =>
     assert.deepEqual(
       expectedTools.filter(name => name !== TOOL_NAMES.CLASIFY).sort(),
-      canonicalTools.filter(name => name !== TOOL_NAMES.CLASIFY && !isCliOnlyTool(name)).sort()
+      canonicalTools
+        .filter(name => name !== TOOL_NAMES.CLASIFY && !isCliOnlyTool(name))
+        .sort()
     )
   );
-  await check('MCP tool catalog stays below the production transport budget', () =>
-    assert.ok(
-      receipt.catalogBytes <= 200_000,
-      `serialized MCP catalog is ${receipt.catalogBytes} bytes`
-    )
+  await check(
+    'MCP tool catalog stays below the production transport budget',
+    () =>
+      assert.ok(
+        receipt.catalogBytes <= 200_000,
+        `serialized MCP catalog is ${receipt.catalogBytes} bytes`
+      )
   );
   await check('MCP tool catalog omits output schemas', () =>
     assert.ok(
@@ -275,48 +378,96 @@ try {
     )
   );
   if (expectedTools.includes(TOOL_NAMES.CLASIFY)) {
-    await check('clasify rejects caller model selection before provider access', async () => {
-      const response = await invoke(TOOL_NAMES.CLASIFY, {
-        queries: [{
-          id: 'caller-model-rejected',
-          reasoning: 'Verify that provider model selection remains runtime-owned.',
-          resources: [{ id: 'evidence', value: 'Supplied evidence.' }],
-          questions: [{ id: 'bounded', type: 'yesno', ask: 'Is evidence supplied?' }],
-          model: 'caller-model-is-forbidden',
-        }],
-      });
-      const row = response.structuredContent?.results?.[0];
-      assert.ok(response.isError || row?.status === 'error');
-      assert.equal(row?.data?.usage, undefined);
-      assert.match(JSON.stringify(response), /unknown field.*model/i);
-    });
+    await check(
+      'clasify rejects caller model selection before provider access',
+      async () => {
+        const response = await invoke(TOOL_NAMES.CLASIFY, {
+          queries: [
+            {
+              id: 'caller-model-rejected',
+              reasoning:
+                'Verify that provider model selection remains runtime-owned.',
+              resources: [{ id: 'evidence', value: 'Supplied evidence.' }],
+              questions: [
+                { id: 'bounded', type: 'yesno', ask: 'Is evidence supplied?' },
+              ],
+              model: 'caller-model-is-forbidden',
+            },
+          ],
+        });
+        const row = response.structuredContent?.results?.[0];
+        assert.ok(response.isError || row?.status === 'error');
+        assert.equal(row?.data?.usage, undefined);
+        assert.match(JSON.stringify(response), /unknown field.*model/i);
+      }
+    );
   }
-  await check('CLI canonical contracts and MCP published input schemas agree', () => {
-    const definitions = new Map(getDirectToolDefinitionsWithAddons({
-    }).map(definition => [definition.name, definition]));
-    for (const tool of list.tools) {
-      const cli = JSON.parse(
-        execFileSync(
-          values.node,
-          [path.resolve(values.cli), 'schema', tool.name],
-          { encoding: 'utf8', timeout: 10_000, cwd: acceptanceCwd, env: acceptanceEnv }
-        )
+  await check(
+    'CLI canonical contracts and MCP published input schemas agree',
+    () => {
+      // The CLI lists every tool it can run; MCP clasify may delegate only to the
+      // tools MCP exposes, so its published schema is built for that tool set.
+      const cliCatalog = new Map(
+        getPublicToolCatalogWithAddons({}).tools.map(tool => [tool.name, tool])
       );
-      assert.equal(cli.name, tool.name);
-      assert.equal(cli.availability.enabled, true);
-      assert.equal(Object.hasOwn(cli, 'querySchema'), false);
-      assert.equal(Object.hasOwn(cli, 'outputSchema'), false);
-      const definition = definitions.get(tool.name);
-      assert.ok(definition, `${tool.name} has no canonical contract`);
-      const canonical = z.toJSONSchema(definition.inputSchema, {
-        target: 'draft-2020-12',
-        io: 'input',
-        unrepresentable: 'any',
-      });
-      assert.deepEqual(cli.inputSchema, canonical, `${tool.name} CLI input schema differs from the canonical contract`);
-      assert.deepEqual(tool.inputSchema, publishedInputSchema(tool.name, canonical), `${tool.name} MCP input schema differs from the published contract`);
+      const cliDefinitions = new Map(
+        getDirectToolDefinitionsWithAddons({}).map(definition => [
+          definition.name,
+          definition,
+        ])
+      );
+      const mcpDefinitions = new Map(
+        getDirectToolDefinitionsWithAddons({
+          availableTools: expectedTools,
+        }).map(definition => [definition.name, definition])
+      );
+      const cliSchema = (name, ...args) =>
+        JSON.parse(
+          execFileSync(
+            values.node,
+            [path.resolve(values.cli), 'schema', name, ...args],
+            {
+              encoding: 'utf8',
+              timeout: 10_000,
+              cwd: acceptanceCwd,
+              env: acceptanceEnv,
+            }
+          )
+        );
+      for (const tool of list.tools) {
+        const cli = cliSchema(tool.name);
+        assert.equal(cli.name, tool.name);
+        assert.equal(cli.availability.enabled, true);
+        // The CLI contract is the query row; the request wrapper and output schema are not published.
+        assert.equal(Object.hasOwn(cli, 'inputSchema'), false);
+        assert.equal(Object.hasOwn(cli, 'outputSchema'), false);
+        const cliDefinition = cliDefinitions.get(tool.name);
+        const mcpDefinition = mcpDefinitions.get(tool.name);
+        assert.ok(
+          cliDefinition && mcpDefinition,
+          `${tool.name} has no canonical contract`
+        );
+        const { $schema, ...canonicalRow } = cliCatalog.get(
+          tool.name
+        ).querySchema;
+        assert.deepEqual(
+          cli.querySchema,
+          canonicalRow,
+          `${tool.name} CLI query schema differs from the canonical contract`
+        );
+        assert.deepEqual(
+          cliSchema(tool.name, '--view', 'query').querySchema,
+          publishedInputSchema(cliDefinition.inputSchema, 'row'),
+          `${tool.name} CLI query view differs from the published row schema`
+        );
+        assert.deepEqual(
+          tool.inputSchema,
+          publishedInputSchema(mcpDefinition.inputSchema),
+          `${tool.name} MCP input schema differs from the published contract`
+        );
+      }
     }
-  });
+  );
   await check(
     'local file read carries numbered source lines in text and structured content',
     async () => {
@@ -325,20 +476,27 @@ try {
         path: file,
         minify: 'none',
       });
-      // C5: `<line>\t<text>` per source line (docs/TOOL_DATA_CONTRACT.md).
+      // `<line>\t<text>` per source line (docs/TOOL_DATA_CONTRACT.md).
       const source = await readFile(file, 'utf8');
       const numbered = source
         .split('\n')
-        .map((line, index, all) => (index === all.length - 1 && line === '' ? '' : `${index + 1}\t${line}`))
+        .map((line, index, all) =>
+          index === all.length - 1 && line === '' ? '' : `${index + 1}\t${line}`
+        )
         .join('\n');
       assert.equal(data.content, numbered);
       assert.ok(
-        receipt.calls.at(-1).response.content.some(block =>
-          block.type === 'text'
-          && block.text.includes('content (source lines):')
-          && block.text.includes('1\t// Arithmetic fixture.')
-          && block.text.includes('2\texport function add(left: number, right: number) { return left + right; }')
-        )
+        receipt.calls
+          .at(-1)
+          .response.content.some(
+            block =>
+              block.type === 'text' &&
+              block.text.includes('content (source lines):') &&
+              block.text.includes('1\t// Arithmetic fixture.') &&
+              block.text.includes(
+                '2\texport function add(left: number, right: number) { return left + right; }'
+              )
+          )
       );
     }
   );
@@ -360,108 +518,166 @@ try {
     assert.equal(response.isError, false);
     const rows = response.structuredContent?.results;
     assert.equal(rows?.length, 2);
-    assert.deepEqual(rows.map(row => row.index), [0, 1]);
+    assert.deepEqual(
+      rows.map(row => row.index),
+      [0, 1]
+    );
     assert.ok(rows[0].data.content.includes('Arithmetic fixture'));
     assert.ok(rows[1].data.content.includes('import'));
   });
-  await check('localFetch line and byte chunks preserve selected views through real MCP', async () => {
-    const directory = await mkdtemp(path.join(fixture, 'fetch-chunks-'));
-    const file = path.join(directory, 'source.txt');
-    const source = 'skip\r\nneedle 🌍\r\n\r\nneedle café\nlast\n';
-    try {
-      await writeFile(file, source);
-      for (const unit of ['lines', 'bytes']) {
-        for (const matched of [false, true]) {
-          // Byte accounting (sourceBytes/returnedBytes) is opt-in `stats`;
-          // continuations carry extras forward.
-          let page = await call('localFetch', {
-            path: file, unit, length: unit === 'lines' ? 1 : 3, extras: ['stats'],
-            ...(matched ? { matchString: 'needle', contextLines: 0, minify: 'standard' } : {}),
-          });
-          let content = '';
-          let count = 0;
-          const numbers = [];
-          for (;;) {
-            assert.ok(++count < 100);
-            assert.equal(page.totalLines, 5);
-            assert.equal(page.sourceBytes, Buffer.byteLength(source));
-            // Line views carry a `<line>\t` gutter (TOOL_DATA_CONTRACT numbered
-            // content); returnedBytes counts only the source bytes under it.
-            // Byte windows stay verbatim.
-            const text = unit === 'lines'
-              ? page.content.replace(/^(\d+)\t/gm, (_, line) => { numbers.push(Number(line)); return ''; })
-              : page.content;
-            assert.equal(page.returnedBytes, Buffer.byteLength(text));
-            // matchString reads are verbatim; no fallback notice says so per row.
-            assert.equal(page.minifyFallback, undefined);
-            content += text;
-            if (!page.next?.continue) break;
-            assert.equal(page.next.continue.tool, 'localFetch');
-            page = await nextCall(page.next.continue);
+  await check(
+    'localFetch line and byte chunks preserve selected views through real MCP',
+    async () => {
+      const directory = await mkdtemp(path.join(fixture, 'fetch-chunks-'));
+      const file = path.join(directory, 'source.txt');
+      const source = 'skip\r\nneedle 🌍\r\n\r\nneedle café\nlast\n';
+      try {
+        await writeFile(file, source);
+        for (const unit of ['lines', 'bytes']) {
+          for (const matched of [false, true]) {
+            // Byte accounting (sourceBytes/returnedBytes) is opt-in `stats`;
+            // continuations carry extras forward.
+            let page = await call('localFetch', {
+              path: file,
+              unit,
+              length: unit === 'lines' ? 1 : 3,
+              extras: ['stats'],
+              ...(matched
+                ? { matchString: 'needle', contextLines: 0, minify: 'standard' }
+                : {}),
+            });
+            let content = '';
+            let count = 0;
+            const numbers = [];
+            for (;;) {
+              assert.ok(++count < 100);
+              assert.equal(page.totalLines, 5);
+              assert.equal(page.sourceBytes, Buffer.byteLength(source));
+              // Line views carry a `<line>\t` gutter (TOOL_DATA_CONTRACT numbered
+              // content); returnedBytes counts only the source bytes under it.
+              // Byte windows stay verbatim.
+              const text =
+                unit === 'lines'
+                  ? page.content.replace(/^(\d+)\t/gm, (_, line) => {
+                      numbers.push(Number(line));
+                      return '';
+                    })
+                  : page.content;
+              assert.equal(page.returnedBytes, Buffer.byteLength(text));
+              // matchString reads are verbatim; no fallback notice says so per row.
+              assert.equal(page.minifyFallback, undefined);
+              content += text;
+              if (!page.next?.continueWindow) break;
+              assert.equal(page.next.continueWindow.tool, 'localFetch');
+              page = await nextCall(page.next.continueWindow);
+            }
+            if (unit === 'lines')
+              assert.deepEqual(numbers, matched ? [2, 4] : [1, 2, 3, 4, 5]);
+            assert.equal(
+              content,
+              matched
+                ? 'needle 🌍\r\n... [line 3 not requested] ...\nneedle café\n'
+                : source
+            );
           }
-          if (unit === 'lines') assert.deepEqual(numbers, matched ? [2, 4] : [1, 2, 3, 4, 5]);
-          assert.equal(
-            content,
-            matched
-              ? 'needle 🌍\r\n... [line 3 not requested] ...\nneedle café\n'
-              : source
-          );
         }
+        const invalid = await invoke('localFetch', {
+          queries: [
+            {
+              reasoning:
+                'Verify an unknown localFetch window field is rejected.',
+              path: file,
+              window: 3,
+            },
+          ],
+        });
+        assert.equal(invalid.isError, true);
+      } finally {
+        await rm(directory, { recursive: true, force: true });
       }
-      const invalid = await invoke('localFetch', {
-        queries: [{
-          reasoning: 'Verify an unknown localFetch window field is rejected.',
-          path: file,
-          window: 3,
-        }],
-      });
-      assert.equal(invalid.isError, true);
-    } finally {
-      await rm(directory, { recursive: true, force: true });
     }
-  });
+  );
   for (const [regex, matchString] of [
     ['literal', 'add'],
     ['rust', '\\badd\\b'],
     ['pcre2', '(?<!\\w)add(?!\\w)'],
   ]) {
-    await check(`local text search returns the observed anchor (${regex})`, async () => {
-      const data = await call('localSearch', {
-        path: path.join(fixture, 'math.ts'),
-        matchString,
-        regex,
-        wholeWord: true,
-        resultView: 'content',
-      });
-      // Minimal output drops single-page stats: the rows are the count.
-      assert.equal(data.files.length, 1);
-      assert.equal(data.files[0].matches.length, 1);
-      assert.notEqual(data.isPartial, true);
-      assert.equal(data.capped, undefined);
-      assert.equal(data.files[0].matches[0].line, 2);
-      assert.ok(data.files[0].matches[0].value.includes('function add'));
-    });
+    await check(
+      `local text search returns the observed anchor (${regex})`,
+      async () => {
+        const data = await call('localSearch', {
+          path: path.join(fixture, 'math.ts'),
+          matchString,
+          regex,
+          wholeWord: true,
+          resultView: 'paginated',
+        });
+        // Minimal output drops single-page stats: the rows are the count.
+        assert.equal(data.files.length, 1);
+        assert.equal(data.files[0].matches.length, 1);
+        assert.notEqual(data.isPartial, true);
+        assert.equal(data.capped, undefined);
+        assert.equal(data.files[0].matches[0].line, 2);
+        assert.ok(data.files[0].matches[0].value.includes('function add'));
+      }
+    );
   }
-  await check('empty local search returns one concise recovery hint', async () => {
-    const data = await call('localSearch', {
-      path: fixture,
-      matchString: 'octocode-definitely-absent-token',
-      regex: 'literal',
-      resultView: 'files',
-    });
-    assert.equal(data.stats.matchCount, 0);
-    assert.equal(data.hints?.text?.length, 1);
-    assert.match(data.hints.text[0], /try|shorter|case|regex/i);
-  });
-  await check('a page carries a brief only when the caller sent one', async () => {
-    const search = brief => call('localSearch', { path: fixture, matchString: 'add', pageSize: 1, ...brief });
-    const bare = await search({});
-    assert.ok(bare.next?.nextPage, 'no nextPage on a multi-file search');
-    for (const field of ['mainGoal', 'reasoning']) assert.equal(bare.next.nextPage.query.queries[0][field], undefined, field);
-    const brief = { mainGoal: 'Trace the add helper.', reasoning: 'Find every caller.' };
-    const briefed = await search(brief);
-    assert.equal(briefed.next?.nextPage?.query.queries[0].mainGoal, brief.mainGoal);
-    assert.equal(briefed.next.nextPage.query.queries[0].reasoning, brief.reasoning);
+  await check(
+    'empty local search returns one concise recovery hint',
+    async () => {
+      const query = {
+        path: fixture,
+        matchString: 'octocode-definitely-absent-token',
+        regex: 'literal',
+        resultView: 'files',
+      };
+      const data = await call('localSearch', query);
+      assert.equal(data.matchCount, 0);
+      // An empty row states how many files it read; repair advice is the tool description's <empty> section.
+      assert.equal(data.hints?.text?.length, 1);
+      assert.ok(data.hints.text[0].length <= 120);
+      assert.match(data.hints.text[0], /^No matches in \d+ files? searched\.$/);
+      const searched = await call('localSearch', {
+        ...query,
+        extras: ['stats'],
+      });
+      assert.equal(searched.matchCount, 0);
+      assert.equal(
+        data.hints.text[0],
+        `No matches in ${searched.filesScanned} ${searched.filesScanned === 1 ? 'file' : 'files'} searched.`
+      );
+      const description = list.tools.find(
+        tool => tool.name === 'localSearch'
+      ).description;
+      assert.match(
+        description,
+        /<empty>[^<]*(shorter|regex|includeIgnored)[^<]*<\/empty>/i
+      );
+    }
+  );
+  await check('a page never carries the brief, sent or not', async () => {
+    // The brief is request-level (docs/TOOL_DATA_CONTRACT.md): a page
+    // carries the scope and cursor, never mainGoal or reasoning.
+    const search = brief =>
+      call('localSearch', {
+        path: fixture,
+        matchString: 'add',
+        pageSize: 1,
+        ...brief,
+      });
+    for (const brief of [
+      {},
+      { mainGoal: 'Trace the add helper.', reasoning: 'Find every caller.' },
+    ]) {
+      const data = await search(brief);
+      assert.ok(data.next?.nextPage, 'no nextPage on a multi-file search');
+      for (const field of ['mainGoal', 'reasoning'])
+        assert.equal(
+          data.next.nextPage.query.queries[0][field],
+          undefined,
+          field
+        );
+    }
   });
   await check('local file discovery positive', async () => {
     const data = await call('structureSearch', {
@@ -470,59 +686,102 @@ try {
       extensions: ['ts'],
       pageSize: 50,
     });
-    assert.ok(listedPaths(data.files, data.path).some(file => file.endsWith('math.ts')));
+    assert.ok(
+      listedPaths(data.files, data.path).some(file => file.endsWith('math.ts'))
+    );
   });
-  await check('AST symbols identify the exported arithmetic declaration', async () => {
-    const data = await call('astSearch', {
-      operation: 'symbols',
-      path: path.join(fixture, 'math.ts'),
-      symbolName: 'add',
-      kinds: ['function'],
-    });
-    // Minimal output drops the `operation` request echo.
-    assert.equal(data.operation, undefined);
-    // One outline entry (P1); `doc 1` marks the comment block above it.
-    assert.deepEqual(data.symbols, ['add (2, function, doc 1, exported)']);
-    assert.equal(data.pagination?.totalItems ?? data.symbols.length, 1);
-  });
-  await check('astRewrite is CLI-only: MCP rejects it, the CLI previews and applies on an isolated fixture', async () => {
-    assert.ok(!expectedTools.includes('astRewrite'), 'MCP must not list astRewrite');
-    // An unlisted tool is a protocol error (-32602) or an error result, never a rewrite.
-    const rejected = await client
-      .callTool({ name: 'astRewrite', arguments: { queries: [{ reasoning: 'Verify MCP never rewrites.', path: fixture, language: 'typescript', pattern: 'oldCall($A)', rewrite: 'newCall($A)' }] } })
-      .then(result => result.isError === true, error => /not found|not available/i.test(String(error?.message)));
-    assert.ok(rejected, 'MCP must reject astRewrite');
-    const directory = await mkdtemp(path.join(fixture, 'cli-rewrite-'));
-    const file = path.join(directory, 'source.ts');
-    try {
-      await writeFile(file, 'oldCall(1);\noldCall(2);\n');
-      const rule = { reasoning: 'Verify CLI rewrite.', path: directory, language: 'typescript', pattern: 'oldCall($A)', rewrite: 'newCall($A)', pageSize: 10 };
-      const preview = executeCliTool('astRewrite', [rule]).results[0].data;
-      assert.equal(preview.mode, 'preview');
-      assert.equal(preview.matchCount, 2);
-      // Apply is the preview's hints.apply lead replayed verbatim: it carries
-      // the snapshot (not echoed in minimal output) and the expected hashes.
-      assert.equal(preview.next, undefined);
-      assert.equal(preview.hints?.apply?.tool, 'astRewrite');
-      assert.equal(preview.hints.apply.query.queries[0].apply, true);
-      const applied = executeCliTool('astRewrite', preview.hints.apply.query.queries).results[0].data;
-      assert.equal(applied.mode, 'apply');
-      assert.equal(applied.transaction.committed, true);
-      assert.equal(await readFile(file, 'utf8'), 'newCall(1);\nnewCall(2);\n');
-    } finally {
-      await rm(directory, { recursive: true, force: true });
+  await check(
+    'AST symbols identify the exported arithmetic declaration',
+    async () => {
+      const data = await call('astSearch', {
+        operation: 'symbols',
+        path: path.join(fixture, 'math.ts'),
+        symbolName: 'add',
+        kinds: ['function'],
+      });
+      // Minimal output drops the `operation` request echo.
+      assert.equal(data.operation, undefined);
+      // One outline entry; `doc 1` marks the comment block above it.
+      assert.deepEqual(data.symbols, ['add (2, function, doc 1, exported)']);
+      assert.equal(data.pagination?.totalItems ?? data.symbols.length, 1);
     }
-  });
+  );
+  await check(
+    'astRewrite is CLI-only: MCP rejects it, the CLI previews and applies on an isolated fixture',
+    async () => {
+      assert.ok(
+        !expectedTools.includes('astRewrite'),
+        'MCP must not list astRewrite'
+      );
+      // An unlisted tool is a protocol error (-32602) or an error result, never a rewrite.
+      const rejected = await client
+        .callTool({
+          name: 'astRewrite',
+          arguments: {
+            queries: [
+              {
+                reasoning: 'Verify MCP never rewrites.',
+                path: fixture,
+                language: 'typescript',
+                pattern: 'oldCall($A)',
+                rewrite: 'newCall($A)',
+              },
+            ],
+          },
+        })
+        .then(
+          result => result.isError === true,
+          error => /not found|not available/i.test(String(error?.message))
+        );
+      assert.ok(rejected, 'MCP must reject astRewrite');
+      const directory = await mkdtemp(path.join(fixture, 'cli-rewrite-'));
+      const file = path.join(directory, 'source.ts');
+      try {
+        await writeFile(file, 'oldCall(1);\noldCall(2);\n');
+        const rule = {
+          reasoning: 'Verify CLI rewrite.',
+          path: directory,
+          language: 'typescript',
+          pattern: 'oldCall($A)',
+          rewrite: 'newCall($A)',
+          pageSize: 10,
+        };
+        const preview = executeCliTool('astRewrite', [rule]).results[0].data;
+        assert.equal(preview.mode, 'preview');
+        assert.equal(preview.matchCount, 2);
+        // Apply is the preview's hints.apply lead replayed verbatim: it carries
+        // the snapshot (not echoed in minimal output) and the expected hashes.
+        assert.equal(preview.next, undefined);
+        assert.equal(preview.hints?.apply?.tool, 'astRewrite');
+        assert.equal(preview.hints.apply.query.queries[0].apply, true);
+        const applied = executeCliTool(
+          'astRewrite',
+          preview.hints.apply.query.queries
+        ).results[0].data;
+        assert.equal(applied.mode, 'apply');
+        assert.equal(applied.transaction.committed, true);
+        assert.equal(
+          await readFile(file, 'utf8'),
+          'newCall(1);\nnewCall(2);\n'
+        );
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    }
+  );
   if (!values.quick) {
     await check(
       'outer text pagination isolates structured rows and reconstructs every character',
       async () => {
         const args = {
-          queries: [{
-            reasoning: 'Exercise localFetch response pagination through built stdio acceptance.',
-            path: path.join(fixture, 'math.ts'),
-            minify: 'none',
-          }],
+          queries: [
+            {
+              reasoning:
+                'Exercise localFetch response pagination through built stdio acceptance.',
+              path: path.join(fixture, 'math.ts'),
+              minify: 'none',
+            },
+          ],
         };
         const full = await invoke('localFetch', args);
         let current = await invoke('localFetch', {
@@ -534,10 +793,7 @@ try {
         assert.ok(full.structuredContent.results.length > 0);
         while (true) {
           assert.ok(count++ < 30);
-          assert.deepEqual(
-            current.structuredContent.results,
-            []
-          );
+          assert.deepEqual(current.structuredContent.results, []);
           // structuredContent-only hosts must still see the page window.
           assert.equal(
             current.structuredContent.responseWindow,
@@ -574,63 +830,84 @@ try {
           listedPaths(data.files, data.path)
         );
         assert.ok(paged.count > 1);
-        assert.deepEqual(paged.rows.sort(), listedPaths(full.files, full.path).sort());
+        assert.deepEqual(
+          paged.rows.sort(),
+          listedPaths(full.files, full.path).sort()
+        );
       }
     );
-    await check('whole-response pages replay an unchanged source; an edit restarts like a fresh runtime', async () => {
-      const parent = fixture;
-      await mkdir(parent, { recursive: true });
-      const directory = await mkdtemp(path.join(parent, 'mcp-snapshot-'));
-      const file = path.join(directory, 'source.ts');
-      try {
-        await writeFile(file, 'export const value = 1;\n');
-        // Settled sources: a page over them may replay.
-        const then = new Date(Date.now() - 10_000);
-        for (const entry of [file, directory]) await utimes(entry, then, then);
-        const page1 = () => invoke('localFetch', {
-          queries: [{
-            reasoning: 'Exercise localFetch response pagination through built stdio acceptance.',
+    await check(
+      'whole-response pages replay an unchanged source; an edit restarts like a fresh runtime',
+      async () => {
+        const parent = fixture;
+        await mkdir(parent, { recursive: true });
+        const directory = await mkdtemp(path.join(parent, 'mcp-snapshot-'));
+        const file = path.join(directory, 'source.ts');
+        try {
+          await writeFile(file, 'export const value = 1;\n');
+          // Settled sources: a page over them may replay.
+          const then = new Date(Date.now() - 10_000);
+          for (const entry of [file, directory])
+            await utimes(entry, then, then);
+          const page1 = () =>
+            invoke('localFetch', {
+              queries: [
+                {
+                  reasoning:
+                    'Exercise localFetch response pagination through built stdio acceptance.',
+                  path: file,
+                  minify: 'none',
+                },
+              ],
+              responseLength: 100,
+            });
+          const first = await page1();
+          const before = first.structuredContent.responsePagination;
+          assert.ok(before.next);
+          let current = first;
+          let rendered = '';
+          let pages = 0;
+          for (;;) {
+            assert.ok(++pages < 100);
+            // The last page has nothing left to page: it carries no responsePagination.
+            const pagination = current.structuredContent.responsePagination;
+            if (pagination) {
+              assert.equal(pagination.snapshot, before.snapshot);
+              assert.notEqual(pagination.restart, true);
+            } else
+              assert.ok(
+                pages > 1,
+                'the first page lost its responsePagination'
+              );
+            rendered += current.content
+              .filter(block => block.type === 'text')
+              .map(block => block.text.replace(/^# Response page[^\n]*\n/, ''))
+              .join('');
+            if (!pagination?.next) break;
+            current = await invoke(pagination.next.tool, pagination.next.query);
+          }
+          assert.ok(pages > 1);
+          assert.match(rendered, /export const value = 1;/);
+
+          // After an edit the stored pages are stale: the next page restarts on
+          // the current source, never serving the old evidence.
+          const restartFrom = (await page1()).structuredContent
+            .responsePagination.next;
+          await writeFile(file, 'export const value = 200;\n');
+          const restarted = await invoke(restartFrom.tool, restartFrom.query);
+          const pagination = restarted.structuredContent.responsePagination;
+          assert.equal(pagination.restart, true);
+          assert.notEqual(pagination.snapshot, before.snapshot);
+          const fresh = await call('localFetch', {
             path: file,
             minify: 'none',
-          }],
-          responseLength: 100,
-        });
-        const first = await page1();
-        const before = first.structuredContent.responsePagination;
-        assert.ok(before.next);
-        let current = first;
-        let rendered = '';
-        let pages = 0;
-        for (;;) {
-          assert.ok(++pages < 100);
-          // The last page has nothing left to page: it carries no responsePagination.
-          const pagination = current.structuredContent.responsePagination;
-          if (pagination) {
-            assert.equal(pagination.snapshot, before.snapshot);
-            assert.notEqual(pagination.restart, true);
-          } else assert.ok(pages > 1, 'the first page lost its responsePagination');
-          rendered += current.content.filter(block => block.type === 'text')
-            .map(block => block.text.replace(/^# Response page[^\n]*\n/, '')).join('');
-          if (!pagination?.next) break;
-          current = await invoke(pagination.next.tool, pagination.next.query);
+          });
+          assert.equal(fresh.content, '1\texport const value = 200;\n');
+        } finally {
+          await rm(directory, { recursive: true, force: true });
         }
-        assert.ok(pages > 1);
-        assert.match(rendered, /export const value = 1;/);
-
-        // After an edit the stored pages are stale: the next page restarts on
-        // the current source, never serving the old evidence.
-        const restartFrom = (await page1()).structuredContent.responsePagination.next;
-        await writeFile(file, 'export const value = 200;\n');
-        const restarted = await invoke(restartFrom.tool, restartFrom.query);
-        const pagination = restarted.structuredContent.responsePagination;
-        assert.equal(pagination.restart, true);
-        assert.notEqual(pagination.snapshot, before.snapshot);
-        const fresh = await call('localFetch', { path: file, minify: 'none' });
-        assert.equal(fresh.content, '1\texport const value = 200;\n');
-      } finally {
-        await rm(directory, { recursive: true, force: true });
       }
-    });
+    );
     await check('structural captures positive', async () => {
       const data = await call('astSearch', {
         operation: 'match',
@@ -641,16 +918,31 @@ try {
       });
       assert.ok(JSON.stringify(data).includes('add(value, value)'));
     });
-    await check('astTopology is CLI-only: MCP rejects it, the CLI runs the file graph', async () => {
-      assert.ok(!expectedTools.includes('astTopology'), 'MCP must not list astTopology');
-      const query = { operation: 'dependencies', path: fixture, source: 'entry.ts', depth: 2, exclude: ['coverage', 'removed', 'rust'] };
-      const rejected = await client
-        .callTool({ name: 'astTopology', arguments: { queries: [query] } })
-        .then(result => result.isError === true, error => /not found|not available/i.test(String(error?.message)));
-      assert.ok(rejected, 'MCP must reject astTopology');
-      const data = executeCliTool('astTopology', [query]).results[0].data;
-      assert.ok(JSON.stringify(data).includes('math.ts'));
-    });
+    await check(
+      'astTopology is CLI-only: MCP rejects it, the CLI runs the file graph',
+      async () => {
+        assert.ok(
+          !expectedTools.includes('astTopology'),
+          'MCP must not list astTopology'
+        );
+        const query = {
+          operation: 'dependencies',
+          path: fixture,
+          source: 'entry.ts',
+          graphDepth: 2,
+          exclude: ['coverage', 'removed', 'rust'],
+        };
+        const rejected = await client
+          .callTool({ name: 'astTopology', arguments: { queries: [query] } })
+          .then(
+            result => result.isError === true,
+            error => /not found|not available/i.test(String(error?.message))
+          );
+        assert.ok(rejected, 'MCP must reject astTopology');
+        const data = executeCliTool('astTopology', [query]).results[0].data;
+        assert.ok(JSON.stringify(data).includes('math.ts'));
+      }
+    );
     await check(
       'graph diagnostic continuation union preserves the complete inventory (CLI)',
       async () => {
@@ -658,7 +950,7 @@ try {
           operation: 'dependencies',
           path: `${fixture}-diagnostics`,
           source: 'entry.ts',
-          depth: 3,
+          graphDepth: 3,
           pageSize: 50,
           exclude: [],
         };
@@ -680,13 +972,27 @@ try {
           }
           return { rows, count };
         };
-        const run = diagnosticPageSize => executeCliTool('astTopology', [{ ...query, diagnosticPageSize }]).results[0].data;
+        // The entry's only imports are unresolved, so the answer has no
+        // rows: an empty result (CLI exit 1) whose diagnostics stay
+        // reachable through the lead.
+        const run = diagnosticPageSize => {
+          const [result] = executeCliTool(
+            'astTopology',
+            [{ ...query, diagnosticPageSize }],
+            1
+          ).results;
+          assert.equal(result.status, 'empty');
+          return result.data;
+        };
         const first = run(2);
         assert.equal(first.coverage.diagnostics, undefined);
         assert.equal(first.coverage.imports.unresolvedInternal, 5);
         const full = cliPages(run(100).hints.readDiagnostics);
         const paged = cliPages(first.hints.readDiagnostics);
-        assert.equal(full.rows.length, first.coverage.imports.unresolvedInternal);
+        assert.equal(
+          full.rows.length,
+          first.coverage.imports.unresolvedInternal
+        );
         assert.ok(paged.count > full.count);
         assert.deepEqual(paged.rows, full.rows);
       }
@@ -697,11 +1003,11 @@ try {
         workspaceRoot: fixture,
         operation: 'definition',
         symbolName: 'add',
-        lineHint: 4,
+        line: 4,
       });
-      assert.equal(data.payload.kind, 'definition');
+      assert.equal(data.kind, 'definition');
       assert.ok(
-        data.payload.matches.some(
+        data.matches.some(
           location =>
             location.path.endsWith('math.ts') &&
             location.displayRange.startLine === 2
@@ -716,16 +1022,23 @@ try {
           workspaceRoot: fixture,
           operation: 'references',
           symbolName: 'add',
-          lineHint: 2,
+          line: 2,
         };
-        // References group per file: {path, matches: ["<line>:<col> <text>"]}.
+        // References group per file: {path, matches: [{line, column, value}]}.
         const collect = data =>
-          data.payload.files.flatMap(file => file.matches.map(ref => `${file.path} ${ref}`));
+          data.files.flatMap(file =>
+            file.matches.map(
+              ref => `${file.path} ${ref.line}:${ref.column} ${ref.value}`
+            )
+          );
         const first = await call('lspSearch', { ...query, pageSize: 1 });
         const paged = await pages(first, 'nextPage', collect);
         const full = await call('lspSearch', { ...query, pageSize: 100 });
         assert.ok(paged.count > 1);
-        assert.equal(paged.rows.length, full.pagination?.totalItems ?? collect(full).length);
+        assert.equal(
+          paged.rows.length,
+          full.pagination?.totalItems ?? collect(full).length
+        );
         assert.deepEqual(paged.rows, collect(full));
       }
     );
@@ -741,97 +1054,151 @@ try {
             .map(block => block.text)
             .join('\n');
           assert.match(message, /queries|array|invalid/i);
-          assert.ok(message.length > 0 && message.length <= 2_000, `${name}: unusable validation message`);
-          assert.equal((await client.listTools()).tools.length, expectedTools.length);
+          assert.ok(
+            message.length > 0 && message.length <= 2_000,
+            `${name}: unusable validation message`
+          );
+          assert.equal(
+            (await client.listTools()).tools.length,
+            expectedTools.length
+          );
         }
       );
-    for (const removedName of ['localAnalyzeGraph', 'lspGetSemantics', 'octocode_nonexistent_tool']) await check(
-      `${removedName} returns an error and server remains responsive`,
+    for (const removedName of [
+      'localAnalyzeGraph',
+      'lspGetSemantics',
+      'octocode_nonexistent_tool',
+    ])
+      await check(
+        `${removedName} returns an error and server remains responsive`,
+        async () => {
+          let rejected = false;
+          try {
+            const result = await client.callTool({
+              name: removedName,
+              arguments: {},
+            });
+            rejected = result.isError === true;
+          } catch {
+            rejected = true;
+          }
+          assert.ok(rejected);
+          assert.equal(
+            (await client.listTools()).tools.length,
+            expectedTools.length
+          );
+        }
+      );
+  }
+  if (values.live && !values.quick) {
+    if (expectedTools.includes(TOOL_NAMES.CLASIFY)) {
+      await check(
+        'clasify executes yesno, choice, and score through the live provider',
+        async () => {
+          const response = await invoke(TOOL_NAMES.CLASIFY, {
+            queries: [
+              {
+                id: 'live-primitives',
+                reasoning:
+                  'Verify every semantic primitive through the built MCP surface.',
+                resources: [
+                  {
+                    id: 'fixture',
+                    value:
+                      'The fixture explicitly states that alpha is enabled.',
+                  },
+                ],
+                questions: [
+                  {
+                    id: 'yesno',
+                    type: 'yesno',
+                    ask: 'Does the fixture state that alpha is enabled?',
+                  },
+                  {
+                    id: 'choice',
+                    type: 'choice',
+                    ask: 'Which state does the fixture assign to alpha?',
+                    labels: { enabled: null, disabled: null },
+                  },
+                  {
+                    id: 'score',
+                    type: 'score',
+                    ask: 'How explicit is the fixture about alpha being enabled?',
+                    labels: ['not stated', 'implied', 'explicitly stated'],
+                  },
+                ],
+              },
+            ],
+          });
+          assert.equal(response.isError, false);
+          const resource =
+            response.structuredContent?.queries?.[0]?.resources?.[0];
+          assert.equal(resource?.coverage, 'complete');
+          const answers = resource?.pages?.[0]?.answers;
+          assert.ok(typeof answers?.yesno?.yesno === 'number');
+          assert.ok(typeof answers?.choice?.choice === 'string');
+          assert.ok(typeof answers?.score?.score === 'number');
+        }
+      );
+    }
+    const repo = { owner: 'octocat', repo: 'Hello-World' };
+    const sha = '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d';
+    await check(
+      'GitHub tree preserves paths and the requested revision',
       async () => {
+        const data = await call('ghStructure', {
+          ...repo,
+          ref: sha,
+          pageSize: 1,
+        });
+        // The resolved ref restates the requested ref, so it is not repeated.
+        assert.equal(data.resolvedRef ?? sha, sha);
+        assert.ok(
+          data.entries.some(directory => directory.files.includes('README'))
+        );
+      }
+    );
+    await check(
+      'GitHub full file reads return content without a checkout',
+      async () => {
+        const data = await call('ghGetFileContent', {
+          ...repo,
+          ref: sha,
+          path: 'README',
+          fullContent: true,
+        });
+        assert.equal(data.content, '1\tHello World!\n');
+        assert.equal(data.files, undefined);
+        assert.equal(data.localPath, undefined);
+        assert.equal(data.repoRoot, undefined);
+        assert.equal(data.directories, undefined);
+      }
+    );
+    await check(
+      'GitHub file fetch rejects directory paths and removed directory mode',
+      async () => {
+        const directory = await invoke('ghGetFileContent', {
+          queries: [{ ...repo, ref: sha, path: '' }],
+        });
+        assert.equal(directory.isError, true);
+        assert.match(
+          JSON.stringify(
+            directory.structuredContent ?? directory.content ?? directory
+          ),
+          /non-blank path|directory/i
+        );
         let rejected = false;
         try {
-          const result = await client.callTool({
-            name: removedName,
-            arguments: {},
+          const result = await invoke('ghGetFileContent', {
+            queries: [{ ...repo, path: '', type: 'directory' }],
           });
           rejected = result.isError === true;
         } catch {
           rejected = true;
         }
         assert.ok(rejected);
-        assert.equal((await client.listTools()).tools.length, expectedTools.length);
       }
     );
-  }
-  if (values.live && !values.quick) {
-    if (expectedTools.includes(TOOL_NAMES.CLASIFY)) {
-      await check('clasify executes yesno, choice, and score through the live provider', async () => {
-        const response = await invoke(TOOL_NAMES.CLASIFY, { queries: [{
-          id: 'live-primitives',
-          reasoning: 'Verify every semantic primitive through the built MCP surface.',
-          resources: [{
-            id: 'fixture',
-            value: 'The fixture explicitly states that alpha is enabled.',
-          }],
-          questions: [
-            {
-              id: 'yesno',
-              type: 'yesno',
-              ask: 'Does the fixture state that alpha is enabled?',
-            },
-            {
-              id: 'choice',
-              type: 'choice',
-              ask: 'Which state does the fixture assign to alpha?',
-              labels: { enabled: null, disabled: null },
-            },
-            {
-              id: 'score',
-              type: 'score',
-              ask: 'How explicit is the fixture about alpha being enabled?',
-              labels: ['not stated', 'implied', 'explicitly stated'],
-            },
-          ],
-        }] });
-        assert.equal(response.isError, false);
-        const resource = response.structuredContent?.queries?.[0]?.resources?.[0];
-        assert.equal(resource?.coverage, 'complete');
-        const answers = resource?.pages?.[0]?.answers;
-        assert.ok(typeof answers?.yesno?.yesno === 'number');
-        assert.ok(typeof answers?.choice?.choice === 'string');
-        assert.ok(typeof answers?.score?.score === 'number');
-      });
-    }
-    const repo = { owner: 'octocat', repo: 'Hello-World' };
-    const sha = '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d';
-    await check('GitHub tree preserves paths and the requested revision', async () => {
-      const data = await call('ghStructure', { ...repo, ref: sha, pageSize: 1 });
-      // The resolved ref restates the requested ref, so it is not repeated.
-      assert.equal(data.resolvedRef ?? sha, sha);
-      assert.ok(data.entries.some(directory => directory.files.includes('README')));
-    });
-    await check('GitHub full file reads return content without a checkout', async () => {
-      const data = await call('ghGetFileContent', { ...repo, ref: sha, path: 'README', fullContent: true });
-      assert.equal(data.content, '1\tHello World!\n');
-      assert.equal(data.files, undefined);
-      assert.equal(data.localPath, undefined);
-      assert.equal(data.repoRoot, undefined);
-      assert.equal(data.directories, undefined);
-    });
-    await check('GitHub file fetch rejects directory paths and removed directory mode', async () => {
-      const directory = await invoke('ghGetFileContent', { queries: [{ ...repo, ref: sha, path: '' }] });
-      assert.equal(directory.isError, true);
-      assert.match(
-        JSON.stringify(directory.structuredContent ?? directory.content ?? directory),
-        /non-blank path|directory/i
-      );
-      let rejected = false;
-      try {
-        const result = await invoke('ghGetFileContent', { queries: [{ ...repo, path: '', type: 'directory' }] });
-        rejected = result.isError === true;
-      } catch { rejected = true; }
-      assert.ok(rejected);
-    });
     await check('GitHub repository search positive', async () => {
       const data = await call('ghSearchRepo', {
         owner: 'octocat',
@@ -857,67 +1224,111 @@ try {
         const full = await call('ghGetFileContent', query);
         let current = await call('ghGetFileContent', {
           ...query,
-          unit: 'bytes', length: 5,
+          unit: 'bytes',
+          length: 5,
         });
         let content = current.content;
         let count = 1;
-        while (current.next?.continue) {
+        while (current.next?.continueWindow) {
           assert.ok(count++ < 20);
-          current = await nextCall(current.next.continue);
+          current = await nextCall(current.next.continueWindow);
           content += current.content;
         }
         assert.ok(count > 1);
         assert.equal(content, full.content);
       }
     );
-    await check('GitHub/local search-to-match fetch parity in both chunk units', async () => {
-      const repo = { owner: 'jonschlinkert', repo: 'is-number' };
-      const found = await call('ghSearchCode', { ...repo, filename: 'index.js', keywords: ['module.exports'], pageSize: 1 });
-      assert.ok(found.files?.length > 0);
-      const remotePath = found.files[0].path;
-      const full = await call('ghGetFileContent', { ...repo, path: remotePath, fullContent: true });
-      const source = full.content;
-      assert.ok(source.includes('module.exports'));
-      const parent = fixture;
-      const directory = await mkdtemp(path.join(parent, 'remote-local-fetch-'));
-      const file = path.join(directory, 'index.js');
-      try {
-        await writeFile(file, source);
-        const localFound = await call('localSearch', { path: directory, matchString: 'module.exports', regex: 'literal' });
-        assert.ok(localFound.files?.length > 0);
-        for (const unit of ['lines', 'bytes']) {
-          const selector = { matchString: 'module.exports', contextLines: 2, minify: 'standard', unit, length: unit === 'lines' ? 1 : 7, extras: ['stats', 'details'] };
-          const contents = [];
-          const anchors = [];
-          for (const remote of [false, true]) {
-            const tool = remote ? 'ghGetFileContent' : 'localFetch';
-            const query = remote ? { ...repo, path: remotePath, ...(full.commitSha ? { ref: full.commitSha } : {}), ...selector } : { path: file, ...selector };
-            let result = await call(tool, query);
-            let joined = '';
-            let count = 0;
-            const matched = new Set();
-            while (true) {
-              assert.ok(count++ < 100);
-              const page = result;
-              assert.equal(page.sourceBytes, Buffer.byteLength(source));
-              assert.equal(page.returnedBytes, Buffer.byteLength(page.content));
-              assert.equal(page.minifyFallback.reason, 'match-evidence');
-              joined += page.content;
-              for (const line of page.matchedLines ?? []) matched.add(line);
-              if (!page.next?.continue) { assert.equal(page.pagination.hasMore, false); break; }
-              assert.equal(page.next.continue.query.queries[0].matchString, selector.matchString);
-              result = await nextCall(page.next.continue);
+    await check(
+      'GitHub/local search-to-match fetch parity in both chunk units',
+      async () => {
+        const repo = { owner: 'jonschlinkert', repo: 'is-number' };
+        const found = await call('ghSearchCode', {
+          ...repo,
+          filename: 'index.js',
+          keywords: ['module.exports'],
+          pageSize: 1,
+        });
+        assert.ok(found.files?.length > 0);
+        const remotePath = found.files[0].path;
+        const full = await call('ghGetFileContent', {
+          ...repo,
+          path: remotePath,
+          fullContent: true,
+        });
+        const source = full.content;
+        assert.ok(source.includes('module.exports'));
+        const parent = fixture;
+        const directory = await mkdtemp(
+          path.join(parent, 'remote-local-fetch-')
+        );
+        const file = path.join(directory, 'index.js');
+        try {
+          await writeFile(file, source);
+          const localFound = await call('localSearch', {
+            path: directory,
+            matchString: 'module.exports',
+            regex: 'literal',
+          });
+          assert.ok(localFound.files?.length > 0);
+          for (const unit of ['lines', 'bytes']) {
+            const selector = {
+              matchString: 'module.exports',
+              contextLines: 2,
+              minify: 'standard',
+              unit,
+              length: unit === 'lines' ? 1 : 7,
+              extras: ['stats', 'details'],
+            };
+            const contents = [];
+            const anchors = [];
+            for (const remote of [false, true]) {
+              const tool = remote ? 'ghGetFileContent' : 'localFetch';
+              const query = remote
+                ? {
+                    ...repo,
+                    path: remotePath,
+                    ...(full.commitSha ? { ref: full.commitSha } : {}),
+                    ...selector,
+                  }
+                : { path: file, ...selector };
+              let result = await call(tool, query);
+              let joined = '';
+              let count = 0;
+              const matched = new Set();
+              while (true) {
+                assert.ok(count++ < 100);
+                const page = result;
+                assert.equal(page.sourceBytes, Buffer.byteLength(source));
+                assert.equal(
+                  page.returnedBytes,
+                  Buffer.byteLength(page.content)
+                );
+                assert.equal(page.minifyFallback.reason, 'match-evidence');
+                joined += page.content;
+                for (const line of page.matchedLines ?? []) matched.add(line);
+                if (!page.next?.continueWindow) {
+                  assert.equal(page.pagination.hasMore, false);
+                  break;
+                }
+                assert.equal(
+                  page.next.continueWindow.query.queries[0].matchString,
+                  selector.matchString
+                );
+                result = await nextCall(page.next.continueWindow);
+              }
+              assert.ok(count > 1);
+              contents.push(joined);
+              anchors.push([...matched]);
             }
-            assert.ok(count > 1);
-            contents.push(joined);
-            anchors.push([...matched]);
+            assert.equal(contents[0], contents[1]);
+            assert.deepEqual(anchors[0], anchors[1]);
+            assert.ok(anchors[0].length > 0);
           }
-          assert.equal(contents[0], contents[1]);
-          assert.deepEqual(anchors[0], anchors[1]);
-          assert.ok(anchors[0].length > 0);
+        } finally {
+          await rm(directory, { recursive: true, force: true });
         }
-      } finally { await rm(directory, { recursive: true, force: true }); }
-    });
+      }
+    );
     await check('GitHub commit history search positive', async () => {
       const data = await call('ghSearchHistory', {
         ...repo,
@@ -939,7 +1350,10 @@ try {
       assert.ok(JSON.stringify(data).includes(sha));
     });
     await check('npm exact metadata positive', async () => {
-      const data = await call('artifactSearch', { ecosystem: 'npm', packageName: 'is-number' });
+      const data = await call('artifactSearch', {
+        ecosystem: 'npm',
+        packageName: 'is-number',
+      });
       assert.ok(JSON.stringify(data).includes('7.0.0'));
     });
     await check('npm discovery continuation is executable', async () => {
@@ -952,7 +1366,9 @@ try {
       await nextCall(data.next.nextPage);
     });
     await check('CLI clone pinned revision positive', async () => {
-      const data = executeCliTool('ghCloneRepo', [{ ...repo, ref: sha, reasoning: 'Verify CLI-only clone.' }]).results[0].data;
+      const data = executeCliTool('ghCloneRepo', [
+        { ...repo, ref: sha, reasoning: 'Verify CLI-only clone.' },
+      ]).results[0].data;
       assert.ok(data.location.localPath);
       assert.equal(data.location.commitSha, sha);
       assert.equal(
@@ -961,152 +1377,238 @@ try {
       );
     });
     if (expectedTools.includes(TOOL_NAMES.CLASIFY)) {
-      await check('clasify captures every allowed resource tool and completes continuations', async () => {
-        const resourceTools = new Set();
-        const visit = value => {
-          if (!value || typeof value !== 'object') return;
-          for (const name of value.properties?.tool?.enum ?? []) resourceTools.add(name);
-          Object.values(value).forEach(visit);
-        };
-        visit(list.tools.find(tool => tool.name === TOOL_NAMES.CLASIFY).inputSchema);
-        assert.ok(resourceTools.size > 0);
-        const resources = [...resourceTools].map(tool => {
-          const sample = receipt.calls.find(call =>
-            call.name === tool && call.response.isError === false
-            && call.response.structuredContent?.results?.[0]?.data
-            && !['empty', 'error'].includes(call.response.structuredContent.results[0].status)
+      await check(
+        'clasify captures every allowed resource tool and completes continuations',
+        async () => {
+          const resourceTools = new Set();
+          const visit = value => {
+            if (!value || typeof value !== 'object') return;
+            for (const name of value.properties?.tool?.enum ?? [])
+              resourceTools.add(name);
+            Object.values(value).forEach(visit);
+          };
+          visit(
+            list.tools.find(tool => tool.name === TOOL_NAMES.CLASIFY)
+              .inputSchema
           );
-          assert.ok(sample, `${tool}: no successful resource fixture`);
-          return { id: tool, tool, query: sample.arguments.queries[0] };
-        });
-        let input = {
-          queries: [{
-            resources,
-            questions: [{ id: 'evidence', type: 'yesno', ask: 'Does this evidence identify a named file, repository, package, or code symbol?' }],
-          }],
-        };
-        const completed = new Set();
-        let calls = 0;
-        while (input) {
-          assert.ok(calls++ < 20, 'clasify continuations did not terminate');
-          const response = await invoke(TOOL_NAMES.CLASIFY, input);
-          assert.equal(response.isError, false);
-          const matrix = response.structuredContent?.queries?.[0];
-          assert.ok(matrix?.resources?.length);
-          assert.deepEqual(matrix.resources.map(resource => resource.id), input.queries[0].resources.map(resource => resource.id));
-          for (const resource of matrix.resources) {
-            assert.ok(['complete', 'partial'].includes(resource.coverage), JSON.stringify(resource));
-            assert.ok(resource.pages.length > 0);
-            for (const page of resource.pages) {
-              assert.equal(page.error, undefined);
-              const answer = page.answers?.evidence?.yesno ?? page.answers?.evidence;
-              assert.ok(typeof answer === 'number' && answer >= 0 && answer <= 1, JSON.stringify(page));
-              assert.equal(page.content, undefined);
-              assert.equal(page.body, undefined);
+          assert.ok(resourceTools.size > 0);
+          const resources = [...resourceTools].map(tool => {
+            const sample = receipt.calls.find(
+              call =>
+                call.name === tool &&
+                call.response.isError === false &&
+                call.response.structuredContent?.results?.[0]?.data &&
+                !['empty', 'error'].includes(
+                  call.response.structuredContent.results[0].status
+                )
+            );
+            assert.ok(sample, `${tool}: no successful resource fixture`);
+            return { id: tool, tool, query: sample.arguments.queries[0] };
+          });
+          let input = {
+            queries: [
+              {
+                resources,
+                questions: [
+                  {
+                    id: 'evidence',
+                    type: 'yesno',
+                    ask: 'Does this evidence identify a named file, repository, package, or code symbol?',
+                  },
+                ],
+              },
+            ],
+          };
+          const completed = new Set();
+          let calls = 0;
+          while (input) {
+            assert.ok(calls++ < 20, 'clasify continuations did not terminate');
+            const response = await invoke(TOOL_NAMES.CLASIFY, input);
+            assert.equal(response.isError, false);
+            const matrix = response.structuredContent?.queries?.[0];
+            assert.ok(matrix?.resources?.length);
+            assert.deepEqual(
+              matrix.resources.map(resource => resource.id),
+              input.queries[0].resources.map(resource => resource.id)
+            );
+            for (const resource of matrix.resources) {
+              assert.ok(
+                ['complete', 'partial'].includes(resource.coverage),
+                JSON.stringify(resource)
+              );
+              assert.ok(resource.pages.length > 0);
+              for (const page of resource.pages) {
+                assert.equal(page.error, undefined);
+                const answer =
+                  page.answers?.evidence?.yesno ?? page.answers?.evidence;
+                assert.ok(
+                  typeof answer === 'number' && answer >= 0 && answer <= 1,
+                  JSON.stringify(page)
+                );
+                assert.equal(page.content, undefined);
+                assert.equal(page.body, undefined);
+              }
+              if (resource.coverage === 'complete') completed.add(resource.id);
+              else
+                assert.ok(
+                  matrix.next?.clasify?.queries?.[0]?.resources.some(
+                    next => next.id === resource.id
+                  )
+                );
             }
-            if (resource.coverage === 'complete') completed.add(resource.id);
-            else assert.ok(matrix.next?.clasify?.queries?.[0]?.resources.some(next => next.id === resource.id));
+            input = matrix.next?.clasify;
           }
-          input = matrix.next?.clasify;
+          assert.deepEqual([...completed].sort(), [...resourceTools].sort());
         }
-        assert.deepEqual([...completed].sort(), [...resourceTools].sort());
-      });
+      );
     }
   }
   if (values['cli-mcp-parity']) {
-    await check('deterministic same-query CLI and real MCP structured result parity', async () => {
-      const parity = [];
-      receipt.cliMcpParity = parity;
-      const cacheVolatileTools = new Set([
-        'ghSearchRepo', 'ghSearchCode', 'ghStructure', 'ghGetFileContent', 'ghSearchHistory', 'ghGetHistoryItem', 'artifactSearch',
-      ]);
-      const liveOnlyTools = cacheVolatileTools;
-      for (const name of expectedTools) {
-        if (name === TOOL_NAMES.CLASIFY) {
-          const executionVerified = receipt.calls.some(call =>
-            call.name === name
-            && call.response.isError === false
-            && call.response.structuredContent?.results?.[0]?.status !== 'error'
-          );
-          parity.push({
-            name,
-            status: 'not-applicable',
-            comparison: 'exact-structured-results',
-            executionVerified,
-            reason: 'Independent probabilistic responses need not be identical; executionVerified records the separate live provider check.',
-          });
+    await check(
+      'deterministic same-query CLI and real MCP structured result parity',
+      async () => {
+        const parity = [];
+        receipt.cliMcpParity = parity;
+        const cacheVolatileTools = new Set([
+          'ghSearchRepo',
+          'ghSearchCode',
+          'ghStructure',
+          'ghGetFileContent',
+          'ghSearchHistory',
+          'ghGetHistoryItem',
+          'artifactSearch',
+        ]);
+        const liveOnlyTools = cacheVolatileTools;
+        for (const name of expectedTools) {
+          if (name === TOOL_NAMES.CLASIFY) {
+            const executionVerified = receipt.calls.some(
+              call =>
+                call.name === name &&
+                call.response.isError === false &&
+                call.response.structuredContent?.results?.[0]?.status !==
+                  'error'
+            );
+            parity.push({
+              name,
+              status: 'not-applicable',
+              comparison: 'exact-structured-results',
+              executionVerified,
+              reason:
+                'Independent probabilistic responses need not be identical; executionVerified records the separate live provider check.',
+            });
+            assert.ok(
+              !values.live || executionVerified,
+              'clasify: --live requires one successful provider-backed execution'
+            );
+            continue;
+          }
+          const sample = cliMcpParitySamples.get(name);
+          const selected =
+            sample?.selected ??
+            receipt.calls.find(
+              call =>
+                call.name === name &&
+                call.response.isError === false &&
+                call.response.structuredContent?.results?.[0]?.status !==
+                  'error' &&
+                call.response.structuredContent?.results?.[0]?.status !==
+                  'empty'
+            );
+          if (
+            !selected &&
+            liveOnlyTools.has(name) &&
+            (!values.live || values.quick)
+          ) {
+            parity.push({
+              name,
+              status: 'not-run',
+              reason:
+                'Successful provider-backed parity requires --live without --quick.',
+            });
+            continue;
+          }
           assert.ok(
-            !values.live || executionVerified,
-            'clasify: --live requires one successful provider-backed execution'
+            selected,
+            `${name}: no successful non-mutating MCP call to compare`
           );
-          continue;
-        }
-        const sample = cliMcpParitySamples.get(name);
-        const selected = sample?.selected ?? receipt.calls.find(call =>
-          call.name === name
-          && call.response.isError === false
-          && call.response.structuredContent?.results?.[0]?.status !== 'error'
-          && call.response.structuredContent?.results?.[0]?.status !== 'empty'
-        );
-        if (
-          !selected
-          && liveOnlyTools.has(name)
-          && (!values.live || values.quick)
-        ) {
+          const cliResponse =
+            sample?.cliResponse ??
+            executeCliTool(name, selected.arguments.queries);
+          const cliResults = sample?.cliResults ?? cliResponse.results;
+          const mcpResults = selected.response.structuredContent.results;
+          const mcpBase = selected.response.structuredContent.root;
+          const cliBase = cliResponse?.root;
+          const differences = differingFields(mcpResults, cliResults);
+          // Provider cache state depends on which cross-process arm reached the
+          // provider first. For these provider tools it is receipt metadata,
+          // not evidence or tool data; retain the raw pair and compare all other
+          // fields explicitly. No local/AST/LSP result receives this exception.
+          const cacheOnly =
+            cacheVolatileTools.has(name) &&
+            differences.every(field => field === '/0/cache');
+          const mcpComparable = cacheOnly
+            ? mcpResults.map(({ cache, ...row }) => row)
+            : mcpResults;
+          const cliComparable = cacheOnly
+            ? cliResults.map(({ cache, ...row }) => row)
+            : cliResults;
+          const contractDifferences = differingFields(
+            mcpComparable,
+            cliComparable
+          ).filter(field => !field.endsWith('/cursor'));
+          const opaqueCursorDifferences = differences.filter(field =>
+            field.endsWith('/cursor')
+          );
+          const baseEqual = mcpBase === cliBase;
           parity.push({
             name,
-            status: 'not-run',
-            reason: 'Successful provider-backed parity requires --live without --quick.',
+            arguments: selected.arguments,
+            mcpResults,
+            cliResults,
+            mcpBase,
+            cliBase,
+            baseEqual,
+            exact: differences.length === 0,
+            rawDifferingFields: differences,
+            comparison:
+              cacheOnly || opaqueCursorDifferences.length
+                ? 'evidence-data-and-executable-query'
+                : 'exact-structured-results',
+            cacheExclusionJustification: cacheOnly
+              ? 'provider cache state is cross-process timing metadata; all evidence and data fields remain exact'
+              : undefined,
+            opaqueCursorExclusionJustification: opaqueCursorDifferences.length
+              ? 'opaque cursors may differ across independent processes; the continuation tool and executable query remain exact'
+              : undefined,
+            differingFields: contractDifferences,
+            passesContract: contractDifferences.length === 0 && baseEqual,
           });
-          continue;
         }
-        assert.ok(selected, `${name}: no successful non-mutating MCP call to compare`);
-        const cliResponse = sample?.cliResponse ?? executeCliTool(name, selected.arguments.queries);
-        const cliResults = sample?.cliResults ?? cliResponse.results;
-        const mcpResults = selected.response.structuredContent.results;
-        const mcpBase = selected.response.structuredContent.root;
-        const cliBase = cliResponse?.root;
-        const differences = differingFields(mcpResults, cliResults);
-        // Provider cache state depends on which cross-process arm reached the
-        // provider first. For these provider tools it is receipt metadata,
-        // not evidence or tool data; retain the raw pair and compare all other
-        // fields explicitly. No local/AST/LSP result receives this exception.
-        const cacheOnly = cacheVolatileTools.has(name) && differences.every(field => field === '/0/cache');
-        const mcpComparable = cacheOnly ? mcpResults.map(({ cache, ...row }) => row) : mcpResults;
-        const cliComparable = cacheOnly ? cliResults.map(({ cache, ...row }) => row) : cliResults;
-        const contractDifferences = differingFields(mcpComparable, cliComparable)
-          .filter(field => !field.endsWith('/cursor'));
-        const opaqueCursorDifferences = differences.filter(field => field.endsWith('/cursor'));
-        const baseEqual = mcpBase === cliBase;
-        parity.push({
-          name,
-          arguments: selected.arguments,
-          mcpResults,
-          cliResults,
-          mcpBase,
-          cliBase,
-          baseEqual,
-          exact: differences.length === 0,
-          rawDifferingFields: differences,
-          comparison: cacheOnly || opaqueCursorDifferences.length
-            ? 'evidence-data-and-executable-query'
-            : 'exact-structured-results',
-          cacheExclusionJustification: cacheOnly ? 'provider cache state is cross-process timing metadata; all evidence and data fields remain exact' : undefined,
-          opaqueCursorExclusionJustification: opaqueCursorDifferences.length
-            ? 'opaque cursors may differ across independent processes; the continuation tool and executable query remain exact'
-            : undefined,
-          differingFields: contractDifferences,
-          passesContract: contractDifferences.length === 0 && baseEqual,
-        });
+        receipt.cliMcpParitySummary = {
+          compared: parity.filter(row => row.passesContract !== undefined)
+            .length,
+          notApplicable: parity
+            .filter(row => row.status === 'not-applicable')
+            .map(row => row.name),
+          notRun: parity
+            .filter(row => row.status === 'not-run')
+            .map(row => row.name),
+        };
+        const failures = parity.filter(
+          row =>
+            !['not-run', 'not-applicable'].includes(row.status) &&
+            !row.passesContract
+        );
+        assert.deepEqual(
+          failures.map(row => ({
+            name: row.name,
+            baseEqual: row.baseEqual,
+            differingFields: row.differingFields,
+          })),
+          []
+        );
       }
-      receipt.cliMcpParitySummary = {
-        compared: parity.filter(row => row.passesContract !== undefined).length,
-        notApplicable: parity.filter(row => row.status === 'not-applicable').map(row => row.name),
-        notRun: parity.filter(row => row.status === 'not-run').map(row => row.name),
-      };
-      const failures = parity.filter(row => !['not-run', 'not-applicable'].includes(row.status) && !row.passesContract);
-      assert.deepEqual(failures.map(row => ({ name: row.name, baseEqual: row.baseEqual, differingFields: row.differingFields })), []);
-    });
+    );
   }
   await check('stdio contains no parser or protocol errors', () =>
     assert.deepEqual(receipt.transportErrors, [])
@@ -1119,23 +1621,34 @@ try {
     receipt.closeError = error.message;
   }
   receipt.shutdownMs = Date.now() - start;
-  const summarizeLatencies = calls => Object.fromEntries(
-    [...new Set(calls.map(call => call.name))].sort().map(name => {
-      const durations = calls
-        .filter(call => call.name === name)
-        .map(call => call.durationMs)
-        .sort((left, right) => left - right);
-      const percentile = fraction =>
-        durations[Math.min(durations.length - 1, Math.ceil(durations.length * fraction) - 1)];
-      return [name, {
-        count: durations.length,
-        p50Ms: percentile(0.5),
-        p95Ms: percentile(0.95),
-        maxMs: durations.at(-1),
-        totalMs: Number(durations.reduce((sum, duration) => sum + duration, 0).toFixed(2)),
-      }];
-    })
-  );
+  const summarizeLatencies = calls =>
+    Object.fromEntries(
+      [...new Set(calls.map(call => call.name))].sort().map(name => {
+        const durations = calls
+          .filter(call => call.name === name)
+          .map(call => call.durationMs)
+          .sort((left, right) => left - right);
+        const percentile = fraction =>
+          durations[
+            Math.min(
+              durations.length - 1,
+              Math.ceil(durations.length * fraction) - 1
+            )
+          ];
+        return [
+          name,
+          {
+            count: durations.length,
+            p50Ms: percentile(0.5),
+            p95Ms: percentile(0.95),
+            maxMs: durations.at(-1),
+            totalMs: Number(
+              durations.reduce((sum, duration) => sum + duration, 0).toFixed(2)
+            ),
+          },
+        ];
+      })
+    );
   receipt.latencyByTool = summarizeLatencies(receipt.calls);
   receipt.cliLatencyByTool = summarizeLatencies(cliCalls);
   receipt.responseBytesByTool = Object.fromEntries(
@@ -1145,13 +1658,18 @@ try {
         .map(call => call.responseBytes)
         .sort((left, right) => left - right);
       const percentile = fraction =>
-        sizes[Math.min(sizes.length - 1, Math.ceil(sizes.length * fraction) - 1)];
-      return [name, {
-        count: sizes.length,
-        p50Bytes: percentile(0.5),
-        p95Bytes: percentile(0.95),
-        maxBytes: sizes.at(-1),
-      }];
+        sizes[
+          Math.min(sizes.length - 1, Math.ceil(sizes.length * fraction) - 1)
+        ];
+      return [
+        name,
+        {
+          count: sizes.length,
+          p50Bytes: percentile(0.5),
+          p95Bytes: percentile(0.95),
+          maxBytes: sizes.at(-1),
+        },
+      ];
     })
   );
   receipt.totalMs = Number((performance.now() - suiteStartedAt).toFixed(2));

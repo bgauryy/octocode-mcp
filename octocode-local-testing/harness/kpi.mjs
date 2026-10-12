@@ -85,10 +85,10 @@ const L = [
   `Skipped: ${comp.skipped.join('; ') || 'none'}.`, '',
   '| KPI | Value |', '|---|--:|',
   `| Correct answers (rg/gh) | ${w.correct} (${w.correctShell}) |`,
-  `| Median bytes ratio vs rg/gh (B7) | ${fmt(w.medianBytesRatio)} |`,
+  `| Median bytes ratio vs rg/gh | ${fmt(w.medianBytesRatio)} |`,
   `| Median bytes ratio vs unfiltered shell | ${fmt(w.medianBytesRatioUnfiltered)} |`,
   `| Median calls ratio · ms ratio | ${fmt(w.medianCallsRatio)} · ${fmt(w.medianMsRatio)} |`,
-  `| Hints share, small tasks (B9; ${w.smallTasks} tasks with rg/gh ≤ 1,000 B) | ${fmt(w.hintsShareSmall)} |`,
+  `| Hints share, small tasks (${w.smallTasks} tasks with rg/gh ≤ 1,000 B) | ${fmt(w.hintsShareSmall)} |`,
   `| Hints share, all tasks · lead share, all · lead share, small | ${fmt(w.hintsShareAll)} · ${fmt(w.leadShareAll)} · ${fmt(w.leadShareSmall)} |`,
   `| Never-trim violations · schema errors | ${fmt(w.neverTrimViolations)} · ${fmt(w.schemaErrors)} |`,
   '', '| Tool | Tasks | Correct | Bytes (octocode / rg-gh) | Ratio | Lead share | Hints share |', '|---|--:|--:|--:|--:|--:|--:|',
@@ -100,12 +100,12 @@ for (const t of TOOL_ORDER.filter(t => comp.perTool[t])) {
 fs.writeFileSync(path.join(OUT, `KPI-${LABEL}.md`), `${L.join('\n')}\n`);
 process.stdout.write(`${L.join('\n')}\n`);
 
-// Regression gates (decided 2026-10-07): B7 re-baselined at 2.3× with a 2.4× guard;
-// B9 keeps read+callers on multi-hit answers, target ≤0.20. Every answer stays correct.
+// Regression gates (decided 2026-10-07): the median bytes ratio is re-baselined at 2.3× with a 2.4× guard;
+// the small-task hints share keeps read+callers on multi-hit answers, target ≤0.20. Every answer stays correct.
 const gates = [
   ['correct answers', w.correct.split('/')[0] === w.correct.split('/')[1], w.correct],
-  ['B7 median bytes ratio ≤ 2.4', w.medianBytesRatio != null && w.medianBytesRatio <= 2.4, w.medianBytesRatio],
-  ['B9 small-task hints share ≤ 0.20', w.hintsShareSmall != null && w.hintsShareSmall <= 0.2, w.hintsShareSmall],
+  ['median bytes ratio ≤ 2.4', w.medianBytesRatio != null && w.medianBytesRatio <= 2.4, w.medianBytesRatio],
+  ['small-task hints share ≤ 0.20', w.hintsShareSmall != null && w.hintsShareSmall <= 0.2, w.hintsShareSmall],
   ['never-trim violations = 0', !w.neverTrimViolations, w.neverTrimViolations],
 ];
 for (const [name, ok, value] of gates) process.stdout.write(`${ok ? 'PASS' : 'FAIL'} [kpi] ${name} — ${fmt(value)}\n`);

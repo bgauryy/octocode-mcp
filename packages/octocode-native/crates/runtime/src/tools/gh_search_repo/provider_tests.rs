@@ -117,7 +117,7 @@ async fn default_archived_search_exclusion_offers_no_lead() {
     );
     // Repo-discovery words are not code keywords: no code-search lead.
     assert!(
-        first.data["next"].get("searchCode").is_none(),
+        first.data["next"].get("findCode").is_none(),
         "{}",
         first.data
     );
@@ -130,7 +130,7 @@ async fn default_archived_search_exclusion_offers_no_lead() {
         second.data
     );
     assert!(
-        second.data["next"].get("searchCode").is_none(),
+        second.data["next"].get("findCode").is_none(),
         "{}",
         second.data
     );
@@ -139,14 +139,14 @@ async fn default_archived_search_exclusion_offers_no_lead() {
         "{}",
         second.data
     );
-    let excluded = run(&server, json!({"keywords":["x"],"archived":false})).await;
+    let excluded = run(&server, json!({"keywords":["x"],"includeArchived":false})).await;
     assert!(
         excluded.data["next"].get("includeArchived").is_none(),
         "{}",
         excluded.data
     );
 
-    let archived = run(&server, json!({"keywords":["x"],"archived":true})).await;
+    let archived = run(&server, json!({"keywords":["x"],"includeArchived":true})).await;
     assert_eq!(
         archived.data["repositories"][0]["archived"], true,
         "{}",
@@ -179,7 +179,7 @@ async fn owner_listing_counts_skipped_archived_repositories() {
     assert!(warnings.contains("2 archived repositories"), "{}", out.data);
     assert_eq!(
         out.data["next"]["includeArchived"]["query"]["queries"][0],
-        json!({"owner":"o","archived":true}),
+        json!({"owner":"o","includeArchived":true}),
         "{}",
         out.data
     );
@@ -260,7 +260,7 @@ async fn owner_listing_marks_forks_only() {
     assert_eq!(rows[1]["fork"], true, "{}", out.data);
 }
 
-/// QA2: GitHub matched more repositories than search reaches (1,000): the
+/// GitHub matched more repositories than search reaches (1,000): the
 /// first page states the provider's full count, not only the reachable
 /// `totalItems`, so an org count is never silently 1,000.
 #[tokio::test]
@@ -273,7 +273,11 @@ async fn capped_search_states_the_full_match_count() {
         json!({"total_count": 4156, "incomplete_results": false, "items": [repo_item("r", false)]}),
     )
     .await;
-    let out = run(&server, json!({"owner":"o","archived":false,"pageSize":1})).await;
+    let out = run(
+        &server,
+        json!({"owner":"o","sort":"stars:desc","pageSize":1}),
+    )
+    .await;
     assert_eq!(
         out.data["partialReasons"],
         json!(["providerResultCap"]),
@@ -285,7 +289,7 @@ async fn capped_search_states_the_full_match_count() {
     // Later pages do not repeat it.
     let second = run(
         &server,
-        json!({"owner":"o","archived":false,"pageSize":1,"page":2}),
+        json!({"owner":"o","sort":"stars:desc","pageSize":1,"page":2}),
     )
     .await;
     assert!(
@@ -293,4 +297,137 @@ async fn capped_search_states_the_full_match_count() {
         "{}",
         second.data
     );
+}
+
+/// owner+repo reads that one repository from the repository endpoint: one
+/// row with its language and default branch, no search request, no page.
+#[tokio::test]
+async fn owner_and_repo_return_that_repository_without_searching() {
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/repos/sindresorhus/is",
+        200,
+        json!({
+            "full_name": "sindresorhus/is", "name": "is", "html_url": "https://x",
+            "url": "https://x", "default_branch": "main", "language": "TypeScript",
+            "stargazers_count": 1700, "description": "Type check values",
+            "pushed_at": "2026-09-01T00:00:00Z"
+        }),
+    )
+    .await;
+    let out = run(&server, json!({"owner":"sindresorhus","repo":"is"})).await;
+    assert_eq!(
+        out.data["repositories"],
+        json!([{
+            "owner": "sindresorhus", "repo": "is", "stars": 1700,
+            "language": "TypeScript", "pushedAt": "2026-09-01",
+            "description": "Type check values", "forks": 0,
+            "defaultBranch": "main"
+        }]),
+        "{}",
+        out.data
+    );
+    assert!(out.data.get("pagination").is_none(), "{}", out.data);
+    assert!(out.data.get("next").is_none(), "{}", out.data);
+    let requests = server.received_requests().await.expect("requests");
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].url.path(), "/api/v3/repos/sindresorhus/is");
+}
+
+/// Anchors: a search row carries exactly the next hop's coordinates
+/// (`owner`, `repo`, `defaultBranch`) beside its decision facts, and no
+/// query echo.
+#[tokio::test]
+async fn a_search_row_carries_owner_repo_and_default_branch() {
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/search/repositories",
+        200,
+        page(vec![repo_item("r", false)]),
+    )
+    .await;
+    let out = run(&server, json!({"keywords":["x"]})).await;
+    let row = &out.data["repositories"][0];
+    assert_eq!(
+        row,
+        &json!({"owner":"o","repo":"r","defaultBranch":"main","stars":0,"forks":0}),
+        "{}",
+        out.data
+    );
+    for echo in ["keywords", "page", "sort"] {
+        assert!(out.data.get(echo).is_none(), "{echo}: {}", out.data);
+    }
+}
+
+/// A failure's one repair is a lead, not prose: a page past the search
+/// window leads to the last reachable page; an owner+repo that does not
+/// resolve leads to a search for the repository's name.
+#[tokio::test]
+async fn search_failures_lead_to_their_repair() {
+    let server = MockServer::start().await;
+    mount_json(
+        &server,
+        "/api/v3/repos/o/missing",
+        404,
+        json!({"message":"Not Found"}),
+    )
+    .await;
+    let provider = mock_provider(
+        &server,
+        RetryPolicy {
+            max_attempts: 1,
+            ..Default::default()
+        },
+    );
+    let context =
+        crate::tools::gh_shared::test_support::fixture_context(Duration::from_secs(5), 1 << 20);
+    let fail = |query: Value| {
+        let query: GhSearchRepoQuery = serde_json::from_value(query).expect("query");
+        let provider = &provider;
+        let context = &context;
+        async move {
+            super::run(provider, &query, Ok(context))
+                .await
+                .expect_err("failure")
+        }
+    };
+    let window = fail(json!({"keywords":["x"],"page":51,"pageSize":20})).await;
+    assert!(window.hints.is_empty(), "{:?}", window.hints);
+    let next = window.next.expect("repair");
+    assert_eq!(next["repair"]["tool"], "ghSearchRepo", "{next}");
+    let repair = &next["repair"]["query"]["queries"][0];
+    assert_eq!(repair["page"], 50, "{next}");
+    assert_eq!(repair["keywords"], json!(["x"]), "{next}");
+    let missing = fail(json!({"owner":"o","repo":"missing"})).await;
+    assert!(missing.hints.is_empty(), "{:?}", missing.hints);
+    let next = missing.next.expect("find");
+    assert_eq!(
+        next["findRepository"]["query"]["queries"][0],
+        json!({"keywords":["missing"]}),
+        "{next}"
+    );
+}
+
+/// A page past the last of a search that has results is out of range, not an
+/// empty search: no "use fewer keywords" hint, and the shared response stage
+/// leads back to page 1.
+#[tokio::test]
+async fn a_page_past_the_end_is_out_of_range_not_an_empty_search() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/api/v3/search/repositories"))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                json!({"total_count": 12, "incomplete_results": false, "items": []}),
+            ),
+        )
+        .mount(&server)
+        .await;
+    let out = run(&server, json!({"keywords":["x"],"pageSize":5,"page":9})).await;
+    assert_eq!(out.data["pagination"]["outOfRange"], true, "{}", out.data);
+    assert_eq!(out.data["pagination"]["totalItems"], 12, "{}", out.data);
+    assert!(out.data.get("hints").is_none(), "{}", out.data);
+    assert!(out.data.get("isPartial").is_none(), "{}", out.data);
 }

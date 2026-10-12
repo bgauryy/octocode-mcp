@@ -1,9 +1,10 @@
-//! B2: every tool's empty and error rows, through each tool's real path
+//! Every tool's empty and error rows, through each tool's real path
 //! (local files, a mocked GitHub and registry, a mocked judge), meet one row
 //! contract: the output validates, an error row names its `errorCode` and
-//! `error`, every empty or error row offers a recovery (a runnable lead or
-//! hint text), `retryable` is never `false` (N7), and the exit class says the
-//! call did not succeed.
+//! `error`, every error row offers a recovery (a runnable lead or hint text)
+//! unless its message is the whole answer, an empty row carries a tool-specific
+//! recovery too (a lead or hint text, never a bare empty), `retryable` is never
+//! `false`, and the exit class says the call did not succeed.
 #![allow(clippy::panic, clippy::unwrap_used)]
 
 use crate::support::{MOCK_PROVIDER_TIMEOUT_MS, Workspace};
@@ -45,7 +46,7 @@ fn has_recovery(data: &Value) -> bool {
 
 async fn run(runtime: &ToolRuntime, probe: &Probe) -> ToolOutcome {
     let mut row = probe.row.clone();
-    row["mainGoal"] = json!("B2 empty/error row contract.");
+    row["mainGoal"] = json!("empty/error row contract.");
     runtime
         .execute(
             format!("b2-{}-{}", probe.tool, probe.status),
@@ -97,11 +98,24 @@ fn check(probe: &Probe, outcome: &ToolOutcome) -> Vec<String> {
             }
         }
     }
-    if !has_recovery(data) {
+    let message_only = MESSAGE_ONLY.contains(&(
+        probe.tool,
+        data.get("errorCode").and_then(Value::as_str).unwrap_or(""),
+    ));
+    if probe.status == "error" && !message_only && !has_recovery(data) {
         failures.push(format!("{label}: no recovery lead or text: {out}"));
+    }
+    // Every empty row names what to try next (an empty row does not carry
+    // only its own facts).
+    if probe.status == "empty" && !has_recovery(data) {
+        failures.push(format!("{label}: empty row without a hint or lead: {out}"));
     }
     failures
 }
+
+/// Error codes whose message names everything the caller can act on (the
+/// missing item, the parse limit): no hint repeats it.
+const MESSAGE_ONLY: &[(&str, &str)] = &[("ghGetHistoryItem", "notFound")];
 
 async fn github_and_registry() -> MockServer {
     let server = MockServer::builder().start().await;
@@ -183,12 +197,29 @@ async fn every_tool_empty_and_error_row_meets_the_row_contract() {
         probe(
             "lspSearch",
             "error",
-            json!({"path":"missing.rs","symbolName":"x","lineHint":1,"operation":"definition"}),
+            json!({"path":"missing.rs","symbolName":"x","line":1,"operation":"definition"}),
         ),
         probe(
             "astTopology",
             "error",
             json!({"operation":"cycles","path":"missing"}),
+        ),
+        // Every operation whose answer rows are empty is an empty result
+        // (exit 1, as a search with no match), with a hint naming the operation.
+        probe(
+            "astTopology",
+            "empty",
+            json!({"operation":"cycles","path":"src"}),
+        ),
+        probe(
+            "astTopology",
+            "empty",
+            json!({"operation":"dependents","path":"src","source":"a.rs"}),
+        ),
+        probe(
+            "astTopology",
+            "empty",
+            json!({"operation":"dependencies","path":"src","source":"a.rs"}),
         ),
         probe(
             "astRewrite",
@@ -246,11 +277,11 @@ async fn every_tool_empty_and_error_row_meets_the_row_contract() {
     runtime.close().await;
 }
 
-/// B2 + LS6/LF4: one missing path gets one recovery form on every local tool
+/// One missing path gets one recovery form on every local tool
 /// (today lspSearch/localFetch give text while structureSearch gives a
 /// `viewTree` lead). Ignored until the local lane's shared lead builder lands.
 #[tokio::test]
-#[ignore = "B2: enable when LS6/LF4 unify the pathNotFound recovery (local lane)"]
+#[ignore = "enable when the local tools unify the pathNotFound recovery"]
 async fn a_missing_path_gets_one_recovery_form_on_every_local_tool() {
     let workspace = Workspace::new();
     workspace.write("src/a.rs", "fn alpha() {}\n");
@@ -265,7 +296,7 @@ async fn a_missing_path_gets_one_recovery_form_on_every_local_tool() {
         ("structureSearch", json!({"path":"src/missing"})),
         (
             "lspSearch",
-            json!({"path":"src/missing.rs","symbolName":"x","lineHint":1,"operation":"definition"}),
+            json!({"path":"src/missing.rs","symbolName":"x","line":1,"operation":"definition"}),
         ),
     ] {
         let outcome = run(

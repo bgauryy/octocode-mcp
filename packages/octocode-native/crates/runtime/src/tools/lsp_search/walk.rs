@@ -11,7 +11,9 @@
 //! capped in code; each level's requests run concurrently under a small
 //! bound; per-node failures are collected as data.
 
-use super::failure::{LspFailure, continuation, mark_partial, mark_terminal_limit, push_reason};
+use super::failure::{
+    LspFailure, continuation, mark_partial, mark_terminal_limit, push_reason, push_warning,
+};
 use super::importers::{
     Importers, WindowRequest, callers_from_references, enclosing_callable, flatten_symbols,
     verified_anchors,
@@ -519,12 +521,12 @@ impl<'a> Walker<'a> {
 
 /// Public hierarchy node (`CallHierarchyItem`/`TypeHierarchyItem`): named
 /// kind, `uri`, and a one-based `displayRange` that starts at the symbol
-/// name (usable as `lineHint`) and ends with the full declaration. Opaque
+/// name (usable as `line`) and ends with the full declaration. Opaque
 /// server `data` and empty `detail` are dropped.
 pub(super) fn public_hierarchy_node(node: &Value) -> Value {
     let mut public = serde_json::Map::new();
     if let Some(name) = node.get("name") {
-        public.insert("name".into(), name.clone());
+        public.insert("symbolName".into(), name.clone());
     }
     public.insert("kind".into(), json!(symbol_kind_name(node.get("kind"))));
     if let Some(detail) = node
@@ -564,7 +566,7 @@ fn public_via(node: &Value) -> Value {
             .map(|value| value + 1)
     };
     json!({
-        "name": node.get("name"),
+        "symbolName": node.get("name"),
         "path": node.get("uri").and_then(Value::as_str).map(uri_to_path),
         "line": point("line"),
         "character": point("character")
@@ -773,7 +775,7 @@ impl ClassFacts {
                     // The parse is shared with outline pages and search hits:
                     // one parse per file version.
                     tokio::task::spawn_blocking(move || {
-                        crate::tools::ast_search::declarations_cache::extract(
+                        crate::tools::declarations_cache::extract(
                             &source.content,
                             &file,
                             false,
@@ -881,7 +883,10 @@ const DETAIL_KEYWORDS: &[&str] = &[
 /// a container name, parameters, or a return type. A detail that is only
 /// the name, its kind, and declaration words (`fn walk()`) adds nothing.
 fn detail_adds(detail: &str, node: &Value) -> bool {
-    let name = node.get("name").and_then(Value::as_str).unwrap_or_default();
+    let name = node
+        .get("symbolName")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let kind = node.get("kind").and_then(Value::as_str).unwrap_or_default();
     detail
         .split(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
@@ -891,18 +896,18 @@ fn detail_adds(detail: &str, node: &Value) -> bool {
 
 /// A page of call edges (`callers`, `callees`, any depth) as per-file rows
 /// `{path, matches: [call row]}`, filed under the file the call sites lie in
-/// (X1). A call row is `{symbolName, kind, line, endLine?, path?, sites,
+/// A call row is `{symbolName, kind, line, endLine?, path?, sites,
 /// detail?, via?, source?}`: for `callers` the caller declared in that file,
 /// for `callees` the callee called from it (the anchor, or the `via` node).
 /// `line`–`endLine` is the declaration's range from its name line (a
-/// `lineHint` for the next hop); `path` names the declaration's file when it
+/// `line` for the next hop); `path` names the declaration's file when it
 /// differs from the row's; `sites` are the 1-based call sites in the row's
 /// file. An edge below level 1 names its parent as `via: {symbolName, line}`
 /// (with `path` when another listed node shares that name and line). A
 /// caller recovered from references carries its label as `source`. `all` is
 /// every edge of the walk (not only this page), for that disambiguation.
 pub(super) fn compact_calls(row: &mut Value, all: &[Value], paths: &PathPolicy) {
-    let Some(items) = row.pointer("/payload/matches").and_then(Value::as_array) else {
+    let Some(items) = row.pointer("/matches").and_then(Value::as_array) else {
         return;
     };
     if items.is_empty() || items.iter().any(|item| call_node(item).is_none()) {
@@ -948,7 +953,7 @@ pub(super) fn compact_calls(row: &mut Value, all: &[Value], paths: &PathPolicy) 
             calls.push(call);
         }
     }
-    if let Some(payload) = row.get_mut("payload").and_then(Value::as_object_mut) {
+    if let Some(payload) = row.as_object_mut() {
         payload.remove("matches");
         payload.insert(
             "files".into(),
@@ -982,7 +987,7 @@ fn declaring_files<'a>(
     for item in items {
         if let Some((_, node)) = call_node(item)
             && let (Some(name), Some(line)) = (
-                node.get("name").and_then(Value::as_str),
+                node.get("symbolName").and_then(Value::as_str),
                 node.pointer("/displayRange/startLine")
                     .and_then(Value::as_u64),
             )
@@ -1020,13 +1025,18 @@ fn call_row(
     declared: &HashMap<(String, u64), HashSet<String>>,
     paths: &PathPolicy,
 ) -> Value {
-    let name = node.get("name").and_then(Value::as_str).unwrap_or_default();
+    let name = node
+        .get("symbolName")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let kind = node.get("kind").and_then(Value::as_str).unwrap_or("symbol");
     let mut row = serde_json::Map::new();
-    row.insert("symbolName".into(), json!(name));
-    row.insert(
-        "kind".into(),
-        json!(node.get("kind").and_then(Value::as_str).unwrap_or("symbol")),
-    );
+    // A module or file "caller" is top-level code, named by its file: that
+    // name anchors no lspSearch call, so the row carries no `symbolName`.
+    if !matches!(kind, "module" | "file") {
+        row.insert("symbolName".into(), json!(name));
+    }
+    row.insert("kind".into(), json!(kind));
     if let Some(range) = node.get("displayRange")
         && let Some(start) = range.get("startLine").and_then(Value::as_u64)
     {
@@ -1040,7 +1050,7 @@ fn call_row(
         }
     }
     // A callee declared in another file names it, so its range is a
-    // `lineHint` there.
+    // `line` there.
     if declared_in != path {
         row.insert("path".into(), json!(display_path(paths, declared_in)));
     }
@@ -1078,7 +1088,10 @@ fn call_row(
         );
     }
     if let Some(via) = item.get("via").filter(|via| via.is_object()) {
-        let via_name = via.get("name").and_then(Value::as_str).unwrap_or_default();
+        let via_name = via
+            .get("symbolName")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         let line = via.get("line").and_then(Value::as_u64).unwrap_or(0);
         let mut public = json!({"symbolName": via_name, "line": line});
         let ambiguous = declared
@@ -1138,9 +1151,7 @@ pub(super) fn mark_partial_expansion(
     let items = if total == 1 { "item" } else { "items" };
     let warning = match distinct.as_slice() {
         [(message, _)] => {
-            format!(
-                "Hierarchy expansion failed for {total} {items}: {message}. next.retry reruns the walk."
-            )
+            format!("Hierarchy expansion failed for {total} {items}: {message}.")
         }
         _ => {
             let (message, count) =
@@ -1149,7 +1160,7 @@ pub(super) fn mark_partial_expansion(
                     |top, entry| if entry.1 > top.1 { entry } else { top },
                 );
             format!(
-                "Hierarchy expansion failed for {total} {items} ({} distinct errors; most frequent, {count}×: {message}). next.retry reruns the walk; extras:[\"diagnostics\"] lists every error.",
+                "Hierarchy expansion failed for {total} {items} ({} distinct errors; most frequent, {count}×: {message}).",
                 distinct.len()
             )
         }
@@ -1169,8 +1180,8 @@ pub(super) fn mark_partial_expansion(
 }
 
 /// Truncation diagnostics of a hierarchy walk (each operation walks one
-/// direction). A node-capped walk gets `payload.truncated`,
-/// `payload.unexpandedParents`, an executable `next.continueWalk` that
+/// direction). A node-capped walk gets `clipped`,
+/// `unexpandedParents`, an executable `next.continueWalk` that
 /// re-anchors on the first parent whose children were dropped, and
 /// `next.continueWalk2…N` for every other such parent. A node whose results
 /// were cut to [`MAX_HIERARCHY_FAN_OUT`] resumes the same way: re-anchored,
@@ -1183,21 +1194,21 @@ pub(super) fn mark_truncation(
     if row.get("status").and_then(Value::as_str) == Some("error") {
         return;
     }
-    warn_omitted(row, walks);
+    note_omitted(row, walks);
     let resumes = walks
         .iter()
         .flat_map(|(_, walk)| walk.resumes.iter())
         .collect::<Vec<_>>();
-    let Some(first) = resumes.first() else {
+    if resumes.is_empty() {
         return;
-    };
+    }
     let fan_out_capped = walks
         .iter()
         .map(|(_, walk)| walk.fan_out_capped.len())
         .sum::<usize>();
-    row["payload"]["truncated"] = json!(true);
+    row["clipped"] = json!(true);
     // Every unexpanded or capped parent is listed and resumable.
-    row["payload"]["unexpandedParents"] = json!(
+    row["unexpandedParents"] = json!(
         resumes
             .iter()
             .map(|resume| {
@@ -1211,20 +1222,7 @@ pub(super) fn mark_truncation(
         .iter()
         .map(|resume| resume_query(query, resume))
         .collect::<Option<Vec<_>>>();
-    let follow = format!(
-        "Run next.continueWalk to walk on from {}{}.",
-        first
-            .node
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or("the first unexpanded node"),
-        if resumes.len() > 1 {
-            ", then next.continueWalk2… for the rest"
-        } else {
-            ""
-        }
-    );
-    let limits = limit_warnings(walks, fan_out_capped, &follow);
+    let limits = limit_warnings(walks, fan_out_capped);
     match queries {
         Some(queries) => {
             for (reason, warning) in limits {
@@ -1248,36 +1246,38 @@ pub(super) fn mark_truncation(
     }
 }
 
-/// A warning for results outside the read policy; TypeScript built-in
-/// library callees are listed by name under `payload.builtinLib` (tiny, and
-/// never worth a second call).
-fn warn_omitted(row: &mut Value, walks: &[(Expansion, &HierarchyWalk)]) {
+/// Every walk's TypeScript built-in library callees, each named once.
+fn builtin_lib_names<'a>(walks: &[(Expansion, &'a HierarchyWalk)]) -> Vec<&'a String> {
+    let mut names: Vec<&String> = Vec::new();
+    for name in walks.iter().flat_map(|(_, walk)| &walk.builtin_lib) {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// What the walk left out of its items: a warning for results outside the
+/// read policy; TypeScript built-in library callees are listed by name
+/// under `builtinLib` (tiny, and never worth a second call).
+fn note_omitted(row: &mut Value, walks: &[(Expansion, &HierarchyWalk)]) {
     let out_of_policy = walks
         .iter()
         .map(|(_, walk)| walk.out_of_policy)
         .sum::<usize>();
-    let mut builtin_lib: Vec<&String> = Vec::new();
-    for name in walks.iter().flat_map(|(_, walk)| &walk.builtin_lib) {
-        if !builtin_lib.contains(&name) {
-            builtin_lib.push(name);
-        }
-    }
-    let mut push = |warning: String| {
-        if let Some(warnings) = row
+    if out_of_policy > 0
+        && let Some(warnings) = row
             .as_object_mut()
             .map(|object| object.entry("warnings").or_insert_with(|| json!([])))
             .and_then(Value::as_array_mut)
-        {
-            warnings.push(json!(warning));
-        }
-    };
-    if out_of_policy > 0 {
-        push(format!(
+    {
+        warnings.push(json!(format!(
             "{out_of_policy} hierarchy items outside the allowed read roots were omitted."
-        ));
+        )));
     }
+    let builtin_lib = builtin_lib_names(walks);
     if !builtin_lib.is_empty()
-        && let Some(payload) = row.get_mut("payload").and_then(Value::as_object_mut)
+        && let Some(payload) = row.as_object_mut()
     {
         payload.insert("builtinLib".into(), json!(builtin_lib));
     }
@@ -1287,7 +1287,6 @@ fn warn_omitted(row: &mut Value, walks: &[(Expansion, &HierarchyWalk)]) {
 fn limit_warnings(
     walks: &[(Expansion, &HierarchyWalk)],
     fan_out_capped: usize,
-    follow: &str,
 ) -> Vec<(&'static str, String)> {
     let dropped_edges = walks
         .iter()
@@ -1302,17 +1301,17 @@ fn limit_warnings(
         limits.push((
             "hierarchyNodeLimit",
             format!(
-                "Stopped at {MAX_HIERARCHY_NODES} hierarchy nodes; {dropped_edges} edges to further nodes were not listed and {unexpanded_nodes} listed results were not expanded (payload.unexpandedParents). {follow}"
+                "Stopped at {MAX_HIERARCHY_NODES} hierarchy nodes; {dropped_edges} edges to further nodes were not listed and {unexpanded_nodes} listed results were not expanded (unexpandedParents)."
             ),
         ));
     }
-    // `payload.unexpandedParents` names every capped node once; the warning
+    // `unexpandedParents` names every capped node once; the warning
     // carries the count.
     if fan_out_capped > 0 {
         limits.push((
             "hierarchyFanOutLimit",
             format!(
-                "Kept the first {MAX_HIERARCHY_FAN_OUT} results of {fan_out_capped} node(s) below the anchor (payload.unexpandedParents); each resumes as the anchor of its continuation, which lists every result. {follow}"
+                "Kept the first {MAX_HIERARCHY_FAN_OUT} results of {fan_out_capped} node(s) below the anchor (unexpandedParents); each resumes as the anchor of its continuation, which lists every result."
             ),
         ));
     }
@@ -1321,7 +1320,7 @@ fn limit_warnings(
 
 /// An executable query that walks `resume.depth` levels from `resume.node`:
 /// the same operation re-anchored on the node by its name and 1-based selection line, with
-/// `orderHint` when the name repeats on that line before the node (D2: no
+/// `orderHint` when the name repeats on that line before the node (no
 /// 0-based coordinate reaches an input).
 fn resume_query(query: &LspSearchQuery, resume: &Resume) -> Option<Value> {
     let uri = resume.node.get("uri").and_then(Value::as_str)?;
@@ -1337,7 +1336,7 @@ fn resume_query(query: &LspSearchQuery, resume: &Resume) -> Option<Value> {
         object.remove(field);
     }
     object.insert("symbolName".into(), json!(name));
-    object.insert("lineHint".into(), json!(line.saturating_add(1)));
+    object.insert("line".into(), json!(line.saturating_add(1)));
     if let Some(order) = std::fs::read_to_string(&path)
         .ok()
         .and_then(|text| order_on_line(&text, line, name, character))
@@ -1345,7 +1344,7 @@ fn resume_query(query: &LspSearchQuery, resume: &Resume) -> Option<Value> {
     {
         object.insert("orderHint".into(), json!(order));
     }
-    object.insert("depth".into(), json!(resume.depth));
+    object.insert("graphDepth".into(), json!(resume.depth));
     Some(next)
 }
 
@@ -1373,6 +1372,27 @@ fn order_on_line(text: &str, line: u32, name: &str, character: u32) -> Option<u3
         units += u32::try_from(c.len_utf16()).ok()?;
     }
     Some(order)
+}
+
+/// LSP `SymbolKind`s of a type: class, enum, interface, struct.
+const TYPE_KINDS: [u64; 4] = [5, 10, 11, 23];
+
+/// The label of `callers` on a type: a call hierarchy has no calls into a
+/// type, so a server answers with the symbols that use it (construct it,
+/// hold or extend it). `None` for any other operation or anchor.
+pub(super) fn class_uses_warning(operation: &str, roots: &[Value]) -> Option<String> {
+    if operation != "callers" {
+        return None;
+    }
+    let kind = roots.iter().find_map(|root| {
+        let code = root.get("kind")?.as_u64()?;
+        TYPE_KINDS
+            .contains(&code)
+            .then(|| symbol_kind_name(root.get("kind")))
+    })?;
+    Some(format!(
+        "The anchor is a {kind}: callers lists its uses (symbols that construct, hold or extend it), not calls; each row's `kind` and `detail` name the user."
+    ))
 }
 
 /// Label for caller edges derived from verified importer references.
@@ -1483,11 +1503,12 @@ pub(super) async fn hierarchy(
     (path, line, character): (&str, u32, u32),
     recovery: Option<ImporterRecovery<'_>>,
     cancel: &dyn CancellationCheck,
+    budget: usize,
 ) -> Result<(Value, Option<Importers>), LspFailure> {
     let paths = sources.policy();
     let (roots, expansions) =
         hierarchy_roots(client, query, paths, (path, line, character), cancel).await?;
-    let depth = query.depth().unwrap_or(1);
+    let depth = query.graph_depth().unwrap_or(1);
     let mut items = Vec::new();
     let mut failures = Vec::new();
     let mut walks = Vec::new();
@@ -1580,18 +1601,28 @@ pub(super) async fn hierarchy(
         failures.append(&mut walk.failures);
     }
     let (items, failures) = expansion_outcome(items, failures)?;
-    let mut row = salted_items_payload(
-        query,
-        query.operation().as_str(),
-        json!(items.clone()),
-        verified.as_ref().and_then(Importers::digest),
-    );
-    compact_calls(&mut row, &items, paths);
-    mark_partial_expansion(&mut row, query, &failures);
     let walks = walks
         .iter()
         .map(|(expansion, walk)| (*expansion, walk))
         .collect::<Vec<_>>();
+    // Built-in callees are the answer: a walk that listed only those
+    // resolved, it is not empty.
+    let mut row = if items.is_empty() && !builtin_lib_names(&walks).is_empty() {
+        json!({"path": query.path(), "lsp": {"serverAvailable": true}})
+    } else {
+        salted_items_payload(
+            query,
+            query.operation().as_str(),
+            json!(items.clone()),
+            verified.as_ref().and_then(Importers::digest),
+            budget,
+        )
+    };
+    compact_calls(&mut row, &items, paths);
+    if let Some(note) = class_uses_warning(query.operation().as_str(), &roots) {
+        push_warning(&mut row, note);
+    }
+    mark_partial_expansion(&mut row, query, &failures);
     // Every walked direction is marked together: marking them one after
     // the other would let the second overwrite the first's
     // `unexpandedParents` and `continueWalk*`.
@@ -1619,7 +1650,7 @@ fn answer_files(anchor: &str, items: &[Value], importers: Option<&Importers>) ->
     if let Some(importers) = importers {
         files.extend(importers.per_file().map(|anchor| anchor.path.clone()));
         files.extend(importers.rejected.iter().cloned());
-        files.extend(importers.covered().iter().cloned());
+        files.extend(importers.covered());
     }
     files
 }

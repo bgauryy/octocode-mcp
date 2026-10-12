@@ -33,21 +33,50 @@ export function capOutput(text: string, maxBytes = DEFAULT_MAX_BYTES, maxLines =
   if (!cut.truncated) return cut.content;
   if (cut.content === '' && text !== '') {
     // Pi keeps whole lines only, so a first line over the byte budget would leave nothing: keep its head instead.
-    const head = utf8Head(text, maxBytes);
-    return `${head}\n\n[Output truncated: the first line alone is ${formatSize(Buffer.byteLength(firstLine(text)))}; kept its first ${formatSize(Buffer.byteLength(head))} (${formatSize(cut.totalBytes)} in all).]`;
+    const head = cutText(text, maxBytes);
+    return `${head}\n\n[Output trimmed: the first line alone is ${formatSize(Buffer.byteLength(firstLine(text)))}; kept its first ${formatSize(Buffer.byteLength(head))} (${formatSize(cut.totalBytes)} in all).]`;
   }
-  return `${cut.content}\n\n[Output truncated: ${cut.outputLines} of ${cut.totalLines} lines (${formatSize(cut.outputBytes)} of ${formatSize(cut.totalBytes)}).]`;
+  return `${cut.content}\n\n[Output trimmed: ${cut.outputLines} of ${cut.totalLines} lines (${formatSize(cut.outputBytes)} of ${formatSize(cut.totalBytes)}).]`;
 }
 
-/** The first `maxBytes` bytes of `text`, without a character cut in half. */
-export function utf8Head(text: string, maxBytes: number): string {
-  return Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8').replace(/\uFFFD+$/, '');
+/**
+ * The one text cut: the head (or, with `tail`, the end) of `text` within `max` UTF-8 bytes, or UTF-16 code units with
+ * `chars`. A character is never cut in half: neither a multi-byte UTF-8 sequence nor a surrogate pair.
+ */
+export function cutText(text: string, max: number, { chars = false, tail = false }: { chars?: boolean; tail?: boolean } = {}): string {
+  const limit = Math.max(0, Math.floor(max));
+  if (chars) {
+    if (text.length <= limit) return text;
+    if (tail) {
+      let start = text.length - limit;
+      if (isLowSurrogate(text.charCodeAt(start))) start++;
+      return text.slice(start);
+    }
+    let end = limit;
+    if (end > 0 && isHighSurrogate(text.charCodeAt(end - 1))) end--;
+    return text.slice(0, end);
+  }
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.length <= limit) return text;
+  // UTF-8 continuation bytes are 10xxxxxx: a cut moves off them to the nearest character boundary inside the budget.
+  const continuation = (index: number) => (bytes[index]! & 0xc0) === 0x80;
+  if (tail) {
+    let start = bytes.length - limit;
+    while (start < bytes.length && continuation(start)) start++;
+    return bytes.subarray(start).toString('utf8');
+  }
+  let end = limit;
+  while (end > 0 && continuation(end)) end--;
+  return bytes.subarray(0, end).toString('utf8');
 }
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
 
 /** `text` cut to `max` characters, ending in `…` when cut: the one character clip (`clip` adds one sanitized line). */
 export function clipText(text: string, max: number): string {
   if (max <= 0) return '';
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+  return text.length > max ? `${cutText(text, max - 1, { chars: true })}…` : text;
 }
 
 /**
@@ -83,7 +112,7 @@ export async function withTimeout<T>(work: Promise<T>, ms: number, label: string
 }
 
 /**
- * The placeholders Octocode leaves where it shortened text the model later sees again: trimmed call arguments and
+ * The placeholders Octocode leaves where it trimmed text the model later sees again: trimmed call arguments and
  * tool results (compaction) and `capChars` cuts. A model that copies one into a file writes a hole, not content.
  */
 const ELISION_MARKER = /\[(?:… ?)?\d+ more characters (?:of this earlier, successful call omitted|from this earlier tool result were trimmed[^\]\n]*|cut[^\]\n]*)\]/g;
@@ -104,7 +133,8 @@ export function parseJson(text: string): unknown {
 /** `text` cut to `max` characters with a note saying how much was cut (and, optionally, what to do instead). */
 export function capChars(text: string, max: number, hint?: string): string {
   if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n[… ${text.length - max} more characters cut${hint ? `; ${hint}` : ''}]`;
+  const kept = cutText(text, max, { chars: true });
+  return `${kept}\n[… ${text.length - kept.length} more characters cut${hint ? `; ${hint}` : ''}]`;
 }
 
 /**
@@ -166,12 +196,4 @@ export function addUsage(total: Usage, usage: unknown): void {
   total.cost.cacheRead += num(cost['cacheRead']);
   total.cost.cacheWrite += num(cost['cacheWrite']);
   total.cost.total += num(cost['total']);
-}
-
-/** A new usage record holding the sum of two. */
-export function sumUsage(a: Usage, b: Usage): Usage {
-  const total = emptyUsage();
-  addUsage(total, a);
-  addUsage(total, b);
-  return total;
 }

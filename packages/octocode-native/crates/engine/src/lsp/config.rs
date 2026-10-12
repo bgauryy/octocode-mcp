@@ -1,6 +1,8 @@
+use crate::lsp::bundled_tsgo::bundled_tsgo;
 use crate::lsp::commands::{command_resolves_to_executable, is_executable_path, is_rejected_shell};
 use crate::lsp::grammar::grammar_for_file;
 use crate::lsp::managed::{platform_id, resolve_cached_server};
+use crate::lsp::module_path::install_anchor;
 use crate::lsp::types::JsLanguageServerConfig;
 use crate::text::file_extension::{JS_TS_EXTENSIONS, extension_of};
 use serde::Deserialize;
@@ -32,6 +34,12 @@ struct UserServerSpec {
     language_id: String,
     #[serde(rename = "initializationOptions")]
     initialization_options: Option<Value>,
+    /// Resident-memory cap for this server's process tree, in MiB; wins over
+    /// the host's `lsp.maxMemoryMb`. `0` disables the cap.
+    #[serde(rename = "maxMemoryMb")]
+    max_memory_mb: Option<u32>,
+    /// Extra environment variables for the server process.
+    env: Option<HashMap<String, String>>,
 }
 
 pub fn detect_language_id(file_path: &str) -> Option<String> {
@@ -76,6 +84,15 @@ impl LspDiscoveryOptions {
         resolve_cached_server(&self.managed_root()?, command, &platform_id())
     }
 
+    /// The host's resolved `lsp.maxMemoryMb` (`OCTOCODE_LSP_MAX_MEMORY_MB`);
+    /// unset takes the host-derived default.
+    fn max_memory_mb(&self) -> Option<u32> {
+        self.setting("OCTOCODE_LSP_MAX_MEMORY_MB")?
+            .trim()
+            .parse()
+            .ok()
+    }
+
     /// The host's resolved `lsp.trustProjectConfig` (or a trusted project).
     fn trusts_project(&self) -> bool {
         self.trust_project_config
@@ -88,6 +105,61 @@ pub fn default_server_for_file(
     file_path: &str,
     workspace_root: &str,
     options: &LspDiscoveryOptions,
+) -> Option<JsLanguageServerConfig> {
+    default_server_for_file_from(
+        file_path,
+        workspace_root,
+        options,
+        install_anchor().as_deref(),
+    )
+}
+
+/// [`default_server_for_file`] with octocode's install tree (where the
+/// bundled servers live) named by `anchor`.
+fn default_server_for_file_from(
+    file_path: &str,
+    workspace_root: &str,
+    options: &LspDiscoveryOptions,
+    anchor: Option<&Path>,
+) -> Option<JsLanguageServerConfig> {
+    server_for_file(file_path, workspace_root, options, anchor, true)
+}
+
+/// The TypeScript server octocode falls back to when the native `tsgo` route
+/// for `file_path` fails to start: `Some` only where that route is the
+/// built-in choice, never for a user `lsp-servers.json` entry (the user's
+/// explicit server gets no silent substitute) or a file tsgo does not serve.
+pub fn typescript_server_fallback(
+    file_path: &str,
+    workspace_root: &str,
+    options: &LspDiscoveryOptions,
+) -> Option<JsLanguageServerConfig> {
+    typescript_server_fallback_from(
+        file_path,
+        workspace_root,
+        options,
+        install_anchor().as_deref(),
+    )
+}
+
+fn typescript_server_fallback_from(
+    file_path: &str,
+    workspace_root: &str,
+    options: &LspDiscoveryOptions,
+    anchor: Option<&Path>,
+) -> Option<JsLanguageServerConfig> {
+    let native = server_for_file(file_path, workspace_root, options, anchor, true)?;
+    let tsserver = server_for_file(file_path, workspace_root, options, anchor, false)?;
+    (native.command != tsserver.command || native.args != tsserver.args).then_some(tsserver)
+}
+
+/// `native_typescript: false` skips the tsgo routes, leaving tsserver.
+fn server_for_file(
+    file_path: &str,
+    workspace_root: &str,
+    options: &LspDiscoveryOptions,
+    anchor: Option<&Path>,
+    native_typescript: bool,
 ) -> Option<JsLanguageServerConfig> {
     let extension = extension_key(file_path)?;
 
@@ -104,7 +176,7 @@ pub fn default_server_for_file(
         return Some(config);
     }
 
-    spec.map(|spec| config_from_spec(spec, workspace_root, options))
+    spec.map(|spec| config_from_spec(spec, workspace_root, options, anchor, native_typescript))
 }
 
 /// rust-analyzer settings that keep it from running repository code: no
@@ -159,6 +231,23 @@ pub(crate) fn metals_headless_options() -> Value {
     })
 }
 
+/// typescript-language-server `initializationOptions` for a headless,
+/// read-only run: no network typings acquisition, one tsserver process (no
+/// separate syntax server), no package.json auto-import scan, and a V8 heap
+/// bound 512 MiB under the memory `cap_mb` so the GC works before the
+/// watchdog fires (no bound when the cap is disabled).
+pub(crate) fn typescript_headless_options(cap_mb: Option<u32>) -> Value {
+    let mut options = json!({
+        "disableAutomaticTypingAcquisition": true,
+        "tsserver": { "useSyntaxServer": "never" },
+        "preferences": { "includePackageJsonAutoImports": "off" }
+    });
+    if let Some(cap) = cap_mb {
+        options["maxTsServerMemory"] = json!(cap.saturating_sub(512).max(1024));
+    }
+    options
+}
+
 /// The per-workspace jdtls data directory, outside the repository:
 /// `<octocode home>/lsp-workspaces/jdtls/<sha256(workspace root)[..16]>`.
 pub(crate) fn jdtls_data_dir(octocode_home: &Path, workspace_root: &str) -> PathBuf {
@@ -167,6 +256,14 @@ pub(crate) fn jdtls_data_dir(octocode_home: &Path, workspace_root: &str) -> Path
         .join("lsp-workspaces")
         .join("jdtls")
         .join(&digest[..16])
+}
+
+/// Whether the server answers overlapping requests in parallel, so a caller
+/// with many independent requests may pipeline them. tsgo does; tsserver
+/// (behind typescript-language-server) works through them one at a time,
+/// where queueing only spends each request's timeout waiting.
+pub fn serves_requests_concurrently(config: &JsLanguageServerConfig) -> bool {
+    server_stem(&config.command).as_deref() == Some("tsgo")
 }
 
 /// Apply per-server safe defaults to a resolved launch configuration, on
@@ -199,9 +296,35 @@ pub(crate) fn apply_server_default_options(
             }
             merge_default_options(config, jdtls_headless_options());
         }
+        Some("tsgo") => {
+            let cap = crate::lsp::spawn_limits::effective_memory_cap_mb(config.max_memory_mb);
+            if let Some(cap) = cap {
+                config
+                    .env
+                    .get_or_insert_with(Default::default)
+                    .entry("GOMEMLIMIT".to_owned())
+                    .or_insert_with(|| format!("{}MiB", cap.saturating_sub(512).max(1024)));
+            }
+        }
         Some("metals") => merge_default_options(config, metals_headless_options()),
+        Some("typescript-language-server") => {
+            let cap = crate::lsp::spawn_limits::effective_memory_cap_mb(config.max_memory_mb);
+            merge_default_options(config, typescript_headless_options(cap));
+        }
+        _ if runs_typescript_language_server(config) => {
+            let cap = crate::lsp::spawn_limits::effective_memory_cap_mb(config.max_memory_mb);
+            merge_default_options(config, typescript_headless_options(cap));
+        }
         _ => {}
     }
+}
+
+/// The server runs `typescript-language-server`'s CLI under `node`.
+fn runs_typescript_language_server(config: &JsLanguageServerConfig) -> bool {
+    config.args.iter().flatten().any(|arg| {
+        Path::new(arg).file_name().and_then(OsStr::to_str) == Some("cli.mjs")
+            && arg.contains("typescript-language-server")
+    })
 }
 
 /// Lower-cased file stem of a server command (`/usr/bin/clangd-18` →
@@ -292,18 +415,33 @@ pub fn default_server_for_workspace_root(
     workspace_root: &str,
     options: &LspDiscoveryOptions,
 ) -> Option<JsLanguageServerConfig> {
+    let representative = workspace_root_probe_path(workspace_root)?;
+    default_server_for_file(&representative, workspace_root, options)
+}
+
+/// [`typescript_server_fallback`] for a `workspaceRoot`-only query.
+pub fn typescript_server_fallback_for_workspace_root(
+    workspace_root: &str,
+    options: &LspDiscoveryOptions,
+) -> Option<JsLanguageServerConfig> {
+    let representative = workspace_root_probe_path(workspace_root)?;
+    typescript_server_fallback(&representative, workspace_root, options)
+}
+
+/// A synthetic file path in the language the root's project markers imply:
+/// discovery keys only on its extension, and the file is never opened or
+/// synced.
+fn workspace_root_probe_path(workspace_root: &str) -> Option<String> {
     let root = Path::new(workspace_root);
     let extension = WORKSPACE_ROOT_MARKERS
         .iter()
         .find(|(marker, _)| root.join(marker).is_file())
         .map(|(_, extension)| *extension)?;
-    // A synthetic representative path: discovery keys only on its extension,
-    // and the file is never opened or synced.
-    let representative = root
-        .join(format!("workspace{extension}"))
-        .to_string_lossy()
-        .into_owned();
-    default_server_for_file(&representative, workspace_root, options)
+    Some(
+        root.join(format!("workspace{extension}"))
+            .to_string_lossy()
+            .into_owned(),
+    )
 }
 
 /// A source file inside `workspace_root` (in the language its project markers
@@ -452,8 +590,11 @@ fn config_from_spec(
     spec: ServerSpec,
     workspace_root: &str,
     options: &LspDiscoveryOptions,
+    anchor: Option<&Path>,
+    native_typescript: bool,
 ) -> JsLanguageServerConfig {
-    let (command, args) = resolve_spec_invocation(&spec, workspace_root, options);
+    let (command, args) =
+        resolve_spec_invocation(&spec, workspace_root, options, anchor, native_typescript);
     let mut config = JsLanguageServerConfig {
         command,
         args: Some(args),
@@ -461,7 +602,7 @@ fn config_from_spec(
         language_id: Some(spec.language_id.to_owned()),
         initialization_options: None,
         env: None,
-        max_memory_mb: None,
+        max_memory_mb: options.max_memory_mb(),
     };
     // The built-in Rust route is rust-analyzer even from a managed install
     // whose file name differs.
@@ -480,6 +621,8 @@ fn resolve_spec_invocation(
     spec: &ServerSpec,
     workspace_root: &str,
     options: &LspDiscoveryOptions,
+    anchor: Option<&Path>,
+    native_typescript: bool,
 ) -> (String, Vec<String>) {
     let trust_workspace = options.trusts_project();
     if spec.language_id == "python" {
@@ -487,6 +630,22 @@ fn resolve_spec_invocation(
         if let Some(invocation) = resolve_pyright_family(workspace_root, path_var.as_deref()) {
             return invocation;
         }
+    }
+
+    // TypeScript prefers a native tsgo: the trusted workspace's own (its
+    // TypeScript version), else octocode's bundled one, which is safe for any
+    // workspace because it comes from octocode's install tree.
+    if native_typescript
+        && is_typescript_only_spec(spec)
+        && let Some(tsgo) = trust_workspace
+            .then(|| workspace_tsgo(workspace_root))
+            .flatten()
+            .or_else(|| anchor.and_then(bundled_tsgo))
+    {
+        return (
+            tsgo.to_string_lossy().into_owned(),
+            TSGO_ARGS.iter().map(|arg| (*arg).to_owned()).collect(),
+        );
     }
 
     let command = options
@@ -499,6 +658,28 @@ fn resolve_spec_invocation(
         workspace_root,
         trust_workspace,
     )
+}
+
+/// Arguments that start the native TypeScript server in LSP mode.
+const TSGO_ARGS: &[&str] = &["--lsp", "-stdio"];
+
+/// TypeScript sources only: tsgo drops JavaScript constructor functions and
+/// `this` expandos, so JavaScript keeps tsserver.
+fn is_typescript_only_spec(spec: &ServerSpec) -> bool {
+    spec.command == "typescript-language-server"
+        && matches!(spec.language_id, "typescript" | "typescriptreact")
+}
+
+/// The workspace's own native TypeScript server (`node_modules/.bin/tsgo`
+/// of the workspace or an ancestor): 2-3x faster than tsserver on a large
+/// program. Only a trusted workspace is searched, because a checkout must
+/// not swap in an executable it ships.
+fn workspace_tsgo(workspace_root: &str) -> Option<PathBuf> {
+    let name = if cfg!(windows) { "tsgo.cmd" } else { "tsgo" };
+    Path::new(workspace_root)
+        .ancestors()
+        .map(|dir| dir.join("node_modules").join(".bin").join(name))
+        .find(|candidate| is_executable_path(candidate))
 }
 
 /// Python servers in preference order. basedpyright and pyright implement
@@ -848,8 +1029,8 @@ fn user_server_for_extension(
             workspace_root: workspace_root.to_owned(),
             language_id: Some(server.language_id.clone()),
             initialization_options: server.initialization_options.clone(),
-            env: None,
-            max_memory_mb: None,
+            env: server.env.clone(),
+            max_memory_mb: server.max_memory_mb.or_else(|| options.max_memory_mb()),
         });
     }
     None
@@ -919,9 +1100,7 @@ fn resolve_server_invocation(
     trust_workspace: bool,
 ) -> (String, Vec<String>) {
     let current_dir = std::env::current_dir().ok();
-    let managed_start = std::env::current_exe()
-        .ok()
-        .map(|exe| std::fs::canonicalize(&exe).unwrap_or(exe));
+    let managed_start = install_anchor();
     let workspace_trusted =
         trust_workspace || workspace_is_invocation_root(workspace_root, current_dir.as_deref());
     resolve_server_invocation_with_environment(
@@ -939,8 +1118,9 @@ fn resolve_server_invocation(
 
 /// Where the TypeScript server may be looked up when it is not on `PATH`.
 struct TypeScriptServerSearch<'a> {
-    /// The running octocode executable: its install tree's `node_modules`
-    /// (octocode ships `typescript-language-server`) is octocode-managed.
+    /// The file octocode's code was loaded from (the executable, or the Node
+    /// addon under MCP): its install tree's `node_modules` (octocode ships
+    /// `typescript-language-server`) is octocode-managed.
     managed_start: Option<&'a Path>,
     /// The invocation directory: the user's own project.
     current_dir: Option<&'a Path>,
@@ -1119,13 +1299,15 @@ mod tests {
     use super::{
         LspDiscoveryOptions, default_server_for_file, default_server_for_workspace_root,
         detect_language_id, is_node_executable, is_rust_analyzer_command,
-        resolve_known_server_command, workspace_root_representative_source,
+        resolve_known_server_command, serves_requests_concurrently,
+        workspace_root_representative_source,
     };
     #[cfg(unix)]
     use super::{
         command_resolves_to_executable, current_node_command, is_command_available,
         resolve_server_invocation, resolve_server_invocation_with_environment,
     };
+    use crate::lsp::types::JsLanguageServerConfig;
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::path::PathBuf;
@@ -2177,5 +2359,344 @@ mod tests {
             default_server_for_file("src/lib.rs", "/workspace", &options).expect("rust route");
         assert_ne!(PathBuf::from(&unmanaged.command), bin);
         let _ = std::fs::remove_dir_all(home);
+    }
+
+    /// The memory cap is one setting: the host's `lsp.maxMemoryMb` (env
+    /// `OCTOCODE_LSP_MAX_MEMORY_MB`) reaches every server, a per-server
+    /// `maxMemoryMb` in `lsp-servers.json` wins over it, and `env` of a user
+    /// entry reaches the server process.
+    #[test]
+    fn the_memory_cap_comes_from_one_setting_with_a_per_server_override() {
+        let home = temp_test_root("octocode-engine-memory-cap-setting");
+        std::fs::create_dir_all(&home).expect("create home");
+        std::fs::write(
+            home.join("lsp-servers.json"),
+            r#"{"languageServers":{".php":{"command":"home-php-server","args":[],"languageId":"php","maxMemoryMb":1500,"env":{"GOMEMLIMIT":"1GiB"}}}}"#,
+        )
+        .expect("write user lsp config");
+        let mut options = LspDiscoveryOptions {
+            octocode_home: Some(home.clone()),
+            ..LspDiscoveryOptions::default()
+        };
+        let unset = default_server_for_file("a.go", "/workspace", &options).expect("go");
+        assert_eq!(unset.max_memory_mb, None, "unset: the host-derived default");
+        options.env =
+            BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "6000".to_owned())]);
+        let set = default_server_for_file("a.go", "/workspace", &options).expect("go");
+        assert_eq!(set.max_memory_mb, Some(6000));
+        let user = default_server_for_file("a.php", "/workspace", &options).expect("php");
+        assert_eq!(user.max_memory_mb, Some(1500), "per-server wins");
+        assert_eq!(
+            user.env
+                .as_ref()
+                .and_then(|env| env.get("GOMEMLIMIT"))
+                .map(String::as_str),
+            Some("1GiB")
+        );
+        options.env = BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "0".to_owned())]);
+        let disabled = default_server_for_file("a.go", "/workspace", &options).expect("go");
+        assert_eq!(disabled.max_memory_mb, Some(0), "0 disables the cap");
+        let _ = std::fs::remove_dir_all(home);
+    }
+
+    /// typescript-language-server runs headless: no network typings, one
+    /// process, a V8 heap that stays under the cap, and no package.json
+    /// import scan. Options the user set win.
+    #[test]
+    fn typescript_server_gets_headless_options_sized_to_the_cap() {
+        let options = LspDiscoveryOptions {
+            env: BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "8192".to_owned())]),
+            ..LspDiscoveryOptions::default()
+        };
+        let ts =
+            super::default_server_for_file_from("a.ts", "/workspace", &options, None).expect("ts");
+        let init = ts.initialization_options.expect("init options");
+        assert_eq!(init["disableAutomaticTypingAcquisition"], true, "{init}");
+        assert_eq!(init["tsserver"]["useSyntaxServer"], "never", "{init}");
+        assert_eq!(init["maxTsServerMemory"], 8192 - 512, "{init}");
+        assert_eq!(
+            init["preferences"]["includePackageJsonAutoImports"], "off",
+            "{init}"
+        );
+        // No cap, no heap bound.
+        let uncapped = LspDiscoveryOptions {
+            env: BTreeMap::from([("OCTOCODE_LSP_MAX_MEMORY_MB".to_owned(), "0".to_owned())]),
+            ..LspDiscoveryOptions::default()
+        };
+        let ts =
+            super::default_server_for_file_from("a.ts", "/workspace", &uncapped, None).expect("ts");
+        assert!(ts.initialization_options.expect("init")["maxTsServerMemory"].is_null());
+        // A user value wins.
+        let mut config = crate::lsp::types::JsLanguageServerConfig {
+            command: "typescript-language-server".to_owned(),
+            args: None,
+            workspace_root: "/workspace".to_owned(),
+            language_id: Some("typescript".to_owned()),
+            initialization_options: Some(json!({"maxTsServerMemory": 1234})),
+            env: None,
+            max_memory_mb: Some(8192),
+        };
+        crate::lsp::config::apply_server_default_options(&mut config, None);
+        let init = config.initialization_options.expect("init");
+        assert_eq!(init["maxTsServerMemory"], 1234, "{init}");
+    }
+
+    /// The default cap follows host memory: a quarter of it, within
+    /// 4 GiB..8 GiB; an unreadable host keeps the floor.
+    #[test]
+    fn the_default_cap_is_a_quarter_of_host_memory_within_bounds() {
+        use crate::lsp::spawn_limits::default_memory_cap_mb;
+        assert_eq!(default_memory_cap_mb(None), 4_096);
+        assert_eq!(default_memory_cap_mb(Some(8_192)), 4_096);
+        assert_eq!(default_memory_cap_mb(Some(20_000)), 5_000);
+        assert_eq!(default_memory_cap_mb(Some(32_768)), 8_192);
+        assert_eq!(default_memory_cap_mb(Some(262_144)), 8_192);
+    }
+
+    /// A trusted workspace's native TypeScript server is preferred over
+    /// tsserver; an untrusted one never swaps in a checkout's executable.
+    #[cfg(unix)]
+    #[test]
+    fn a_trusted_workspace_tsgo_is_preferred_over_tsserver() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = temp_test_root("octocode-engine-tsgo-preferred");
+        let bin = root.join("node_modules").join(".bin");
+        std::fs::create_dir_all(&bin).expect("bin dir");
+        let tsgo = bin.join("tsgo");
+        std::fs::write(&tsgo, "#!/bin/sh\n").expect("tsgo");
+        std::fs::set_permissions(&tsgo, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let Some(root_str) = root.to_str() else {
+            panic!("temporary root is not utf-8");
+        };
+        let trusted = LspDiscoveryOptions {
+            trust_project_config: true,
+            ..LspDiscoveryOptions::default()
+        };
+        let config =
+            super::default_server_for_file_from("a.ts", root_str, &trusted, None).expect("ts");
+        assert_eq!(PathBuf::from(&config.command), tsgo);
+        assert_eq!(
+            config.args.as_deref(),
+            Some(&["--lsp".to_owned(), "-stdio".to_owned()][..])
+        );
+        // tsgo is a Go program: its GC works toward GOMEMLIMIT, set 512 MiB
+        // under the memory cap unless the user's `env` already chose one.
+        let cap = crate::lsp::spawn_limits::effective_memory_cap_mb(config.max_memory_mb)
+            .expect("the default cap is on");
+        assert_eq!(
+            config.env.as_ref().and_then(|env| env.get("GOMEMLIMIT")),
+            Some(&format!("{}MiB", cap - 512)),
+            "{config:?}"
+        );
+        // tsgo drops constructor functions and `this` expandos, so JavaScript
+        // stays on tsserver; every TypeScript extension takes the native one.
+        for file in ["a.tsx", "a.mts", "a.cts"] {
+            let ts =
+                super::default_server_for_file_from(file, root_str, &trusted, None).expect(file);
+            assert_eq!(PathBuf::from(&ts.command), tsgo, "{file}");
+        }
+        for file in ["a.js", "a.jsx", "a.mjs", "a.cjs"] {
+            let js =
+                super::default_server_for_file_from(file, root_str, &trusted, None).expect(file);
+            assert_ne!(PathBuf::from(&js.command), tsgo, "{file} stays on tsserver");
+        }
+        // `None`: an install tree without a bundled tsgo (the checkout that
+        // runs these tests ships one beside the test binary); the bundled
+        // route has its own tests below.
+        let untrusted = super::default_server_for_file_from(
+            "a.ts",
+            root_str,
+            &LspDiscoveryOptions::default(),
+            None,
+        )
+        .expect("ts");
+        assert_ne!(PathBuf::from(&untrusted.command), tsgo);
+        assert!(
+            format!("{} {:?}", untrusted.command, untrusted.args)
+                .contains("typescript-language-server"),
+            "{untrusted:?}"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// An install tree whose `node_modules` ships octocode's own tsgo, plus
+    /// the anchor file (the executable or addon) inside it.
+    #[cfg(unix)]
+    fn install_with_bundled_tsgo(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        let install = temp_test_root(name);
+        let package = install
+            .join("node_modules")
+            .join("@typescript")
+            .join(format!(
+                "native-preview-{}",
+                crate::lsp::managed::npm_platform_id()
+            ))
+            .join("lib");
+        std::fs::create_dir_all(&package).expect("package dir");
+        let tsgo = package.join("tsgo");
+        std::fs::write(&tsgo, "#!/bin/sh\n").expect("tsgo");
+        std::fs::set_permissions(&tsgo, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        let anchor = install.join("node_modules/octocode-native/octocode.node");
+        std::fs::create_dir_all(anchor.parent().expect("parent")).expect("anchor dir");
+        std::fs::write(&anchor, "").expect("anchor");
+        let tsgo = std::fs::canonicalize(tsgo).expect("canonical tsgo");
+        (install, anchor, tsgo)
+    }
+
+    /// Octocode's own tsgo serves TypeScript whatever the trust state, and
+    /// a tsgo the scanned checkout ships is never run untrusted.
+    #[cfg(unix)]
+    #[test]
+    fn the_bundled_tsgo_serves_typescript_in_an_untrusted_workspace() {
+        use super::default_server_for_file_from;
+        use std::os::unix::fs::PermissionsExt;
+        let (install, anchor, tsgo) = install_with_bundled_tsgo("octocode-engine-bundled-tsgo");
+        let workspace = temp_test_root("octocode-engine-bundled-tsgo-workspace");
+        let shipped = workspace.join("node_modules").join(".bin");
+        std::fs::create_dir_all(&shipped).expect("bin dir");
+        let shipped_tsgo = shipped.join("tsgo");
+        std::fs::write(&shipped_tsgo, "#!/bin/sh\n").expect("shipped tsgo");
+        std::fs::set_permissions(&shipped_tsgo, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod");
+        let root = workspace.to_str().expect("utf-8 root");
+        let untrusted = LspDiscoveryOptions::default();
+
+        for file in ["a.ts", "a.tsx", "a.mts", "a.cts"] {
+            let config =
+                default_server_for_file_from(file, root, &untrusted, Some(&anchor)).expect(file);
+            assert_eq!(PathBuf::from(&config.command), tsgo, "{file}");
+            assert_eq!(
+                config.args.as_deref(),
+                Some(&["--lsp".to_owned(), "-stdio".to_owned()][..])
+            );
+        }
+        // The Go GC works toward GOMEMLIMIT, set under the memory cap.
+        let config =
+            default_server_for_file_from("a.ts", root, &untrusted, Some(&anchor)).expect("ts");
+        let cap = crate::lsp::spawn_limits::effective_memory_cap_mb(config.max_memory_mb)
+            .expect("the default cap is on");
+        assert_eq!(
+            config.env.as_ref().and_then(|env| env.get("GOMEMLIMIT")),
+            Some(&format!("{}MiB", cap - 512)),
+            "{config:?}"
+        );
+        // JavaScript stays on tsserver.
+        for file in ["a.js", "a.jsx", "a.mjs", "a.cjs"] {
+            let js =
+                default_server_for_file_from(file, root, &untrusted, Some(&anchor)).expect(file);
+            assert_ne!(PathBuf::from(&js.command), tsgo, "{file}");
+        }
+        let _ = std::fs::remove_dir_all(install);
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    /// A trusted workspace's own tsgo (its TypeScript version) still wins
+    /// over octocode's bundled one.
+    #[cfg(unix)]
+    #[test]
+    fn a_trusted_workspace_tsgo_wins_over_the_bundled_one() {
+        use super::default_server_for_file_from;
+        use std::os::unix::fs::PermissionsExt;
+        let (install, anchor, bundled) = install_with_bundled_tsgo("octocode-engine-tsgo-order");
+        let workspace = temp_test_root("octocode-engine-tsgo-order-workspace");
+        let shipped = workspace.join("node_modules").join(".bin");
+        std::fs::create_dir_all(&shipped).expect("bin dir");
+        let shipped_tsgo = shipped.join("tsgo");
+        std::fs::write(&shipped_tsgo, "#!/bin/sh\n").expect("shipped tsgo");
+        std::fs::set_permissions(&shipped_tsgo, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod");
+        let root = workspace.to_str().expect("utf-8 root");
+        let trusted = LspDiscoveryOptions {
+            trust_project_config: true,
+            ..LspDiscoveryOptions::default()
+        };
+        let config =
+            default_server_for_file_from("a.ts", root, &trusted, Some(&anchor)).expect("ts");
+        assert_eq!(PathBuf::from(&config.command), shipped_tsgo);
+        assert_ne!(PathBuf::from(&config.command), bundled);
+        let _ = std::fs::remove_dir_all(install);
+        let _ = std::fs::remove_dir_all(workspace);
+    }
+
+    /// Without a bundled tsgo the route stays tsserver, and the fallback is
+    /// offered only where a native route exists: a user server entry is the
+    /// user's explicit choice and has no fallback.
+    #[cfg(unix)]
+    #[test]
+    fn only_tsgo_serves_requests_concurrently() {
+        let config = |command: &str| JsLanguageServerConfig {
+            command: command.to_owned(),
+            args: None,
+            workspace_root: "/workspace".to_owned(),
+            language_id: Some("typescript".to_owned()),
+            initialization_options: None,
+            env: None,
+            max_memory_mb: None,
+        };
+        assert!(serves_requests_concurrently(&config(
+            "/i/@typescript/native-preview-darwin-arm64/lib/tsgo"
+        )));
+        assert!(serves_requests_concurrently(&config("tsgo")));
+        assert!(!serves_requests_concurrently(&config(
+            "typescript-language-server"
+        )));
+        assert!(!serves_requests_concurrently(&config("gopls")));
+    }
+
+    #[test]
+    fn tsserver_is_the_fallback_when_tsgo_is_absent_or_fails() {
+        use super::{default_server_for_file_from, typescript_server_fallback_from};
+        let (install, anchor, tsgo) = install_with_bundled_tsgo("octocode-engine-tsgo-fallback");
+        let bare = temp_test_root("octocode-engine-tsgo-absent");
+        std::fs::create_dir_all(&bare).expect("bare install");
+        let bare_anchor = bare.join("octocode");
+        let workspace = temp_test_root("octocode-engine-tsgo-fallback-workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace");
+        let root = workspace.to_str().expect("utf-8 root");
+        let options = LspDiscoveryOptions::default();
+
+        let absent = default_server_for_file_from("a.ts", root, &options, Some(&bare_anchor))
+            .expect("ts without tsgo");
+        assert!(
+            format!("{} {:?}", absent.command, absent.args).contains("typescript-language-server"),
+            "{absent:?}"
+        );
+        assert!(
+            typescript_server_fallback_from("a.ts", root, &options, Some(&bare_anchor)).is_none(),
+            "nothing to fall back from"
+        );
+
+        let fallback = typescript_server_fallback_from("a.ts", root, &options, Some(&anchor))
+            .expect("tsgo route has a tsserver fallback");
+        assert_ne!(PathBuf::from(&fallback.command), tsgo);
+        assert!(
+            format!("{} {:?}", fallback.command, fallback.args)
+                .contains("typescript-language-server"),
+            "{fallback:?}"
+        );
+        assert!(
+            typescript_server_fallback_from("a.js", root, &options, Some(&anchor)).is_none(),
+            "JavaScript never used tsgo"
+        );
+
+        let home = temp_test_root("octocode-engine-tsgo-user-entry");
+        std::fs::create_dir_all(&home).expect("home");
+        std::fs::write(
+            home.join("lsp-servers.json"),
+            r#"{"languageServers":{".ts":{"command":"my-ts","args":[],"languageId":"typescript"}}}"#,
+        )
+        .expect("user config");
+        let user = LspDiscoveryOptions {
+            octocode_home: Some(home.clone()),
+            ..LspDiscoveryOptions::default()
+        };
+        assert!(
+            typescript_server_fallback_from("a.ts", root, &user, Some(&anchor)).is_none(),
+            "an explicit user entry has no silent fallback"
+        );
+        for dir in [install, bare, workspace, home] {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

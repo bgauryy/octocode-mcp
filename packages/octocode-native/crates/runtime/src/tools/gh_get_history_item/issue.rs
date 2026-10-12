@@ -1,17 +1,17 @@
 //! `operation: "issue"`: issue metadata, body window, and one page of
 //! discussion comments.
-use super::patch::auto_page;
 use super::promotion::promote_issue_continuations;
-use super::util::{
-    array, content_flag, delivered_earlier, history_body_view, map_comments, merge, paginate_text,
-    str_at, string, window_body,
-};
-use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, MAX_COLLECTION_PAGE, fetch, validation};
+use super::text::{delivered_earlier, history_body_view, paginate_text, window_body};
+use super::util::{array, content_flag, map_comments, merge, str_at, string};
+use super::window::auto_page;
+use super::{DEFAULT_PAGE_SIZE, HistoryItemRequest, fetch, validation};
 use crate::providers::github::{
     GitHubTransport, ProviderError, ProviderErrorKind, ProviderErrorReason, RequestContext,
 };
+use crate::tools::gh_shared::ensure_next;
 use crate::tools::id::ToolId;
 use crate::tools::result::{Continuation, remove_nulls};
+use octocode_github::MAX_PER_PAGE;
 use serde_json::{Map, Value, json};
 
 /// A pull-request read that 404ed: when the number is an issue, say so with
@@ -31,9 +31,7 @@ pub(super) async fn name_issue_number(
         Ok((raw, _)) if raw.get("pull_request").is_none_or(Value::is_null) => {
             let mut error = ProviderError::new(
                 ProviderErrorKind::NotFound,
-                format!(
-                    "#{number} is an issue, not a pull request; read it with operation:\"issue\"."
-                ),
+                format!("#{number} is an issue, not a pull request"),
             )
             .with_reason(ProviderErrorReason::PullRequestIsIssue);
             error.status = not_found.status;
@@ -55,8 +53,8 @@ pub(super) async fn issue(
     let issue_path = ["repos", query.owner(), query.repo(), "issues", &number];
     // The closing PRs load beside the issue on its first window; later
     // windows ask only for their count so the bounded set stays disclosed.
-    let first_window = query.comment_page().unwrap_or(1) <= 1
-        && query.char_offset().is_none_or(|offset| offset == 0);
+    let first_window =
+        query.page().unwrap_or(1) <= 1 && query.char_offset().is_none_or(|offset| offset == 0);
     let (fetched, closed_by) = tokio::join!(fetch(transport, &issue_path, &[], context), async {
         if first_window {
             closing_pull_requests(transport, query, context).await
@@ -66,10 +64,8 @@ pub(super) async fn issue(
     });
     let (raw, _) = fetched?;
     if raw.get("pull_request").is_some_and(|v| !v.is_null()) {
-        return Err(validation(&format!(
-            "Issue #{number} is a pull request; use ghGetHistoryItem operation:\"pullRequest\" with number:{number}."
-        ))
-        .with_reason(ProviderErrorReason::IssueIsPullRequest));
+        return Err(validation(&format!("Issue #{number} is a pull request"))
+            .with_reason(ProviderErrorReason::IssueIsPullRequest));
     }
     let content_value = query.content_value();
     let content = content_value.as_ref().and_then(Value::as_object);
@@ -78,7 +74,6 @@ pub(super) async fn issue(
         .and_then(|v| v.get("comments"))
         .and_then(Value::as_object);
     let want_comments = content_flag(comments, "discussion");
-    let include_bots = content_flag(comments, "includeBots");
     // A comment-body hop (`offset` > 0 with the discussion) continues the
     // comment bodies of its first window. The issue body is not shown again
     // (its own `continueBody` reads it at its own offset), but its first
@@ -87,32 +82,21 @@ pub(super) async fn issue(
     let comment_hop = want_comments && query.char_offset().is_some_and(|offset| offset > 0);
     let show_body = want_body && !comment_hop;
     // A later comment page continues a read whose first page named the
-    // issue: only the number is restated.
-    let later_page = query.comment_page().unwrap_or(1) > 1;
-    let header = json!({
-        "number":raw["number"],"title":string(raw.get("title")),
-        "state":str_at(&raw,"/state").unwrap_or("open"),"author":str_at(&raw,"/user/login").unwrap_or("unknown"),
-        "labels":raw.get("labels").and_then(Value::as_array).into_iter().flatten().filter_map(|v|str_at(v,"/name").map(str::to_owned)).collect::<Vec<_>>(),
-        "createdAt":string(raw.get("created_at")),
-        // The discussion's size, so the caller can choose to read it.
-        "commentsCount":super::util::nonzero(raw.get("comments")),
-        // Only an open issue's last update says whether it is still moving.
-        "updatedAt":(str_at(&raw,"/state").unwrap_or("open") == "open").then(|| string(raw.get("updated_at"))),
-        "closedAt":raw.get("closed_at").filter(|v|!v.is_null())
-    });
-    let header_for = |body: bool| {
+    // issue; a section read's sections carry its evidence: either restates
+    // only the number and state (the summary owns the rest).
+    let later_page = query.page().unwrap_or(1) > 1;
+    let slim = later_page || query.has_sections();
+    let header = issue_header(&raw);
+    let header_for = || {
         let mut row = header.clone();
-        if later_page
-            && !body
-            && let Some(fields) = row.as_object_mut()
-        {
-            fields.retain(|key, _| key == "number");
+        if slim && let Some(fields) = row.as_object_mut() {
+            fields.retain(|key, _| key == "number" || key == "state");
         }
         row
     };
     let body_view =
         want_body.then(|| history_body_view(str_at(&raw, "/body").unwrap_or(""), query));
-    let mut row = header_for(show_body);
+    let mut row = header_for();
     let mut pagination = Map::new();
     if let Some(body_view) = body_view.as_deref().filter(|_| show_body) {
         let (body, page) = paginate_text(body_view, query.char_offset(), query.char_length());
@@ -122,14 +106,10 @@ pub(super) async fn issue(
             pagination.insert("body".into(), page);
         }
     }
-    let mut bots_hidden = 0;
     if want_comments {
-        // The comments fill what the header and body leave of the response
-        // page (less a reserve for the row's cursors and leads), so one
-        // comment page is one response page. A comment-body hop counts the
-        // row its first window showed.
+        // A comment-body hop counts the row its first window showed.
         let used = if comment_hop {
-            let mut first = header_for(want_body);
+            let mut first = header_for();
             if let Some(body_view) = body_view.as_deref() {
                 first["body"] = json!(paginate_text(body_view, None, query.char_length()).0);
             }
@@ -137,33 +117,12 @@ pub(super) async fn issue(
         } else {
             crate::tools::stream_page::json_chars(&row)
         };
-        let budget = auto_page(query.auto_page_chars)
-            .saturating_sub(COMMENT_PAGE_RESERVE)
-            .saturating_sub(used);
-        let page =
-            issue_comments(transport, query, context, &issue_path, include_bots, budget).await?;
-        bots_hidden = page.bots_hidden;
-        if !page.comments.is_empty() {
-            row["comments"] = Value::Array(page.comments);
-        }
-        // `raw.comments` is the issue's real comment count (bots included);
-        // the page holds the `comments` array, and `remainingItems` counts
-        // the provider comments after this page.
-        let mut comments = page.pagination;
-        let total = raw.get("comments").and_then(Value::as_u64);
-        comments["totalItems"] = json!(total);
-        if comments["hasMore"] == true
-            && let Some(total) = total
-        {
-            let left = total.saturating_sub(u64::try_from(page.consumed).unwrap_or(u64::MAX));
-            if left > 0 {
-                comments["remainingItems"] = json!(left);
-            }
-        }
-        pagination.insert("comments".into(), comments);
-        if let Some(body) = page.body {
-            pagination.insert("commentBody".into(), body);
-        }
+        let at = CommentRead {
+            issue_path: &issue_path,
+            used,
+            total: raw.get("comments").and_then(Value::as_u64),
+        };
+        attach_comment_page(transport, query, context, &at, &mut row, &mut pagination).await?;
     }
     if !pagination.is_empty() {
         row["contentPagination"] = Value::Object(pagination);
@@ -172,13 +131,10 @@ pub(super) async fn issue(
     if let Some(references) = closed_by.as_ref().filter(|refs| !refs.prs.is_empty()) {
         row["closedBy"] = Value::Array(references.prs.iter().map(|pr| pr.row.clone()).collect());
     }
-    let mut out = json!({"owner":query.owner(),"repo":query.repo(),"issues":[row]});
+    let mut out = json!({"issues":[row]});
     promote_issue_continuations(&mut out, query);
     if !want_comments && !later_page {
         attach_comments_read(&mut out, query, &raw);
-    }
-    if bots_hidden > 0 {
-        attach_bot_read(&mut out, query, bots_hidden);
     }
     let bounded = closed_by.as_ref().and_then(|references| {
         references
@@ -197,25 +153,88 @@ pub(super) async fn issue(
     Ok(out)
 }
 
+/// The issue's identity and decision facts: number, title, state, author,
+/// labels (when any), creation, the discussion's size, the last update of
+/// an open issue, and the close date.
+fn issue_header(raw: &Value) -> Value {
+    json!({
+        "number":raw["number"],"title":string(raw.get("title")),
+        "state":str_at(raw,"/state").unwrap_or("open"),"author":str_at(raw,"/user/login").unwrap_or("unknown"),
+        // Labels only when there are any.
+        "labels":Some(raw.get("labels").and_then(Value::as_array).into_iter().flatten().filter_map(|v|str_at(v,"/name").map(str::to_owned)).collect::<Vec<_>>()).filter(|labels| !labels.is_empty()),
+        "createdAt":string(raw.get("created_at")),
+        // The discussion's size, so the caller can choose to read it.
+        "commentsCount":super::util::nonzero(raw.get("comments")),
+        // Only an open issue's last update says whether it is still moving.
+        "updatedAt":(str_at(raw,"/state").unwrap_or("open") == "open").then(|| string(raw.get("updated_at"))),
+        "closedAt":raw.get("closed_at").filter(|v|!v.is_null())
+    })
+}
+
+/// Where an issue's comment page reads and what the row already holds.
+struct CommentRead<'a> {
+    issue_path: &'a [&'a str],
+    /// Response characters the row's header and body already use.
+    used: usize,
+    /// GitHub's count of the issue's comments.
+    total: Option<u64>,
+}
+
+/// The issue's comment page on `row`, and its page facts. The comments fill
+/// what the header and body leave of the response page (less a reserve for
+/// the row's cursors and leads), so one comment page is one response page.
+async fn attach_comment_page(
+    transport: &GitHubTransport,
+    query: &HistoryItemRequest,
+    context: &RequestContext,
+    at: &CommentRead<'_>,
+    row: &mut Value,
+    pagination: &mut Map<String, Value>,
+) -> Result<(), ProviderError> {
+    let budget = auto_page(query.auto_page_chars)
+        .saturating_sub(COMMENT_PAGE_RESERVE)
+        .saturating_sub(at.used);
+    let page = issue_comments(transport, query, context, at.issue_path, budget).await?;
+    if !page.comments.is_empty() {
+        row["comments"] = Value::Array(page.comments);
+    }
+    // `total` is the issue's real comment count; the page holds the
+    // `comments` array, and `remainingItems` counts the provider comments
+    // after this page.
+    let mut comments = page.pagination;
+    comments["totalItems"] = json!(at.total);
+    if comments["hasMore"] == true
+        && let Some(total) = at.total
+    {
+        let left = total.saturating_sub(u64::try_from(page.consumed).unwrap_or(u64::MAX));
+        if left > 0 {
+            comments["remainingItems"] = json!(left);
+        }
+    }
+    pagination.insert("comments".into(), comments);
+    if let Some(body) = page.body {
+        pagination.insert("commentBody".into(), body);
+    }
+    Ok(())
+}
+
 /// One page of an issue's discussion comments.
 struct CommentPage {
     comments: Vec<Value>,
-    /// The page object (`hasMore`, `nextPage`/`nextPageSize`, `botsHidden`).
+    /// The page object (`hasMore`, `nextPage`/`nextPageSize`).
     pagination: Value,
     /// The first comment-body window with more text.
     body: Option<Value>,
-    /// Provider comments read up to the end of this page (shown and hidden).
+    /// Provider comments read up to the end of this page.
     consumed: usize,
-    /// Bot comments this page skipped (`includeBots` omitted).
-    bots_hidden: usize,
 }
 
 /// One page of an issue's discussion comments, each body windowed, filling
 /// `budget` characters. The page starts at comment
-/// `(commentPage − 1) × pageSize`; a first page shows at most an explicit
+/// `(page − 1) × pageSize`; a first page shows at most an explicit
 /// `pageSize`, and every page as many comments as fit (up to one provider
 /// batch), read from at most two provider batches. The page resumes at its
-/// first unshown comment through a `commentPage`/`pageSize` pair that starts
+/// first unshown comment through a `page`/`pageSize` pair that starts
 /// there ([`resume_page`]), so the comment cursor is the response's only
 /// cursor.
 async fn issue_comments(
@@ -223,26 +242,25 @@ async fn issue_comments(
     query: &HistoryItemRequest,
     context: &RequestContext,
     issue_path: &[&str],
-    include_bots: bool,
     budget: usize,
 ) -> Result<CommentPage, ProviderError> {
-    let page_no = query.comment_page().unwrap_or(1);
+    let page_no = query.page().unwrap_or(1);
     let grid = query.page_size().unwrap_or(DEFAULT_PAGE_SIZE).max(1);
     let start = page_no.saturating_sub(1) * grid;
     let cap = match query.page_size() {
         Some(size) if page_no <= 1 => size,
-        _ => MAX_COLLECTION_PAGE,
+        _ => MAX_PER_PAGE,
     };
     let mut raw_comments = Vec::new();
     let mut provider_more = false;
     if page_no > 0 {
-        let mut skip = start % MAX_COLLECTION_PAGE;
-        for batch in (start / MAX_COLLECTION_PAGE + 1..).take(2) {
+        let mut skip = start % MAX_PER_PAGE;
+        for batch in (start / MAX_PER_PAGE + 1..).take(2) {
             let (value, more) = fetch(
                 transport,
                 &[issue_path, &["comments"]].concat(),
                 &[
-                    ("per_page", MAX_COLLECTION_PAGE.to_string()),
+                    ("per_page", MAX_PER_PAGE.to_string()),
                     ("page", batch.to_string()),
                 ],
                 context,
@@ -256,37 +274,27 @@ async fn issue_comments(
             skip = 0;
         }
     }
-    // Each provider comment (a hidden bot's is `None`), in order.
-    let fetched: Vec<Option<Value>> = raw_comments
-        .into_iter()
-        .map(|raw| map_comments(vec![raw], "discussion", include_bots).pop())
-        .collect();
-    // Comments that fit the budget and the cap; at least the first shown
-    // one. Hidden bots ride free up to the stop. Each comment costs its
-    // first window, so a body continuation (`offset` > 0) pages exactly the
-    // comments its first window showed.
-    let (mut consumed, mut shown, mut used) = (0, 0, 0usize);
+    let fetched = map_comments(raw_comments);
+    // Comments that fit the budget and the cap; at least the first one.
+    // Each comment costs its first window, so a body continuation
+    // (`offset` > 0) pages exactly the comments its first window showed.
+    let (mut consumed, mut used) = (0, 0usize);
     for comment in &fetched {
-        if let Some(comment) = comment {
-            let (first, _) = shape_issue_comment(comment, None, query, &mut None);
-            let chars = crate::tools::stream_page::json_chars(&first) + 1;
-            if shown > 0 && (used + chars > budget || shown >= cap) {
-                break;
-            }
-            used += chars;
-            shown += 1;
+        let (first, _) = shape_issue_comment(comment, None, query, &mut None);
+        let chars = crate::tools::stream_page::json_chars(&first) + 1;
+        if consumed > 0 && (used + chars > budget || consumed >= cap) {
+            break;
         }
+        used += chars;
         consumed += 1;
     }
     let more = consumed < fetched.len() || provider_more;
-    let bots_hidden = fetched[..consumed].iter().filter(|c| c.is_none()).count();
     // The page's bodies at the call's offset. A continuation lists only the
     // bodies it continues: a body an earlier window delivered whole is not
     // repeated as an empty row.
     let mut body_page = None;
     let comments = fetched[..consumed]
         .iter()
-        .flatten()
         .filter_map(|comment| {
             let (shaped, page) =
                 shape_issue_comment(comment, query.char_offset(), query, &mut body_page);
@@ -299,15 +307,11 @@ async fn issue_comments(
         pagination["nextPage"] = json!(page);
         pagination["nextPageSize"] = json!(size);
     }
-    if bots_hidden > 0 {
-        pagination["botsHidden"] = json!(bots_hidden);
-    }
     Ok(CommentPage {
         comments,
         pagination,
         body: body_page,
         consumed: start + consumed,
-        bots_hidden,
     })
 }
 
@@ -332,14 +336,6 @@ fn shape_issue_comment(
     if page["offset"] != 0 || page["hasMore"] == true {
         c["bodyPagination"] = page.clone();
     }
-    if let Some(map) = c.as_object_mut() {
-        // Every issue comment is a discussion comment, and an unedited one
-        // has one timestamp.
-        map.remove("commentType");
-        if map.get("updatedAt") == map.get("createdAt") {
-            map.remove("updatedAt");
-        }
-    }
     remove_nulls(&mut c);
     (c, page)
 }
@@ -348,27 +344,6 @@ fn shape_issue_comment(
 /// leads, and warnings.
 const COMMENT_PAGE_RESERVE: usize = 2_500;
 
-/// Bot comments a page hid are counted, never silently dropped: a warning
-/// names them and `hints.includeBots` re-reads the same page with them.
-fn attach_bot_read(out: &mut Value, query: &HistoryItemRequest, hidden: usize) {
-    let noun = if hidden == 1 { "comment" } else { "comments" };
-    super::patch::push_warning(
-        out,
-        format!("{hidden} bot {noun} hidden on this page; hints.includeBots shows them."),
-    );
-    let mut nq = super::pr_menu::base_public_query(query, super::ItemOperation::Issue);
-    let mut comments = query
-        .content_value()
-        .and_then(|content| content.get("comments").cloned())
-        .unwrap_or(json!({"discussion":true}));
-    comments["includeBots"] = json!(true);
-    nq["content"] = json!({"comments": comments});
-    if !out.get("next").is_some_and(Value::is_object) {
-        out["next"] = json!({});
-    }
-    out["next"]["includeBots"] = super::pr_menu::menu_read(nq);
-}
-
 /// `next.readDiscussion`: an issue read without its discussion offers it
 /// when GitHub counts any comment (the same issue, `sections:["comments"]`).
 fn attach_comments_read(out: &mut Value, query: &HistoryItemRequest, raw: &Value) {
@@ -376,21 +351,19 @@ fn attach_comments_read(out: &mut Value, query: &HistoryItemRequest, raw: &Value
         return;
     }
     let mut nq = super::pr_menu::base_public_query(query, super::ItemOperation::Issue);
-    for key in ["offset", "length", "commentPage"] {
+    for key in ["offset", "length", "page"] {
         super::pr_menu::remove_key(&mut nq, key);
     }
     nq["content"] = json!({"comments": {"discussion": true}});
-    if !out.get("next").is_some_and(Value::is_object) {
-        out["next"] = json!({});
-    }
+    ensure_next(out);
     out["next"]["readDiscussion"] = super::pr_menu::menu_read(nq);
 }
 
-/// The `(commentPage, pageSize)` pair whose page starts at comment index
+/// The `(page, pageSize)` pair whose page starts at comment index
 /// `start`: the largest page size (at most one provider batch) dividing it.
 /// The size only places the start; the page fills its budget.
 fn resume_page(start: usize) -> (usize, usize) {
-    let size = (1..=start.clamp(1, MAX_COLLECTION_PAGE))
+    let size = (1..=start.clamp(1, MAX_PER_PAGE))
         .rev()
         .find(|size| start.is_multiple_of(*size))
         .unwrap_or(1);
@@ -409,7 +382,7 @@ fn mark_bounded_closing(out: &mut Value, listed: usize, total: u64, first_window
     reasons.push(json!("closingReferenceLimit"));
     out["partialReasons"] = Value::Array(reasons);
     // Appended: a bot-comment warning on the same page stays.
-    super::patch::push_warning(
+    crate::tools::gh_shared::push_warning(
         out,
         if first_window {
             format!(
@@ -607,9 +580,7 @@ fn attach_fix_pr(
         ),
         None => return,
     };
-    if !out.get("next").is_some_and(Value::is_object) {
-        out["next"] = json!({});
-    }
+    ensure_next(out);
     // The fix is new evidence: it leads the issue's own reads, so a
     // one-lead answer offers it.
     if let Some(leads) = out["next"].as_object_mut() {
@@ -765,7 +736,7 @@ mod tests {
 mod resume_tests {
     use super::resume_page;
 
-    /// E18: a cut page resumes exactly at its first unshown comment: the
+    /// A cut page resumes exactly at its first unshown comment: the
     /// page size only places the start (the largest one dividing it, at
     /// most one provider batch); the next page fills its own budget.
     #[test]

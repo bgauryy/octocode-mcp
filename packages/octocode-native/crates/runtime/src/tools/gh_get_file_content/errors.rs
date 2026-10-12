@@ -37,18 +37,11 @@ pub(crate) fn failure(
         ];
         failure
     };
-    // GitHub reports an unknown ref as "No commit found for SHA: <ref>" (422
-    // on the commits endpoint used for ref resolution, typed `RefNotFound`)
-    // or "No commit found for the ref <ref>" (404 on the contents endpoint):
-    // the requested branch/tag/SHA does not exist, so name it and list the
-    // refs it could name.
+    // The requested branch/tag/SHA does not exist (the transport types
+    // GitHub's "No commit found"): name it and list the refs it could name.
     if let Some(reference) = at.reference.filter(|value| !value.is_empty())
-        && (error.reason == Some(ProviderErrorReason::RefNotFound)
-            || error.message.starts_with("No commit found"))
+        && error.reason == Some(ProviderErrorReason::RefNotFound)
     {
-        let mut error = error;
-        error.kind = ProviderErrorKind::NotFound;
-        error.reason = Some(ProviderErrorReason::RefNotFound);
         let failure = GhFailure::new(
             error,
             format!("Branch, tag, or SHA not found for {owner}/{repo}: \"{reference}\""),
@@ -85,9 +78,10 @@ pub(crate) fn failure(
         && error.status.is_none()
         && error.reason == Some(ProviderErrorReason::PathIsDirectory)
     {
-        // The provider confirmed this path is a directory: listing it is exact.
+        // The provider confirmed this path is a directory: listing it is
+        // exact, and the lead is the whole repair.
         (
-            Some("The path is a directory; list its entries with the viewTree continuation."),
+            None,
             Some(json!({ "viewTree": tree_recovery(&at, max_depth, "exact") })),
         )
     } else if repository_not_found(&error) {
@@ -122,9 +116,7 @@ fn path_recovery(
             ..*at
         };
         return (
-            Some(
-                "Check the path's exact case (no leading slash) and the ref; list the parent directory with hints.viewTree.",
-            ),
+            None,
             Some(json!({ "viewTree": tree_recovery(&listing, None, "low") })),
         );
     };
@@ -137,25 +129,24 @@ fn path_recovery(
         path: directory,
         ..*at
     };
-    let mut next = json!({ "viewTree": tree_recovery(&listing, None, "exact") });
+    // One repair: the case-corrected file's read, else the listing of the
+    // deepest existing directory (the lead's path is the fact).
     match found.file {
         Some(path) => {
             let mut read = serde_json::to_value(query).unwrap_or_default();
             remove_nulls(&mut read);
             read["path"] = json!(path);
-            next["read"] = Continuation::new(ToolId::GhGetFileContent, read)
+            let read = Continuation::new(ToolId::GhGetFileContent, read)
                 .confidence("high")
                 .build();
             (
-                Some("Only the path's case differs; run hints.read."),
-                Some(next),
+                Some("Only the path's case differs."),
+                Some(json!({ "read": read })),
             )
         }
         None => (
-            Some(
-                "The rest of the path does not exist; hints.viewTree lists the nearest existing directory.",
-            ),
-            Some(next),
+            None,
+            Some(json!({ "viewTree": tree_recovery(&listing, None, "exact") })),
         ),
     }
 }

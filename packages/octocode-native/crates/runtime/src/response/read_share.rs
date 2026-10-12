@@ -7,7 +7,7 @@
 //! `localFetch` or `ghGetFileContent` batch that would overflow, gives each
 //! row a fair share of the window (a small row keeps its size and leaves the
 //! rest to larger ones), and re-reads each oversized row as a shorter line
-//! page. Every row then returns its first lines plus its own `next.continue`
+//! page. Every row then returns its first lines plus its own `next.continueWindow`
 //! for exactly the rest; nothing is dropped.
 
 use serde_json::{Map, Value};
@@ -23,7 +23,7 @@ use crate::tools::stream_page::{json_chars, json_text_chars};
 /// response-level warning that names the partial rows.
 const ENVELOPE_CHARS: usize = 512;
 
-/// Room for a shortened row's `next.continue` beyond the query it copies:
+/// Room for a shortened row's `next.continueWindow` beyond the query it copies:
 /// tool name, offset, unit, and the row's remaining-lines warning.
 const CONTINUATION_EXTRA_CHARS: usize = 192;
 
@@ -275,7 +275,7 @@ mod tests {
                     .map(|query| {
                         let lines = query["length"].as_u64().unwrap_or(0) as usize;
                         let mut row = local_row(lines, 60);
-                        row.data["next"] = json!({"continue":{"tool":"localFetch","query":{"queries":[{
+                        row.data["next"] = json!({"continueWindow":{"tool":"localFetch","query":{"queries":[{
                         "path":"a.txt","offset":lines,"unit":"lines","length":lines}]}}});
                         row
                     })
@@ -286,7 +286,7 @@ mod tests {
         assert_eq!(seen.len(), 2);
         assert!(seen.iter().all(|query| query["unit"] == "lines"));
         for row in &shared {
-            let next = &row.data["next"]["continue"]["query"]["queries"][0];
+            let next = &row.data["next"]["continueWindow"]["query"]["queries"][0];
             assert!(next.get("length").is_none(), "{next}");
             assert!(next["offset"].as_u64().is_some_and(|offset| offset > 0));
         }

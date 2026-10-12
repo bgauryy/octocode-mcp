@@ -48,8 +48,105 @@ fn detect_applies_file_context_when_path_matches() {
     let result_with_ts = detect(yaml, Some("src/index.ts"));
     // With .yaml path → file-context pattern should fire
     assert!(result_with_yaml.has_secrets_or(&result_no_path));
-    // With .ts path → file-context pattern should NOT fire
-    assert_eq!(result_with_ts.sanitized, result_no_path.sanitized);
+    // With .ts path → file-context pattern should NOT fire (the YAML scalar
+    // pattern is skipped for source code too, so the output differs from the
+    // pathless net's).
+    assert!(
+        !result_with_ts
+            .secrets_detected
+            .contains(&"kubernetesSecrets".to_string()),
+        "{:?}",
+        result_with_ts.secrets_detected
+    );
+    assert!(
+        result_with_yaml
+            .secrets_detected
+            .contains(&"kubernetesSecrets".to_string()),
+        "{:?}",
+        result_with_yaml.secrets_detected
+    );
+}
+
+/// An unquoted `credentialName: Identifier;` is a type member in source
+/// code (lib.dom.d.ts, minified plotly), never a literal secret; the same
+/// line is a secret in a YAML file and in pathless content.
+#[test]
+fn yaml_secret_value_skips_source_code_paths() {
+    let member = "interface Result {\n  password: URLPatternComponentResult;\n}\n";
+    for path in ["lib.dom.d.ts", "src/plotly.min.js", "pkg/types.py"] {
+        let result = detect(member, Some(path));
+        assert_eq!(result.sanitized, member, "{path}");
+        assert!(result.secrets_detected.is_empty(), "{path}");
+    }
+    let config = "db:\n  password: hunter2hunter2hunter2\n";
+    for path in [Some("config/app.yaml"), Some("Procfile"), None] {
+        let result = detect(config, path);
+        assert!(
+            result
+                .secrets_detected
+                .contains(&"yamlSecretValue".to_string()),
+            "{path:?}: {:?}",
+            result.secrets_detected
+        );
+    }
+}
+
+/// Output net: a string leaf of a result about a source file is scanned
+/// knowing only its language. Config syntax is not a secret in code, while
+/// every credential shape — and the config syntax in config files and in the
+/// pathless net — stays redacted.
+#[test]
+fn leaf_of_source_file_skips_config_syntax_but_keeps_every_credential() {
+    use super::Scope::{Leaf, Pathless};
+    let member = "interface Cfg {\n  password: hunter2hunter2hunter2;\n}\n";
+    for path in ["src/a.ts", "lib/b.rs", "pkg/c.py"] {
+        let result = detect_in(member, Leaf(path));
+        assert_eq!(result.sanitized, member, "{path}");
+    }
+    for scope in [
+        Leaf("config/app.yaml"),
+        Leaf(".env"),
+        Leaf("Procfile"),
+        Pathless,
+    ] {
+        let result = detect_in(member, scope);
+        assert!(
+            result
+                .secrets_detected
+                .contains(&"yamlSecretValue".to_string()),
+            "{scope:?}: {:?}",
+            result.secrets_detected
+        );
+    }
+    let aws = format!("AKIA{}", "IOSFODNN7EXAMPLE");
+    let pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz\n-----END RSA PRIVATE KEY-----";
+    let credentials = [
+        format!("const t = \"ghp_{}\";", "a".repeat(37)),
+        format!("const k = \"{aws}\";"),
+        pem.to_owned(),
+    ];
+    for credential in &credentials {
+        let result = detect_in(credential, Leaf("src/secrets.ts"));
+        assert!(!result.secrets_detected.is_empty(), "{credential}");
+        assert!(
+            result.sanitized.contains("[REDACTED-"),
+            "{}",
+            result.sanitized
+        );
+    }
+}
+
+/// A leaf's path never loosens file-context patterns: they stay content-gated
+/// like the pathless net (a `.ts` leaf is not exempt from a keyword-anchored
+/// pattern the pathless net applies).
+#[test]
+fn leaf_scope_keeps_content_gated_file_context_patterns() {
+    use super::Scope::{Leaf, Pathless};
+    let content = "kind: Secret\ndata:\n  password: c2VjcmV0cGFzc3dvcmQ=\n# source: manifest.yaml";
+    assert_eq!(
+        detect_in(content, Leaf("src/a.ts")).sanitized,
+        detect_in(content, Pathless).sanitized
+    );
 }
 
 #[test]
@@ -344,6 +441,178 @@ fn detect_large_redacts_both_in_chunk_and_straddling_matches() {
         "pattern must be reported exactly once"
     );
     assert_no_pattern_matches(&result);
+}
+
+/// Fake, deterministic base64 body (never a real key).
+fn fake_b64(len: usize) -> String {
+    "Zm9vYmFyYmF6cXV4".chars().cycle().take(len).collect()
+}
+
+fn b64(text: &str) -> String {
+    use std::fmt::Write;
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in text.as_bytes().chunks(3) {
+        let n =
+            chunk.iter().fold(0u32, |acc, b| (acc << 8) | u32::from(*b)) << (8 * (3 - chunk.len()));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                let _ = write!(
+                    out,
+                    "{}",
+                    ALPHABET[((n >> (18 - 6 * i)) & 63) as usize] as char
+                );
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// A base64-encoded PEM private key (Kubernetes `data:`, Helm values,
+/// JSON) is redacted in any window, without `kind: Secret` context.
+#[test]
+fn base64_encoded_private_key_is_redacted_without_manifest_context() {
+    for kind in ["", "RSA ", "EC ", "OPENSSH ", "ENCRYPTED ", "PGP "] {
+        let suffix = if kind == "PGP " { " BLOCK" } else { "" };
+        let pem = format!(
+            "-----BEGIN {kind}PRIVATE KEY{suffix}-----\n{}\n-----END {kind}PRIVATE KEY{suffix}-----\n",
+            fake_b64(64)
+        );
+        let encoded = b64(&pem);
+        for content in [
+            format!("  tls.key: {encoded}\n"),
+            format!("{{\"key\":\"{encoded}\"}}"),
+            format!("key: |\n  {}\n  {}\n", &encoded[..76], &encoded[76..]),
+        ] {
+            let result = detect(&content, None);
+            assert!(
+                !result.sanitized.contains(&encoded[20..60]),
+                "{kind}: base64 key body leaked: {}",
+                result.sanitized
+            );
+            assert!(!result.secrets_detected.is_empty());
+            assert_eq!(result.sanitized.lines().count(), content.lines().count());
+        }
+    }
+    let cert = b64(&format!(
+        "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+        fake_b64(64)
+    ));
+    let line = format!("  tls.crt: {cert}\n");
+    assert_eq!(
+        detect(&line, None).sanitized,
+        line,
+        "public certificates stay readable"
+    );
+}
+
+/// Credential-named assignments in camelCase, JSON keys, YAML and
+/// unquoted dotenv lines redact only the value and keep the identifier.
+#[test]
+fn credential_assignments_redact_only_the_value() {
+    let value = format!("c7Tvo+hBKqFY{}", fake_b64(28));
+    let cases = [
+        (
+            format!("const awsSecret = \"{value}\";"),
+            "const awsSecret = \"",
+        ),
+        (
+            format!("const awsSecret: \"{value}\""),
+            "const awsSecret: \"",
+        ),
+        (
+            format!("{{\"clientSecret\": \"{value}\"}}"),
+            "{\"clientSecret\": \"",
+        ),
+        (
+            format!("AWS_SECRET_ACCESS_KEY = \"{value}\""),
+            "AWS_SECRET_ACCESS_KEY = \"",
+        ),
+        (format!("API_SECRET={value}\n"), "API_SECRET="),
+        (
+            format!("export DB_PASSWORD={value} # prod\n"),
+            "export DB_PASSWORD=",
+        ),
+        (format!("  client_secret: {value}\n"), "  client_secret: "),
+        (format!("  apiKey: {value}\n"), "  apiKey: "),
+        (format!("jwt_secret = \"{value}\";"), "jwt_secret = \""),
+    ];
+    for (content, kept) in cases {
+        let result = detect(&content, None);
+        assert!(
+            !result.sanitized.contains(&value[..16]),
+            "value leaked: {content:?} -> {:?}",
+            result.sanitized
+        );
+        assert!(
+            result.sanitized.starts_with(kept),
+            "identifier lost: {content:?} -> {:?}",
+            result.sanitized
+        );
+    }
+}
+
+/// The credential-assignment rules leave code and config references alone.
+#[test]
+fn credential_assignments_skip_references_and_plain_keys() {
+    for content in [
+        "SECRET_KEY = os.environ[\"DJANGO_SECRET_KEY\"]\n",
+        "API_TOKEN=${API_TOKEN_FROM_VAULT}\n",
+        "  token: ${{ secrets.GITHUB_TOKEN }}\n",
+        "  - key: node-role.kubernetes.io/control-plane\n",
+        "  secretName: my-ingress-tls-secret\n",
+        "const tokenType = \"Bearer\";\n",
+        "  password: short\n",
+    ] {
+        assert_eq!(detect(content, None).sanitized, content);
+    }
+}
+
+/// A Kubernetes Secret keeps its `kind:`/`data:` lines and line count;
+/// every data value is redacted whichever key comes first.
+#[test]
+fn kubernetes_secret_redacts_every_data_value_in_either_key_order() {
+    let one = fake_b64(24);
+    let two = format!("{}xyz", fake_b64(20));
+    let kind_first = format!(
+        "apiVersion: v1\nkind: Secret\ndata:\n  username: {one}\n  password: {two}\nmetadata:\n  name: db\n"
+    );
+    let data_first = format!(
+        "apiVersion: v1\ndata:\n  username: {one}\n  password: {two}\nkind: Secret\nmetadata:\n  name: db\n"
+    );
+    for content in [kind_first, data_first] {
+        let result = detect(&content, Some("k8s/secret.yaml"));
+        assert!(!result.sanitized.contains(&one), "{}", result.sanitized);
+        assert!(!result.sanitized.contains(&two), "{}", result.sanitized);
+        assert!(result.sanitized.contains("kind: Secret\n"));
+        assert!(result.sanitized.contains("\ndata:\n"));
+        assert!(result.sanitized.contains("  name: db\n"));
+        assert_eq!(result.sanitized.lines().count(), content.lines().count());
+    }
+}
+
+/// A Stripe-shaped `sk_live_` key carries the Stripe label.
+#[test]
+fn stripe_secret_key_is_labelled_stripe() {
+    let key = format!("sk_{}_{}", "live", "a1B2c3D4e5".repeat(3));
+    let result = detect(&format!("STRIPE = '{key}'"), None);
+    assert!(!result.sanitized.contains(&key));
+    assert_eq!(
+        result.secrets_detected.first().map(String::as_str),
+        Some("stripeSecretKey")
+    );
+}
+
+/// Rules bounded by quotes fire when the quote is followed by punctuation
+/// (`"…";`, `"…"}`): a `\b` beside a quote needs a word character there.
+#[test]
+fn quote_bounded_rules_fire_before_punctuation() {
+    let id = "a1B2c3D4e5F6g7H8i9J0k1L2";
+    let result = detect(&format!("{{\"client_secret\":\"{id}\"}}"), None);
+    assert!(!result.sanitized.contains(id), "{}", result.sanitized);
+    assert!(result.sanitized.starts_with("{\"client_secret\":\""));
 }
 
 // ── Property tests ───────────────────────────────────────────────────────

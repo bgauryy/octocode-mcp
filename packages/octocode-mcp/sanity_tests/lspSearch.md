@@ -5,7 +5,7 @@ callees, hover, symbols, implementations, type hierarchy, and diagnostics.
 Use the built CLI or the MCP tool with the same queries; check the live
 operations with `octocode schema lspSearch --view variants`.
 
-- Anchor a query on a prior search hit: `path` + `symbolName` + `lineHint`.
+- Anchor a query on a prior search hit: `path` + `symbolName` + `line`.
   `definition` and `references` resolve the intended symbol, and
   `references` includes the declaration.
 - Run `documentSymbols` and `diagnostic` with `path` only, and

@@ -13,6 +13,7 @@ pub(super) fn success_value(
     matches: &[PreparedMatch],
     executable: &ExecutableReceipt,
     transaction: Option<Value>,
+    code_covered: bool,
 ) -> Value {
     let apply = query.apply();
     let page = if apply { 1 } else { query.page() };
@@ -86,6 +87,7 @@ pub(super) fn success_value(
         snapshot,
         files,
         (page, page_size, has_more),
+        code_covered,
     );
     if let Some(mut transaction) = transaction {
         if let Some(map) = transaction.as_object_mut() {
@@ -117,6 +119,7 @@ fn attach_leads(
     snapshot: &str,
     files: &[PreparedFile],
     (page, page_size, has_more): (usize, usize, bool),
+    code_covered: bool,
 ) {
     let apply = query.apply();
     if has_more {
@@ -149,12 +152,11 @@ fn attach_leads(
                 .collect(),
         );
         // The one lead that writes: marked, and only ever an optional route.
+        // It replays this preview exactly; the preview itself is a judgment
+        // when whole-word mentions in code lie outside every match.
+        let confidence = if code_covered { "exact" } else { "medium" };
         value["next"]["apply"] = crate::tools::result::Continuation::new(ToolId::AstRewrite, next)
-            .why(format!(
-                "Writes these edits to {} file(s); run only to apply this preview.",
-                files.len()
-            ))
-            .confidence("exact")
+            .confidence(confidence)
             .build();
     }
     if apply && let Some(pattern) = query.pattern() {
@@ -162,7 +164,6 @@ fn attach_leads(
             ToolId::AstSearch,
             json!({"operation":"match","path":root,"language":query.lang(),"pattern":pattern}),
         )
-        .why("Read-only: 0 matches confirms the old pattern is gone.")
         .confidence("high")
         .build();
     }
@@ -354,8 +355,11 @@ impl crate::tools::output::ToolOutput for Output {
     fn error_hint(&self, code: &str) -> Option<&'static str> {
         (code == "rootUnavailable").then_some(crate::tools::output::VERIFY_PATH_HINT)
     }
-    fn evidence_kind(&self, _query: &Value, _data: &Value) -> &'static str {
-        "exact"
+    fn evidence_kind(&self, _query: &Value, data: &Value) -> &'static str {
+        let uncovered = data["partialReasons"]
+            .as_array()
+            .is_some_and(|reasons| reasons.iter().any(|r| r == super::UNCOVERED_CODE_POSITIONS));
+        if uncovered { "syntactic" } else { "exact" }
     }
     fn path_anchor(&self) -> crate::tools::output::PathAnchor {
         crate::tools::output::PathAnchor::Workspace

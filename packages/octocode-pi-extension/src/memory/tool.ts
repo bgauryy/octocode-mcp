@@ -14,23 +14,26 @@ const DEFAULT_LIMIT = 10;
 /** A note under reads in an untrusted project, where project memories stay hidden as they do from auto-injection. */
 const HIDDEN_NOTE = '(untrusted project: project memories are hidden; only global ones are shown)';
 
-/** What the model reads about `memory`: the description owns ops and mechanics, the guidelines only when to use it. */
-function memoryPrompt(subagent: boolean): { description: string; promptSnippet: string; promptGuidelines: string[] } {
+/** What the model reads about `memory`: the description says what it is, `op` owns the operations, the guidelines only when to use it. */
+function memoryPrompt(subagent: boolean): { description: string; ops: string; promptSnippet: string; promptGuidelines: string[] } {
   const description =
-    'Retrieve or maintain durable decisions and preferences across sessions. `search`: relevant notes by query; `get`: full note by id; `list`: pinned notes first, then newest. ' +
+    'Retrieve or maintain durable decisions and preferences across sessions. ' +
     (subagent
       ? 'Read-only in a subagent: report anything worth remembering to your parent. '
-      : '`set`: add a memory (`title`, `body`, `keywords`, `kind`, `scope` default project, `pinned` = always injected), or update one with `id`; near-duplicates and secrets are refused. `delete`: remove `id`. ' +
-        "Global or pinned changes need a trusted project and, with a UI, the user's confirmation. ") +
-    'Read scopes default to all (global plus this repository); an untrusted project shows only global memories.';
+      : "Near-duplicates and secrets are refused; global or pinned changes need a trusted project and, with a UI, the user's confirmation. ") +
+    'An untrusted project shows only global memories.';
+  const ops =
+    'search: relevant notes by query; get: full note by id; list: pinned notes first, then newest' +
+    (subagent ? '' : '; set: add a memory (title required), or update one with id; delete: remove id');
   return {
     description,
+    ops,
     promptSnippet: subagent ? 'Search and read durable notes from earlier sessions' : 'Search, read or save durable notes shared across sessions',
     promptGuidelines: subagent
-      ? ['Memory is read-only here: search it when earlier decisions may matter, and put anything worth remembering in your report.']
+      ? ['Memory is read-only here: search it when earlier decisions may matter, and put anything worth remembering in your report. A memory may be stale; verify it against the code before relying on it.']
       : [
-          'Save lasting user preferences or verified decisions that code and docs do not capture. Keep task progress in the task or backlog, and leave secrets out of memory.',
-          'Search before saving and update a match instead of adding another; use scope global or pinned only when the user asks.',
+          'Save lasting user preferences or verified decisions that code and docs do not capture; keep task progress and secrets out.',
+          'Search before saving and update a match; use scope global or pinned only when the user asks. A memory may be stale; verify it against the code before relying on it.',
         ],
   };
 }
@@ -73,19 +76,20 @@ function listText(memories: readonly Memory[], empty: string): string {
  */
 export function registerMemoryTool(pi: ExtensionAPI, storeFor: (ctx: ExtensionContext) => MemoryStore, options: { isSubagent: boolean }): void {
   const ops = options.isSubagent ? ['search', 'get', 'list'] as const : ['search', 'get', 'list', 'set', 'delete'] as const;
+  const { ops: opsDescription, ...prompt } = memoryPrompt(options.isSubagent);
   pi.registerTool(timedTool({
     name: 'memory',
     label: 'Memory',
-    ...memoryPrompt(options.isSubagent),
+    ...prompt,
     parameters: Type.Object({
-      op: StringEnum(ops, { description: 'What to do' }),
+      op: StringEnum(ops, { description: opsDescription }),
       id: Type.Optional(Type.String({ description: options.isSubagent ? 'get: M<n>' : 'get/delete: M<n>; with set, updates that memory' })),
       query: Type.Optional(Type.String({ description: 'search: keywords' })),
       // A subagent only reads: the set-only fields would only cost context.
       ...(options.isSubagent
-        ? { scope: Type.Optional(StringEnum(['project', 'global', 'all'] as const, { description: 'search/list: all (default)' })) }
+        ? { scope: Type.Optional(StringEnum(['project', 'global', 'all'] as const, { description: 'search/list: all (default; global plus this repository)' })) }
         : {
-            scope: Type.Optional(StringEnum(['project', 'global', 'all'] as const, { description: 'set: project (default) or global; search/list: all (default)' })),
+            scope: Type.Optional(StringEnum(['project', 'global', 'all'] as const, { description: 'set: project (default) or global; search/list: all (default; global plus this repository)' })),
             title: Type.Optional(Type.String({ maxLength: 120, description: 'set: specific one-line title' })),
             body: Type.Optional(Type.String({ maxLength: 1500, description: 'set: the note itself' })),
             keywords: Type.Optional(Type.String({ maxLength: 200, description: 'set: synonyms/terms that should retrieve this memory' })),

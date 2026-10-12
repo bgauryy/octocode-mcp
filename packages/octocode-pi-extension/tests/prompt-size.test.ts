@@ -1,0 +1,68 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import octocode from '../src/index.js';
+import { fakeCtx, fakePi } from './fake-pi.js';
+import { tmp } from './helpers.js';
+
+let saved: NodeJS.ProcessEnv;
+beforeEach(() => {
+  saved = { ...process.env };
+  process.env['OCTOCODE_HOME'] = tmp();
+  // Hermetic: a run inside a Pi subagent inherits its identity, which changes the tools and the prompt.
+  for (const key of ['OCTOCODE_SUBAGENT', 'OCTOCODE_BROWSER_VISIBLE', 'OCTOCODE_AGENT_COLLABORATE', 'OCTOCODE_SUBAGENT_COLLABORATE', 'OCTOCODE_DIRECT_TOOLS']) delete process.env[key];
+});
+afterEach(() => {
+  process.env = saved;
+});
+
+interface Size {
+  total: number;
+  prompt: number;
+  perTool: Record<string, number>;
+}
+
+/**
+ * What one request carries as fixed context: every active tool's description, JSON schema and prompt guidelines, plus
+ * the `octocode` prompt section. `exclude` mirrors a subagent profile's `excludeTools`.
+ */
+async function promptSize(options: { subagent: boolean; exclude?: string[] }): Promise<Size> {
+  if (options.subagent) process.env['OCTOCODE_SUBAGENT'] = '1';
+  const fake = fakePi();
+  Object.assign(fake.pi, { getSessionName: () => undefined });
+  await octocode(fake.pi);
+  const ctx = fakeCtx({ cwd: tmp(), hasUI: !options.subagent });
+  Object.assign(ctx.ui, { onTerminalInput: () => () => undefined });
+  await fake.fire('session_start', { type: 'session_start', reason: 'startup' }, ctx);
+  const active = fake.pi.getActiveTools().filter((name) => !options.exclude?.includes(name));
+  const sections: Record<string, string> = {};
+  await fake.fire('before_agent_start', { type: 'before_agent_start', prompt: 'hi', systemPromptOptions: { sections, selectedTools: active } }, ctx);
+  const perTool: Record<string, number> = {};
+  for (const tool of fake.pi.getAllTools().filter((candidate) => active.includes(candidate.name))) {
+    const { description, parameters, promptGuidelines } = tool as { description: string; parameters: unknown; promptGuidelines?: string[] };
+    perTool[tool.name] = description.length + JSON.stringify(parameters).length + (promptGuidelines ?? []).join('').length;
+  }
+  const prompt = (sections['octocode'] ?? '').length;
+  return { total: Object.values(perTool).reduce((sum, size) => sum + size, prompt), prompt, perTool };
+}
+
+/*
+ * Ceilings are about 5% above the size measured when they were set. When the prompt shrinks, lower them to match;
+ * never raise one without a reason a reviewer can weigh against paying these characters on every request.
+ */
+const MAIN_CEILING = 17_800;
+const READ_ONLY_SUBAGENT_CEILING = 11_150;
+
+describe('prompt size', () => {
+  it('main session', async () => {
+    const size = await promptSize({ subagent: false });
+    console.log(`main session: ${size.total} chars (prompt ${size.prompt}); ${JSON.stringify(size.perTool)}`);
+    expect(size.prompt).toBeGreaterThan(0);
+    expect(size.total, `main session measured ${size.total}`).toBeLessThan(MAIN_CEILING);
+  });
+
+  it('read-only subagent', async () => {
+    const size = await promptSize({ subagent: true, exclude: ['file', 'browser'] });
+    console.log(`read-only subagent: ${size.total} chars (prompt ${size.prompt}); ${JSON.stringify(size.perTool)}`);
+    expect(size.prompt).toBeGreaterThan(0);
+    expect(size.total, `read-only subagent measured ${size.total}`).toBeLessThan(READ_ONLY_SUBAGENT_CEILING);
+  });
+});

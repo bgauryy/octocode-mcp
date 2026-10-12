@@ -9,6 +9,7 @@
 mod files;
 mod kinds;
 mod language;
+mod layout;
 mod macro_bodies;
 mod metavars;
 mod octo;
@@ -21,13 +22,16 @@ pub use files::rewrite_files;
 #[cfg(test)]
 use files::search_files_detailed;
 pub use files::search_files_detailed_filtered_with_extension;
+pub use octo::EXAMPLE_RULE;
 #[cfg(test)]
 use rewrite::rewrite;
 pub use rewrite::{
-    CompiledRewrite, MAX_REWRITE_CONTENT_BYTES, compile_rewrite, count_syntax_errors,
-    rewrite_parser_for_path,
+    CompiledRewrite, MAX_REWRITE_CONTENT_BYTES, UnmatchedMention, compile_rewrite,
+    count_syntax_errors, rewrite_parser_for_path,
 };
-pub use syntax_tree::{SyntaxTreeInspectOptions, SyntaxTreeInspectResult, inspect_with_extension};
+pub use syntax_tree::{
+    SyntaxTreeInspectOptions, SyntaxTreeInspectResult, SyntaxTreeNode, inspect_with_extension,
+};
 #[cfg(test)]
 use types::StructuralMatch;
 pub use types::StructuralRewriteFilesOptions;

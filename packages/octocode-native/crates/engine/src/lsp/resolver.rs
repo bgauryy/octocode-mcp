@@ -166,7 +166,7 @@ fn resolve_position_with_grammar(
         &mut candidates,
         deadline,
     )?;
-    let result = pick_candidate(candidates, fuzzy, lines);
+    let result = pick_candidate(candidates, fuzzy, lines)?;
     check_budget(deadline)?;
     Ok(result)
 }
@@ -261,7 +261,7 @@ fn pick_candidate(
     mut candidates: Vec<SymbolCandidate>,
     fuzzy: &JsFuzzyPosition,
     lines: &[&str],
-) -> Option<JsResolvedSymbol> {
+) -> Result<Option<JsResolvedSymbol>> {
     // Nested nodes (e.g. `string` and its `string_fragment` child) can report
     // the same position; keep one candidate per position, preferring the most
     // symbol-like reading so an orderHint counts each occurrence once.
@@ -288,6 +288,15 @@ fn pick_candidate(
             // mentions inside string literals, so orderHint indexes real
             // symbol uses before incidental text matches.
             same_line.sort_by_key(|candidate| (candidate.is_literal, candidate.character));
+            // An explicit orderHint past this line's occurrences names none
+            // of them: say so, never answer for another occurrence.
+            if order_hint > 0 && !same_line.is_empty() && order_hint >= same_line.len() {
+                return Err(order_hint_error(
+                    &fuzzy.symbol_name,
+                    line_hint,
+                    same_line.len(),
+                ));
+            }
             if let Some(candidate) = same_line.get(order_hint) {
                 Some((*candidate).clone())
             } else {
@@ -317,9 +326,12 @@ fn pick_candidate(
                 candidate.character,
             )
         }),
-    }?;
+    };
+    let Some(selected) = selected else {
+        return Ok(None);
+    };
 
-    Some(hit_for(
+    Ok(Some(hit_for(
         lines.get(selected.line_index).copied().unwrap_or_default(),
         selected.line_index,
         selected.character,
@@ -328,7 +340,7 @@ fn pick_candidate(
             .filter(|line_hint| *line_hint > 0)
             .map(|line_hint| selected.line_index as i32 - (line_hint as i32 - 1))
             .unwrap_or(0),
-    ))
+    )))
 }
 
 fn is_ignored_node(kind: &str) -> bool {
@@ -431,6 +443,14 @@ fn exact_symbol_text(text: &str, symbol_name: &str) -> bool {
         == symbol_name
 }
 
+/// An `orderHint` past the occurrences of `symbol_name` on `line_hint`.
+fn order_hint_error(symbol_name: &str, line_hint: u32, count: usize) -> Error {
+    Error::new(format!(
+        "Line {line_hint} has {count} occurrence(s) of '{symbol_name}'; orderHint is 0-based, at most {}",
+        count - 1
+    ))
+}
+
 fn scan_near_line(
     lines: &[&str],
     symbol_name: &str,
@@ -447,6 +467,16 @@ fn scan_near_line(
 
     if let Some(hit) = find_symbol_in_line(lines[target as usize], symbol_name, order_hint) {
         return Ok(hit_for(lines[target as usize], target as usize, hit, 0));
+    }
+    if order_hint > 0 {
+        let count = (0..)
+            .take_while(|index| {
+                find_symbol_in_line(lines[target as usize], symbol_name, *index).is_some()
+            })
+            .count();
+        if count > 0 {
+            return Err(order_hint_error(symbol_name, line_hint, count));
+        }
     }
 
     for offset in 1..=DEFAULT_RADIUS {
@@ -717,6 +747,33 @@ mod tests {
         )
         .expect("lexical target");
         assert_eq!((lexical.position.line, lexical.position.character), (1, 4));
+    }
+
+    /// An orderHint past the line's occurrences is an error naming the
+    /// count, in the grammar walk and the lexical scan alike; it never
+    /// answers for another occurrence.
+    #[test]
+    fn an_order_hint_past_the_lines_occurrences_is_an_error() {
+        for file in ["demo.ts", "demo.unknown"] {
+            let result = resolve_position_in_file_content(
+                file,
+                "const other = 1;\nconst a = target + target;\n",
+                &JsFuzzyPosition {
+                    symbol_name: "target".to_owned(),
+                    line_hint: Some(2),
+                    order_hint: Some(3),
+                },
+            );
+            let error = match result {
+                Err(error) => error,
+                Ok(hit) => panic!("{file}: resolved {hit:?}"),
+            };
+            assert!(
+                error.reason.contains("2 occurrence(s)"),
+                "{file}: {}",
+                error.reason
+            );
+        }
     }
 
     #[test]
@@ -999,7 +1056,7 @@ mod tests {
 
     #[test]
     fn uses_inside_class_and_function_bodies_are_not_declarations() {
-        // Without a lineHint the declaration wins over earlier uses; a use in a
+        // Without a line the declaration wins over earlier uses; a use in a
         // class body, method body or object value must not count as one.
         let cases = [
             (

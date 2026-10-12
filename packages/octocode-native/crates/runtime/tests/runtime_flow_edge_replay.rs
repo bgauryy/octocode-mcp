@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 use support::{Workspace, call};
 
 /// Names retired from `scope` (`input`: a row field; `lead`: a
-/// continuation name) for `tool`, from the shared D1 deny-list.
+/// continuation name) for `tool`, from the shared retired-name deny-list.
 fn retired(scope: &str, tool: &str) -> Vec<String> {
     support::retired_names(&[scope], Some(tool))
         .into_iter()
@@ -179,7 +179,7 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
     let web = root.join("web");
     let lib = src.join("lib.rs");
     let seeds: Vec<(&str, Value)> = vec![
-        // localSearch: nextPage, read, callers, matchString leads.
+        // localSearch: nextPage, read, findCallers, matchString leads.
         (
             "localSearch",
             json!({"path": src, "matchString": "helper", "pageSize": 1}),
@@ -234,7 +234,7 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
             "astTopology",
             json!({"operation": "dependencies", "path": web, "source": "a.ts", "maxFiles": 1}),
         ),
-        // localFetch: continue, matchString, block, a missed match.
+        // localFetch: continueWindow, matchString, block, a missed match.
         (
             "localFetch",
             json!({"path": lib, "unit": "lines", "length": 10}),
@@ -298,14 +298,14 @@ async fn every_emitted_edge_is_current_strict_and_replays_verbatim() {
     }
     for expected in [
         "localSearch.nextPage",
-        "localSearch.callers",
+        "localSearch.findCallers",
         "localSearch.binarySkipped",
         "structureSearch.read",
         "structureSearch.expandScan",
         "astSearch.nextPage",
         "astSearch.nextMatchPage",
         "astTopology.retrySuffixMatch",
-        "localFetch.continue",
+        "localFetch.continueWindow",
     ] {
         assert!(
             seen.contains(expected),

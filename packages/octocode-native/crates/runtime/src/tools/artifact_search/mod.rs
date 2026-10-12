@@ -7,7 +7,7 @@ pub(crate) use output::Output;
 use crate::providers::RequestBudget;
 use crate::providers::artifact::{
     ArtifactCache, ArtifactError, ArtifactProviderContext, ArtifactProviderPage, ReleaseTags,
-    SystemArtifactHttp, execute_artifact,
+    SystemArtifactHttp, execute_artifact, github_repository, github_slug,
 };
 use crate::tools::id::ToolId;
 use crate::tools::result::Continuation;
@@ -44,11 +44,11 @@ pub async fn execute(
     call: ArtifactCall<'_>,
 ) -> Result<Value, ArtifactError> {
     let http = SystemArtifactHttp::shared()?.with_retries(call.max_retries);
-    let budget = RequestBudget {
-        deadline: call.deadline.min(Instant::now() + call.timeout),
-        cancellation: call.cancellation,
-        max_body_bytes: 16 * 1024 * 1024,
-    };
+    let budget = RequestBudget::new(
+        call.deadline.min(Instant::now() + call.timeout),
+        call.cancellation,
+        16 * 1024 * 1024,
+    );
     let npm_registry = npm_registry(&query, call.env)?;
     let page = execute_artifact(
         &query,
@@ -61,8 +61,9 @@ pub async fn execute(
             tags: call.tags,
         },
     )
-    .await?;
-    respond(&query, page)
+    .await
+    .map_err(|error| leads::with_repair(error, &query))?;
+    respond(&query, page).map_err(|error| leads::with_repair(error, &query))
 }
 
 /// The npm registry a query reads: only the query names it (default
@@ -126,62 +127,35 @@ fn respond(
                 query.artifact_type()
             ),
         )
-        .with_status(404)
-        .with_hint("Check the package name and ecosystem, or discover it with keywords."));
+        .with_status(404));
     }
-    if !query.wants(crate::contracts::tool_types::ExtraKind::Details) {
-        artifacts.iter_mut().for_each(drop_repository_homepage);
+    shape_rows(query, &mut artifacts);
+    let mut rows = serde_json::to_value(&artifacts)
+        .map_err(|_| ArtifactError::new("providerError", "Failed to encode artifacts."))?;
+    for row in rows.as_array_mut().into_iter().flatten() {
+        name_github_repository(row);
     }
-    let exact = query.package_name().is_some();
-    for artifact in &mut artifacts {
-        leads::label_release_source(artifact, exact);
-        artifact.dedupe_dependency_count();
-    }
-    // An exact lookup whose source lives on GitHub continues to its tree
-    // and manifest. Registry metadata can point at a fork or stale repo, so
-    // these are leads, not proof.
-    let leads = query
-        .package_name()
-        .and(artifacts.first())
-        .map(leads::source_leads)
-        .unwrap_or_default();
-    let mut data = json!({
-        "artifacts": serde_json::to_value(&artifacts)
-            .map_err(|_| ArtifactError::new("providerError", "Failed to encode artifacts."))?,
-    });
-    if query.package_name().is_none() {
-        let current = query.page();
-        data["pagination"] = json!({"hasMore": next_state.is_some(), "totalItems": total});
-        if current > 1 {
-            data["pagination"]["currentPage"] = json!(current);
+    let mut data = json!({ "artifacts": rows });
+    let mut terminal_limit = terminal_limit;
+    match query.package_name() {
+        None => {
+            let page_cap = discovery_page(query, &mut data, next_state.is_some(), total);
+            terminal_limit = terminal_limit.or(page_cap);
         }
-        if next_state.is_some() {
-            let mut next = query.clone();
-            next.set_page(current + 1);
-            if let Ok(next_query) = serde_json::to_value(next) {
-                data["next"]["nextPage"] =
-                    Continuation::new(ToolId::ArtifactSearch, next_query).build();
+        // An exact lookup whose source lives on GitHub continues to its
+        // tree. Registry metadata can point at a fork or stale repo, so
+        // these are leads, not proof.
+        Some(_) => {
+            for (name, lead) in artifacts
+                .first()
+                .map(leads::source_leads)
+                .unwrap_or_default()
+            {
+                data["next"][name] = lead;
             }
         }
     }
-    for (name, lead) in leads {
-        data["next"][name] = lead;
-    }
-    let missing = artifacts
-        .iter()
-        .filter_map(|artifact| {
-            let reference = artifact.missing_ref.as_deref()?;
-            let repository = artifact.repository.as_deref().unwrap_or("its repository");
-            let repository = repository
-                .strip_prefix("https://github.com/")
-                .unwrap_or(repository);
-            Some(format!(
-                "{} {}: the registry's release commit {reference} is not in {repository} on GitHub (unpushed or rewritten); the source lead reads the default branch, not this release.",
-                artifact.name,
-                artifact.version.as_deref().unwrap_or("")
-            ))
-        })
-        .collect::<Vec<_>>();
+    let missing = missing_ref_warnings(&artifacts);
     if !missing.is_empty() {
         data["warnings"] = json!(missing);
     }
@@ -192,24 +166,119 @@ fn respond(
     }
     if artifacts.is_empty() {
         data["status"] = json!("empty");
-        data["hints"] = json!(["Try fewer or broader keywords."]);
+        if let Some(broader) = leads::broaden_keywords(query) {
+            data["next"]["broadenSearch"] = broader;
+        }
     }
     Ok(data)
 }
 
-/// Clears a homepage that is the repository page (it adds nothing). The
-/// registry URL is verbose (core field class); every other field is
-/// evidence.
+/// Typed row shaping before encoding: a row whose registry names no
+/// repository but whose homepage is a GitHub repository points at it; a
+/// homepage restating the repository is cleared (kept with `details`); the
+/// release source is labeled; a complete dependency list drops its count.
+fn shape_rows(query: &ArtifactSearchQuery, artifacts: &mut [ArtifactItem]) {
+    let exact = query.package_name().is_some();
+    let details = query.wants(crate::contracts::tool_types::ExtraKind::Details);
+    for artifact in artifacts {
+        if artifact.repository.is_none() {
+            artifact.repository = artifact.homepage.as_deref().and_then(github_repository);
+        }
+        if !details {
+            drop_repository_homepage(artifact);
+        }
+        leads::label_release_source(artifact, exact);
+    }
+}
+
+/// A discovery page's facts: whether more exist and the registry's total
+/// (a stats extra), and the next page, which carries the whole query. When
+/// the contract rejects the next page (past its page maximum), the rest is
+/// unreachable by paging: the returned reason states that terminal limit.
+fn discovery_page(
+    query: &ArtifactSearchQuery,
+    data: &mut Value,
+    more: bool,
+    total: Option<u64>,
+) -> Option<String> {
+    let current = query.page();
+    data["pagination"] = json!({"hasMore": more, "totalItems": total});
+    if current > 1 {
+        data["pagination"]["currentPage"] = json!(current);
+    }
+    if !more {
+        return None;
+    }
+    let mut next = query.clone();
+    next.set_page(current + 1);
+    let next_query = serde_json::to_value(next).ok()?;
+    if crate::contracts::validate_query(ToolId::ArtifactSearch.as_str(), next_query.clone())
+        .is_err()
+    {
+        return Some(format!(
+            "Page {current} is the last page artifactSearch can request; narrow the keywords to reach the remaining results."
+        ));
+    }
+    data["next"]["nextPage"] = Continuation::new(ToolId::ArtifactSearch, next_query).build();
+    None
+}
+
+/// One warning per row whose registry release commit GitHub does not have.
+fn missing_ref_warnings(artifacts: &[ArtifactItem]) -> Vec<String> {
+    artifacts
+        .iter()
+        .filter_map(|artifact| {
+            let reference = artifact.missing_ref.as_deref()?;
+            let repository = artifact.repository.as_deref().unwrap_or("its repository");
+            let repository = repository
+                .strip_prefix("https://github.com/")
+                .unwrap_or(repository);
+            Some(format!(
+                "{} {}: release commit {reference} is not in {repository} (unpushed or rewritten).",
+                artifact.name,
+                artifact.version.as_deref().unwrap_or("")
+            ))
+        })
+        .collect()
+}
+
+/// A row whose `repository` URL is a GitHub repository names its `owner` and
+/// `repo` right after it: the coordinates every GitHub tool takes.
+fn name_github_repository(row: &mut Value) {
+    let Some(fields) = row.as_object_mut() else {
+        return;
+    };
+    let Some((owner, repo)) = fields
+        .get("repository")
+        .and_then(Value::as_str)
+        .and_then(github_slug)
+    else {
+        return;
+    };
+    let after = fields
+        .keys()
+        .position(|key| key == "repository")
+        .map_or(fields.len(), |index| index + 1);
+    fields.shift_insert(after, "owner".to_owned(), json!(owner));
+    fields.shift_insert(after + 1, "repo".to_owned(), json!(repo));
+}
+
+/// Clears a homepage that is the repository page, or a `/tree/<ref>/…`
+/// page inside it (it adds nothing). The registry URL is verbose (core
+/// field class); every other field is evidence.
 fn drop_repository_homepage(artifact: &mut ArtifactItem) {
+    let bare = |url: &str| {
+        url.split(['#', '?'])
+            .next()
+            .unwrap_or(url)
+            .trim_end_matches('/')
+            .trim_end_matches(".git")
+            .to_ascii_lowercase()
+    };
     let duplicate = match (artifact.homepage.as_deref(), artifact.repository.as_deref()) {
         (Some(homepage), Some(repository)) => {
-            let page = homepage
-                .split(['#', '?'])
-                .next()
-                .unwrap_or(homepage)
-                .trim_end_matches('/')
-                .trim_end_matches(".git");
-            page.eq_ignore_ascii_case(repository.trim_end_matches('/'))
+            let (page, repository) = (bare(homepage), bare(repository));
+            page == repository || page.starts_with(&format!("{repository}/tree/"))
         }
         _ => false,
     };
@@ -220,7 +289,28 @@ fn drop_repository_homepage(artifact: &mut ArtifactItem) {
 
 #[cfg(test)]
 mod row_tests {
-    use super::{ArtifactItem, ArtifactType, drop_repository_homepage};
+    use super::{ArtifactItem, ArtifactType, drop_repository_homepage, name_github_repository};
+    use serde_json::json;
+
+    /// A GitHub repository URL names its owner and repo beside itself; any
+    /// other host, or no repository, adds nothing.
+    #[test]
+    fn github_rows_name_owner_and_repo_after_the_repository_url() {
+        let mut row = json!({"name":"ajv","repository":"https://github.com/ajv-validator/ajv.git","version":"8.0.0"});
+        name_github_repository(&mut row);
+        assert_eq!(
+            row.as_object().unwrap().keys().collect::<Vec<_>>(),
+            ["name", "repository", "owner", "repo", "version"]
+        );
+        assert_eq!(row["owner"], "ajv-validator");
+        assert_eq!(row["repo"], "ajv");
+        let mut other = json!({"name":"x","repository":"https://gitlab.com/g/x"});
+        name_github_repository(&mut other);
+        assert!(other.get("owner").is_none() && other.get("repo").is_none());
+        let mut none = json!({"name":"x"});
+        name_github_repository(&mut none);
+        assert_eq!(none, json!({"name":"x"}));
+    }
 
     fn row(homepage: &str, repository: &str) -> ArtifactItem {
         let mut item = ArtifactItem::new(ArtifactType::Npm, "x".into(), "https://r/x".into());
@@ -235,6 +325,22 @@ mod row_tests {
         let mut same = row("https://github.com/o/x#readme", "https://github.com/o/x");
         drop_repository_homepage(&mut same);
         assert_eq!(same.homepage, None);
+        // A tree page of the repository, or a `.git` repository URL, is the
+        // repository too.
+        for (homepage, repository) in [
+            (
+                "https://github.com/DT/DT/tree/master/types/node",
+                "https://github.com/DT/DT",
+            ),
+            (
+                "https://github.com/Seldaek/monolog",
+                "https://github.com/Seldaek/monolog.git",
+            ),
+        ] {
+            let mut same = row(homepage, repository);
+            drop_repository_homepage(&mut same);
+            assert_eq!(same.homepage, None, "{homepage}");
+        }
         let mut distinct = row("https://zod.dev", "https://github.com/o/x");
         drop_repository_homepage(&mut distinct);
         assert_eq!(distinct.homepage.as_deref(), Some("https://zod.dev"));
@@ -256,6 +362,148 @@ mod row_tests {
             "{encoded}"
         );
         assert!(!keys.iter().any(|key| *key == "type"), "{encoded}");
+    }
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+    use crate::providers::artifact::ArtifactProviderPage;
+
+    fn exact_row() -> ArtifactItem {
+        let mut item = ArtifactItem::new(
+            ArtifactType::Npm,
+            "zod".into(),
+            "https://www.npmjs.com/package/zod".into(),
+        );
+        item.version = Some("4.6.5".into());
+        item.repository = Some("https://github.com/colinhacks/zod".into());
+        item.source_ref = Some("59bbc03e10c636b9eb3c393dfeb552819774ec21".into());
+        item.source_attested = true;
+        item
+    }
+
+    /// An exact row carries what the next hop takes: the package's name
+    /// and version, its repository as `owner`/`repo` for ghStructure, and
+    /// the release ref with how it was checked. No query field is echoed.
+    #[test]
+    fn an_exact_row_carries_the_release_source_anchors() {
+        let query = typed(&json!({"ecosystem":"npm","packageName":"zod"}));
+        let data = respond(&query, ArtifactProviderPage::single(exact_row())).expect("row");
+        let row = data["artifacts"][0].as_object().expect("row");
+        for anchor in [
+            "name",
+            "version",
+            "repository",
+            "owner",
+            "repo",
+            "sourceRef",
+            "verification",
+        ] {
+            assert!(row.contains_key(anchor), "{anchor}: {data}");
+        }
+        assert_eq!(row["owner"], "colinhacks");
+        assert_eq!(row["repo"], "zod");
+        assert_eq!(row["verification"], "provenance");
+        assert!(
+            !row.contains_key("ecosystem") && !row.contains_key("type"),
+            "{data}"
+        );
+        let tree = &data["next"]["viewReleaseSource"]["query"]["queries"][0];
+        assert_eq!(tree["ref"], row["sourceRef"], "{data}");
+    }
+
+    /// A discovery row whose registry names no repository but whose
+    /// homepage is a GitHub repository carries it, as `owner`/`repo`; the
+    /// homepage that restated it is gone.
+    #[test]
+    fn a_github_homepage_is_a_discovery_rows_repository() {
+        let query = typed(&json!({"ecosystem":"rubygems","keywords":["jwt"]}));
+        let mut gem = ArtifactItem::new(
+            ArtifactType::Rubygems,
+            "json-jwt".into(),
+            "https://rubygems.org/gems/json-jwt".into(),
+        );
+        gem.homepage = Some("https://github.com/nov/json-jwt".into());
+        let data = respond(
+            &query,
+            ArtifactProviderPage {
+                artifacts: vec![gem],
+                next_state: None,
+                total: None,
+                terminal_limit: None,
+                registry: None,
+            },
+        )
+        .expect("rows");
+        let row = &data["artifacts"][0];
+        assert_eq!(
+            row["repository"], "https://github.com/nov/json-jwt",
+            "{data}"
+        );
+        assert_eq!(
+            (&row["owner"], &row["repo"]),
+            (&json!("nov"), &json!("json-jwt"))
+        );
+        assert!(row.get("homepage").is_none(), "{data}");
+    }
+
+    /// An empty discovery states no advice: its one lead re-runs the
+    /// search without each keyword, as one batch.
+    #[test]
+    fn an_empty_discovery_broadens_by_dropping_each_keyword() {
+        let query = typed(&json!({"ecosystem":"crates","keywords":["zzz","async","runtime"]}));
+        let data = respond(&query, ArtifactProviderPage::empty(Some(0))).expect("empty");
+        assert_eq!(data["status"], "empty");
+        assert!(data.get("hints").is_none(), "{data}");
+        let variants = data["next"]["broadenSearch"]["query"]["queries"]
+            .as_array()
+            .expect("batch");
+        assert_eq!(variants.len(), 3, "{data}");
+        assert_eq!(variants[0]["keywords"], json!(["zzz", "async"]), "{data}");
+        assert_eq!(variants[0]["ecosystem"], "crates", "{data}");
+        let single = typed(&json!({"ecosystem":"crates","keywords":["zzz"]}));
+        let data = respond(&single, ArtifactProviderPage::empty(Some(0))).expect("empty");
+        assert!(data.get("next").is_none(), "{data}");
+    }
+
+    /// A failure a call repairs carries exactly that one lead and no text.
+    #[test]
+    fn failures_carry_one_repair_lead() {
+        let unknown = typed(&json!({"ecosystem":"crates","packageName":"no-such-crate@1.0.0"}));
+        let error = respond(&unknown, ArtifactProviderPage::empty(Some(0))).expect_err("missing");
+        let error = leads::with_repair(error, &unknown);
+        let next = error.next.expect("lead");
+        assert_eq!(next.as_object().map(|next| next.len()), Some(1), "{next}");
+        assert_eq!(
+            next["broadenSearch"]["query"]["queries"][0],
+            json!({"ecosystem":"crates","keywords":["no-such-crate"]})
+        );
+        assert!(error.hints.is_empty());
+
+        let pinned = typed(&json!({"ecosystem":"npm","packageName":"zod","version":"3.22.9"}));
+        let mut missing = ArtifactError::new("versionNotFound", "no 3.22.9");
+        missing.nearest = vec!["3.22.4".into(), "3.22.0".into()];
+        let next = leads::with_repair(missing, &pinned).next.expect("lead");
+        let versions = next["repair"]["query"]["queries"]
+            .as_array()
+            .expect("batch")
+            .iter()
+            .map(|row| row["version"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(versions, [json!("3.22.4"), json!("3.22.0")], "{next}");
+
+        let latest = leads::with_repair(ArtifactError::new("capabilityUnavailable", "x"), &pinned)
+            .next
+            .expect("lead");
+        assert_eq!(
+            latest["repair"]["query"]["queries"][0],
+            json!({"ecosystem":"npm","packageName":"zod"})
+        );
+        // PyPI has no keyword search: an unknown package has no repair.
+        let pypi = typed(&json!({"ecosystem":"pypi","packageName":"nope"}));
+        let error = ArtifactError::new("notFound", "x");
+        assert!(leads::with_repair(error, &pypi).next.is_none());
     }
 }
 
@@ -372,7 +620,7 @@ mod npm_auth_tests {
         .expect("lookup succeeds");
     }
 
-    /// D12: a missing exact package is notFound (like the GitHub tools), not
+    /// A missing exact package is notFound (like the GitHub tools), not
     /// an empty discovery.
     #[tokio::test]
     async fn missing_exact_package_is_not_found() {
@@ -425,14 +673,10 @@ mod npm_auth_tests {
                 .await
                 .expect("lookup succeeds");
             let next = data["next"].as_object().expect("next");
+            // An exact row is a single hit: one lead, the release tree.
             assert_eq!(
                 next.keys().collect::<Vec<_>>(),
-                vec!["viewReleaseSource", "readManifest"],
-                "{data}"
-            );
-            assert_eq!(
-                next["readManifest"]["query"]["queries"][0],
-                json!({"owner": "o", "repo": "r", "path": "packages/x/package.json", "ref": sha}),
+                vec!["viewReleaseSource"],
                 "{data}"
             );
             // An exact lookup has one row: no pagination, no request echo.
@@ -445,13 +689,10 @@ mod npm_auth_tests {
                 json!({"owner": "o", "repo": "r", "path": "packages/x", "ref": sha}),
                 "{data}"
             );
-            // AR2: an unchecked registry ref is labeled as the registry's
+            // An unchecked registry ref is labeled as the registry's
             // claim on the row (the one source); leads do not repeat it.
             assert!(release.get("source").is_none(), "{data}");
             assert!(release.get("verification").is_none(), "{data}");
-            assert!(next["readManifest"].get("verification").is_none(), "{data}");
-            let why = release["why"].as_str().expect("why");
-            assert!(why.contains("omit ref"), "{data}");
             let row = data["artifacts"][0].as_object().expect("row");
             assert_eq!(row["sourceRef"], sha, "{data}");
             assert_eq!(row["verification"], "registryRef", "{data}");
@@ -481,7 +722,7 @@ mod npm_auth_tests {
         }
     }
 
-    /// P7: an npm `gitHead` GitHub does not have (an unpushed or rewritten
+    /// An npm `gitHead` GitHub does not have (an unpushed or rewritten
     /// commit) is no release source: the row offers the default branch
     /// (`viewRepo`, `verification:"defaultBranch"`) and its warning names the
     /// registry's dead ref, instead of a `viewReleaseSource` that fails. A
@@ -536,6 +777,39 @@ mod npm_auth_tests {
             assert!(data["next"]["viewReleaseSource"].is_object(), "{data}");
             assert!(data.get("warnings").is_none(), "{data}");
         }
+    }
+
+    /// The last page the contract accepts offers no next page: it states
+    /// the terminal limit instead of a lead the tool would reject.
+    #[tokio::test]
+    async fn the_last_requestable_page_states_a_terminal_limit_not_a_next_page() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+                "objects": [{"package": {"name": "a", "version": "1.0.0"}}],
+                "total": 100_000
+            })))
+            .mount(&server)
+            .await;
+        let query = json!({
+            "ecosystem": "npm",
+            "keywords": ["x"],
+            "pageSize": 1,
+            "page": 1000,
+            "registryUrl": format!("http://127.0.0.1:{}", server.address().port()),
+        });
+        let deadline = Instant::now() + std::time::Duration::from_secs(300);
+        let data = execute(typed(&query), call(deadline, true))
+            .await
+            .expect("discovery succeeds");
+        assert!(data["next"].get("nextPage").is_none(), "{data}");
+        assert_eq!(data["terminalLimit"], true, "{data}");
+        assert!(
+            data["partialReasons"][0]
+                .as_str()
+                .is_some_and(|reason| reason.contains("Page 1000 is the last page")),
+            "{data}"
+        );
     }
 
     /// A discovery page states only what the rows do not: whether more

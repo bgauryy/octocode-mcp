@@ -3,6 +3,17 @@
 use super::{ContractValidationError, issue};
 use serde_json::Value;
 
+/// Repository-search filters with a text value: each changes which
+/// repositories match.
+const REPO_SEARCH_FILTERS: [&str; 6] = [
+    "language",
+    "stars",
+    "pushed",
+    "created",
+    "license",
+    "qualifiers",
+];
+
 #[derive(Clone, Copy)]
 pub(super) enum GithubSearchKind {
     Code,
@@ -45,37 +56,26 @@ pub(super) fn validate_github_search_queries(
             GithubSearchKind::Repositories => (
                 has_terms("keywords")
                     || has_terms("topics")
-                    || [
-                        "owner",
-                        "language",
-                        "stars",
-                        "pushed",
-                        "created",
-                        "license",
-                        "qualifiers",
-                    ]
-                    .iter()
-                    .any(|field| has_text(field))
+                    || has_text("owner")
+                    || REPO_SEARCH_FILTERS.iter().any(|field| has_text(field))
                     || query.get("archived").is_some_and(Value::is_boolean),
                 "ghSearchRepo needs keywords, topics, owner, or a filter",
             ),
         };
+        // owner+repo names one repository; filters beside it search inside it.
+        if matches!(kind, GithubSearchKind::Repositories) && has_text("repo") && !has_text("owner")
+        {
+            return Err(issue(
+                "gh-search.repo-lookup",
+                vec!["queries".into(), index.to_string(), "owner".into()],
+                "repo needs owner: owner+repo looks up one repository".to_owned(),
+            ));
+        }
         if !runnable {
             return Err(issue(
                 "gh-search.runnable-constraint",
                 vec!["queries".into(), index.to_string(), "keywords".into()],
                 message.to_owned(),
-            ));
-        }
-        // Code search must be scoped to an owner: the public contract states code
-        // "cannot wildcard repositories", so an unscoped code query (which the
-        // provider would run across all of GitHub) is rejected here rather than
-        // silently returning global noise.
-        if matches!(kind, GithubSearchKind::Code) && !has_text("owner") {
-            return Err(issue(
-                "gh-search.code-scope",
-                vec!["queries".into(), index.to_string(), "owner".into()],
-                "code search requires an owner (optionally with repo); it cannot wildcard across all of GitHub".to_owned(),
             ));
         }
     }
@@ -117,6 +117,31 @@ mod tests {
         .expect("path is an explicit code-search narrowing filter");
     }
 
+    /// owner+repo is an exact lookup that needs owner; filters beside it
+    /// search inside that repository instead of failing.
+    #[test]
+    fn repo_lookup_needs_owner_and_filters_search_inside_it() {
+        validate(
+            "ghSearchRepo",
+            json!({"queries":[{"owner":"sindresorhus","repo":"is"}]}),
+        )
+        .expect("owner+repo is an exact lookup");
+        let error =
+            validate("ghSearchRepo", json!({"queries":[{"repo":"is"}]})).expect_err("repo alone");
+        assert!(
+            error
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("repo needs owner")),
+            "{error:?}"
+        );
+        validate(
+            "ghSearchRepo",
+            json!({"queries":[{"owner":"o","repo":"r","keywords":["x"],"language":"rust"}]}),
+        )
+        .expect("filters beside owner+repo search inside it");
+    }
+
     /// A malformed repository date or count names the accepted forms (the
     /// field's own note), not the regex.
     #[test]
@@ -147,13 +172,10 @@ mod tests {
             }]}),
         )
         .expect_err("code search without an owner is a global wildcard");
-        // The schema requires owner; the code-scope rule backs it up.
+        // The schema requires owner.
         assert!(error.issues.iter().any(|issue| {
             issue.path.last().is_some_and(|field| field == "owner")
-                && matches!(
-                    issue.rule_id.as_str(),
-                    "schema.required" | "gh-search.code-scope"
-                )
+                && issue.rule_id == "schema.required"
         }));
         // owner alone (no repo) is a legitimate org-wide code search.
         validate(

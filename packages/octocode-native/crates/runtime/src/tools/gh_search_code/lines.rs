@@ -7,8 +7,12 @@ use crate::providers::github::{GitHubProvider, ProviderError, ProviderErrorKind,
 use crate::security::scan::ContentScan;
 use std::path::Path;
 
-/// Hit lines listed per file; a file with more names the rest by count.
-pub(super) const MAX_LINES_PER_FILE: usize = 20;
+/// Hit lines listed per file; a file with more states `matchCount`, and its
+/// `next.readHits` row reads every keyword line. 20 → 5 (2026-10-09): one
+/// repo-scoped search listed up to 20 lines per file (8.9 KB for 20 files)
+/// where a shell search returns paths; five lines show what a file
+/// holds, and its read returns the rest.
+pub(super) const MAX_LINES_PER_FILE: usize = 5;
 /// Characters kept per hit line (a window around the first keyword).
 const MAX_LINE_CHARS: usize = 200;
 /// Blobs larger than this keep their index fragments.
@@ -34,6 +38,11 @@ pub(super) enum FileHits {
         /// holds it: a `matchString` + `block` read returns that whole
         /// declaration.
         declaration: Option<String>,
+        /// The last shown line, when the listing is exactly the file's
+        /// first keyword lines with none cut: a read of the lines after it
+        /// reaches every unshown hit once. `None` when a hit line was
+        /// skipped or cut, so only a whole re-read reaches it.
+        resume_after: Option<u32>,
     },
     /// The blob was read but no line holds a keyword (index lag or
     /// tokenization differences): keep the index fragments.
@@ -186,6 +195,9 @@ pub(super) fn scan(
     let in_window = |hit: usize| window.is_some_and(|(start, end)| hit == start || hit == end);
     let mut lines = Vec::new();
     let mut clipped = false;
+    let mut shown_hits = 0;
+    let mut prefix = true;
+    let mut last_shown = 0;
     for (hit, &(index, at, every)) in hits.iter().enumerate() {
         if lines.len() >= MAX_LINES_PER_FILE {
             break;
@@ -197,6 +209,9 @@ pub(super) fn scan(
             continue;
         }
         let number = u32::try_from(index + 1).unwrap_or(u32::MAX);
+        prefix &= hit == shown_hits;
+        shown_hits += 1;
+        last_shown = number;
         let line = raw[index];
         let in_key_block = key_blocks
             .iter()
@@ -241,6 +256,7 @@ pub(super) fn scan(
         total,
         line_count,
         declaration,
+        resume_after: (prefix && !clipped && last_shown > 0).then_some(last_shown),
     }
 }
 
@@ -507,7 +523,7 @@ mod tests {
 
     use crate::security::scan::Passthrough;
 
-    /// E10: a hit on a declared name carries its declaration line, so the
+    /// A hit on a declared name carries its declaration line, so the
     /// read lead returns the whole block; a call or a repeated line does not.
     #[test]
     fn a_declared_hit_names_its_unique_declaration_line() {
@@ -553,6 +569,53 @@ mod tests {
         );
     }
 
+    /// The resume line is where the next unshown hit can start, only
+    /// when the shown lines are exactly the first hits and none was cut.
+    #[test]
+    fn a_listing_that_is_a_hit_prefix_resumes_after_its_last_line() {
+        let text = "x\n".repeat(2) + &"hit()\n".repeat(8);
+        let FileHits::Lines {
+            lines,
+            total,
+            resume_after,
+            ..
+        } = scan(text.as_bytes(), "a.rs", &["hit".into()], "", &Passthrough)
+        else {
+            panic!("hits")
+        };
+        assert_eq!((lines.len(), total), (MAX_LINES_PER_FILE, 8));
+        assert_eq!(resume_after, Some(7));
+        // The last hit is shown: nothing is left to continue.
+        let text = "hit()\n".repeat(3);
+        let FileHits::Lines { resume_after, .. } =
+            scan(text.as_bytes(), "a.rs", &["hit".into()], "", &Passthrough)
+        else {
+            panic!("hits")
+        };
+        assert_eq!(resume_after, Some(3));
+        // A listing that skipped a hit line (a keyword-only line beside
+        // lines holding every keyword) is not a prefix of the hits.
+        let text = "alpha\n".to_owned() + &"alpha beta\n".repeat(6);
+        let FileHits::Lines { resume_after, .. } = scan(
+            text.as_bytes(),
+            "a.rs",
+            &["alpha".into(), "beta".into()],
+            "",
+            &Passthrough,
+        ) else {
+            panic!("hits")
+        };
+        assert_eq!(resume_after, None);
+        // A cut line cannot be resumed after: its tail was not shown.
+        let text = format!("hit {}\n{}", "a".repeat(400), "hit\n".repeat(7));
+        let FileHits::Lines { resume_after, .. } =
+            scan(text.as_bytes(), "a.rs", &["hit".into()], "", &Passthrough)
+        else {
+            panic!("hits")
+        };
+        assert_eq!(resume_after, None);
+    }
+
     #[test]
     fn every_keyword_line_is_numbered_case_insensitively() {
         let text = "import x\nawait Wrap_App(app)\nother\n    await wrap_app(s)\n";
@@ -577,6 +640,7 @@ mod tests {
                 line_count: 4,
                 clipped: false,
                 declaration: None,
+                resume_after: Some(4),
             }
         );
         assert_eq!(

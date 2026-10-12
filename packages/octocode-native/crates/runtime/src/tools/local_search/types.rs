@@ -39,21 +39,16 @@ impl LocalSearchQuery {
     pub(crate) fn snapshot(&self) -> Option<&str> {
         self.snapshot.as_deref().map(String::as_str)
     }
-    /// The search mode: the caller's `regex`, else literal text unless
-    /// `matchString` uses a regex operator.
+    /// The search mode: the caller's `regex`, else literal text in every tool
+    /// (`a|b` finds that text; `regex:"rust"` runs it as a pattern).
     pub(crate) fn regex_mode(&self) -> LocalSearchQueryRegex {
-        self.regex
-            .unwrap_or(if self.match_string.contains(REGEX_OPERATORS) {
-                LocalSearchQueryRegex::Rust
-            } else {
-                LocalSearchQueryRegex::Literal
-            })
+        self.regex.unwrap_or(LocalSearchQueryRegex::Literal)
     }
 }
 
-/// Characters that make an unset-mode `matchString` a regex; code
-/// punctuation such as `.` `(` `)` alone stays literal text.
-const REGEX_OPERATORS: &[char] = &['|', '\\', '[', ']', '*', '+', '?', '^', '$', '{', '}'];
+/// Characters that give a text a regex reading besides its literal one.
+pub(super) const REGEX_METACHARACTERS: [char; 11] =
+    ['.', '(', '|', '[', '*', '+', '?', '^', '$', '{', '\\'];
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum SearchStatus {
@@ -72,23 +67,34 @@ pub struct SearchMatch {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub column: Option<u32>,
     pub value: String,
+    /// Byte offset of the hit in its line: where a byte-window read of a long
+    /// line starts at the match. Read by leads, never shown.
+    #[serde(skip)]
+    pub byte_offset: u32,
     /// Every matched line inside a merged context block, in order; present
     /// only when overlapping/adjacent windows were merged into this one.
     #[serde(rename = "matchedLines", skip_serializing_if = "Option::is_none")]
     pub match_lines: Option<Vec<u32>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub count: Option<u32>,
+    /// The value is clipped (`originalChars`, `returnedChars` say by how much).
+    /// Clipping a value leaves no row out, so it is not a partial result.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub truncated: bool,
+    pub clipped: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub original_chars: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub returned_chars: Option<usize>,
     /// The innermost declaration around the hit (its name, kind, name line
     /// and last line: an lspSearch anchor and a localFetch span), on the
-    /// first row of a run inside it.
+    /// first row of this file inside it; later rows inside it carry
+    /// `enclosing_line` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enclosing: Option<Enclosing>,
+    /// The name line of the declaration enclosing this hit: the `enclosing`
+    /// of the nearest earlier row of this file whose `enclosing.line` is it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enclosing_line: Option<u32>,
     /// `true` on a row whose hit line declares a name (the lspSearch
     /// anchor among same-name hits); absent on every other row.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -106,7 +112,7 @@ pub struct ItemPagination {
     #[serde(rename = "totalItems")]
     pub total_matches: u32,
     pub has_more: bool,
-    /// Lines of this file's hits on later pages, ascending (X1: numbers,
+    /// Lines of this file's hits on later pages, ascending (numbers,
     /// not a packed list): read them directly or page on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub more_lines: Option<Vec<u32>>,
@@ -119,7 +125,7 @@ pub struct ItemPagination {
 }
 
 /// A declaration enclosing a hit, named like the inputs that take it
-/// (`symbolName` + `lineHint` = `line`, `ranges` = `line-endLine`).
+/// (`symbolName` + `line` = `line`, `ranges` = `line-endLine`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Enclosing {
@@ -133,6 +139,13 @@ pub struct Enclosing {
 #[serde(rename_all = "camelCase")]
 pub struct SearchFile {
     pub path: String,
+    /// JSON and TOML files: each hit line's key path (`matchKeys`).
+    #[serde(
+        rename = "matchKeys",
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "crate::tools::match_keys::serialize"
+    )]
+    pub match_keys: Vec<(usize, String)>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matches: Option<Vec<SearchMatch>>,
     #[serde(rename = "matchCount", skip_serializing_if = "Option::is_none")]
@@ -143,6 +156,10 @@ pub struct SearchFile {
     pub pagination: Option<ItemPagination>,
 }
 
+/// The response's totals. They serialize flat into the row (`matchCount`,
+/// `matchedLineCount`, `filesScanned`, `bytesSearched`, `binarySkipped`,
+/// `fileErrors`, `partialReasons`); the fields marked `skip` are what the
+/// runtime reads and the row never carries.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchStats {
@@ -150,22 +167,38 @@ pub struct SearchStats {
     pub total_occurrences: u32,
     #[serde(rename = "matchedLineCount")]
     pub matched_lines: u32,
-    #[serde(rename = "fileCount")]
+    #[serde(skip)]
     pub files_matched: u32,
     #[serde(rename = "filesScanned")]
     pub files_searched: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bytes_searched: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub search_time: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub capped: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub cap_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The limits that ended the scan early, one per reason (the engine's
+    /// `capReason` words).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub partial_reasons: Vec<String>,
+    #[serde(skip)]
     pub error_count: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub first_error: Option<String>,
+    /// Files the search could not read, and the first of them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_errors: Option<FileErrors>,
+    /// Files skipped as binary from their leading bytes, on a first page
+    /// with hits (an empty page states it in `warnings`).
+    #[serde(rename = "binarySkipped", skip_serializing_if = "Option::is_none")]
+    pub binary_skipped: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct FileErrors {
+    pub count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -179,8 +212,8 @@ pub struct FilePagination {
     /// Grid pages only; streamed pages are cut by the response budget.
     #[serde(rename = "pageSize", skip_serializing_if = "Option::is_none")]
     pub files_per_page: Option<u32>,
-    #[serde(rename = "totalItems")]
-    pub total_files: u32,
+    /// In the pages' unit: files on grid pages, hit rows on streamed pages.
+    pub total_items: u32,
     pub has_more: bool,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub out_of_range: bool,
@@ -191,6 +224,7 @@ pub struct FilePagination {
 pub struct LocalSearchResult {
     #[serde(skip)]
     pub status: SearchStatus,
+    #[serde(flatten)]
     pub stats: SearchStats,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub files: Vec<SearchFile>,

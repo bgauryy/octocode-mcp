@@ -79,21 +79,32 @@ pub(super) async fn traverse<C: crate::providers::github::ConditionalCache>(
     listing: &Listing<'_>,
     context: &RequestContext,
 ) -> Result<Traversal, ProviderError> {
-    if listing.max_depth > 1
-        && let Some(traversal) = recursive_tree(provider, listing, context).await?
-    {
-        return Ok(traversal);
+    let mut split = false;
+    if listing.max_depth > 1 {
+        match recursive_tree(provider, listing, context).await? {
+            DeepTree::Read(traversal) => return Ok(traversal),
+            DeepTree::Truncated => split = true,
+            DeepTree::Unavailable => {}
+        }
     }
-    walk_contents(provider, listing, context).await
+    walk_contents(provider, listing, split, context).await
 }
 
-/// A deep listing from one recursive git tree (cached by commit); `None`
-/// when the tree is truncated or unavailable, so the contents walk runs.
+/// What one recursive git tree read answered.
+pub(super) enum DeepTree {
+    Read(Traversal),
+    /// Past GitHub's recursive-tree limit: smaller subtrees still read whole.
+    Truncated,
+    Unavailable,
+}
+
+/// A deep listing from one recursive git tree (cached by commit); a
+/// truncated or unavailable tree leaves the walk to the Contents API.
 pub(super) async fn recursive_tree<C: crate::providers::github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     listing: &Listing<'_>,
     context: &RequestContext,
-) -> Result<Option<Traversal>, ProviderError> {
+) -> Result<DeepTree, ProviderError> {
     let Listing {
         owner,
         repo,
@@ -108,7 +119,9 @@ pub(super) async fn recursive_tree<C: crate::providers::github::ConditionalCache
             serde_json::from_slice::<crate::providers::github::TreeResponse>(&cached.bytes)
     {
         root_is_directory(&tree, root)?;
-        return Ok(Some(traversal_from_git_tree(tree, root, max_depth)));
+        return Ok(DeepTree::Read(traversal_from_git_tree(
+            tree, root, max_depth,
+        )));
     }
     match provider
         .transport
@@ -126,24 +139,80 @@ pub(super) async fn recursive_tree<C: crate::providers::github::ConditionalCache
         Ok(tree) if !tree.truncated => {
             root_is_directory(&tree, root)?;
             cache_tree(provider, context, resource, branch, &tree).await;
-            return Ok(Some(traversal_from_git_tree(tree, root, max_depth)));
+            Ok(DeepTree::Read(traversal_from_git_tree(
+                tree, root, max_depth,
+            )))
         }
-        Ok(_) => {}
-        Err(error) if access_failure(&error) => {
-            return Err(error);
-        }
-        Err(_) => {}
+        Ok(_) => Ok(DeepTree::Truncated),
+        Err(error) if access_failure(&error) => Err(error),
+        Err(_) => Ok(DeepTree::Unavailable),
     }
-    Ok(None)
+}
+
+/// One subdirectory's whole subtree from a recursive git tree read by its
+/// tree SHA (content-addressed, so cached like a commit's tree), with
+/// repo-relative paths; `None` when that subtree is truncated too or
+/// unreadable, so the Contents walk descends into it instead.
+async fn subtree<C: crate::providers::github::ConditionalCache>(
+    provider: &GitHubProvider<C>,
+    listing: &Listing<'_>,
+    dir: &str,
+    sha: &str,
+    context: &RequestContext,
+) -> Result<Option<crate::providers::github::TreeResponse>, ProviderError> {
+    let resource = format!(
+        "{}:{sha}",
+        repo_key("git-tree", listing.owner, listing.repo)
+    );
+    let cached = match provider.transport.cache_partition(context, None) {
+        Ok(partition) => provider.cache.get(&partition, &resource).await,
+        Err(_) => None,
+    };
+    let tree = match cached.and_then(|cached| {
+        serde_json::from_slice::<crate::providers::github::TreeResponse>(&cached.bytes).ok()
+    }) {
+        Some(tree) => tree,
+        None => match provider
+            .transport
+            .get_tree(
+                &TreeRequest {
+                    owner: listing.owner.into(),
+                    repo: listing.repo.into(),
+                    reference: sha.into(),
+                    recursive: true,
+                },
+                context,
+            )
+            .await
+        {
+            Ok(tree) if !tree.truncated => {
+                cache_tree(provider, context, resource, sha, &tree).await;
+                tree
+            }
+            Ok(_) => return Ok(None),
+            Err(error) if access_failure(&error) => return Err(error),
+            Err(_) => return Ok(None),
+        },
+    };
+    let mut tree = tree;
+    for entry in &mut tree.tree {
+        entry.path = format!("{dir}/{}", entry.path);
+    }
+    Ok(Some(tree))
 }
 
 /// The Contents API walk, one directory read per folder up to
 /// [`MAX_DIRECTORY_FETCHES`]; a complete walk is reused for the cache TTL.
+/// After a truncated recursive tree (`split`), a folder with more than one
+/// level left to list is read whole from its own recursive subtree, so a
+/// large repository costs one read per subtree instead of per folder.
 pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>(
     provider: &GitHubProvider<C>,
     listing: &Listing<'_>,
+    split: bool,
     context: &RequestContext,
 ) -> Result<Traversal, ProviderError> {
+    let at = *listing;
     let Listing {
         owner,
         repo,
@@ -200,6 +269,7 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
         }
         for entry in listing.entries {
             let Some(kind) = entry_kind(&entry) else {
+                note_unlisted(&mut traversal, &entry.name, unlisted_kind(&entry));
                 continue;
             };
             if ignored_entry(&entry.name, kind) {
@@ -212,9 +282,25 @@ pub(super) async fn walk_contents<C: crate::providers::github::ConditionalCache>
                 kind,
                 size: entry.size,
             });
-            if kind == EntryKind::Dir && depth < max_depth {
-                pending.push((child_path, depth + 1, false));
+            if kind != EntryKind::Dir || depth >= max_depth {
+                continue;
             }
+            if split
+                && max_depth - depth >= 2
+                && fetches < MAX_DIRECTORY_FETCHES
+                && let Some(sha) = entry.sha.as_deref()
+            {
+                fetches += 1;
+                if let Some(tree) = subtree(provider, &at, &child_path, sha, context).await? {
+                    let below = traversal_from_git_tree(tree, root, max_depth);
+                    traversal.entries.extend(below.entries);
+                    for (name, count) in below.omitted {
+                        *traversal.omitted.entry(name).or_default() += count;
+                    }
+                    continue;
+                }
+            }
+            pending.push((child_path, depth + 1, false));
         }
     }
     if traversal.failed_subtrees == 0
@@ -302,19 +388,23 @@ pub(super) fn root_is_directory(
     }
 }
 
+/// A tree listing of a path that is not a directory. A file is typed
+/// ([`ProviderErrorReason::PathIsFile`]): its read is the repair.
 pub(super) fn not_a_directory(path: &str, kind: &str) -> ProviderError {
-    let kind = match kind {
-        "blob" | "file" => "a file",
-        "commit" | "submodule" => "a git submodule",
-        "symlink" => "a symlink",
-        _ => "an unsupported entry",
+    let (kind, reason) = match kind {
+        "blob" | "file" => ("a file", Some(ProviderErrorReason::PathIsFile)),
+        "commit" | "submodule" => ("a git submodule", None),
+        "symlink" => ("a symlink", None),
+        _ => ("an unsupported entry", None),
     };
-    ProviderError::new(
+    let error = ProviderError::new(
         ProviderErrorKind::Validation,
-        format!(
-            "Path \"{path}\" is {kind}, not a directory; read files with ghGetFileContent, or list its parent directory."
-        ),
-    )
+        format!("Path \"{path}\" is {kind}, not a directory"),
+    );
+    match reason {
+        Some(reason) => error.with_reason(reason),
+        None => error,
+    }
 }
 
 pub(super) fn traversal_from_git_tree(
@@ -345,7 +435,10 @@ pub(super) fn traversal_from_git_tree(
         let kind = match entry.kind.as_str() {
             "blob" => EntryKind::File,
             "tree" => EntryKind::Dir,
-            _ => continue,
+            other => {
+                note_unlisted(&mut traversal, name_of(&relative), other);
+                continue;
+            }
         };
         // Beneath an ignored directory nothing is listed, sized, or
         // materialized, as the Contents walk never descends into one; only
@@ -374,7 +467,39 @@ pub(super) fn traversal_from_git_tree(
     traversal
 }
 
+/// The last segment of a repository-relative path.
+fn name_of(path: &str) -> &str {
+    path.rsplit_once('/').map_or(path, |(_, name)| name)
+}
+
+/// A symlink or submodule has no listable content: name it beside the
+/// skipped directories instead of dropping it silently.
+fn note_unlisted(traversal: &mut Traversal, name: &str, kind: &str) {
+    let label = match kind {
+        "symlink" => "symlink",
+        "submodule" | "commit" => "submodule",
+        _ => return,
+    };
+    *traversal
+        .omitted
+        .entry(format!("{name} ({label})"))
+        .or_default() += 1;
+}
+
+/// The entry kind [`note_unlisted`] names: the listing's own type, or a
+/// submodule the listing types `file`.
+fn unlisted_kind(entry: &ContentsEntry) -> &str {
+    if entry.is_submodule() {
+        "submodule"
+    } else {
+        &entry.kind
+    }
+}
+
 pub(super) fn entry_kind(entry: &ContentsEntry) -> Option<EntryKind> {
+    if entry.is_submodule() {
+        return None;
+    }
     match entry.kind.as_str() {
         "file" => Some(EntryKind::File),
         "dir" => Some(EntryKind::Dir),

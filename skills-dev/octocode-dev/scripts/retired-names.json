@@ -865,6 +865,248 @@
       "name": "includeDiff",
       "scope": "lead",
       "slice": "flow edges"
+    },
+    {
+      "name": "filePage",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "commentPage",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "commitPage",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "reviewPage",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "patchRanges",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "contextBytes",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetFileContent",
+        "localFetch"
+      ]
+    },
+    {
+      "name": "compareStatus",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "totalCommits",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "lastModifiedAt",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghSearchCode"
+      ],
+      "text": true
+    },
+    {
+      "name": "prNumber",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghSearchHistory",
+        "ghGetHistoryItem"
+      ]
+    },
+    {
+      "name": "readManifest",
+      "scope": "lead",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "artifactSearch"
+      ],
+      "text": true
+    },
+    {
+      "name": "commentType",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "reviewSummary",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "concise",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghSearchRepo",
+        "ghSearchCode",
+        "ghSearchHistory"
+      ]
+    },
+    {
+      "name": "includeBots",
+      "scope": "input",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "includeBots",
+      "scope": "lead",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ]
+    },
+    {
+      "name": "botsHidden",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "sanitizationWarnings",
+      "scope": "field",
+      "slice": "2026-10-10 cutover",
+      "text": true
+    },
+    {
+      "name": "lineHint",
+      "scope": "input",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "lspSearch"
+      ],
+      "text": true
+    },
+    {
+      "name": "sourceSha",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "targetSha",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "sourceBranch",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "targetBranch",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "ghGetHistoryItem"
+      ],
+      "text": true
+    },
+    {
+      "name": "hitCount",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "ghSearchCode"
+      ],
+      "text": true
+    },
+    {
+      "name": "sha",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "ghSearchHistory",
+        "ghGetHistoryItem",
+        "ghCloneRepo"
+      ],
+      "pattern": "\\b(?:o|v|row|commit|commits\\[\\d*\\])\\.sha\\b|[\"']sha[\"']\\s*:"
+    },
+    {
+      "name": "name",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "lspSearch"
+      ],
+      "pattern": "\\b(?:matches\\[\\d*\\]|from|to|via)\\.name\\b"
+    },
+    {
+      "name": "totalFiles",
+      "scope": "field",
+      "slice": "2026-10-10 names",
+      "tools": [
+        "lspSearch"
+      ],
+      "pattern": "payload\\.totalFiles\\b"
     }
   ]
 }

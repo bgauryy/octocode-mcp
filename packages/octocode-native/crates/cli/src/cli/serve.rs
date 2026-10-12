@@ -6,9 +6,10 @@
 //! detached process that owns one [`ToolRuntime`] (and its servers) behind a
 //! private Unix socket. Later calls send their query there.
 //!
-//! - One server per binary build, working directory, Octocode/GitHub
-//!   environment, and config file version: the socket name hashes all of
-//!   them, so a rebuild or config edit gets a fresh server.
+//! - One server per binary build, working directory, settings environment
+//!   (every env name the config contract binds, plus Octocode, GitHub and gh
+//!   variables), and config file version: the socket name hashes all of
+//!   them, so a rebuild, config edit or settings change gets a fresh server.
 //! - The socket lives in `<octocode home>/run` (mode 0700); only the owner
 //!   can connect. With `storage.mode = memory`, or on Windows, calls run in
 //!   process as before.
@@ -202,12 +203,19 @@ fn server_key(
         stamp(&exe)
     );
     let _ = writeln!(identity, "{}", cwd.display());
-    for (name, value) in env {
-        if name.starts_with("OCTOCODE_")
-            || name.starts_with("GITHUB_")
-            || name.starts_with("GH_")
+    // The settings the server holds: every env name the config contract
+    // binds (path roots, tool sets, network limits), every GitHub and gh CLI
+    // variable a token or host can come from, the runtime's own switches,
+    // and the PATH its language servers resolve from.
+    let bound = |name: &str| {
+        octocode_native::config::CONFIG_SOURCE_ENV_KEYS.contains(&name)
+            || ["OCTOCODE_", "GITHUB_", "GH_"]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
             || name == "PATH"
-        {
+    };
+    for (name, value) in env {
+        if bound(name) {
             let _ = writeln!(identity, "{name}={value}");
         }
     }
@@ -349,7 +357,7 @@ async fn handle(
     ) else {
         return;
     };
-    let execution = runtime.execute_rendered(id.clone(), tool, input);
+    let execution = runtime.execute_rendered(id.clone(), tool.clone(), input);
     tokio::pin!(execution);
     let mut probe = [0u8; 1];
     let result = tokio::select! {
@@ -369,7 +377,7 @@ async fn handle(
         }
         Err(error) => {
             let exit = super::exit_code(error.exit_class());
-            let value = super::runtime_error_output(error);
+            let value = super::runtime_error_output(error, &tool);
             let text = super::runtime_error_text(&value);
             let mut response = reply(value, text, exit);
             response["error"] = json!(true);
@@ -410,6 +418,26 @@ mod tests {
             super::server_key(&BTreeMap::new(), &home.path().join("other"), home.path()),
             Some(key)
         );
+    }
+
+    /// The warm server answers with the settings it started under, so
+    /// every env name the config contract binds (path roots, tool sets,
+    /// network limits, credentials) is part of its identity: a call under
+    /// different settings never reaches a server holding the old ones.
+    #[test]
+    fn server_key_tracks_every_env_name_the_config_contract_binds() {
+        use octocode_native::config::{CONFIG_SOURCE_ENV_KEYS, ENV_TOKEN_VARS};
+        let home = tempfile::tempdir().expect("home");
+        let cwd = home.path().join("w");
+        let base = super::server_key(&BTreeMap::new(), &cwd, home.path()).expect("key");
+        for name in CONFIG_SOURCE_ENV_KEYS.iter().chain(ENV_TOKEN_VARS) {
+            let env = BTreeMap::from([((*name).to_owned(), "/tmp/x".to_owned())]);
+            assert_ne!(
+                super::server_key(&env, &cwd, home.path()),
+                Some(base.clone()),
+                "{name} must change the warm server's key"
+            );
+        }
     }
 
     #[test]

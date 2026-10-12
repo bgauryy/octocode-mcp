@@ -1,8 +1,18 @@
 use super::detector;
-use super::detector::{CONTENT_SIZE_LIMIT_PLACEHOLDER, MAX_CONTENT_SIZE};
+use super::detector::{CONTENT_SIZE_LIMIT_PLACEHOLDER, MAX_CONTENT_SIZE, Scope};
 use super::types::SanitizationResult;
 
 pub fn sanitize_content(content: &str, file_path: Option<&str>) -> SanitizationResult {
+    sanitize_in(content, file_path.map_or(Scope::Pathless, Scope::File))
+}
+
+/// [`sanitize_content`] for one string leaf of a tool result about the file at
+/// `source_path` (see [`Scope::Leaf`]).
+pub fn sanitize_leaf(content: &str, source_path: &str) -> SanitizationResult {
+    sanitize_in(content, Scope::Leaf(source_path))
+}
+
+fn sanitize_in(content: &str, scope: Scope<'_>) -> SanitizationResult {
     // Byte-based cap (the JS fallback uses Buffer.byteLength) so the same content
     // is redacted identically whether or not the native addon is available.
     if content.len() > MAX_CONTENT_SIZE {
@@ -17,7 +27,7 @@ pub fn sanitize_content(content: &str, file_path: Option<&str>) -> SanitizationR
         };
     }
 
-    let result = detector::detect(content, file_path);
+    let result = detector::detect_in(content, scope);
 
     let warnings = if result.secrets_detected.is_empty() {
         vec![]

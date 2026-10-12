@@ -117,7 +117,8 @@ export function footerLines(state: FooterState, branch: string | null, statuses:
       // Session names come from anywhere (RPC, other extensions); Pi strips only newlines.
       { text: state.sessionName ? theme.fg('muted', sanitizeTerminalText(state.sessionName)) : '', priority: 50 },
       { text: tokens, priority: 60 },
-      ...others.map(([, text]) => ({ text, priority: 20 })),
+      // As Pi's own footer does (sanitizeStatusText): a line break inside a footer row breaks pi-tui's row tracking.
+      ...others.map(([, text]) => ({ text: text.replace(/[\r\n\t]/g, ' ').replace(/ +/g, ' ').trim(), priority: 20 })),
     ],
     [],
     theme,

@@ -35,12 +35,12 @@ for (const r of REPOS_BY_LANG) {
 
   const tree = await call('structureSearch', { operation: 'tree', path: root, maxDepth: 2 });
   check(`${r.lang}: structure tree`, !tree.isError && !tree.rowErrors, `${tree.ms}ms`);
-  const listing = await call('structureSearch', { operation: 'files', path: scope, extensions: r.ext, detail: 'full', sort: 'lines', maxEntries: 5 });
-  const biggest = structureFiles(rowData(listing)?.files, rowData(listing)?.path).filter(o => typeof o.path === 'string' && typeof o.lineCount === 'number')[0];
+  const listing = await call('structureSearch', { operation: 'files', path: scope, extensions: r.ext, extras: ['details'], sort: 'lines', maxEntries: 5 });
+  const biggest = structureFiles(rowData(listing)?.files, rowData(listing)?.path).filter(o => typeof o.path === 'string' && typeof o.totalLines === 'number')[0];
   check(`${r.lang}: biggest source located`, !!biggest, listing.text.slice(0, 100));
   if (!biggest) { table.push(row); continue; }
   const L = rootPath(listing, biggest.path);
-  row.file = `${path.relative(root, L)} (${biggest.lineCount} lines)`;
+  row.file = `${path.relative(root, L)} (${biggest.totalLines} lines)`;
 
   // Symbols: whole file, all pages, unique ids.
   const sym1 = await call('astSearch', { operation: 'symbols', path: L, pageSize: 100, ...(r.language ? { language: r.language } : {}) });
@@ -93,7 +93,7 @@ for (const r of REPOS_BY_LANG) {
   // Identity: AST→LSP bridge (definition from a call site lands on the symbols row).
   if (r.lsp && callRows.length) {
     const site = callRows.find(c => c.file !== L) ?? callRows[0];
-    const def = await call('lspSearch', { path: site.file, symbolName: S.name, lineHint: site.line, operation: 'definition' });
+    const def = await call('lspSearch', { path: site.file, symbolName: S.name, line: site.line, operation: 'definition' });
     const locs = lspLocations(def);
     // The definition must land on a declaration astSearch also reports (the
     // call site may legitimately resolve to a same-named local function).
@@ -111,12 +111,12 @@ for (const r of REPOS_BY_LANG) {
         if (new RegExp(`\\b(function|def|fn|func|class|var|let|const|struct)\\b[^\\n]*\\b${S.name}\\b|\\b${S.name}\\s*[:=]\\s*(function|\\()`).test(text)) lands = true;
       }
     }
-    row.lspDefinition = def.isError || def.rowErrors ? `ERR ${rowData(def)?.errorCode}` : locs.length === 0 ? `none (${JSON.stringify(rowData(def)?.hints ?? rowData(def)?.payload?.reason ?? '')})` : lands ? 'lands on an astSearch declaration' : `→ ${locs.map(l => `${l.path}:${l.displayRange?.startLine}`).join(',')}`;
+    row.lspDefinition = def.isError || def.rowErrors ? `ERR ${rowData(def)?.errorCode}` : locs.length === 0 ? `none (${JSON.stringify(rowData(def)?.hints ?? rowData(def)?.reason ?? '')})` : lands ? 'lands on an astSearch declaration' : `→ ${locs.map(l => `${l.path}:${l.displayRange?.startLine}`).join(',')}`;
     // Without a compilation database clangd cannot resolve other headers;
     // the tool must say exactly that rather than return a bare empty row.
     const explainedNoDatabase = locs.length === 0 && /compile_commands\.json/.test(JSON.stringify(rowData(def)?.hints ?? []));
     check(`${r.lang}: lspSearch definition from a call site = an astSearch declaration${explainedNoDatabase ? ' (clangd: no compile database, explained)' : ''}`, lands || explainedNoDatabase, row.lspDefinition);
-    const refs = await call('lspSearch', { path: L, symbolName: S.name, lineHint: S.line, operation: 'references', pageSize: 100 });
+    const refs = await call('lspSearch', { path: L, symbolName: S.name, line: S.line, operation: 'references', pageSize: 100 });
     const refPages = await walk(client, refs, 'nextPage', 50, { keepError: true });
     const refFiles = [...new Set(refPages.flatMap(p => lspLocations(p).map(o => sourcePath(p, o, L))))];
     const outside = refFiles.filter(f => !textFiles.includes(f));
@@ -126,7 +126,7 @@ for (const r of REPOS_BY_LANG) {
 
   // localFetch on the biggest file: pages continue gap-free; views agree.
   const f1 = await call('localFetch', { path: L, unit: 'lines', length: 400 });
-  const fPages = await walk(client, f1, 'continue', 400, { keepError: true });
+  const fPages = await walk(client, f1, 'continueWindow', 400, { keepError: true });
   const ranges = fPages.map(p => sourceView(rowData(p)).ranges).map(rr => [rr[0]?.start, rr.at(-1)?.end]);
   const byteMode = fPages.map(p => rowData(p)?.pagination?.unit === 'bytes');
   let gapFree = ranges[0]?.[0] === 1;
@@ -134,13 +134,13 @@ for (const r of REPOS_BY_LANG) {
   // continue the same line (the final byte page carries no pagination, so a
   // byte-mode predecessor also licenses the same-line continuation).
   for (let i = 1; i < ranges.length; i++) gapFree &&= ranges[i][0] === ranges[i - 1][1] + 1 || ((byteMode[i] || byteMode[i - 1]) && ranges[i][0] === ranges[i - 1][1]);
-  row.fetchPages = `${fPages.length} → ${ranges.at(-1)?.[1]}/${biggest.lineCount}`;
-  check(`${r.lang}: localFetch pages cover the whole file gap-free`, gapFree && ranges.at(-1)?.[1] === biggest.lineCount, row.fetchPages);
+  row.fetchPages = `${fPages.length} → ${ranges.at(-1)?.[1]}/${biggest.totalLines}`;
+  check(`${r.lang}: localFetch pages cover the whole file gap-free`, gapFree && ranges.at(-1)?.[1] === biggest.totalLines, row.fetchPages);
   const ms = await call('localFetch', { path: L, matchString: S.name, contextLines: 1 });
   check(`${r.lang}: localFetch matchString finds ${S.name}`, (rowData(ms)?.matchRanges?.length ?? 0) > 0 || (rowData(ms)?.content ?? '').includes(S.name), rowData(ms)?.errorCode ?? '');
   const outline = await call('localFetch', { path: L, minify: 'symbols' });
   // Walk the outline's pages: the symbol must appear somewhere in the view.
-  const outlinePages = await walk(client, outline, 'continue', 40, { keepError: true });
+  const outlinePages = await walk(client, outline, 'continueWindow', 40, { keepError: true });
   const named = outlinePages.some(pg => (rowData(pg)?.content ?? '').includes(S.name));
   check(`${r.lang}: symbols view names ${S.name}`, named, `${outlinePages.length} page(s) ${rowData(outline)?.contentView ?? rowData(outline)?.errorCode}`);
 

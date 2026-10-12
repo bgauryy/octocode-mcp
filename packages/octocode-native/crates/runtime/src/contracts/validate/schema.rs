@@ -213,6 +213,14 @@ fn validate_object(
     }
     if let Some(properties) = properties {
         for (name, field_schema) in properties {
+            // A shared field (`$ref`) declares its default on the definition.
+            let field_schema = field_schema
+                .get("$ref")
+                .and_then(Value::as_str)
+                .and_then(|reference| {
+                    root.pointer(reference.strip_prefix('#').unwrap_or(reference))
+                })
+                .unwrap_or(field_schema);
             if !object.contains_key(name)
                 && let Some(default) = field_schema.get("default")
             {
@@ -330,7 +338,16 @@ fn validate_string(
     value: &Value,
     path: &[String],
 ) -> Result<(), ContractValidationError> {
+    let line_range =
+        schema.get("pattern").and_then(Value::as_str) == Some(coerce::LINE_RANGE_PATTERN);
     let string = value.as_str().ok_or_else(|| {
+        if line_range {
+            return issue(
+                "schema.type",
+                path.to_vec(),
+                line_range_message(value, path),
+            );
+        }
         schema_issue(
             "schema.type",
             path.to_vec(),
@@ -344,11 +361,12 @@ fn validate_string(
         let regex = compiled_pattern(pattern)
             .map_err(|error| issue("schema.unsupported-pattern", path.to_vec(), error))?;
         if !regex.is_match(string) {
-            return Err(issue(
-                "schema.pattern",
-                path.to_vec(),
-                pattern_message(string, path, &regex, schema),
-            ));
+            let message = if line_range {
+                line_range_message(value, path)
+            } else {
+                pattern_message(string, path, &regex, schema)
+            };
+            return Err(issue("schema.pattern", path.to_vec(), message));
         }
     }
     if schema.get("format").and_then(Value::as_str) == Some("uri") && Url::parse(string).is_err() {
@@ -403,15 +421,36 @@ fn pattern_message(value: &str, path: &[String], regex: &Regex, schema: &Value) 
         };
     }
     if !value.trim().is_empty() {
+        let shown: String = value.chars().take(80).collect();
         return match schema.get("description").and_then(Value::as_str) {
-            Some(note) => {
-                let shown: String = value.chars().take(80).collect();
-                format!("\"{shown}\" does not match the expected form: {note}")
-            }
-            None => "String does not match required pattern".into(),
+            Some(note) => format!("\"{shown}\" does not match the expected form: {note}"),
+            None => format!("\"{shown}\" does not match {}", regex.as_str()),
         };
     }
     "is empty; give non-blank text.".into()
+}
+
+/// A rejected line-range item: the value as sent, then the shape once
+/// (`ranges: ["299-342"] (strings "start-end")`), named by its field.
+fn line_range_message(value: &Value, path: &[String]) -> String {
+    let field = path
+        .iter()
+        .rev()
+        .find(|segment| segment.parse::<usize>().is_err())
+        .map_or("ranges", String::as_str);
+    let clip = |text: &str| {
+        let shown: String = text.chars().take(80).collect();
+        if shown.len() < text.len() {
+            format!("{shown}…")
+        } else {
+            shown
+        }
+    };
+    let sent = match value {
+        Value::String(text) => serde_json::to_string(&clip(text)).unwrap_or_default(),
+        other => clip(&other.to_string()),
+    };
+    format!("{sent} is not a line range; {field}: [\"299-342\"] (strings \"start-end\")")
 }
 
 /// The allowed keys a `qualifiers` field declares (`x-qualifierKeys`, a
@@ -608,6 +647,29 @@ mod tests {
         assert!(pattern_cached(pattern));
         let mut bad = json!("cache-probe-ab");
         assert!(validate_schema(&schema, &schema, &mut bad, &mut vec![]).is_err());
+    }
+
+    /// A rejected line range names the value sent and the shape
+    /// once, whether it is the wrong text or not a string at all.
+    #[test]
+    fn rejected_line_ranges_quote_the_shape() {
+        let schema = json!({"type":"array","items":{"type":"string","pattern":super::coerce::LINE_RANGE_PATTERN}});
+        let message = |mut value: Value| {
+            let mut path = vec!["queries".to_owned(), "0".to_owned(), "ranges".to_owned()];
+            validate_schema(&schema, &schema, &mut value, &mut path)
+                .unwrap_err()
+                .issues[0]
+                .message
+                .clone()
+        };
+        assert_eq!(
+            message(json!(["[&quot;299-342&quot;]"])),
+            r#""[&quot;299-342&quot;]" is not a line range; ranges: ["299-342"] (strings "start-end")"#
+        );
+        assert_eq!(
+            message(json!([{"s":"12-47"}])),
+            r#"{"s":"12-47"} is not a line range; ranges: ["299-342"] (strings "start-end")"#
+        );
     }
 
     /// SH4: a rejected qualifier term lists the keys the field declares.

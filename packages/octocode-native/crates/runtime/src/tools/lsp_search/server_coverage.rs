@@ -8,14 +8,14 @@
 //! `cfgGatedFiles` when files that mention the name carry such gates, with
 //! an `expandFeatures` rerun page. An all-features run compiles out
 //! `cfg(not(feature …))` code instead: reason `cfgNegatedFeatures`. Every
-//! such row gets the lexical `textSearch` lead. Gate scans cover the
+//! such row gets the lexical `findText` lead. Gate scans cover the
 //! request's search scope (the repository), not the member crate.
 
 use super::LspSearchQuery;
 use super::failure::{FILE_LEVEL_REASONS, TEXT_CHECK, flag_partial, flagged_with};
 use super::inferred_project::is_incoming;
 use super::scope::Scope;
-use crate::tools::id::{Channel, ToolId, channel, continuation_channels};
+use crate::tools::id::ToolId;
 use serde_json::{Value, json};
 use std::path::Path;
 
@@ -25,25 +25,14 @@ pub(super) const CFG_NEGATED_REASON: &str = "cfgNegatedFeatures";
 const PYTHON_WARNING: &str = "The Python language server resolves a use only through a receiver whose type it infers; uses through untyped or dynamic receivers (managers, mixins, getattr, duck typing) are missing. Confirm with a localSearch of the name.";
 /// Bound of the Rust gate scan; a larger workspace counts what it reached.
 const MAX_SCANNED_FILES: usize = 20_000;
-const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+/// Largest file the gate scan reads; generated sources (a 2.4 MB
+/// `tool_types.rs`) fit, so they never make every answer partial.
+const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 const GATE_SCAN_BUDGET: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// Where an `lspSearch` continuation named `name` lands in a default
-/// response (`next.<name>` for a page, `hints.<name>` for a default lead),
-/// so tool text names only a place an agent finds it; `None` for an opt-in
-/// lead (`extras: ["hints"]`).
-pub(super) fn lead_ref(name: &str) -> Option<String> {
-    match channel(ToolId::LspSearch, name) {
-        Channel::Page => Some(format!("next.{name}")),
-        Channel::Lead => continuation_channels::DEFAULT_LEADS
-            .contains(&crate::tools::id::kind(name))
-            .then(|| format!("hints.{name}")),
-    }
-}
-
-/// [`lead_ref`] of the lexical `textSearch` check, else the search itself.
+/// The lexical `findText` check, named by its search.
 fn text_check() -> String {
-    lead_ref("textSearch").unwrap_or_else(|| TEXT_CHECK.to_owned())
+    TEXT_CHECK.to_owned()
 }
 
 pub(super) fn annotate(
@@ -112,7 +101,6 @@ fn annotate_rust(row: &mut Value, query: &LspSearchQuery, scope: &Scope) {
     rerun["rustContext"] = context;
     row["next"]["expandFeatures"] =
         crate::tools::result::Continuation::new(ToolId::LspSearch, rerun)
-            .why("Analyze every Cargo feature so feature-gated uses are compiled in.")
             .confidence("medium")
             .build();
 }
@@ -181,6 +169,7 @@ fn gated_files_mentioning_limit(
             break;
         }
         visited += 1;
+        // Only a file past the read cap leaves the scan incomplete.
         if !entry
             .metadata()
             .is_ok_and(|meta| meta.len() <= MAX_FILE_BYTES)
@@ -255,23 +244,22 @@ mod tests {
 
     #[test]
     fn python_incoming_rows_name_dynamic_dispatch_and_offer_text_search() {
-        let mut row = json!({"payload":{"kind":"callers","matches":[{"path":"a.py"}]}});
+        let mut row = json!({"kind":"callers","matches":[{"path":"a.py"}]});
         let q = query(
-            json!({"path":"/w/a.py","operation":"callers","symbolName":"get_or_create","lineHint":3}),
+            json!({"path":"/w/a.py","operation":"callers","symbolName":"get_or_create","line":3}),
         );
         let scope = Scope::new("/w".into(), vec!["*.py".into()]);
         annotate(&mut row, &q, Some("python"), &scope);
         // The reason is stated once, in partialReasons.
         assert_eq!(row["partialReasons"], json!([DYNAMIC_REASON]), "{row}");
-        assert!(row["payload"]["coverage"].get("reason").is_none(), "{row}");
+        assert!(row["coverage"].get("reason").is_none(), "{row}");
         assert_eq!(row["isPartial"], true, "{row}");
         let warning = row["warnings"][0].as_str().expect("warning");
-        assert!(!warning.contains("hints.textSearch"), "{warning}");
-        assert_eq!(row["next"]["textSearch"]["tool"], "localSearch", "{row}");
+        assert!(!warning.contains("hints.findText"), "{warning}");
+        assert_eq!(row["next"]["findText"]["tool"], "localSearch", "{row}");
         // Outgoing questions are not affected.
-        let mut definition = json!({"payload":{"kind":"definition","matches":[]}});
-        let q =
-            query(json!({"path":"/w/a.py","operation":"definition","symbolName":"x","lineHint":3}));
+        let mut definition = json!({"kind":"definition","matches":[]});
+        let q = query(json!({"path":"/w/a.py","operation":"definition","symbolName":"x","line":3}));
         annotate(&mut definition, &q, Some("python"), &scope);
         assert!(definition.get("isPartial").is_none(), "{definition}");
     }
@@ -292,14 +280,13 @@ mod tests {
         .expect("other");
         let root = dir.path().to_string_lossy().into_owned();
         let scope = Scope::new(root.clone(), vec!["*.rs".into()]);
-        let row_query = json!({"path":format!("{root}/lib.rs"),"operation":"references","symbolName":"spawn_blocking","lineHint":1});
-        let mut row = json!({"payload":{"kind":"references","matches":[{"path":"lib.rs"}]}});
+        let row_query = json!({"path":format!("{root}/lib.rs"),"operation":"references","symbolName":"spawn_blocking","line":1});
+        let mut row = json!({"kind":"references","matches":[{"path":"lib.rs"}]});
         annotate(&mut row, &query(row_query.clone()), Some("rust"), &scope);
         // Gated files found: the rerun page and one reason, no prose.
         assert_eq!(row["partialReasons"], json!([CFG_REASON]), "{row}");
         assert!(
-            row["payload"]
-                .get("coverage")
+            row.get("coverage")
                 .is_none_or(|c| c.get("reason").is_none()),
             "{row}"
         );
@@ -308,28 +295,11 @@ mod tests {
         assert_eq!(rerun["rustContext"]["features"], "all", "{row}");
         assert_eq!(rerun["symbolName"], "spawn_blocking", "{row}");
         // An all-features run is not flagged again.
-        let mut all = json!({"payload":{"kind":"references","matches":[]}});
+        let mut all = json!({"kind":"references","matches":[]});
         let mut all_query = row_query;
         all_query["rustContext"] = json!({"features":"all"});
         annotate(&mut all, &query(all_query), Some("rust"), &scope);
         assert!(all.get("isPartial").is_none(), "{all}");
-    }
-
-    /// Tool text names only what a default response carries: pages, and
-    /// default leads; an opt-in lead (`textSearch`) is named by its search.
-    #[test]
-    fn warning_names_only_places_a_default_response_carries() {
-        assert_eq!(
-            lead_ref("expandFeatures").as_deref(),
-            Some("next.expandFeatures")
-        );
-        assert_eq!(lead_ref("nextPage").as_deref(), Some("next.nextPage"));
-        assert_eq!(
-            lead_ref("binarySkipped").as_deref(),
-            Some("hints.binarySkipped")
-        );
-        assert_eq!(lead_ref("textSearch"), None);
-        assert_eq!(text_check(), TEXT_CHECK);
     }
 
     #[test]
@@ -343,14 +313,14 @@ mod tests {
         .expect("negated");
         let root = dir.path().to_string_lossy().into_owned();
         let scope = Scope::new(root.clone(), vec!["*.rs".into()]);
-        let mut row = json!({"payload":{"kind":"references","matches":[]}});
+        let mut row = json!({"kind":"references","matches":[]});
         let q = query(
             json!({"path":format!("{root}/lib.rs"),"operation":"references",
-            "symbolName":"spawn_blocking","lineHint":1,"rustContext":{"features":"all"}}),
+            "symbolName":"spawn_blocking","line":1,"rustContext":{"features":"all"}}),
         );
         annotate(&mut row, &q, Some("rust"), &scope);
         assert_eq!(row["partialReasons"], json!([CFG_NEGATED_REASON]), "{row}");
-        assert_eq!(row["next"]["textSearch"]["tool"], "localSearch", "{row}");
+        assert_eq!(row["next"]["findText"]["tool"], "localSearch", "{row}");
         assert!(row["next"].get("expandFeatures").is_none(), "{row}");
         assert!(has_negated_feature_gate(
             "#[cfg(all(unix, not( feature = \"x\")))]"
@@ -360,13 +330,13 @@ mod tests {
 
     #[test]
     fn text_search_lead_targets_repo_scope_with_language_include() {
-        let mut row = json!({"payload":{"kind":"references","matches":[{"path":"a.py"}]}});
+        let mut row = json!({"kind":"references","matches":[{"path":"a.py"}]});
         let q = query(
-            json!({"path":"/repo/pkg/a.py","operation":"references","symbolName":"get","lineHint":3}),
+            json!({"path":"/repo/pkg/a.py","operation":"references","symbolName":"get","line":3}),
         );
         let scope = Scope::new("/repo".into(), vec!["*.py".into(), "*.pyi".into()]);
         annotate(&mut row, &q, Some("python"), &scope);
-        let lead = &row["next"]["textSearch"]["query"]["queries"][0];
+        let lead = &row["next"]["findText"]["query"]["queries"][0];
         assert_eq!(lead["path"], "/repo", "{row}");
         assert_eq!(lead["include"], json!(["*.py", "*.pyi"]), "{row}");
     }

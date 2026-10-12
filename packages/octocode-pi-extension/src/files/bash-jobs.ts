@@ -1,29 +1,33 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import type { Socket } from 'node:net';
 import path from 'node:path';
 import { SettingsManager, getAgentDir, getShellConfig, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { PRIVATE_FILE_MODE, privateDir, sessionOutputDir } from '../shared/home.js';
 import { formatDuration, shortPath } from '../shared/format.js';
-import { killTree } from '../shared/process.js';
+import { groupAlive, killTree, stopTree } from '../shared/process.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { capOutput, errorMessage, firstLine } from '../shared/util.js';
 
 /**
  * Background shell jobs for the `bash` tool (bash.ts): each runs in its own process group, with the user's Pi shell,
- * command prefix and Pi's environment, writing to a size-capped log in the session's `bash/` folder.
+ * command prefix and Pi's environment. Its output comes back through pipes and Pi writes it to a size-capped,
+ * rotating log in the session's `bash/` folder.
  */
 
 /** Background jobs running at once; more are refused. */
-export const MAX_BASH_JOBS = 8;
+const MAX_BASH_JOBS = 8;
 /** The longest timer Node keeps (2^31-1 ms), in whole seconds. */
 export const MAX_TIMER_SECONDS = 2_147_483;
 /** Output tail a finished job reports back. */
 const TAIL_BYTES = 4 * 1024;
 const TAIL_LINES = 40;
-/** A job log past this size drops its older output (keeping the tail), so a chatty server cannot fill the disk. */
-export const MAX_JOB_LOG_BYTES = 16 * 1024 * 1024;
-/** How often a running job's log size is checked, in ms. */
-const LOG_CHECK_MS = 2_000;
+/** A job log past this size moves to `<log>.1` (replacing the one before) and starts over, so a chatty server cannot fill the disk. */
+const MAX_JOB_LOG_BYTES = 16 * 1024 * 1024;
+/** After the job's process group is gone, how long its pipes may take to deliver the last output, in ms. */
+const DRAIN_MS = 1_000;
+/** How often a job whose shell exited checks whether children it left in its group are still running, in ms. */
+const GROUP_POLL_MS = 250;
 export const JOB_TYPE = 'octocode-bash-job';
 /** The user's Pi shell settings that every command runs with. */
 export interface ShellSettings {
@@ -48,16 +52,74 @@ export function prefixed(command: string, commandPrefix?: string): string {
   return commandPrefix ? `${commandPrefix}\n${command}` : command;
 }
 
-/** Keeps a log under `max` bytes: past it, the log restarts with a note and its last part. */
-export function capLog(file: string, max = MAX_JOB_LOG_BYTES): void {
-  try {
-    if (fs.statSync(file).size <= max) return;
-    const tail = logTail(file, Math.min(64 * 1024, Math.floor(max / 2)));
-    // The job writes with O_APPEND, so after the truncation its next write lands at the new end.
-    fs.truncateSync(file, 0);
-    fs.appendFileSync(file, `[earlier output dropped: the log passed ${Math.round(max / 1024 / 1024)} MB]\n${tail}`);
-  } catch {
-    // The log is gone.
+/**
+ * A job's log. Only Pi writes it (the job's output arrives through pipes), so rotation can neither lose nor reorder
+ * output: once the log would pass `max` bytes it moves to `<log>.1`, replacing the previous one, and a new log starts
+ * with a note naming it. Writes never throw: a log that cannot be written stops recording.
+ */
+class JobLog {
+  private fd: number | undefined;
+  private size = 0;
+  private rotations = 0;
+  /** Bytes of the rotation note at the head of the current log: a log holding only the note has no output to move. */
+  private header = 0;
+
+  constructor(
+    readonly file: string,
+    private readonly max: number,
+  ) {
+    this.fd = fs.openSync(file, 'a', PRIVATE_FILE_MODE);
+  }
+
+  write(data: string | Buffer): void {
+    if (this.fd === undefined) return;
+    const chunk = typeof data === 'string' ? Buffer.from(data) : data;
+    try {
+      let rest = chunk;
+      while (rest.length > 0) {
+        const room = this.max - this.size;
+        if (rest.length <= room) {
+          this.append(rest);
+          break;
+        }
+        // Fill the log up to its last whole line that fits; a line longer than an empty log is cut at the cap.
+        const fits = room > 0 ? rest.subarray(0, room).lastIndexOf(0x0a) + 1 : 0;
+        const take = fits > 0 ? fits : this.size > this.header ? 0 : Math.max(room, 1);
+        if (take > 0) this.append(rest.subarray(0, take));
+        rest = rest.subarray(take);
+        if (rest.length > 0) this.rotate();
+      }
+    } catch {
+      this.close();
+    }
+  }
+
+  close(): void {
+    if (this.fd === undefined) return;
+    try {
+      fs.closeSync(this.fd);
+    } catch {
+      // Already closed.
+    }
+    this.fd = undefined;
+  }
+
+  private append(chunk: Buffer): void {
+    for (let offset = 0; offset < chunk.length; ) offset += fs.writeSync(this.fd!, chunk, offset);
+    this.size += chunk.length;
+  }
+
+  private rotate(): void {
+    fs.closeSync(this.fd!);
+    this.fd = undefined;
+    fs.renameSync(this.file, `${this.file}.1`);
+    this.fd = fs.openSync(this.file, 'a', PRIVATE_FILE_MODE);
+    this.size = 0;
+    this.rotations++;
+    const older = this.rotations > 1 ? '; older output was dropped' : '';
+    const note = Buffer.from(`[earlier output is in ${path.basename(this.file)}.1${older}]\n`);
+    this.append(note);
+    this.header = note.length;
   }
 }
 
@@ -152,27 +214,22 @@ export class BashJobs {
     const id = `bash-${++this.next}`;
     // Job ids restart with each extension instance (a /reload), so the start time keeps an earlier log.
     const log = path.join(dir, `${id}-${Date.now()}.log`);
-    // Append mode, so capLog can truncate the file under the running job.
-    const out = fs.openSync(log, 'a', PRIVATE_FILE_MODE);
+    const output = new JobLog(log, maxLogBytes);
     const shell = getShellConfig(settings.shellPath);
     const viaStdin = shell.commandTransport === 'stdin';
     const script = prefixed(command, settings.commandPrefix);
-    let child;
-    try {
-      child = spawn(shell.shell, viaStdin ? shell.args : [...shell.args, script], {
-        cwd,
-        env,
-        detached: process.platform !== 'win32',
-        stdio: [viaStdin ? 'pipe' : 'ignore', out, out],
-        windowsHide: true,
-      });
-    } finally {
-      fs.closeSync(out);
-    }
+    const child = spawn(shell.shell, viaStdin ? shell.args : [...shell.args, script], {
+      cwd,
+      env,
+      detached: process.platform !== 'win32',
+      stdio: [viaStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
     if (child.pid === undefined) {
       // Spawning failed (no shell, EAGAIN, EMFILE): the 'error' event that follows names the cause. Nothing ran, so
       // the empty log goes too.
       const cause = await new Promise<unknown>((resolve) => child.once('error', resolve));
+      output.close();
       fs.rmSync(log, { force: true });
       throw new Error(`Could not start a background shell (${shell.shell}): ${errorMessage(cause)}. Nothing is running.`);
     }
@@ -180,24 +237,43 @@ export class BashJobs {
       child.stdin?.on('error', () => undefined);
       child.stdin?.end(script);
     }
-    // The job must not keep a print run's process alive; session_shutdown stops it.
+    // The job, and its output pipes, must not keep a print run's process alive; session_shutdown stops it.
     child.unref();
+    const pipes = [child.stdout, child.stderr].filter((pipe) => pipe !== null) as Socket[];
+    const drained = Promise.all(pipes.map((pipe) => new Promise<void>((resolve) => pipe.once('close', () => resolve()))));
+    for (const pipe of pipes) {
+      pipe.on('data', (chunk: Buffer) => output.write(chunk));
+      pipe.on('error', () => undefined);
+      pipe.unref();
+    }
     const startedAt = Date.now();
     let timer: NodeJS.Timeout | undefined;
-    const sizeCheck = setInterval(() => capLog(log, maxLogBytes), LOG_CHECK_MS);
-    sizeCheck.unref();
     const done = new Promise<JobExit>((resolve) => {
+      let finished = false;
       const finish = (code: number | null, signal: NodeJS.Signals | null) => {
+        if (finished) return;
+        finished = true;
         if (timer) clearTimeout(timer);
-        clearInterval(sizeCheck);
-        capLog(log, maxLogBytes);
-        resolve({ code, signal, seconds: Math.round((Date.now() - startedAt) / 1000) });
+        // The pipes close once every writer is gone; a process that left the group may hold them open forever.
+        void Promise.race([drained, new Promise((settle) => setTimeout(settle, DRAIN_MS).unref())]).then(() => {
+          for (const pipe of pipes) pipe.destroy();
+          output.close();
+          resolve({ code, signal, seconds: Math.round((Date.now() - startedAt) / 1000) });
+        });
       };
       child.once('error', (error) => {
-        fs.appendFileSync(log, `\n${errorMessage(error)}\n`);
+        output.write(`\n${errorMessage(error)}\n`);
         finish(null, null);
       });
-      child.once('exit', finish);
+      // The shell can exit while children it started (`server &`) still run in its group and write to the log: the
+      // job lasts until the group is gone, so they stay capped, stoppable and stopped at session end.
+      child.once('exit', (code, signal) => {
+        const wait = (): void => {
+          if (groupAlive(child.pid)) setTimeout(wait, GROUP_POLL_MS).unref();
+          else finish(code, signal);
+        };
+        wait();
+      });
     });
     const job: BashJob = { id, command, cwd, pid: child.pid, log, startedAt, ...(timeout ? { timeout } : {}), done };
     if (timeout) {
@@ -221,8 +297,11 @@ export class BashJobs {
     return true;
   }
 
-  stopAll(reason: NonNullable<BashJob['stopped']>): void {
-    for (const id of [...this.jobs.keys()]) this.stop(id, reason);
+  /** Stops every job; resolves once each tree that outlived SIGTERM got SIGKILL (Pi may exit right after). */
+  async stopAll(reason: NonNullable<BashJob['stopped']>): Promise<void> {
+    const jobs = [...this.jobs.values()];
+    for (const job of jobs) job.stopped ??= reason;
+    await Promise.all(jobs.map((job) => stopTree(job.pid)));
   }
 
   /**

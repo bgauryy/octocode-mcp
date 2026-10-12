@@ -43,8 +43,9 @@
     "node": "^24.15.0"
   },
   "dependencies": {
+    "@earendil-works/pi-mcp": "^0.99.2",
     "chrome-launcher": "^1.2.1",
-    "octocode-mcp": "19.1.0"
+    "octocode-mcp": "latest"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.99.2",

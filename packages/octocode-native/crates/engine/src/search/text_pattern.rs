@@ -57,9 +57,38 @@ pub fn validate_text_pattern(
     }
 }
 
+/// Whether `pattern` matches a line break, which the line-by-line search
+/// (multiline off, the default engine) rejects: it compiles as a regex but
+/// not under the `\n` line terminator that search sets.
+#[must_use]
+pub fn matches_line_break(pattern: &str, fixed_string: bool) -> bool {
+    let pattern = if fixed_string {
+        regex::escape(pattern)
+    } else {
+        pattern.to_owned()
+    };
+    RegexMatcherBuilder::new().build(&pattern).is_ok()
+        && RegexMatcherBuilder::new()
+            .crlf(true)
+            .line_terminator(Some(b'\n'))
+            .build(&pattern)
+            .is_err()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn line_breaks_are_named_only_where_the_line_search_rejects_them() {
+        assert!(matches_line_break("\\n", false));
+        assert!(matches_line_break("a\\nb", false));
+        assert!(matches_line_break("a\nb", true));
+        assert!(!matches_line_break("\\s+", false));
+        assert!(!matches_line_break("\\n", true));
+        assert!(!matches_line_break("(", false));
+        assert!(!matches_line_break("^fn ", false));
+    }
 
     #[test]
     fn validate_rejects_invalid_default_regex() {

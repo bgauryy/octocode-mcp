@@ -116,9 +116,13 @@ fn alias_path(home: &Path, owner: &str, repo: &str, endpoint: &str) -> PathBuf {
 /// The directory holding every checkout of `owner/repo`. GitHub owner/repo
 /// names are case-insensitive: Foo/Bar and foo/bar are one repository and
 /// must share one checkout.
+/// Root of every clone checkout under the cache home; local tools may read it.
+pub(crate) fn clones_root(home: &Path) -> PathBuf {
+    home.join("tmp").join("clone")
+}
+
 fn repo_dir(home: &Path, owner: &str, repo: &str) -> PathBuf {
-    home.join("tmp")
-        .join("clone")
+    clones_root(home)
         .join(owner.to_ascii_lowercase())
         .join(repo.to_ascii_lowercase())
 }
@@ -465,7 +469,7 @@ pub(super) fn evict(context: &CloneContext<'_>, protected: Option<&Path>) {
     let ttl = context.config.cache_ttl;
     let max_bytes = context.config.max_cache_size_bytes;
     let max_count = context.config.max_clone_count;
-    let base = home.join("tmp").join("clone");
+    let base = clones_root(home);
     let mut live = vec![];
     for branch in clone_entries(&base) {
         if context.path_policy.validate(&branch).is_err() {

@@ -4,14 +4,17 @@ import { octocodePrompt } from '../src/prompt.js';
 describe('prompt', () => {
   it('prefers Octocode MCP for research without contradicting Pi read/bash guidance or naming its tools', () => {
     const root = octocodePrompt({ octocode: true, profiles: [{ name: 'researcher', description: 'Reads code' }], canDelegate: true });
-    expect(root).toContain('Prefer Octocode MCP (`mcp__octocode__*`) for code search and research');
-    expect(root).toContain('GitHub repositories, PRs and history, package registries');
-    expect(root).toContain('`read` and bash stay right for known paths');
-    // Octocode wins over Pi's generic "Use bash for file operations like ls, rg, find" for code search.
-    expect(root).toContain('takes precedence over the generic rule to use bash for ls, rg or find');
+    expect(root).toContain('Use Octocode MCP (`mcp__octocode__*`) to check code before you rely on it, here or outside this repository');
+    // Triggers for local and external research.
+    expect(root).toMatch(/Here: where something is defined or used, who calls it/);
+    expect(root).toMatch(/Outside: how a dependency or library behaves, which API or version a package has, an upstream issue, PR, commit or release/);
+    // A missing or refusing server has a stated recovery.
+    expect(root).toContain('If an Octocode tool is missing or refuses a path, say so and fall back to shell search.');
+    // Octocode wins over Pi's generic "Use bash for file operations like ls, rg, find" for code search only.
+    expect(root).toContain('Use it instead of ls, rg, grep or find in bash.');
+    expect(root).toContain('Use `read` for a file you will edit, and bash for builds, tests, git and running commands.');
     expect(root).not.toContain('tool_search');
-    expect(octocodePrompt({ octocode: true, octocodeDeferred: true, profiles: [], canDelegate: true })).toContain('Load its GitHub and package registry tools with `tool_search`');
-    expect(root).not.toMatch(/instead of bash|instead of `read`/);
+    expect(root).not.toMatch(/instead of bash\b|instead of `read`/);
     // Pi's base prompt owns the identity and the skills rule.
     expect(root).not.toContain('You are Octocode');
     expect(root).not.toContain('SKILL.md');
@@ -35,42 +38,49 @@ describe('prompt', () => {
     expect(child).toContain('You cannot ask the user');
     expect(child).not.toContain('askUser');
     // Subagents load this extension too, so with Octocode connected they get the same preference.
-    expect(octocodePrompt({ octocode: true, profiles: [], canDelegate: false })).toContain('Prefer Octocode MCP');
+    expect(octocodePrompt({ octocode: true, profiles: [], canDelegate: false })).toContain('Use Octocode MCP');
   });
 
   it('hands results back without polling, choosing report, message or doc', () => {
     const root = octocodePrompt({ octocode: false, profiles: [], canDelegate: true });
-    expect(root).toContain('use `coordinate list` when current membership changes your next action');
+    // The coordinate tool guideline owns membership checks; the agent parameters own background and collaborate.
+    expect(root).not.toContain('coordinate list');
+    expect(root).not.toContain('`background: true`');
+    expect(root).not.toContain('collaborate: true');
     expect(root).not.toContain('Never poll a subagent');
-    expect(root).toContain('ask a writable profile for a doc');
+    expect(root).toContain('have a writable subagent save it as a Markdown doc under `.octocode/<topic>/`');
     // The agent tool description owns delegation mechanics: the limit, report delivery and report files.
     expect(root).not.toContain('Reports arrive automatically');
     expect(root).not.toMatch(/at most \d+ at a time/);
     expect(root).not.toContain('.octocode/tmp/agents/');
-    const writer = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: true, identity: { id: 'implementer-1a2b', parentId: 'lead-0001', scratch: '/repo/.octocode/tmp/agents/implementer-1a2b' } });
-    expect(writer).toContain('reaches `lead-0001` by itself');
-    expect(writer).toContain('`sendMessage` `lead-0001` only for a blocker');
-    expect(writer).toContain('a Markdown doc in `/repo/.octocode/tmp/agents/implementer-1a2b`');
-    expect(writer).toContain('substantial or reusable results');
-    expect(writer).toContain("A loaded skill's output path");
+    const writer = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: true });
+    expect(writer).toContain('reaches your parent by itself');
+    // The prompt owns whom to tell about a blocker, once; the sendMessage guideline owns how and when else to message.
+    for (const prompt of [writer, octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: false })]) {
+      expect(prompt.match(/`sendMessage` your parent the blocker/g)).toHaveLength(1);
+      expect(prompt).not.toContain('replyTo');
+    }
+    expect(writer).toContain('a Markdown doc in your scratch folder');
+    expect(writer).toContain('Scratch is cleared after a week');
+    expect(writer).not.toContain('reusable');
+    expect(root).toContain('its scratch folder is cleared after a week');
     expect(writer).not.toContain('over about 30 lines');
-    expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: true, identity: { id: 'i-1', scratch: `${process.cwd()}/.octocode/tmp/agents/i-1` } })).toContain('a Markdown doc in `.octocode/tmp/agents/i-1`');
-    const reader = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: false, identity: { id: 'researcher-1a2b', scratch: '/repo/.octocode/tmp/agents/researcher-1a2b' } });
-    expect(reader).toContain('a longer report is saved whole in `/repo/.octocode/tmp/agents/researcher-1a2b`');
+    const reader = octocodePrompt({ octocode: false, profiles: [], canDelegate: false, canWrite: false });
+    expect(reader).toContain('a longer report is saved whole in your scratch folder');
     expect(reader).not.toContain('Markdown doc');
-    expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: false })).toContain('under `.octocode/tmp/` in the repository');
-  });
-
-  it('offers background subagents', () => {
-    expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: true })).toContain('`background: true`');
+    // Nothing unique to one child enters the prompt: ids and paths arrive in its task, so siblings share a cached prefix.
+    for (const prompt of [writer, reader]) expect(prompt).not.toMatch(/\.octocode\/tmp|-[0-9a-f]{4}\b/);
   });
 
   it('gives a read-only agent one investigate-and-report rule instead of the rules about changing files', () => {
     const reader = octocodePrompt({ octocode: true, profiles: [], canDelegate: false, canWrite: false });
-    expect(reader).toContain('- Investigate and report; do not modify files.');
+    expect(reader).toContain('- Investigate and report; do not modify files. Shell and MCP tools can still write, so run only read-only commands');
+    expect(reader).not.toContain('a file you will edit');
+    expect(reader).toContain('Use `read` for files you know.');
     for (const rule of ['Make the smallest complete change', 'Never weaken or delete tests', 'When you changed files']) expect(reader).not.toContain(rule);
     const writer = octocodePrompt({ octocode: true, profiles: [], canDelegate: false, canWrite: true });
     expect(writer).not.toContain('do not modify files');
+    expect(writer).toContain('Use `read` for a file you will edit');
     for (const rule of ['Make the smallest complete change', 'Never weaken or delete tests', 'When you changed files']) expect(writer).toContain(rule);
   });
 });

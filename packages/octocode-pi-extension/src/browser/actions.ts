@@ -1,5 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { privateDir, sessionOutputDir } from '../shared/home.js';
 import { abortError, type BrowserSession } from './cdp.js';
 import { applyDownloads } from './emulation.js';
 
@@ -42,10 +44,9 @@ function nextEvent(page: Page, method: string, timeoutMs: number, signal?: Abort
   });
 }
 
-/** Sets `files` on the file input `[ref]`, or on the file chooser that clicking `[ref]` opens (an upload button). */
-export async function uploadFiles(page: Page, ref: number, element: string, files: string[] | undefined, cwd: string, signal?: AbortSignal): Promise<string> {
-  if (!files || files.length === 0) throw new Error('upload needs files (paths to attach)');
-  const paths = files.map((file) => path.resolve(cwd, file));
+/** Sets `paths` (absolute) on the file input `[ref]`, or on the file chooser that clicking `[ref]` opens (an upload button). */
+export async function uploadFiles(page: Page, ref: number, element: string, paths: readonly string[], signal?: AbortSignal): Promise<string> {
+  if (paths.length === 0) throw new Error('upload needs files (paths to attach)');
   const missing = paths.find((file) => !fs.statSync(file, { throwIfNoEntry: false })?.isFile());
   if (missing) throw new Error(`No such file: ${missing}`);
   const found = await page.send<{ result?: { objectId?: string } }>('Runtime.evaluate', { expression: element }, signal);
@@ -77,32 +78,39 @@ async function until(done: () => boolean, timeoutMs: number, signal?: AbortSigna
   while (!done()) {
     if (signal?.aborted) throw abortError(signal);
     if (Date.now() >= deadline) return false;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // An abort ends the pause early; the check above reports it.
+    await sleep(100, undefined, signal ? { signal } : undefined).catch(() => undefined);
   }
   return true;
 }
 
 /**
- * Turns downloads on (saved to `<cwd>/downloads`), optionally runs `click` to start one, waits for running downloads
- * to finish, and lists them.
+ * Turns downloads on (saved to the session's private `output/downloads` folder, not the workspace), optionally runs
+ * `click` to start one, waits for running downloads to finish, and lists them with the path of each saved file.
  */
-export async function download(session: BrowserSession, cwd: string, click: (() => Promise<void>) | undefined, signal?: AbortSignal, waitMs = 60_000): Promise<string> {
+export async function download(session: BrowserSession, click: (() => Promise<void>) | undefined, signal?: AbortSignal, waitMs = 60_000): Promise<string> {
   if (!session.downloadDir) {
-    const dir = path.join(cwd, 'downloads');
-    fs.mkdirSync(dir, { recursive: true });
+    const dir = privateDir(path.join(sessionOutputDir('output'), 'downloads'));
     await applyDownloads(session.page, dir, signal);
     // Set from now on: switchTo applies it to every tab the session moves to.
     session.downloadDir = dir;
   }
-  const before = session.downloads.size;
+  const before = new Set(session.downloads.keys());
   if (click) {
     await click();
-    await until(() => session.downloads.size > before, 5_000, signal);
+    await until(() => [...session.downloads.keys()].some((guid) => !before.has(guid)), 5_000, signal);
   }
   const running = () => [...session.downloads.values()].some((item) => item.state === 'inProgress');
   await until(() => !running(), waitMs, signal);
   const items = [...session.downloads.values()];
   if (items.length === 0) return `No downloads yet (saving to ${session.downloadDir}). Pass ref to click a download link.`;
   const state = { completed: 'saved', canceled: 'canceled', inProgress: 'still downloading' } as const;
-  return [`Downloads in ${session.downloadDir}:`, ...items.map((item) => `- ${item.name} · ${item.bytes} bytes · ${state[item.state] ?? item.state}`)].join('\n');
+  const dir = session.downloadDir;
+  const saved = (item: (typeof items)[number]) => {
+    if (item.state !== 'completed') return '';
+    // Chrome reports the path on current builds; otherwise the suggested name is where it saves (unless that was taken).
+    const file = item.path ?? path.join(dir, path.basename(item.name));
+    return fs.existsSync(file) ? ` · ${file}` : '';
+  };
+  return [`Downloads in ${dir}:`, ...items.map((item) => `- ${item.name} · ${item.bytes} bytes · ${state[item.state] ?? item.state}${saved(item)}`)].join('\n');
 }

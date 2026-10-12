@@ -38,7 +38,7 @@ Tree-sitter-backed. Two query forms: `pattern` (code-shaped, `$X`/`$$$ARGS` meta
 | Paths or file metadata | `structureSearch files` / `tree` | Filesystem result; no grammar required |
 | Syntax pattern or node kind | `astSearch match` | Native grammar; provide `language` for a directory, or let a file extension select it |
 | Parsed node tree | `astSearch syntaxTree` | Syntax only; does not resolve symbol identity |
-| Declaration outline | `astSearch symbols` | Native declarations; a row's `name`+`line` is `lspSearch` `symbolName`+`lineHint` as-is; read source for bodies and exact claims |
+| Declaration outline | `astSearch symbols` | Native declarations; a row's `symbolName`+`line` is the `lspSearch` anchor as-is; read source for bodies and exact claims |
 | Structural edit | `astRewrite` | Beta-gated preview and hash-guarded apply |
 | File links, cycles, reachability | `astTopology` | Syntax-derived candidate graph; confirm delete claims with LSP references/callers |
 | Definition, references, types, hover, implementations | `lspSearch definition/references/typeDefinition/hover/implementation` | Requires an installed server and its advertised capability; use an observed symbol anchor |

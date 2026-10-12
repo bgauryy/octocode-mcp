@@ -6,9 +6,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { buildMcpInstructions } from '@octocodeai/config/mcp';
 
-const [referenceServer, nativeServer, addon, regexWorker] = process.argv.slice(2);
-assert.ok(referenceServer && nativeServer && addon && regexWorker,
-  'usage: node response-pagination.mjs <reference> <native> <addon> <regex-worker>');
+const [referenceServer, nativeServer, addon] = process.argv.slice(2);
+assert.ok(referenceServer && nativeServer && addon,
+  'usage: node response-pagination.mjs <reference> <native> <addon>');
 
 const fixture = await mkdtemp(path.join(tmpdir(), 'octocode-native-mcp-'));
 const source = path.join(fixture, 'unicode.txt');
@@ -22,7 +22,6 @@ const env = {
   ALLOWED_PATHS: fixture,
   NODE_ENV: 'development',
   OCTOCODE_NATIVE_BINDING: addon,
-  OCTOCODE_REGEX_WORKER: regexWorker,
 };
 
 async function connect(server) {

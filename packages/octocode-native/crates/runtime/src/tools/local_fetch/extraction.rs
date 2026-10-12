@@ -1,5 +1,6 @@
 use super::types::{
-    LineRange, LocalFetchQuery, NextCalls, RegexMatch, RegexSpans, line_read, uncovered,
+    ExtractionError, ExtractionErrorKind, LineRange, LocalFetchQuery, NextCalls, RegexMatch,
+    RegexSpans, line_read, uncovered,
 };
 
 pub struct Extraction {
@@ -16,16 +17,13 @@ pub struct Extraction {
     /// The declarations a `block:true` match read widened hits to.
     pub blocks: Vec<super::types::DeclaredBlock>,
     /// A regex scan stopped at its match limit: the selection is a prefix
-    /// of the matches (warned, with a `textSearch` lead that pages them all;
-    /// the response delivers it as `hints.textSearch`).
+    /// of the matches (warned, with a `findText` lead that pages them all;
+    /// the response delivers it as `hints.findText`).
     pub match_limited: bool,
 }
 
-fn follow_up(query: LocalFetchQuery, why: &str) -> Option<super::types::Continuation> {
-    Some(super::types::Continuation {
-        query,
-        reason: Some(why.into()),
-    })
+fn follow_up(query: LocalFetchQuery) -> Option<super::types::Continuation> {
+    Some(super::types::Continuation { query })
 }
 /// A matched line longer than this (minified or bundled source) is read in
 /// byte windows unless the caller chose a context.
@@ -57,7 +55,7 @@ pub fn extract(
     q: &LocalFetchQuery,
     content: &str,
     regex: &impl RegexMatch,
-) -> Result<Extraction, String> {
+) -> Result<Extraction, ExtractionError> {
     let lines = content.split_inclusive('\n').collect::<Vec<_>>();
     let patterns = q.match_strings();
     if !patterns.is_empty() {
@@ -89,17 +87,11 @@ fn ranges_extract(
     content: &str,
     lines: &[&str],
     requested: &[LineRange],
-) -> Result<Extraction, String> {
+) -> Result<Extraction, ExtractionError> {
     let total = lines.len();
     let mut warnings = vec![];
     let mut kept: Vec<LineRange> = vec![];
     for range in requested {
-        if range.end < range.start {
-            return Err(format!(
-                "range {}-{} ends before it starts; use start-end with end >= start",
-                range.start, range.end
-            ));
-        }
         if range.start > total {
             warnings.push(format!(
                 "Range {}-{} starts past the file end ({total} lines); skipped.",
@@ -119,8 +111,9 @@ fn ranges_extract(
         });
     }
     if kept.is_empty() {
-        return Err(format!(
-            "Requested lines start past the file end ({total} lines)"
+        return Err(ExtractionError::new(
+            ExtractionErrorKind::InvalidInput,
+            format!("Requested lines start past the file end ({total} lines)"),
         ));
     }
     let mut rest = vec![];
@@ -156,14 +149,9 @@ fn ranges_extract(
             _ => Some(block),
         })
         .and_then(|block| line_read(q, &block_lead(block, &windows, span)))
-        .and_then(|query| follow_up(query, "Read the declaration this read cut."));
+        .and_then(follow_up);
     let next = NextCalls {
-        continue_block: line_read(q, &uncovered(&merge_ranges(rest), &windows)).and_then(|query| {
-            follow_up(
-                query,
-                "Read the rest of the declaration the block window stopped inside.",
-            )
-        }),
+        continue_block: line_read(q, &uncovered(&merge_ranges(rest), &windows)).and_then(follow_up),
         read_block,
         ..NextCalls::default()
     };
@@ -248,16 +236,17 @@ fn match_spans(
     content: &str,
     patterns: &[&str],
     regex: &impl RegexMatch,
-) -> Result<RegexSpans, String> {
+) -> Result<RegexSpans, ExtractionError> {
     let mut found = RegexSpans::default();
-    for pattern in patterns {
+    for (index, pattern) in patterns.iter().enumerate() {
         let sensitive = q.case_sensitive_for(pattern);
+        let name = |error| failing_item(error, index, pattern, patterns.len());
         let one = if q.is_pcre2() {
-            pcre2_ranges(pattern, sensitive, content)?
+            pcre2_ranges(pattern, sensitive, content).map_err(name)?
         } else if q.is_regex() {
-            regex.matching_ranges(pattern, sensitive, content).map_err(|error| {
-                if *pattern == "[" { "Invalid regex pattern: Invalid regular expression: /[/: Unterminated character class".to_owned() } else { error }
-            })?
+            regex
+                .matching_ranges(pattern, sensitive, content)
+                .map_err(name)?
         } else {
             RegexSpans {
                 spans: literal_ranges(content, pattern, sensitive),
@@ -265,7 +254,11 @@ fn match_spans(
             }
         };
         found.truncated |= one.truncated;
-        found.spans.extend(one.spans);
+        found.spans.extend(
+            one.spans
+                .into_iter()
+                .filter(|&(start, end)| !q.whole_word() || is_whole_word(content, start, end)),
+        );
     }
     if patterns.len() > 1 {
         found.spans.sort_unstable();
@@ -274,25 +267,58 @@ fn match_spans(
     Ok(found)
 }
 
+/// Whether the span `[start, end)` stands alone as a word: no word character
+/// (alphanumeric or `_`) touches either side, as in localSearch `wholeWord`.
+fn is_whole_word(content: &str, start: usize, end: usize) -> bool {
+    let word = |c: char| c.is_alphanumeric() || c == '_';
+    !content[..start].chars().next_back().is_some_and(word)
+        && !content[end..].chars().next().is_some_and(word)
+}
+
+/// A pattern that does not compile names its item, so the fix lands on the
+/// right entry of a list: `matchString[2] "def post("`.
+fn failing_item(
+    mut error: ExtractionError,
+    index: usize,
+    pattern: &str,
+    count: usize,
+) -> ExtractionError {
+    if error.kind != ExtractionErrorKind::InvalidPattern {
+        return error;
+    }
+    let item = if count > 1 {
+        format!("matchString[{index}]")
+    } else {
+        "matchString".to_owned()
+    };
+    let quoted = serde_json::to_string(pattern).unwrap_or_default();
+    error.detail = format!("{item} {quoted}: {}", error.detail);
+    error
+}
+
 /// Most matches one regex read records (`regex:"rust"` and `"pcre2"`). A
 /// scan that finds more stops here and says so: the read is partial and
-/// its `textSearch` lead (delivered as `hints.textSearch`) pages every match
+/// its `findText` lead (delivered as `hints.findText`) pages every match
 /// through localSearch.
 pub(super) const MAX_REGEX_MATCHES: usize = 100_000;
 
 /// `regex:"pcre2"` spans through the engine's deadline-bounded PCRE2 scan,
 /// with the read's error prefixes (`invalidPattern`, `executionFailed`).
-fn pcre2_ranges(pattern: &str, case_sensitive: bool, content: &str) -> Result<RegexSpans, String> {
+fn pcre2_ranges(
+    pattern: &str,
+    case_sensitive: bool,
+    content: &str,
+) -> Result<RegexSpans, ExtractionError> {
     use octocode_engine::portable::{Pcre2RangesError, pcre2_find_ranges};
     // One probe past the limit tells a capped prefix from the whole set.
     let probe = MAX_REGEX_MATCHES + 1;
     let mut spans = pcre2_find_ranges(pattern, !case_sensitive, content, probe).map_err(
         |error| match error {
             Pcre2RangesError::InvalidPattern(message) => {
-                format!("Invalid regex pattern: {message}")
+                ExtractionError::new(ExtractionErrorKind::InvalidPattern, message)
             }
             Pcre2RangesError::Unavailable(message) => {
-                format!("Regex execution unavailable: {message}")
+                ExtractionError::new(ExtractionErrorKind::ExecutionFailed, message)
             }
         },
     )?;
@@ -303,6 +329,32 @@ fn pcre2_ranges(pattern: &str, case_sensitive: bool, content: &str) -> Result<Re
 
 /// 1-based lines any span touches: every line of a multiline match, not
 /// just its start. A match ending at the next line's start does not touch it.
+/// Each requested range clamped to the file, with its byte span in
+/// `lines`' source: where a region grep counts hits.
+fn region_bytes(lines: &[&str], ranges: &[LineRange]) -> Vec<(LineRange, (usize, usize))> {
+    let mut starts = Vec::with_capacity(lines.len() + 1);
+    let mut offset = 0;
+    for line in lines {
+        starts.push(offset);
+        offset += line.len();
+    }
+    starts.push(offset);
+    ranges
+        .iter()
+        .filter(|range| range.start <= lines.len())
+        .map(|range| {
+            let end = range.end.min(lines.len());
+            (
+                LineRange {
+                    start: range.start,
+                    end,
+                },
+                (starts[range.start - 1], starts[end]),
+            )
+        })
+        .collect()
+}
+
 fn hit_lines(lines: &[&str], spans: &[(usize, usize)]) -> Vec<usize> {
     let mut hits = vec![];
     let mut line_start = 0;
@@ -377,19 +429,14 @@ fn finish_cut_declarations(
             .next()
             .filter(|top| bytes(top) <= READ_BLOCK_MAX_BYTES)?
     };
-    let why = if read.len() > 1 {
-        "Read the declarations the hit windows cut."
-    } else {
-        "Read the top hit's declaration."
-    };
-    line_read(q, &read).and_then(|query| follow_up(query, why))
+    line_read(q, &read).and_then(follow_up)
 }
 
 /// Largest read a cut-declaration lead points at.
 const READ_BLOCK_MAX_BYTES: usize = 32 * 1024;
 
-/// Most bytes of whole lines a default match window (no `contextLines`, no
-/// `contextBytes`) shows around each hit: long-line sources get fewer
+/// Most bytes of whole lines a default match window (no `contextLines`)
+/// shows around each hit: long-line sources get fewer
 /// lines, and `next.expandContext` shows the full default window.
 const MATCH_WINDOW_BYTES: usize = 2 * 1024;
 
@@ -430,27 +477,22 @@ fn expand_context_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation
     wide.unit = None;
     wide.length = None;
     wide.snapshot = None;
-    follow_up(
-        wide,
-        &format!("Show the full ±{DEFAULT_MATCH_CONTEXT_LINES}-line window around each hit."),
-    )
+    follow_up(wide)
 }
 
 /// The whole matched lines a long-line match showed only byte windows of.
 fn whole_lines_lead(q: &LocalFetchQuery) -> Option<super::types::Continuation> {
     let mut whole = q.clone();
     whole.context_lines = Some(0);
-    whole.context_bytes = None;
     whole.offset = None;
     whole.unit = None;
     whole.length = None;
     whole.snapshot = None;
-    follow_up(whole, "Read the whole matched lines, paged.")
+    follow_up(whole)
 }
 
-/// Lines shown around each `matchString` hit when `contextLines` is unset
-/// (and no `contextBytes` window replaces them): contract
-/// `limits.defaultReadContextLines`.
+/// Lines shown around each `matchString` hit when `contextLines` is unset:
+/// contract `limits.defaultReadContextLines`.
 pub(crate) const DEFAULT_MATCH_CONTEXT_LINES: usize = crate::tools::id::DEFAULT_READ_CONTEXT_LINES;
 
 fn match_extract(
@@ -459,9 +501,37 @@ fn match_extract(
     lines: &[&str],
     patterns: &[&str],
     regex: &impl RegexMatch,
-) -> Result<Extraction, String> {
-    let RegexSpans { spans, truncated } = match_spans(q, content, patterns, regex)?;
+) -> Result<Extraction, ExtractionError> {
+    let RegexSpans {
+        mut spans,
+        truncated,
+    } = match_spans(q, content, patterns, regex)?;
+    // With `ranges`, only hits inside them count, and their windows stay
+    // inside the range that holds them.
+    let regions = region_bytes(lines, &q.line_ranges());
+    if q.has_ranges() {
+        if regions.is_empty() {
+            return Err(ExtractionError::new(
+                ExtractionErrorKind::InvalidInput,
+                format!(
+                    "Requested lines start past the file end ({} lines)",
+                    lines.len()
+                ),
+            ));
+        }
+        spans.retain(|(start, _)| {
+            regions
+                .iter()
+                .any(|(_, (from, to))| (*from..*to).contains(start))
+        });
+    }
     let hits = hit_lines(lines, &spans);
+    let region_of = |line: usize| {
+        regions
+            .iter()
+            .map(|(range, _)| range)
+            .find(|range| (range.start..=range.end).contains(&line))
+    };
     // The last line the capped scan reached: matches after it went unseen.
     let limit_line = truncated.then(|| hits.last().copied()).flatten();
     if hits.is_empty() {
@@ -479,20 +549,16 @@ fn match_extract(
             match_limited: false,
         });
     }
-    let context = q.context_lines().unwrap_or(if q.context_bytes().is_none() {
-        DEFAULT_MATCH_CONTEXT_LINES
-    } else {
-        0
-    });
+    let context = q.context_lines().unwrap_or(DEFAULT_MATCH_CONTEXT_LINES);
     let mut warnings = vec![];
     // An unset context sizes each window by bytes as well as lines, so a
     // long-line (minified) source does not return kilobytes per hit.
-    let default_window = q.context_lines().is_none() && q.context_bytes().is_none();
+    let default_window = q.context_lines().is_none();
     let mut narrowed = false;
     let windows: Vec<LineRange> = hits
         .iter()
         .map(|&line| {
-            if default_window {
+            let window = if default_window {
                 let (window, cut) = byte_bounded_window(lines, line, context);
                 narrowed |= cut;
                 window
@@ -501,12 +567,19 @@ fn match_extract(
                     start: line.saturating_sub(context).max(1),
                     end: (line + context).min(lines.len()),
                 }
+            };
+            match region_of(line) {
+                Some(region) => LineRange {
+                    start: window.start.max(region.start),
+                    end: window.end.min(region.end),
+                },
+                None => window,
             }
         })
         .collect();
     let mut oversized = vec![];
     let mut blocks = vec![];
-    let windows = if q.block() && q.context_bytes().is_none() {
+    let windows = if q.block() {
         super::block::widen_matches(
             content,
             q.path(),
@@ -521,16 +594,10 @@ fn match_extract(
     };
     let mut ranges = merge_ranges(windows);
     let mut next = NextCalls {
-        read_block: line_read(q, &first_unseen(oversized, &ranges)).and_then(|query| {
-            follow_up(
-                query,
-                "Read the top hit's declaration too large for a block window, minus the lines shown.",
-            )
-        }),
+        read_block: line_read(q, &first_unseen(oversized, &ranges)).and_then(follow_up),
         ..NextCalls::default()
     };
     if !q.block()
-        && q.context_bytes().is_none()
         && q.context_lines() != Some(0)
         && !hits
             .iter()
@@ -543,7 +610,6 @@ fn match_extract(
     let (mut text, mut selected) = windows_text(lines, &ranges);
     let long_lines = !q.block()
         && q.context_lines().is_none()
-        && q.context_bytes().is_none()
         && hits
             .iter()
             .any(|line| lines[line - 1].len() > LONG_LINE_BYTES);
@@ -565,7 +631,7 @@ fn match_extract(
     }
     if long_lines {
         warnings.push(format!(
-            "longMatchedLines: a matched line exceeds {LONG_LINE_BYTES} bytes (minified source), so each match is shown with {LONG_LINE_CONTEXT_BYTES} bytes of context; `... [N bytes omitted] ...` marks gaps; contextBytes resizes the windows."
+            "longMatchedLines: a matched line exceeds {LONG_LINE_BYTES} bytes (minified source), so each match is shown with {LONG_LINE_CONTEXT_BYTES} bytes of context; `... [N bytes omitted] ...` marks gaps."
         ));
         next.whole_lines = whole_lines_lead(q);
     }
@@ -575,11 +641,8 @@ fn match_extract(
         ));
         next.text_search = match_limit_lead(q, patterns);
     }
-    if let Some(bytes) = q
-        .context_bytes()
-        .or(long_lines.then_some(LONG_LINE_CONTEXT_BYTES))
-    {
-        (text, selected) = byte_windows(content, spans, bytes);
+    if long_lines {
+        (text, selected) = byte_windows(content, spans, LONG_LINE_CONTEXT_BYTES);
         ranges = super::executor::compress_ranges(&selected);
     }
     Ok(Extraction {
@@ -598,50 +661,83 @@ fn match_extract(
 }
 
 /// A localSearch over the same file and pattern(s): it streams and pages
-/// every match, past the read's in-process match limit. Several patterns
-/// join as one alternation, each keeping its own case rule.
+/// every match, past the read's in-process match limit.
 fn match_limit_lead(q: &LocalFetchQuery, patterns: &[&str]) -> Option<serde_json::Value> {
+    search_lead(q, q.path(), patterns)
+}
+
+/// A localSearch under `path` for exactly what the read looked for, so the
+/// lead never matches more than the read would: the regex dialect, each
+/// pattern's case rule and `wholeWord` carry over. Several patterns join as
+/// one alternation, each keeping its own case rule; literal ones are
+/// escaped first.
+pub(super) fn search_lead(
+    q: &LocalFetchQuery,
+    path: &str,
+    patterns: &[&str],
+) -> Option<serde_json::Value> {
     use crate::tools::id::ToolId;
-    let sensitive = |pattern: &&str| q.case_sensitive_for(pattern);
-    let (text, case_mode) = match patterns {
-        [one] => (
-            (*one).to_owned(),
-            if sensitive(one) {
-                "sensitive"
-            } else {
-                "insensitive"
-            },
-        ),
-        _ => (
-            patterns
+    let dialect = if q.is_pcre2() { "pcre2" } else { "rust" };
+    let case = |pattern: &str| {
+        if q.case_sensitive_for(pattern) {
+            "sensitive"
+        } else {
+            "insensitive"
+        }
+    };
+    let mut row = match patterns {
+        [] => return None,
+        [one] => {
+            let mut row = serde_json::json!({
+                "path": path,
+                "matchString": one,
+                "caseMode": case(one),
+            });
+            if q.is_regex() {
+                row["regex"] = serde_json::json!(dialect);
+            }
+            row
+        }
+        many => {
+            let alternation = many
                 .iter()
                 .map(|pattern| {
-                    let flag = if sensitive(pattern) { "" } else { "i" };
-                    format!("(?{flag}:{pattern})")
+                    let flag = if q.case_sensitive_for(pattern) {
+                        ""
+                    } else {
+                        "i"
+                    };
+                    let source = if q.is_regex() {
+                        (*pattern).to_owned()
+                    } else {
+                        regex::escape(pattern)
+                    };
+                    format!("(?{flag}:{source})")
                 })
                 .collect::<Vec<_>>()
-                .join("|"),
-            "sensitive",
-        ),
+                .join("|");
+            serde_json::json!({
+                "path": path,
+                "matchString": alternation,
+                "regex": dialect,
+                "caseMode": "sensitive",
+            })
+        }
     };
-    let regex = if q.is_pcre2() { "pcre2" } else { "rust" };
-    let row = serde_json::json!({
-        "path": q.path(),
-        "matchString": text,
-        "regex": regex,
-        "caseMode": case_mode,
-    });
-    Some(
-        crate::tools::result::Continuation::new(ToolId::LocalSearch, row)
-            .why("Page every match of the pattern in this file.")
-            .build(),
-    )
+    if q.whole_word() {
+        row["wholeWord"] = serde_json::json!(true);
+    }
+    Some(crate::tools::result::Continuation::new(ToolId::LocalSearch, row).build())
 }
 
 /// Byte windows of `bytes` around each match span, with `... [N bytes
 /// omitted] ...` between them (and, for long lines, before the first and
 /// after the last): the text and the source line of every view line.
-fn byte_windows(content: &str, spans: Vec<(usize, usize)>, bytes: usize) -> (String, Vec<usize>) {
+pub(super) fn byte_windows(
+    content: &str,
+    spans: Vec<(usize, usize)>,
+    bytes: usize,
+) -> (String, Vec<usize>) {
     let mut text = String::new();
     let mut last_end = 0;
     let mut selected = Vec::new();
@@ -707,7 +803,7 @@ fn byte_windows(content: &str, spans: Vec<(usize, usize)>, bytes: usize) -> (Str
 /// change byte length (e.g. İ → i + combining dot), so folded offsets must
 /// never be used to slice the source. Only length-changing characters need
 /// an entry in the offset map; ordinary text keeps an empty map.
-fn literal_ranges(content: &str, pattern: &str, sensitive: bool) -> Vec<(usize, usize)> {
+pub(super) fn literal_ranges(content: &str, pattern: &str, sensitive: bool) -> Vec<(usize, usize)> {
     if sensitive {
         return content
             .match_indices(pattern)

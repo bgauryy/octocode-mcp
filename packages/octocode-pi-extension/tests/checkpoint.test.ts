@@ -316,6 +316,8 @@ function host(cwd: string, sessionId = 'session/1', header?: { parentSession?: s
   } as never;
   const labels = new Map<string, string>();
   const guard = new FileGuard();
+  // These tests are about checkpoints: the agent has read the workspace files it changes (the guard requires it).
+  for (const name of fs.readdirSync(cwd)) guard.record(path.join(cwd, name));
   const checkpoints = new Checkpoints();
   registerFileTool(pi, guard, undefined, checkpoints);
   const forgotten: string[] = [];
@@ -564,22 +566,27 @@ describe('/rewind and the fork offer', () => {
     await handlers.get('agent_start')!({}, ctx);
     const sync = vi.spyOn(fs, 'readFileSync');
     const promised = vi.spyOn(fs.promises, 'readFile');
+    // The compare-and-swap streams its hash.
+    const streamed = vi.spyOn(fs, 'createReadStream');
     const real = fs.realpathSync(file);
-    const reads = () => [...sync.mock.calls, ...promised.mock.calls].filter(([target]) => [file, real].includes(String(target))).length;
+    const reads = () => [...sync.mock.calls, ...promised.mock.calls, ...streamed.mock.calls].filter(([target]) => [file, real].includes(String(target))).length;
     try {
       await edit('one', 'two');
       expect(reads()).toBe(2);
       sync.mockClear();
       promised.mockClear();
+      streamed.mockClear();
       await run([{ reasoning: 'r', type: 'write', path: 'a.txt', content: 'three' }]);
       expect(reads()).toBe(2);
       sync.mockClear();
       promised.mockClear();
+      streamed.mockClear();
       await run([{ reasoning: 'r', type: 'delete', path: 'a.txt' }]);
       expect(reads()).toBe(2);
     } finally {
       sync.mockRestore();
       promised.mockRestore();
+      streamed.mockRestore();
     }
     expect(fs.existsSync(file)).toBe(false);
   });

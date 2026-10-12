@@ -1,11 +1,8 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { launch, type LaunchedChrome } from 'chrome-launcher';
+import type { LaunchedChrome } from 'chrome-launcher';
 import { BROWSER_VISIBLE_ENV, envFlag, envInt } from '../shared/env.js';
-import { HOME_NAMES, outputDir, sweepDeadOutputs } from '../shared/home.js';
-import { processAlive } from '../shared/process.js';
-import { withTimeout } from '../shared/util.js';
+import { errorMessage, withTimeout } from '../shared/util.js';
 import { applyDownloads, applyLocale } from './emulation.js';
+import { launchChrome, persistentProfileDir, profileLocked, profilePort, recordProfilePort } from './launch.js';
 
 /** The error an aborted browser operation rejects with: the signal's own reason when it is an Error. */
 export const abortError = (signal: AbortSignal): Error => (signal.reason instanceof Error ? signal.reason : new Error('Aborted'));
@@ -169,12 +166,21 @@ export interface BrowserSession {
   /** Closes the tab this session opened in a Chrome it attached to. */
   closeTab?: () => Promise<void>;
   console: string[];
+  /** Checks every document (page or frame) request the driven page makes; a rejection fails the request. */
+  guard?: NavigationGuard;
+  /** Why the guard last failed a request, until an action reports it. */
+  blocked?: string;
 }
+
+/** Resolves when a page may load `url`; rejects (with the reason) when it may not. */
+export type NavigationGuard = (url: string) => Promise<void>;
 
 export interface Download {
   name: string;
   state: 'inProgress' | 'completed' | 'canceled';
   bytes: number;
+  /** Where Chrome saved the file, once it reports the path. */
+  path?: string;
 }
 
 export interface PageTarget {
@@ -189,61 +195,8 @@ interface OpenOptions {
   port?: number;
   /** Drive the browser's existing page instead of opening a tab (a browser someone else is showing in a window). */
   reuseTab?: boolean;
-}
-
-/** The persistent profile visible mode uses: `<Octocode home>/pi-browser-profile`. */
-const persistentProfileDir = (env: NodeJS.ProcessEnv): string => outputDir(HOME_NAMES.browserProfile, env);
-
-/**
- * A launched Chrome's profile folder: `profile` (kept) or a fresh one under `<Octocode home>/pi-browser/` (not the
- * temp dir) that is removed when it closes.
- */
-async function launchChrome(headless: boolean, profile?: string): Promise<LaunchedChrome> {
-  // Headless Chrome defaults to an 800x600 window, where many sites collapse into a mobile layout (no search box).
-  const flags = [...(headless ? ['--headless=new', '--window-size=1366,900'] : []), '--no-first-run', '--no-default-browser-check'];
-  if (profile) return launch({ startingUrl: 'about:blank', userDataDir: profile, chromeFlags: flags });
-  const root = outputDir(HOME_NAMES.browser);
-  sweepDeadOutputs(root, 0);
-  const userDataDir = fs.mkdtempSync(path.join(root, `${process.pid}-`));
-  let chrome: LaunchedChrome;
-  try {
-    chrome = await launch({ startingUrl: 'about:blank', userDataDir, chromeFlags: flags });
-  } catch (error) {
-    fs.rmSync(userDataDir, { recursive: true, force: true });
-    throw error;
-  }
-  const kill = chrome.kill.bind(chrome);
-  chrome.kill = async () => {
-    try {
-      await kill();
-    } finally {
-      fs.rmSync(userDataDir, { recursive: true, force: true, maxRetries: 5 });
-    }
-  };
-  return chrome;
-}
-
-/** The DevTools port of a Chrome already running on `profile`, from the DevToolsActivePort file Chrome writes there. */
-async function profilePort(profile: string): Promise<number | undefined> {
-  let port: number;
-  try {
-    port = Number(fs.readFileSync(path.join(profile, 'DevToolsActivePort'), 'utf8').split('\n')[0]);
-  } catch {
-    return undefined;
-  }
-  if (!Number.isInteger(port) || port <= 0) return undefined;
-  const ok = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1_000) }).then((r) => r.ok, () => false);
-  return ok ? port : undefined;
-}
-
-/** Chrome's SingletonLock (a `<host>-<pid>` symlink) names a live process: another Chrome owns the profile. */
-function profileLocked(profile: string): boolean {
-  try {
-    const pid = Number(fs.readlinkSync(path.join(profile, 'SingletonLock')).split('-').pop());
-    return Number.isInteger(pid) && pid > 0 && processAlive(pid);
-  } catch {
-    return false;
-  }
+  /** Checks each document request of every page the session drives (links, redirects, script navigations, frames). */
+  guard?: NavigationGuard;
 }
 
 export async function openBrowser(env: NodeJS.ProcessEnv = process.env, options: OpenOptions = {}): Promise<BrowserSession> {
@@ -279,9 +232,10 @@ export async function openBrowser(env: NodeJS.ProcessEnv = process.env, options:
     headless = !profile && envFlag(env, 'OCTOCODE_BROWSER_HEADLESS', true);
     chrome = await launchChrome(headless, profile);
     onProfile = profile !== undefined;
-    // Chrome writes this file only for port 0; chrome-launcher picks a fixed port, so record it for the next run.
-    if (profile) fs.writeFileSync(path.join(profile, 'DevToolsActivePort'), `${chrome.port}\n`);
     try {
+      // Chrome writes this file only for port 0; chrome-launcher picks a fixed port, so record it (in Chrome's format)
+      // for the next run.
+      if (profile) await recordProfilePort(profile, chrome.port);
       target = await firstPage(chrome.port);
     } catch (error) {
       await chrome.kill();
@@ -292,9 +246,8 @@ export async function openBrowser(env: NodeJS.ProcessEnv = process.env, options:
   try {
     page = await CdpPage.connect(target.webSocketDebuggerUrl);
     const kind = chrome ? 'own' : options.reuseTab ? 'attached' : 'shared';
-    const session = startSession(page, target.id, { port: chrome?.port ?? port, kind, chrome, headless, closeTab, profile: onProfile ? profile : undefined });
-    await Promise.all([page.send('Page.enable'), page.send('Runtime.enable')]);
-    await applyLocale(page, env);
+    const session = startSession(page, target.id, { port: chrome?.port ?? port, kind, chrome, headless, closeTab, profile: onProfile ? profile : undefined, guard: options.guard });
+    await preparePage(session, page, env);
     return session;
   } catch (error) {
     // Nothing owns the tab or the Chrome yet: release them instead of leaking a process or a tab.
@@ -310,7 +263,13 @@ export function sharedChromePort(env: NodeJS.ProcessEnv): number | undefined {
   return env['OCTOCODE_CHROME_PORT']?.trim() ? envInt(env, 'OCTOCODE_CHROME_PORT', 9222, { min: 1, max: 65_535 }) : undefined;
 }
 
-type SessionParts = Pick<BrowserSession, 'port' | 'kind'> & { chrome?: LaunchedChrome | undefined; headless?: boolean | undefined; closeTab?: (() => Promise<void>) | undefined; profile?: string | undefined };
+type SessionParts = Pick<BrowserSession, 'port' | 'kind'> & {
+  chrome?: LaunchedChrome | undefined;
+  headless?: boolean | undefined;
+  closeTab?: (() => Promise<void>) | undefined;
+  profile?: string | undefined;
+  guard?: NavigationGuard | undefined;
+};
 
 function startSession(page: CdpPage, targetId: string, parts: SessionParts): BrowserSession {
   const session: BrowserSession = { page, targetId, port: parts.port, kind: parts.kind, console: [], downloads: new Map() };
@@ -318,8 +277,50 @@ function startSession(page: CdpPage, targetId: string, parts: SessionParts): Bro
   if (parts.headless !== undefined) session.headless = parts.headless;
   if (parts.closeTab) session.closeTab = parts.closeTab;
   if (parts.profile) session.profile = parts.profile;
+  if (parts.guard) session.guard = parts.guard;
   listen(session, page);
   return session;
+}
+
+/**
+ * Setup every page the session drives gets: page and runtime events, the locale, the download folder (once `download`
+ * turned it on), and, with a guard, a pause before each document request so the guard sees every navigation.
+ */
+async function preparePage(session: BrowserSession, page: CdpPage, env: NodeJS.ProcessEnv): Promise<void> {
+  await Promise.all([page.send('Page.enable'), page.send('Runtime.enable')]);
+  await applyLocale(page, env);
+  if (session.downloadDir) await applyDownloads(page, session.downloadDir);
+  if (session.guard) await page.send('Fetch.enable', { patterns: [{ urlPattern: '*', resourceType: 'Document', requestStage: 'Request' }] });
+}
+
+/** Lets a paused document request through when the guard allows its URL; fails it otherwise and records why. */
+async function guardRequest(session: BrowserSession, page: CdpPage, params: Record<string, unknown>): Promise<void> {
+  const requestId = String(params['requestId']);
+  const url = String((params['request'] as { url?: unknown } | undefined)?.url ?? '');
+  try {
+    await session.guard!(url);
+  } catch (error) {
+    session.blocked = `${url}: ${errorMessage(error)}`;
+    logConsole(session, `[blocked] ${session.blocked}`);
+    await page.send('Fetch.failRequest', { requestId, errorReason: 'BlockedByClient' }).catch(() => undefined);
+    return;
+  }
+  // The request may be gone (the tab navigated elsewhere or closed) by the time the guard answers.
+  await page.send('Fetch.continueRequest', { requestId }).catch(() => undefined);
+}
+
+const CONSOLE_KEEP = 200, CONSOLE_ENTRY_CHARS = 2_000, DOWNLOADS_KEEP = 100; // what a session remembers
+
+/** Appends one console line, cut to `CONSOLE_ENTRY_CHARS`; only the last `CONSOLE_KEEP` lines are kept. */
+function logConsole(session: BrowserSession, line: string): void {
+  session.console = [...session.console.slice(1 - CONSOLE_KEEP), line.length > CONSOLE_ENTRY_CHARS ? `${line.slice(0, CONSOLE_ENTRY_CHARS)}…` : line];
+}
+
+/** Records a download's state; past `DOWNLOADS_KEEP` the oldest finished one is dropped (a running one only when none is finished). */
+function trackDownload(session: BrowserSession, guid: string, download: Download): void {
+  session.downloads.set(guid, download);
+  if (session.downloads.size <= DOWNLOADS_KEEP) return;
+  session.downloads.delete(([...session.downloads].find(([key, item]) => key !== guid && item.state !== 'inProgress') ?? [...session.downloads][0]!)[0]);
 }
 
 /** Tracks the page's dialogs, downloads and console output on the session. */
@@ -330,17 +331,20 @@ function listen(session: BrowserSession, page: CdpPage): void {
     } else if (method === 'Page.javascriptDialogClosed') {
       delete session.dialog;
     } else if (method === 'Browser.downloadWillBegin' || method === 'Page.downloadWillBegin') {
-      session.downloads.set(String(params['guid']), { name: String(params['suggestedFilename'] ?? 'download'), state: 'inProgress', bytes: 0 });
+      trackDownload(session, String(params['guid']), { name: String(params['suggestedFilename'] ?? 'download'), state: 'inProgress', bytes: 0 });
     } else if (method === 'Browser.downloadProgress' || method === 'Page.downloadProgress') {
       const download = session.downloads.get(String(params['guid']));
-      if (download) session.downloads.set(String(params['guid']), { ...download, state: params['state'] as Download['state'], bytes: Number(params['receivedBytes'] ?? download.bytes) });
+      const file = typeof params['filePath'] === 'string' && params['filePath'] ? { path: params['filePath'] } : {};
+      if (download) trackDownload(session, String(params['guid']), { ...download, ...file, state: params['state'] as Download['state'], bytes: Number(params['receivedBytes'] ?? download.bytes) });
+    } else if (method === 'Fetch.requestPaused' && session.guard) {
+      void guardRequest(session, page, params);
     } else if (method === 'Runtime.consoleAPICalled') {
       const args = Array.isArray(params['args']) ? params['args'] : [];
       const text = args.map((arg) => String((arg as { value?: unknown; description?: string }).value ?? (arg as { description?: string }).description ?? '')).join(' ');
-      session.console = [...session.console.slice(-199), `[${String(params['type'])}] ${text}`];
+      logConsole(session, `[${String(params['type'])}] ${text}`);
     } else if (method === 'Runtime.exceptionThrown') {
       const details = params['exceptionDetails'] as { text?: string; exception?: { description?: string } } | undefined;
-      session.console = [...session.console.slice(-199), `[exception] ${details?.exception?.description ?? details?.text ?? ''}`];
+      logConsole(session, `[exception] ${details?.exception?.description ?? details?.text ?? ''}`);
     }
   });
 }
@@ -367,9 +371,7 @@ export async function openTab(port: number, url: string): Promise<PageTarget> {
 export async function switchTo(session: BrowserSession, target: PageTarget): Promise<void> {
   const page = await CdpPage.connect(target.webSocketDebuggerUrl);
   try {
-    await Promise.all([page.send('Page.enable'), page.send('Runtime.enable')]);
-    await applyLocale(page, process.env);
-    if (session.downloadDir) await applyDownloads(page, session.downloadDir);
+    await preparePage(session, page, process.env);
   } catch (error) {
     page.close();
     throw error;

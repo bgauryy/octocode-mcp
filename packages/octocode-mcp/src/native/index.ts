@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
 import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import {
@@ -168,18 +167,7 @@ function passThroughSchema(
 export function toolInputSchema(
   definition: Pick<ToolDefinition, 'name' | 'inputSchema'>
 ): StandardSchema {
-  return passThroughSchema(
-    publishedInputSchema(definition.name, canonicalInputSchema(definition))
-  );
-}
-
-function canonicalInputSchema(
-  definition: Pick<ToolDefinition, 'inputSchema'>
-): Record<string, unknown> {
-  return z.toJSONSchema(definition.inputSchema, {
-    io: 'input',
-    unrepresentable: 'any',
-  }) as Record<string, unknown>;
+  return passThroughSchema(publishedInputSchema(definition.inputSchema));
 }
 
 /**
@@ -208,6 +196,68 @@ function ensureTextContent(result: unknown): unknown {
   };
 }
 
+interface NativeErrorEnvelope {
+  code: string;
+  message: string;
+  payload: Record<string, unknown> | null;
+}
+
+/**
+ * A rejection the addon raised through its error boundary: native has already
+ * scrubbed secrets from the message and payload and typed it with `code`, so
+ * it is safe to show. Anything else (a panic guard, a napi status error, a
+ * non-Error) is unknown and stays out of client text.
+ */
+function parseNativeError(error: unknown): NativeErrorEnvelope | undefined {
+  if (!(error instanceof Error)) return undefined;
+  let detail: unknown;
+  try {
+    detail = JSON.parse(error.message);
+  } catch {
+    return undefined;
+  }
+  if (!detail || typeof detail !== 'object') return undefined;
+  const { kind, code, message, payload } = detail as Record<string, unknown>;
+  if (
+    kind !== 'octocode.nativeError' ||
+    typeof code !== 'string' ||
+    code.length === 0 ||
+    typeof message !== 'string'
+  ) {
+    return undefined;
+  }
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    !!value && typeof value === 'object' && !Array.isArray(value);
+  return { code, message, payload: isRecord(payload) ? payload : null };
+}
+
+/**
+ * The tool-error result the CLI prints for the same failure: the error and its
+ * repair details typed with `errorCode` (structuredContent), and one text
+ * block, `error; detail; ... (errorCode: code)`.
+ */
+function nativeErrorResult({ code, message, payload }: NativeErrorEnvelope) {
+  const structuredContent: Record<string, unknown> = payload
+    ? { ...payload }
+    : { error: message };
+  structuredContent.errorCode ??= code;
+  const error =
+    typeof structuredContent.error === 'string'
+      ? structuredContent.error
+      : message;
+  const details = Array.isArray(structuredContent.details)
+    ? structuredContent.details.filter(
+        (detail): detail is string => typeof detail === 'string'
+      )
+    : [];
+  const text = [error, ...details].join('; ');
+  return {
+    content: [{ type: 'text', text: `${text} (errorCode: ${code})` }],
+    structuredContent,
+    isError: true,
+  };
+}
+
 export async function createNativeMcp({
   env = process.env,
   binding,
@@ -220,7 +270,6 @@ export async function createNativeMcp({
   );
   const runtime = new NativeRuntime({
     surface: MCP_SURFACE,
-    regexWorkerPath: env.OCTOCODE_REGEX_WORKER,
     env: runtimeEnv,
     timeoutSecs: INTERACTIVE_EXECUTION_TIMEOUT_SECS,
   });
@@ -326,17 +375,19 @@ export async function createNativeMcp({
         await runtime.executeMcp(requestId, toolName, args)
       );
     } catch (error) {
-      // A thrown rejection here is an internal/native failure (not a normal
-      // tool error, which is returned in the result envelope). The SDK would
-      // surface its raw message verbatim to the client, so backstop it:
-      // cancellations propagate unchanged; everything else is logged to
-      // stderr and replaced with a generic client-facing message so paths,
-      // ids, or token fragments in native error text never leak.
+      // A rejection here is a request-level failure (timeout, busy, tool
+      // unavailable, ...), not a tool error row. Cancellations propagate
+      // unchanged. A typed native error was scrubbed at the addon boundary:
+      // return it as the tool error the CLI shows. Anything else is unknown;
+      // log it to stderr and give the client a generic message so paths, ids
+      // or token fragments in raw error text never leak.
       if (signal?.aborted) throw error;
       const detail = error instanceof Error ? error.message : String(error);
       process.stderr.write(
         `[octocode-mcp] ${toolName} execution error: ${detail}\n`
       );
+      const native = parseNativeError(error);
+      if (native) return nativeErrorResult(native);
       throw new Error(
         `Tool ${toolName} failed to execute; see the server logs for detail.`,
         { cause: error }
@@ -373,7 +424,7 @@ export async function createNativeMcp({
     const dispatcher = deferredDispatcherDefinition(
       deferred.map(name => ({
         name,
-        canonical: canonicalInputSchema(definitions.get(name)!),
+        inputSchema: definitions.get(name)!.inputSchema,
       }))
     );
     registerTool(
@@ -398,13 +449,7 @@ export async function createNativeMcp({
                 text: `Input validation error: Invalid arguments for tool ${DEFERRED_TOOL_DISPATCHER}: ${error} (errorCode: invalidInput)`,
               },
             ],
-            structuredContent: {
-              kind: 'octocode.toolError',
-              version: 1,
-              tool: DEFERRED_TOOL_DISPATCHER,
-              error,
-              errorCode: 'invalidInput',
-            },
+            structuredContent: { error, errorCode: 'invalidInput' },
             isError: true,
           };
         }

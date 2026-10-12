@@ -15,7 +15,9 @@ import { envFlag, SUBAGENT_ENV, TRUST_ROOT_ENV } from './env.js';
  * would run its hooks without ever asking. A project is trusted here when the user accepted these exact files: the decision is
  * stored in `<Octocode home>/pi-trust.json` with a SHA-256 of their content, so a later change needs `/octocode trust`
  * again. When Pi really resolved trust (it has protected resources, or a saved `/trust` decision) and Octocode has no
- * decision yet, the files present then are recorded as trusted; a later change is asked about like any other.
+ * decision yet, the files present then are recorded as trusted, unless a hooks file among them starts commands: the
+ * user never saw those in Pi's dialog, so they wait for `/octocode trust`, which shows them. A later change is asked
+ * about like any other.
  */
 
 type ProjectContext = Pick<ExtensionContext, 'cwd' | 'hasUI' | 'isProjectTrusted'> & { ui?: Pick<ExtensionContext['ui'], 'notify'> };
@@ -126,13 +128,26 @@ function envSent(server: Record<string, unknown>): string | undefined {
  * profiles, memory), and each answer re-reads and re-hashes the project's config files. A decision clears it.
  */
 const TRUST_MEMO_MS = 5_000;
-const trustMemo = new Map<string, { at: number; value: boolean | undefined }>();
+
+/** One trust answer and what it was computed from: the gated files and their `fingerprint`. */
+interface TrustState {
+  value: boolean | undefined;
+  files: string[];
+  sha: string;
+}
+
+const trustMemo = new Map<string, { at: number; state: TrustState }>();
 
 /**
  * The trust decision when it needs no question: `true`/`false`, or `undefined` when the user must be asked (project
  * files exist, Pi did not decline, and no stored decision matches their current content).
  */
 export function projectTrustNow(ctx: Pick<ProjectContext, 'cwd' | 'isProjectTrusted'>, home?: string): boolean | undefined {
+  return trustState(ctx, home).value;
+}
+
+/** `projectTrustNow` with the files it saw: the gated files are walked once per call, and hashed only on a memo miss. */
+function trustState(ctx: Pick<ProjectContext, 'cwd' | 'isProjectTrusted'>, home?: string): TrustState {
   const files = projectConfigFiles(ctx.cwd);
   // Keyed by the files' size and mtime too (a stat, not a read), so an edited or added config file is never missed.
   const stamp = files.map((file) => {
@@ -141,40 +156,46 @@ export function projectTrustNow(ctx: Pick<ProjectContext, 'cwd' | 'isProjectTrus
   });
   // Pi's own decision (its `/trust`) and our store file (written by any process) are part of the key too.
   const store = fs.statSync(storePath(home), { throwIfNoEntry: false })?.mtimeMs;
-  const memoKey = `${ctx.cwd}\0${process.env[TRUST_ROOT_ENV] ?? ''}\0${process.env[SUBAGENT_ENV] ?? ''}\0${home ?? ''}\0${ctx.isProjectTrusted()}\0${piDecided(ctx.cwd)}\0${store}\0${stamp.join('|')}`;
+  const trusted = ctx.isProjectTrusted();
+  const decided = piDecided(ctx.cwd);
+  const memoKey = `${ctx.cwd}\0${process.env[TRUST_ROOT_ENV] ?? ''}\0${process.env[SUBAGENT_ENV] ?? ''}\0${home ?? ''}\0${trusted}\0${decided}\0${store}\0${stamp.join('|')}`;
   const now = Date.now();
   const memo = trustMemo.get(memoKey);
-  if (memo && now - memo.at < TRUST_MEMO_MS) return memo.value;
+  if (memo && now - memo.at < TRUST_MEMO_MS) return memo.state;
   for (const [key, entry] of trustMemo) if (now - entry.at >= TRUST_MEMO_MS) trustMemo.delete(key);
-  const value = computeTrust(ctx, home);
-  trustMemo.set(memoKey, { at: now, value });
-  return value;
+  const sha = fingerprint(files);
+  const state = { value: computeTrust(ctx.cwd, files, sha, trusted, decided, home), files, sha };
+  trustMemo.set(memoKey, { at: now, state });
+  return state;
 }
 
-function computeTrust(ctx: Pick<ProjectContext, 'cwd' | 'isProjectTrusted'>, home?: string): boolean | undefined {
-  const files = projectConfigFiles(ctx.cwd);
+function computeTrust(cwd: string, files: string[], sha: string, trusted: boolean, decided: boolean, home?: string): boolean | undefined {
   // An isolated subagent works in a worktree of its parent's repository: it follows the decision stored for that
   // repository, and only for the same files (no one can be asked in a subagent, so anything else stays closed).
   const inherited = process.env[TRUST_ROOT_ENV];
   if (inherited && path.isAbsolute(inherited)) {
     const parent = realPath(inherited);
-    const root = storeKey(ctx.cwd);
+    const root = storeKey(cwd);
     if (!envFlag(process.env, SUBAGENT_ENV) || !isWorktreeOf(root, parent)) return files.length === 0;
     const stored = readStore(home)[parent];
     return files.length === 0 || (stored?.trusted === true && stored.sha === fingerprint(files, (file) => path.join(parent, path.relative(root, file))));
   }
-  const sha = fingerprint(files);
-  const trusted = ctx.isProjectTrusted();
   if (!trusted && files.length > 0) return false;
-  const stored = trusted ? readStore(home)[storeKey(ctx.cwd)] : undefined;
+  const stored = trusted ? readStore(home)[storeKey(cwd)] : undefined;
   if (stored?.sha === sha) return stored.trusted;
   // Pi's trust covers the files present now (even none); recording them makes a later change, such as a pulled
-  // hooks file, ask again.
-  if (!stored && trusted && piDecided(ctx.cwd)) {
-    saveDecision(ctx.cwd, sha, true, home);
+  // hooks file, ask again. Hooks that start commands were never shown by Pi: they need `/octocode trust`.
+  if (!stored && trusted && decided && !startsCommands(cwd, files)) {
+    saveDecision(cwd, sha, true, home);
     return true;
   }
   return files.length === 0 ? true : undefined;
+}
+
+/** Some hooks file among `files` (Claude Code, Codex, Octocode hooks) holds a command, URL or args to run. */
+function startsCommands(cwd: string, files: string[]): boolean {
+  const hooks = new Set(projectHookFiles(cwd).map(realPath));
+  return files.some((file) => hooks.has(file) && commandsIn(parseJson(readText(file))).length > 0);
 }
 
 /** Pi resolved trust itself: protected resources exist, or `/trust` saved a decision. */
@@ -196,10 +217,9 @@ const noticed = new Set<string>();
  * no one to ask.
  */
 export async function projectTrust(ctx: ProjectContext, home?: string): Promise<boolean> {
-  const now = projectTrustNow(ctx, home);
-  if (now !== undefined) return now;
-  const files = projectConfigFiles(ctx.cwd);
-  const key = `${storeKey(ctx.cwd)}\0${fingerprint(files)}`;
+  const { value, files, sha } = trustState(ctx, home);
+  if (value !== undefined) return value;
+  const key = `${storeKey(ctx.cwd)}\0${sha}`;
   if (!noticed.has(key)) {
     noticed.add(key);
     ctx.ui?.notify?.(`Project config not loaded (${files.length} files). Run /octocode trust to review.`, 'warning');
@@ -207,14 +227,50 @@ export async function projectTrust(ctx: ProjectContext, home?: string): Promise<
   return false;
 }
 
-/** Record a decision for the project files whose `fingerprint` is `sha` (the ones the user was shown). */
+/** How long a save waits for another session's store lock, and when a lock is old enough to be a crashed holder's. */
+const STORE_LOCK_WAIT_MS = 2_000;
+const STORE_LOCK_STALE_MS = 10_000;
+
+/**
+ * Run `update` holding `<file>.lock` (created exclusively), so sessions that read, change and write the same file
+ * never drop each other's change. A lock older than `STORE_LOCK_STALE_MS`, or still held after `STORE_LOCK_WAIT_MS`,
+ * belongs to a crashed or stuck holder and is taken over.
+ */
+function withFileLock(file: string, update: () => void): void {
+  const lock = `${file}.lock`;
+  const deadline = Date.now() + STORE_LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      fs.closeSync(fs.openSync(lock, 'wx', 0o600));
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      const since = fs.statSync(lock, { throwIfNoEntry: false })?.mtimeMs;
+      if (since !== undefined && Date.now() - since < STORE_LOCK_STALE_MS && Date.now() < deadline) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      else fs.rmSync(lock, { force: true });
+    }
+  }
+  try {
+    update();
+  } finally {
+    fs.rmSync(lock, { force: true });
+  }
+}
+
+/**
+ * Record a decision for the project files whose `fingerprint` is `sha` (the ones the user was shown). Other sessions
+ * write the same store, so the read, merge and write happen under its lock.
+ */
 export function saveDecision(cwd: string, sha: string, trusted: boolean, home?: string): void {
   trustMemo.clear();
-  const store = readStore(home);
-  store[storeKey(cwd)] = { sha, trusted };
+  const key = storeKey(cwd);
   const file = storePath(home);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  atomicWriteFileSync(file, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  withFileLock(file, () => {
+    const store = readStore(home);
+    store[key] = { sha, trusted };
+    atomicWriteFileSync(file, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  });
 }
 
 /** `/octocode trust [off]`: show what the project would run and trust (or distrust) exactly that, then reload. */

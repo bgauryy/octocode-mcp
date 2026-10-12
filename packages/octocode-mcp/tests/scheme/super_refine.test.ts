@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import { LocalFetchContentQuerySchema } from '@octocodeai/config/schema';
 import { LocalSearchQuerySchema } from '@octocodeai/config/schema';
-import { FileContentQueryLocalSchema } from '@octocodeai/config/schema';
+import { FileContentQuerySchema } from '@octocodeai/config/schema';
 import { ArtifactSearchBulkQueryLocalSchema } from '@octocodeai/config/schema';
 
 describe('LocalFetchContentQuerySchema mutual-exclusion', () => {
@@ -12,43 +12,29 @@ describe('LocalFetchContentQuerySchema mutual-exclusion', () => {
     path: 'src/foo.ts',
   };
 
-  it('rejects fullContent=true together with matchString', () => {
-    const result = LocalFetchContentQuerySchema.safeParse({
-      ...baseQuery,
-      fullContent: true,
-      matchString: 'foo',
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join('\n');
-      expect(messages.toLowerCase()).toMatch(/mutually exclusive|matchstring/);
+  it.each([{ matchString: 'foo' }, { ranges: ['10-20'] }])(
+    'rejects fullContent=true together with %o',
+    selector => {
+      const result = LocalFetchContentQuerySchema.safeParse({
+        ...baseQuery,
+        fullContent: true,
+        ...selector,
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        const messages = result.error.issues.map(i => i.message).join('\n');
+        expect(messages).toContain('fullContent');
+      }
     }
-  });
+  );
 
-  it('rejects fullContent=true together with ranges', () => {
-    const result = LocalFetchContentQuerySchema.safeParse({
-      ...baseQuery,
-      fullContent: true,
-      ranges: ['10-20'],
-    });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join('\n');
-      expect(messages.toLowerCase()).toMatch(/ranges/);
-    }
-  });
-
-  it('rejects matchString together with ranges', () => {
+  it('accepts matchString inside ranges (a region grep)', () => {
     const result = LocalFetchContentQuerySchema.safeParse({
       ...baseQuery,
       matchString: 'foo',
       ranges: ['10-20'],
     });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join('\n');
-      expect(messages.toLowerCase()).toMatch(/matchstring/);
-    }
+    expect(result.success).toBe(true);
   });
 
   it('accepts fullContent=true alone', () => {
@@ -85,7 +71,7 @@ describe('LocalFetchContentQuerySchema mutual-exclusion', () => {
   });
 });
 
-describe('FileContentQueryLocalSchema (github) three-mode mutual exclusion', () => {
+describe('FileContentQuerySchema (github) three-mode mutual exclusion', () => {
   const baseQuery = {
     mainGoal: 'test goal',
     reasoning: 'exercise mutex validation',
@@ -95,7 +81,7 @@ describe('FileContentQueryLocalSchema (github) three-mode mutual exclusion', () 
   };
 
   it('rejects fullContent=true together with matchString', () => {
-    const result = FileContentQueryLocalSchema.safeParse({
+    const result = FileContentQuerySchema.safeParse({
       ...baseQuery,
       fullContent: true,
       matchString: 'foo',
@@ -104,13 +90,12 @@ describe('FileContentQueryLocalSchema (github) three-mode mutual exclusion', () 
     if (!result.success) {
       const messages = result.error.issues.map(i => i.message).join('\n');
       expect(messages).toContain('fullContent');
-      expect(messages).toContain('matchString');
       expect(messages.length).toBeLessThanOrEqual(90);
     }
   });
 
   it('rejects fullContent=true together with ranges', () => {
-    const result = FileContentQueryLocalSchema.safeParse({
+    const result = FileContentQuerySchema.safeParse({
       ...baseQuery,
       fullContent: true,
       ranges: ['10-20'],
@@ -118,17 +103,17 @@ describe('FileContentQueryLocalSchema (github) three-mode mutual exclusion', () 
     expect(result.success).toBe(false);
   });
 
-  it('rejects matchString together with ranges', () => {
-    const result = FileContentQueryLocalSchema.safeParse({
+  it('accepts matchString inside ranges (a region grep)', () => {
+    const result = FileContentQuerySchema.safeParse({
       ...baseQuery,
       matchString: 'foo',
       ranges: ['10-20'],
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('accepts fullContent=true alone', () => {
-    const result = FileContentQueryLocalSchema.safeParse({
+    const result = FileContentQuerySchema.safeParse({
       ...baseQuery,
       fullContent: true,
     });
@@ -136,7 +121,7 @@ describe('FileContentQueryLocalSchema (github) three-mode mutual exclusion', () 
   });
 
   it('accepts matchString alone', () => {
-    const result = FileContentQueryLocalSchema.safeParse({
+    const result = FileContentQuerySchema.safeParse({
       ...baseQuery,
       matchString: 'foo',
     });
@@ -144,24 +129,19 @@ describe('FileContentQueryLocalSchema (github) three-mode mutual exclusion', () 
   });
 
   it('accepts ranges alone', () => {
-    const result = FileContentQueryLocalSchema.safeParse({
+    const result = FileContentQuerySchema.safeParse({
       ...baseQuery,
       ranges: ['10-20'],
     });
     expect(result.success).toBe(true);
   });
 
-  it('rejects an inverted range', () => {
-    const result = FileContentQueryLocalSchema.safeParse({
+  it('accepts an inverted range as the same span', () => {
+    const result = FileContentQuerySchema.safeParse({
       ...baseQuery,
       ranges: ['20-10'],
     });
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      const messages = result.error.issues.map(i => i.message).join('\n');
-      expect(messages).toContain('end >= start');
-      expect(messages.length).toBeLessThanOrEqual(90);
-    }
+    expect(result.success).toBe(true);
   });
 });
 
@@ -173,18 +153,26 @@ describe('LocalSearchQuerySchema enum contract', () => {
     path: '/repo',
   };
 
-  it('accepts the resultView enum values (files / filesWithout / count*)', () => {
+  it('accepts the resultView enum values (paginated / files / filesWithout / count* / matchOnly)', () => {
     for (const resultView of [
-      'content',
+      'paginated',
       'files',
       'filesWithout',
       'countLines',
       'countMatches',
+      'matchOnly',
     ] as const) {
       expect(
         LocalSearchQuerySchema.safeParse({ ...baseQuery, resultView }).success
       ).toBe(true);
     }
+  });
+
+  it('rejects the removed "content" view: "paginated" is the one name', () => {
+    expect(
+      LocalSearchQuerySchema.safeParse({ ...baseQuery, resultView: 'content' })
+        .success
+    ).toBe(false);
   });
 
   it('accepts the regex enum values (rust / literal / pcre2)', () => {

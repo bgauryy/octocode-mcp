@@ -227,7 +227,7 @@ mod tests {
         assert!(result.is_err(), "a missing configured cargo cannot run");
     }
 
-    /// L2: a cancelled build stops `cargo metadata` as cancelled (not at the
+    /// A cancelled build stops `cargo metadata` as cancelled (not at the
     /// 5 s limit), and its process group dies with it.
     #[cfg(unix)]
     #[test]

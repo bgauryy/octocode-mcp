@@ -1,7 +1,7 @@
 use super::http::{DnsPin, NPM_INSTALL_JSON, RegistryClient};
 use super::util::{
-    commit_sha, date_from_millis, encode_component, endpoint, object_for, required, safe_url,
-    string, total,
+    canonical_repository, commit_sha, date_from_millis, encode_component, endpoint, object_for,
+    required, safe_url, string, total,
 };
 use super::versions::{VersionSpec, nearest, npm_resolve};
 use super::{
@@ -9,6 +9,7 @@ use super::{
     ArtifactType, ResolvedNpmRegistry,
 };
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use url::{Host, Url};
 
@@ -269,12 +270,12 @@ async fn exact(
     artifact.homepage = string(row.get("homepage"));
     artifact.source_ref = commit_sha(row.get("gitHead"));
     match row.get("repository") {
-        Some(Value::String(value)) => artifact.repository = normalize_repository(value),
+        Some(Value::String(value)) => artifact.repository = canonical_repository(value),
         Some(Value::Object(value)) => {
             artifact.repository = value
                 .get("url")
                 .and_then(Value::as_str)
-                .and_then(normalize_repository);
+                .and_then(canonical_repository);
             artifact.repository_directory = string(value.get("directory")).map(|value| {
                 value
                     .trim_start_matches("./")
@@ -353,71 +354,40 @@ pub(crate) fn version_not_found(name: &str, requested: &str, versions: &[String]
         format!("{name} has no published version matching \"{requested}\""),
     )
     .with_status(404);
-    if close.is_empty() {
-        error.with_hint("Omit version for the latest release.")
-    } else {
-        error.with_hint(format!("Nearest published: {}.", close.join(", ")))
+    ArtifactError {
+        nearest: close,
+        ..error
     }
 }
 
 /// Release facts the version manifest already carries.
 fn release_facts(artifact: &mut ArtifactItem, row: &serde_json::Map<String, Value>) {
-    let count = |field: &str| {
+    // A manifest without `dependencies` declares none.
+    let declared = |field: &str| -> Vec<String> {
         row.get(field)
             .and_then(Value::as_object)
-            .map(|deps| deps.len())
-    };
-    artifact.dependencies = count("dependencies").or(Some(0));
-    artifact.dependency_list = row
-        .get("dependencies")
-        .and_then(Value::as_object)
-        .into_iter()
-        .flatten()
-        .map(|(name, range)| match range.as_str() {
-            Some(range) => format!("{name}@{range}"),
-            None => name.clone(),
-        })
-        .collect();
-    artifact.peer_dependencies = count("peerDependencies").filter(|count| *count > 0);
-    artifact.deprecated = string(row.get("deprecated"));
-    artifact.engines = string(row.get("engines").and_then(|engines| engines.get("node")));
-    artifact.published_at = published_at(row);
-    artifact.entry_directory = entry_directory(row);
-}
-
-/// The directory of `main` when the package ships it as written: no build
-/// script, so the published entry is a repository path (`./source/index.js`
-/// → `source`). A built package's `main` names output absent upstream.
-fn entry_directory(row: &serde_json::Map<String, Value>) -> Option<String> {
-    let builds = row
-        .get("scripts")
-        .and_then(Value::as_object)
-        .is_some_and(|scripts| {
-            scripts.keys().any(|name| {
-                name.starts_with("build")
-                    || name.starts_with("compile")
-                    || name.starts_with("bundle")
-                    || matches!(
-                        name.as_str(),
-                        "prepare" | "prepack" | "prepublish" | "prepublishOnly"
-                    )
+            .into_iter()
+            .flatten()
+            .map(|(name, range)| match range.as_str() {
+                Some(range) => format!("{name}@{range}"),
+                None => name.clone(),
             })
-        });
-    if builds {
-        return None;
-    }
-    let main = row.get("main")?.as_str()?;
-    let main = main.trim_start_matches("./").trim_start_matches('/');
-    let (directory, _) = main.rsplit_once('/')?;
-    let segments: Vec<&str> = directory.split('/').collect();
-    let shipped = segments
-        .iter()
-        .all(|part| !part.is_empty() && *part != "." && *part != "..")
-        && !matches!(
-            segments[0],
-            "dist" | "build" | "out" | "cjs" | "esm" | "umd" | "bundle" | "node_modules"
-        );
-    shipped.then(|| directory.to_owned())
+            .collect()
+    };
+    artifact.dependencies = Some(declared("dependencies"));
+    artifact.peer_dependencies = Some(declared("peerDependencies"));
+    artifact.deprecated = string(row.get("deprecated"));
+    artifact.engines = row
+        .get("engines")
+        .and_then(Value::as_object)
+        .map(|engines| {
+            engines
+                .iter()
+                .filter_map(|(name, range)| Some((name.clone(), range.as_str()?.to_owned())))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .filter(|engines| !engines.is_empty());
+    artifact.published_at = published_at(row);
 }
 
 /// npm's version manifest has no publish time, but its upload record does:
@@ -482,7 +452,7 @@ pub(crate) fn provenance_commit(
     let same_repo = |uri: &str| {
         let uri = uri.strip_prefix("git+").unwrap_or(uri);
         let uri = uri.split_once('@').map_or(uri, |(repo, _)| repo);
-        normalize_repository(uri).is_some_and(|uri| {
+        canonical_repository(uri).is_some_and(|uri| {
             uri.trim_end_matches('/')
                 .eq_ignore_ascii_case(repository.trim_end_matches('/'))
         })
@@ -529,7 +499,7 @@ async fn search(
     dns_pin: Option<DnsPin>,
 ) -> Result<ArtifactProviderPage, ArtifactError> {
     let offset = state.offset.unwrap_or(0);
-    let size = query.page_size().unwrap_or(10);
+    let size = query.page_size();
     let terms = query.terms();
     let url = endpoint(
         &format!("{}/-/v1/search", trim_registry(&registry.base)),
@@ -587,7 +557,7 @@ async fn search(
             artifact.repository = links
                 .get("repository")
                 .and_then(Value::as_str)
-                .and_then(normalize_repository);
+                .and_then(canonical_repository);
         }
         artifacts.push(artifact);
     }
@@ -611,83 +581,9 @@ fn registry_url(base: &Url, path: &str) -> Result<Url, ArtifactError> {
         .map_err(|_| ArtifactError::new("invalidInput", "Invalid npm registry URL."))
 }
 
-pub(crate) fn normalize_repository(value: &str) -> Option<String> {
-    let mut value = value
-        .trim()
-        .strip_prefix("git+")
-        .unwrap_or(value.trim())
-        .to_owned();
-    if value.is_empty() {
-        return None;
-    }
-    for (prefix, host) in [
-        ("github:", "github.com"),
-        ("gitlab:", "gitlab.com"),
-        ("bitbucket:", "bitbucket.org"),
-    ] {
-        if value.to_ascii_lowercase().starts_with(prefix) {
-            value = format!("https://{host}/{}", &value[prefix.len()..]);
-            return Some(value.trim_end_matches(".git").to_owned());
-        }
-    }
-    if let Some((_, rest)) = value.split_once('@')
-        && !value.contains("://")
-        && let Some((host, path)) = rest.split_once(':')
-    {
-        return Some(format!("https://{host}/{}", path.trim_end_matches(".git")));
-    }
-    if let Some(rest) = value
-        .strip_prefix("ssh://")
-        .or_else(|| value.strip_prefix("git://"))
-        .or_else(|| value.strip_prefix("http://"))
-        .or_else(|| value.strip_prefix("https://"))
-    {
-        let rest = rest.split_once('@').map(|(_, tail)| tail).unwrap_or(rest);
-        return Some(format!("https://{}", rest.trim_end_matches(".git")));
-    }
-    Some(value.trim_end_matches(".git").to_owned())
-}
-
-#[cfg(test)]
-mod entry_directory_tests {
-    use super::entry_directory;
-    use serde_json::json;
-
-    fn entry(row: serde_json::Value) -> Option<String> {
-        entry_directory(row.as_object().expect("row"))
-    }
-
-    #[test]
-    fn shipped_source_main_names_its_directory() {
-        assert_eq!(
-            entry(json!({"main": "./source/index.js"})).as_deref(),
-            Some("source")
-        );
-        assert_eq!(
-            entry(json!({"main": "src/lib/index.js", "scripts": {"test": "x"}})).as_deref(),
-            Some("src/lib")
-        );
-        // A root entry, a missing main, or a build output stays at the package root.
-        assert_eq!(entry(json!({"main": "index.js"})), None);
-        assert_eq!(entry(json!({})), None);
-        assert_eq!(entry(json!({"main": "./dist/index.js"})), None);
-        assert_eq!(entry(json!({"main": "../x/index.js"})), None);
-        // A build step makes `main` output, not a repository path.
-        assert_eq!(
-            entry(json!({"main": "./lib/index.js", "scripts": {"build": "tsc"}})),
-            None
-        );
-        assert_eq!(
-            entry(json!({"main": "./lib/index.js", "scripts": {"prepare": "x"}})),
-            None
-        );
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::types::artifact_query;
-    use super::normalize_repository;
     use super::{
         ArtifactSearchQuery, ArtifactType, ResolvedNpmRegistry, is_blocked_v4, is_blocked_v6,
         validate_registry, validate_resolved_addresses,
@@ -744,20 +640,6 @@ mod tests {
             .expect_err("one blocked answer must reject the complete DNS result");
         assert_eq!(error.code, "invalidInput");
         assert!(validate_resolved_addresses(&[addresses[0]]).is_ok());
-    }
-
-    #[test]
-    fn repository_shapes_are_canonical() {
-        for (input, expected) in [
-            (
-                "github:octokit/rest.js",
-                "https://github.com/octokit/rest.js",
-            ),
-            ("git+https://github.com/a/b.git", "https://github.com/a/b"),
-            ("git@github.com:a/b.git", "https://github.com/a/b"),
-        ] {
-            assert_eq!(normalize_repository(input).as_deref(), Some(expected));
-        }
     }
 
     use super::super::http::{
@@ -842,7 +724,7 @@ mod tests {
             "repository": {"type": "git", "url": "git+https://github.com/colinhacks/zod.git"},
             "gitHead": "aaaaaaa1",
             "dependencies": {}, "peerDependencies": {"typescript": "*"},
-            "engines": {"node": ">=18"},
+            "engines": {"node": ">=18", "npm": ">=9", "pnpm": ">=8"},
             "deprecated": (version == "3.22.0").then_some("Use 3.22.4"),
             "_npmOperationalInternal": {"tmp": format!("tmp/zod_{version}_1789341914484_0.59")},
             "dist": dist
@@ -914,9 +796,22 @@ mod tests {
         let item = &range.artifacts[0];
         assert_eq!(item.version.as_deref(), Some("3.25.76"));
         assert_eq!(item.published_at.as_deref(), Some("2026-09-13"));
-        assert_eq!(item.dependencies, Some(0));
-        assert_eq!(item.peer_dependencies, Some(1));
-        assert_eq!(item.engines.as_deref(), Some(">=18"));
+        assert_eq!(item.dependencies, Some(Vec::new()));
+        assert_eq!(
+            item.peer_dependencies.as_ref().map(Vec::len),
+            Some(1),
+            "{:?}",
+            item.peer_dependencies
+        );
+        // Every declared engine stays: not only `node`.
+        assert_eq!(
+            item.engines,
+            Some(std::collections::BTreeMap::from([
+                ("node".to_owned(), ">=18".to_owned()),
+                ("npm".to_owned(), ">=9".to_owned()),
+                ("pnpm".to_owned(), ">=8".to_owned()),
+            ]))
+        );
         let coordinate = lookup(&http, json!({"packageName": "zod@3.22.0"}))
             .await
             .expect("coordinate");
@@ -934,7 +829,10 @@ mod tests {
             .expect_err("missing version");
         assert_eq!(missing.code, "versionNotFound");
         assert_eq!(missing.status, Some(404));
-        assert!(missing.hints[0].contains("3.22.0"), "{missing:?}");
+        assert!(
+            missing.nearest.iter().any(|version| version == "3.22.0"),
+            "{missing:?}"
+        );
         let unmatched = lookup(&http, json!({"packageName": "zod", "version": "^9"}))
             .await
             .expect_err("no match");
@@ -943,11 +841,7 @@ mod tests {
             .await
             .expect_err("beyond every release");
         assert_eq!(beyond.code, "versionNotFound");
-        assert_eq!(
-            beyond.hints,
-            ["Nearest published: 4.6.5, 3.25.76, 3.22.0."],
-            "{beyond:?}"
-        );
+        assert_eq!(beyond.nearest, ["4.6.5", "3.25.76", "3.22.0"], "{beyond:?}");
         let seen = http.seen.lock().expect("seen").clone();
         assert_eq!(
             seen[..2],

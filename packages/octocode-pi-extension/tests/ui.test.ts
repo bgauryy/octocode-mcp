@@ -65,6 +65,26 @@ describe('chrome', () => {
     expect(child.handlers.size).toBe(0);
   });
 
+  it('shines the banner only on a fresh startup, never on /resume, /new, /fork, /reload or over a resumed transcript', async () => {
+    const frames = async (reason: string, branch: unknown[] = []): Promise<number> => {
+      // Pi re-imports extensions for every runtime, so each session start meets fresh module state.
+      const fake = fakePi();
+      registerUi(fake.pi, false);
+      const ctx = fakeCtx({ cwd: '/work/app' });
+      ctx.sessionManager.getBranch = () => branch as never;
+      await fake.emit('session_start', { reason }, ctx);
+      const requestRender = vi.fn();
+      const header = (ctx.ui.header as (tui: unknown, theme: unknown) => { dispose(): void })({ requestRender }, colorTheme);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      header.dispose();
+      return requestRender.mock.calls.length;
+    };
+    expect(await frames('startup')).toBeGreaterThan(0);
+    // `pi -c`: the history renders first, so the banner sits above the viewport and a frame would redraw everything.
+    expect(await frames('startup', [{ type: 'message' }])).toBe(0);
+    for (const reason of ['resume', 'new', 'fork', 'reload']) expect(await frames(reason)).toBe(0);
+  });
+
   it('paints the banner and spinner along the theme gradient, and falls back to tokens without concrete colours', () => {
     expect(themeRamp(theme)).toBeUndefined();
     expect(spinnerFrames(theme)[0]).toBe('⠋');

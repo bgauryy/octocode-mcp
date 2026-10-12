@@ -60,7 +60,7 @@ pub(super) const CARGO_APP: (&str, &str) = (
 
 /// The `file` of every result row.
 pub(super) fn result_files(out: &Value) -> Vec<&str> {
-    out["results"]
+    out["nodes"]
         .as_array()
         .expect("rows")
         .iter()

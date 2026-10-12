@@ -29,7 +29,8 @@ pub fn validate_lsp_server_path(command: String) -> Result<String> {
 
     let resolved = which::which(&command).map_err(|err| {
         Error::new(format!(
-            "Language server command not found: {command}: {err}"
+            "Language server command not found: {command}: {err}{}",
+            lookup_note(&command)
         ))
     })?;
     if !is_executable_path(&resolved) {
@@ -39,6 +40,15 @@ pub fn validate_lsp_server_path(command: String) -> Result<String> {
         )));
     }
     absolute_string(&resolved)
+}
+
+/// What octocode searched for a server it normally finds by itself.
+fn lookup_note(command: &str) -> &'static str {
+    if command == "typescript-language-server" {
+        ". octocode runs node_modules/typescript-language-server/lib/cli.mjs under node from its own install tree (its file mode, often 644 after a yarn install, is fine) and found none; install typescript-language-server there or put it on PATH"
+    } else {
+        ""
+    }
 }
 
 /// Absolute path as a string, preserving the executable's own filename
@@ -79,6 +89,17 @@ mod tests {
     }
 
     // ── validate_lsp_server_path ──────────────────────────────────────────────
+
+    /// A missing typescript-language-server names how octocode runs it, so a
+    /// 644 `cli.mjs` is not mistaken for the cause.
+    #[test]
+    fn a_missing_typescript_language_server_explains_the_lookup() {
+        let note = lookup_note("typescript-language-server");
+        assert!(note.contains("lib/cli.mjs"), "{note}");
+        assert!(note.contains("under node"), "{note}");
+        assert!(note.contains("644"), "{note}");
+        assert_eq!(lookup_note("gopls"), "");
+    }
 
     #[test]
     fn validate_lsp_server_path_rejects_empty_string() {

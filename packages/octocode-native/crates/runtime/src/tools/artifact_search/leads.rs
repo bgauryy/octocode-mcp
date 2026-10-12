@@ -1,5 +1,7 @@
 //! Leads from an exact registry row to its source on GitHub.
-use crate::providers::artifact::{ArtifactItem, ArtifactType};
+use crate::providers::artifact::{
+    ArtifactError, ArtifactItem, ArtifactSearchQuery, ArtifactType, github_repo_dir, github_slug,
+};
 use crate::tools::id::ToolId;
 use crate::tools::result::Continuation;
 use serde_json::{Map, Value, json};
@@ -23,7 +25,7 @@ pub(super) fn label_release_source(artifact: &mut ArtifactItem, exact: bool) {
             && artifact
                 .repository
                 .as_deref()
-                .and_then(github_repo)
+                .and_then(github_slug)
                 .is_some())
         .then_some("defaultBranch")
     } else if artifact.source_attested {
@@ -36,15 +38,15 @@ pub(super) fn label_release_source(artifact: &mut ArtifactItem, exact: bool) {
 }
 
 /// The leads of an exact row whose repository is on GitHub: the
-/// ghStructure tree at the package's directory (plus its entry directory
-/// when the registry names one), and with a release ref the package
-/// manifest at that ref. With a release ref the tree lead is
+/// ghStructure tree at the package's directory. A published entry point is
+/// not a source path (a built package names output the repository lacks), so
+/// only the directory the registry records for the package is led to. With a release ref the tree lead is
 /// `viewReleaseSource`; the default-branch tree is that lead without `ref`,
 /// so no second tree lead restates it. The row states how its ref was
 /// checked (`verification`); its leads do not repeat it.
 pub(super) fn source_leads(artifact: &ArtifactItem) -> Map<String, Value> {
     let mut leads = Map::new();
-    let Some((owner, repo)) = artifact.repository.as_deref().and_then(github_repo) else {
+    let Some((owner, repo)) = artifact.repository.as_deref().and_then(github_slug) else {
         return leads;
     };
     let directory = artifact
@@ -52,63 +54,136 @@ pub(super) fn source_leads(artifact: &ArtifactItem) -> Map<String, Value> {
         .clone()
         .or_else(|| artifact.repository.as_deref().and_then(github_repo_dir))
         .filter(|directory| !directory.is_empty());
-    let path = match (directory.as_deref(), artifact.entry_directory.as_deref()) {
-        (Some(directory), Some(entry)) => Some(format!("{directory}/{entry}")),
-        (directory, entry) => directory.or(entry).map(str::to_owned),
-    };
     // The root at depth one is ghStructure's default listing.
     let mut query = json!({ "owner": owner, "repo": repo });
-    if let Some(path) = path {
+    if let Some(path) = directory {
         query["path"] = json!(path);
     }
     match artifact.source_ref.as_deref() {
         None => {
             leads.insert(
                 "viewRepo".into(),
-                Continuation::new(ToolId::GhStructure, query)
-                    .why("Default-branch code; not release evidence.")
-                    .build(),
+                Continuation::new(ToolId::GhStructure, query).build(),
             );
         }
         Some(reference) => {
             query["ref"] = json!(reference);
-            let tree = Continuation::new(ToolId::GhStructure, query)
-                .why(match artifact.verification {
-                    Some("provenance") => "Release commit attested by npm provenance.",
-                    Some("tag") => "Upstream tag of this version.",
-                    _ => "Registry release-ref lead; if unpushed, omit ref.",
-                })
-                .build();
+            let tree = Continuation::new(ToolId::GhStructure, query).build();
             leads.insert("viewReleaseSource".into(), tree);
-            if let Some(file) = manifest_file(artifact) {
-                let path = directory.map_or_else(|| file.to_owned(), |dir| format!("{dir}/{file}"));
-                leads.insert(
-                    "readManifest".into(),
-                    Continuation::new(
-                        ToolId::GhGetFileContent,
-                        json!({ "owner": owner, "repo": repo, "path": path, "ref": reference }),
-                    )
-                    .why("Dependency names at the release ref.")
-                    .build(),
-                );
-            }
         }
     }
     leads
 }
 
-/// The manifest that names a package's dependencies: the one the release
-/// was checked to declare them in, else the ecosystem's fixed file name.
-fn manifest_file(artifact: &ArtifactItem) -> Option<&'static str> {
-    artifact.manifest.or(match artifact.artifact_type {
-        ArtifactType::Npm => Some("package.json"),
-        ArtifactType::Crates => Some("Cargo.toml"),
-        ArtifactType::Go => Some("go.mod"),
-        ArtifactType::Packagist => Some("composer.json"),
-        ArtifactType::Pypi => Some("pyproject.toml"),
-        _ => None,
-    })
+/// The query as a lead copies it: every field the caller set except the
+/// brief and the page cursor.
+fn copied(query: &ArtifactSearchQuery) -> Map<String, Value> {
+    let mut row = match serde_json::to_value(query) {
+        Ok(Value::Object(row)) => row,
+        _ => Map::new(),
+    };
+    row.retain(|key, value| {
+        !matches!(key.as_str(), "mainGoal" | "reasoning" | "page") && !value.is_null()
+    });
+    row
 }
+
+/// A failure's one repair lead, when a call fixes it: an unknown exact
+/// package searches its name as keywords (`broadenSearch`; PyPI has no
+/// search); a missing version reads the nearest published ones, else the
+/// latest (`repair`); a version the ecosystem cannot select reads the
+/// latest (`repair`).
+pub(super) fn with_repair(mut error: ArtifactError, query: &ArtifactSearchQuery) -> ArtifactError {
+    let Some(name) = query.bare_package_name() else {
+        return error;
+    };
+    let mut exact = copied(query);
+    exact.insert("packageName".into(), json!(name));
+    exact.remove("version");
+    let lead = match error.code.as_str() {
+        "notFound" if query.artifact_type() != ArtifactType::Pypi => {
+            exact.remove("packageName");
+            exact.insert("keywords".into(), json!([name]));
+            Some((
+                "broadenSearch",
+                Continuation::new(ToolId::ArtifactSearch, Value::Object(exact))
+                    .confidence("low")
+                    .build(),
+            ))
+        }
+        "versionNotFound" if !error.nearest.is_empty() => {
+            let queries = error
+                .nearest
+                .iter()
+                .map(|version| {
+                    let mut row = exact.clone();
+                    row.insert("version".into(), json!(version));
+                    Value::Object(row)
+                })
+                .collect::<Vec<_>>();
+            Some((
+                "repair",
+                Continuation::input(ToolId::ArtifactSearch, json!({ "queries": queries }))
+                    .confidence("medium")
+                    .build(),
+            ))
+        }
+        "versionNotFound" | "capabilityUnavailable" if query.version().is_some() => Some((
+            "repair",
+            Continuation::new(ToolId::ArtifactSearch, Value::Object(exact))
+                .confidence("medium")
+                .build(),
+        )),
+        _ => None,
+    };
+    if let Some((name, lead)) = lead {
+        error.next = Some(Box::new(json!({ name: lead })));
+    }
+    error
+}
+
+/// An empty keyword discovery, broadened: one variant per dropped keyword
+/// (a single multi-word keyword: per dropped word), run as one batch, so
+/// the variant that returns rows names what emptied the search.
+pub(super) fn broaden_keywords(query: &ArtifactSearchQuery) -> Option<Value> {
+    let terms = query.keyword_list();
+    let words: Vec<&str> = match terms.as_slice() {
+        [single] => single.split_whitespace().collect(),
+        many => many.iter().map(String::as_str).collect(),
+    };
+    if words.len() < 2 {
+        return None;
+    }
+    let base = copied(query);
+    let variants = (0..words.len())
+        .rev()
+        .take(BROADEN_VARIANTS)
+        .map(|dropped| {
+            let mut row = base.clone();
+            let kept = words
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != dropped)
+                .map(|(_, word)| *word)
+                .collect::<Vec<_>>();
+            let keywords = if terms.len() == 1 {
+                json!([kept.join(" ")])
+            } else {
+                json!(kept)
+            };
+            row.insert("keywords".into(), keywords);
+            Value::Object(row)
+        })
+        .collect::<Vec<_>>();
+    Some(
+        Continuation::input(ToolId::ArtifactSearch, json!({ "queries": variants }))
+            .confidence("low")
+            .build(),
+    )
+}
+
+/// Broadened variants at most: one call's batch.
+const BROADEN_VARIANTS: usize = 5;
 
 /// The ref of a `/tree/<ref>` or `/blob/<ref>` repository URL when it names
 /// `version`'s release (`v8.1.4` for 8.1.4) and nothing after it: a branch
@@ -127,41 +202,9 @@ fn version_ref(url: &str, version: &str) -> Option<String> {
         .then(|| reference.to_owned())
 }
 
-/// `owner/repo` from a GitHub repository URL in any common registry form
-/// (`git+https://github.com/o/r.git`, `git@github.com:o/r`, `github.com/o/r/tree/…`).
-fn github_repo(url: &str) -> Option<(String, String)> {
-    let rest = url
-        .split_once("github.com/")
-        .or_else(|| url.split_once("github.com:"))?
-        .1;
-    let mut parts = rest.split(['/', '#', '?']);
-    let owner = parts.next().filter(|part| !part.is_empty())?;
-    let repo = parts.next()?.trim_end_matches(".git");
-    (!repo.is_empty()).then(|| (owner.to_owned(), repo.to_owned()))
-}
-
-/// Monorepo subdirectory from a `/tree/<ref>/<dir>` or `/blob/<ref>/<file>`
-/// repository URL. The ref is dropped: refs may contain slashes, and URL refs
-/// are often stale; only viewReleaseSource pins the registry's source ref.
-fn github_repo_dir(url: &str) -> Option<String> {
-    let rest = url.split_once("github.com/")?.1;
-    let rest = rest.split(['#', '?']).next()?;
-    let mut parts = rest.split('/').filter(|part| !part.is_empty());
-    let (_owner, _repo, kind, _ref) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
-    let mut segments: Vec<&str> = parts.collect();
-    match kind {
-        "tree" => {}
-        "blob" => {
-            segments.pop();
-        }
-        _ => return None,
-    }
-    (!segments.is_empty()).then(|| segments.join("/"))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{github_repo, github_repo_dir, label_release_source, source_leads};
+    use super::{github_repo_dir, label_release_source, source_leads};
     use crate::providers::artifact::{ArtifactItem, ArtifactType};
     use serde_json::json;
 
@@ -186,40 +229,26 @@ mod tests {
             leads["viewRepo"]["query"]["queries"][0],
             json!({"owner":"psf","repo":"requests"})
         );
-        // AR2: the row labels the default branch; the lead does not repeat it.
+        // The row labels the default branch; the lead does not repeat it.
         assert!(leads["viewRepo"].get("verification").is_none());
         assert!(leads_of(&item(ArtifactType::Npm, "https://gitlab.com/o/r")).is_empty());
     }
 
     #[test]
-    fn the_release_lead_joins_the_package_and_entry_directories() {
+    fn the_release_lead_leads_to_the_package_directory() {
         let mut row = item(ArtifactType::Pypi, "https://github.com/o/r");
         row.source_ref = Some("v1.2.3".into());
-        row.entry_directory = Some("src".into());
         let leads = leads_of(&row);
-        // PyPI declares its dependencies in pyproject.toml.
-        assert_eq!(
-            leads.keys().collect::<Vec<_>>(),
-            vec!["viewReleaseSource", "readManifest"]
-        );
-        assert_eq!(
-            leads["readManifest"]["query"]["queries"][0]["path"],
-            "pyproject.toml"
-        );
+        assert_eq!(leads.keys().collect::<Vec<_>>(), vec!["viewReleaseSource"]);
         assert_eq!(
             leads["viewReleaseSource"]["query"]["queries"][0],
-            json!({"owner":"o","repo":"r","path":"src","ref":"v1.2.3"})
+            json!({"owner":"o","repo":"r","ref":"v1.2.3"})
         );
+        // The package directory is the registry's, never the built entry's.
         row.repository_directory = Some("packages/x".into());
         row.source_attested = true;
         let lead = &leads_of(&row)["viewReleaseSource"];
-        assert_eq!(lead["query"]["queries"][0]["path"], "packages/x/src");
-        assert!(
-            lead["why"]
-                .as_str()
-                .is_some_and(|why| why.contains("provenance")),
-            "{lead}"
-        );
+        assert_eq!(lead["query"]["queries"][0]["path"], "packages/x");
     }
 
     /// The row is the one source of the release ref's label: no lead at
@@ -233,52 +262,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn an_upstream_tag_and_an_unchecked_ref_are_labeled_apart() {
-        let mut row = item(ArtifactType::Pypi, "https://github.com/psf/requests");
-        row.source_ref = Some("v2.31.0".into());
-        let lead = &leads_of(&row)["viewReleaseSource"];
-        assert!(
-            lead["why"]
-                .as_str()
-                .is_some_and(|why| why.contains("release-ref")),
-            "{lead}"
-        );
-        row.source_tag = true;
-        let lead = &leads_of(&row)["viewReleaseSource"];
-        assert!(
-            lead["why"].as_str().is_some_and(|why| why.contains("tag")),
-            "{lead}"
-        );
-    }
-
-    #[test]
-    fn a_release_ref_also_leads_to_the_manifest_at_that_ref() {
-        let mut row = item(ArtifactType::Crates, "https://github.com/serde-rs/serde");
-        row.source_ref = Some("b6a77c4".into());
-        row.repository_directory = Some("serde".into());
-        let leads = leads_of(&row);
-        assert_eq!(
-            leads.keys().collect::<Vec<_>>(),
-            vec!["viewReleaseSource", "readManifest"]
-        );
-        let manifest = &leads["readManifest"];
-        assert_eq!(manifest["tool"], "ghGetFileContent");
-        assert_eq!(
-            manifest["query"]["queries"][0],
-            json!({"owner":"serde-rs","repo":"serde","path":"serde/Cargo.toml","ref":"b6a77c4"})
-        );
-        // The entry directory points the tree, never the manifest.
-        let mut npm = item(ArtifactType::Npm, "https://github.com/o/r");
-        npm.source_ref = Some("abc".into());
-        npm.entry_directory = Some("lib".into());
-        assert_eq!(
-            leads_of(&npm)["readManifest"]["query"]["queries"][0]["path"],
-            "package.json"
-        );
-    }
-
-    /// E19: rubygems names its release as a `/tree/<tag>` URL: the lead
+    /// Rubygems names its release as a `/tree/<tag>` URL: the lead
     /// reads that tag, not the default branch; a branch URL stays unpinned.
     #[test]
     fn a_repository_url_naming_the_versions_tag_pins_the_release_lead() {
@@ -319,23 +303,7 @@ mod tests {
         assert_eq!(dir("git+https://github.com/o/r.git"), None);
     }
 
-    #[test]
-    fn parses_registry_repository_urls() {
-        let expected = Some(("o".to_owned(), "r".to_owned()));
-        for url in [
-            "git+https://github.com/o/r.git",
-            "https://github.com/o/r",
-            "git@github.com:o/r.git",
-            "https://github.com/o/r/tree/main/packages/x",
-            "github.com/o/r#readme",
-        ] {
-            assert_eq!(github_repo(url), expected, "{url}");
-        }
-        assert_eq!(github_repo("https://gitlab.com/o/r"), None);
-        assert_eq!(github_repo("https://github.com/o"), None);
-    }
-
-    /// AR2: the row is the one source of the label; a discovery row
+    /// The row is the one source of the label; a discovery row
     /// without a ref gets none, and a rubygems tag URL is a registry ref.
     #[test]
     fn the_row_states_its_release_source_and_label() {
@@ -363,34 +331,52 @@ mod tests {
         assert_eq!(gem.verification, Some("registryRef"));
     }
 
-    /// AR4: a release checked to declare its dependencies in setup.py
-    /// points the manifest lead there.
+    /// `dependencies` is always the declared list: an empty list
+    /// says the version declares none (evidence); unknown leaves it out.
     #[test]
-    fn a_checked_manifest_points_the_manifest_lead() {
-        let mut row = item(ArtifactType::Pypi, "https://github.com/psf/requests");
-        row.source_ref = Some("v2.32.3".into());
-        row.source_tag = true;
-        row.manifest = Some("setup.py");
+    fn dependencies_are_one_list_shape() {
+        let mut row = item(ArtifactType::Npm, "https://github.com/o/r");
+        row.dependencies = Some(vec!["a@1".into(), "b@2".into()]);
+        let encoded = serde_json::to_value(&row).expect("row");
+        assert_eq!(encoded["dependencies"], json!(["a@1", "b@2"]));
+        assert!(encoded.get("dependencyList").is_none(), "{encoded}");
+        let mut none = item(ArtifactType::Npm, "https://github.com/o/r");
+        none.dependencies = Some(Vec::new());
         assert_eq!(
-            leads_of(&row)["readManifest"]["query"]["queries"][0]["path"],
-            "setup.py"
+            serde_json::to_value(&none).expect("row")["dependencies"],
+            json!([])
+        );
+        none.dependencies = None;
+        assert!(
+            serde_json::to_value(&none)
+                .expect("row")
+                .get("dependencies")
+                .is_none()
         );
     }
 
-    /// AR5: a complete dependency list replaces its own count; an absent
-    /// list keeps the count (zero dependencies is evidence).
+    /// `peerDependencies` follows the `dependencies` rule: a declared
+    /// list (empty says the version declares none), absent only when the
+    /// registry has no such field.
     #[test]
-    fn a_complete_dependency_list_drops_its_count() {
+    fn peer_dependencies_are_one_list_shape() {
         let mut row = item(ArtifactType::Npm, "https://github.com/o/r");
-        row.dependency_list = vec!["a@1".into(), "b@2".into()];
-        row.dependencies = Some(2);
-        row.dedupe_dependency_count();
-        let encoded = serde_json::to_value(&row).expect("row");
-        assert!(encoded.get("dependencies").is_none(), "{encoded}");
-        assert_eq!(encoded["dependencyList"], json!(["a@1", "b@2"]));
-        let mut none = item(ArtifactType::Npm, "https://github.com/o/r");
-        none.dependencies = Some(0);
-        none.dedupe_dependency_count();
-        assert_eq!(serde_json::to_value(&none).expect("row")["dependencies"], 0);
+        row.peer_dependencies = Some(vec!["react@^19".into()]);
+        assert_eq!(
+            serde_json::to_value(&row).expect("row")["peerDependencies"],
+            json!(["react@^19"])
+        );
+        row.peer_dependencies = Some(Vec::new());
+        assert_eq!(
+            serde_json::to_value(&row).expect("row")["peerDependencies"],
+            json!([])
+        );
+        row.peer_dependencies = None;
+        assert!(
+            serde_json::to_value(&row)
+                .expect("row")
+                .get("peerDependencies")
+                .is_none()
+        );
     }
 }

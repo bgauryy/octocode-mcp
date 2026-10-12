@@ -1,4 +1,4 @@
-//! R7: a batch with a rejected row keeps every row's input index across
+//! A batch with a rejected row keeps every row's input index across
 //! response pages. The continuation carries only the admitted rows (a
 //! rejected row would fail the output contract); the rejected row rides the
 //! first page and the snapshot mark keeps the admitted rows' indices.

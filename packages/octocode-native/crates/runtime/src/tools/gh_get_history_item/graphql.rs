@@ -31,13 +31,7 @@ pub(super) fn graphql_complete_collection_eligible(query: &HistoryItemRequest) -
     ) {
         return false;
     }
-    if query.page().unwrap_or(1) > 1
-        || query.file_page().unwrap_or(1) > 1
-        || query.comment_page().unwrap_or(1) > 1
-        || query.commit_page().unwrap_or(1) > 1
-        || query.review_page().unwrap_or(1) > 1
-        || query.include_diff()
-    {
+    if query.page().unwrap_or(1) > 1 || query.include_diff() {
         return false;
     }
     let wants = content_wants(query);
@@ -93,13 +87,13 @@ pub(super) fn pull_request_document(wants: &ContentWants) -> (String, Vec<(&'sta
             wants.discussion,
             "discussion",
             100,
-            "commentsConn: comments(first:$discussion){ pageInfo{ hasNextPage } nodes{ databaseId author{ login } body createdAt url } }",
+            "commentsConn: comments(first:$discussion){ pageInfo{ hasNextPage } nodes{ databaseId author{ login __typename } body createdAt url } }",
         ),
         (
             wants.reviews,
             "reviews",
             100,
-            "reviews(first:$reviews){ pageInfo{ hasNextPage } nodes{ databaseId author{ login } state body submittedAt commit{ oid } } }",
+            "reviews(first:$reviews){ pageInfo{ hasNextPage } nodes{ databaseId author{ login __typename } state body submittedAt commit{ oid } } }",
         ),
         (
             wants.commits,
@@ -238,7 +232,7 @@ pub(super) fn map_graphql_pr_metadata(pr: &Value) -> Value {
         "user": { "login": str_at(pr, "/author/login").unwrap_or("") },
         "labels": labels,
         "labels_truncated": labels_truncated,
-        // The target-branch tip GitHub recorded for the PR (`targetSha`).
+        // The target-branch tip GitHub recorded for the PR (`baseSha`).
         "base": { "ref": pr.get("baseRefName"), "sha": pr.get("baseRefOid") },
         "head": { "ref": pr.get("headRefName"), "sha": pr.get("headRefOid") },
         "created_at": pr.get("createdAt"),
@@ -280,12 +274,24 @@ pub(super) fn map_graphql_files(pr: &Value) -> Vec<Value> {
     })
 }
 
+/// The REST login of a GraphQL author: GraphQL drops the `[bot]` suffix
+/// REST gives app accounts, so a `Bot` author gets it back and the bot
+/// filter sees the same login on both paths.
+fn author_login(node: &Value) -> String {
+    let login = str_at(node, "/author/login").unwrap_or("unknown");
+    if str_at(node, "/author/__typename") == Some("Bot") && !login.ends_with("[bot]") {
+        format!("{login}[bot]")
+    } else {
+        login.to_owned()
+    }
+}
+
 pub(super) fn map_graphql_comments(pr: &Value) -> Vec<Value> {
     nodes(pr, "/commentsConn/nodes", |node| {
         json!({
             "id": node.get("databaseId").cloned().unwrap_or_else(|| node["id"].clone()),
             "body": node.get("body"),
-            "user": { "login": str_at(node, "/author/login").unwrap_or("unknown") },
+            "user": { "login": author_login(node) },
             "created_at": node.get("createdAt"),
             "html_url": node.get("url"),
         })
@@ -297,7 +303,7 @@ pub(super) fn map_graphql_reviews(pr: &Value) -> Vec<Value> {
         // The REST review shape: numeric id and the reviewed commit.
         json!({
             "id": node.get("databaseId"),
-            "user": { "login": str_at(node, "/author/login").unwrap_or("unknown") },
+            "user": { "login": author_login(node) },
             "state": node.get("state"),
             "body": node.get("body"),
             "submitted_at": node.get("submittedAt"),
@@ -329,6 +335,28 @@ pub(super) fn map_graphql_commits(pr: &Value) -> Vec<Value> {
 
 #[cfg(test)]
 mod tests {
+    /// A GraphQL `Bot` author reads as the REST `<login>[bot]`, so the bot
+    /// filter drops review-app comments and reviews on both paths.
+    #[test]
+    fn graphql_bot_authors_get_the_rest_bot_suffix() {
+        let pr = serde_json::json!({
+            "commentsConn": {"nodes": [
+                {"databaseId": 1, "author": {"login": "cubic-dev-ai", "__typename": "Bot"}, "body": "b"},
+                {"databaseId": 2, "author": {"login": "dev", "__typename": "User"}, "body": "b"}
+            ]},
+            "reviews": {"nodes": [
+                {"databaseId": 3, "author": {"login": "cubic-dev-ai", "__typename": "Bot"}, "state": "COMMENTED"}
+            ]}
+        });
+        let comments = super::map_graphql_comments(&pr);
+        assert_eq!(comments[0]["user"]["login"], "cubic-dev-ai[bot]");
+        assert_eq!(comments[1]["user"]["login"], "dev");
+        assert_eq!(
+            super::map_graphql_reviews(&pr)[0]["user"]["login"],
+            "cubic-dev-ai[bot]"
+        );
+    }
+
     use super::*;
 
     /// Fields and arguments `document` selects that the GitHub schema
@@ -370,7 +398,8 @@ mod tests {
                     *at += 2;
                 }
                 let field = &types[ty][name];
-                if field.is_null() {
+                // `__typename` is a meta-field every object type has.
+                if field.is_null() && name != "__typename" {
                     missing.push(format!("{ty}.{name}"));
                 }
                 if tokens.get(*at).is_some_and(|t| t == "(") {
@@ -477,7 +506,7 @@ mod tests {
         assert!(super::graphql_complete_collection_eligible(&query));
         let file_page: HistoryItemRequest = HistoryItemRequest::from_row(json!({
             "operation":"pullRequest","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b","number":1,
-            "sections":["body","files"],"filePage":2
+            "sections":["body","files"],"page":2
         }))
         .expect("GitHub history test data should be valid");
         assert!(!super::graphql_complete_collection_eligible(&file_page));
@@ -493,7 +522,7 @@ mod tests {
         let paged: HistoryItemRequest = HistoryItemRequest::from_row(json!({
             "operation":"pullRequest","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b","number":1,
             "sections":["body","comments"],
-            "commentPage":2
+            "page":2
         }))
         .expect("GitHub history test data should be valid");
         assert!(!super::graphql_complete_collection_eligible(&paged));
@@ -561,7 +590,7 @@ mod tests {
         assert_eq!(complete["labels_truncated"], false);
     }
 
-    /// HI4/HI7/X5: the GraphQL PR carries the target-branch tip, the commit
+    /// The GraphQL PR carries the target-branch tip, the commit
     /// and review-thread totals, and each commit's account login beside its
     /// git name, in the REST shape.
     #[test]

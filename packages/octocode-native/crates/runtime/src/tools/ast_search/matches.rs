@@ -3,6 +3,7 @@ use crate::tools::ast_rule::{
     GrammarChoice, choose_grammar, compile_check, has_extension_in, language_extensions,
     present_grammars,
 };
+use crate::tools::empty_walk::{FileProbe, Globs, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::ast_search::r#match as limits;
 use crate::tools::num::u32_of;
@@ -74,11 +75,11 @@ impl MatchQuery<'_> {
         use crate::policy::prune::DefaultsFlag;
         either_form!(self, default_excludes => default_excludes.defaults())
     }
-    pub fn hidden(self) -> Option<bool> {
-        either_form!(self, hidden => *hidden)
+    pub fn include_hidden(self) -> Option<bool> {
+        either_form!(self, include_hidden => *include_hidden)
     }
-    pub fn no_ignore(self) -> Option<bool> {
-        either_form!(self, no_ignore => *no_ignore)
+    pub fn include_ignored(self) -> Option<bool> {
+        either_form!(self, include_ignored => *include_ignored)
     }
     pub fn reverse(self) -> Option<bool> {
         either_form!(self, reverse => *reverse)
@@ -90,15 +91,18 @@ impl MatchQuery<'_> {
     pub fn max_depth(self) -> Option<u32> {
         either_form!(self, max_depth => max_depth.map(|depth| u32::try_from(depth.get()).unwrap_or(u32::MAX)))
     }
-    pub fn max_files(self) -> u32 {
-        either_form!(self, max_files => u32_of(*max_files))
+    /// The caller's file scan cap; unset scans the whole scope within the
+    /// scan time budget.
+    pub fn max_files(self) -> Option<u32> {
+        either_form!(self, max_files => max_files.map(|files| u32_of(files.get())))
     }
     /// Leading candidates (walk order) an earlier window evaluated.
     pub fn scan_offset(self) -> u32 {
         either_form!(self, scan_offset => scan_offset.map_or(0, |offset| u32::try_from(offset.get()).unwrap_or(u32::MAX)))
     }
-    pub fn match_page_size(self) -> u32 {
-        either_form!(self, match_page_size => u32_of(*match_page_size))
+    /// The caller's matches per file page; unset fills the response window.
+    pub fn match_page_size(self) -> Option<u32> {
+        either_form!(self, match_page_size => match_page_size.map(|size| u32_of(size.get())))
     }
     pub fn match_content_length(self) -> Option<u32> {
         either_form!(self, match_content_length => Some(u32_of(*match_content_length)))
@@ -118,8 +122,9 @@ impl MatchQuery<'_> {
     pub fn match_page(self) -> u32 {
         either_form!(self, match_page => u32_of(*match_page))
     }
-    pub fn page_size(self) -> u32 {
-        either_form!(self, page_size => u32_of(*page_size))
+    /// The caller's files per page; unset fills the response window.
+    pub fn page_size(self) -> Option<u32> {
+        either_form!(self, page_size => page_size.map(|size| u32_of(size.get())))
     }
     pub fn snapshot(self) -> Option<String> {
         either_form!(self, snapshot => snapshot.as_ref().map(ToString::to_string))
@@ -144,16 +149,17 @@ pub fn execute_match(
     paths: &PathPolicy,
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
+    response_window: Option<usize>,
 ) -> super::AstResult {
-    let out = execute_match_inner(q, paths, security, cancel).map_err(|mut error| {
-        // A YAML rule that fails to compile needs a rule-shaped recovery, not
-        // the pattern advice (terminators, bodies) the generic hint gives.
-        if q.rule().is_some() && error.code == "invalidPattern" && error.hints.is_empty() {
-            error.hints.push(RULE_COMPILE_HINT.to_owned());
-        }
-        error
-    })?;
-    Ok(retry_omitted_parts(q, out, paths, security, cancel))
+    let out = execute_match_inner(q, paths, security, cancel, response_window)?;
+    Ok(retry_omitted_parts(
+        q,
+        out,
+        paths,
+        security,
+        cancel,
+        response_window,
+    ))
 }
 
 /// A declaration pattern matches exactly, so `function $N($$$A) { $$$B }`
@@ -168,6 +174,7 @@ fn retry_omitted_parts(
     paths: &PathPolicy,
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
+    response_window: Option<usize>,
 ) -> Value {
     let (MatchQuery::Pattern(query), Some(pattern)) = (q, q.pattern()) else {
         return out;
@@ -203,12 +210,17 @@ fn retry_omitted_parts(
     let Ok(rule) = serde_json::from_value::<AstSearchQueryMatchRule>(row) else {
         return out;
     };
-    let Ok(mut retried) = execute_match_inner(MatchQuery::Rule(&rule), paths, security, cancel)
-    else {
+    let Ok(mut retried) = execute_match_inner(
+        MatchQuery::Rule(&rule),
+        paths,
+        security,
+        cancel,
+        response_window,
+    ) else {
         return out;
     };
-    let written = out["stats"]["matchCount"].as_u64().unwrap_or(0);
-    if retried["stats"]["matchCount"].as_u64().unwrap_or(0) <= written {
+    let written = out["matchCount"].as_u64().unwrap_or(0);
+    if retried["matchCount"].as_u64().unwrap_or(0) <= written {
         return out;
     }
     let note = json!({
@@ -289,8 +301,6 @@ fn return_slot(pattern: &str, keyword: &str, slot: &str, body: char) -> Option<S
     None
 }
 
-const RULE_COMPILE_HINT: &str = "Fix the YAML rule where the error points (keys: kind pattern regex has inside all any not stopBy); test patterns alone.";
-
 /// Rust item keywords a visibility modifier (`pub`, `pub(crate)`) can precede.
 const RUST_VISIBLE_ITEMS: &[&str] = &[
     "fn", "async", "unsafe", "const", "static", "struct", "enum", "union", "trait", "type", "mod",
@@ -322,6 +332,8 @@ type ScannedFile = (
 struct Scan {
     files: Vec<ScannedFile>,
     truncated: bool,
+    /// Where a time-budget cut resumes (`scanOffset`), in walk order.
+    scan_resume: Option<u32>,
     diagnostics: Vec<StructuralDiagnostic>,
     /// Unsupported, unreadable and over-large files skipped.
     skips: (u32, u32, u32),
@@ -384,12 +396,23 @@ fn scan_bytes(scan: &Scan) -> usize {
 /// One file's row on the result page, with what its match page withheld.
 struct Group {
     row: Value,
+    /// What the file adds to a file page: its first match page.
+    chars: usize,
+    /// This match page starts past the file's last match.
+    out_of_range: bool,
     more_matches: bool,
     truncated_captures: bool,
     /// The longest value this match page shortened, in characters.
     cut_chars: Option<usize>,
     /// Line spans of this match page's rows whose shown text was cut.
     clipped: Vec<(u64, u64)>,
+}
+
+/// How the candidate scan ended early, and where a resume starts.
+#[derive(Clone, Copy)]
+struct ScanCut {
+    truncated: bool,
+    resume: Option<u32>,
 }
 
 /// Rows per file plus per-file coverage: files that parsed, files whose
@@ -403,6 +426,8 @@ struct Grouped {
     diagnostics: Vec<Value>,
     total_matches: u64,
     parsed_files: u32,
+    /// Files the scan read: parsed, or skipped by the literal-anchor prefilter.
+    scanned_files: u32,
     compile_error: Option<ToolError>,
     compile_failed_files: u32,
     unevaluated_files: u32,
@@ -413,6 +438,7 @@ fn execute_match_inner(
     paths: &PathPolicy,
     security: &ContentSecurity,
     cancel: &dyn CancellationCheck,
+    response_window: Option<usize>,
 ) -> super::AstResult {
     cancel.check().map_err(ToolError::cancelled)?;
     let scope = resolve_scope(q, paths, cancel)?;
@@ -440,14 +466,16 @@ fn execute_match_inner(
         }
     };
     let snapshot = match_snapshot(q, &scope, &scan.files);
-    if continues && q.snapshot().as_deref() != Some(&snapshot) {
+    // A page number without a snapshot asks for that page of a fresh scan;
+    // only a snapshot that no longer matches is stale.
+    if continues && q.snapshot().is_some_and(|given| given != snapshot) {
         if !fresh {
             // A stored scan is only a candidate: a page whose query no longer
             // matches it is answered by a fresh scan, exactly as without one.
             if let Some(stale) = q.snapshot() {
                 SCANS.evict(&stale);
             }
-            return execute_match_inner(q, paths, security, cancel);
+            return execute_match_inner(q, paths, security, cancel, response_window);
         }
         if let Some(error) = interrupted_rescan(q, &scan) {
             return Err(error);
@@ -458,7 +486,8 @@ fn execute_match_inner(
             &snapshot,
         )));
     }
-    let grouped = group_files(q, &scan.files);
+    let budget = crate::tools::page_windows::page_budget(response_window, &q.to_value());
+    let grouped = group_files(q, &scan.files, budget);
     if grouped.total_matches == 0
         && grouped.parsed_files == 0
         && grouped.compile_failed_files > 0
@@ -468,7 +497,18 @@ fn execute_match_inner(
         // as proof of absence, so surface the compile failure instead.
         return Err(error);
     }
-    let out = render_match_page(q, &scope, &scan, grouped, &snapshot);
+    let empty_scope = if scope.is_file || grouped.total_matches > 0 {
+        EmptyScope::default()
+    } else if grouped.parsed_files == 0 && q.language().is_some() {
+        EmptyScope::of(q, &scope, paths, cancel)
+    } else if grouped.parsed_files > 0 {
+        // The files it did parse hold no match; files of the grammar behind
+        // skipped paths are still a reason, beside the pattern's shape.
+        EmptyScope::beside_parsed(q, &scope, paths, cancel)
+    } else {
+        EmptyScope::default()
+    };
+    let out = render_match_page(q, &scope, &scan, grouped, &snapshot, empty_scope, budget);
     if fresh
         && out["next"]
             .as_object()
@@ -545,10 +585,19 @@ fn scan_file(
     let canonical = &scope.canonical;
     super::validate_file_language(canonical, scope.language.as_deref())?;
     let Some(bytes) = super::read_parse_source(canonical)? else {
-        return Err(ToolError::new(
+        let mut error = ToolError::new(
             "fileTooLarge",
             "Source exceeds the native parser byte limit.",
-        ));
+        );
+        if let Some(lead) = q
+            .pattern()
+            .as_deref()
+            .and_then(super::pattern_literal)
+            .and_then(|literal| super::text_search(&canonical.to_string_lossy(), literal))
+        {
+            error.next = Some(Box::new(serde_json::json!({ "findText": lead })));
+        }
+        return Err(error);
     };
     // Parse the file as the directory scan does: raw. Output strings are
     // redacted by the response stage.
@@ -572,9 +621,9 @@ fn scan_file(
             q.rule().as_deref(),
         )
     }
-    .map_err(super::native_error)?;
+    .map_err(|error| tree_repair(super::native_error(error), q, scope))?;
     if let Some(error) = diagnostic_error(&r.diagnostics) {
-        return Err(error);
+        return Err(tree_repair(error, q, scope));
     }
     Ok(Scan {
         files: vec![(
@@ -586,6 +635,31 @@ fn scan_file(
         sources: vec![canonical.clone()],
         ..Scan::default()
     })
+}
+
+/// A query that does not compile against one file leads to that file's
+/// syntax tree, where the node shapes a pattern or rule names are read.
+fn tree_repair(mut error: ToolError, q: MatchQuery<'_>, scope: &Scope) -> ToolError {
+    if error.code == crate::tools::ast_rule::INVALID_PATTERN && error.next.is_none() {
+        error.next = Some(Box::new(
+            json!({ "viewTree": tree_lead(q, scope, &scope.canonical) }),
+        ));
+    }
+    error
+}
+
+/// The syntaxTree read of `file` (its grammar pinned when one was named
+/// for a single file).
+fn tree_lead(q: MatchQuery<'_>, scope: &Scope, file: &std::path::Path) -> Value {
+    let mut tree = json!({"operation":"syntaxTree","path":file.to_string_lossy()});
+    if scope.is_file
+        && let Some(language) = q.language()
+    {
+        tree["language"] = json!(language);
+    }
+    crate::tools::result::Continuation::new(ToolId::AstSearch, tree)
+        .confidence("medium")
+        .build()
 }
 
 fn scan_directory(
@@ -610,10 +684,10 @@ fn scan_directory(
             exclude_dir: Some(
                 PruneMode::SyntaxVisible.directories_before_policy(q.default_excludes()),
             ),
-            hidden: q.hidden(),
-            no_ignore: q.no_ignore(),
+            hidden: q.include_hidden(),
+            no_ignore: q.include_ignored(),
             max_depth: q.max_depth(),
-            max_files: Some(q.max_files()),
+            max_files: q.max_files(),
             skip_files: Some(q.scan_offset()),
             max_file_bytes: u32::try_from(super::MAX_PARSE_SOURCE_BYTES).ok(),
         },
@@ -621,8 +695,11 @@ fn scan_directory(
             let allowed = super::allow_discovery(path, paths, cancel)?;
             // Only a directory or a file of the scanned grammar could have
             // matched, so only those leave absence unproven.
+            // A dot entry out of view (no `hidden`) is neither walked nor
+            // disclosed, as structureSearch tree does.
             let is_dir = path.is_dir();
             if !allowed
+                && (q.include_hidden() == Some(true) || !super::is_dot_entry(path))
                 && (is_dir
                     || extensions.is_none_or(|extensions| has_extension_in(path, extensions)))
             {
@@ -674,6 +751,7 @@ fn scan_directory(
             })
             .collect(),
         truncated: r.scan_truncated,
+        scan_resume: r.scan_resume,
         diagnostics: r.diagnostics,
         skips: (r.skipped_unsupported, r.skipped_unreadable, r.skipped_large),
         skipped_by_prefilter: r.skipped_by_pre_filter,
@@ -716,9 +794,8 @@ fn interrupted_rescan(q: MatchQuery<'_>, scan: &Scan) -> Option<ToolError> {
     }
     let mut error = ToolError::new(
         "timeout",
-        "The rescan for this page stopped at the structural match deadline, so it cannot be checked against the earlier pages; the source is unchanged. Retry the same page.",
+        "The rescan for this page stopped at the structural match deadline, so it cannot be checked against the earlier pages; the source is unchanged.",
     );
-    error.hints = vec!["Retry next.retry; a narrower path or pattern parses less per page.".into()];
     error.next = Some(Box::new(json!({
         "retry": crate::tools::result::Continuation::new(ToolId::AstSearch, q.to_value())
             .confidence("exact")
@@ -741,7 +818,7 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, files: &[ScannedFile]) -> St
         .map(|f| (f.0.clone(), f.1.len()))
         .collect::<Vec<_>>();
     crate::digest::json_sha256(&json!([
-        // Row shape version (D1 v4: `stats.matchCount`, object rows, 1-based columns); an older cursor
+        // Row shape version (v4: `matchCount`, object rows, 1-based columns); an older cursor
         // restarts instead of mixing shapes across pages.
         MATCH_ROWS_VERSION,
         scope.canonical.to_string_lossy(),
@@ -749,8 +826,8 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, files: &[ScannedFile]) -> St
         q.rule(),
         q.include(),
         q.exclude(),
-        q.hidden(),
-        q.no_ignore(),
+        q.include_hidden(),
+        q.include_ignored(),
         q.max_depth(),
         scope.language,
         q.reverse(),
@@ -763,14 +840,7 @@ fn match_snapshot(q: MatchQuery<'_>, scope: &Scope, files: &[ScannedFile]) -> St
     ]))
 }
 
-/// The match page size, the requested match page and its first row.
-fn match_window(q: MatchQuery<'_>) -> (usize, usize, usize) {
-    let per_page = (q.match_page_size() as usize).clamp(1, limits::MATCH_PAGE_SIZE_MAXIMUM);
-    let page = q.match_page().max(1) as usize;
-    (per_page, page, (page - 1).saturating_mul(per_page))
-}
-
-fn group_files(q: MatchQuery<'_>, files: &[ScannedFile]) -> Grouped {
+fn group_files(q: MatchQuery<'_>, files: &[ScannedFile], budget: usize) -> Grouped {
     let mut grouped = Grouped::default();
     let file_list = matches!(q.result_view().as_deref(), Some("files" | "countMatches"));
     let content_length = q
@@ -783,9 +853,10 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile]) -> Grouped {
         match status.as_str() {
             "ok" => {
                 grouped.parsed_files += 1;
+                grouped.scanned_files += 1;
                 grouped.first_parsed.get_or_insert_with(|| path.clone());
             }
-            "skippedByPreFilter" => {}
+            "skippedByPreFilter" => grouped.scanned_files += 1,
             _ => {
                 if let Some(diagnostic) = diagnostics
                     .iter()
@@ -812,7 +883,7 @@ fn group_files(q: MatchQuery<'_>, files: &[ScannedFile]) -> Grouped {
             grouped.groups.push(if file_list {
                 listed_file(q, path.clone(), rows.len())
             } else {
-                match_group(q, path.clone(), rows)
+                match_group(q, path.clone(), rows, budget)
             });
         }
         if status != "ok" || !diagnostics.is_empty() {
@@ -838,7 +909,9 @@ fn listed_file(q: MatchQuery<'_>, path: String, total: usize) -> Group {
         json!({"path":path})
     };
     Group {
+        chars: crate::tools::stream_page::json_chars(&row) + 1,
         row,
+        out_of_range: false,
         more_matches: false,
         truncated_captures: false,
         cut_chars: None,
@@ -847,11 +920,28 @@ fn listed_file(q: MatchQuery<'_>, path: String, total: usize) -> Group {
 }
 
 /// One file's match page, with per-file pagination when it is a subset.
-fn match_group(q: MatchQuery<'_>, path: String, rows: Vec<MatchRow>) -> Group {
-    let (per_page, match_page, start) = match_window(q);
+fn match_group(q: MatchQuery<'_>, path: String, rows: Vec<MatchRow>, budget: usize) -> Group {
     let total = rows.len();
-    let end = start.saturating_add(per_page).min(total);
-    let page_rows = rows.get(start..end).unwrap_or(&[]);
+    let sizes = rows
+        .iter()
+        .map(|row| crate::tools::stream_page::json_chars(&row.value) + 1)
+        .collect::<Vec<_>>();
+    let paging = crate::tools::page_windows::Paging::of(
+        q.match_page_size()
+            .map(|size| (size as usize).clamp(1, limits::MATCH_PAGE_SIZE_MAXIMUM)),
+        budget,
+    );
+    let windows = paging.windows(&sizes);
+    let match_page = q.match_page().max(1) as usize;
+    let out_of_range = match_page > windows.len();
+    let more_matches = match_page < windows.len();
+    let window = windows.get(match_page - 1).cloned().unwrap_or(total..total);
+    // The file's place on a file page is its first match page, whichever
+    // match page is asked for, so the file pages never move.
+    let first_chars = windows.first().map_or(0, |first| {
+        sizes[first.clone()].iter().sum::<usize>() + path.len() + 32
+    });
+    let page_rows = &rows[window];
     // Rows whose text was cut to a header or that hide capture text:
     // `captureText:true` (next.expandCaptures) returns them whole.
     let truncated_captures = page_rows.iter().any(|row| row.withheld);
@@ -865,26 +955,31 @@ fn match_group(q: MatchQuery<'_>, path: String, rows: Vec<MatchRow>) -> Group {
         .iter()
         .map(|row| row.value.clone())
         .collect::<Vec<_>>();
-    let out_of_range = start >= total;
-    let returned = selected.len();
     let mut row = json!({"path":path,"matches":selected});
-    // Counts only add information when this match page is a subset.
-    if returned != total || out_of_range {
-        row["totalMatchRows"] = json!(total);
-        row["returnedMatchRows"] = json!(returned);
-    }
-    if total > per_page || out_of_range {
-        let facts = crate::response::pages::PageFacts::counted(match_page, per_page, total)
-            .out_of_range(out_of_range);
-        let more = match_page < total.div_ceil(per_page).max(1);
-        row["pagination"] = facts.to_value();
-        if more && match_page < limits::MATCH_PAGE_MAXIMUM {
-            row["pagination"]["nextMatchPage"] = json!(match_page + 1);
-        }
+    // A file whose matches span match pages states its page facts (the
+    // page stage counts the matches left from them); `next.nextMatchPage`
+    // is the continuation, so the facts do not restate it.
+    if windows.len() > 1 || out_of_range {
+        let facts = match q.match_page_size() {
+            Some(size) => crate::response::pages::PageFacts::counted(
+                match_page,
+                (size as usize).clamp(1, limits::MATCH_PAGE_SIZE_MAXIMUM),
+                total,
+            ),
+            None => crate::response::pages::PageFacts::sized(
+                match_page,
+                windows.len(),
+                total,
+                more_matches,
+            ),
+        };
+        row["pagination"] = facts.out_of_range(out_of_range).to_value();
     }
     Group {
+        chars: first_chars,
         row,
-        more_matches: end < total,
+        out_of_range,
+        more_matches,
         truncated_captures,
         cut_chars,
         clipped,
@@ -900,19 +995,30 @@ fn scan_diagnostics(q: MatchQuery<'_>, scope: &Scope, scan: &Scan) -> Vec<Value>
             "severity":"info",
             "stage":"scan",
             "message":format!("Literal-anchor prefilter skipped AST parsing for {} file(s) that cannot contain the anchor.", scan.skipped_by_prefilter),
-            "recovery":"Use a YAML rule with no safe literal anchor only when every supported candidate must be parsed."
         }));
     }
     diagnostics.extend(scan.diagnostics.iter().map(diag));
     if scan.truncated {
-        let limit = q.max_files();
+        let message = match q.max_files() {
+            Some(limit) => format!(
+                "Candidate scan hit the maxFiles limit ({limit}); files beyond it were not evaluated."
+            ),
+            None => super::scan_window::ceiling_note(scan.scan_resume).map_or_else(
+                || {
+                    "Candidate scan stopped at its time budget; files beyond it were not evaluated."
+                        .to_owned()
+                },
+                |note| {
+                    format!("Candidate scan stopped; files beyond it were not evaluated. {note}")
+                },
+            ),
+        };
         diagnostics.push(json!({
             "code":"structural.scan.truncated",
             "severity":"warning",
             "stage":"scan",
-            "message":format!("Candidate scan hit the maxFiles limit ({limit}); files beyond it were not evaluated. Results are a bounded subset, not the full corpus."),
-            "path":scope.canonical.to_string_lossy(),
-            "recovery":"Follow next.expandScan, or narrow the scope with include or exclude globs."
+            "message":message,
+            "path":scope.canonical.to_string_lossy()
         }));
     }
     diagnostics
@@ -924,27 +1030,54 @@ fn render_match_page(
     scan: &Scan,
     grouped: Grouped,
     snapshot: &str,
+    empty_scope: EmptyScope,
+    budget: usize,
 ) -> Value {
     let (skips, truncated) = (scan.skips, scan.truncated);
     let mut diagnostics = grouped.diagnostics;
     diagnostics.extend(scan_diagnostics(q, scope, scan));
     let parsed = grouped.parsed_files;
+    let scanned = grouped.scanned_files;
     let groups = grouped.groups;
-    let size = (q.page_size() as usize).clamp(1, limits::PAGE_SIZE_MAXIMUM);
+    let paging = crate::tools::page_windows::Paging::of(
+        q.page_size()
+            .map(|size| (size as usize).clamp(1, limits::PAGE_SIZE_MAXIMUM)),
+        budget,
+    );
     let page = q.page().max(1) as usize;
-    let start = (page - 1) * size;
-    let page_groups = groups
-        .get(start..(start + size).min(groups.len()))
-        .unwrap_or(&[]);
-    let more = start + size < groups.len();
-    let mut out = json!({"searchEngine":"structural","snapshot":snapshot,"stats":{"matchCount":grouped.total_matches}});
+    let group_sizes = groups.iter().map(|group| group.chars).collect::<Vec<_>>();
+    let windows = paging.windows(&group_sizes);
+    let page_groups = windows
+        .get(page - 1)
+        .map_or(&groups[groups.len()..], |window| &groups[window.clone()]);
+    let more = page < windows.len();
+    let mut out =
+        json!({"searchEngine":"structural","snapshot":snapshot,"matchCount":grouped.total_matches});
     if let Some(inferred) = &scope.inferred {
         out["inferredLanguage"] = json!(inferred);
     }
     if !groups.is_empty() {
-        out["files"] = Value::Array(page_groups.iter().map(|group| group.row.clone()).collect());
-        out["pagination"] =
-            crate::response::pages::PageFacts::counted(page, size, groups.len()).to_value();
+        // A later match page lists only the files it still has matches for:
+        // a file whose matches ended on an earlier match page adds no row.
+        let listed = page_groups
+            .iter()
+            .filter(|group| !group.out_of_range)
+            .collect::<Vec<_>>();
+        let rows = if listed.is_empty() {
+            page_groups.iter().collect()
+        } else {
+            listed
+        };
+        out["files"] = Value::Array(rows.into_iter().map(|group| group.row.clone()).collect());
+        let facts = match paging {
+            crate::tools::page_windows::Paging::Count(size) => {
+                crate::response::pages::PageFacts::counted(page, size, groups.len())
+            }
+            crate::tools::page_windows::Paging::Chars(_) => {
+                crate::response::pages::PageFacts::sized(page, windows.len(), groups.len(), more)
+            }
+        };
+        out["pagination"] = facts.out_of_range(page > windows.len()).to_value();
     }
     if !diagnostics.is_empty() {
         out["diagnostics"] = json!(diagnostics)
@@ -954,21 +1087,65 @@ fn render_match_page(
     if let Some(notice) = &withheld {
         out["warnings"] = json!([notice]);
     }
-    if groups.is_empty() && q.pattern().is_some() && diagnostics.is_empty() {
-        out["diagnostics"] = json!([{
-            "code":"structural.query.noMatches",
-            "severity":"info",
-            "stage":"match",
-            "message":format!("0 structural matches for the requested pattern in {parsed} parsed file{}. Patterns must be complete parseable nodes with their relevant bodies (`$$$BODY`), return types, or decorators; trailing punctuation the pattern omits is not required. Confirm the node shape with operation:\"syntaxTree\" (next.viewTree); use an explicit YAML rule for partial or relational constraints.", if parsed == 1 { "" } else { "s" }),
-            "path":scope.canonical.to_string_lossy()
-        }]);
+    // No file in scope parsed in the requested language: nothing was
+    // matched against, so the pattern is not the cause.
+    if groups.is_empty() && parsed == 0 && diagnostics.is_empty() {
+        let language = q
+            .language()
+            .map_or_else(String::new, |language| format!(" {language}"));
+        let mut hint = format!("No{language} file under this path was parsed.");
+        if let Some(skipped) = empty_scope.skipped {
+            let subject = match language.trim_start() {
+                "" => "Files".to_owned(),
+                language => format!("{language} files"),
+            };
+            hint.push_str(&format!(
+                " {subject} were skipped as {} ({}); the lead includes them.",
+                skipped.labels, skipped.because
+            ));
+            out["next"]["includeIgnored"] = skipped.lead;
+        }
+        out["hints"] = json!([hint]);
+        // The grammars the scope does hold, each a query that runs.
+        if let Some(repair) = empty_scope.repair {
+            out["next"]["repair"] = repair;
+        }
+    } else if groups.is_empty() && scanned > 0 {
+        // What the empty answer covered: the files read, in which grammar.
+        let language = scope.language.clone().or_else(|| {
+            crate::tools::ast_rule::file_grammar(&scope.canonical).map(|(grammar, _)| grammar)
+        });
+        out["filesScanned"] = json!(scanned);
+        let mut hints = vec![crate::tools::ast_rule::empty_match_hint(
+            scanned,
+            language.as_deref(),
+            q.pattern().is_some(),
+        )];
+        if let Some(skipped) = empty_scope.skipped {
+            let subject = language.as_deref().map_or_else(
+                || "Files".to_owned(),
+                |language| format!("{language} files"),
+            );
+            hints.push(format!(
+                "{subject} were skipped as {} ({}); the lead includes them.",
+                skipped.labels, skipped.because
+            ));
+            out["next"]["includeIgnored"] = skipped.lead;
+        }
+        out["hints"] = json!(hints);
     }
     let skipped = skips.0 + skips.1 + skips.2 > 0;
     let incomplete =
         truncated || skipped || grouped.compile_failed_files > 0 || grouped.unevaluated_files > 0;
-    out["truncated"] = json!(truncated);
     let partial_reasons = [
-        (truncated, "maxFiles"),
+        (
+            truncated,
+            if q.max_files().is_some() {
+                "maxFiles"
+            } else {
+                "scanBudget"
+            },
+        ),
         (skipped, "filesSkipped"),
         (grouped.compile_failed_files > 0, "compileFailed"),
         (grouped.unevaluated_files > 0, "filesUnevaluated"),
@@ -994,7 +1171,18 @@ fn render_match_page(
     {
         out["complete"] = json!(true);
     }
-    attach_match_continuations(q, scope, &mut out, page_groups, truncated, more, snapshot);
+    attach_match_continuations(
+        q,
+        scope,
+        &mut out,
+        page_groups,
+        ScanCut {
+            truncated,
+            resume: scan.scan_resume,
+        },
+        more,
+        snapshot,
+    );
     // `complete` tells a reader the row's pages are drill-downs; a row with
     // no page needs no such note.
     let has_page = out["next"].as_object().is_some_and(|next| {
@@ -1012,16 +1200,7 @@ fn render_match_page(
             .first_parsed
             .and_then(|path| row_file(scope, &json!({"path": path})))
     {
-        let mut tree = json!({"operation":"syntaxTree","path":file.to_string_lossy()});
-        if scope.is_file
-            && let Some(language) = q.language()
-        {
-            tree["language"] = json!(language);
-        }
-        out["next"]["viewTree"] = crate::tools::result::Continuation::new(ToolId::AstSearch, tree)
-            .why("Compare the pattern with a parsed file's node shapes.")
-            .confidence("medium")
-            .build();
+        out["next"]["viewTree"] = tree_lead(q, scope, &file);
     }
     out
 }
@@ -1033,12 +1212,13 @@ fn attach_match_continuations(
     scope: &Scope,
     out: &mut Value,
     page_groups: &[Group],
-    truncated: bool,
+    cut: ScanCut,
     more: bool,
     snapshot: &str,
 ) {
+    let truncated = cut.truncated;
     let page = q.page().max(1) as usize;
-    let (per_page, match_page, _) = match_window(q);
+    let match_page = q.match_page().max(1) as usize;
     let has_more_matches = page_groups.iter().any(|group| group.more_matches);
     let has_truncated_captures = page_groups.iter().any(|group| group.truncated_captures);
     let cut_chars = page_groups.iter().filter_map(|group| group.cut_chars).max();
@@ -1049,13 +1229,23 @@ fn attach_match_continuations(
             length as usize
         })
         .clamp(1, limits::MATCH_CONTENT_LENGTH_MAXIMUM);
-    // A `maxFiles` cut below the schema maximum is raisable: expandScan
-    // scans on with a doubled bound, so only the maximum is terminal. It
-    // resumes after the files this window evaluated (`scanOffset`), so it is
-    // offered once the window's last file page is reached.
-    let max_files = q.max_files() as usize;
-    let expand_scan = (truncated && max_files < limits::MAX_FILES_MAXIMUM)
-        .then(|| max_files.saturating_mul(2).min(limits::MAX_FILES_MAXIMUM));
+    // The scan continues after the files this window evaluated
+    // (`scanOffset`), so the lead is offered once the window's last file page
+    // is reached.
+    let expand_scan = super::scan_window::expand_scan(
+        truncated,
+        q.max_files(),
+        cut.resume,
+        super::scan_window::ScanLimits::MATCH,
+    )
+    .map(|window| {
+        let mut expand =
+            json!({"scanOffset":window.scan_offset,"page":1,"matchPage":1,"snapshot":null});
+        if let Some(bound) = window.max_files {
+            expand["maxFiles"] = json!(bound);
+        }
+        expand
+    });
     if (truncated && !more && expand_scan.is_none())
         || (more && page >= limits::PAGE_MAXIMUM)
         || (has_more_matches && match_page >= limits::MATCH_PAGE_MAXIMUM)
@@ -1078,13 +1268,10 @@ fn attach_match_continuations(
         out["next"] = json!({"nextPage":with(json!({"page":page + 1,"matchPage":1}))})
     }
     if has_more_matches && match_page < limits::MATCH_PAGE_MAXIMUM {
-        out["next"]["nextMatchPage"] =
-            with(json!({"matchPageSize":per_page,"matchPage":match_page+1}));
+        out["next"]["nextMatchPage"] = with(json!({"matchPage":match_page+1}));
     }
-    if let Some(bound) = expand_scan.filter(|_| !more) {
-        out["next"]["expandScan"] = with(json!({
-            "maxFiles":bound,"scanOffset":max_files,"page":1,"matchPage":1,"snapshot":null
-        }));
+    if let Some(expand) = expand_scan.filter(|_| !more) {
+        out["next"]["expandScan"] = with(expand);
     }
     // A clipped value is display clipping of a listed match, not a coverage
     // gap: expandCaptures re-runs with captures and the whole length when
@@ -1142,14 +1329,14 @@ fn row_file(scope: &Scope, row: &Value) -> Option<std::path::PathBuf> {
 }
 
 /// Reads of one file's clipped rows, whole: their merged line spans, at most
-/// [`MAX_READ_RANGES`](crate::tools::local_fetch::MAX_READ_RANGES) per read.
+/// [`RANGES_MAX_ITEMS`](crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS) per read.
 fn read_clipped_values(scope: &Scope, group: &Group) -> Vec<Value> {
     let Some(file) = row_file(scope, &group.row).filter(|_| !group.clipped.is_empty()) else {
         return vec![];
     };
     let spans = crate::tools::line_spans::merge_spans(group.clipped.iter().copied());
     spans
-        .chunks(crate::tools::local_fetch::MAX_READ_RANGES)
+        .chunks(crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS)
         .map(|chunk| {
             let ranges = chunk
                 .iter()
@@ -1159,7 +1346,6 @@ fn read_clipped_values(scope: &Scope, group: &Group) -> Vec<Value> {
                 ToolId::LocalFetch,
                 json!({"path": file.to_string_lossy(), "ranges": ranges}),
             )
-            .why("Read the clipped match values whole.")
             .confidence("high")
             .build()
         })
@@ -1197,7 +1383,6 @@ fn read_top_hits(scope: &Scope, row: &Value) -> Option<Value> {
             ToolId::LocalFetch,
             json!({"path": file.to_string_lossy(), "ranges": ranges}),
         )
-        .why("Read the top file's hits in context.")
         .confidence("high")
         .build(),
     )
@@ -1246,7 +1431,7 @@ fn match_value(m: &StructuralDetailedMatch, capture_text: bool, content_length: 
                 .flatten()
                 .any(|range| hidden(&range.text))
             || m.metavars.values().flatten().any(|value| hidden(value));
-        // X1: a row is an object named like the inputs that take it; a
+        // A row is an object named like the inputs that take it; a
         // multi-line match states its last line.
         let mut value = json!({
             "line": m.start_line,
@@ -1268,7 +1453,7 @@ fn match_value(m: &StructuralDetailedMatch, capture_text: bool, content_length: 
     let mut value =
         json!({"line":m.start_line,"value":text,"column":one_based_column(m.start_col)});
     if shown_cut {
-        value["truncated"] = json!(true);
+        value["clipped"] = json!(true);
     }
     if m.end_line != m.start_line {
         value["endLine"] = json!(m.end_line);
@@ -1390,6 +1575,200 @@ fn continuation_with(q: MatchQuery<'_>, changes: Value, snapshot: &str) -> Value
         .build()
 }
 
+/// What an empty directory scan can still offer: the other grammars the scope
+/// holds, and the walk flags that were off while files of the requested
+/// grammar sat behind them.
+#[derive(Default)]
+struct EmptyScope {
+    repair: Option<Value>,
+    skipped: Option<SkippedWalk>,
+}
+
+/// The skip causes that hid files of the requested grammar: the rules that
+/// name them, with the query that lifts exactly those.
+struct SkippedWalk {
+    labels: String,
+    because: String,
+    lead: Value,
+}
+
+impl EmptyScope {
+    fn of(
+        q: MatchQuery<'_>,
+        scope: &Scope,
+        paths: &PathPolicy,
+        cancel: &dyn CancellationCheck,
+    ) -> Self {
+        Self {
+            repair: other_language_repair(q, scope, paths, cancel),
+            skipped: skipped_walk(q, scope, paths, cancel),
+        }
+    }
+
+    /// An empty scan that parsed files: only the skipped walks, no repair.
+    fn beside_parsed(
+        q: MatchQuery<'_>,
+        scope: &Scope,
+        paths: &PathPolicy,
+        cancel: &dyn CancellationCheck,
+    ) -> Self {
+        Self {
+            repair: None,
+            skipped: skipped_walk(q, scope, paths, cancel),
+        }
+    }
+}
+
+/// Asks which of the walks the request left off (ignore files, hidden
+/// entries, default-excluded directories) hold files of the requested
+/// grammar; the lead lifts exactly those.
+fn skipped_walk(
+    q: MatchQuery<'_>,
+    scope: &Scope,
+    paths: &PathPolicy,
+    cancel: &dyn CancellationCheck,
+) -> Option<SkippedWalk> {
+    let extensions = scope.extensions.as_ref()?;
+    let walk = Walk {
+        ignored: q.include_ignored().unwrap_or(false),
+        hidden: q.include_hidden().unwrap_or(false),
+        default_excludes: q.default_excludes(),
+    };
+    let budget = q
+        .max_files()
+        .map_or(octocode_engine::scan_budget::SCAN_WALK_FILES, |files| {
+            files as usize
+        });
+    let (include, exclude) = (
+        q.include().unwrap_or_default(),
+        q.exclude().unwrap_or_default(),
+    );
+    let permits = |path: &std::path::Path| super::allow_discovery(path, paths, cancel);
+    let keep = |path: &std::path::Path| {
+        extensions.contains(&octocode_engine::text::extension_of(
+            &path.to_string_lossy(),
+            true,
+            "",
+        ))
+    };
+    let probe = FileProbe::new(
+        &scope.canonical,
+        PruneMode::SyntaxVisible,
+        budget,
+        &permits,
+        &keep,
+    )
+    .within(Globs {
+        include: &include,
+        exclude: &exclude,
+    })
+    .beyond(walk);
+    let verdict = diagnose(
+        &scope.canonical,
+        PruneMode::SyntaxVisible,
+        walk,
+        |relaxed| probe.find(relaxed),
+    )
+    .ok()?;
+    let Verdict::Skipped(diagnosis) = verdict else {
+        return None;
+    };
+    let mut lead = q.to_value();
+    lift(&mut lead, diagnosis.causes());
+    if let Some(fields) = lead.as_object_mut() {
+        for field in ["snapshot", "page", "matchPage", "scanOffset"] {
+            fields.remove(field);
+        }
+    }
+    if let Some(language) = &scope.inferred {
+        // The lifted walk may reach other grammars: keep the one searched.
+        lead["language"] = json!(language);
+    }
+    Some(SkippedWalk {
+        labels: diagnosis.labels(),
+        because: diagnosis.because(),
+        lead: crate::tools::result::Continuation::new(ToolId::AstSearch, lead)
+            .confidence("exact")
+            .build(),
+    })
+}
+
+/// The grammars of a directory scope that occur in it and compile the query,
+/// without `language` in play.
+fn directory_choice(
+    q: MatchQuery<'_>,
+    root: &std::path::Path,
+    paths: &PathPolicy,
+    cancel: &dyn CancellationCheck,
+) -> Result<GrammarChoice, ToolError> {
+    let prune = PruneMode::SyntaxVisible.directories(q.default_excludes());
+    let (include, exclude) = (
+        q.include().unwrap_or_default(),
+        q.exclude().unwrap_or_default(),
+    );
+    let present = present_grammars(
+        root,
+        &prune,
+        q.include_hidden().unwrap_or(false),
+        q.include_ignored().unwrap_or(false),
+        q.max_files()
+            .map_or(octocode_engine::scan_budget::SCAN_WALK_FILES, |files| {
+                files as usize
+            }),
+        Globs {
+            include: &include,
+            exclude: &exclude,
+        },
+        &|path| super::allow_discovery(path, paths, cancel),
+    )
+    .map_err(super::scan_error)?;
+    let (pattern, rule) = (q.pattern(), q.rule());
+    Ok(choose_grammar(present.into_iter(), |_, extensions| {
+        compile_check(extensions, pattern.as_deref(), rule.as_deref())
+    }))
+}
+
+/// One repair lead that runs the query once per candidate grammar, as a
+/// batch within the input limit (the most frequent grammars lead).
+fn language_repair(q: MatchQuery<'_>, languages: &[String]) -> Value {
+    let base = q.to_value();
+    let queries = languages
+        .iter()
+        .take(crate::tools::result::rows_per_call(ToolId::AstSearch))
+        .map(|language| {
+            let mut row = base.clone();
+            row["language"] = json!(language);
+            if let Some(fields) = row.as_object_mut() {
+                fields.remove("snapshot");
+            }
+            row
+        })
+        .collect::<Vec<_>>();
+    crate::tools::result::Continuation::input(ToolId::AstSearch, json!({ "queries": queries }))
+        .confidence("exact")
+        .build()
+}
+
+/// The repair of a `language` that parsed no file in a directory: the
+/// grammars the scope does hold, when the query compiles in any of them.
+fn other_language_repair(
+    q: MatchQuery<'_>,
+    scope: &Scope,
+    paths: &PathPolicy,
+    cancel: &dyn CancellationCheck,
+) -> Option<Value> {
+    let requested = q.language()?;
+    let languages = match directory_choice(q, &scope.canonical, paths, cancel).ok()? {
+        GrammarChoice::One(language) => vec![language],
+        GrammarChoice::Several(languages) => languages,
+        GrammarChoice::Invalid(_) | GrammarChoice::Absent => return None,
+    }
+    .into_iter()
+    .filter(|language| *language != requested)
+    .collect::<Vec<_>>();
+    (!languages.is_empty()).then(|| language_repair(q, &languages))
+}
+
 /// The single grammar for a directory `match` without language: present in
 /// the scope and able to compile the query. Several candidates (or none
 /// present) fail with `ast.language.required`, naming what was found.
@@ -1399,21 +1778,7 @@ fn infer_directory_language(
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
 ) -> Result<String, ToolError> {
-    let prune = PruneMode::SyntaxVisible.directories(q.default_excludes());
-    let present = present_grammars(
-        root,
-        &prune,
-        q.hidden().unwrap_or(false),
-        q.no_ignore().unwrap_or(false),
-        q.max_files() as usize,
-        &|path| super::allow_discovery(path, paths, cancel),
-    )
-    .map_err(super::native_error)?;
-    let (pattern, rule) = (q.pattern(), q.rule());
-    let choice = choose_grammar(present.into_iter(), |_, extensions| {
-        compile_check(extensions, pattern.as_deref(), rule.as_deref())
-    });
-    match choice {
+    match directory_choice(q, root, paths, cancel)? {
         GrammarChoice::One(language) => Ok(language),
         GrammarChoice::Invalid(error) => Err(ToolError::new(error.code, error.message)),
         GrammarChoice::Absent => Err(ToolError::new(
@@ -1428,29 +1793,8 @@ fn infer_directory_language(
                     several.join(", ")
                 ),
             );
-            error
-                .hints
-                .push("Or narrow path/include to files of one language.".to_owned());
-            // One runnable lead per grammar (`next.withRust`, …).
-            let base = q.to_value();
             let mut leads = serde_json::Map::new();
-            for language in &several {
-                let mut row = base.clone();
-                row["language"] = json!(language);
-                let mut name = String::from("with");
-                let mut chars = language.chars();
-                if let Some(first) = chars.next() {
-                    name.extend(first.to_uppercase());
-                    name.extend(chars);
-                }
-                leads.insert(
-                    name,
-                    crate::tools::result::Continuation::new(ToolId::AstSearch, row)
-                        .why(format!("Match the {language} files."))
-                        .confidence("exact")
-                        .build(),
-                );
-            }
+            leads.insert("repair".into(), language_repair(q, &several));
             error.next = Some(Box::new(Value::Object(leads)));
             Err(error)
         }
@@ -1552,7 +1896,7 @@ mod memo_tests {
     fn run(query: &Value, paths: &PathPolicy, security: &ContentSecurity) -> Value {
         let query: super::super::AstSearchQuery =
             serde_json::from_value(query.clone()).expect("typed astSearch row");
-        super::super::execute_ast(&query, paths, security, &NeverCancel).expect("astSearch")
+        super::super::execute_ast(&query, paths, security, &NeverCancel, None).expect("astSearch")
     }
 
     fn next_query(out: &Value, name: &str) -> Value {

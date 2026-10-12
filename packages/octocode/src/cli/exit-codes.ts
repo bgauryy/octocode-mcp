@@ -11,7 +11,27 @@ export const EXIT = {
   TOOL: 5,
 } as const;
 
-/** The CLI-wide JSON error envelope, the native CLI's error shape. */
-export function toolErrorJson(error: string): string {
-  return JSON.stringify({ kind: 'octocode.toolError', version: 1, error });
+/**
+ * The native CLI's JSON error envelope: `{error}` for a command error, plus
+ * `errorCode` for a typed failure (a tool call's error adds `details`). The
+ * one error shape on every Node-owned path.
+ */
+export function toolErrorJson(error: string, errorCode?: string): string {
+  return JSON.stringify(errorCode ? { error, errorCode } : { error });
+}
+
+/**
+ * Report an execution failure (runtime unavailable, crash, binary that will
+ * not start) the way the native CLI reports one: the typed envelope on stdout
+ * with `--json`, else the text on stderr. Returns the exit code (5; exit 1
+ * means an empty result).
+ */
+export function reportExecutionFailure(
+  message: string,
+  json: boolean,
+  errorCode: string
+): number {
+  if (json) console.log(toolErrorJson(message, errorCode));
+  else console.error(message);
+  return EXIT.TOOL;
 }

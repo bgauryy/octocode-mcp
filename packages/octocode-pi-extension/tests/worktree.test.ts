@@ -130,6 +130,29 @@ describe('isolated subagent worktrees', () => {
     await finishWorktree(live);
   });
 
+  it('lets only one of two concurrent prunes claim an orphan, and recovers a claim whose session died', async () => {
+    const dir = repo();
+    const home = tmp();
+    const dead = spawnSync(process.execPath, ['-e', '0']).pid;
+    const orphan = async (id: string) => {
+      const worktree = await createWorktree(dir, id, home);
+      fs.writeFileSync(path.join(worktree.path, 'src', 'a.txt'), `${id}\n`);
+      const meta = `${worktree.path}.json`;
+      fs.writeFileSync(meta, JSON.stringify({ ...JSON.parse(fs.readFileSync(meta, 'utf8')), pids: [dead] }));
+      return worktree;
+    };
+    await orphan('race-1');
+    const [first, second] = await Promise.all([pruneWorktrees(dir, home), pruneWorktrees(dir, home)]);
+    expect([...first.saved, ...second.saved]).toEqual([{ agentId: 'race-1', ref: 'refs/octocode/pi/race-1' }]);
+    expect(git(dir, 'for-each-ref', '--format=%(refname)', 'refs/octocode/pi/')).toBe('refs/octocode/pi/race-1');
+
+    // A session that died mid-prune leaves its claim behind; the next prune takes it over.
+    const stuck = await orphan('stuck-1');
+    fs.renameSync(`${stuck.path}.json`, `${stuck.path}.json.pruning-${dead}`);
+    expect(await pruneWorktrees(dir, home)).toEqual({ saved: [{ agentId: 'stuck-1', ref: 'refs/octocode/pi/stuck-1' }], kept: [] });
+    expect(fs.readdirSync(worktreesDir(dir, home))).toEqual([]);
+  });
+
   it('leaves a worktree whose owner record is unreadable but fresh, and warns about it once stale', async () => {
     const dir = repo();
     const home = tmp();

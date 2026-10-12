@@ -1,4 +1,5 @@
 import type { AgentDb } from '../agentdb/db.js';
+import type { Row } from '../agentdb/rows.js';
 import { sanitizeTerminalText, secretProblem, storedText } from '../shared/sanitize.js';
 import { clipText } from '../shared/util.js';
 import { ftsQuery, jaccard, memoryLabel, normalizeTitle, stem, terms } from './query.js';
@@ -65,7 +66,6 @@ const DUPLICATE_JACCARD = 0.6;
 const LIKE_SCAN_LIMIT = 2000;
 const SETTING_AUTO = 'memory_auto';
 
-type Row = Record<string, unknown>;
 
 function toMemory(row: Row): Memory {
   return {

@@ -1,10 +1,16 @@
-pub(crate) mod declarations_cache;
+#[cfg(test)]
+mod lead_tests;
 mod matches;
 mod memo;
 mod output;
 #[cfg(test)]
+mod paging_tests;
+#[cfg(test)]
 mod policy_tests;
+mod scan_window;
 mod symbols;
+#[cfg(test)]
+mod symbols_tests;
 mod syntax;
 
 use serde_json::Value;
@@ -38,9 +44,38 @@ pub(super) fn read_parse_source(path: &std::path::Path) -> Result<Option<Vec<u8>
     }
 }
 
-/// The terminal row of a source larger than [`MAX_PARSE_SOURCE_BYTES`].
-pub(super) fn source_limit(path: &str) -> Value {
-    serde_json::json!({"status":"error","path":path,"errorCode":"fileTooLarge","error":"Source exceeds the native parser byte limit.","isPartial":true,"terminalLimit":true})
+/// The terminal row of a source larger than [`MAX_PARSE_SOURCE_BYTES`]; a
+/// searched literal (a symbol name, a pattern without metavariables) leads
+/// to a text search of it in the same file.
+pub(super) fn source_limit(path: &str, literal: Option<&str>) -> Value {
+    let mut row = serde_json::json!({"status":"error","path":path,"errorCode":"fileTooLarge","error":"Source exceeds the native parser byte limit.","isPartial":true,"terminalLimit":true});
+    if let Some(lead) = literal.and_then(|literal| text_search(path, literal)) {
+        row["next"] = serde_json::json!({ "findText": lead });
+    }
+    row
+}
+
+/// A localSearch of `literal` in `path`: the reach a parse limit leaves.
+pub(super) fn text_search(path: &str, literal: &str) -> Option<Value> {
+    let literal = literal.trim();
+    if literal.is_empty() || literal.contains('\n') {
+        return None;
+    }
+    let mut row = serde_json::json!({"path": path, "matchString": literal});
+    if regex::escape(literal) != literal {
+        row["regex"] = serde_json::json!("literal");
+    }
+    Some(
+        crate::tools::result::Continuation::new(crate::tools::id::ToolId::LocalSearch, row)
+            .confidence("medium")
+            .build(),
+    )
+}
+
+/// A pattern's text when it names no metavariable: the literal a text
+/// search can still find.
+pub(super) fn pattern_literal(pattern: &str) -> Option<&str> {
+    (!pattern.contains('$')).then_some(pattern)
 }
 
 /// An I/O failure on `path` (as the caller wrote it); a missing path says
@@ -64,40 +99,48 @@ fn path_not_found(path: &str) -> ToolError {
     )
 }
 
-pub(super) fn native_error(error: impl ToString) -> ToolError {
+/// An engine error as a tool error: a `[structural.…]` or declared tag names
+/// its code; otherwise the engine's typed kind does (never the message text).
+pub(super) fn native_error(error: octocode_engine::error::Error) -> ToolError {
+    use octocode_engine::error::ErrorKind;
     let message = error.to_string();
-    if let Some(rest) = message.strip_prefix('[')
-        && let Some((tag, _)) = rest.split_once(']')
-        && (tag.starts_with("structural.") || crate::tools::id::error_codes::class(tag).is_some())
-    {
-        return ToolError::new(
-            engine_error_code(tag),
-            crate::tools::ast_rule::untagged(&message),
-        );
+    if let Some(tagged) = tagged_error(&message) {
+        return tagged;
     }
-    let lower = message.to_ascii_lowercase();
-    if lower.contains("no such file") || lower.contains("not found") {
-        // The engine quotes the path it could not access ('…').
-        let quoted = message
-            .split_once('\'')
-            .and_then(|(_, rest)| rest.split_once('\''))
-            .map(|(path, _)| path.to_owned());
-        return match quoted {
-            Some(path) => path_not_found(&path),
-            None => ToolError::new(
+    let code = match error.kind() {
+        ErrorKind::NotFound => {
+            return ToolError::new(
                 crate::policy::PATH_NOT_FOUND,
                 format!("Path does not exist ({message})"),
-            ),
-        };
-    }
-    let code = if lower.contains("permission denied") {
-        "permissionDenied"
-    } else if lower.contains("invalid") && lower.contains("regex") {
-        "invalidPattern"
-    } else {
-        "executionFailed"
+            );
+        }
+        ErrorKind::PermissionDenied => "permissionDenied",
+        ErrorKind::InvalidPattern => "invalidPattern",
+        ErrorKind::InvalidInput => "invalidInput",
+        ErrorKind::Timeout => "timeout",
+        _ => "executionFailed",
     };
     ToolError::new(code, message)
+}
+
+/// A scan that failed with a bare message (a grammar walk, a caught panic):
+/// a tagged message names its code, anything else is an execution failure.
+pub(super) fn scan_error(message: String) -> ToolError {
+    tagged_error(&message).unwrap_or_else(|| ToolError::new("executionFailed", message))
+}
+
+/// The tool error of a `[tag] …` engine message, when it carries one.
+fn tagged_error(message: &str) -> Option<ToolError> {
+    let rest = message.strip_prefix('[')?;
+    let (tag, _) = rest.split_once(']')?;
+    (tag.starts_with("structural.") || crate::tools::id::error_codes::class(tag).is_some()).then(
+        || {
+            ToolError::new(
+                engine_error_code(tag),
+                crate::tools::ast_rule::untagged(message),
+            )
+        },
+    )
 }
 
 /// The declared `errorCode` of an engine error tag (`[structural.…]` or an
@@ -108,7 +151,9 @@ pub(super) fn engine_error_code(tag: &str) -> &'static str {
         "structural.query.compileFailed" | "structural.query.invalid" => {
             crate::tools::ast_rule::INVALID_PATTERN
         }
-        "structural.language.unsupported" => "languageUnsupported",
+        "structural.language.unsupported" | "syntaxTree.language.unsupported" => {
+            "languageUnsupported"
+        }
         "structural.content.tooLarge" | "structural.file.tooLarge" => "fileTooLarge",
         "structural.file.unreadable" => "fileReadFailed",
         "structural.parse.interrupted" | "structural.match.deadline" => "timeout",
@@ -200,16 +245,29 @@ pub fn execute_ast(
     paths: &crate::policy::path::PathPolicy,
     security: &crate::security::ContentSecurity,
     cancellation: &dyn crate::tools::cancel::CancellationCheck,
+    response_window: Option<usize>,
 ) -> AstResult {
     match query {
-        AstSearchQuery::Symbols(query) => execute_symbols(query, paths, security, cancellation),
-        AstSearchQuery::MatchPattern(query) => {
-            execute_match(MatchQuery::Pattern(query), paths, security, cancellation)
+        AstSearchQuery::Symbols(query) => {
+            execute_symbols(query, paths, security, cancellation, response_window)
         }
-        AstSearchQuery::MatchRule(query) => {
-            execute_match(MatchQuery::Rule(query), paths, security, cancellation)
+        AstSearchQuery::MatchPattern(query) => execute_match(
+            MatchQuery::Pattern(query),
+            paths,
+            security,
+            cancellation,
+            response_window,
+        ),
+        AstSearchQuery::MatchRule(query) => execute_match(
+            MatchQuery::Rule(query),
+            paths,
+            security,
+            cancellation,
+            response_window,
+        ),
+        AstSearchQuery::SyntaxTree(query) => {
+            execute_syntax(query, paths, security, cancellation, response_window)
         }
-        AstSearchQuery::SyntaxTree(query) => execute_syntax(query, paths, security, cancellation),
     }
 }
 
@@ -217,6 +275,13 @@ pub use matches::execute_match;
 pub(crate) use output::Output;
 pub use symbols::execute_symbols;
 pub use syntax::execute_syntax;
+
+/// A dot-named entry (`.git`, `.env`): out of view of a walk without
+/// `hidden`.
+pub(super) fn is_dot_entry(path: &std::path::Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name.to_string_lossy().starts_with('.'))
+}
 
 #[cfg(test)]
 mod tests {
@@ -245,7 +310,7 @@ mod tests {
         cancellation: &dyn CancellationCheck,
     ) -> AstResult {
         let query: AstSearchQuery = serde_json::from_value(query).expect("typed astSearch row");
-        execute_ast(&query, paths, security, cancellation)
+        execute_ast(&query, paths, security, cancellation, None)
     }
 
     fn context() -> (PathPolicy, ContentSecurity) {
@@ -298,7 +363,7 @@ mod tests {
         assert!(syntax.get("treeKind").is_none(), "{syntax}");
         // One compact row per node: id, kind (an anonymous token quoted),
         // 1-based line:column span, and `^parent`. Byte offsets are
-        // verbose (the verbose stage drops `nodeBytes` unless `debug`).
+        // verbose (the verbose stage drops `returnedBytes` unless `debug`).
         let nodes = syntax["nodes"].as_array().expect("node rows");
         assert_eq!(nodes[0], "0 program 1:1-2:1", "{syntax}");
         assert_eq!(nodes[1], "1 export_statement 1:1-1:24 ^0", "{syntax}");
@@ -314,16 +379,16 @@ mod tests {
         )
         .expect("token tree");
         assert_eq!(tokens["nodes"][2], "2 \"export\" 1:1-1:7 ^1", "{tokens}");
-        assert_eq!(syntax["nodeBytes"][0], "0-24", "{syntax}");
+        assert_eq!(syntax["returnedBytes"][0], "0-24", "{syntax}");
         assert_eq!(
-            syntax["nodeBytes"].as_array().map(Vec::len),
+            syntax["returnedBytes"].as_array().map(Vec::len),
             Some(nodes.len()),
             "{syntax}"
         );
         assert!(
             crate::response::extras::all_paths(crate::tools::id::ToolId::AstSearch)
-                .contains(&"results[].data.nodeBytes"),
-            "nodeBytes is verbose"
+                .contains(&"results[].data.returnedBytes"),
+            "returnedBytes is verbose"
         );
 
         for retired in [
@@ -354,20 +419,39 @@ mod tests {
         );
         assert_eq!(gone.code, "pathNotFound");
         assert_eq!(gone.message, "Path does not exist: src/gone.rs");
-        let engine = native_error(
-            "Cannot access structural search path '/w/x': No such file or directory (os error 2)",
-        );
+        use octocode_engine::error::{Error, ErrorKind};
+        let engine = native_error(Error::with_kind(
+            ErrorKind::NotFound,
+            "Cannot access structural search path '/w/x'",
+        ));
         assert_eq!(engine.code, "pathNotFound");
-        assert_eq!(engine.message, "Path does not exist: /w/x");
+        assert_eq!(
+            engine.message,
+            "Path does not exist (Cannot access structural search path '/w/x')"
+        );
         let denied = policy_error(PolicyError::new(PolicyErrorCode::PermissionDenied, "no"));
         assert_eq!(denied.code, "permissionDenied");
         assert_eq!(
-            native_error("[structural.query.compileFailed] bad pattern").code,
+            native_error(Error::new("[structural.query.compileFailed] bad pattern")).code,
             "invalidPattern"
         );
         assert_eq!(
-            native_error("invalid regex: unclosed group").code,
+            scan_error("[structural.query.compileFailed] bad pattern".to_owned()).code,
             "invalidPattern"
         );
+        // The kind decides, never the words of the message.
+        assert_eq!(
+            native_error(Error::with_kind(ErrorKind::InvalidPattern, "bad")).code,
+            "invalidPattern"
+        );
+        assert_eq!(
+            native_error(Error::with_kind(ErrorKind::PermissionDenied, "no")).code,
+            "permissionDenied"
+        );
+        assert_eq!(
+            native_error(Error::new("invalid regex: unclosed group")).code,
+            "executionFailed"
+        );
+        assert_eq!(scan_error("boom".to_owned()).code, "executionFailed");
     }
 }

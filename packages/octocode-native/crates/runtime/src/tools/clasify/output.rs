@@ -30,11 +30,14 @@ pub(super) enum PageOutcome {
 pub(super) const TOO_LARGE: &str = "classificationContextTooLarge";
 
 /// A failed answer, page, or resource in the shape of a failed tool row:
-/// `{errorCode, error, hints:{text}}`.
+/// `{errorCode, error, hints:{text, <lead>}}`.
 fn error_value(error: &ClassificationError) -> Value {
     let mut value = json!({"errorCode":error.code,"error":error.message});
     if !error.hints.is_empty() {
-        value["hints"] = json!({"text":error.hints});
+        value["hints"]["text"] = json!(error.hints);
+    }
+    for (name, lead) in &error.leads {
+        value["hints"][name] = lead.clone();
     }
     value
 }
@@ -424,6 +427,119 @@ fn page_read(page: &mut Map<String, Value>, receipt: &Value) {
     }
 }
 
+/// Ranked SCOUT pages past this many keep no read of their own (unless
+/// sufficient): the row names the page, and the top reads are the next step.
+pub(super) const READ_RANKS: usize = 3;
+/// P(sufficient) from which a page keeps its read whatever its rank.
+pub(super) const SUFFICIENT_READ: f64 = 0.7;
+
+/// Question types whose answer is one P(yes).
+const YES_NO_TYPES: [&str; 5] = ["relevant", "sufficient", "supports", "adds", "yesno"];
+
+/// One judged page's place in a SCOUT ranking.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Ranked {
+    /// The page's index in its resource.
+    pub(super) index: usize,
+    /// P(yes) of the primary key: `relevant`, else the first yes/no question.
+    pub(super) primary: f64,
+    /// P(yes) of the tiebreak: `sufficient`, else the next yes/no question.
+    pub(super) secondary: f64,
+    /// P(sufficient) when the matrix asks it.
+    pub(super) sufficient: Option<f64>,
+}
+
+impl Ranked {
+    /// Whether a page at 0-based `position` keeps its own read: a top page,
+    /// or one whose evidence alone answers.
+    pub(super) fn keeps_read(&self, position: usize) -> bool {
+        position < READ_RANKS || self.sufficient.is_some_and(|yes| yes >= SUFFICIENT_READ)
+    }
+}
+
+/// SCOUT (yes/no questions, no locate): the judged pages ordered by
+/// P(relevant) then P(sufficient), best first; without `relevant` the first
+/// yes/no question leads, and without `sufficient` the next one breaks ties.
+/// A page with no judged cell is left out. `None` when the questions include
+/// a locate or no yes/no question.
+pub(super) fn scout_ranking(outcomes: &[PageOutcome], questions: &[Value]) -> Option<Vec<Ranked>> {
+    if questions.iter().any(crate::tools::clasify::is_locate) {
+        return None;
+    }
+    let index_of = |kind: &str| {
+        questions
+            .iter()
+            .position(|question| question["type"] == kind)
+    };
+    let yes_no = questions
+        .iter()
+        .enumerate()
+        .filter(|(_, question)| {
+            question["type"]
+                .as_str()
+                .is_some_and(|kind| YES_NO_TYPES.contains(&kind))
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let sufficient = index_of("sufficient");
+    let primary = index_of("relevant").or_else(|| yes_no.first().copied())?;
+    let secondary = sufficient
+        .filter(|index| *index != primary)
+        .or_else(|| yes_no.iter().copied().find(|index| *index != primary));
+    let yes = |answers: &[Result<Value, ClassificationError>], index: Option<usize>| {
+        index.and_then(|index| answers.get(index)?.as_ref().ok()?["answer"]["yesno"].as_f64())
+    };
+    let mut ranked = outcomes
+        .iter()
+        .enumerate()
+        .filter_map(|(index, outcome)| match outcome {
+            // A page whose every cell failed was not judged: no rank.
+            PageOutcome::Assessed { answers, .. } if answers.iter().any(Result::is_ok) => {
+                Some(Ranked {
+                    index,
+                    primary: yes(answers, Some(primary)).unwrap_or(0.0),
+                    secondary: yes(answers, secondary).unwrap_or(0.0),
+                    sufficient: yes(answers, sufficient),
+                })
+            }
+            PageOutcome::Assessed { .. } | PageOutcome::Failed { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    // Stable: equal scores keep source order.
+    ranked.sort_by(|left, right| {
+        right
+            .primary
+            .total_cmp(&left.primary)
+            .then_with(|| right.secondary.total_cmp(&left.secondary))
+    });
+    Some(ranked)
+}
+
+/// SCOUT: the page ranked first by [`scout_ranking`], with the read that
+/// fetches it whole when its receipt publishes none of its own (a
+/// whole-file page keeps only the private `fileRead` template), so the top
+/// candidate is one call away without comparing numbers. A top page that is
+/// a confident "no" gets none.
+pub(super) fn scout_top_read(
+    outcomes: &[PageOutcome],
+    ranking: &[Ranked],
+) -> Option<(usize, Value)> {
+    let top = ranking.first()?;
+    let index = top.index;
+    if top.primary.max(top.secondary) < VERIFY_FLOOR {
+        return None;
+    }
+    let PageOutcome::Assessed { receipt, .. } = outcomes.get(index)? else {
+        return None;
+    };
+    let mut read = read_template(receipt)?.clone();
+    let query = read.get_mut("query")?.as_object_mut()?;
+    for field in SLICE_FIELDS {
+        query.remove(field);
+    }
+    Some((index, read))
+}
+
 /// `template` narrowed to the byte page `start..end` of a byte-chunked read.
 fn byte_window_read(template: &Value, start: u64, end: u64) -> Option<Value> {
     if end <= start
@@ -512,7 +628,7 @@ pub(super) fn resource(
     };
     let mut rendered = rendered;
     let shared = hoist_limitations(&mut rendered);
-    let mut out = json!({"id":resource_id,"coverage":coverage,"pages":rendered});
+    let mut out = json!({"id":resource_id,"coverage":{"state":coverage},"pages":rendered});
     if let Some(limitations) = shared {
         out["limitations"] = limitations;
     }
@@ -841,6 +957,64 @@ mod tests {
         );
     }
 
+    /// SCOUT pages rank by P(relevant), then P(sufficient); a page with no
+    /// judged cell has no rank, and a locate matrix ranks nothing.
+    #[test]
+    fn scout_ranking_orders_judged_pages_by_relevant_then_sufficient() {
+        let questions = [
+            json!({"id":"r","type":"relevant"}),
+            json!({"id":"s","type":"sufficient"}),
+        ];
+        let yes = |relevant: f64, sufficient: f64| PageOutcome::Assessed {
+            receipt: json!({}),
+            answers: vec![
+                Ok(json!({"answer":{"type":"yesno","yesno":relevant}})),
+                Ok(json!({"answer":{"type":"yesno","yesno":sufficient}})),
+            ],
+        };
+        let outcomes = vec![
+            yes(0.4, 0.9),
+            PageOutcome::Assessed {
+                receipt: json!({}),
+                answers: vec![
+                    Err(provider_error("classificationQuotaExhausted")),
+                    Err(provider_error("classificationQuotaExhausted")),
+                ],
+            },
+            yes(0.9, 0.2),
+            yes(0.9, 0.7),
+        ];
+        let ranking = scout_ranking(&outcomes, &questions).expect("scout ranking");
+        assert_eq!(
+            ranking
+                .iter()
+                .map(|ranked| ranked.index)
+                .collect::<Vec<_>>(),
+            [3, 2, 0]
+        );
+        // Ranks 1–3 keep their reads; a sufficient page keeps it at any rank.
+        assert!(ranking[1].keeps_read(2) && !ranking[1].keeps_read(3));
+        assert!(ranking[0].keeps_read(9), "P(sufficient) 0.7 keeps its read");
+        let locate = [json!({"id":"l","type":"locate","target":"x"})];
+        assert!(scout_ranking(&outcomes, &locate).is_none());
+        // Without relevant/sufficient the yes/no questions rank in order.
+        let judged = [
+            json!({"id":"a","type":"yesno"}),
+            json!({"id":"b","type":"supports"}),
+        ];
+        let ranking = scout_ranking(&outcomes, &judged).expect("yes/no ranking");
+        assert_eq!(
+            ranking
+                .iter()
+                .map(|ranked| ranked.index)
+                .collect::<Vec<_>>(),
+            [3, 2, 0]
+        );
+        assert!(ranking.iter().all(|ranked| ranked.sufficient.is_none()));
+        let labels = [json!({"id":"c","type":"choice"})];
+        assert!(scout_ranking(&outcomes, &labels).is_none());
+    }
+
     #[test]
     fn answers_drop_redundant_fields_but_keep_all_probabilities_and_precision() {
         assert_eq!(
@@ -894,7 +1068,7 @@ mod tests {
         );
         assert_eq!(
             rendered,
-            json!({"id":"file","coverage":"partial","pages":[{
+            json!({"id":"file","coverage":{"state":"partial"},"pages":[{
                 "scope":{"startLine":1,"endLine":9,"totalLines":9},
                 "next":{"read":{"tool":"localFetch","confidence":"exact","query":{
                     "mainGoal": "test", "reasoning":"Verify evidence.","path":"/repo/a.rs","ranges":["1-9"]
@@ -1094,7 +1268,7 @@ mod tests {
             }],
             false,
         );
-        assert_eq!(failed["coverage"], "error");
+        assert_eq!(failed["coverage"]["state"], "error");
         assert_eq!(
             failed["pages"][0]["error"]["errorCode"],
             "classificationContextFailed"
@@ -1112,7 +1286,7 @@ mod tests {
             }],
             true,
         );
-        assert_eq!(pending["coverage"], "partial");
+        assert_eq!(pending["coverage"]["state"], "partial");
         assert!(pending["pages"][0].get("limitations").is_none());
     }
 

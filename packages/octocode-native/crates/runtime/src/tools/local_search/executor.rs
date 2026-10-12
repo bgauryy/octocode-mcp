@@ -1,6 +1,5 @@
 use super::types::*;
 use super::{cursor::*, layout::*, leads::*, regex_repair::*, rows::*, verify::*};
-use crate::policy::discovery::{CREDENTIAL_FILE_EXTENSIONS, CREDENTIAL_FILE_NAMES};
 use crate::policy::path::PathPolicy;
 use crate::policy::prune::DefaultsFlag;
 use crate::policy::prune::PruneMode;
@@ -15,8 +14,9 @@ use std::sync::Arc;
 /// Soft budget (in value chars) for a single localSearch response body.
 /// Distributed across the matches shown on a page so a pathological giant line
 /// or a raised `matchContentLength`/`matchPageSize` cannot emit a multi-MB
-/// body. It bounds displayed value size only — every match row and its line
-/// anchor are preserved, so no continuation cursor is required.
+/// body. It bounds displayed value size only: every match row and its line
+/// anchor are preserved, and a clipped row's `expandValues` lead reads its
+/// value whole.
 pub(super) const RESPONSE_VALUE_CHAR_BUDGET: usize = 1_000_000;
 
 /// Floor on the per-match display cap the budget may impose, so a page with many
@@ -46,6 +46,9 @@ pub(super) const DEFAULT_SNIPPET_PAGE_SIZE: u32 = 20;
 
 pub(super) const DEFAULT_LIST_PAGE_SIZE: u32 = 100;
 
+/// Matched files the engine collects for pages; more are counted only.
+pub(super) const MAX_COLLECTED_FILES: u32 = 10_000;
+
 pub fn execute_local_search(
     query: &LocalSearchQuery,
     paths: &PathPolicy,
@@ -64,7 +67,6 @@ pub fn execute_local_search(
         query_key,
         stored_redaction,
         reusable,
-        probe_options,
         search_options,
         policy_key,
         skipped,
@@ -117,24 +119,30 @@ pub fn execute_local_search(
         files: scanned,
         stats: scanned_stats,
     } = parsed;
-    let stats = search_stats(&scanned_stats, total_files);
+    let mut stats = search_stats(&scanned_stats, total_files);
     let (mut files, shown_redacted) = project_files(query, &layout, scanned, &redacted);
     let symbol = searched_symbol(query, &layout);
     // Rows render with the root's prefix, which the page cut charged.
-    let enclosing_budget =
-        page_budget.saturating_sub(layout.prefix_chars.saturating_mul(files.len()));
+    let keys_budget = page_budget.saturating_sub(layout.prefix_chars.saturating_mul(files.len()));
+    let keys_note = annotate_match_keys(
+        &mut files,
+        output_root,
+        keys_budget,
+        &|source| expected_digest(source),
+        security,
+    );
     let (definition, enclosing_note) = annotate_enclosing(
         &mut files,
         symbol,
         symbol.filter(|_| super::enclosing::declaration_search(&query.match_string)),
         output_root,
-        enclosing_budget,
         &|source| expected_digest(source),
         outlines,
         security,
     );
-    let coverage = Coverage::of(query, &stats, &scanned_stats, root, output_root, &skipped);
-    let mut warnings = coverage.warnings(&files, &layout, shown_redacted, unverified, empty);
+    let mut coverage = Coverage::of(query, &stats, &scanned_stats, root, output_root, &skipped);
+    let mut warnings = coverage.warnings(&layout, shown_redacted, unverified, empty);
+    warnings.extend(keys_note);
     warnings.extend(enclosing_note);
     let capped = stats.capped.unwrap_or(false);
     let (status, terminal_limit) = settle(
@@ -146,10 +154,10 @@ pub fn execute_local_search(
         coverage.gap(),
         next.is_none(),
     );
-    let mut hints = coverage.empty_hints(query, empty);
+    let mut hints = coverage.empty_hints(empty);
     // Leads go in after the status is settled: they are optional follow-ups
     // and never stand in for a page.
-    Found {
+    let skipped_match = Found {
         query,
         paths,
         root,
@@ -164,18 +172,28 @@ pub fn execute_local_search(
         empty,
     }
     .add_leads(
+        &mut stats,
         &mut next,
         &mut hints,
         &mut warnings,
         &search_options,
-        probe_options,
         cancel,
     );
-    if coverage.scope_miss
+    if skipped_match {
+        coverage.skipped_paths_hold_matches(&mut hints);
+    }
+    // Files past the collection cap are on no page: every page says so and
+    // leads to the scope's tree to split the search.
+    let uncollected = uncollected_warning(&stats, total_files);
+    // A zero-match search cut by a binary file proved nothing about the cut
+    // files: the tree of the scope is the way to narrow it.
+    let unproven_empty = empty && coverage.binary_cut;
+    if (coverage.scope_miss || uncollected.is_some() || unproven_empty)
         && let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut()
     {
         map.insert("viewTree".into(), scope_listing(query));
     }
+    warnings.extend(uncollected);
     Ok(LocalSearchResult {
         status,
         stats,
@@ -219,7 +237,7 @@ pub(super) fn file_paging(
         match_page: (match_page > 1).then_some(match_page),
         total_pages: layout.total_pages,
         files_per_page: layout.files_per_page,
-        total_files,
+        total_items: layout.total_items,
         has_more: page < layout.total_pages,
         out_of_range: layout.out_of_range,
     })
@@ -332,8 +350,6 @@ pub(super) struct Scanned {
     pub(super) stored_redaction: Option<Redaction>,
     /// A fresh scan small enough to store for this snapshot's later pages.
     pub(super) reusable: Option<octocode_engine::types::TextSearchResult>,
-    /// The walk an empty result re-runs over what the defaults leave out.
-    pub(super) probe_options: Option<TextSearchOptions>,
     /// The query's own walk, for probes over the same scope.
     pub(super) search_options: TextSearchOptions,
     pub(super) policy_key: String,
@@ -350,16 +366,12 @@ pub(super) fn scan_query(
     walk_threads: Option<u32>,
     response_window: Option<usize>,
 ) -> Result<Scanned, ToolError> {
+    if let Some(error) = malformed_snapshot(query) {
+        return Err(error);
+    }
     let validated = search_root(query, paths)?;
     let options = search_options(query, &validated.canonical, walk_threads);
     check_pattern(query)?;
-    // An empty result re-walks with ignored, hidden and default-excluded
-    // entries included (files only, time-bounded) to say whether they hold
-    // the text.
-    let probe_options = (query.no_ignore != Some(true)
-        || query.hidden != Some(true)
-        || query.default_excludes.defaults())
-    .then(|| options.clone());
     let search_options = options.clone();
     let policy_key = paths.identity();
     let ScanOutput {
@@ -408,7 +420,6 @@ pub(super) fn scan_query(
         query_key,
         stored_redaction,
         reusable,
-        probe_options,
         search_options,
         policy_key,
         skipped,
@@ -465,11 +476,7 @@ pub(super) fn search_options(
         files_without_match: Some(view == LocalSearchQueryResultView::FilesWithout),
         count_lines_per_file: Some(view == LocalSearchQueryResultView::CountLines),
         count_matches_per_file: Some(view == LocalSearchQueryResultView::CountMatches),
-        context_lines: Some(
-            query
-                .context_lines()
-                .unwrap_or_else(|| default_context_lines(view)),
-        ),
+        context_lines: Some(query.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)),
         lang_type: query.language.clone(),
         file_contains_all: Some(query.file_has.iter().map(|t| t.to_string()).collect())
             .filter(|terms: &Vec<String>| !terms.is_empty()),
@@ -477,23 +484,16 @@ pub(super) fn search_options(
             .filter(|terms: &Vec<String>| !terms.is_empty()),
         include: Some(crate::policy::include::include_globs(&query.include))
             .filter(|include| !include.is_empty()),
-        exclude: Some(
-            query
-                .exclude
-                .clone()
-                .into_iter()
-                // Credential-shaped names are never searched; generated
-                // files are skipped (and counted) by the walk's path filter
-                // unless `defaultExcludes:false`.
-                .chain(CREDENTIAL_FILE_NAMES.iter().map(|s| (*s).to_owned()))
-                .chain(CREDENTIAL_FILE_EXTENSIONS.iter().map(|s| format!("*{s}")))
-                .collect(),
-        ),
+        // Credential-named files are withheld, and generated files skipped
+        // (both counted), by the walk's path filter, not by globs here.
+        exclude: Some(query.exclude.clone().into_iter().collect()),
         exclude_dir: Some(PruneMode::SearchSafe.directories(query.default_excludes.defaults())),
-        no_ignore: query.no_ignore,
-        // `noIgnore` is the one "search everything" switch: it
+        no_ignore: query.include_ignored,
+        // `includeIgnored` is the one "search everything" switch: it
         // walks hidden files too unless `hidden` says otherwise.
-        hidden: query.hidden.or(query.no_ignore.filter(|all| *all)),
+        hidden: query
+            .include_hidden
+            .or(query.include_ignored.filter(|all| *all)),
         max_depth: query.max_depth(),
         // The engine owns the relevance order (for a bare-identifier search,
         // source files declaring the name first; then count, then source
@@ -520,7 +520,7 @@ pub(super) fn search_options(
         // above (by match count for relevance/matchCount), chosen across every
         // searched file; stats totals still count all matched files and the
         // cap surfaces as capReason "maxCollectedFiles".
-        max_collected_files: Some(10_000),
+        max_collected_files: Some(MAX_COLLECTED_FILES),
         // Use the engine default per-file byte ceiling (skips pathological
         // multi-GB files, surfaced as a maxFileSize diagnostic).
         max_file_bytes: None,
@@ -586,18 +586,12 @@ pub(super) fn scan(
         ));
         let parsed = search_text_cancellable(options, walk.clone(), &|| cancel.check().is_err())
             .map_err(|error| {
-                let message = error.to_string();
-                // Glob and file-type failures carry no typed kind from the engine yet.
-                let bad_filter =
-                    message.contains("glob") || message.contains("unrecognized file type");
-                ToolError::new(
-                    if bad_filter {
-                        "invalidInput"
-                    } else {
-                        "executionFailed"
-                    },
-                    message,
-                )
+                // A malformed glob or file type is caller input.
+                let code = match error.kind() {
+                    octocode_engine::error::ErrorKind::InvalidInput => "invalidInput",
+                    _ => "executionFailed",
+                };
+                ToolError::new(code, error.to_string())
             })?;
         (parsed, None, walk.skipped(), None)
     };
@@ -671,13 +665,27 @@ pub(super) fn search_stats(
         files_matched: scanned.files_matched.unwrap_or(total_files),
         files_searched: scanned.files_searched.unwrap_or(0),
         bytes_searched: scanned.bytes_searched,
-        search_time: None,
         // A binary cut (capReason `binaryQuit`) stays `capped`: coverage ended
         // early, and the result is marked partial/terminal.
         capped: scanned.capped,
         cap_reason: scanned.cap_reason.clone(),
+        partial_reasons: scanned
+            .cap_reason
+            .iter()
+            .flat_map(|reasons| reasons.split(", "))
+            .filter(|reason| !reason.is_empty())
+            .map(str::to_owned)
+            .collect(),
         error_count: scanned.error_count.filter(|n| *n > 0),
         first_error: scanned.first_error.clone(),
+        file_errors: scanned
+            .error_count
+            .filter(|n| *n > 0)
+            .map(|count| FileErrors {
+                count,
+                first: scanned.first_error.clone(),
+            }),
+        binary_skipped: None,
     }
 }
 
@@ -738,6 +746,7 @@ pub(super) fn project_files(
                     .then_some(f.match_count),
                 pagination: file_pagination(layout, total, start, end, &later, match_page),
                 path: f.path,
+                match_keys: Vec::new(),
             }
         })
         .collect::<Vec<_>>();
@@ -758,8 +767,17 @@ pub(super) fn project_files(
 pub(super) fn unreadable_scope(stats: &octocode_engine::types::TextSearchStats) -> ToolError {
     let count = stats.error_count.unwrap_or(0);
     let first = stats.first_error.as_deref().unwrap_or("unknown error");
+    // Every file was readable; the regex failed in each (a backtracking or
+    // JIT-stack limit): the pattern, not the scope, needs the change.
+    if stats.pattern_error_count == Some(count) {
+        return ToolError::new(
+            "invalidPattern",
+            format!(
+                "The regex hit the engine's matching limit in every file ({count}; first: {first}). Simplify nested repetition, or use regex:\"rust\" (no backtracking)."
+            ),
+        );
+    }
     ToolError {
-        hints: vec![unreadable_hint(count)],
         ..ToolError::new(
             "fileAccessFailed",
             format!(
@@ -778,8 +796,7 @@ pub(super) fn effective_match_content_length(q: &LocalSearchQuery) -> u32 {
     q.match_content_length().unwrap_or_else(|| {
         let view = q.result_view;
         let context = if uses_context(view) {
-            q.context_lines()
-                .unwrap_or_else(|| default_context_lines(view))
+            q.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)
         } else {
             0
         };
@@ -789,13 +806,8 @@ pub(super) fn effective_match_content_length(q: &LocalSearchQuery) -> u32 {
     })
 }
 
-pub(super) fn default_context_lines(view: LocalSearchQueryResultView) -> u32 {
-    if view == LocalSearchQueryResultView::Detailed {
-        3
-    } else {
-        0
-    }
-}
+/// Context lines around a hit when a query sets none.
+pub(super) const DEFAULT_CONTEXT_LINES: u32 = 0;
 
 /// Default files per page: snippet views stay lean; path-only views are cheap.
 pub(super) fn default_page_size(view: LocalSearchQueryResultView) -> u32 {
@@ -810,12 +822,7 @@ pub(super) fn default_page_size(view: LocalSearchQueryResultView) -> u32 {
 
 /// Views whose match rows carry a context window (so `contextLines` matters).
 pub(super) fn uses_context(view: LocalSearchQueryResultView) -> bool {
-    matches!(
-        view,
-        LocalSearchQueryResultView::Paginated
-            | LocalSearchQueryResultView::Content
-            | LocalSearchQueryResultView::Detailed
-    )
+    view == LocalSearchQueryResultView::Paginated
 }
 
 /// Status and `terminalLimit` for a search result. `coverage_gap` means some

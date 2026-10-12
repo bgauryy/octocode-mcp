@@ -4,7 +4,7 @@
 //
 //   C1 chain fit        leads/pages validate against their target's input
 //                       names; no packed string with >=2 coordinates (a
-//                       symbols outline entry, P1, is the allowed packed form);
+//                       symbols outline entry is the allowed packed form);
 //                       prose hints name only published fields (or ship a lead).
 //   C2 empty/error rows error rows carry errorCode + error + one recovery;
 //                       empty rows carry a recovery; no call-level rejection.
@@ -19,15 +19,19 @@
 import { parseOutlineEntry } from './mcp-client.mjs';
 
 export const CHECKS = ['C1', 'C2', 'C3', 'C4', 'C5'];
-/** Arrays whose string items are symbols outline entries (P1, docs/TOOL_DATA_CONTRACT.md location rows). */
+/** Arrays whose string items are symbols outline entries (docs/TOOL_DATA_CONTRACT.md location rows). */
 const OUTLINE_KEYS = new Set(['symbols', 'members']);
-/** Mirrors core publishedSurfaceBudget.test.ts MAX_DEFAULT_SURFACE_BYTES (one prompt for every surface, 2026-10-07). */
-export const SURFACE_BUDGET = 15_000;
+/**
+ * Mirrors core publishedSurfaceBudget.test.ts MAX_DEFAULT_SURFACE_BYTES; that file records why each
+ * raise was made (the Zod-derived view carries every repair note and <workflow> once, so responses
+ * carry none). Keep both values equal.
+ */
+export const SURFACE_BUDGET = 20_078;
 /**
  * Bytes clasify adds when a classification key registers it: its tool only (the prompt does not change).
- * Core MAX_CLASIFY_TOOL_BYTES (2,070 since 2026-10-07: three flows + handoffs) plus 200 B headroom.
+ * Core MAX_CLASIFY_TOOL_BYTES (2,523 since 2026-10-10: the hints.read rule in the description) plus 200 B headroom.
  */
-export const CLASIFY_SURFACE_BUDGET = 2_270;
+export const CLASIFY_SURFACE_BUDGET = 2_723;
 
 const SOURCE_TEXT_KEYS = new Set(['value', 'content', 'text', 'body', 'patch', 'diff', 'snippet', 'code', 'source', 'line', 'lines', 'matchString', 'message', 'title', 'description', 'error', 'warnings', 'question', 'answer', 'evidence', 'reason', 'summary', 'readme']);
 const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -129,7 +133,7 @@ export function checkChainFit(sc, tool, { inputNames, published, toolNames = [] 
 }
 
 /**
- * X12 lint: a `name:value` token in `hints.text` must be a published field of
+ * Lint: a `name:value` token in `hints.text` must be a published field of
  * the emitting tool, or appear as a field of a lead query on the same row.
  */
 export function hintTextLint(sc, tool, published, toolNames = []) {
@@ -243,14 +247,17 @@ export function silentOmissions(sc) {
 
 // ---------- C5 description lint ----------
 /**
- * One description: names a neighbor tool, and one of that neighbor's
- * published fields. `publishedFields(tool)` → Set.
+ * One description: carries one <workflow> note; when the note names a neighbor
+ * tool, it names one of that neighbor's published fields too. A note that
+ * names no tool is a terminal workflow (cite lines, write files).
+ * `publishedFields(tool)` → Set.
  */
 export function descriptionLint(tool, description, toolNames, publishedFields) {
   const reasons = [];
   const desc = String(description ?? '');
   const neighbors = toolNames.filter(t => t !== tool && new RegExp(`\\b${t}\\b`).test(desc));
-  if (!neighbors.length) reasons.push('names no next tool');
+  if (!/<workflow>[^<]+<\/workflow>/.test(desc)) reasons.push('no <workflow> note');
+  if (!neighbors.length) return reasons;
   else if (!neighbors.some(n => [...(publishedFields(n) ?? [])].some(f => new RegExp(`(?<![\\w.])${f}(?![\\w])`).test(desc)))) reasons.push(`names ${neighbors.join(',')} but none of its fields`);
   return reasons;
 }

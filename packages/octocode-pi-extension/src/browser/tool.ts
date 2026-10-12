@@ -1,11 +1,13 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { StringEnum } from '@earendil-works/pi-ai';
 import { Type, type Static } from 'typebox';
 import { answerDialog, dialogNotice, download, uploadFiles } from './actions.js';
 import { browserCallHeader, browserResult } from './render.js';
-import { openBrowser, type BrowserSession } from './cdp.js';
+import { openBrowser, type BrowserSession, type NavigationGuard } from './cdp.js';
 import { click, drag, elementExpr, fillFields, hover, pressKey, refForText, settle, settleAfterLoad, typeInto, waitForText } from './input.js';
+import { screenshot } from './screenshot.js';
 import { snapshot } from './snapshot.js';
 import { describeTabs, followNewTab, newTab, selectTab, tabIds } from './tabs.js';
 import { withDialog } from '../shared/locks.js';
@@ -13,7 +15,7 @@ import { resultText, timedTool } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { capOutputToFile } from '../shared/spill.js';
 import { textResult, withTimeout } from '../shared/util.js';
-import { allowPrivate, isPrivateHost } from '../web/guard.js';
+import { allowPrivate, classifyHost } from '../web/guard.js';
 
 const ACTIONS = ['info', 'attach', 'navigate', 'snapshot', 'click', 'hover', 'drag', 'type', 'fill', 'press', 'wait', 'tabs', 'tab', 'evaluate', 'screenshot', 'console', 'dialog', 'upload', 'download', 'close'] as const;
 /** Actions that talk to the page, so an open JavaScript dialog must be answered first. */
@@ -22,10 +24,28 @@ const PAGE_ACTIONS = new Set(['click', 'hover', 'drag', 'type', 'fill', 'press',
 const WAIT_DEFAULT_S = 10;
 const WAIT_MAX_S = 60;
 
+type Confirmer = Pick<ExtensionContext, 'hasUI' | 'ui'>;
+/** Before any tool call supplies a context: nothing to ask, so what needs confirmation is refused. */
+const NO_UI = { hasUI: false } as Confirmer;
+
 export class BrowserTool {
   #session: BrowserSession | undefined;
   /** Private hosts (`host:port`) the user allowed this session. */
   readonly allowedHosts = new Set<string>();
+  /** The latest tool call's context: where the navigation guard asks for confirmation. */
+  #confirmer: Confirmer = NO_UI;
+  /** Checks every page and frame load the session's pages start, not only URLs the agent passes. */
+  readonly #guard: NavigationGuard = (url) => this.checkUrl(url);
+
+  /** Whether the browser may open `url`, asking through the latest tool call's context when it needs confirmation. */
+  checkUrl(url: string): Promise<void> {
+    return checkBrowserUrl(url, this.#confirmer, this.allowedHosts);
+  }
+
+  /** Remembers the calling tool's context for confirmations the session's pages trigger while it runs. */
+  useContext(ctx: Confirmer | undefined): void {
+    this.#confirmer = ctx ?? NO_UI;
+  }
 
   /** Whether a browser is open now, without opening one. */
   get isOpen(): boolean {
@@ -36,7 +56,7 @@ export class BrowserTool {
     if (this.#session?.page.open) return this.#session;
     // The page connection dropped: release what the old session owns before opening a new one.
     await this.close();
-    this.#session = await openBrowser();
+    this.#session = await openBrowser(process.env, { guard: this.#guard });
     return this.#session;
   }
 
@@ -44,7 +64,7 @@ export class BrowserTool {
   async attach(port: number | undefined): Promise<BrowserSession> {
     if (!port) throw new Error('attach needs port (the DevTools port of an open browser).');
     await this.close();
-    this.#session = await openBrowser(process.env, { port, reuseTab: true });
+    this.#session = await openBrowser(process.env, { port, reuseTab: true, guard: this.#guard });
     return this.#session;
   }
 
@@ -77,7 +97,8 @@ const PARAMETERS = Type.Object({
   index: Type.Optional(Type.Integer({ minimum: 1, description: 'tab: tab number from tabs' })),
   gone: Type.Optional(Type.Boolean({ description: 'wait: until text disappears' })),
   timeout: Type.Optional(Type.Number({ description: `wait (and navigate/snapshot with text): seconds (default ${WAIT_DEFAULT_S}, max ${WAIT_MAX_S})` })),
-  text: Type.Optional(Type.String({ description: 'Meaning depends on action. type: the value to enter (replaces the current value; for a <select>, the option label to pick). wait: the text to wait for (or, with gone, to disappear). navigate/snapshot: optional text to wait for before returning. drag: visible text of the drop zone, instead of to. dialog: the reply to a prompt() dialog.' })),
+  text: Type.Optional(Type.String({ description: 'type: value to enter, replacing the current one. wait: text to wait for (gone: to disappear). navigate/snapshot: text to wait for before returning. drag: visible text of the drop zone. dialog: reply to a prompt().' })),
+  format: Type.Optional(StringEnum(['jpeg', 'png'], { description: 'screenshot: image format (default jpeg; png only when the user asks for it)' })),
   accept: Type.Optional(Type.Boolean({ description: 'dialog: accept (default) or false to dismiss' })),
   files: Type.Optional(Type.Array(Type.String(), { description: 'upload: file paths' })),
   submit: Type.Optional(Type.Boolean({ description: 'Press Enter after typing' })),
@@ -91,11 +112,19 @@ export function registerBrowserTool(pi: ExtensionAPI, browser: BrowserTool): voi
     name: 'browser',
     label: 'Browser',
     description:
-      'Inspect and interact with one Chrome session for JavaScript pages, forms and authenticated flows; headless unless visible mode is enabled. ' +
-      'Actions: navigate(url) and tab(url | index) return a snapshot: page text plus numbered elements; snapshot; click/hover(ref); drag(ref, to | text); type(ref, text, submit?); fill(fields); press(key); wait(text, gone?); tabs; evaluate(expression); screenshot; console; dialog(accept?, text?); upload(ref, files); download(ref?); info; attach(port: an open browser); close. ' +
-      'An element keeps its number while it stays on the page; a new document renumbers. Other actions report what changed, so a fresh snapshot is rarely needed. A wait that times out fails with the current snapshot. Private/local addresses require confirmation unless explicitly enabled in configuration; uploads outside the workspace require interactive confirmation.',
+      'Drive one Chrome session (JavaScript pages, forms, logins); headless unless visible mode is on. One action per call:\n' +
+      'navigate(url), tab(url | index): snapshot = page text + numbered elements\n' +
+      'snapshot(text?): wait for text first\n' +
+      'click, hover(ref)\n' +
+      'drag(ref, to | text)\n' +
+      'type(ref, text, submit?), fill(fields), press(key)\n' +
+      'wait(text, gone?), evaluate(expression)\n' +
+      'screenshot(format?): jpeg (default) or png, shrunk to fit; result names the full-size file\n' +
+      'dialog(accept?, text?), upload(ref, files), download(ref?)\n' +
+      'tabs, console, info, close, attach(port: an open browser)\n' +
+      'An element keeps its number while it stays on the page; a new document renumbers. Actions report what changed, so a fresh snapshot is rarely needed. A wait that times out fails with the current snapshot. Private/local addresses and uploads outside the workspace need the user\'s confirmation.',
     promptSnippet: 'Inspect rendered pages and act on current element refs',
-    promptGuidelines: ['Use web for static public text. Use browser for interaction; inspect the outcome before repeating a click or submission, and use existing user authorization for actions with side effects.'],
+    promptGuidelines: ['Inspect the outcome before repeating a browser click or submission, and use existing user authorization for actions with side effects.'],
     // One shared page: parallel actions would race (a click against a navigation, stale element refs), so browser calls
     // run one at a time (`exclusive` below) while other tools in the same message still run beside them.
     parameters: PARAMETERS,
@@ -103,6 +132,7 @@ export function registerBrowserTool(pi: ExtensionAPI, browser: BrowserTool): voi
     renderResult: (result, _options, theme, context) => browserResult(result, theme, context),
     async execute(_id, params, signal, _onUpdate, ctx) {
       const { action } = params;
+      browser.useContext(ctx);
       if (isSessionAction(action)) return SESSION_HANDLERS[action](browser, params, signal);
       const session = await browser.session();
       if (session.dialog && PAGE_ACTIONS.has(action)) return pageResult(dialogNotice(session.dialog));
@@ -123,7 +153,7 @@ interface PageAction {
   page: BrowserSession['page'];
   params: BrowserParams;
   signal: AbortSignal | undefined;
-  /** Read only by the actions that need it (URL and upload checks, download paths). */
+  /** Read only by the actions that need it (upload checks); URL checks go through `browser`. */
   ctx: ExtensionContext;
   browser: BrowserTool;
 }
@@ -160,7 +190,14 @@ async function input({ session, page, signal }: PageAction, start: () => Promise
   if (!session.dialog) await page.untilDialog(settle(page, signal));
   const opened = session.dialog ? undefined : await followNewTab(session, before, signal);
   const after = opened ? `This action opened a new tab; now driving it (tabs lists all).\n\n${await snapshot(session, signal)}` : await snapshot(session, signal, { changesOnly: true });
-  return pageResult(typeof note === 'string' && note ? `${note}\n\n${after}` : after);
+  return pageResult(withBlockedNote(session, typeof note === 'string' && note ? `${note}\n\n${after}` : after));
+}
+
+/** `text` led by a line naming the page load the guard refused since the last report, which is then forgotten. */
+function withBlockedNote(session: BrowserSession, text: string): string {
+  const blocked = session.blocked;
+  delete session.blocked;
+  return blocked ? `Blocked a page load: ${blocked}\n\n${text}` : text;
 }
 
 /**
@@ -176,29 +213,49 @@ export async function checkBrowserUrl(raw: string, ctx: Pick<ExtensionContext, '
     throw new Error(`Not a URL: ${raw}`);
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`The browser opens http(s) URLs only, not ${url.protocol}`);
-  if (allowPrivate() || allowed.has(url.host) || !(await isPrivateHost(url))) return;
-  if (ctx.hasUI && (await withDialog(() => ctx.ui.confirm('Open a private address?', `The browser wants to open ${url.host}, a local or private network address.`)))) {
+  if (allowPrivate() || allowed.has(url.host)) return;
+  const host = await classifyHost(url);
+  if (host.kind === 'public') return;
+  // A name that does not resolve here may still resolve in Chrome (its own DNS, hosts file, proxy) to a private address.
+  const what = host.kind === 'private' ? 'a local or private network address' : 'a name that does not resolve here and may reach a local or private address';
+  if (ctx.hasUI && (await withDialog(() => ctx.ui.confirm('Open a private address?', `The browser wants to open ${url.host}, ${what}.`)))) {
     allowed.add(url.host);
     return;
   }
-  throw new Error(`Blocked private or local address: ${url.host}. It needs the user's confirmation in an interactive session, or OCTOCODE_WEB_ALLOW_PRIVATE=1.`);
+  const blocked = host.kind === 'private' ? 'Blocked private or local address' : 'Blocked unresolved host';
+  throw new Error(`${blocked}: ${url.host}. Ask the user to allow private addresses (OCTOCODE_WEB_ALLOW_PRIVATE=1); do not retry.`);
 }
 
-/** Upload paths resolved against `cwd`; paths outside it need the user's confirmation. */
-export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd' | 'hasUI' | 'ui'>): Promise<void> {
-  const inside = (file: string) => {
-    const relative = path.relative(ctx.cwd, file);
-    return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
-  };
-  const outside = files.map((file) => path.resolve(ctx.cwd, file)).filter((file) => !inside(file));
-  if (outside.length === 0) return;
-  if (ctx.hasUI && (await withDialog(() => ctx.ui.confirm('Upload files from outside the workspace?', outside.join('\n'))))) return;
+/**
+ * Upload paths resolved against `cwd` and through symlinks: the files Chrome will read, returned for the upload. A
+ * path outside the workspace (a symlink inside it pointing out included) needs the user's confirmation.
+ */
+export async function checkUploadPaths(files: readonly string[], ctx: Pick<ExtensionContext, 'cwd' | 'hasUI' | 'ui'>): Promise<string[]> {
+  const root = realPath(path.resolve(ctx.cwd));
+  const paths = files.map((file) => realPath(path.resolve(ctx.cwd, file)));
+  const outside = paths.filter((file) => {
+    const relative = path.relative(root, file);
+    return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+  });
+  if (outside.length === 0) return paths;
+  if (ctx.hasUI && (await withDialog(() => ctx.ui.confirm('Upload files from outside the workspace?', outside.join('\n'))))) return paths;
   throw new Error(`Refused to upload files outside the workspace without the user's confirmation: ${outside.join(', ')}`);
 }
 
-async function navigate({ session, page, params, signal, ctx, browser }: PageAction): Promise<ActionResult> {
+/** `file` with symlinks resolved; a missing tail (a file that does not exist yet) is kept under its real parent. */
+function realPath(file: string): string {
+  try {
+    return fs.realpathSync(file);
+  } catch {
+    const parent = path.dirname(file);
+    return parent === file ? file : path.join(realPath(parent), path.basename(file));
+  }
+}
+
+async function navigate({ session, page, params, signal, browser }: PageAction): Promise<ActionResult> {
   if (!params.url) throw new Error('navigate needs url');
-  await checkBrowserUrl(params.url, ctx, browser.allowedHosts);
+  await browser.checkUrl(params.url);
+  delete session.blocked;
   // The wait starts before the command so a fast load is not missed; `done` ends it when the command fails, and a
   // dialog (an alert() while loading holds the load event) ends it at once: the snapshot then reports the dialog.
   const done = new AbortController();
@@ -206,7 +263,7 @@ async function navigate({ session, page, params, signal, ctx, browser }: PageAct
   loaded.catch(() => undefined);
   try {
     const result = await page.send<{ errorText?: string; loaderId?: string }>('Page.navigate', { url: params.url }, signal);
-    if (result.errorText) throw new Error(`Navigation failed: ${result.errorText}`);
+    if (result.errorText) throw new Error(`Navigation failed: ${result.errorText}${session.blocked ? ` (blocked ${session.blocked})` : ''}`);
     // A same-document navigation (a #fragment) has no loader and fires no load event.
     if (result.loaderId) await loaded;
   } finally {
@@ -216,7 +273,7 @@ async function navigate({ session, page, params, signal, ctx, browser }: PageAct
   const settled = session.dialog ? true : ((await page.untilDialog(settleAfterLoad(page, signal)))?.settled ?? true);
   const waited = params.text ? await waitUntil(session, params.text, params.timeout, signal) : '';
   const note = settled || params.text ? '' : '\n\nNote: the page was still changing 6s after loading; values may still update. Use wait (text) or snapshot again for content that loads late.';
-  return pageResult(`${waited}${await snapshot(session, signal)}${note}`);
+  return pageResult(withBlockedNote(session, `${waited}${await snapshot(session, signal)}${note}`));
 }
 
 async function dragAction(action: PageAction): Promise<ActionResult> {
@@ -275,26 +332,23 @@ const PAGE_HANDLERS: Record<PageActionName, (action: PageAction) => Promise<Acti
   },
   wait,
   tabs: async ({ session }) => pageResult(await describeTabs(session)),
-  tab: async ({ session, params, signal, ctx, browser }) => {
-    if (params.url) await checkBrowserUrl(params.url, ctx, browser.allowedHosts);
+  tab: async ({ session, params, signal, browser }) => {
+    if (params.url) await browser.checkUrl(params.url);
     if (params.url) await newTab(session, params.url, signal);
     else await selectTab(session, params.index, signal);
-    return pageResult(await snapshot(session, signal));
+    return pageResult(withBlockedNote(session, await snapshot(session, signal)));
   },
   dialog: async ({ session, params, signal }) => pageResult(await answerDialog(session, params.accept ?? true, params.text, signal)),
   upload: async ({ page, params, signal, ctx }) => {
-    await checkUploadPaths(params.files ?? [], ctx);
-    return pageResult(await uploadFiles(page, requireRef(params.ref), elementExpr(requireRef(params.ref)), params.files, ctx.cwd, signal));
+    const files = await checkUploadPaths(params.files ?? [], ctx);
+    return pageResult(await uploadFiles(page, requireRef(params.ref), elementExpr(requireRef(params.ref)), files, signal));
   },
-  download: async ({ session, page, params, signal, ctx }) => {
+  download: async ({ session, page, params, signal }) => {
     const ref = params.ref;
-    return pageResult(await download(session, ctx.cwd, ref === undefined ? undefined : async () => void (await page.untilDialog(click(page, ref, signal))), signal));
+    return pageResult(await download(session, ref === undefined ? undefined : async () => void (await page.untilDialog(click(page, ref, signal))), signal));
   },
   evaluate,
-  screenshot: async ({ page, signal }) => {
-    const shot = await page.send<{ data: string }>('Page.captureScreenshot', { format: 'png' }, signal);
-    return { content: [{ type: 'image', data: shot.data, mimeType: 'image/png' }], details: undefined };
-  },
+  screenshot: ({ page, params, signal }) => screenshot(page, params.format === 'png' ? 'png' : 'jpeg', signal),
   console: async ({ session }) => pageResult(session.console.length > 0 ? capOutputToFile(sanitizeTerminalText(session.console.join('\n')), { label: 'browser_console' }) : '(no console messages)'),
 };
 

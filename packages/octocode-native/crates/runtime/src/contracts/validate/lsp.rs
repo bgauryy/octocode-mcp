@@ -1,4 +1,4 @@
-//! Interpreter for the `lsp_rust_context` opcode.
+//! Interpreters for the `operation_controls` and `lsp_rust_context` opcodes.
 use super::{ContractValidationError, internal, issue, query_values};
 use serde_json::Value;
 
@@ -49,8 +49,13 @@ pub(super) fn validate_lsp_queries(input: &Value) -> Result<(), ContractValidati
             {
                 return Err(issue(
                     "lsp.proc-macros",
-                    prefix("rustContext"),
-                    "procMacros requires buildScripts:true",
+                    vec![
+                        "queries".into(),
+                        index.to_string(),
+                        "rustContext".into(),
+                        "procMacros".into(),
+                    ],
+                    "procMacros requires buildScripts:true because rust-analyzer builds procedural macros through Cargo.",
                 ));
             }
             if !query
@@ -61,80 +66,9 @@ pub(super) fn validate_lsp_queries(input: &Value) -> Result<(), ContractValidati
                 return Err(issue(
                     "lsp.rust-path",
                     prefix("rustContext"),
-                    "rustContext requires a Rust .rs path",
+                    "rustContext requires a Rust .rs path, including for workspaceSymbol.",
                 ));
             }
-        }
-        let operation = query.get("operation").and_then(Value::as_str).unwrap_or("");
-        if operation == "workspaceSymbol" {
-            if query.get("position").is_some() || query.get("lineHint").is_some() {
-                return Err(issue(
-                    "lsp.workspace-anchor",
-                    prefix("position"),
-                    "workspaceSymbol does not accept a position or lineHint",
-                ));
-            }
-            if query
-                .get("symbolName")
-                .and_then(Value::as_str)
-                .is_none_or(str::is_empty)
-            {
-                return Err(issue(
-                    "lsp.workspace-symbol",
-                    prefix("symbolName"),
-                    "Set symbolName for workspaceSymbol",
-                ));
-            }
-            if query.get("path").is_none() && query.get("workspaceRoot").is_none() {
-                return Err(issue(
-                    "lsp.workspace-root",
-                    prefix("workspaceRoot"),
-                    "Set path or workspaceRoot for workspaceSymbol",
-                ));
-            }
-            continue;
-        }
-        if query.get("path").is_none() {
-            return Err(issue(
-                "lsp.path",
-                prefix("path"),
-                "Set path for file-scoped operations",
-            ));
-        }
-        if matches!(operation, "documentSymbols" | "diagnostic") {
-            continue;
-        }
-        let has_name = query
-            .get("symbolName")
-            .and_then(Value::as_str)
-            .is_some_and(|v| !v.is_empty())
-            || query.get("lineHint").is_some();
-        let has_position = query.get("position").is_some();
-        if has_name && has_position {
-            return Err(issue(
-                "lsp.anchor-exclusive",
-                prefix("position"),
-                "Use either symbolName+lineHint or position, not both",
-            ));
-        }
-        if !has_position
-            && query
-                .get("symbolName")
-                .and_then(Value::as_str)
-                .is_none_or(str::is_empty)
-        {
-            return Err(issue(
-                "lsp.symbol-anchor",
-                prefix("symbolName"),
-                "Set symbolName for anchored operations",
-            ));
-        }
-        if !has_position && query.get("lineHint").and_then(Value::as_i64).is_none() {
-            return Err(issue(
-                "lsp.line-anchor",
-                prefix("lineHint"),
-                "Set lineHint for anchored operations",
-            ));
         }
     }
     Ok(())

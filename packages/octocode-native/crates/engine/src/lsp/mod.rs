@@ -1,8 +1,10 @@
+mod bundled_tsgo;
 pub mod client;
 mod commands;
 pub mod config;
 pub(crate) mod grammar;
 pub mod managed;
+mod module_path;
 pub mod pool;
 mod process_tree;
 pub mod resolver;

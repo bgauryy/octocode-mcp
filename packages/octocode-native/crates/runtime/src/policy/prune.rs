@@ -54,7 +54,6 @@ const CREDENTIAL_DIRECTORY_NAMES: &[&str] = &[
     ".azure",
     ".kube",
     ".terraform",
-    "secrets",
     ".password-store",
 ];
 
@@ -169,10 +168,12 @@ mod tests {
             .copied()
             .collect::<Vec<_>>();
         assert_eq!(search_only, TOOL_CONFIG_DIRECTORY_NAMES);
-        for name in [".git", ".ssh", "secrets", "node_modules", "target"] {
+        for name in [".git", ".ssh", "node_modules", "target"] {
             assert!(syntax.contains(&name), "{name}");
         }
-        for name in ["vendor", "output", "cache", "release", "tmp"] {
+        for name in [
+            "vendor", "output", "cache", "release", "tmp", "secrets", "private",
+        ] {
             assert!(!search.contains(&name), "{name} is routinely real source");
         }
     }

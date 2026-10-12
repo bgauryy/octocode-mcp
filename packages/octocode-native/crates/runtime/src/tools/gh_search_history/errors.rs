@@ -5,10 +5,10 @@ use crate::tools::gh_shared::{provider_hint, provider_message, validation_messag
 
 /// The message and the optional hint for a history failure. `search`
 /// distinguishes ghSearchHistory from the direct-fetch ghGetHistoryItem: a
-/// search 422 names the query. (ghGetHistoryItem maps a bogus commit SHA,
-/// GitHub 422 "No commit found for SHA: …", to a missing commit before it
-/// gets here.) Without a hint here the runtime gives the one hint of the
-/// error kind, the same for every GitHub tool.
+/// search 422 names the query. (The transport types a bogus commit SHA,
+/// GitHub's "No commit found", as a missing ref.) Without a hint here the
+/// runtime gives the one hint of the error kind, the same for every GitHub
+/// tool.
 pub(crate) fn history_failure(
     error: &ProviderError,
     search: bool,

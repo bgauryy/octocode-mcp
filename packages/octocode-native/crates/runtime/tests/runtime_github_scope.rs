@@ -275,7 +275,7 @@ async fn incomplete_code_search_page_is_partial_without_extras() {
     let outcome = call(
         &runtime,
         "ghSearchCode",
-        json!({"owner": "a", "keywords": ["app"], "match": "path", "extras": []}),
+        json!({"owner": "a", "keywords": ["app"], "matchIn": "path", "extras": []}),
     )
     .await
     .expect("code search");
@@ -354,7 +354,7 @@ async fn pull_request_commit_details_load_concurrently_in_order() {
         .as_array()
         .expect("commits")
         .iter()
-        .map(|commit| commit["sha"].as_str().unwrap_or_default().to_owned())
+        .map(|commit| commit["commitSha"].as_str().unwrap_or_default().to_owned())
         .collect::<Vec<_>>();
     assert_eq!(listed, shas, "page order: {data}");
     assert!(

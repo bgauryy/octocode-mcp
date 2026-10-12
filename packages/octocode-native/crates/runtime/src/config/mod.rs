@@ -65,7 +65,7 @@ mod tests {
         }
     }
     #[test]
-    fn dotenv_freezes_js_edge_behavior() {
+    fn dotenv_edge_behavior() {
         assert_eq!(
             parse_env(Some(
                 " export URL = x?a=1&b=2\r\nA=one\nA=two\nINLINE=v # kept\nLEFT=\"abc"
@@ -77,10 +77,31 @@ mod tests {
                 ("URL".into(), "x?a=1&b=2".into())
             ])
         );
+    }
+    /// An integer setting is the whole value or nothing: a prefix of digits
+    /// (`12ms`, `2e9`, `0x10`) or a fraction is not the number the user meant.
+    #[test]
+    fn integer_env_values_are_parsed_strictly() {
         assert_eq!(
-            ["12.9", "12ms", "0x10", "1e3", "-7"].map(|s| parse_int_env(Some(s))),
-            [Some(12), Some(12), Some(0), Some(1), Some(-7)]
-        )
+            [" 42 ", "-7", "+7", "0"].map(|s| parse_int_env(Some(s))),
+            [Some(42), Some(-7), Some(7), Some(0)]
+        );
+        for garbage in [
+            "12.9",
+            "12ms",
+            "0x10",
+            "1e3",
+            "2e9",
+            "30s",
+            "--1",
+            "1 2",
+            "99999999999999999999",
+            "",
+            "  ",
+        ] {
+            assert_eq!(parse_int_env(Some(garbage)), None, "{garbage:?}");
+        }
+        assert_eq!(parse_int_env(None), None);
     }
     #[test]
     fn config_parser_is_comment_json_not_full_json5() {
@@ -129,7 +150,12 @@ mod tests {
         ]);
         let out = resolve_config(&input(env, None));
         assert!(out.resolved.local.beta);
-        assert_eq!(out.resolved.network.timeout, 5000.);
+        // `12ms` is not an integer: the setting keeps its default and says so.
+        assert_eq!(out.resolved.network.timeout, 30000.);
+        assert!(
+            out.diagnostics.iter().any(|d| d.code == "invalid_env_value"
+                && d.field_path.as_deref() == Some("network.timeout"))
+        );
         assert_eq!(out.source, ConfigSource::Env);
         let only = BTreeMap::from([("OCTOCODE_BETA".into(), "true".into())]);
         assert_eq!(

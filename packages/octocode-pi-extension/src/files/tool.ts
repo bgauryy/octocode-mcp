@@ -9,23 +9,27 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { Type, type Static } from 'typebox';
 import { atomicWriteFile, changedOnDisk, sha256, sha256File } from '../shared/atomic.js';
-import { resolveToolPath } from '../shared/home.js';
+import { canonicalPath, octocodeHome, repoKey, resolveToolPath } from '../shared/home.js';
 import { lastUserEntry, type Capture, type Checkpoints } from './checkpoint.js';
 import { reviewChanges, type ReviewMode } from './review.js';
-import { exclusive } from '../shared/locks.js';
+import { exclusive, withDialog } from '../shared/locks.js';
 import { timed } from '../shared/render.js';
 import { renderFileCall, renderFileResult, type QueryOutcome } from './render.js';
-import { wholeReadPaths } from './reads.js';
+import { readPaths } from './reads.js';
 import { contentText, elisionMarkers, errorMessage, isRecord } from '../shared/util.js';
 
 /**
  * Octocode's `file` tool: batched edit / write / delete queries, each with a
  * reasoning line. Edits and writes run through Pi's own engines (exact-match
  * replacement, diffs, per-file mutation queue) but write atomically (temp file + rename) and only over the bytes
- * they checked. A file read with Pi's `read` (or whole with Octocode MCP's `localFetch`), or changed by this
+ * they checked. A file read with Pi's `read`, or changed by this
  * tool, that changed on disk since then must be read again before it is changed. A file whose earlier read left the
  * context (compaction, a branch switch, a rewind that restored it, its read result trimmed) must be read again before
  * it is changed, even if the disk did not move.
+ *
+ * Paths are checked against the workspace first: Octocode's own state folder (the Octocode home, holding trust
+ * decisions, memory and sessions) is never changed, and a path outside the repository needs the user's confirmation
+ * (refused without a UI to ask in).
  *
  * A read is recorded by stat (size, mtime, ctime, inode) of the canonical path, without reading the file again; its
  * digest is known only when the read returned the whole file (Pi's read) or the file tool wrote it, and is then
@@ -60,21 +64,12 @@ function staleRefusal(display: string): string {
   return `${display} changed on disk since you last read it. Read it again with \`read\` before modifying it.`;
 }
 
-function rereadRefusal(display: string): string {
-  return `${display} was read before the context was rewound or compacted (or its read result was trimmed), so its content is no longer in view. Read it again with \`read\` before modifying it.`;
+function unreadRefusal(display: string): string {
+  return `${display} already exists and was not read in this session. Read it with \`read\` before modifying it.`;
 }
 
-/** The real path, so a symlink or case alias of a read file counts as read; a missing file's parent is resolved. */
-export function canonicalPath(file: string): string {
-  try {
-    return fs.realpathSync.native(file);
-  } catch {
-    try {
-      return path.join(fs.realpathSync.native(path.dirname(file)), path.basename(file));
-    } catch {
-      return path.resolve(file);
-    }
-  }
+function rereadRefusal(display: string): string {
+  return `${display}: your earlier read of it is no longer in your context. Read it again with \`read\` before modifying it.`;
 }
 
 export class FileGuard {
@@ -106,7 +101,10 @@ export class FileGuard {
     this.#seen.clear();
   }
 
-  /** Returns an error message when the mutation must be refused, else undefined. */
+  /**
+   * Returns an error message when the mutation must be refused, else undefined. An existing file must have been read
+   * (or written by this tool) in this session, and not changed on disk or left the context since; a new file is free.
+   */
   check(file: string, mode: 'edit' | 'write' | 'delete', display: string): string | undefined {
     return this.inspect(file, mode, display).refusal;
   }
@@ -123,7 +121,7 @@ export class FileGuard {
     if (!current) return mode === 'edit' || mode === 'delete' ? { refusal: `${display} does not exist.` } : {};
     if (this.#reread.has(real)) return { refusal: rereadRefusal(display) };
     const seen = this.#seen.get(real);
-    if (!seen) return { current };
+    if (!seen) return { refusal: unreadRefusal(display) };
     // ctime and inode also move on a same-size rewrite that restored the mtime, or a rename over the file. With a
     // known digest a same-size move is left to the content check (a touch or a no-op rewrite is not a change).
     const moved = seen.mtimeMs !== current.mtimeMs || seen.ctimeMs !== current.ctimeMs || seen.size !== current.size || seen.ino !== current.ino;
@@ -239,6 +237,8 @@ async function runQuery(
   try {
     if (query.type === 'edit' && !query.edits?.length) throw new Error('edit needs a non-empty edits array.');
     if (query.type === 'write' && query.content === undefined) throw new Error('write needs content.');
+    const outside = await workspaceRefusal(file, query, ctx, signal);
+    if (outside) throw new Error(outside);
     const { refusal, current, expected } = guard.inspect(file, query.type, query.path);
     if (refusal) throw new Error(refusal);
     // The one read before the change: it serves the content check, the checkpoint and Pi's edit engine. The atomic
@@ -253,14 +253,14 @@ async function runQuery(
     const copied = copiedElision(query, data?.toString('utf8') ?? '');
     if (copied) {
       throw new Error(
-        `The new text contains "${copied}": a placeholder Octocode puts where it shortened an earlier call or result in your context, not file content. Re-read the source and write the full text.`,
+        `The new text contains "${copied}": a placeholder Octocode puts where it trimmed an earlier call or result in your context, not file content. Re-read the source and write the full text.`,
       );
     }
     capture = await checkpoints?.capture(file, () => lastUserEntry(ctx), data && checked ? { data, sha256: checked, mode: current?.mode ?? 0o644 } : null);
     const note = capture?.note ? ` (${capture.note})` : '';
     if (query.type === 'delete') {
       await withFileMutationQueue(file, async () => {
-        if ((sha256File(file) ?? null) !== checked) throw changedOnDisk(query.path);
+        if (((await sha256File(file)) ?? null) !== checked) throw changedOnDisk(query.path);
         await fs.promises.rm(file);
       });
       guard.record(file);
@@ -281,6 +281,27 @@ async function runQuery(
     await settleCheckpoint(ctx, checkpoints, capture, file, false);
     return { ...base, ok: false, message: errorMessage(error) };
   }
+}
+
+const inside = (file: string, dir: string): boolean => {
+  const relative = path.relative(dir, file);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+};
+
+/**
+ * Why `file` may not be changed for its place: inside Octocode's state folder (always refused), or outside the
+ * repository and the user did not confirm (refused without a UI). Undefined when the change may go ahead.
+ */
+async function workspaceRefusal(file: string, query: FileQuery, ctx: ExtensionToolContext, signal: AbortSignal | undefined): Promise<string | undefined> {
+  const real = canonicalPath(file);
+  if (inside(real, canonicalPath(octocodeHome()))) return `${query.path} is in Octocode's state folder; the file tool does not change it. Ask the user to change it themselves.`;
+  const root = repoKey(ctx.cwd).root;
+  if (inside(real, root)) return undefined;
+  const refusal = `${query.path} is outside the workspace (${root}).`;
+  if (!ctx.hasUI) return `${refusal} Changing it needs the user's confirmation; ask the user to make this change themselves.`;
+  const question = `${query.type} ${real}\n\nThis path is outside the workspace (${root}).\nReason: ${query.reasoning}\n\nAllow this change?`;
+  const allowed = await withDialog(() => ctx.ui.confirm('Change a file outside the workspace?', question, signal ? { signal } : undefined), signal);
+  return allowed ? undefined : `${refusal} The user did not allow this change; do not retry it.`;
 }
 
 /** The first context-shortening placeholder a change would add to the file (one already in the file or the replaced text is fine). */
@@ -322,9 +343,9 @@ export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, review?: Re
     name: 'file',
     label: 'File',
     description:
-      'Create, edit or delete workspace files. Queries run in order and report individual outcomes; a failure does not roll back earlier changes. Put replacements for one file in one query. ' +
-      'Read existing files with `read` (or Octocode MCP `localFetch` with `fullContent`) before changing them. If a change is refused because the file changed or left the context, read it again with `read` (only `read` or a `fullContent` read clears the refusal), then retry. Inspect every outcome before continuing.',
-    promptSnippet: 'Apply guarded file changes and inspect each outcome',
+      'Create, edit or delete files in this repository; other paths need the user\'s confirmation. Queries run in order and report individual outcomes; a failure does not roll back earlier changes. Put replacements for one file in one query. ' +
+      'Read an existing file with `read` first: a change to an unread or stale file is refused, and the refusal says how to recover. Inspect every outcome before continuing.',
+    promptSnippet: 'Create, edit or delete files (guarded)',
     promptGuidelines: [
       'Use file for authored changes; batch related files when useful. Run formatters, generators and builds with bash, then inspect their changes.',
     ],
@@ -352,6 +373,6 @@ export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, review?: Re
   pi.on('tool_result', async (event, ctx) => {
     if (event.isError) return;
     const known = returnedContent(event.toolName, event.input, event.content, event.details);
-    for (const file of wholeReadPaths(event.toolName, event.input, ctx.cwd, event)) guard.record(file, known);
+    for (const file of readPaths(event.toolName, event.input, ctx.cwd)) guard.record(file, known);
   });
 }

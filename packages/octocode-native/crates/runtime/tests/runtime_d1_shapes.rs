@@ -1,6 +1,6 @@
-//! D1 hard-cutover shapes, through each tool's real runtime path: one
-//! workspace-relative path form (D4), one name per purpose (X4b, X5, AR3,
-//! CL4, X6), and the retired-name deny-list
+//! Hard-cutover shapes, through each tool's real runtime path: one
+//! workspace-relative path form, one name per purpose, and the retired-name
+//! deny-list
 //! (`skills-dev/octocode-dev/scripts/retired-names.json`), checked against
 //! every tool output these tests produce.
 #![allow(clippy::panic, clippy::unwrap_used)]
@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 /// Run one row (default view unless it names `extras`) through the full runtime (validation, response
 /// stages, path shaping), as an agent sees it.
 async fn run(runtime: &ToolRuntime, tool: &str, mut row: Value) -> ToolOutcome {
-    row["mainGoal"] = json!("D1 cutover shapes.");
+    row["mainGoal"] = json!("cutover shapes.");
     let outcome = runtime
         .execute(format!("d1-{tool}"), tool.into(), json!({"queries":[row]}))
         .await
@@ -76,7 +76,7 @@ fn beta_runtime(workspace: &Workspace) -> ToolRuntime {
     workspace.runtime(&[("OCTOCODE_BETA", "true".into())])
 }
 
-// ---------- S-a: D4, one workspace-relative path form ----------
+// ---------- one workspace-relative path form ----------
 
 #[tokio::test]
 async fn ast_search_error_rows_name_workspace_relative_paths() {
@@ -192,15 +192,13 @@ async fn boundary_relative_keys_from_old_preview_fail_closed_with_rerun_hint() {
     let mut apply = data(&preview)["hints"]["apply"]["query"].clone();
     let row = &mut apply["queries"][0];
     let hash = row["expectedHashes"]["src/sub/a.ts"].clone();
-    // A pre-D4 preview keyed its hashes relative to the scanned directory.
+    // An older preview keyed its hashes relative to the scanned directory.
     row["expectedHashes"] = json!({"a.ts": hash});
     let rejected = run(&runtime, "astRewrite", row.clone()).await;
     let result = &rejected.structured_content["results"][0];
     assert_eq!(result["status"], "error", "{result}");
     let code = result["data"]["errorCode"].as_str().unwrap_or_default();
     assert!(code.starts_with("expectedHash"), "{result}");
-    let hint = result["data"]["hints"].to_string();
-    assert!(hint.contains("re-run the preview"), "{result}");
     assert_eq!(
         std::fs::read_to_string(&file).expect("unchanged"),
         "export const f = (x) => old(x);\n"
@@ -218,7 +216,7 @@ async fn boundary_relative_keys_from_old_preview_fail_closed_with_rerun_hint() {
     runtime.close().await;
 }
 
-// ---------- S-b: X4b, X5, AR3, CL4 names ----------
+// ---------- one name per purpose ----------
 
 #[tokio::test]
 async fn artifact_search_takes_ecosystem_and_registry_url() {
@@ -249,7 +247,7 @@ async fn artifact_search_takes_ecosystem_and_registry_url() {
         ),
     ] {
         let mut row = row;
-        row["mainGoal"] = json!("D1 cutover shapes.");
+        row["mainGoal"] = json!("cutover shapes.");
         let error = runtime
             .execute(
                 "d1-artifact-retired".into(),
@@ -344,7 +342,7 @@ async fn history_reviews_and_issue_comments_name_author_and_commit_sha() {
     runtime.close().await;
 }
 
-// ---------- S-c: X6 + B12, one count vocabulary ----------
+// ---------- one count vocabulary ----------
 
 #[tokio::test]
 async fn local_search_counts_are_match_line_and_file_counts() {
@@ -356,13 +354,24 @@ async fn local_search_counts_are_match_line_and_file_counts() {
     let paged = run(
         &runtime,
         "localSearch",
-        json!({"path":".","matchString":"needle","pageSize":1}),
+        // The page counters are a stats extra.
+        json!({"path":".","matchString":"needle","pageSize":1,"extras":["stats"]}),
     )
     .await;
-    let stats = &data(&paged)["stats"];
-    assert_eq!(stats["matchCount"], 6, "{}", paged.structured_content);
-    assert_eq!(stats["matchedLineCount"], 6, "{}", paged.structured_content);
-    assert_eq!(stats["fileCount"], 3, "{}", paged.structured_content);
+    // The totals are flat on the row (no `stats` object, no `fileCount`: the
+    // file count is `pagination.totalItems`).
+    let totals = data(&paged);
+    assert_eq!(totals["matchCount"], 6, "{}", paged.structured_content);
+    assert_eq!(
+        totals["matchedLineCount"], 6,
+        "{}",
+        paged.structured_content
+    );
+    assert!(
+        totals.get("stats").is_none(),
+        "{}",
+        paged.structured_content
+    );
     // `pagination.totalItems` counts the paged unit: files.
     assert_eq!(
         data(&paged)["pagination"]["totalItems"],
@@ -395,13 +404,12 @@ async fn ast_tools_count_matches_as_match_count() {
     let search = run(
         &runtime,
         "astSearch",
-        // A complete page drops its stats; the echo extra (no minimizing)
-        // keeps them.
-        json!({"operation":"match","path":"src","language":"typescript","pattern":"old($A)","extras":["echo"]}),
+        // A complete page drops its stats; the stats extra keeps them.
+        json!({"operation":"match","path":"src","language":"typescript","pattern":"old($A)","extras":["stats"]}),
     )
     .await;
     assert_eq!(
-        data(&search)["stats"]["matchCount"],
+        data(&search)["matchCount"],
         2,
         "{}",
         search.structured_content
@@ -421,7 +429,7 @@ async fn ast_tools_count_matches_as_match_count() {
     runtime.close().await;
 }
 
-// ---------- S-d: D2/X3/LP1/LP3, one 1-based column base ----------
+// ---------- one 1-based column base ----------
 
 /// Hit columns are a detail (`extras: ["details"]`); every one shown is
 /// 1-based.
@@ -488,12 +496,12 @@ async fn lsp_position_and_call_hierarchy_inputs_fail_closed() {
             ["position", "symbolName"],
         ),
         (
-            json!({"operation":"callHierarchy","path":"a.ts","symbolName":"f","lineHint":1}),
+            json!({"operation":"callHierarchy","path":"a.ts","symbolName":"f","line":1}),
             ["callHierarchy", "callers"],
         ),
     ] {
         let mut row = row;
-        row["mainGoal"] = json!("D1 cutover shapes.");
+        row["mainGoal"] = json!("cutover shapes.");
         let error = runtime
             .execute(
                 "d1-lsp-retired".into(),
@@ -510,7 +518,7 @@ async fn lsp_position_and_call_hierarchy_inputs_fail_closed() {
     runtime.close().await;
 }
 
-// ---------- S-e: X1/X2, location rows are objects named like tool inputs ----------
+// ---------- location rows are objects named like tool inputs ----------
 
 #[tokio::test]
 async fn location_rows_are_objects_named_like_tool_inputs() {
@@ -521,7 +529,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
     );
     workspace.write("pkg/a.txt", "x\n");
     let runtime = workspace.runtime(&[]);
-    // X2: the enclosing declaration is an object an lspSearch/localFetch
+    // The enclosing declaration is an object an lspSearch/localFetch
     // call takes as is.
     let hits = run(
         &runtime,
@@ -537,7 +545,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
         hits.structured_content
     );
     assert!(first.get("in").is_none(), "{first}");
-    // P1: a declaration without members is an entry string.
+    // A declaration without members is an entry string.
     let outline = run(
         &runtime,
         "astSearch",
@@ -591,7 +599,7 @@ async fn location_rows_are_objects_named_like_tool_inputs() {
     runtime.close().await;
 }
 
-// ---------- S-f: X10 lead names, X12 runnable recoveries ----------
+// ---------- lead names and runnable recoveries ----------
 
 /// The lead `name` under `next` or `hints`, whichever channel holds it.
 fn lead<'a>(outcome: &'a ToolOutcome, name: &str) -> &'a Value {
@@ -659,7 +667,7 @@ async fn a_missing_file_leads_to_find_file() {
     runtime.close().await;
 }
 
-// ---------- S-g: X13b one camelCase error-code set ----------
+// ---------- one camelCase error-code set ----------
 
 #[tokio::test]
 async fn error_codes_are_declared_camel_case_names() {

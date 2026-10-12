@@ -23,7 +23,7 @@ pub(crate) fn u32_of_signed(value: i64) -> u32 {
 }
 
 /// The public column of a 0-based engine or LSP column: every column a
-/// tool emits or takes is 1-based (D2), in the source's UTF-16 units.
+/// tool emits or takes is 1-based, in the source's UTF-16 units.
 pub(crate) fn one_based_column(zero_based: u32) -> u32 {
     zero_based.saturating_add(1)
 }

@@ -6,6 +6,7 @@ use crate::tools::result::ToolError;
 use crate::{
     policy::path::PathPolicy, security::ContentSecurity, tools::cancel::CancellationCheck,
 };
+use octocode_engine::graph::FileEdge;
 use serde_json::{Map, Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -50,7 +51,7 @@ pub(crate) fn analyze(
     // trusted, so an incomplete import graph never presents as a confident
     // zero (e.g. `cycleCount:0` when no `crate::` import could be resolved).
     // It only ever escalates to low.
-    if gaps.unresolved || gaps.unsupported {
+    if (gaps.unresolved || gaps.unsupported) && import_gaps_reach_answer(b, q, &items) {
         low = true;
         if let Some(obj) = summary.as_object_mut() {
             let resolved = b.imports[0];
@@ -66,11 +67,11 @@ pub(crate) fn analyze(
         }
     }
     let results_digest = crate::digest::json_sha256(&items);
+    let answer_empty = answer_is_empty(&items);
     let (page, pagination) = paginate(items, q);
-    warnings.extend(out_of_range_warning(&pagination));
-    base.insert("results".into(), Value::Array(page));
+    base.insert("nodes".into(), Value::Array(page));
     base.insert("pagination".into(), pagination);
-    base.insert("summary".into(), summary);
+    base.insert("graphSummary".into(), summary);
     if !warnings.is_empty() {
         base.insert("warnings".into(), json!(warnings));
     }
@@ -84,6 +85,9 @@ pub(crate) fn analyze(
     let diagnostics_only = q.diagnostic_rows_requested() && q.diagnostic_snapshot().is_some();
     if diagnostics_only && !coverage_state.changed {
         keep_diagnostics_only(&mut base);
+    }
+    if answer_empty && !diagnostics_only {
+        mark_empty(&mut base);
     }
     if coverage_state.changed {
         base.insert(
@@ -118,9 +122,38 @@ pub(crate) fn analyze(
     } else {
         "complete"
     };
-    add_completeness(&mut base, cuts.graph_cut(), result_state, &gaps.reasons());
+    add_completeness(&mut base, cuts, result_state, &gaps.reasons());
     base.insert("operation".into(), json!(q.analysis().as_str()));
     Ok(Value::Object(base))
+}
+
+/// Whether an unresolved or unsupported import can change this answer.
+/// `dependencies` reads only the imports of its source and of each file it
+/// expanded (`distance < depth`), so a gap elsewhere cannot hide one of its
+/// rows. Every other answer can lose an edge, importer or path anywhere in the
+/// scan, so any gap reaches it.
+fn import_gaps_reach_answer(b: &BuiltGraph, q: &AstTopologyQuery, items: &[Value]) -> bool {
+    if q.analysis() != GraphAnalysis::Dependencies {
+        return true;
+    }
+    let depth = u64::from(q.depth().unwrap_or(1));
+    let mut read = q
+        .source()
+        .map(|raw| node_key(raw, &b.root, &b.nodes))
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    read.extend(
+        items
+            .iter()
+            .filter(|item| item["distance"].as_u64().is_some_and(|d| d < depth))
+            .filter_map(|item| item["file"].as_str().map(str::to_owned)),
+    );
+    b.diagnostics.iter().any(|d| {
+        matches!(
+            d.code.as_str(),
+            "unresolved-internal" | "unsupported-linking"
+        ) && read.contains(&d.file)
+    })
 }
 
 /// The resolved root and dynamic-only lists are page-invariant: emit them
@@ -150,7 +183,7 @@ pub(super) fn drop_repeated_summary_lists(summary: &mut Value, q: &AstTopologyQu
 }
 
 /// Coverage gaps of the linked graph. They are not truncation: every page
-/// is still reachable, so they surface only as `completeness.graph` plus
+/// is still reachable, so they surface only as `coverage.parts.graph` plus
 /// `confidence`; each gap's count is in `coverage`.
 pub(super) struct CoverageGaps {
     parse: bool,
@@ -199,9 +232,14 @@ pub(super) fn mark_scope_cuts(
         && q.diagnostic_page() as usize >= DIAGNOSTIC_PAGE_MAXIMUM;
     if result_page_limit {
         reasons.push("pageLimit");
+        push_warning(base, page_ceiling_warning("result", PAGE_MAXIMUM));
     }
     if diagnostic_page_limit {
         base["coverage"]["diagnosticPagination"]["terminalLimit"] = json!(true);
+        push_warning(
+            base,
+            page_ceiling_warning("diagnostic", DIAGNOSTIC_PAGE_MAXIMUM),
+        );
     }
     // A skipped file is named once: `partialReasons` says the scan is
     // partial and the coverage diagnostics name the file and why.
@@ -216,11 +254,21 @@ pub(super) fn mark_scope_cuts(
     result_page_limit
 }
 
+/// Append one line to the row's `warnings`.
+pub(super) fn push_warning(base: &mut Map<String, Value>, warning: String) {
+    match base.get_mut("warnings").and_then(Value::as_array_mut) {
+        Some(list) => list.push(json!(warning)),
+        None => {
+            base.insert("warnings".into(), json!([warning]));
+        }
+    }
+}
+
 /// A diagnostic page keeps its diagnostics and their pagination only.
 pub(super) fn keep_diagnostics_only(base: &mut Map<String, Value>) {
-    base.insert("results".into(), json!([]));
+    base.insert("nodes".into(), json!([]));
     base.shift_remove("pagination");
-    base.shift_remove("summary");
+    base.shift_remove("graphSummary");
     if let Some(coverage) = base.get_mut("coverage").and_then(Value::as_object_mut) {
         coverage.retain(|key, _| matches!(key.as_str(), "diagnostics" | "diagnosticPagination"));
     }
@@ -231,12 +279,12 @@ pub(super) fn keep_diagnostics_only(base: &mut Map<String, Value>) {
 /// a remaining page.
 pub(super) fn add_completeness(
     base: &mut Map<String, Value>,
-    graph_cut: bool,
+    cuts: ScanCuts,
     result_state: &str,
     gaps: &[&str],
 ) {
-    let graph_state = if graph_cut {
-        "scan-truncated"
+    let graph_state = if let Some(state) = cuts.graph_state() {
+        state
     } else if !gaps.is_empty() {
         "coverage-incomplete"
     } else {
@@ -251,7 +299,7 @@ pub(super) fn add_completeness(
     };
     let mut completeness = Map::new();
     for (key, state) in [
-        ("results", result_state),
+        ("nodes", result_state),
         ("graph", graph_state),
         ("diagnostics", diag_state),
     ] {
@@ -259,9 +307,43 @@ pub(super) fn add_completeness(
             completeness.insert(key.into(), json!(state));
         }
     }
-    if !completeness.is_empty() {
-        base.insert("completeness".into(), Value::Object(completeness));
+    state_coverage(base, completeness);
+}
+
+/// Stamps the one coverage vocabulary on the row: `coverage.state` is
+/// `complete` or `partial`; `parts` names each part (results, graph,
+/// diagnostics) that is not complete, with its state, and `reason` says it
+/// in one line.
+pub(super) fn state_coverage(base: &mut Map<String, Value>, parts: Map<String, Value>) {
+    let coverage = base.entry("coverage").or_insert_with(|| json!({}));
+    let Some(coverage) = coverage.as_object_mut() else {
+        return;
+    };
+    if parts.is_empty() {
+        coverage.insert("state".into(), json!("complete"));
+        return;
     }
+    let reason = parts
+        .iter()
+        .map(|(part, state)| format!("{part}: {}", state.as_str().unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join("; ");
+    coverage.insert("state".into(), json!("partial"));
+    coverage.insert("reason".into(), json!(reason));
+    coverage.insert("parts".into(), Value::Object(parts));
+}
+
+/// Whether an operation's answer rows say nothing was found: no rows, or only
+/// rows that report a miss (`found:false`, a path that does not exist).
+pub(super) fn answer_is_empty(items: &[Value]) -> bool {
+    items.iter().all(|row| row["found"] == json!(false))
+}
+
+/// An empty answer is an empty result, as a search with no match is: every
+/// interface reports it as such (CLI exit 1) and the row carries a recovery
+/// that names the operation.
+pub(super) fn mark_empty(base: &mut Map<String, Value>) {
+    base.insert("status".into(), json!("empty"));
 }
 
 pub(super) fn traversal(
@@ -341,7 +423,77 @@ pub(super) fn traversal(
         item["transitiveEdge"] = json!(a.zip(z).is_some_and(|e| trans.contains(&e)));
     }
     let summary = json!({"source":file,"condensationComponentCount":c.components.len(),"topologicalLayerCount":c.layers.len(),"transitiveEdgeCount":trans.len()});
-    Ok((items, summary, vec![], false))
+    let warnings = if q.analysis() == GraphAnalysis::Dependents {
+        unlinked_importer_warning(b, &file).into_iter().collect()
+    } else {
+        vec![]
+    };
+    Ok((items, summary, warnings, false))
+}
+
+/// A bare import no resolver linked (it needs a tsconfig `paths`/`baseUrl`
+/// that does not cover the importer) is not a dependent edge, yet its
+/// specifier can name `target` by path: `vs/base/common/x` for
+/// `src/vs/base/common/x.ts`. Those importers are stated, not omitted, so the
+/// answer never silently lacks a file a text search finds.
+fn unlinked_importer_warning(b: &BuiltGraph, target: &str) -> Option<String> {
+    let mut named = Vec::new();
+    for (importer, facts) in &b.facts {
+        if !is_js_ts(importer) {
+            continue;
+        }
+        for import in &facts.imports {
+            if import.target.is_none() && specifier_names_file(&import.specifier, target) {
+                named.push(format!(
+                    "{importer}:{} ({:?})",
+                    import.line, import.specifier
+                ));
+            }
+        }
+    }
+    (!named.is_empty()).then(|| {
+        format!(
+            "{} import(s) name {target} by a bare path no tsconfig paths/baseUrl links, so they are not dependents above: {}",
+            named.len(),
+            named.join(", ")
+        )
+    })
+}
+
+fn is_js_ts(file: &str) -> bool {
+    octocode_engine::text::JS_TS_EXTENSIONS
+        .contains(&octocode_engine::text::extension_of(file, true, "").as_str())
+}
+
+/// `path` without its JS/TS extension.
+fn module_stem(path: &str) -> &str {
+    let extension = octocode_engine::text::extension_of(path, false, "");
+    if octocode_engine::text::JS_TS_EXTENSIONS.contains(&extension.to_lowercase().as_str()) {
+        path.strip_suffix(extension.as_str())
+            .and_then(|stem| stem.strip_suffix('.'))
+            .unwrap_or(path)
+    } else {
+        path
+    }
+}
+
+/// Whether a bare, multi-segment specifier is a trailing path of `file`
+/// (the file itself, or the directory whose `index` it is).
+fn specifier_names_file(specifier: &str, file: &str) -> bool {
+    if specifier.starts_with(['.', '/']) || !specifier.contains('/') {
+        return false;
+    }
+    let specifier = module_stem(specifier.trim_end_matches('/'));
+    let stem = module_stem(file);
+    [Some(stem), stem.strip_suffix("/index")]
+        .into_iter()
+        .flatten()
+        .any(|module| {
+            module == specifier
+                || module
+                    .strip_suffix(specifier)
+                    .is_some_and(|rest| rest.ends_with('/'))
+        })
 }
 
 /// Files that use `target`'s items through a module re-exporting them:
@@ -460,6 +612,17 @@ pub(super) fn path_analysis(
     ))
 }
 
+/// What a witness is: one cycle through a strongly connected group, naming
+/// how many of the group's `of` files it passes, not every edge of the group.
+fn witness_label(witness: &[FileEdge], of: usize) -> Value {
+    let files = witness
+        .iter()
+        .flat_map(|edge| [edge.from.as_str(), edge.to.as_str()])
+        .collect::<BTreeSet<_>>()
+        .len();
+    json!({"kind":"witness","files":files,"of":of})
+}
+
 pub(super) fn cycles(b: &BuiltGraph) -> (Vec<Value>, Value, Vec<String>, bool) {
     // A module tree is not a dependency cycle: `mod x;` plus the child's use
     // of its ancestor (`use super::…`) loop by construction. Cycles are found
@@ -495,10 +658,20 @@ pub(super) fn cycles(b: &BuiltGraph) -> (Vec<Value>, Value, Vec<String>, bool) {
         // response page shows its counts and runtime cycles before its files.
         let mut item = json!({"componentId":id,"fileCount":files.len(),"runtimeCycleCount":contained.len(),"runtimeCycle":!contained.is_empty()});
         if !contained.is_empty() {
-            item["runtimeCycles"] = json!(contained);
-            item["runtimeCycleEdges"] = json!(witness_edges(runtime_witnesses.witness(&members)));
+            item["runtimeGroups"] = json!(
+                contained
+                    .iter()
+                    .map(|group| json!({"fileCount":group.len(),"files":group}))
+                    .collect::<Vec<_>>()
+            );
+            let witness = runtime_witnesses.witness(&members);
+            let largest = contained.iter().map(Vec::len).max().unwrap_or_default();
+            item["runtimeCycleEdgesShown"] = witness_label(&witness, largest);
+            item["runtimeCycleEdges"] = json!(witness_edges(witness));
         }
-        item["cycleEdges"] = json!(witness_edges(file_witnesses.witness(&members)));
+        let witness = file_witnesses.witness(&members);
+        item["cycleEdgesShown"] = witness_label(&witness, files.len());
+        item["cycleEdges"] = json!(witness_edges(witness));
         item["edgeKinds"] = json!(collect_kinds(&uses, files));
         item["topologicalLayer"] = json!(layers.get(&id));
         item["outgoingComponents"] = json!(outgoing);
@@ -562,7 +735,6 @@ pub(super) fn missing_file_error(
         query["source"] = json!(candidate);
         error.next = Some(Box::new(json!({
             "retrySuffixMatch": Continuation::new(ToolId::AstTopology, query)
-                .why("Retry with the scanned file that shares this path suffix.")
                 .confidence("medium")
                 .build()
         })));
@@ -695,7 +867,7 @@ mod tests {
                 "outOfRange":false,
                 "resultId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
             }},
-            "results":[]
+            "nodes":[]
         })
         .as_object()
         .cloned()
@@ -715,7 +887,7 @@ mod tests {
 
         // Counts-only default: withheld rows are an opt-in lead to page 1 of
         // the same snapshot.
-        let mut counts_only = json!({"pagination":{"hasMore":false},"coverage":{},"results":[]})
+        let mut counts_only = json!({"pagination":{"hasMore":false},"coverage":{},"nodes":[]})
             .as_object()
             .cloned()
             .expect("result object");
@@ -737,7 +909,7 @@ mod tests {
     }
 
     #[test]
-    fn identical_diagnostics_group_into_one_row_with_their_files() {
+    fn every_diagnostic_row_lists_its_occurrences_as_files() {
         let diagnostic = |file: &str, line: Option<u32>, message: &str| Diagnostic {
             file: file.into(),
             line,
@@ -753,7 +925,7 @@ mod tests {
             rows,
             vec![
                 json!({"code":"unsupported-linking","message":"macro","files":["a.rs:3","b.rs"]}),
-                json!({"file":"c.rs","line":9,"code":"unsupported-linking","message":"other"}),
+                json!({"code":"unsupported-linking","message":"other","files":["c.rs:9"]}),
             ]
         );
     }

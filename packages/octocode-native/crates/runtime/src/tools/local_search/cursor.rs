@@ -77,7 +77,6 @@ pub(super) fn stale_snapshot(query: &LocalSearchQuery) -> ToolError {
     ToolError {
         next: Some(Box::new(json!({
             "restart": Continuation::new(ToolId::LocalSearch, restart)
-                .why("Start a new search against the current source.")
                 .confidence("exact")
                 .build()
         }))),
@@ -201,10 +200,40 @@ pub(super) fn fingerprint(
     let canonical = canonicalize(
         json!([query_key,file_values,{"matchCount":stats.match_count.unwrap_or(0),"matchedLineCount":stats.matched_lines.unwrap_or(0),"fileCount":stats.files_matched.unwrap_or(files.len() as u32),"filesScanned":stats.files_searched.unwrap_or(0),"capped":stats.capped.unwrap_or(false),"capReason":stats.cap_reason,"errorCount":stats.error_count.filter(|n|*n>0),"firstError":stats.first_error} ]),
     );
-    // v4 (D1): `matchCount`/`matchedLineCount`/`fileCount`, 1-based
+    // v4: `matchCount`/`matchedLineCount`/`fileCount`, 1-based
     // columns, `enclosing` objects and `moreLines` arrays
     // (an older cursor restarts instead of mixing shapes across pages).
-    format!("lexical-live-v4:{}", crate::digest::json_sha256(&canonical))
+    format!(
+        "{SNAPSHOT_SCHEME}{SNAPSHOT_VERSION}:{}",
+        crate::digest::json_sha256(&canonical)
+    )
+}
+
+const SNAPSHOT_SCHEME: &str = "lexical-live-v";
+const SNAPSHOT_VERSION: u32 = 4;
+
+/// A `snapshot` no search could have issued: not `lexical-live-v<N>:` plus a
+/// SHA-256. That is input to correct; a well-formed snapshot of an older
+/// version or another result is stale and restarts instead.
+pub(super) fn malformed_snapshot(query: &LocalSearchQuery) -> Option<ToolError> {
+    let snapshot = query.snapshot()?;
+    let well_formed = snapshot
+        .strip_prefix(SNAPSHOT_SCHEME)
+        .and_then(|rest| rest.split_once(':'))
+        .is_some_and(|(version, digest)| {
+            !version.is_empty()
+                && version.bytes().all(|byte| byte.is_ascii_digit())
+                && digest.len() == 64
+                && digest
+                    .bytes()
+                    .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+        });
+    (!well_formed).then(|| {
+        ToolError::new(
+            "invalidInput",
+            "snapshot is not one a localSearch result issued; drop `snapshot` to search again",
+        )
+    })
 }
 
 /// Digest of the search semantics a snapshot answers: the query fields
@@ -224,13 +253,6 @@ pub(super) fn query_key(
     );
     identity.insert("matchString".into(), json!(q.match_string));
     identity.insert(
-        "mode".into(),
-        json!(match q.result_view {
-            LocalSearchQueryResultView::Detailed => "detailed",
-            _ => "paginated",
-        }),
-    );
-    identity.insert(
         "regex".into(),
         json!(match q.regex_mode() {
             LocalSearchQueryRegex::Literal => "fixed",
@@ -248,10 +270,7 @@ pub(super) fn query_key(
     );
     identity.insert(
         "contextLines".into(),
-        json!(
-            q.context_lines()
-                .unwrap_or_else(|| default_context_lines(q.result_view))
-        ),
+        json!(q.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES)),
     );
     identity.insert(
         "matchContentLength".into(),
@@ -307,8 +326,8 @@ pub(super) fn query_key(
     opt!("invertMatch", q.invert_match);
     opt!("include", (!q.include.is_empty()).then_some(&q.include));
     opt!("exclude", (!q.exclude.is_empty()).then_some(&q.exclude));
-    opt!("noIgnore", q.no_ignore);
-    opt!("hidden", q.hidden);
+    opt!("includeIgnored", q.include_ignored);
+    opt!("includeHidden", q.include_hidden);
     opt!("maxDepth", q.max_depth);
     opt!("language", q.language.as_ref());
     opt!("sortReverse", q.reverse);

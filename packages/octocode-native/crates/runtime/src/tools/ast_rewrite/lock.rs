@@ -24,8 +24,8 @@ pub(super) struct RootLock {
 }
 
 impl RootLock {
-    pub(super) fn acquire(root: &Path) -> Result<Self, RewriteError> {
-        let home = super::state_base_dir().join(format!(
+    pub(super) fn acquire(state_base: &Path, root: &Path) -> Result<Self, RewriteError> {
+        let home = state_base.join(format!(
             "octocode-ast-rewrite-locks-v1-{}",
             super::state_dir_uid_suffix()
         ));

@@ -37,11 +37,14 @@ async fn invalid_rows_become_error_rows_while_valid_rows_execute() {
     assert_ne!(rows[0]["status"], "error");
     assert_eq!(rows[1]["status"], "error");
     assert_eq!(rows[1]["data"]["errorCode"], "invalidInput");
-    let hints = rows[1]["data"]["hints"].to_string();
+    // The single repair is the row's error; no leftover hints.
+    let error = rows[1]["data"]["error"].as_str().unwrap_or_default();
     assert!(
-        hints.contains("query 2") || hints.contains("serchText"),
-        "{hints}"
+        error.contains("queries[1]") && error.contains("serchText"),
+        "{}",
+        rows[1]
     );
+    assert!(rows[1]["data"].get("hints").is_none(), "{}", rows[1]);
     assert_ne!(rows[2]["status"], "error");
     assert!(!outcome.all_failed);
     octocode_native::contracts::validate_output("localSearch", &outcome.structured_content)

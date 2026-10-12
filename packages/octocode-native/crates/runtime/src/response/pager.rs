@@ -74,6 +74,10 @@ pub struct ResponseInput {
     pub rendered_text: Option<String>,
     pub is_error: bool,
     pub options: ResponsePageOptions,
+    /// Each result row's remaining-page notes (by position), so a split
+    /// row's parts re-render their disclosure
+    /// ([`super::pages::take_remaining_notes`]).
+    pub remaining: Vec<Vec<super::pages::Remaining>>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
@@ -138,9 +142,17 @@ pub struct ResponseContinuation {
     pub query: Value,
 }
 
-/// The contract's `responseLength` maximum (pinned by a contracts test): a
-/// continuation the pager builds must stay within it.
-const MAX_RESPONSE_LENGTH: usize = 50_000;
+/// `tool`'s contract `responseLength` maximum: a continuation the pager
+/// builds must stay within it. A tool without the envelope field has no
+/// bound to keep.
+fn max_response_length(tool: &str) -> usize {
+    crate::contracts::tool_contract_named(tool)
+        .and_then(Result::ok)
+        .and_then(|contract| contract.pointer("/inputSchema/properties/responseLength/maximum"))
+        .and_then(Value::as_u64)
+        .and_then(|maximum| usize::try_from(maximum).ok())
+        .unwrap_or(usize::MAX)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct ResponsePagerConfig {
@@ -213,8 +225,13 @@ impl ResponsePager {
         // Same bytes as the Value form, without cloning the envelope first.
         // Every page is bounded by its budget, so any envelope size pages.
         let full = serde_json::to_string(&structured).map_err(|_| ResponseError::Unserializable)?;
-        let (mut envelope, mut pagination) =
-            paginate_rows(structured, &full, &input.options, volatile);
+        let (mut envelope, mut pagination) = paginate_rows(
+            structured,
+            &full,
+            &input.options,
+            volatile,
+            &input.remaining,
+        );
         if cancelled.is_cancelled() {
             return Err(ResponseError::Cancelled);
         }
@@ -284,7 +301,7 @@ impl ResponsePager {
                 .options
                 .response_length
                 .unwrap_or(self.config.max_rendered_bytes)
-                .min(MAX_RESPONSE_LENGTH);
+                .min(max_response_length(&input.tool));
             let oversized_row = structured
                 .get("results")
                 .and_then(Value::as_array)
@@ -444,6 +461,7 @@ fn paginate_units(text: &str, options: &ResponsePageOptions, with_header: bool) 
             text: format!("# Response pagination restart required. {reason}\n"),
             pagination: Some(restart_pagination(
                 "content.text",
+                page_number(&units, offset, length),
                 offset,
                 total_pages(&units, length),
                 total,
@@ -492,6 +510,7 @@ fn paginate_units(text: &str, options: &ResponsePageOptions, with_header: bool) 
 /// resumes from offset 0.
 pub(super) fn restart_pagination(
     scope: &str,
+    current_page: usize,
     offset: usize,
     total_pages: usize,
     total_chars: usize,
@@ -502,7 +521,7 @@ pub(super) fn restart_pagination(
     let expected = options.response_snapshot.clone();
     ResponsePagination {
         scope: scope.into(),
-        current_page: 1,
+        current_page,
         total_pages,
         has_more: true,
         char_offset: offset,
@@ -715,6 +734,7 @@ mod tests {
             let prepared = pager
                 .prepare(
                     ResponseInput {
+                        remaining: Vec::new(),
                         tool: "localFetch".into(),
                         query: json!({"path":"a","mainGoal": "test", "reasoning":"r"}),
                         structured: envelope.clone(),
@@ -765,6 +785,7 @@ mod tests {
         let prepared = pager
             .prepare(
                 ResponseInput {
+                    remaining: Vec::new(),
                     tool: "localFetch".into(),
                     query: json!({"path":"a","mainGoal": "test", "reasoning":"r"}),
                     structured: json!({"results":[{"index":0,"data":{"content":"body"}}]}),
@@ -790,6 +811,7 @@ mod tests {
         let prepared = pager
             .prepare(
                 ResponseInput {
+                    remaining: Vec::new(),
                     tool: "localFetch".into(),
                     query: json!({"path":"a","mainGoal": "test", "reasoning":"r"}),
                     structured: envelope.clone(),
@@ -811,6 +833,7 @@ mod tests {
         let prepared = pager
             .prepare(
                 ResponseInput {
+                    remaining: Vec::new(),
                     tool: "localFetch".into(),
                     query: json!({"path":"a","mainGoal": "test", "reasoning":"r"}),
                     structured: envelope.clone(),
@@ -849,6 +872,7 @@ mod tests {
             let prepared = pager
                 .prepare(
                     ResponseInput {
+                        remaining: Vec::new(),
                         tool: "localFetch".into(),
                         query: json!({"path":"a","mainGoal": "test", "reasoning":"r"}),
                         structured: envelope.clone(),
@@ -880,6 +904,7 @@ mod tests {
         let result = pager
             .prepare(
                 ResponseInput {
+                    remaining: Vec::new(),
                     tool: "localFetch".into(),
                     query: json!({"path":"a", "mainGoal":"g", "reasoning":"r", "extras":["stats"]}),
                     structured: json!({"results":[]}),
@@ -926,6 +951,7 @@ mod tests {
             let result = pager
                 .prepare(
                     ResponseInput {
+                        remaining: Vec::new(),
                         tool: "localFetch".into(),
                         query: json!({"queries":queries}),
                         structured: json!({"results":[]}),
@@ -1012,6 +1038,7 @@ mod tests {
             max_rendered_bytes: 4,
         });
         let input = ResponseInput {
+            remaining: Vec::new(),
             tool: "tool".into(),
             query: json!({}),
             structured: json!({}),
@@ -1046,6 +1073,7 @@ mod tests {
             let prepared = pager
                 .prepare(
                     ResponseInput {
+                        remaining: Vec::new(),
                         tool: "localFetch".into(),
                         query: json!({"queries": [{"path": "a"}]}),
                         structured: structured.clone(),
@@ -1085,6 +1113,7 @@ mod tests {
             let prepared = pager
                 .prepare(
                     ResponseInput {
+                        remaining: Vec::new(),
                         tool: "localFetch".into(),
                         query: json!({"queries": [{"path": "a"}]}),
                         structured: structured.clone(),
@@ -1131,6 +1160,7 @@ mod tests {
                 pager
                     .prepare(
                         ResponseInput {
+                            remaining: Vec::new(),
                             tool: "ghGetFileContent".into(),
                             query: json!({"queries":[{"path":"a"}]}),
                             structured: envelope(warm),
@@ -1166,7 +1196,7 @@ mod tests {
         }
     }
 
-    /// B1: two executions of a batch with a GitHub error row differ only in
+    /// Two executions of a batch with a GitHub error row differ only in
     /// the provider's per-call facts; the copied continuation must page on.
     #[test]
     fn provider_request_ids_do_not_restart_a_copied_continuation() {
@@ -1188,6 +1218,7 @@ mod tests {
                 pager
                     .prepare(
                         ResponseInput {
+                            remaining: Vec::new(),
                             tool: "ghGetFileContent".into(),
                             query: json!({"queries":[{"path":"a"}]}),
                             structured: envelope(call),

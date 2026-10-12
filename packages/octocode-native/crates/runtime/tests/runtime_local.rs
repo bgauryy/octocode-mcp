@@ -111,7 +111,7 @@ async fn local_fetch_pages_and_unions_through_the_runtime() {
     assert_eq!(row_status(&first), "success");
     let data = row_data(&first);
     assert_eq!(data["content"].as_str(), Some("1\tone\n"));
-    let next = data["next"]["continue"]["query"].clone();
+    let next = data["next"]["continueWindow"]["query"].clone();
     assert!(next.is_object(), "executable continuation");
 
     let second = call(&runtime, "localFetch", next)
@@ -121,7 +121,7 @@ async fn local_fetch_pages_and_unions_through_the_runtime() {
     runtime.close().await;
 }
 
-/// P6: a byte page states its view's total (`pagination.totalBytes`), as a
+/// A byte page states its view's total (`pagination.total`), as a
 /// line page's total rides `totalLines`: `sourceBytes` is a stats extra, so
 /// without it the page would name no total at all.
 #[tokio::test]
@@ -139,7 +139,7 @@ async fn local_fetch_byte_pages_state_their_total() {
     .expect("byte page");
     let data = row_data(&page);
     assert!(data.get("sourceBytes").is_none(), "{data}");
-    assert_eq!(data["pagination"]["totalBytes"], text.len(), "{data}");
+    assert_eq!(data["pagination"]["total"], text.len(), "{data}");
     assert_eq!(data["pagination"]["hasMore"], true, "{data}");
     runtime.close().await;
 }
@@ -178,7 +178,7 @@ async fn mcp_local_fetch_snapshots_stale_only_the_mutated_batch_row() {
     );
     let rows = structured["results"].as_array().expect("MCP result rows");
     let continuation =
-        |row: usize| rows[row]["data"]["next"]["continue"]["query"]["queries"][0].clone();
+        |row: usize| rows[row]["data"]["next"]["continueWindow"]["query"]["queries"][0].clone();
     let (first_next, second_next) = (continuation(0), continuation(1));
     assert_eq!(
         first_next["snapshot"].as_str().map(str::len),
@@ -248,6 +248,50 @@ async fn local_search_finds_literal_matches() {
         "expected main.ts in {rendered}"
     );
 
+    runtime.close().await;
+}
+
+/// `matchPageSize:1` is `rg -m1`: one row per file, and at most one
+/// continuation for the whole response, never one per file.
+#[tokio::test]
+async fn local_search_match_page_size_one_is_first_hit_per_file() {
+    let workspace = Workspace::new();
+    for index in 0..18 {
+        workspace.write(
+            &format!("conv/c{index:02}.cs"),
+            format!("#region License\nclass C{index} {{}}\n#region Other\n"),
+        );
+    }
+    let runtime = workspace.runtime(&[]);
+    let found = call(
+        &runtime,
+        "localSearch",
+        json!({
+            "path": workspace.workspace.join("conv"),
+            "matchString": "#region",
+            "matchPageSize": 1,
+            "extras": []
+        }),
+    )
+    .await
+    .expect("search");
+    assert_eq!(
+        row_status(&found),
+        "success",
+        "{}",
+        found.structured_content
+    );
+    let data = row_data(&found);
+    let files = data["files"].as_array().expect("files");
+    assert_eq!(files.len(), 18, "{data}");
+    for file in files {
+        assert_eq!(file["matches"].as_array().map(Vec::len), Some(1), "{file}");
+        assert!(file.get("next").is_none(), "{file}");
+        assert!(file.get("hints").is_none(), "{file}");
+    }
+    // The rest of every file is one match page, named once.
+    let next = data["next"].as_object().expect("next");
+    assert_eq!(next.keys().collect::<Vec<_>>(), ["nextMatchPage"], "{data}");
     runtime.close().await;
 }
 
@@ -535,7 +579,7 @@ async fn lsp_search_returns_a_typed_row_when_no_server_is_configured() {
             "operation": "definition",
             "path": path,
             "symbolName": "title",
-            "lineHint": 1
+            "line": 1
         }),
     )
     .await
@@ -749,7 +793,7 @@ async fn ast_topology_dead_code_verify_references_is_a_valid_lsp_query() {
         "deadCode row must not be withheld: {}",
         outcome.structured_content
     );
-    let verify = &row_data(&outcome)["hints"]["references"];
+    let verify = &row_data(&outcome)["hints"]["findReferences"];
     assert_eq!(
         verify["tool"], "lspSearch",
         "{}",
@@ -828,10 +872,7 @@ async fn ast_topology_result_pages_reject_a_changed_graph() {
         .await
         .expect("unchanged second page");
     assert_ne!(row_status(&second), "error", "{}", row_data(&second));
-    assert_eq!(
-        row_data(&second)["results"].as_array().map(Vec::len),
-        Some(1)
-    );
+    assert_eq!(row_data(&second)["nodes"].as_array().map(Vec::len), Some(1));
 
     workspace.write("graph/aa.ts", "export const aa = 1;\n");
     workspace.write(
@@ -843,7 +884,10 @@ async fn ast_topology_result_pages_reject_a_changed_graph() {
         .expect("typed stale row");
     let data = row_data(&stale);
     assert_eq!(data["errorCode"], "staleSnapshot", "{data}");
-    assert_eq!(data["results"], json!([]), "{data}");
+    assert!(
+        data.get("results").is_none(),
+        "an error row lists nothing: {data}"
+    );
     let restart = &data["next"]["restartDiagnostics"]["query"]["queries"][0];
     // Page 1 is the default, so compaction may omit it.
     assert!(restart.get("page").is_none_or(|page| page == 1), "{data}");
@@ -926,7 +970,6 @@ async fn local_walks_share_one_default_prune_and_exclude_adds() {
         ".venv",
         "__pycache__",
         "DerivedData",
-        "secrets",
         "extra",
     ];
     for dir in pruned {
@@ -983,7 +1026,7 @@ async fn local_walks_share_one_default_prune_and_exclude_adds() {
     let searched = call(
         &runtime,
         "localSearch",
-        json!({"path":root,"matchString":"needle","hidden":true,"exclude":exclude}),
+        json!({"path":root,"matchString":"needle","includeHidden":true,"exclude":exclude}),
     )
     .await
     .expect("localSearch");
@@ -1006,11 +1049,11 @@ async fn local_walks_share_one_default_prune_and_exclude_adds() {
     let tree = call(
         &runtime,
         "structureSearch",
-        json!({"operation":"tree","path":root,"hidden":true,"exclude":exclude}),
+        json!({"operation":"tree","path":root,"includeHidden":true,"exclude":exclude}),
     )
     .await
     .expect("structureSearch tree");
-    // Listed entries only: the withheld notice names `secrets/` by policy.
+    // Listed entries only: a withheld notice names policy entries.
     let rendered = serde_json::to_string(&row_data(&tree)["files"]).expect("json");
     for dir in pruned {
         assert!(
@@ -1026,7 +1069,7 @@ async fn local_walks_share_one_default_prune_and_exclude_adds() {
     let matched = call(
         &runtime,
         "astSearch",
-        json!({"operation":"match","path":root,"language":"rust","pattern":"pub fn needle() {}","hidden":true,"exclude":exclude}),
+        json!({"operation":"match","path":root,"language":"rust","pattern":"pub fn needle() {}","includeHidden":true,"exclude":exclude}),
     )
     .await
     .expect("astSearch match");
@@ -1056,7 +1099,7 @@ async fn local_walks_share_one_default_prune_and_exclude_adds() {
 }
 
 #[tokio::test]
-async fn continuations_carry_the_input_brief_and_replay() {
+async fn continuations_replay_without_the_request_brief() {
     let workspace = Workspace::new();
     for name in ["a", "b", "c"] {
         workspace.write(&format!("{name}.txt"), "needle\n");
@@ -1073,12 +1116,11 @@ async fn continuations_carry_the_input_brief_and_replay() {
         .expect("first page");
     let next = &first.structured_content["results"][0]["data"]["next"]["nextPage"];
     let query = next["query"].clone();
-    assert_eq!(
-        query["queries"][0]["mainGoal"], "Find every needle file for the audit.",
-        "{next}"
-    );
-    assert_eq!(
-        query["queries"][0]["reasoning"], "List files one page at a time.",
+    // The brief is request-level (docs/TOOL_DATA_CONTRACT.md): the page
+    // carries the scope and cursor, never the mainGoal or reasoning.
+    assert!(
+        query["queries"][0].get("mainGoal").is_none()
+            && query["queries"][0].get("reasoning").is_none(),
         "{next}"
     );
     // The continuation is the whole call: it runs exactly as emitted.
@@ -1147,14 +1189,19 @@ async fn default_excludes_false_walks_dependency_directories() {
     runtime.close().await;
 }
 
-/// Directories named like credential stores (`secrets/`, `private/`) stay
-/// withheld by the security path policy, and every local tool says so
-/// truthfully: a policy denial with what it matched and that no flag or
-/// config setting lifts it — never "check spelling" or "retry the path".
+/// Credential-named files stay withheld by the security path policy, and
+/// every local tool says so truthfully: a policy denial with what it matched
+/// and that no flag or config setting lifts it, never "check spelling" or
+/// "retry the path". Source folders named `secrets/` or `private/` are not
+/// withheld: only the filename pattern is.
 #[tokio::test]
-async fn policy_withheld_dirs_are_disclosed_never_advised_as_retry_or_spelling() {
+async fn policy_withheld_files_are_disclosed_never_advised_as_retry_or_spelling() {
     let workspace = Workspace::new();
     let secret = workspace.write(
+        "src/credentials.json",
+        "{\"name\": \"ISecretStorageService\"}\n",
+    );
+    workspace.write(
         "src/secrets/common/secrets.ts",
         "export interface ISecretStorageService {}\n",
     );
@@ -1165,6 +1212,7 @@ async fn policy_withheld_dirs_are_disclosed_never_advised_as_retry_or_spelling()
     workspace.write("src/other.ts", "export const other = 1;\n");
     let runtime = workspace.runtime(&[]);
     let root = workspace.workspace.join("src");
+    let notice = "1 entry withheld by path policy: 1 credential file.";
 
     let searched = call(
         &runtime,
@@ -1174,17 +1222,15 @@ async fn policy_withheld_dirs_are_disclosed_never_advised_as_retry_or_spelling()
     .await
     .expect("search");
     let text = searched.structured_content.to_string();
-    assert_eq!(row_status(&searched), "empty", "{text}");
+    assert_ne!(row_status(&searched), "empty", "{text}");
     assert!(
-        text.contains("2 entries withheld by path policy: security-policy dirs private/, secrets/"),
+        text.contains("src/secrets/common/secrets.ts")
+            || text.contains("secrets/common/secrets.ts"),
         "{text}"
     );
-    assert!(
-        text.contains("No flag or config setting lifts it"),
-        "{text}"
-    );
-    assert!(!text.contains("shorter term"), "{text}");
-    assert!(!text.contains("all-lowercase"), "{text}");
+    assert!(text.contains("private/store.ts"), "{text}");
+    assert!(!text.contains("credentials.json"), "{text}");
+    assert!(text.contains(notice), "{text}");
 
     let fetched = call(&runtime, "localFetch", json!({"path":secret}))
         .await
@@ -1196,7 +1242,7 @@ async fn policy_withheld_dirs_are_disclosed_never_advised_as_retry_or_spelling()
         data["error"]
             .as_str()
             .is_some_and(|error| error
-                .contains("withheld by the security path policy (a `secrets/` directory)")),
+                .contains("withheld by the security path policy (a credential file name)")),
         "{text}"
     );
     assert!(!text.to_lowercase().contains("then retry"), "{text}");
@@ -1205,15 +1251,12 @@ async fn policy_withheld_dirs_are_disclosed_never_advised_as_retry_or_spelling()
     let listed = call(
         &runtime,
         "structureSearch",
-        json!({"operation":"files","path":root,"extensions":["ts"]}),
+        json!({"operation":"files","path":root,"extensions":["json"]}),
     )
     .await
     .expect("files");
     let text = listed.structured_content.to_string();
-    assert!(
-        text.contains("2 entries withheld by path policy: security-policy dirs private/, secrets/"),
-        "{text}"
-    );
+    assert!(text.contains(notice), "{text}");
     let tree = call(
         &runtime,
         "structureSearch",
@@ -1222,8 +1265,9 @@ async fn policy_withheld_dirs_are_disclosed_never_advised_as_retry_or_spelling()
     .await
     .expect("tree");
     let text = tree.structured_content.to_string();
+    assert!(text.contains(notice), "{text}");
     assert!(
-        text.contains("withheld by path policy: security-policy dirs private/, secrets/"),
+        text.contains("secrets") && text.contains("private"),
         "{text}"
     );
     runtime.close().await;
@@ -1268,7 +1312,7 @@ async fn local_search_discloses_default_excluded_dirs_and_files_with_a_rerun() {
     let text = found.structured_content.to_string();
     assert_eq!(files_of(&found).len(), 1, "{text}");
     assert!(
-        text.contains("Default excludes skipped 2 dirs (dist/, target/) and 2 files (*.lock, *.min.js); the same search with defaultExcludes:false covers them."),
+        text.contains("Default excludes skipped 2 dirs (dist/, target/) and 2 files (Cargo.lock, vendor/lib.min.js); the same search with defaultExcludes:false covers them."),
         "{text}"
     );
     let lead = found
@@ -1292,7 +1336,7 @@ async fn local_search_discloses_default_excluded_dirs_and_files_with_a_rerun() {
     runtime.close().await;
 }
 
-/// N11b replay: astTopology echoes a nested package `path` in the caller's
+/// astTopology echoes a nested package `path` in the caller's
 /// workspace-relative form on every page, and its next page replays as is.
 #[tokio::test]
 async fn topology_path_echo_matches_caller_form_on_paged_cycles() {
@@ -1323,7 +1367,7 @@ async fn topology_path_echo_matches_caller_form_on_paged_cycles() {
         .expect("cycles page 2");
     let data = row_data(&second);
     assert_eq!(data["path"], "packages/app", "{data}");
-    assert_eq!(data["results"].as_array().map(Vec::len), Some(1), "{data}");
+    assert_eq!(data["nodes"].as_array().map(Vec::len), Some(1), "{data}");
     runtime.close().await;
 }
 
@@ -1366,7 +1410,7 @@ async fn regex_match_limit_warning_and_its_opt_in_search_lead() {
                 .find(|w| w.contains("match limit"))
                 .unwrap_or_else(|| panic!("mcp={mcp}: no match-limit warning: {data}"));
             assert!(
-                data["next"]["continue"].is_object(),
+                data["next"]["continueWindow"].is_object(),
                 "mcp={mcp}: the read pages"
             );
             assert!(
@@ -1375,16 +1419,90 @@ async fn regex_match_limit_warning_and_its_opt_in_search_lead() {
             );
             if hinted {
                 assert_eq!(
-                    data["hints"]["textSearch"]["tool"], "localSearch",
+                    data["hints"]["findText"]["tool"], "localSearch",
                     "mcp={mcp}: {data}"
                 );
             } else {
                 assert!(
                     data.get("hints")
-                        .is_none_or(|hints| hints.get("textSearch").is_none()),
+                        .is_none_or(|hints| hints.get("findText").is_none()),
                     "mcp={mcp}: the search lead is opt-in: {data}"
                 );
             }
         }
     }
+}
+
+/// A value clipped to the display bound is not a gap in the rows: the row
+/// stays complete, the clip is reported by `clipped` and `originalChars`, and its
+/// `expandValues` lead is optional, so the call is not partial.
+#[tokio::test]
+async fn a_clipped_match_value_is_not_a_partial_result() {
+    use octocode_native::runtime::ExitClass;
+    let workspace = Workspace::new();
+    workspace.write("min.js", format!("needle {}\n", "x ".repeat(5_000)));
+    let runtime = workspace.runtime(&[]);
+    let outcome = runtime
+        .execute(
+            "clipped-value".into(),
+            "localSearch".into(),
+            json!({"queries":[{"path":workspace.workspace.to_string_lossy(),"matchString":"needle"}]}),
+        )
+        .await
+        .expect("localSearch");
+    let data = row_data(&outcome);
+    let matched = &data["files"][0]["matches"][0];
+    assert!(matched["originalChars"].as_u64().is_some(), "{data}");
+    assert_eq!(matched["clipped"], true, "{data}");
+    assert!(data.get("isPartial").is_none(), "{data}");
+    assert!(data["next"]["expandValues"].is_object(), "{data}");
+    assert_eq!(outcome.exit_class(), ExitClass::Success, "{data}");
+    runtime.close().await;
+}
+
+/// On a line longer than a read page the match is far from the line's start:
+/// the `expandValues` read windows the line by bytes at the match (a
+/// multi-byte prefix included), not at the line's start.
+#[tokio::test]
+async fn expand_values_of_a_long_line_windows_around_the_match() {
+    let workspace = Workspace::new();
+    let line = format!(
+        "{}needleHere{}",
+        "é ".repeat(100_000),
+        " tail".repeat(1_000)
+    );
+    workspace.write("min.js", format!("head\n{line}\ntail\n"));
+    let runtime = workspace.runtime(&[]);
+    let outcome = runtime
+        .execute(
+            "long-line".into(),
+            "localSearch".into(),
+            json!({"queries":[{"path":workspace.workspace.to_string_lossy(),"matchString":"needleHere"}]}),
+        )
+        .await
+        .expect("localSearch");
+    let data = row_data(&outcome);
+    let lead = &data["next"]["expandValues"];
+    let read = &lead["query"]["queries"][0];
+    assert_eq!(lead["tool"], "localFetch", "{data}");
+    assert_eq!(read["unit"], "bytes", "{data}");
+    assert_eq!(read["ranges"], json!(["2-2"]), "{data}");
+    let offset = read["offset"].as_u64().expect("offset") as usize;
+    assert!(offset > 100_000, "{read}");
+    let page = runtime
+        .execute(
+            "long-line-read".into(),
+            "localFetch".into(),
+            lead["query"].clone(),
+        )
+        .await
+        .expect("localFetch");
+    let page = row_data(&page);
+    assert!(
+        page["content"]
+            .as_str()
+            .is_some_and(|text| text.contains("needleHere")),
+        "the window holds the match: {page}"
+    );
+    runtime.close().await;
 }

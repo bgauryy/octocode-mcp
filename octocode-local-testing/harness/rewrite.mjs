@@ -52,9 +52,9 @@ check('T1 file rows drop afterHash/patchBytes/absolutePath; every file hash is s
 check('T1 every match line lies inside a hunk of its file', rows.every(row => hunkLines(files.find(file => file.path === row.path) ?? {}).has(row.line)), '');
 const apply = t1.data.hints?.apply?.query?.queries?.[0];
 check('T1 hints.apply pins language, snapshot and every file hash', apply?.apply === true && apply.language === 'rust' && /^[a-f0-9]{64}$/.test(apply.snapshot ?? '') && Object.keys(apply.expectedHashes ?? {}).length === t1.data.affectedFiles, JSON.stringify(apply ?? {}).slice(0, 200));
-// Regression guard: baseline 6,581 B; plan A5's 4,000 B would need a
+// Regression guard: baseline 6,581 B; a 4,000 B target would need a
 // 2-line patch context (kept at 3, see astRewrite PLAN Results).
-// D4 (2026-10-07): file/match paths, patch headers and expectedHashes keys are
+// Since 2026-10-07: file/match paths, patch headers and expectedHashes keys are
 // workspace-relative, so each repeats the scope prefix (+~150 B on these previews).
 check(`T1 preview ≤ 4,600 B (${t1.bytes} B)`, t1.bytes <= 4600, `${t1.bytes} B`);
 

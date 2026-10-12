@@ -31,7 +31,7 @@ use serde_json::Value;
 
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 /// The canonical line-range item pattern (`95-105`).
-const LINE_RANGE_PATTERN: &str = r"^[1-9]\d*-[1-9]\d*$";
+pub(super) const LINE_RANGE_PATTERN: &str = r"^[1-9]\d*-[1-9]\d*$";
 const MAX_REF_DEPTH: usize = 32;
 
 /// A schema and the root its `$ref`s resolve against.

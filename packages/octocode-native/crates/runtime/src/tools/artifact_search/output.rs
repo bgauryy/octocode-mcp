@@ -7,8 +7,12 @@ use serde_json::{Value, json};
 pub(crate) struct Output;
 
 impl ToolOutput for Output {
-    fn fallback_hint(&self, _query: &Value) -> &'static str {
-        "Check packageName, or broaden keywords."
+    fn fallback_hint(&self, query: &Value) -> &'static str {
+        if crate::tools::output::has_value(query, "packageName") {
+            "Check the exact packageName spelling and ecosystem, or search by keywords."
+        } else {
+            "Use fewer or broader keywords, an exact packageName, or another ecosystem."
+        }
     }
     fn evidence_kind(&self, _query: &Value, _data: &Value) -> &'static str {
         "provider"

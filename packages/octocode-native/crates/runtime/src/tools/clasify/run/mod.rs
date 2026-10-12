@@ -294,8 +294,9 @@ fn usage_summary(records: &[Value]) -> Value {
 /// questions resolved by [`clasify::preflight`] (or the preflight rejection).
 type Matrix = (Value, Result<Vec<Value>, ClassificationError>);
 
-/// One matrix's output: compact by default; `extras: ["details"]` keeps every page's
-/// full answers and adds provider usage receipts (per page and per matrix).
+/// One matrix's output: compact by default; `extras: ["details"]` keeps every
+/// page's full answers, and `extras: ["stats"]` adds provider usage (per page
+/// and per matrix).
 fn execute_query(
     matrix: &Matrix,
     dispatcher: &DomainDispatcher,
@@ -306,9 +307,19 @@ fn execute_query(
     reads: &ReadLimiter,
 ) -> Result<(DomainResult, Vec<Value>), ExecutionError> {
     let started = std::time::Instant::now();
-    let (mut result, usage) =
-        execute_query_verbose(matrix, dispatcher, execution, config, budget, gate, reads)?;
     let query = &matrix.0;
+    // details: full page answers and runner-up windows; stats: provider usage.
+    let details = crate::response::extras::wants(query, ExtraKind::Details);
+    let stats = crate::response::extras::wants(query, ExtraKind::Stats);
+    let scheduling = Scheduling {
+        dispatcher,
+        execution,
+        config,
+        budget,
+        gate,
+        reads,
+    };
+    let (mut result, usage) = execute_query_verbose(matrix, &scheduling, stats)?;
     let locate_ids = query["questions"]
         .as_array()
         .into_iter()
@@ -325,13 +336,12 @@ fn execute_query(
         locate_ids: &locate_ids,
         default_max_chars: MAX_RESOURCE_CHARS as u64,
     };
-    // details: full page answers and runner-up windows; stats: usage.
-    if crate::response::extras::wants(query, ExtraKind::Details) {
+    if details {
         crate::tools::clasify::compact::publish_verbose(&mut result.data, &matrix);
     } else {
         crate::tools::clasify::compact::compact_query_result(&mut result.data, &matrix);
     }
-    if crate::response::extras::wants(query, ExtraKind::Stats) {
+    if stats {
         let mut summary = usage_summary(&usage);
         summary["ms"] = json!(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
         result.data["usage"] = summary;
@@ -339,27 +349,35 @@ fn execute_query(
     Ok((result, usage))
 }
 
+/// What one matrix runs under: the call's reads, provider, and limits.
+struct Scheduling<'a> {
+    dispatcher: &'a DomainDispatcher,
+    execution: &'a ExecutionContext,
+    config: ProviderConfig<'a>,
+    budget: &'a crate::providers::RequestBudget,
+    gate: &'a GateLease,
+    reads: &'a ReadLimiter,
+}
+
+/// One matrix's full receipt; `stats` adds each page's provider usage.
 fn execute_query_verbose(
     (query, resolved): &Matrix,
-    dispatcher: &DomainDispatcher,
-    execution: &ExecutionContext,
-    config: ProviderConfig<'_>,
-    budget: &crate::providers::RequestBudget,
-    gate: &GateLease,
-    reads: &ReadLimiter,
+    scheduling: &Scheduling<'_>,
+    stats: bool,
 ) -> Result<(DomainResult, Vec<Value>), ExecutionError> {
+    let Scheduling {
+        dispatcher,
+        execution,
+        config,
+        budget,
+        gate,
+        reads,
+    } = *scheduling;
     execution.check()?;
     let resolved_questions = match resolved {
         Ok(questions) => questions.as_slice(),
         Err(error) => {
-            return Ok((
-                unjudged_matrix(
-                    query,
-                    error,
-                    "Matrix rejected before context retrieval or classification.",
-                ),
-                Vec::new(),
-            ));
+            return Ok((unjudged_matrix(query, error), Vec::new()));
         }
     };
     if let Some(output) = literal_route(query) {
@@ -396,7 +414,6 @@ fn execute_query_verbose(
         };
         judge.assess(&captured)
     };
-    let debug = crate::response::extras::wants(query, ExtraKind::Details);
     let Rendered {
         resources: rendered,
         continuations,
@@ -405,7 +422,7 @@ fn execute_query_verbose(
         read_failures,
         judged,
         withheld,
-    } = render_captured(captured, assessments, questions, dispatcher, debug)?;
+    } = render_captured(captured, assessments, questions, dispatcher, stats)?;
     let output = matrix_output(
         query,
         resources,
@@ -786,10 +803,11 @@ mod tests {
             json!({"id":"question-1","type":"locate","ask":"first"})
         );
         assert_eq!(queries[0]["questions"][1]["id"], "named");
-        // A lead's `{queries:[row]}` reads its row; a whole-file read is explicit.
+        // A lead's `{queries:[row]}` reads its row; a whole-file read is
+        // explicit and verbatim (pages and ranges cite source lines).
         assert_eq!(
             queries[0]["resources"][2]["query"],
-            json!({"path":"/a.rs","fullContent":true})
+            json!({"path":"/a.rs","fullContent":true,"minify":"none"})
         );
         // locate reads a search's files.
         assert_eq!(

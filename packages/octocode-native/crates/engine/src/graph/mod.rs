@@ -21,12 +21,36 @@ use rayon::prelude::*;
 
 use crate::types::{FileSystemQueryOptions, GraphFactsScanDiagnostic, GraphFactsScanOptions};
 
-const DEFAULT_MAX_FILES: u32 = 20_000;
 const DEFAULT_MAX_FILE_BYTES: u32 = 1_000_000;
 
-enum GraphFactsScanOutcome {
-    Entry(Box<GraphFactsTypedEntry>),
+enum GraphFactsScanOutcome<T> {
+    /// A parsed file and what the caller's map kept of it (`None`: nothing).
+    Entry(String, Option<T>),
     Skipped(GraphFactsScanDiagnostic),
+}
+
+/// One parsed file, borrowed from the scan's cache: a caller reduces it to
+/// what it keeps before the next file is read.
+pub struct GraphFactsView<'a> {
+    pub relative_path: &'a str,
+    pub content_digest: &'a str,
+    pub source_stamp: Option<SourceStamp>,
+    pub facts: &'a GraphFactsDocument,
+    pub reference_counts: &'a [crate::types::GraphReferenceCount],
+}
+
+/// The result of [`scan_graph_facts_mapped`]: only what the map kept.
+#[derive(Debug)]
+pub struct GraphFactsMappedScan<T> {
+    /// `(relative path, kept value)` per file the map kept, sorted by path.
+    pub kept: Vec<(String, T)>,
+    /// Files read and parsed (kept or not); skipped files are separate.
+    pub parsed: usize,
+    pub skipped: Vec<GraphFactsScanDiagnostic>,
+    pub files_skipped: u32,
+    pub truncated: bool,
+    pub scan_resume: Option<u32>,
+    pub pruned_dirs: Vec<String>,
 }
 
 fn parser_overrides(
@@ -58,7 +82,7 @@ fn parser_overrides(
     }).collect()
 }
 
-fn skipped(relative_path: String, code: &str, message: &str) -> GraphFactsScanOutcome {
+fn skipped<T>(relative_path: String, code: &str, message: &str) -> GraphFactsScanOutcome<T> {
     GraphFactsScanOutcome::Skipped(GraphFactsScanDiagnostic {
         relative_path,
         code: code.to_owned(),
@@ -70,8 +94,120 @@ fn skipped(relative_path: String, code: &str, message: &str) -> GraphFactsScanOu
 struct ParsedFacts {
     facts: GraphFactsDocument,
     reference_counts: Vec<crate::types::GraphReferenceCount>,
-    /// Source bytes, the cache weight (facts scale with source size).
+    /// Estimated heap bytes of the facts, the cache weight.
     weight: u32,
+}
+
+/// Estimated heap bytes of one file's facts: every row's own size plus its
+/// strings. A file's facts outweigh its source several times (ids, ranges,
+/// edge and call rows), so the source size would let the cache hold far more
+/// than its capacity names.
+fn facts_heap_bytes(
+    facts: &GraphFactsDocument,
+    reference_counts: &[crate::types::GraphReferenceCount],
+) -> usize {
+    use std::mem::size_of;
+    let text = |value: &str| value.len();
+    let option = |value: &Option<String>| value.as_deref().map_or(0, str::len);
+    let list = |values: &[String]| {
+        values
+            .iter()
+            .map(|value| size_of::<String>() + value.len())
+            .sum::<usize>()
+    };
+    let option_list = |values: &Option<Vec<String>>| values.as_deref().map_or(0, list);
+    let mut bytes =
+        text(&facts.kind) + text(&facts.source) + text(&facts.language) + text(&facts.file);
+    bytes += facts
+        .declarations
+        .iter()
+        .map(|d| {
+            size_of::<GraphFactDeclaration>()
+                + text(&d.id)
+                + text(&d.name)
+                + text(&d.kind)
+                + list(&d.exported_as)
+                + option(&d.parent)
+        })
+        .sum::<usize>();
+    bytes += facts
+        .imports
+        .iter()
+        .map(|i| {
+            size_of::<GraphFactImport>()
+                + text(&i.id)
+                + text(&i.specifier)
+                + text(&i.import_kind)
+                + option(&i.local_name)
+                + option(&i.imported_name)
+                + option(&i.resolution_hint)
+                + option_list(&i.module_scope)
+                + option_list(&i.used_in)
+        })
+        .sum::<usize>();
+    bytes += facts
+        .exports
+        .iter()
+        .map(|e| {
+            size_of::<GraphFactExport>()
+                + text(&e.id)
+                + text(&e.name)
+                + text(&e.export_kind)
+                + option(&e.local_name)
+                + option(&e.source)
+        })
+        .sum::<usize>();
+    bytes += facts
+        .calls
+        .iter()
+        .map(|c| {
+            size_of::<GraphFactCall>()
+                + text(&c.id)
+                + text(&c.caller)
+                + option(&c.caller_id)
+                + text(&c.callee)
+                + text(&c.kind)
+                + option(&c.receiver_type)
+        })
+        .sum::<usize>();
+    bytes += facts
+        .common_js
+        .iter()
+        .map(|c| {
+            size_of::<GraphFactCommonJs>()
+                + option(&c.specifier)
+                + text(&c.kind)
+                + text(&c.binding)
+                + option(&c.reason)
+        })
+        .sum::<usize>();
+    bytes += facts
+        .edges
+        .iter()
+        .map(|e| {
+            size_of::<GraphFactEdge>()
+                + text(&e.id)
+                + text(&e.from)
+                + text(&e.to)
+                + text(&e.relation)
+                + text(&e.source)
+                + text(&e.resolution)
+        })
+        .sum::<usize>();
+    bytes += facts
+        .modules
+        .iter()
+        .map(|m| {
+            size_of::<GraphFactRustModule>() + text(&m.name) + list(&m.scope) + option(&m.path)
+        })
+        .sum::<usize>();
+    bytes += list(&facts.diagnostics);
+    bytes += facts.error_lines.len() * size_of::<[u32; 2]>();
+    bytes += reference_counts
+        .iter()
+        .map(|r| size_of::<crate::types::GraphReferenceCount>() + text(&r.declaration_id))
+        .sum::<usize>();
+    bytes
 }
 
 /// Parsed facts keyed by (content digest, relative path, parser override):
@@ -80,11 +216,14 @@ struct ParsedFacts {
 static FACTS_MEMO: std::sync::LazyLock<moka::sync::Cache<String, Arc<ParsedFacts>>> =
     std::sync::LazyLock::new(|| {
         moka::sync::Cache::builder()
-            .max_capacity(256 * 1024 * 1024)
+            .max_capacity(FACTS_MEMO_BYTES)
             .weigher(|_: &String, parsed: &Arc<ParsedFacts>| parsed.weight)
             .time_to_idle(std::time::Duration::from_secs(1800))
             .build()
     });
+
+/// Estimated heap bytes the parsed-facts cache may hold.
+const FACTS_MEMO_BYTES: u64 = 128 * 1024 * 1024;
 
 pub(crate) fn scan_graph_facts_typed_filtered(
     options: GraphFactsScanOptions,
@@ -93,16 +232,70 @@ pub(crate) fn scan_graph_facts_typed_filtered(
     scan_graph_facts_typed_selected(options, allow_path, &|_| true)
 }
 
-/// [`scan_graph_facts_typed_filtered`] that parses only files whose source
-/// `keep` accepts (a byte prefilter, e.g. a name the caller looks for); a
-/// rejected file is read once and yields neither an entry nor a diagnostic.
+/// [`scan_graph_facts_mapped`] that keeps every parsed file whole.
 pub fn scan_graph_facts_typed_selected(
     options: GraphFactsScanOptions,
     allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
     keep: &(dyn Fn(&str) -> bool + Sync),
 ) -> Result<GraphFactsTypedScanResult, String> {
+    let scan = scan_graph_facts_mapped(options, allow_path, keep, &|view| {
+        Some(GraphFactsTypedEntry {
+            relative_path: view.relative_path.to_owned(),
+            content_digest: view.content_digest.to_owned(),
+            source_stamp: view.source_stamp,
+            facts: view.facts.clone(),
+            reference_counts: view.reference_counts.to_vec(),
+        })
+    })?;
+    Ok(GraphFactsTypedScanResult {
+        schema_version: crate::signatures::GRAPH_FACTS_SCHEMA_VERSION,
+        entries: scan.kept.into_iter().map(|(_, entry)| entry).collect(),
+        skipped: scan.skipped,
+        files_skipped: scan.files_skipped,
+        truncated: scan.truncated,
+        scan_resume: scan.scan_resume,
+        pruned_dirs: scan.pruned_dirs,
+    })
+}
+
+/// Scans the graph facts of a tree, handing each parsed file to `map` as soon
+/// as it is parsed and keeping only what `map` returns, so the scan holds
+/// what the caller needs rather than every file's facts at once. A file whose
+/// source `keep` rejects (a byte prefilter, e.g. a name the caller looks for)
+/// is read once and neither parsed nor mapped.
+///
+/// An unset `max_files` caps nothing but the time (see
+/// [`crate::scan_budget`]): files are read in chunks and the scan stops at the
+/// first chunk boundary past the budget, reporting `scan_resume`.
+pub fn scan_graph_facts_mapped<T: Send>(
+    options: GraphFactsScanOptions,
+    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    keep: &(dyn Fn(&str) -> bool + Sync),
+    map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
+) -> Result<GraphFactsMappedScan<T>, String> {
+    scan_graph_facts_with_budget(
+        options,
+        allow_path,
+        keep,
+        map,
+        Some(crate::scan_budget::SCAN_TIME_BUDGET),
+    )
+}
+
+/// [`scan_graph_facts_mapped`] with its time budget (`None` reads every
+/// candidate).
+pub(crate) fn scan_graph_facts_with_budget<T: Send>(
+    options: GraphFactsScanOptions,
+    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    keep: &(dyn Fn(&str) -> bool + Sync),
+    map: &(dyn Fn(&GraphFactsView<'_>) -> Option<T> + Sync),
+    budget: Option<std::time::Duration>,
+) -> Result<GraphFactsMappedScan<T>, String> {
     let overrides = parser_overrides(options.language_globs.as_deref())?;
-    let max_files = options.max_files.unwrap_or(DEFAULT_MAX_FILES);
+    let timed = options.max_files.is_none();
+    let max_files = options
+        .max_files
+        .unwrap_or(crate::scan_budget::SCAN_WALK_FILES as u32);
     let max_file_bytes = options.max_file_bytes.unwrap_or(DEFAULT_MAX_FILE_BYTES) as i64;
     let query = crate::search::fs_query::query_file_system_filtered_inner(
         FileSystemQueryOptions {
@@ -118,7 +311,8 @@ pub fn scan_graph_facts_typed_selected(
             ..Default::default()
         },
         allow_path,
-    )?;
+    )
+    .map_err(|error| error.reason)?;
 
     let truncated = query.was_capped;
     let mut entries = query.entries;
@@ -129,9 +323,8 @@ pub fn scan_graph_facts_typed_selected(
         .map_or(0, |n| n as usize)
         .min(entries.len());
     entries.drain(..skip);
-    let outcomes: Vec<Option<GraphFactsScanOutcome>> = entries
-        .into_par_iter()
-        .map(|entry| -> Result<Option<GraphFactsScanOutcome>, String> {
+    let evaluate =
+        |entry: &crate::types::FileSystemEntry| -> Result<Option<GraphFactsScanOutcome<T>>, String> {
             let path = Path::new(&entry.path);
             if !allow_path(path)? {
                 return Ok(None);
@@ -193,7 +386,10 @@ pub fn scan_graph_facts_typed_selected(
                 .filter(|meta| meta.len() == content.len() as u64)
                 .and_then(|meta| SourceStamp::settled(&meta, std::time::SystemTime::now()));
             let parser = selected.iter().next().copied();
-            let memo_key = format!("{content_digest}\u{0}{relative_path}\u{0}{}", parser.unwrap_or(""));
+            let memo_key = format!(
+                "{content_digest}\u{0}{relative_path}\u{0}{}",
+                parser.unwrap_or("")
+            );
             let parsed = if let Some(hit) = FACTS_MEMO.get(&memo_key) {
                 hit
             } else {
@@ -204,7 +400,10 @@ pub fn scan_graph_facts_typed_selected(
                         extension,
                     )
                 } else {
-                    crate::signatures::extract_graph_facts_with_metadata_inner(&content, &relative_path)
+                    crate::signatures::extract_graph_facts_with_metadata_inner(
+                        &content,
+                        &relative_path,
+                    )
                 };
                 let Some(extraction) = extraction else {
                     return outcome(
@@ -212,10 +411,11 @@ pub fn scan_graph_facts_typed_selected(
                         "native graph-fact extraction returned no result",
                     );
                 };
+                let weight = facts_heap_bytes(&extraction.facts, &extraction.reference_counts);
                 let parsed = Arc::new(ParsedFacts {
                     facts: extraction.facts,
                     reference_counts: extraction.reference_counts,
-                    weight: u32::try_from(content.len()).unwrap_or(u32::MAX),
+                    weight: u32::try_from(weight).unwrap_or(u32::MAX),
                 });
                 FACTS_MEMO.insert(memo_key, Arc::clone(&parsed));
                 parsed
@@ -223,35 +423,59 @@ pub fn scan_graph_facts_typed_selected(
             if !allow_path(path)? {
                 return Ok(None);
             }
-            Ok(Some(GraphFactsScanOutcome::Entry(Box::new(
-                GraphFactsTypedEntry {
-                    relative_path,
-                    content_digest,
-                    source_stamp,
-                    facts: parsed.facts.clone(),
-                    reference_counts: parsed.reference_counts.clone(),
-                },
-            ))))
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let mut entries = Vec::new();
+            let kept = map(&GraphFactsView {
+                relative_path: &relative_path,
+                content_digest: &content_digest,
+                source_stamp,
+                facts: &parsed.facts,
+                reference_counts: &parsed.reference_counts,
+            });
+            Ok(Some(GraphFactsScanOutcome::Entry(relative_path, kept)))
+        };
+    let started = std::time::Instant::now();
+    let mut kept: Vec<(String, T)> = Vec::new();
     let mut skipped = Vec::new();
-    for outcome in outcomes.into_iter().flatten() {
-        match outcome {
-            GraphFactsScanOutcome::Entry(entry) => entries.push(*entry),
-            GraphFactsScanOutcome::Skipped(diagnostic) => skipped.push(diagnostic),
+    let (mut evaluated, mut parsed) = (0, 0);
+    let mut scan_resume = None;
+    for chunk in entries.chunks(crate::scan_budget::SCAN_CHUNK_FILES) {
+        if timed && evaluated > 0 && budget.is_some_and(|budget| started.elapsed() >= budget) {
+            scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
+            break;
+        }
+        evaluated += chunk.len();
+        for outcome in chunk
+            .par_iter()
+            .map(&evaluate)
+            .collect::<Result<Vec<_>, String>>()?
+            .into_iter()
+            .flatten()
+        {
+            match outcome {
+                GraphFactsScanOutcome::Entry(path, value) => {
+                    parsed += 1;
+                    kept.extend(value.map(|value| (path, value)));
+                }
+                GraphFactsScanOutcome::Skipped(diagnostic) => skipped.push(diagnostic),
+            }
         }
     }
-    entries.sort_unstable_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    // The walk cap of an unset `max_files` resumes where the walk stopped.
+    if timed && scan_resume.is_none() && truncated {
+        scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
+    }
+    let truncated = truncated || scan_resume.is_some();
+    kept.sort_unstable_by(|left, right| left.0.cmp(&right.0));
     skipped.sort_unstable_by(|left, right| left.relative_path.cmp(&right.relative_path));
     let files_skipped = skipped.len() as u32;
 
-    Ok(GraphFactsTypedScanResult {
-        schema_version: crate::signatures::GRAPH_FACTS_SCHEMA_VERSION,
-        entries,
+    Ok(GraphFactsMappedScan {
+        kept,
+        parsed,
         skipped,
         files_skipped,
         truncated,
+        scan_resume,
+        pruned_dirs: query.pruned_dirs,
     })
 }
 
@@ -325,6 +549,103 @@ mod tests {
         assert_eq!(result.entries.len(), 1);
         assert_eq!(result.entries[0].source_stamp, None);
         fs::remove_dir_all(root).expect("cleanup fixture");
+    }
+
+    /// An unset `max_files` caps nothing but the time: a tree past the old
+    /// 20,000-file default is read whole; a scan past its budget stops at a
+    /// chunk boundary and the resumes reach every file exactly once.
+    #[test]
+    fn an_unbounded_scan_resumes_exactly_once_past_its_time_budget() {
+        let root =
+            std::env::temp_dir().join(format!("octocode-graph-budget-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        create_supported_files(&root, 1_300);
+        let scan = |skip: u32, budget: Option<std::time::Duration>| {
+            scan_graph_facts_with_budget(
+                GraphFactsScanOptions {
+                    path: path_string(&root),
+                    max_files: None,
+                    skip_files: Some(skip),
+                    ..Default::default()
+                },
+                &|_| Ok(true),
+                &|_| true,
+                &|view| Some(view.relative_path.to_owned()),
+                budget,
+            )
+            .expect("scan graph facts")
+        };
+        let whole = scan(0, None);
+        assert!(!whole.truncated);
+        assert_eq!(whole.scan_resume, None);
+        assert_eq!(whole.kept.len(), 1_300);
+
+        let mut seen = std::collections::BTreeSet::new();
+        let (mut skip, mut calls) = (0, 0);
+        loop {
+            calls += 1;
+            let result = scan(skip, Some(std::time::Duration::ZERO));
+            for (path, _) in &result.kept {
+                assert!(seen.insert(path.clone()), "{path} twice");
+            }
+            let Some(resume) = result.scan_resume else {
+                assert!(!result.truncated);
+                break;
+            };
+            assert!(result.truncated && resume > skip);
+            skip = resume;
+        }
+        assert_eq!(seen.len(), 1_300);
+        assert!(calls > 1);
+        fs::remove_dir_all(root).expect("cleanup fixture");
+    }
+
+    /// A mapped scan keeps only what its map returns, so a scan over a huge
+    /// tree holds the few rows the caller wants, not every file's facts.
+    #[test]
+    fn a_mapped_scan_keeps_only_what_the_map_returns() {
+        let root =
+            std::env::temp_dir().join(format!("octocode-graph-mapped-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        create_supported_files(&root, 40);
+        let scan = scan_graph_facts_mapped(
+            GraphFactsScanOptions {
+                path: path_string(&root),
+                ..Default::default()
+            },
+            &|_| Ok(true),
+            &|_| true,
+            &|view| {
+                view.facts
+                    .declarations
+                    .iter()
+                    .find(|declaration| declaration.name == "value7")
+                    .map(|declaration| declaration.name.clone())
+            },
+        )
+        .expect("mapped scan");
+        assert_eq!(scan.parsed, 40, "every file is parsed and counted");
+        assert_eq!(scan.kept, [("entry-7.ts".to_owned(), "value7".to_owned())]);
+        assert!(!scan.truncated);
+        fs::remove_dir_all(root).expect("cleanup fixture");
+    }
+
+    /// The facts cache weighs estimated heap, not source bytes: facts of a
+    /// small file with many declarations outweigh the file several times.
+    #[test]
+    fn cached_facts_are_weighed_by_their_heap_not_their_source() {
+        let source: String = (0..200)
+            .map(|index| format!("export const v{index} = {index};\n"))
+            .collect();
+        let extraction =
+            crate::signatures::extract_graph_facts_with_metadata_inner(&source, "a.ts")
+                .expect("extract facts");
+        let weight = facts_heap_bytes(&extraction.facts, &extraction.reference_counts);
+        assert!(
+            weight > source.len() * 4,
+            "{weight} bytes for {} source bytes",
+            source.len()
+        );
     }
 
     #[test]

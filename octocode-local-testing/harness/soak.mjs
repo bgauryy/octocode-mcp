@@ -50,8 +50,8 @@ const LOCAL = [
   { tool: 'structureSearch', args: { operation: 'files', path: `${T}/python/django/db`, extensions: ['py'] } },
   { tool: 'astSearch', args: { operation: 'match', path: `${T}/rust/tokio/src/fs`, pattern: '$X.unwrap()', language: 'rust' } },
   { tool: 'localSearch', args: { matchString: 'fn merge_near_windows', path: 'packages/octocode-native/crates' } },
-  { tool: 'lspSearch', cli: false, args: { operation: 'references', path: `${T}/rust/tokio/src/runtime/task/harness.rs`, symbolName: 'try_read_output', lineHint: 281 } },
-  { tool: 'lspSearch', cli: false, args: { operation: 'callers', path: `${T}/tsx/packages/common/src/url.ts`, symbolName: 'toValidURL', lineHint: 21 } },
+  { tool: 'lspSearch', cli: false, args: { operation: 'references', path: `${T}/rust/tokio/src/runtime/task/harness.rs`, symbolName: 'try_read_output', line: 281 } },
+  { tool: 'lspSearch', cli: false, args: { operation: 'callers', path: `${T}/tsx/packages/common/src/url.ts`, symbolName: 'toValidURL', line: 21 } },
 ];
 const STARLETTE = { owner: 'Kludex', repo: 'starlette', ref: '63c5760d8a672cee96e1e523d84bfa1c77d9ee4c' };
 const TOKIO_AT = { owner: 'tokio-rs', repo: 'tokio', ref: 'facc6fc47eb2ba13a465a3179f8e34db620561ec' };
@@ -381,7 +381,7 @@ async function cliSoak() {
     const deadlineMs = injected ? O.injectSlowMs : O.deadlineMs;
     const t = Date.now() - started;
     const r = await runCli(spec, deadlineMs, i);
-    const ok = !r.breach && !r.signal && !r.error && (r.status === 0 || r.status === 6);
+    const ok = !r.breach && !r.signal && !r.error && r.status === 0;
     const row = { type: 'cli', i, t, elapsedS: +(t / 1000).toFixed(1), tool: spec.tool, injected, ...r, ok, isError: !ok };
     calls.push(row); record(row);
     if (!ok) console.log(`CLI #${i} ${spec.tool}: status=${r.status} signal=${r.signal}${r.breach ? ' BREACH' : ''}${r.error ? ` ${r.error}` : ''}`);
@@ -401,7 +401,7 @@ async function cliSoak() {
     events: [...bad, ...breaches].map(c => ({ type: c.breach ? 'deadline-breach' : 'bad-exit', i: c.i, tool: c.tool, status: c.status, signal: c.signal, sample: c.sample })),
   };
   return finish(summary, [
-    ['CLI exit codes 0/6', !bad.length, `${calls.length - bad.length - breaches.length}/${calls.length} ok`],
+    ['CLI exit code 0', !bad.length, `${calls.length - bad.length - breaches.length}/${calls.length} ok`],
     ['no CLI deadline breach', !breaches.length, breaches.map(c => `#${c.i} ${c.tool}`).join(', ')],
     ['CLI p95 drift < 2x per tool', drift.every(d => d.ok !== false), drift.filter(d => d.ok !== null).map(d => `${d.tool} ${d.ratio}x`).join(' ') || 'n/a'],
   ]);
@@ -460,7 +460,7 @@ function selfCheck() {
   let cs = {};
   try { cs = JSON.parse(fs.readFileSync(path.join(cliOut, 'summary.json'), 'utf8')); } catch {}
   check('cli injected slow call is a breach (exit 1)', cliRun.status === 1 && cs.events?.some(e => e.type === 'deadline-breach'), `status=${cliRun.status} ${(cs.reasons ?? []).join('; ')}`);
-  check('cli non-injected calls exit 0/6', (cs.events ?? []).every(e => e.type !== 'bad-exit'), (cs.reasons ?? []).join('; '));
+  check('cli non-injected calls exit 0', (cs.events ?? []).every(e => e.type !== 'bad-exit'), (cs.reasons ?? []).join('; '));
   console.log(`self-check outputs: ${out} ${cliOut}`);
   return summary().failed.length ? 1 : 0;
 }

@@ -30,7 +30,7 @@ function tokens(file, lang) {
   if (['index', 'mod', '__init__', 'lib'].includes(stem)) return dir === 'src' ? [path.basename(path.dirname(path.dirname(file))), stem] : [dir, stem];
   return [stem];
 }
-const results = entry => rowData(entry)?.results ?? [];
+const nodesOf = entry => rowData(entry)?.nodes ?? [];
 /** The import statement starting at `line` (multi-line `import {…} from "x"` included). */
 async function lineAt(root, file, line) {
   const f = await call('localFetch', { path: path.join(root, file), ranges: [`${line}-${line + 200}`] });
@@ -78,15 +78,15 @@ for (const p of PROJECTS) {
   const root = path.join(REPOS, p.root);
   projectTopo = p.topo ?? {};
   const row = { lang: p.lang };
-  const listing = await call('structureSearch', { operation: 'files', path: path.join(root, p.scope), extensions: p.ext, detail: 'full', sort: 'lines', maxEntries: 30 });
-  const candidates = structureFiles(rowData(listing)?.files, rowData(listing)?.path).filter(o => typeof o.path === 'string' && typeof o.lineCount === 'number')
+  const listing = await call('structureSearch', { operation: 'files', path: path.join(root, p.scope), extensions: p.ext, extras: ['details'], sort: 'lines', maxEntries: 30 });
+  const candidates = structureFiles(rowData(listing)?.files, rowData(listing)?.path).filter(o => typeof o.path === 'string' && typeof o.totalLines === 'number')
     // Paths are relative to the response `root` (the workspace for structureSearch).
     .map(o => path.relative(root, path.resolve(listing.sc?.root ?? ROOT, o.path)))
     .filter(f => !/(^|[/_.])(tests?|spec|bench)([/_.]|$)/i.test(f));
   let hub, dependents;
   for (const candidate of candidates.slice(0, 10)) {
-    const d = await topo(root, 'dependents', { source: candidate, depth: 1 });
-    if (results(d).length >= 2) { hub = candidate; dependents = d; break; }
+    const d = await topo(root, 'dependents', { source: candidate, graphDepth: 1 });
+    if (nodesOf(d).length >= 2) { hub = candidate; dependents = d; break; }
   }
   check(`${p.lang}: hub with ≥2 dependents`, !!hub, `candidates=${candidates.length}`);
   if (!hub) { report.push(row); continue; }
@@ -100,13 +100,13 @@ for (const p of PROJECTS) {
     const entries = collect(rowData(diagPage)?.coverage, o => (typeof o.file === 'string' || Array.isArray(o.files)) && typeof o.code === 'string');
     check(`${p.lang}: hints.readDiagnostics returns diagnostic entries`, !diagPage.isError && entries.length > 0, `entries=${entries.length} pagination=${JSON.stringify(rowData(diagPage)?.coverage?.diagnosticPagination ?? {})}`);
   }
-  const dependencies = await topo(root, 'dependencies', { source: hub, depth: 1 });
-  const depRows = results(dependencies);
-  const dependentRows = results(dependents);
+  const dependencies = await topo(root, 'dependencies', { source: hub, graphDepth: 1 });
+  const depRows = nodesOf(dependencies);
+  const dependentRows = nodesOf(dependents);
   row.deps = depRows.length;
   row.dependents = dependentRows.length;
   row.confidence = rowData(dependencies)?.confidence;
-  row.resolution = JSON.stringify(rowData(dependencies)?.summary?.importResolution ?? rowData(dependencies)?.coverage?.imports ?? {}).replace(/"/g, '');
+  row.resolution = JSON.stringify(rowData(dependencies)?.graphSummary?.importResolution ?? rowData(dependencies)?.coverage?.imports ?? {}).replace(/"/g, '');
 
   const inbound = await proveEdges(root, p.lang, dependentRows.map(r => ({ ...r, from: r.file, to: hub })));
   row.dependentsProven = `${inbound.proven}/${inbound.sampled}`;
@@ -127,21 +127,21 @@ for (const p of PROJECTS) {
   check(`${p.lang}: explicit graph importLines are import syntax (astSearch ${p.importKind})`, !imports.isError && syntaxCovered === explicitRows.length, row.importSyntax);
 
   // Transitive closure, path, cycles.
-  const deep = await topo(root, 'dependencies', { source: hub, depth: 3 });
-  const deepFiles = new Set(results(deep).map(r => r.file));
+  const deep = await topo(root, 'dependencies', { source: hub, graphDepth: 3 });
+  const deepFiles = new Set(nodesOf(deep).map(r => r.file));
   row.transitive = deepFiles.size;
   check(`${p.lang}: depth 3 ⊇ depth 1`, depRows.every(r => deepFiles.has(r.file)), `d1=${depRows.length} d3=${deepFiles.size}`);
-  const far = results(deep).find(r => (r.distance ?? 0) >= 2 || !depRows.some(d => d.file === r.file));
+  const far = nodesOf(deep).find(r => (r.distance ?? 0) >= 2 || !depRows.some(d => d.file === r.file));
   if (far) {
     const route = await topo(root, 'path', { source: hub, target: far.file });
-    const found = results(route)[0];
+    const found = nodesOf(route)[0];
     const edges = found?.edges ?? [];
     const proof = await proveEdges(root, p.lang, edges, 10);
     row.path = found?.files?.join(' → ');
     check(`${p.lang}: path hub → ${far.file} found and every hop proven`, found?.found && edges.length >= 2 && proof.proven === proof.sampled, proof.failures.slice(0, 2).join(' | ') || row.path);
   }
   const cycles = await topo(root, 'cycles', { path: path.join(root, p.scope), pageSize: 20 });
-  row.cycles = rowData(cycles)?.pagination?.totalItems ?? results(cycles).length;
+  row.cycles = rowData(cycles)?.pagination?.totalItems ?? nodesOf(cycles).length;
   check(`${p.lang}: cycles answers`, !cycles.isError, `${cycles.ms}ms total=${row.cycles}`);
 
   // Identity view: files whose code references an exported hub symbol must depend on the hub (transitively).
@@ -149,12 +149,12 @@ for (const p of PROJECTS) {
     const symbols = await call('astSearch', { operation: 'symbols', path: path.join(root, hub) });
     const exported = declarations(symbols).filter(o => typeof o.name === 'string' && typeof o.line === 'number' && o.exported && ['function', 'class', 'constant', 'struct'].includes(o.kind));
     for (const symbol of exported.slice(0, 2)) {
-      const refs = await call('lspSearch', { path: path.join(root, hub), symbolName: symbol.name, lineHint: symbol.line, operation: 'references', pageSize: 25, groupByFile: true });
+      const refs = await call('lspSearch', { path: path.join(root, hub), symbolName: symbol.name, line: symbol.line, operation: 'references', pageSize: 25, groupByFile: true });
       const refPages = await walk(client, refs, 'nextPage', 40, { rowErrors: false });
-      const refFiles = [...new Set(refPages.flatMap(pg => collect(rowData(pg)?.payload, o => typeof o.path === 'string').map(o => sourcePath(pg, o, path.join(root, hub)))))];
-      const allDependents = await topo(root, 'dependents', { source: hub, depth: 6, pageSize: 25 });
+      const refFiles = [...new Set(refPages.flatMap(pg => collect(rowData(pg), o => typeof o.path === 'string').map(o => sourcePath(pg, o, path.join(root, hub)))))];
+      const allDependents = await topo(root, 'dependents', { source: hub, graphDepth: 6, pageSize: 25 });
       const depPages = await walk(cliClient, allDependents, 'nextPage', 80, { rowErrors: false });
-      const allowed = new Set(depPages.flatMap(pg => results(pg).map(r => r.file)));
+      const allowed = new Set(depPages.flatMap(pg => nodesOf(pg).map(r => r.file)));
       // Files whose imports the graph declares it cannot link (macro-generated
       // Rust paths) are disclosed gaps, not wrong edges.
       const diagLead = findHint(allDependents.sc, 'readDiagnostics');
@@ -164,7 +164,7 @@ for (const p of PROJECTS) {
       const outside = inRoot.filter(f => !allowed.has(f) && !diagnosed.has(f) && f !== hub && !f.endsWith(path.basename(hub)));
       row.lsp = `${symbol.name}: ${refFiles.length} files, ${outside.length} outside graph`;
       (row.lspComparisons ??= []).push({ symbol: symbol.name, files: refFiles.length, outside, coverage: rowData(allDependents)?.coverage, confidence: rowData(allDependents)?.confidence });
-      const partial = rowData(allDependents)?.confidence === 'low' || rowData(allDependents)?.summary?.importResolution?.status === 'partial' || (rowData(allDependents)?.coverage?.imports?.unresolvedInternal ?? 0) > 0;
+      const partial = rowData(allDependents)?.confidence === 'low' || rowData(allDependents)?.graphSummary?.importResolution?.status === 'partial' || (rowData(allDependents)?.coverage?.imports?.unresolvedInternal ?? 0) > 0;
       check(`${p.lang}: bounded graph/LSP comparison for ${symbol.name} discloses coverage gaps`, !refs.isError && (outside.length === 0 || partial), `outside=${outside.slice(0, 3).join(', ')} partial=${partial}`);
     }
   }

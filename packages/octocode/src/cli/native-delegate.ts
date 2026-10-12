@@ -39,29 +39,41 @@ export const devOverrideOptions: Parameters<typeof devOverridesAllowed>[1] = {
  */
 export const NODE_OWNED_COMMANDS: ReadonlySet<string> = new Set(['skill']);
 
+/** The native binary to run, or why there is none (shown to the user as is). */
+export type NativeBin = { bin: string } | { error: string };
+
+/** The native binary could not be started (spawn failure). */
+export class NativeLaunchError extends Error {
+  override name = 'NativeLaunchError';
+}
+
 /**
- * Resolve the compiled native `octocode` binary, or null when unavailable.
+ * Resolve the compiled native `octocode` binary, or the reason there is none.
  * An explicit `OCTOCODE_NATIVE_BIN` path wins only where config allows dev
  * overrides (never in production, as for MCP's `OCTOCODE_NATIVE_BINDING`);
  * otherwise the platform binary is resolved through
  * `@octocodeai/octocode-native`'s shared resolver — so delegation spawns the
- * native binary itself, not a second Node launcher. Never throws.
+ * native binary itself, not a second Node launcher. The resolver's own
+ * message (unsupported platform, the missing platform package and its
+ * `npm install` fix) is kept. Never throws.
  */
 export function resolveNativeBin(
   env: NodeJS.ProcessEnv = process.env
-): string | null {
+): NativeBin {
   const explicit = devOverridesAllowed(env, devOverrideOptions)
     ? env.OCTOCODE_NATIVE_BIN?.trim()
     : undefined;
   if (explicit) {
-    return existsSync(explicit) ? explicit : null;
+    return existsSync(explicit)
+      ? { bin: explicit }
+      : { error: `OCTOCODE_NATIVE_BIN points at a missing path: ${explicit}` };
   }
   try {
     const { resolveNativeBinaryPath } =
       require('@octocodeai/octocode-native/bin/resolve-binary.cjs') as NativeBinaryResolver;
-    return resolveNativeBinaryPath();
-  } catch {
-    return null;
+    return { bin: resolveNativeBinaryPath() };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
   }
 }
 
@@ -97,16 +109,24 @@ export function shouldDelegateToNative(
 
 /**
  * Run the native binary with the given argv, passing stdio through, and
- * resolve with the child exit code (1 on spawn failure, 128+N on a signal
- * death). While the child owns stdio, signals go only to the child.
+ * resolve with the child exit code (128+N on a signal death). While the child
+ * owns stdio, signals go only to the child. A binary that cannot start
+ * (EACCES, ENOEXEC, a noexec mount) rejects with a `NativeLaunchError` naming
+ * the binary and the cause, never a silent exit.
  */
-export function delegateToNative(
+export async function delegateToNative(
   bin: string,
   argv: readonly string[],
   env: NodeJS.ProcessEnv = process.env
 ): Promise<number> {
   const [command, args] = nativeCommand(bin, argv);
-  return nativeLauncher()
-    .runForwardingSignals(command, args, { env })
-    .catch(() => 1);
+  try {
+    return await nativeLauncher().runForwardingSignals(command, args, { env });
+  } catch (error) {
+    const cause = error instanceof Error ? error.message : String(error);
+    throw new NativeLaunchError(
+      `The native Octocode binary could not start (${bin}): ${cause}`,
+      { cause: error }
+    );
+  }
 }

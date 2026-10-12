@@ -20,6 +20,13 @@ impl VersionSpec {
         if Version::parse(bare).is_ok() {
             return Self::Exact(bare.to_owned());
         }
+        // `v18`, `v1.2`, `v1.x` name versions, never a dist-tag.
+        if let Some(rest) = spec
+            .strip_prefix('v')
+            .filter(|rest| rest.starts_with(|c: char| c.is_ascii_digit()))
+        {
+            return Self::Range(rest.to_owned());
+        }
         let tag = spec
             .chars()
             .next()
@@ -245,6 +252,12 @@ pub(crate) fn nearest<'a>(
         .into_iter()
         .map(|(_, version)| version.to_owned())
         .collect::<Vec<_>>();
+    // Final releases first; a prerelease is a suggestion only when the
+    // request names one, or no final release is near.
+    let prerelease = |version: &str| version.contains('-');
+    if !prerelease(requested) && picked.iter().any(|version| !prerelease(version)) {
+        picked.retain(|version| !prerelease(version));
+    }
     picked.sort_by(|left, right| match (pep440(left), pep440(right)) {
         (Some(l), Some(r)) => pep440_cmp(&r, &l),
         _ => right.cmp(left),

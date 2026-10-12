@@ -18,19 +18,59 @@ function setup() {
   return { team, ctx, id, store, sent, close: () => { team.stop(); store.close(); } };
 }
 
+describe('team leave', () => {
+  it('clears its state even when the database refuses the removal, and a new session can start', () => {
+    const s = setup();
+    try {
+      expect(s.team.id).toBe(s.id);
+      vi.spyOn(TeamStore.prototype, 'remove').mockImplementationOnce(() => { throw new Error('database is locked'); });
+      expect(() => s.team.leave()).toThrow('database is locked');
+      expect(s.team.id).toBeUndefined();
+      // stop() clears the rest of the state despite the same failure...
+      s.team.join();
+      vi.spyOn(TeamStore.prototype, 'remove').mockImplementationOnce(() => { throw new Error('database is closed'); });
+      expect(() => s.team.stop()).toThrow('database is closed');
+      expect(s.team.id).toBeUndefined();
+      expect(() => s.team.join()).toThrow('before the session starts');
+      // ...and start() binds the new session instead of failing on the old one's removal.
+      s.team.start(s.ctx);
+      s.team.join();
+      vi.spyOn(TeamStore.prototype, 'remove').mockImplementationOnce(() => { throw new Error('database is locked'); });
+      expect(() => s.team.start(s.ctx)).not.toThrow();
+      expect(s.team.join().id).toBeDefined();
+    } finally { vi.restoreAllMocks(); s.close(); }
+  });
+});
+
 describe('team resource bounds', () => {
   it('retries a failed acknowledgement without delivering accepted messages twice', () => {
     const s = setup();
     try {
       s.store.send('peer', [s.id], 'once', { replyRequired: false });
-      const inbox = new Inbox(5_000);
+      const inbox = new Inbox();
       const send = vi.fn(() => true);
       const ack = vi.spyOn(s.store, 'ack').mockImplementationOnce(() => { throw new Error('busy'); });
-      expect(() => inbox.deliver(s.store, s.id, 'changed', send)).toThrow('busy');
-      inbox.deliver(s.store, s.id, 'changed', send);
+      expect(() => inbox.deliver(s.store, s.id, send)).toThrow('busy');
+      inbox.deliver(s.store, s.id, send);
       expect(send).toHaveBeenCalledTimes(1);
       expect(ack).toHaveBeenCalledTimes(2);
       expect(s.store.pending(s.id)).toEqual([]);
+    } finally { s.close(); }
+  });
+
+  it('reads the inbox only when a message waits for this recipient', () => {
+    const s = setup();
+    try {
+      const inbox = new Inbox();
+      const pending = vi.spyOn(s.store, 'pending');
+      const send = vi.fn(() => true);
+      s.store.send('peer', ['someone-else'], 'not mine', { replyRequired: false });
+      inbox.deliver(s.store, s.id, send);
+      expect(pending).not.toHaveBeenCalled();
+      s.store.send('peer', [s.id], 'mine', { replyRequired: false });
+      inbox.deliver(s.store, s.id, send);
+      expect(pending).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledTimes(1);
     } finally { s.close(); }
   });
 

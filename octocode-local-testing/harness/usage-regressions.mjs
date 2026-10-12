@@ -20,7 +20,8 @@ function cli(tool, input, env = {}) {
   try { json = JSON.parse(run.stdout); } catch { json = undefined; }
   return { exit: run.status, text: `${run.stdout}${run.stderr}`, json, bytes: run.stdout.length };
 }
-const details = r => (r.json?.details ?? []).join(' | ');
+// The CLI error payload: the first issue is `error`, the rest `details`.
+const details = r => [r.json?.error, ...(r.json?.details ?? [])].filter(Boolean).join(' | ');
 const rowError = r => r.json?.results?.[0]?.data ?? {};
 
 // Batches over the row limit: agents resent the identical 7-row call.
@@ -97,9 +98,9 @@ for (const [label, tool, query, field, want, never] of [
 for (const [label, query] of [['default', {}], ['fullContent', { fullContent: true }]]) {
   const mcp = await call('localFetch', { path: LARGE, ...query });
   const data = rowData(mcp);
-  check(`U14 MCP: localFetch ${label} of a 1,600+ line file stays under 25 KB with next.continue`, mcp.bytes < 25_000 && !!data?.next?.continue && data?.isPartial === true, `${mcp.bytes}B`);
+  check(`U14 MCP: localFetch ${label} of a 1,600+ line file stays under 25 KB with next.continueWindow`, mcp.bytes < 25_000 && !!data?.next?.continueWindow && data?.pagination?.hasMore === true, `${mcp.bytes}B`);
   const shell = cli('localFetch', { queries: [{ path: LARGE, ...query }] });
-  check(`U14 CLI: localFetch ${label} exits 6 under 25 KB`, shell.exit === 6 && shell.bytes < 25_000, `${shell.exit} ${shell.bytes}B`);
+  check(`U14 CLI: localFetch ${label} exits 0 under 25 KB`, shell.exit === 0 && shell.bytes < 25_000, `${shell.exit} ${shell.bytes}B`);
 }
 
 // Paths outside the roots: the hint names the trusted place to widen them.
@@ -121,10 +122,10 @@ for (const [label, query] of [['default', {}], ['fullContent', { fullContent: tr
 // lspSearch on Rust: the first call starts the server, the next one is warm.
 {
   const file = path.join(ROOT, LARGE);
-  const lineHint = fs.readFileSync(file, 'utf8').split('\n').findIndex(l => l.startsWith('fn suggest_field')) + 1;
-  const first = await call('lspSearch', { path: file, symbolName: 'suggest_field', lineHint, operation: 'references' });
+  const line = fs.readFileSync(file, 'utf8').split('\n').findIndex(l => l.startsWith('fn suggest_field')) + 1;
+  const first = await call('lspSearch', { path: file, symbolName: 'suggest_field', line, operation: 'references' });
   check('U17 MCP: cold lspSearch references answers without a timeout', !first.isError && !/errorCode\W+timeout\b/.test(first.text) && first.ms < 90_000, `${first.ms}ms`);
-  const warm = await call('lspSearch', { path: file, symbolName: 'suggest_field', lineHint, operation: 'references' });
+  const warm = await call('lspSearch', { path: file, symbolName: 'suggest_field', line, operation: 'references' });
   check('U17 MCP: a warm lspSearch repeat answers within 15 s', !warm.isError && warm.ms < 15_000, `${warm.ms}ms`);
 }
 
@@ -135,7 +136,7 @@ for (const [label, query] of [['default', {}], ['fullContent', { fullContent: tr
   const dir = fs.mkdtempSync(path.join(ROOT, '.octocode/tmp/cache-binding-'));
   // Rewrite with equal-size bytes, then restore the nanosecond mtime.
   const rewrite = (file, content) => spawnSync('python3', ['-c', 'import os,sys\np=sys.argv[1];s=os.stat(p)\nopen(p,"w").write(sys.argv[2])\nos.utime(p,ns=(s.st_atime_ns,s.st_mtime_ns))\nt=os.stat(p)\nprint(s.st_size==t.st_size and s.st_mtime_ns==t.st_mtime_ns)', file, content], { encoding: 'utf8' }).stdout.trim() === 'True';
-  const search = (where, matchString) => ({ path: where, matchString, regex: 'literal', sort: 'path', include: ['*.ts'], noIgnore: true, pageSize: 1 });
+  const search = (where, matchString) => ({ path: where, matchString, regex: 'literal', sort: 'path', include: ['*.ts'], includeIgnored: true, pageSize: 1 });
   try {
     fs.writeFileSync(path.join(dir, 'a.ts'), 'const needle = "OLD_A";\n');
     const b = path.join(dir, 'b.ts');
@@ -196,9 +197,11 @@ for (const [label, query] of [['default', {}], ['fullContent', { fullContent: tr
   const hits = data => (data.files ?? []).flatMap(f => (f.matches ?? []).map(m => `${f.path}:${m.line}`));
   const files = data => structureFiles(data.files, data.path).map(f => f.path);
   for (const [label, tool, query, rowsOf, totalOf] of [
-    ['localSearch .unwrap() over runtime tools', 'localSearch', { path: `${RUNTIME}/tools`, matchString: '.unwrap()' }, hits, d => d.stats?.matchedLineCount ?? hits(d).length],
+    ['localSearch .unwrap() over runtime tools', 'localSearch', { path: `${RUNTIME}/tools`, matchString: '.unwrap()' }, hits, d => d.matchedLineCount ?? hits(d).length],
     // About 2.9k .py files: several pages even with directory-grouped rows.
-    ['structureSearch **/*.py over the python corpus', 'structureSearch', { operation: 'files', path: 'octocode-local-testing/repos/python', include: ['**/*.py'] }, files, d => d.pagination?.totalItems ?? files(d).length],
+    // The listing total (`pagination.totalItems`) is a stats extra; without
+    // it the first page's row count is not the total.
+    ['structureSearch **/*.py over the python corpus', 'structureSearch', { operation: 'files', path: 'octocode-local-testing/repos/python', include: ['**/*.py'], extras: ['stats'] }, files, d => d.pagination?.totalItems],
   ]) {
     for (const surface of ['mcp', 'cli']) {
       const w = await rowWalk(surface, tool, query, rowsOf, totalOf);
@@ -206,7 +209,7 @@ for (const [label, query] of [['default', {}], ['fullContent', { fullContent: tr
       check(`U19 ${surface.toUpperCase()}: ${label} spans several pages`, w.calls > 1, stats);
       check(`U19 ${surface.toUpperCase()}: ${label} pages each fit one response (no row parts)`, w.splits === 0, stats);
       check(`U19 ${surface.toUpperCase()}: ${label} row-continuation walk shows every row exactly once`, w.total > 0 && w.unique === w.total && w.seen.length === w.total, stats);
-      if (surface === 'cli') check(`U19 CLI: ${label} exits 6 until the last page, then 0`, w.exits.at(-1) === 0 && w.exits.slice(0, -1).every(code => code === 6), w.exits.join(','));
+      if (surface === 'cli') check(`U19 CLI: ${label} exits 0 on every page, including those with a next page`, w.exits.length > 0 && w.exits.every(code => code === 0), w.exits.join(','));
     }
   }
   walker.close();

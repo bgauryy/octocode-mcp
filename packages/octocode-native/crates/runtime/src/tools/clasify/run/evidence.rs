@@ -162,6 +162,31 @@ pub(super) fn file_read_template(source: &Value, receipt: &Value) -> Option<Valu
     Some(json!({"tool":tool.as_str(),"query":query}))
 }
 
+/// A local file read that returned the whole file names no snapshot (only a
+/// paged read pins one), so its located windows would replay against
+/// whatever the file holds later. Pin the template to the file's current
+/// bytes: an edited file then fails the read (`staleSnapshot`) instead of
+/// returning shifted lines.
+pub(super) fn pin_local_snapshot(template: &mut Value, paths: &PathPolicy) {
+    if tool_of(template) != Some(ToolId::LocalFetch) {
+        return;
+    }
+    let Some(query) = template.get_mut("query").and_then(Value::as_object_mut) else {
+        return;
+    };
+    if query.contains_key("snapshot") {
+        return;
+    }
+    let bytes = query
+        .get("path")
+        .and_then(Value::as_str)
+        .and_then(|path| paths.validate_read(path).ok())
+        .and_then(|file| std::fs::read(file.canonical).ok());
+    if let Some(bytes) = bytes {
+        query.insert("snapshot".into(), json!(crate::digest::sha256(&bytes)));
+    }
+}
+
 /// Path-valued fields of local tool envelopes and queries.
 pub(super) const LOCAL_PATH_FIELDS: [&str; 3] = ["root", "path", "workspaceRoot"];
 
@@ -312,7 +337,7 @@ mod tests {
             "symbols":[{"name":"apply_row"}],
             "diagnostics":[{"code":"scan.skipped"}],
             "hints":["Try lspSearch"],
-            "next":{"continue":{"tool":"localFetch","query":{"path":"a"}}}
+            "next":{"continueWindow":{"tool":"localFetch","query":{"path":"a"}}}
         }}]});
         let payload = tool_payload(&state);
         assert_eq!(
@@ -354,7 +379,7 @@ mod tests {
         let local = json!({"root":"/abs/root","results":[{"data":{
             "path":"a.rs","content":"fn a() {}\n","totalLines":1,"modified":"2026",
             "sourceLineRanges":[{"line":1,"endLine":1}],"sourceBytes":10,"fileType":"code",
-            "next":{"continue":{}}}}]});
+            "next":{"continueWindow":{}}}}]});
         let source = json!({"tool":"localFetch","query":{}});
         assert_eq!(
             provider_state(&source, local.clone()),

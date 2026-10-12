@@ -1,7 +1,7 @@
 // Agent-style navigation: follow the server instructions' loop
 // (ORIENT → SEARCH → READ EXACT → PROVE) in every grammar repo, feeding each
 // hop only values copied from the previous result (path via root+path,
-// symbolName/lineHint from symbols rows, anchors from LSP items). Measures
+// symbolName/line from symbols rows, anchors from LSP items). Measures
 // hops and bytes, and fails when a hop's promised handoff is missing.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,12 +48,12 @@ for (const t of TARGETS) {
 
   // ORIENT: layout, then the biggest source file in scope.
   const tree = await hop('orient: tree', 'structureSearch', { operation: 'tree', path: path.join(root, t.scope), maxDepth: 2 });
-  const listing = await hop('orient: files', 'structureSearch', { operation: 'files', path: path.join(root, t.scope), extensions: t.ext, detail: 'full', sort: 'lines', maxEntries: 1 });
-  const top = structureFiles(rowData(listing)?.files, rowData(listing)?.path).filter(o => typeof o.path === 'string' && typeof o.lineCount === 'number')[0];
+  const listing = await hop('orient: files', 'structureSearch', { operation: 'files', path: path.join(root, t.scope), extensions: t.ext, extras: ['details'], sort: 'lines', maxEntries: 1 });
+  const top = structureFiles(rowData(listing)?.files, rowData(listing)?.path).filter(o => typeof o.path === 'string' && typeof o.totalLines === 'number')[0];
   if (!check(`${t.lang}: orient yields a file`, !tree.isError && top, listing.text.slice(0, 80))) { table.push(row); continue; }
   const file = rootPath(listing, top.path);
   check(`${t.lang}: root + path is a real file`, fs.existsSync(file), file);
-  row.file = `${path.basename(file)} (${top.lineCount} lines)`;
+  row.file = `${path.basename(file)} (${top.totalLines} lines)`;
 
   // SEARCH (shape): outline declarations; take a callable used elsewhere.
   const symbols = await hop('search: symbols', 'astSearch', { operation: 'symbols', path: file, kinds: ['function', 'method', 'label'], pageSize: 100, ...(t.language ? { language: t.language } : {}) });
@@ -70,12 +70,12 @@ for (const t of TARGETS) {
   row.symbol = `${target.name}@${target.line}`;
 
   // READ EXACT: the declaration lines, anchored on the symbols row.
-  const read = await hop('read: declaration', 'localFetch', { path: file, ranges: [`${target.line}-${Math.min(target.line + 25, top.lineCount)}`] });
+  const read = await hop('read: declaration', 'localFetch', { path: file, ranges: [`${target.line}-${Math.min(target.line + 25, top.totalLines)}`] });
   check(`${t.lang}: read-exact shows the declaration`, (rowData(read)?.content ?? '').includes(target.name), rowData(read)?.errorCode ?? '');
 
   // PROVE: identity via LSP from the copied anchor, else text + syntax.
   if (t.lsp) {
-    const def = await hop('prove: definition', 'lspSearch', { path: file, symbolName: target.name, lineHint: target.line, operation: 'definition' });
+    const def = await hop('prove: definition', 'lspSearch', { path: file, symbolName: target.name, line: target.line, operation: 'definition' });
     const lands = lspLocations(def).some(l => sourcePath(def, l, file) === file && Math.abs((l.displayRange?.startLine ?? 0) - target.line) <= 1);
     // The server may resolve a declaration name to a merged declaration
     // elsewhere (TS: a function merged with an imported interface); accept
@@ -88,7 +88,7 @@ for (const t of TARGETS) {
     }
     const explained = /compile_commands/.test(JSON.stringify(rowData(def)?.hints?.text ?? []));
     check(`${t.lang}: symbols anchor → lspSearch definition lands on an astSearch-confirmed declaration`, lands || confirmed || explained, JSON.stringify(lspLocations(def)[0]?.displayRange ?? rowData(def)?.hints ?? ''));
-    const refs = await hop('prove: references', 'lspSearch', { path: file, symbolName: target.name, lineHint: target.line, operation: 'references', pageSize: 25 });
+    const refs = await hop('prove: references', 'lspSearch', { path: file, symbolName: target.name, line: target.line, operation: 'references', pageSize: 25 });
     const refFiles = new Set(lspLocations(refs).map(l => sourcePath(refs, l, file)));
     // Every text-hit file (all pages), not just the sampled uses.
     const textFiles = new Set(uses.map(u => u.file));

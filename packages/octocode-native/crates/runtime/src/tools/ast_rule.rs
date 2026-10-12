@@ -26,6 +26,25 @@ pub(crate) const INVALID_PATTERN: &str = "invalidPattern";
 /// Recovery for [`INVALID_PATTERN`], in both tools.
 pub(crate) const INVALID_PATTERN_HINT: &str = "Make the pattern one complete, parseable node, or inspect its shape with astSearch operation:\"syntaxTree\".";
 
+/// Why a pattern that parsed can still match nothing, in both tools.
+pub(crate) const PATTERN_SHAPE_HINT: &str = "Patterns match whole nodes (modifiers, return types); astSearch operation:\"syntaxTree\" shows the shape, or use a rule.";
+/// Where to look when a rule matches nothing, in both tools.
+pub(crate) const RULE_SHAPE_HINT: &str = "A rule matches nodes by kind, pattern and relations; astSearch operation:\"syntaxTree\" shows the node kinds.";
+
+/// What an empty structural answer covered (the files read, in which
+/// grammar) and why a pattern or rule that compiled can still match nothing,
+/// in both tools.
+pub(crate) fn empty_match_hint(scanned: u32, language: Option<&str>, pattern: bool) -> String {
+    let language = language.map_or_else(String::new, |language| format!("{language} "));
+    let plural = if scanned == 1 { "" } else { "s" };
+    let shape = if pattern {
+        PATTERN_SHAPE_HINT
+    } else {
+        RULE_SHAPE_HINT
+    };
+    format!("0 matches in {scanned} {language}file{plural}. {shape}")
+}
+
 /// A rule that does not compile, as both tools report it.
 #[derive(Debug)]
 pub(crate) struct RuleError {
@@ -143,28 +162,30 @@ pub(crate) fn file_grammar(path: &std::path::Path) -> Option<(String, BTreeSet<S
 
 /// Grammars whose extensions occur under `root`, from a bounded walk that
 /// honors the same discovery policy, ignore files and excluded directories
-/// as the match scan. Each maps to its full extension set.
+/// as the match scan. Each maps to its full extension set, most files
+/// first (ties by name), so a list of candidates leads with the grammar the
+/// scope is mostly written in.
 pub(crate) fn present_grammars(
     root: &std::path::Path,
     prune: &[String],
     hidden: bool,
     no_ignore: bool,
     max_files: usize,
+    globs: crate::tools::empty_walk::Globs<'_>,
     permits: &dyn Fn(&std::path::Path) -> Result<bool, String>,
-) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
+) -> Result<Vec<(String, BTreeSet<String>)>, String> {
     let capabilities = octocode_engine::portable::grammar_capabilities()
         .into_iter()
         .filter(|capability| capability.structural_search)
         .collect::<Vec<_>>();
-    let mut seen = BTreeSet::new();
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
     let mut files = 0_usize;
-    let walker = crate::tools::pruned_walk(root, prune.iter().cloned().collect())
-        .hidden(!hidden)
-        .git_ignore(!no_ignore)
-        .git_exclude(!no_ignore)
-        .ignore(!no_ignore)
-        .parents(!no_ignore)
-        .build();
+    let walker = crate::tools::empty_walk::Walk {
+        ignored: no_ignore,
+        hidden,
+        default_excludes: !prune.is_empty(),
+    }
+    .walker(root, prune, globs)?;
     for entry in walker {
         let Ok(entry) = entry else { continue };
         if !entry.file_type().is_some_and(|kind| kind.is_file()) {
@@ -180,20 +201,28 @@ pub(crate) fn present_grammars(
         let extension =
             octocode_engine::text::extension_of(&entry.path().to_string_lossy(), true, "");
         if !extension.is_empty() {
-            seen.insert(extension);
+            *seen.entry(extension).or_default() += 1;
         }
     }
-    let mut grammars = BTreeMap::new();
-    for extension in seen {
+    let mut grammars: BTreeMap<String, (BTreeSet<String>, usize)> = BTreeMap::new();
+    for (extension, count) in seen {
         if let Some(capability) = capabilities
             .iter()
             .find(|capability| capability.extensions.contains(&extension))
             && let Some(extensions) = language_extensions(&capability.language)
         {
-            grammars.insert(grammar_selector(capability), extensions);
+            grammars
+                .entry(grammar_selector(capability))
+                .or_insert_with(|| (extensions, 0))
+                .1 += count;
         }
     }
-    Ok(grammars)
+    let mut ranked = grammars.into_iter().collect::<Vec<_>>();
+    ranked.sort_by(|(a, (_, a_files)), (b, (_, b_files))| b_files.cmp(a_files).then(a.cmp(b)));
+    Ok(ranked
+        .into_iter()
+        .map(|(language, (extensions, _))| (language, extensions))
+        .collect())
 }
 
 /// The language a caller would write for a grammar: its language id

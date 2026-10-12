@@ -1,10 +1,12 @@
 import { execFile } from 'node:child_process';
 import type { AgentDb } from '../agentdb/db.js';
+import { processStartTime } from '../shared/process.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 
 /**
  * What Octocode adds to one Pi session (`sessions` row): the git branch and HEAD it last saw, its cost and tokens, the
- * files it changed, and the pid of the process that has it open. Everything else (file, cwd, name, first message,
+ * files it changed, and the pid (with start time) of the process that has it open (the one record of whether a session is
+ * running; see `agentdb/liveness`). Everything else (file, cwd, name, first message,
  * times) comes from Pi's session listing.
  */
 export interface SessionExtra {
@@ -15,6 +17,8 @@ export interface SessionExtra {
   tokens: number;
   files_changed: number;
   pid: number | null;
+  /** When that process started (`processStartTime`); null in rows from before it was recorded, or where it is unknown. */
+  pid_started: string | null;
 }
 
 interface SessionStats {
@@ -90,17 +94,19 @@ export class SessionIndex {
 
   /** This process has the session open now. Keeps what earlier runs recorded. */
   start(id: string): void {
-    this.agent.db.prepare('INSERT INTO sessions (id, pid) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET pid = excluded.pid').run(id, process.pid);
+    this.agent.db
+      .prepare('INSERT INTO sessions (id, pid, pid_started) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET pid = excluded.pid, pid_started = excluded.pid_started')
+      .run(id, process.pid, processStartTime(process.pid) ?? null);
   }
 
   stats(id: string, stats: SessionStats): void {
     this.agent.db
       .prepare(
-        `INSERT INTO sessions (id, cost, tokens, files_changed, branch, head, pid) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (id, cost, tokens, files_changed, branch, head, pid, pid_started) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET cost = excluded.cost, tokens = excluded.tokens, files_changed = excluded.files_changed,
            branch = COALESCE(excluded.branch, sessions.branch), head = COALESCE(excluded.head, sessions.head)`,
       )
-      .run(id, stats.cost, stats.tokens, stats.filesChanged, stats.branch ?? null, stats.head ?? null, process.pid);
+      .run(id, stats.cost, stats.tokens, stats.filesChanged, stats.branch ?? null, stats.head ?? null, process.pid, processStartTime(process.pid) ?? null);
   }
 
   /** Records where git stood, without touching the stats. */
@@ -112,7 +118,7 @@ export class SessionIndex {
 
   /** The session's process has ended: it is no longer live. */
   end(id: string): void {
-    this.agent.db.prepare('UPDATE sessions SET pid = NULL WHERE id = ? AND pid = ?').run(id, process.pid);
+    this.agent.db.prepare('UPDATE sessions SET pid = NULL, pid_started = NULL WHERE id = ? AND pid = ?').run(id, process.pid);
   }
 
   all(): SessionExtra[] {

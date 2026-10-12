@@ -79,19 +79,36 @@ pub(in crate::structural) fn parse_rule(rule: &str) -> Result<RawRule, String> {
         return Err("structural rule exceeds 64000 byte limit".to_owned());
     }
     let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(rule).map_err(|err| format!("invalid rule YAML: {err}"))?;
+        serde_yaml_ng::from_str(rule).map_err(|err| yaml_error(&err))?;
     let wrapped = value
         .as_mapping()
         .is_some_and(|mapping| mapping.contains_key("rule"));
     let raw: RawRule = if wrapped {
         serde_yaml_ng::from_value::<RawRuleDocument>(value)
-            .map_err(|err| format!("invalid rule YAML: {err}"))?
+            .map_err(|err| yaml_error(&err))?
             .rule
     } else {
-        serde_yaml_ng::from_value(value).map_err(|err| format!("invalid rule YAML: {err}"))?
+        serde_yaml_ng::from_value(value).map_err(|err| yaml_error(&err))?
     };
     validate_rule_depth(&raw, 0)?;
     Ok(raw)
+}
+
+/// One valid rule object: how a relational key (`has`, `inside`) combines with
+/// `kind` and `stopBy`. Every rule error that lists the accepted keys shows it.
+pub const EXAMPLE_RULE: &str =
+    r#"{"kind":"class_declaration","has":{"kind":"extends_clause","stopBy":"end"}}"#;
+
+/// A rule that does not deserialize. An unknown key lists the keys the rule
+/// takes; the example shows how they combine, since the usual mistake is a
+/// key from another matcher (`field`, `constraints`) that has no equivalent.
+fn yaml_error(err: &serde_yaml_ng::Error) -> String {
+    let message = format!("invalid rule YAML: {err}");
+    if message.contains("unknown field") {
+        format!("{message}. Example rule: {EXAMPLE_RULE}")
+    } else {
+        message
+    }
 }
 
 #[cfg(test)]

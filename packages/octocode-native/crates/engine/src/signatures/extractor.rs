@@ -222,15 +222,24 @@ fn cached_query(language: &Language, body_query: &'static str) -> Option<Arc<Que
 /// Test helper: `(1-based line number, trimmed text)` pairs.
 #[cfg(test)]
 pub(crate) fn extract(content: &str, cfg: &LangExtractConfig) -> Option<Vec<(usize, String)>> {
-    extract_with_limits(content, cfg, Instant::now() + AST_EXECUTION_TIMEOUT, 65_536)
+    extract_with_limits(
+        content,
+        cfg,
+        Instant::now() + AST_EXECUTION_TIMEOUT,
+        65_536,
+        false,
+    )
 }
 
 /// The extracted lines for the rendered outline: a run of top-level imports becomes
 /// one summary line (`3| import … (lines 3-40)`), since an outline is for
-/// the file's own declarations and imports read better as a range.
+/// the file's own declarations and imports read better as a range. A
+/// multi-line signature and a module or class docstring shrink to their
+/// first line, marked [`ELIDED`]; the declaration head's line range reads
+/// the rest.
 pub fn extract_outline(content: &str, cfg: &LangExtractConfig) -> Option<Vec<(usize, String)>> {
     let deadline = Instant::now() + AST_EXECUTION_TIMEOUT;
-    let kept = extract_with_limits(content, cfg, deadline, 65_536)?;
+    let kept = extract_with_limits(content, cfg, deadline, 65_536, true)?;
     let tree = parse_before(content, &cfg.language, deadline)?;
     Some(collapse_import_runs(kept, &import_runs(tree.root_node())))
 }
@@ -318,11 +327,104 @@ fn collapse_import_runs(
     out
 }
 
+/// Marks a kept outline line whose continuation was cut.
+const ELIDED: &str = " …";
+
+/// Drop the rows of a multi-line parameter list after its first row, up to
+/// the row that opens the body, and mark the first row. `head_end` is the
+/// last row of the signature.
+fn collapse_signature(
+    function: tree_sitter::Node<'_>,
+    head_end: usize,
+    keep: &mut [bool],
+    elided: &mut [bool],
+) {
+    let Some(parameters) = function.child_by_field_name("parameters") else {
+        return;
+    };
+    let first = parameters.start_position().row;
+    let last = head_end.min(keep.len().saturating_sub(1));
+    if first < last {
+        keep[first + 1..=last].fill(false);
+        elided[first] = true;
+    }
+}
+
+/// The text a docstring's first row holds after its opening quotes.
+fn docstring_opening_text(row: &str) -> &str {
+    let row = row
+        .trim_start()
+        .trim_start_matches(|c: char| c.is_ascii_alphabetic());
+    for quote in ["\"\"\"", "\'\'\'", "\"", "\'"] {
+        if let Some(text) = row.strip_prefix(quote) {
+            return text.trim();
+        }
+    }
+    row.trim()
+}
+
+/// Cut a multi-row module or class docstring to its first text row.
+fn collapse_docstrings(
+    root: tree_sitter::Node<'_>,
+    lines: &[&str],
+    keep: &mut [bool],
+    elided: &mut [bool],
+) {
+    let mut scopes = vec![root];
+    while let Some(scope) = scopes.pop() {
+        let body = if scope.kind() == "class_definition" {
+            scope.child_by_field_name("body")
+        } else {
+            Some(scope)
+        };
+        let Some(body) = body else { continue };
+        let mut cursor = body.walk();
+        let mut first = true;
+        for child in body.named_children(&mut cursor) {
+            if child.kind() == "comment" {
+                continue;
+            }
+            let docstring = first
+                && child.kind() == "expression_statement"
+                && child.named_child_count() == 1
+                && child.named_child(0).is_some_and(|c| c.kind() == "string");
+            first = false;
+            if docstring {
+                let (start, end) = (child.start_position().row, child.end_position().row);
+                if start < end && end < lines.len() {
+                    let shown = if docstring_opening_text(lines[start]).is_empty() {
+                        (start + 1..=end).find(|row| !lines[*row].trim().is_empty())
+                    } else {
+                        Some(start)
+                    };
+                    keep[start..=end].fill(false);
+                    keep[start] = true;
+                    if let Some(shown) = shown {
+                        keep[shown] = true;
+                        // The closing row carries its own quotes: not a cut.
+                        elided[shown] = shown < end;
+                    }
+                }
+            } else if matches!(child.kind(), "class_definition" | "decorated_definition") {
+                let class = if child.kind() == "class_definition" {
+                    Some(child)
+                } else {
+                    child
+                        .child_by_field_name("definition")
+                        .filter(|d| d.kind() == "class_definition")
+                };
+                scopes.extend(class);
+            }
+        }
+    }
+}
+
 fn extract_with_limits(
     content: &str,
     cfg: &LangExtractConfig,
     deadline: Instant,
     match_limit: u32,
+    outline: bool,
 ) -> Option<Vec<(usize, String)>> {
     let lines: Vec<&str> = content.lines().collect();
     let n = lines.len();
@@ -331,6 +433,7 @@ fn extract_with_limits(
     }
 
     let mut keep = vec![true; n];
+    let mut elided = vec![false; n];
 
     let tree = parse_before(content, &cfg.language, deadline)?;
 
@@ -376,6 +479,7 @@ fn extract_with_limits(
                 // Indent-style: first byte is NOT `{` (for example, a Python block).
                 let body_first_byte = content.as_bytes().get(node.start_byte()).copied();
                 let brace_style = body_first_byte == Some(b'{');
+                let mut signature_end = start;
 
                 if brace_style {
                     // Keep opening `{` line ONLY; drop interior AND closing `}`.
@@ -401,12 +505,19 @@ fn extract_with_limits(
                     if lo <= hi {
                         keep[lo..=hi].fill(false);
                     }
+                    signature_end = lo.saturating_sub(1);
+                }
+                if outline && let Some(function) = node.parent() {
+                    collapse_signature(function, signature_end, &mut keep, &mut elided);
                 }
             }
         }
         drop(matches);
         if cursor.did_exceed_match_limit() || Instant::now() >= deadline {
             return None;
+        }
+        if outline {
+            collapse_docstrings(tree.root_node(), &lines, &mut keep, &mut elided);
         }
     } else {
         // Query failed → fall back to heuristic (signal with None)
@@ -417,7 +528,13 @@ fn extract_with_limits(
         .iter()
         .enumerate()
         .filter(|&(_, &keep)| keep)
-        .map(|(i, _)| (i + 1, lines[i].trim_end().to_string()))
+        .map(|(i, _)| {
+            let mut text = lines[i].trim_end().to_string();
+            if elided[i] {
+                text.push_str(ELIDED);
+            }
+            (i + 1, text)
+        })
         .collect();
 
     if result.is_empty() {
@@ -438,7 +555,14 @@ mod tests {
             body_query: "(function_item body: (block) @body)",
         };
         assert!(
-            extract_with_limits("fn f() {\n work();\n}\n", &cfg, Instant::now(), 65_536).is_none()
+            extract_with_limits(
+                "fn f() {\n work();\n}\n",
+                &cfg,
+                Instant::now(),
+                65_536,
+                false
+            )
+            .is_none()
         );
         assert!(
             parse_before(
@@ -459,7 +583,14 @@ mod tests {
         };
         let source = "fn f() {\n one();\n two();\n three();\n four();\n}\n";
         assert!(
-            extract_with_limits(source, &cfg, Instant::now() + Duration::from_secs(2), 1).is_none()
+            extract_with_limits(
+                source,
+                &cfg,
+                Instant::now() + Duration::from_secs(2),
+                1,
+                false
+            )
+            .is_none()
         );
         assert!(extract(source, &cfg).is_some());
     }
@@ -483,6 +614,76 @@ mod tests {
         );
         // The boundary view keeps every line.
         assert_eq!(extract(source, &cfg).expect("lines").len(), 9);
+    }
+
+    fn outline_of(ext: &str, source: &str) -> Vec<(usize, String)> {
+        let entry = super::super::languages::find_entry(ext).expect("grammar");
+        let cfg = LangExtractConfig {
+            language: entry.language.clone(),
+            body_query: entry.body_query,
+        };
+        extract_outline(source, &cfg).expect("outline")
+    }
+
+    fn lines(rows: &[(usize, &str)]) -> Vec<(usize, String)> {
+        rows.iter().map(|(n, t)| (*n, (*t).to_owned())).collect()
+    }
+
+    /// A multi-line signature is one outline line (its first, marked with
+    /// ` …`): the declaration head's line range reads the rest. Single-line
+    /// signatures, and the boundary view, are untouched.
+    #[test]
+    fn outline_collapses_multi_line_signatures_to_their_first_line() {
+        let rust = "pub fn of(\n    query: &Query,\n    root: &Path,\n) -> Self {\n    work();\n}\n\nfn one(a: u8) -> u8 {\n    a\n}\n";
+        assert_eq!(
+            outline_of("rs", rust),
+            lines(&[(1, "pub fn of( …"), (7, ""), (8, "fn one(a: u8) -> u8 {")])
+        );
+        let python = "class A:\n    def run(self,\n            x,\n            y):\n        work()\n\n    def one(self): return 1\n";
+        assert_eq!(
+            outline_of("py", python),
+            lines(&[
+                (1, "class A:"),
+                (2, "    def run(self, …"),
+                (6, ""),
+                (7, "    def one(self): return 1")
+            ])
+        );
+        let ts = "export const make = (\n  a: string,\n  b: number,\n): void => {\n  go();\n};\n";
+        assert_eq!(
+            outline_of("ts", ts),
+            lines(&[(1, "export const make = ( …")])
+        );
+        let cfg = LangExtractConfig {
+            language: tree_sitter_rust::LANGUAGE.into(),
+            body_query: "(function_item body: (block) @body)",
+        };
+        // Rows 1-4 (the whole signature), the blank row and `fn one`.
+        assert_eq!(extract(rust, &cfg).expect("boundary").len(), 6);
+    }
+
+    /// A module or class docstring is its first text line (` …` marks the
+    /// cut), not the whole prose; code and single-line docstrings stay.
+    #[test]
+    fn outline_keeps_the_first_docstring_line() {
+        let python = "# License\n\"\"\"\nRead and write ZIP files.\n\nDetails that run on.\n\"\"\"\nimport os\n\nclass A:\n    \"\"\"Class summary.\n\n    More.\n    \"\"\"\n    X = 1\n\nclass B:\n    \"\"\"One line.\"\"\"\n    def f(self):\n        work()\n";
+        assert_eq!(
+            outline_of("py", python),
+            lines(&[
+                (1, "# License"),
+                (2, "\"\"\""),
+                (3, "Read and write ZIP files. …"),
+                (7, "import os"),
+                (8, ""),
+                (9, "class A:"),
+                (10, "    \"\"\"Class summary. …"),
+                (14, "    X = 1"),
+                (15, ""),
+                (16, "class B:"),
+                (17, "    \"\"\"One line.\"\"\""),
+                (18, "    def f(self):"),
+            ])
+        );
     }
 
     #[test]

@@ -4,6 +4,7 @@
 use super::evidence::{candidate_state, fallback_context, provider_state};
 use super::*;
 use crate::tools::clasify::resource::{ResourceSource, tool_of};
+use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 
 pub(super) fn is_candidate_search(source: &Value) -> bool {
     tool_of(source).is_some_and(clasify::is_candidate_search_tool)
@@ -370,7 +371,7 @@ pub(super) fn local_candidate_read(candidate: &Value, max_bytes: usize) -> Optio
     let mut windows = hit_cluster_windows(shown);
     windows.sort_unstable();
     let mut windows = merge_near_windows(windows);
-    if windows.len() > MAX_READ_RANGES {
+    if windows.len() > RANGES_MAX_ITEMS {
         // One read names at most this many ranges; one span still covers
         // every judged row.
         windows = vec![(windows[0].0, windows[windows.len() - 1].1)];
@@ -379,9 +380,6 @@ pub(super) fn local_candidate_read(candidate: &Value, max_bytes: usize) -> Optio
     read["query"]["ranges"] = ranges_of(&windows);
     Some(read)
 }
-
-/// Most `ranges` one localFetch row names.
-const MAX_READ_RANGES: usize = crate::tools::local_fetch::MAX_READ_RANGES;
 
 /// Rows one localFetch call accepts (the contract's `queries.maxItems`).
 fn fetch_rows_per_call() -> usize {
@@ -395,14 +393,14 @@ fn fetch_rows_per_call() -> usize {
 }
 
 /// Reads of `spans` of one file, as few as the localFetch limits allow:
-/// each names every span once, up to [`MAX_READ_RANGES`] per row and the
+/// each names every span once, up to [`RANGES_MAX_ITEMS`] per row and the
 /// contract's rows per call.
 pub(super) fn batched_window_reads(path: &str, spans: &[(u64, u64)]) -> Vec<Value> {
     spans
-        .chunks(MAX_READ_RANGES * fetch_rows_per_call())
+        .chunks(RANGES_MAX_ITEMS * fetch_rows_per_call())
         .map(|chunk| {
             let mut rows = chunk
-                .chunks(MAX_READ_RANGES)
+                .chunks(RANGES_MAX_ITEMS)
                 .map(|ranges| json!({"path":path, "ranges":ranges_of(ranges)}))
                 .collect::<Vec<_>>();
             let query = if rows.len() == 1 {
@@ -424,7 +422,7 @@ pub(in crate::tools::clasify) fn judged_line_windows(mut lines: Vec<u64>) -> Vec
     windows.sort_unstable();
     let windows = merge_near_windows(windows);
     match (windows.first(), windows.last()) {
-        (Some(first), Some(last)) if windows.len() > MAX_READ_RANGES => vec![(first.0, last.1)],
+        (Some(first), Some(last)) if windows.len() > RANGES_MAX_ITEMS => vec![(first.0, last.1)],
         _ => windows,
     }
 }
@@ -733,7 +731,7 @@ pub(super) fn fitted_radius(radius: u64, state: &Value) -> u64 {
     let ratio = pagination
         .and_then(|page| {
             let chunk = page.get("length")?.as_f64()?;
-            let total = page.get("totalBytes")?.as_f64()?;
+            let total = page.get("total")?.as_f64()?;
             (total > 0.0).then_some(chunk / total)
         })
         .unwrap_or(0.5);
@@ -801,10 +799,8 @@ fn recut_rest_page(source: &Value, candidate: &Value, read: Value) -> CapturedPa
     let mut context = crate::tools::clasify::context::candidate_receipt(source, candidate);
     crate::tools::clasify::context::attach_read(&mut context, read);
     CapturedPage::Failed {
-        error: ClassificationError::new(
-            "classificationBudgetSpent",
+        error: ClassificationError::unjudged(
             "This hit window was not judged: the byte budget narrowed its window to denser hits.",
-            "Run its hints.read to classify it.",
         ),
         context,
     }
@@ -819,7 +815,6 @@ pub(super) fn hydrate_candidate(
     hits: &[u64],
     anchored: bool,
     whole: bool,
-    entire: bool,
     dispatcher: &DomainDispatcher,
     execution: &ExecutionContext,
 ) -> Option<Vec<CapturedPage>> {
@@ -845,12 +840,7 @@ pub(super) fn hydrate_candidate(
             let evidence = provider_state(&read, hydrated_state.clone());
             let evidence_chars = evidence_chars(&evidence);
             let mut context = hydrated_receipt.unwrap_or_else(|| fallback_context(&read));
-            if !entire {
-                crate::tools::clasify::context::append_limitation(
-                    &mut context,
-                    "Only a bounded candidate chunk was assessed; unread file content may change the verdict.",
-                );
-            }
+            // A bounded chunk is stated by the page's `scope`.
             if !anchored {
                 crate::tools::clasify::context::append_limitation(
                     &mut context,
@@ -876,7 +866,7 @@ pub(super) fn hydrate_candidate(
                         format!(
                             "The sanitized candidate chunk is {evidence_chars} characters; the limit is {MAX_HYDRATED_CHARS}."
                         ),
-                        "Use hints.read to select a smaller exact region.",
+                        "Select a smaller exact region.",
                     ),
                     context,
                 }
@@ -888,13 +878,10 @@ pub(super) fn hydrate_candidate(
             }
         }
         Err(failure) => {
-            let mut context = failure.receipt.unwrap_or_else(|| {
+            // The page error states the failure; no limitation repeats it.
+            let context = failure.receipt.unwrap_or_else(|| {
                 crate::tools::clasify::context::candidate_receipt(source, &candidate)
             });
-            crate::tools::clasify::context::append_limitation(
-                &mut context,
-                "Candidate hydration failed; classification was not run for this file.",
-            );
             CapturedPage::Failed {
                 error: failure.error,
                 context,
@@ -940,7 +927,7 @@ impl HydrationJob {
         dispatcher: &DomainDispatcher,
         execution: &ExecutionContext,
     ) -> Vec<CapturedPage> {
-        let hydrate = |read, whole, entire| {
+        let hydrate = |read, whole| {
             hydrate_candidate(
                 source,
                 candidate.clone(),
@@ -948,17 +935,16 @@ impl HydrationJob {
                 &self.hits,
                 self.anchored,
                 whole,
-                entire,
                 dispatcher,
                 execution,
             )
         };
-        if let Some(pages) = hydrate(self.read.clone(), !self.parts.is_empty(), self.entire) {
+        if let Some(pages) = hydrate(self.read.clone(), !self.parts.is_empty()) {
             return pages;
         }
         self.parts
             .iter()
-            .filter_map(|part| hydrate(part.clone(), false, false))
+            .filter_map(|part| hydrate(part.clone(), false))
             .flatten()
             .collect()
     }
@@ -1165,7 +1151,7 @@ pub(super) fn hit_lines_search(source: &Value, file: &Value) -> Option<Value> {
     Some(search)
 }
 
-/// D1: a candidate whose search page only counted some hit lines
+/// A candidate whose search page only counted some hit lines
 /// (`moreLinesUnlisted`) gets them listed by [`hit_lines_search`], so every
 /// hit line reaches a window. A search that cannot list them all leaves the
 /// candidate as it was and returns a `classificationBudgetSpent` page that
@@ -1216,13 +1202,9 @@ fn list_unlisted_hits(
     let mut context = crate::tools::clasify::context::candidate_receipt(source, candidate);
     crate::tools::clasify::context::attach_read(&mut context, search);
     Ok(Some(CapturedPage::Failed {
-        error: ClassificationError::new(
-            "classificationBudgetSpent",
-            format!(
-                "The search page counted {unlisted} hit lines of this file without listing them; they were not judged."
-            ),
-            "Run its hints.read to list them, then classify those lines.",
-        ),
+        error: ClassificationError::unjudged(format!(
+            "The search page counted {unlisted} hit lines of this file without listing them; they were not judged."
+        )),
         context,
     }))
 }
@@ -1243,7 +1225,7 @@ fn unjudged_window(page: &CapturedPage) -> Option<(u64, u64)> {
     }
 }
 
-/// D3/D4: one local candidate's hydrated pages with each window once. A
+/// One local candidate's hydrated pages with each window once. A
 /// window two cut windows re-cut alike is judged on its first page only; an
 /// unjudged window (a narrowed window's left-out hits, or `unjudged` windows
 /// past the page budget) that a judged page reads, or that repeats, drops
@@ -1284,10 +1266,8 @@ pub(super) fn consolidate_candidate_pages(
         let mut context = crate::tools::clasify::context::candidate_receipt(source, candidate);
         crate::tools::clasify::context::attach_read(&mut context, read);
         CapturedPage::Failed {
-            error: ClassificationError::new(
-                "classificationBudgetSpent",
+            error: ClassificationError::unjudged(
                 "These hit windows were not judged: the call's page or byte budget went to denser hits.",
-                "Run hints.read (each unjudged window of this file, once), or narrow the search to classify them.",
             ),
             context,
         }
@@ -1489,7 +1469,7 @@ mod tests {
         );
     }
 
-    /// D2 (CL5 repro: mod.rs, matchPage 3): a snippet page judged its shown
+    /// A snippet page judged its shown
     /// rows 107-108, while the rows it only lists cluster densely at 489-609.
     /// Its read covers the judged rows, not the denser listed cluster.
     #[test]
@@ -1535,7 +1515,7 @@ mod tests {
         assert!(covers(&read, 500), "{read}");
     }
 
-    /// D1: the hit lines a search page only counted are listed by the same
+    /// The hit lines a search page only counted are listed by the same
     /// matcher over that one file, every row on one match page; file
     /// selection, paging, row shaping, and the directory snapshot drop.
     #[test]
@@ -1574,10 +1554,8 @@ mod tests {
             }
         } else {
             CapturedPage::Failed {
-                error: ClassificationError::new(
-                    "classificationBudgetSpent",
+                error: ClassificationError::unjudged(
                     "This hit window was not judged: the byte budget narrowed its window to denser hits.",
-                    "Run its hints.read to classify it.",
                 ),
                 context,
             }
@@ -1596,7 +1574,7 @@ mod tests {
             .collect()
     }
 
-    /// D3/D4 (CL5 fc1.json, mod.rs): two cut windows of one merged span
+    /// Two cut windows of one merged span
     /// re-cut alike, so 102-108 was judged twice and 108-114 listed twice,
     /// and every unjudged window carried its own error and read. Each
     /// window is now judged once, an unjudged window a judged page reads
@@ -1898,12 +1876,12 @@ mod tests {
         assert_eq!(window_center(&read(clamped)), Some((20, 60)));
         // A merged span is judged through its parts, never re-centered.
         assert_eq!(window_center(&read((1, 300))), None);
-        let cut = json!({"results":[{"data":{"pagination":{"length":3000,"totalBytes":12000}}}]});
+        let cut = json!({"results":[{"data":{"pagination":{"unit":"bytes","length":3000,"total":12000}}}]});
         assert_eq!(fitted_radius(60, &cut), 15);
         assert_eq!(fitted_radius(1, &cut), 0);
     }
 
-    /// N1: a cut window holding two far hits re-clusters its own hits at the
+    /// A cut window holding two far hits re-clusters its own hits at the
     /// fitted radius: every sub-window holds a hit (never the empty midpoint
     /// between them), the densest is read first, and together they cover
     /// every hit, so the rest stay reachable as reads.
@@ -1913,7 +1891,7 @@ mod tests {
             panic!("one cluster");
         };
         assert_eq!(window, (396, 516));
-        let cut = json!({"results":[{"data":{"pagination":{"length":600,"totalBytes":12000}}}]});
+        let cut = json!({"results":[{"data":{"pagination":{"unit":"bytes","length":600,"total":12000}}}]});
         let radius = fitted_radius(60, &cut);
         assert_eq!(radius, 3);
         let windows = recut_window(&[429, 483], window, radius);
@@ -2085,12 +2063,12 @@ mod tests {
 
     #[test]
     fn followed_page_receipt_drops_its_continuation_but_keeps_other_limits() {
-        let mut context = json!({"coverage":"partial","next":{"continue":{}},"limitations":[
+        let mut context = json!({"coverage":"partial","next":{"continueWindow":{}},"limitations":[
             crate::tools::clasify::context::PAGE_ONLY_LIMITATION
         ]});
         mark_followed(&mut context);
         assert_eq!(context, json!({"coverage":"partial"}));
-        let mut terminal = json!({"next":{"continue":{}},"limitations":["terminal limit"]});
+        let mut terminal = json!({"next":{"continueWindow":{}},"limitations":["terminal limit"]});
         mark_followed(&mut terminal);
         assert_eq!(terminal, json!({"limitations":["terminal limit"]}));
     }

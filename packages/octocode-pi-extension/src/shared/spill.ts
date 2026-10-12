@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, truncateTail } from '@earendil-works/pi-coding-agent';
 import { PRIVATE_FILE_MODE, sessionOutputDir } from './home.js';
 import { shortPath } from './format.js';
-import { capOutput, utf8Head } from './util.js';
+import { capOutput, cutText } from './util.js';
 
 /** Bytes and lines kept back from the budget for the omission and pointer notes. */
 const NOTE_BYTES = 512;
@@ -52,7 +52,7 @@ export function capOutputToFile(text: string, options: { label: string; maxBytes
   const gap = omitted > 0 ? `[… ${omitted} line${omitted === 1 ? '' : 's'} omitted …]` : `[… ${formatSize(Math.max(whole.totalBytes - shownBytes, 0))} omitted …]`;
   return (
     `${head.text}\n\n${gap}\n\n${tail.text}\n\n` +
-    `[Output truncated: showing ${shownLines} of ${whole.totalLines} lines (${formatSize(shownBytes)} of ${formatSize(whole.totalBytes)}). Full output: ${shortPath(file)}; search it or read it by line range.]`
+    `[Output trimmed: showing ${shownLines} of ${whole.totalLines} lines (${formatSize(shownBytes)} of ${formatSize(whole.totalBytes)}). Full output: ${shortPath(file)}; search it or read it by line range.]`
   );
 }
 
@@ -60,14 +60,42 @@ export function capOutputToFile(text: string, options: { label: string; maxBytes
 function headPreview(text: string, maxBytes: number, maxLines: number): { text: string; lines: number } {
   const cut = truncateHead(text, { maxBytes, maxLines });
   if (cut.content !== '') return { text: cut.content, lines: cut.outputLines };
-  return { text: utf8Head(text, maxBytes), lines: 1 };
+  return { text: cutText(text, maxBytes), lines: 1 };
 }
 
 /** Trailing lines within the budget; the end of the last line when it alone is over the byte budget. */
 function tailPreview(text: string, maxBytes: number, maxLines: number): { text: string; lines: number } {
   const cut = truncateTail(text, { maxBytes, maxLines });
   if (cut.content !== '') return { text: cut.content, lines: cut.outputLines };
-  const buffer = Buffer.from(text, 'utf8');
-  const tail = buffer.subarray(Math.max(buffer.length - maxBytes, 0)).toString('utf8').replace(/^\uFFFD+/, '');
-  return { text: tail, lines: 1 };
+  return { text: cutText(text, maxBytes, { tail: true }), lines: 1 };
+}
+
+/**
+ * The most base64 characters of one image a tool puts in the model's context. A screenshot of ~450 KB costs few tokens
+ * but many request bytes, and a gateway in front of the provider rejects a request of a few MB (HTTP 413).
+ */
+export const IMAGE_MAX_CHARS = 600_000;
+
+const IMAGE_EXTENSIONS: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+/**
+ * Writes a base64 image to `<session folder>/output/<label>-<timestamp>-<n>.<ext>` (owner-only) and returns the
+ * absolute path, or undefined when it could not be written. The session sweep removes old files. Never throws.
+ */
+export function saveImageFile(base64: string, mimeType: string, label: string): string | undefined {
+  try {
+    const file = path.join(sessionOutputDir('output'), `${spillLabel(label)}-${Date.now()}-${++written}.${IMAGE_EXTENSIONS[mimeType] ?? 'img'}`);
+    fs.writeFileSync(file, Buffer.from(base64, 'base64'), { flag: 'wx', mode: PRIVATE_FILE_MODE });
+    return file;
+  } catch {
+    return undefined;
+  }
+}
+
+/** An image part within `IMAGE_MAX_CHARS` unchanged; a larger one saved whole and replaced by a text note naming the file. */
+export function boundImagePart<T extends { type: 'image'; data: string; mimeType: string }>(part: T, label: string): T | { type: 'text'; text: string } {
+  if (part.data.length <= IMAGE_MAX_CHARS) return part;
+  const file = saveImageFile(part.data, part.mimeType, label);
+  const size = formatSize(Math.floor((part.data.length * 3) / 4));
+  return { type: 'text', text: `[${part.mimeType} image of ${size} left out: too large for the context. ${file ? `Saved to ${file}.` : 'It could not be saved.'}]` };
 }

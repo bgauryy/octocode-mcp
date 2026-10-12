@@ -55,11 +55,81 @@ impl<'a> NodePositions<'a> {
         }
     }
 
+    /// A declaration's range, ending at its last character: a node that
+    /// owns its line terminator (C `#define`, every `preproc_*`) would
+    /// otherwise end at column 0 of the next line, which a line-based
+    /// reader takes as the next declaration's line.
+    fn declaration_range(&self, node: Node<'_>) -> GraphRange {
+        let start = node.start_byte();
+        let trimmed = self.content.as_bytes()[start..node.end_byte()]
+            .iter()
+            .rposition(|byte| !matches!(byte, b'\n' | b'\r'))
+            .map_or(start, |last| start + last + 1);
+        GraphRange {
+            start: self.position(start),
+            end: self.position(trimmed),
+        }
+    }
+
     fn position(&self, byte_offset: usize) -> GraphPosition {
         let (line, character) = self
             .index
             .byte_to_position(self.content, byte_offset as u32);
         GraphPosition { line, character }
+    }
+}
+
+/// What a graph-facts diagnostic says. The facts carry the message text;
+/// consumers classify it here, next to the text it is built from, and
+/// branch on the kind instead of matching English.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GraphFactNoteKind {
+    /// The static caveat on every tree-sitter file: facts are syntax-only.
+    SyntaxOnly,
+    /// The parse recovered from syntax errors; facts may be partial.
+    RecoveredParse,
+    /// Rust macro-generated imports are not linked.
+    RustMacroExpansion,
+    /// A Rust module carries conditional or custom attributes.
+    RustModuleAttributes,
+    /// The crate root carries inner conditional or custom attributes.
+    RustCrateAttributes,
+}
+
+const SYNTAX_ONLY_NOTE: &str =
+    "tree-sitter graph facts are syntax-only; use LSP references/callHierarchy for semantic proof";
+const RECOVERED_PARSE_NOTE: &str =
+    "tree-sitter recovered from parse errors; graph facts may be partial";
+const RUST_MACRO_EXPANSION_NOTE: &str =
+    "unsupported Rust macro expansion: macro-generated imports are not linked";
+/// Followed by ` at line <n>`.
+const RUST_MODULE_ATTRIBUTES_NOTE: &str =
+    "unsupported Rust conditional or custom module attributes";
+const RUST_CRATE_ATTRIBUTES_NOTE: &str =
+    "unsupported Rust inner conditional or custom crate attributes";
+
+impl GraphFactNoteKind {
+    /// The kind of a diagnostic this module emitted; `None` for any other
+    /// (deadline and scan diagnostics carry their own codes).
+    pub fn of(message: &str) -> Option<Self> {
+        [
+            (Self::SyntaxOnly, SYNTAX_ONLY_NOTE),
+            (Self::RecoveredParse, RECOVERED_PARSE_NOTE),
+            (Self::RustMacroExpansion, RUST_MACRO_EXPANSION_NOTE),
+            (Self::RustModuleAttributes, RUST_MODULE_ATTRIBUTES_NOTE),
+            (Self::RustCrateAttributes, RUST_CRATE_ATTRIBUTES_NOTE),
+        ]
+        .into_iter()
+        .find_map(|(kind, text)| message.starts_with(text).then_some(kind))
+    }
+
+    /// A caveat about import or module linking, which a declaration
+    /// listing never does.
+    pub fn is_linking_only(self) -> bool {
+        matches!(
+            self,
+            Self::RustMacroExpansion | Self::RustModuleAttributes | Self::RustCrateAttributes
+        )
     }
 }
 
@@ -119,9 +189,7 @@ impl GraphAccumulator {
             private_use_imports: Vec::new(),
             name_tokens: None,
             declarations_only: false,
-            diagnostics: vec![
-                "tree-sitter graph facts are syntax-only; use LSP references/callHierarchy for semantic proof".to_owned(),
-            ],
+            diagnostics: vec![SYNTAX_ONLY_NOTE.to_owned()],
         }
     }
 }
@@ -283,13 +351,10 @@ fn extract_facts_before(
         let line_index = NodePositions::new(content);
         rust_root_unsupported = (ext == "rs").then(|| rust_inner_unsupported(root, content));
         if rust_root_unsupported == Some(true) {
-            acc.diagnostics
-                .push("unsupported Rust inner conditional or custom crate attributes".to_owned());
+            acc.diagnostics.push(RUST_CRATE_ATTRIBUTES_NOTE.to_owned());
         }
         if root.has_error() {
-            acc.diagnostics.push(
-                "tree-sitter recovered from parse errors; graph facts may be partial".to_owned(),
-            );
+            acc.diagnostics.push(RECOVERED_PARSE_NOTE.to_owned());
             error_lines = syntax_error_lines(root);
         }
         acc.name_tokens = (!declarations_only).then(Vec::new);
@@ -555,7 +620,7 @@ fn is_item_level(node: Node<'_>) -> bool {
 type MacroBody = (tree_sitter::Range, Vec<String>, Option<(String, String)>);
 
 fn push_macro_gap(acc: &mut GraphAccumulator) {
-    let message = "unsupported Rust macro expansion: macro-generated imports are not linked";
+    let message = RUST_MACRO_EXPANSION_NOTE;
     if !acc
         .diagnostics
         .iter()
@@ -861,7 +926,7 @@ fn collect_node_facts(
             .and_then(compact_identifier)
             .filter(|name| !is_recovered_keyword_declaration(node, name, &acc.file_path))
             .map(|name| {
-                let range = line_index.range(node);
+                let range = line_index.declaration_range(node);
                 let line = range.start.line + 1;
                 // This identifies a declaration occurrence, not a canonical binding.
                 // Location distinguishes overloads, impl blocks and equal names in scopes.
@@ -974,9 +1039,8 @@ fn collect_node_facts(
             let scope = rust.module_scope.to_vec();
             let inline = node.child_by_field_name("body").is_some();
             if unsupported {
-                acc.diagnostics.push(format!(
-                    "unsupported Rust conditional or custom module attributes at line {line}"
-                ));
+                acc.diagnostics
+                    .push(format!("{RUST_MODULE_ATTRIBUTES_NOTE} at line {line}"));
             }
             acc.modules.push(GraphFactRustModule {
                 name: name.clone(),

@@ -2,7 +2,7 @@
 //! lead source only: any failure leaves the lookup without a release ref.
 use super::ArtifactType;
 use super::http::RegistryClient;
-use super::util::{commit_sha, encode_component, parse_url, string};
+use super::util::{commit_sha, encode_component, github_repo_dir, github_slug, parse_url, string};
 use serde_json::Value;
 use std::io::Read;
 
@@ -112,75 +112,6 @@ fn archive_entry(archive: &[u8], wanted: &str) -> Option<Vec<u8>> {
     }
 }
 
-/// Largest sdist read to find where a release declares its dependencies.
-const MAX_SDIST_BYTES: u64 = 8 * 1024 * 1024;
-
-/// Where a PyPI release declares its dependencies, read from its sdist:
-/// `setup.py` when the sdist's `pyproject.toml` declares no
-/// `[project] dependencies` (absent, or only tool settings) and a
-/// `setup.py` ships; `pyproject.toml` when it declares them. `None` (the
-/// caller's default) without a readable `.tar.gz` sdist.
-pub(crate) async fn pypi_sdist_manifest(
-    name: &str,
-    version: &str,
-    files: &[Value],
-    client: &RegistryClient<'_>,
-) -> Option<&'static str> {
-    let resource = format!("pypi:{name}@{version}:manifest");
-    if let Some(fact) = client.fact(&resource) {
-        return manifest_name(fact.as_str()?);
-    }
-    let sdist = files.iter().find(|file| {
-        file.get("packagetype").and_then(Value::as_str) == Some("sdist")
-            && file
-                .get("size")
-                .and_then(Value::as_u64)
-                .is_some_and(|size| size <= MAX_SDIST_BYTES)
-    })?;
-    let url = sdist.get("url").and_then(Value::as_str)?;
-    let root = url.rsplit('/').next()?.strip_suffix(".tar.gz")?.to_owned();
-    let archive = client
-        .bytes(ArtifactType::Pypi, parse_url(url).ok()?)
-        .await
-        .ok()
-        .flatten()?;
-    let pyproject = archive_entry(&archive, &format!("{root}/pyproject.toml"));
-    let declared = pyproject
-        .as_deref()
-        .is_some_and(|text| declares_project_dependencies(&String::from_utf8_lossy(text)));
-    let manifest = if !declared && archive_entry(&archive, &format!("{root}/setup.py")).is_some() {
-        "setup.py"
-    } else {
-        "pyproject.toml"
-    };
-    client.remember_fact(&resource, &Value::from(manifest));
-    manifest_name(manifest)
-}
-
-fn manifest_name(name: &str) -> Option<&'static str> {
-    ["setup.py", "pyproject.toml"]
-        .into_iter()
-        .find(|known| *known == name)
-}
-
-/// A `pyproject.toml` whose `[project]` table lists `dependencies` (not
-/// as `dynamic`, which defers them to the build backend's setup.py).
-fn declares_project_dependencies(pyproject: &str) -> bool {
-    let mut in_project = false;
-    for line in pyproject.lines().map(str::trim) {
-        if line.starts_with('[') {
-            in_project = line == "[project]";
-        } else if in_project
-            && line
-                .strip_prefix("dependencies")
-                .is_some_and(|rest| rest.trim_start().starts_with('='))
-        {
-            return true;
-        }
-    }
-    false
-}
-
 /// A pending release-tag check.
 pub type TagFuture<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = Option<bool>> + 'a>>;
 
@@ -194,21 +125,83 @@ pub trait ReleaseTags: Send + Sync {
 }
 
 /// The release tag of `version` in a GitHub repository, when one exists
-/// upstream: `v<version>`, then `<version>`. Without a GitHub check, or
+/// upstream: `v<version>`, `<version>`, then the shapes a monorepo uses for
+/// one package's releases ([`tag_candidates`]). Without a GitHub check, or
 /// when the check fails (rate limit, missing repository), there is no tag.
 pub(crate) async fn github_release_tag(
     repository: &str,
+    package: &str,
     version: &str,
     client: &RegistryClient<'_>,
 ) -> Option<String> {
     let tags = client.tags?;
     let (owner, repo) = github_slug(repository)?;
-    for tag in [format!("v{version}"), version.to_owned()] {
+    let directory = github_repo_dir(repository);
+    for tag in tag_candidates(&repo, package, directory.as_deref(), version) {
         if tags.exists(&owner, &repo, &tag).await? {
             return Some(tag);
         }
     }
     None
+}
+
+/// Tags a package's release may carry, most common first: `v<version>` and
+/// `<version>`, then `<stem>-v<version>` and `<stem>@<version>` for each name
+/// the package goes by inside its repository: the package name (scoped or
+/// not), its directory, and either without the repository name's prefix
+/// (`pydantic_core` in `pydantic` is tagged `core-v2.50.1`). A package that
+/// is its repository, with no directory of its own, is tagged without a stem.
+fn tag_candidates(
+    repo: &str,
+    package: &str,
+    directory: Option<&str>,
+    version: &str,
+) -> Vec<String> {
+    let mut tags = vec![format!("v{version}"), version.to_owned()];
+    for stem in tag_stems(repo, package, directory) {
+        for tag in [format!("{stem}-v{version}"), format!("{stem}@{version}")] {
+            if !tags.contains(&tag) {
+                tags.push(tag);
+            }
+        }
+    }
+    tags
+}
+
+fn tag_stems(repo: &str, package: &str, directory: Option<&str>) -> Vec<String> {
+    let key = |name: &str| name.to_ascii_lowercase().replace('_', "-");
+    let repo_key = key(repo);
+    let unscoped = package.rsplit('/').next().unwrap_or(package);
+    let directory = directory
+        .and_then(|directory| directory.rsplit('/').next())
+        .filter(|leaf| !leaf.is_empty());
+    if directory.is_none() && key(unscoped) == repo_key {
+        return Vec::new();
+    }
+    let without_repo = |name: &str| {
+        key(name)
+            .strip_prefix(&repo_key)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .filter(|rest| !rest.is_empty())
+            .map(str::to_owned)
+    };
+    let mut stems: Vec<String> = Vec::new();
+    for stem in [
+        Some(package.to_owned()),
+        Some(unscoped.to_owned()),
+        directory.map(str::to_owned),
+        Some(key(unscoped)),
+        without_repo(unscoped),
+        directory.and_then(without_repo),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if !stem.is_empty() && !stems.contains(&stem) {
+            stems.push(stem);
+        }
+    }
+    stems
 }
 
 /// Whether GitHub says `repository` has no commit `reference`: `false` when
@@ -223,19 +216,6 @@ pub(crate) async fn github_ref_missing(
         return false;
     };
     tags.exists(&owner, &repo, reference).await == Some(false)
-}
-
-/// `owner/repo` of a `https://github.com/<owner>/<repo>…` URL.
-fn github_slug(repository: &str) -> Option<(String, String)> {
-    let url = url::Url::parse(repository).ok()?;
-    let host = url.host_str()?.to_ascii_lowercase();
-    if host != "github.com" && host != "www.github.com" {
-        return None;
-    }
-    let mut segments = url.path_segments()?.filter(|part| !part.is_empty());
-    let owner = segments.next()?;
-    let repo = segments.next()?.trim_end_matches(".git");
-    (!repo.is_empty()).then(|| (owner.to_owned(), repo.to_owned()))
 }
 
 #[cfg(test)]
@@ -268,6 +248,34 @@ pub(crate) fn test_archive(entries: &[(&str, &[u8], u8)]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_monorepo_package_is_tagged_by_the_names_it_goes_by() {
+        // pydantic-core is released from pydantic/pydantic as `core-v<version>`.
+        let tags = tag_candidates("pydantic", "pydantic_core", Some("pydantic-core"), "2.50.1");
+        assert_eq!(&tags[..2], ["v2.50.1", "2.50.1"]);
+        assert!(tags.contains(&"core-v2.50.1".to_owned()), "{tags:?}");
+        assert!(
+            tags.contains(&"pydantic-core-v2.50.1".to_owned()),
+            "{tags:?}"
+        );
+        // A scoped package keeps its scope in the `@` form changesets writes.
+        let tags = tag_candidates("changesets", "@changesets/cli", None, "2.29.0");
+        assert!(
+            tags.contains(&"@changesets/cli@2.29.0".to_owned()),
+            "{tags:?}"
+        );
+        assert!(tags.contains(&"cli@2.29.0".to_owned()), "{tags:?}");
+        // A package that is its repository takes only the plain tags.
+        assert_eq!(
+            tag_candidates("requests", "requests", None, "2.32.3"),
+            ["v2.32.3", "2.32.3"]
+        );
+        assert_eq!(
+            tag_candidates("serde_json", "serde-json", None, "1.0.1"),
+            ["v1.0.1", "1.0.1"]
+        );
+    }
 
     #[test]
     fn reads_the_vcs_info_entry_wherever_it_sits() {
@@ -355,74 +363,5 @@ mod tests {
         assert_eq!(crate_vcs(&name, "1.0.0", &client).await, expected);
         assert_eq!(crate_vcs(&name, "1.0.0", &client).await, expected);
         assert_eq!(http.downloads.load(std::sync::atomic::Ordering::Relaxed), 1);
-    }
-
-    /// AR4: a setuptools sdist (tool-only pyproject.toml, setup.py ships)
-    /// declares its dependencies in setup.py; a `[project] dependencies`
-    /// pyproject.toml keeps pyproject.toml; a dynamic list defers to setup.py.
-    #[tokio::test]
-    async fn the_sdist_names_the_file_that_declares_dependencies() {
-        let budget = super::super::types::test_budget();
-        let files = |name: &str| {
-            vec![
-                serde_json::json!({"packagetype":"bdist_wheel","size":10,"url":"https://files/x.whl"}),
-                serde_json::json!({"packagetype":"sdist","size":100,
-                    "url":format!("https://files.pythonhosted.org/p/{name}-1.0.tar.gz")}),
-            ]
-        };
-        for (pyproject, expected) in [
-            (&b"[tool.black]\nline-length = 88\n"[..], "setup.py"),
-            (
-                &b"[project]\nname = \"x\"\ndependencies = [\"a>=1\"]\n"[..],
-                "pyproject.toml",
-            ),
-            (
-                &b"[project]\nname = \"x\"\ndynamic = [\"dependencies\"]\n"[..],
-                "setup.py",
-            ),
-        ] {
-            let name = format!("sdist-{}", std::process::id());
-            let root = format!("{name}-1.0");
-            let http = ArchiveOnce {
-                archive: test_archive(&[
-                    (format!("{root}/pyproject.toml").as_str(), pyproject, b'0'),
-                    (format!("{root}/setup.py").as_str(), b"setup()", b'0'),
-                ]),
-                downloads: std::sync::atomic::AtomicUsize::new(0),
-            };
-            let client = RegistryClient::uncached(&http, &budget);
-            assert_eq!(
-                pypi_sdist_manifest(&name, "1.0", &files(&name), &client).await,
-                Some(expected)
-            );
-        }
-        // No sdist: the caller's default.
-        let http = ArchiveOnce {
-            archive: Vec::new(),
-            downloads: std::sync::atomic::AtomicUsize::new(0),
-        };
-        let client = RegistryClient::uncached(&http, &budget);
-        let wheel_only = [
-            serde_json::json!({"packagetype":"bdist_wheel","size":10,"url":"https://files/x.whl"}),
-        ];
-        assert_eq!(
-            pypi_sdist_manifest("x", "1.0", &wheel_only, &client).await,
-            None
-        );
-        assert_eq!(http.downloads.load(std::sync::atomic::Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn github_slugs_come_only_from_github_urls() {
-        assert_eq!(
-            github_slug("https://github.com/psf/requests"),
-            Some(("psf".into(), "requests".into()))
-        );
-        assert_eq!(
-            github_slug("https://github.com/o/r.git/tree/main"),
-            Some(("o".into(), "r".into()))
-        );
-        assert_eq!(github_slug("https://gitlab.com/o/r"), None);
-        assert_eq!(github_slug("https://github.com/o"), None);
     }
 }

@@ -1,5 +1,6 @@
 //! Pieces every GitHub tool shares: the failure a tool states, search paging,
 //! and the missing-path recovery of ghStructure and ghGetFileContent.
+pub(crate) mod commit;
 pub(crate) mod query;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -18,9 +19,19 @@ use serde_json::{Value, json};
 /// chars); keep every GitHub recovery hint within it.
 pub(crate) const GITHUB_AUTH_RECOVERY_HINT: &str = "Run octocode auth login or set GH_TOKEN/GITHUB_TOKEN; an invalid env token overrides stored login.";
 
+/// A SAML-protected organization refused the token: the row's `ssoUrl` is
+/// where it is authorized.
+pub(crate) const SSO_AUTHORIZATION_HINT: &str =
+    "Authorize this token for the organization (SAML SSO) at the row's ssoUrl, then retry.";
+
+/// A search qualifier named a login GitHub cannot resolve.
+pub(crate) const USER_QUALIFIER_HINT: &str = "A login in author, committer, assignee, mentions, commenter, reviewed-by or review-requested does not resolve: fix its spelling or drop the qualifier. ghSearchRepo with owner set to the login confirms it exists.";
+
 /// A repository that did not resolve: GitHub answers a private repository
-/// the token cannot see exactly like a missing one.
-pub(crate) const REPOSITORY_ACCESS_HINT: &str = "The repository is missing, private, or hidden from this token; check owner/repo spelling and token access.";
+/// the token cannot see exactly like a missing one (the error says so); the
+/// hint is the action.
+pub(crate) const REPOSITORY_ACCESS_HINT: &str =
+    "Check the owner/repo spelling and this token's access.";
 
 /// A GitHub provider failure as the tool states it: its message, hints and
 /// recovery `next`; the runtime adds the provider's status and rate-limit
@@ -62,9 +73,29 @@ pub(crate) fn repository_not_found(error: &ProviderError) -> bool {
 /// timeout, else the provider's own message.
 pub(crate) fn provider_message(error: &ProviderError) -> String {
     match error.kind {
+        // GitHub's own words (`Bad credentials`) say what is wrong with the token.
+        ProviderErrorKind::Authentication if error.status == Some(401) => {
+            let detail = error.message.trim();
+            if detail.is_empty() {
+                "GitHub authentication required".to_owned()
+            } else {
+                format!("GitHub authentication required: {detail}")
+            }
+        }
         ProviderErrorKind::Authentication => "GitHub authentication required".to_owned(),
         ProviderErrorKind::NotFound if repository_not_found(error) => {
             "Repository not found, or private and not accessible to this token".to_owned()
+        }
+        ProviderErrorKind::NotFound if error.reason == Some(ProviderErrorReason::UserNotFound) => {
+            // GitHub's own words say which logins failed to resolve.
+            format!(
+                "A user named in the search qualifiers does not exist or is not visible to this token. GitHub: {}",
+                error
+                    .message
+                    .trim()
+                    .strip_prefix("Validation Failed: ")
+                    .unwrap_or(error.message.trim())
+            )
         }
         ProviderErrorKind::NotFound => "Repository, resource, or path not found".to_owned(),
         ProviderErrorKind::Server if matches!(error.status, Some(502..=504)) => {
@@ -92,10 +123,14 @@ pub(crate) fn validation_message(error: &ProviderError, summary: &str) -> String
 /// depend on the tool: authenticate, or check the repository's access.
 /// Other failures take the runtime's one hint per error kind.
 pub(crate) fn provider_hint(error: &ProviderError) -> Option<&'static str> {
-    if error.kind == ProviderErrorKind::Authentication {
+    if error.sso_url.is_some() {
+        Some(SSO_AUTHORIZATION_HINT)
+    } else if error.kind == ProviderErrorKind::Authentication {
         Some(GITHUB_AUTH_RECOVERY_HINT)
     } else if repository_not_found(error) {
         Some(REPOSITORY_ACCESS_HINT)
+    } else if error.reason == Some(ProviderErrorReason::UserNotFound) {
+        Some(USER_QUALIFIER_HINT)
     } else {
         None
     }
@@ -104,7 +139,7 @@ pub(crate) fn provider_hint(error: &ProviderError) -> Option<&'static str> {
 /// The failure of a search tool (ghSearchRepo, ghSearchCode, ghStructure).
 /// `window_hint` names the tool's own filters that reach results past the
 /// 1,000-result search window.
-pub(crate) fn search_failure(error: ProviderError, window_hint: &str) -> GhFailure {
+pub(crate) fn search_failure(error: ProviderError, window_hint: Option<&str>) -> GhFailure {
     let message = match error.kind {
         // A typed missing ref names the ref it could not resolve.
         ProviderErrorKind::NotFound if error.reason == Some(ProviderErrorReason::RefNotFound) => {
@@ -117,10 +152,8 @@ pub(crate) fn search_failure(error: ProviderError, window_hint: &str) -> GhFailu
     };
     let hint = if let Some(hint) = provider_hint(&error) {
         Some(hint)
-    } else if error.reason == Some(ProviderErrorReason::RefNotFound) {
-        Some("Verify the branch, tag, or SHA exists, or omit ref to use the default branch.")
     } else if error.reason == Some(ProviderErrorReason::SearchWindowExceeded) {
-        Some(window_hint)
+        window_hint
     } else {
         None
     };
@@ -130,10 +163,6 @@ pub(crate) fn search_failure(error: ProviderError, window_hint: &str) -> GhFailu
         None => failure,
     }
 }
-
-/// The hint of a ref that did not resolve; `hints.viewRefs` lists the
-/// repository's branches and tags.
-pub(crate) const REF_RECOVERY_HINT: &str = "Verify the branch, tag, or SHA (hints.viewRefs lists refs), or omit ref for the default branch.";
 
 /// A ref that did not resolve: ghStructure `operation:"refs"` lists the
 /// branches and tags it could name.
@@ -146,8 +175,8 @@ pub(crate) fn ref_recovery(owner: &str, repo: &str) -> Value {
     .build()
 }
 
-/// A missing ref's failure gets the runnable refs listing and its hint;
-/// any other failure is returned unchanged.
+/// A missing ref's failure gets the runnable refs listing (the lead is the
+/// fix: no hint beside it); any other failure is returned unchanged.
 pub(crate) fn with_ref_recovery(mut failure: GhFailure, owner: &str, repo: &str) -> GhFailure {
     if failure.error.reason != Some(ProviderErrorReason::RefNotFound) {
         return failure;
@@ -155,7 +184,7 @@ pub(crate) fn with_ref_recovery(mut failure: GhFailure, owner: &str, repo: &str)
     let mut next = failure.next.take().unwrap_or_else(|| json!({}));
     next["viewRefs"] = ref_recovery(owner, repo);
     failure.next = Some(next);
-    failure.hint(REF_RECOVERY_HINT)
+    failure
 }
 
 /// The memo of a repository's canonical `owner/repo` (volatile cache class).
@@ -252,6 +281,43 @@ pub(crate) fn reject_window(page: usize, per: usize) -> Result<(), ProviderError
     }
 }
 
+/// A search failure's one repair lead, replacing its static hint: a page
+/// past the search window leads to the last reachable page (`repair`); a
+/// repository that did not resolve leads to a search for its name
+/// (`findRepository`), which names the owner that holds it. Any other
+/// failure is returned unchanged.
+pub(crate) fn with_search_repair(
+    mut failure: GhFailure,
+    tool: ToolId,
+    query: &impl serde::Serialize,
+    per: usize,
+    repo: Option<&str>,
+) -> GhFailure {
+    let (name, lead) = if failure.error.reason == Some(ProviderErrorReason::SearchWindowExceeded) {
+        let mut last = serde_json::to_value(query).unwrap_or_default();
+        remove_null_fields(&mut last);
+        last["page"] = json!(SEARCH_RESULT_CAP.div_ceil(per.max(1)));
+        (
+            "repair",
+            Continuation::new(tool, last).confidence("exact").build(),
+        )
+    } else if let Some(repo) = repo.filter(|_| repository_not_found(&failure.error)) {
+        (
+            "findRepository",
+            Continuation::new(ToolId::GhSearchRepo, json!({"keywords": [repo]}))
+                .confidence("medium")
+                .build(),
+        )
+    } else {
+        return failure;
+    };
+    failure.hints.clear();
+    let mut next = failure.next.take().unwrap_or_else(|| json!({}));
+    next[name] = lead;
+    failure.next = Some(next);
+    failure
+}
+
 /// `next.nextPage`: the same query at the page after `page`; the contract
 /// `page` maximum is the last a search can name, so past it the page is a
 /// terminal limit.
@@ -293,14 +359,15 @@ pub(crate) fn apply_partial(
     let capped = matched > SEARCH_RESULT_CAP;
     let mut reasons = Vec::new();
     if capped {
+        // The match count is this call's fact; that search stops at 1,000
+        // is the cap reason (`providerResultCap`), not a per-call note.
         if page == 1 {
-            let warning = json!(format!(
-                "GitHub matched {matched} {subject} results; search reaches only the first {SEARCH_RESULT_CAP}: narrow the query to reach the rest."
-            ));
-            match value.get_mut("warnings").and_then(Value::as_array_mut) {
-                Some(warnings) => warnings.push(warning),
-                None => value["warnings"] = json!([warning]),
-            }
+            push_warning(
+                value,
+                format!(
+                    "GitHub matched {matched} {subject} results; the first {SEARCH_RESULT_CAP} are reachable."
+                ),
+            );
         }
         reasons.push("providerResultCap");
         // terminalLimit means no executable continuation remains: only the
@@ -314,12 +381,7 @@ pub(crate) fn apply_partial(
         let mut retry = serde_json::to_value(query).unwrap_or_default();
         remove_null_fields(&mut retry);
         retry["page"] = json!(page);
-        value["next"]["retry"] = Continuation::new(tool, retry)
-            .why(format!(
-                "Retry the same {subject} provider page because the provider reported incomplete results."
-            ))
-            .confidence("exact")
-            .build();
+        value["next"]["retry"] = Continuation::new(tool, retry).confidence("exact").build();
     }
     if !reasons.is_empty() {
         value["isPartial"] = json!(true);
@@ -344,7 +406,6 @@ pub(crate) fn missing_path(error: &ProviderError, path: Option<&str>) -> bool {
     error.kind == ProviderErrorKind::NotFound
         && !repository_not_found(error)
         && error.reason != Some(ProviderErrorReason::RefNotFound)
-        && !error.message.starts_with("No commit found")
         && path.is_some_and(|path| !path.trim_matches('/').is_empty())
 }
 
@@ -452,17 +513,39 @@ pub(crate) async fn locate_path<C: ConditionalCache>(
 
 /// The parent directory of a repository path, `.` at the root.
 pub(crate) fn parent_dir(path: &str) -> String {
-    std::path::Path::new(path.trim_matches('/'))
+    let normal = repo_path(path);
+    std::path::Path::new(&normal)
         .parent()
         .map(|path| path.to_string_lossy().into_owned())
         .filter(|path| !path.is_empty())
         .unwrap_or_else(|| ".".into())
 }
 
+/// A repository path with its `.` and `..` segments resolved lexically and
+/// clamped at the repository root (a tree has nothing above it); `.` for
+/// the root. A recovery lead never repeats a traversal the caller sent.
+pub(crate) fn repo_path(path: &str) -> String {
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in path.split('/') {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            segment => segments.push(segment),
+        }
+    }
+    if segments.is_empty() {
+        ".".into()
+    } else {
+        segments.join("/")
+    }
+}
+
 /// A ghStructure listing of `path` at the caller's ref (and depth, when the
 /// caller set one): a fresh query from page 1, not a page of the failed call.
 pub(crate) fn tree_recovery(at: &RepoPath<'_>, max_depth: Option<i64>, confidence: &str) -> Value {
-    let mut tree_query = json!({"owner": at.owner, "repo": at.repo, "path": at.path});
+    let mut tree_query = json!({"owner": at.owner, "repo": at.repo, "path": repo_path(at.path)});
     if let Some(reference) = at.reference {
         tree_query["ref"] = json!(reference);
     }
@@ -472,4 +555,90 @@ pub(crate) fn tree_recovery(at: &RepoPath<'_>, max_depth: Option<i64>, confidenc
     Continuation::new(ToolId::GhStructure, tree_query)
         .confidence(confidence)
         .build()
+}
+
+/// `fields` row pick (gh `--json a,b`): the row's `id` keys, then the
+/// picked keys in request order, so a picked row stays readable (its
+/// number, sha, owner+repo or path). No pick, or a row that is not an
+/// object, passes through whole; a key the row lacks stays absent.
+pub(crate) fn pick_fields(row: Value, id: &[&str], fields: &[String]) -> Value {
+    let Value::Object(map) = row else {
+        return row;
+    };
+    if fields.is_empty() {
+        return Value::Object(map);
+    }
+    let mut picked = serde_json::Map::new();
+    for key in id.iter().copied().chain(fields.iter().map(String::as_str)) {
+        if !picked.contains_key(key)
+            && let Some(value) = map.get(key)
+        {
+            picked.insert(key.to_owned(), value.clone());
+        }
+    }
+    Value::Object(picked)
+}
+
+/// A generated `fields` list as plain key names.
+pub(crate) fn field_names<T: ToString>(fields: &[T]) -> Vec<String> {
+    fields.iter().map(ToString::to_string).collect()
+}
+
+/// Makes the row's `next` an object (an empty one when absent), so leads
+/// can be added by name.
+pub(crate) fn ensure_next(value: &mut Value) {
+    if !value.get("next").is_some_and(Value::is_object) {
+        value["next"] = json!({});
+    }
+}
+
+/// Appends one per-call warning to a row's `warnings`.
+pub(crate) fn push_warning(value: &mut Value, warning: String) {
+    match value.get_mut("warnings").and_then(Value::as_array_mut) {
+        Some(warnings) => warnings.push(json!(warning)),
+        None => value["warnings"] = json!([warning]),
+    }
+}
+
+/// Puts one per-call warning first in a row's `warnings` (a rename the
+/// rest of the row's warnings follow from).
+pub(crate) fn push_warning_front(value: &mut Value, warning: String) {
+    match value.get_mut("warnings").and_then(Value::as_array_mut) {
+        Some(warnings) => warnings.insert(0, json!(warning)),
+        None => value["warnings"] = json!([warning]),
+    }
+}
+
+/// The one `fields` path of the search tools: picks `value[rows]` (each row
+/// keeps its `id` keys) and names picked keys no row carries.
+pub(crate) fn pick_rows(value: &mut Value, rows: &str, id: &[&str], fields: &[String]) {
+    if fields.is_empty() {
+        return;
+    }
+    if let Some(listed) = value.get_mut(rows).and_then(Value::as_array_mut) {
+        for row in listed.iter_mut() {
+            *row = pick_fields(std::mem::take(row), id, fields);
+        }
+    }
+    warn_absent_fields(value, rows, fields);
+}
+
+/// Names the picked `fields` no row of `value[rows]` carries: a typo, or a
+/// value these rows lack. The call still answers; the caller is told
+/// instead of reading the missing key as an empty value.
+fn warn_absent_fields(value: &mut Value, rows: &str, fields: &[String]) {
+    let Some(listed) = value.get(rows).and_then(Value::as_array) else {
+        return;
+    };
+    if listed.is_empty() {
+        return;
+    }
+    let absent = fields
+        .iter()
+        .map(String::as_str)
+        .filter(|key| !listed.iter().any(|row| row.get(*key).is_some()))
+        .collect::<Vec<_>>();
+    if !absent.is_empty() {
+        push_warning(value, format!("No row has {}.", absent.join(", ")));
+    }
 }

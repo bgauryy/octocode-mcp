@@ -178,7 +178,18 @@ pub(super) fn visit_named_expanding_macros(
     deadline: Instant,
     f: &mut CandidateVisitor<'_>,
 ) -> Result<(), ExecutionError> {
-    walk_expanding(root, &[], None, 0, content, language, macros, deadline, f)
+    walk_expanding(
+        root,
+        &[],
+        None,
+        &[],
+        0,
+        content,
+        language,
+        macros,
+        deadline,
+        f,
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -186,6 +197,7 @@ fn walk_expanding<'tree>(
     root: Node<'tree>,
     prefix: &[Node<'tree>],
     body: Option<&tree_sitter::Range>,
+    strings: &[std::ops::Range<usize>],
     depth: usize,
     content: &str,
     language: &Language,
@@ -200,7 +212,7 @@ fn walk_expanding<'tree>(
         let current = cursor.node();
         let candidate = match body {
             None => true,
-            Some(body) => current.id() != root.id() && is_body_candidate(current, body),
+            Some(body) => current.id() != root.id() && is_body_candidate(current, body, strings),
         };
         if current.is_named() && candidate {
             f(current, &ancestors, root)?;
@@ -214,10 +226,12 @@ fn walk_expanding<'tree>(
             if let Some(tree) = parse_body(content, language, range, deadline)? {
                 let mut chain: Vec<Node<'_>> = ancestors.clone();
                 chain.push(current);
+                let body_strings = crate::structural::macro_bodies::string_literals(current);
                 walk_expanding(
                     tree.root_node(),
                     &chain,
                     Some(&range),
+                    &body_strings,
                     depth + 1,
                     content,
                     language,

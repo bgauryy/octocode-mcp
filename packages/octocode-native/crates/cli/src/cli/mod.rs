@@ -51,9 +51,11 @@ Exit codes:
   3    not found
   4    auth required
   5    execution error
-  6    partial result: the response carries a re-runnable next.* continuation
   7    rate limited
-  130  interrupted (Ctrl-C)"#;
+  130  interrupted (Ctrl-C)
+
+A result with more to read (a next page, a partial read) is still 0: follow the
+next.* continuation or pagination.hasMore in the output."#;
 
 /// The one error envelope, shared with contract input errors
 /// (`contracts::validate`) so callers parse a single shape.
@@ -61,7 +63,7 @@ fn emit_error(msg: &str, json_out: bool) {
     if json_out {
         println!(
             "{}",
-            octocode_native::contracts::tool_error(None, msg, None)
+            octocode_native::contracts::tool_error(msg, Vec::new())
         );
     } else {
         eprintln!("{msg}");
@@ -70,9 +72,9 @@ fn emit_error(msg: &str, json_out: bool) {
 
 /// A tool call's unusable query (missing or malformed JSON) in the command's
 /// output mode: the `invalidInput` envelope on stdout, or text on stderr.
-fn emit_tool_error(tool: &str, msg: &str, json_out: bool) {
+fn emit_tool_error(msg: &str, json_out: bool) {
     if json_out {
-        let mut envelope = octocode_native::contracts::tool_error(Some(tool), msg, None);
+        let mut envelope = octocode_native::contracts::tool_error(msg, Vec::new());
         envelope["errorCode"] = json!("invalidInput");
         println!("{envelope}");
     } else {
@@ -152,7 +154,8 @@ where
                 .map(|line| line.trim_start_matches("error: "))
                 .collect::<Vec<_>>()
                 .join("; ");
-            emit_error(&message, true);
+            // A rejected command line is the caller's input, like a bad query.
+            emit_tool_error(&message, true);
             Err(2)
         }
     }
@@ -192,164 +195,6 @@ fn with_tool_help(mut command: clap::Command) -> clap::Command {
         }
     }
     command
-}
-
-/// Fields the contract adds to every query of `tool` (the trimmed
-/// `goal`/`reasoning` pair and the defaulted `debug` flag); listing them per
-/// mode is noise.
-fn meta_fields(tool: &Value) -> Vec<&str> {
-    let rules = tool["rules"].as_array().into_iter().flatten();
-    rules
-        .flat_map(|rule| match rule["id"].as_str() {
-            Some("prepare.reasoning-trim") => rule["args"]["fields"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .collect(),
-            Some("prepare.debug") => rule["args"]["field"].as_str().into_iter().collect(),
-            _ => Vec::new(),
-        })
-        .collect()
-}
-
-/// Compact field list for hidden `catalog` rows. Union tools (`anyOf`/`oneOf`) list
-/// each mode, labelled by its discriminator const (or branch title):
-/// `operation=code[keywords*, owner*, …] | operation=tree[…]`.
-fn compact_fields(tool: &Value) -> String {
-    let schema = tool.get("querySchema").unwrap_or(&Value::Null);
-    let meta = meta_fields(tool);
-    let resolve = |variant: &'_ Value| -> Value {
-        variant
-            .get("$ref")
-            .and_then(Value::as_str)
-            .and_then(|reference| reference.strip_prefix("#/"))
-            .and_then(|pointer| schema.pointer(&format!("/{pointer}")))
-            .cloned()
-            .unwrap_or_else(|| variant.clone())
-    };
-    let variants: Vec<Value> = ["anyOf", "oneOf"]
-        .iter()
-        .find_map(|key| schema.get(*key).and_then(Value::as_array))
-        .map(|items| items.iter().map(resolve).collect())
-        .unwrap_or_else(|| vec![schema.clone()]);
-    if variants.len() == 1 {
-        return variant_fields(&variants[0], None, &meta, 8);
-    }
-    let required_of = |variant: &Value| -> Vec<String> {
-        variant["required"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect()
-    };
-    let mut labels: Vec<(String, Option<String>)> = variants
-        .iter()
-        .enumerate()
-        .map(|(index, variant)| {
-            // The discriminator is the const whose value differs across modes
-            // (astTopology also fixes operation="topology" in every branch).
-            let discriminator = variant["properties"].as_object().and_then(|properties| {
-                properties.iter().find_map(|(name, field)| {
-                    let value = field.get("const")?;
-                    variants
-                        .iter()
-                        .any(|other| other["properties"][name.as_str()].get("const") != Some(value))
-                        .then_some((name, value))
-                })
-            });
-            match discriminator {
-                Some((name, value)) => (
-                    format!("{name}={}", value.as_str().unwrap_or_default()),
-                    Some(name.clone()),
-                ),
-                None => (
-                    variant["title"]
-                        .as_str()
-                        .map_or_else(|| format!("mode{}", index + 1), str::to_owned),
-                    None,
-                ),
-            }
-        })
-        .collect();
-    // Same label twice (e.g. astSearch match by pattern or rule): add the
-    // required field that tells the branches apart.
-    let original: Vec<String> = labels.iter().map(|label| label.0.clone()).collect();
-    for index in 0..labels.len() {
-        let duplicate = original
-            .iter()
-            .enumerate()
-            .any(|(other, label)| other != index && *label == original[index]);
-        if duplicate {
-            let others: Vec<String> = variants
-                .iter()
-                .enumerate()
-                .filter(|(other, _)| *other != index)
-                .flat_map(|(_, variant)| required_of(variant))
-                .collect();
-            if let Some(unique) = required_of(&variants[index])
-                .into_iter()
-                .find(|field| !others.contains(field))
-            {
-                labels[index].0 = format!("{}({unique})", labels[index].0);
-            }
-        }
-    }
-    variants
-        .iter()
-        .zip(labels)
-        .map(|(variant, (label, discriminator))| {
-            format!(
-                "{label}{}",
-                variant_fields(variant, discriminator.as_deref(), &meta, 6)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(" | ")
-}
-
-fn variant_fields(
-    schema: &Value,
-    discriminator: Option<&str>,
-    meta: &[&str],
-    max_fields: usize,
-) -> String {
-    let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
-        return "[]".to_owned();
-    };
-    let required = schema
-        .get("required")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<std::collections::HashSet<_>>()
-        })
-        .unwrap_or_default();
-    let mut names = properties
-        .iter()
-        // `{"not":{}}` marks a field this mode forbids.
-        .filter(|(name, field)| {
-            Some(name.as_str()) != discriminator
-                && !meta.contains(&name.as_str())
-                && field.get("not").is_none()
-        })
-        .map(|(name, _)| name.as_str())
-        .collect::<Vec<_>>();
-    names.sort_by_key(|name| (!required.contains(name), *name));
-    let truncated = names.len() > max_fields;
-    let mut fields = names
-        .into_iter()
-        .take(max_fields)
-        .map(|name| format!("{name}{}", if required.contains(name) { "*" } else { "?" }))
-        .collect::<Vec<_>>();
-    if truncated {
-        fields.push("…".to_owned());
-    }
-    format!("[{}]", fields.join(", "))
 }
 
 /// Env vars that gate a disabled tool, from the config contract bindings of
@@ -392,25 +237,25 @@ fn tool_list_config_paths() -> String {
         .join("/")
 }
 
-/// The machine catalog: runtime availability joined with field lists from
-/// the embedded enforcement contract (the runtime catalog has none).
+/// The machine catalog: runtime availability joined with the compact field
+/// lists the embedded CLI presentation precomputes from the core Zod rows.
 fn machine_catalog(runtime: &ToolRuntime) -> Result<Value, String> {
     let catalog = runtime.catalog().map_err(|error| error.message)?;
-    let contract = octocode_native::contracts::parsed_contract()
-        .map_err(|_| "Embedded contract is invalid".to_owned())?;
+    let presentation = octocode_native::contracts::cli_presentation()
+        .map_err(|error| format!("Embedded CLI presentation is invalid: {error}"))?;
     Ok(compact_tool_catalog(
         &catalog,
-        contract,
+        presentation,
         &runtime.config().dotenv,
     ))
 }
 
 fn compact_tool_catalog(
     catalog: &Value,
-    contract: &Value,
+    presentation: &Value,
     dotenv: &octocode_native::config::EnvApplyReport,
 ) -> Value {
-    let contract_tools = contract.get("tools").and_then(Value::as_array);
+    let presentation_tools = presentation.get("tools").and_then(Value::as_array);
     let tools = catalog
         .get("tools")
         .and_then(Value::as_array)
@@ -438,10 +283,10 @@ fn compact_tool_catalog(
                             availability["configuration"] = Value::String(tool_list_config_paths());
                         }
                     }
-                    let fields = contract_tools
+                    let fields = presentation_tools
                         .and_then(|tools| tools.iter().find(|candidate| candidate["name"] == name))
-                        .map(compact_fields)
-                        .unwrap_or_else(|| "[]".to_owned());
+                        .and_then(|tool| tool["fields"].as_str())
+                        .unwrap_or("[]");
                     json!({
                         "name": name,
                         "fields": fields,
@@ -731,7 +576,6 @@ fn tool_input(tool: &str, args: &ToolArgs, json_out: bool) -> Result<Value, u8> 
         Ok(Some(text)) => text,
         Ok(None) => {
             emit_tool_error(
-                tool,
                 &format!(
                     "Missing JSON query. Usage: octocode {tool} '<json>' | --input FILE|-. Contract: octocode schema {tool}"
                 ),
@@ -740,16 +584,12 @@ fn tool_input(tool: &str, args: &ToolArgs, json_out: bool) -> Result<Value, u8> 
             return Err(2);
         }
         Err(error) => {
-            emit_tool_error(tool, &error, json_out);
+            emit_tool_error(&error, json_out);
             return Err(2);
         }
     };
     serde_json::from_str::<Value>(&query_text).map_err(|parse_error| {
-        emit_tool_error(
-            tool,
-            &format!("Invalid JSON query: {parse_error}"),
-            json_out,
-        );
+        emit_tool_error(&format!("Invalid JSON query: {parse_error}"), json_out);
         2
     })
 }
@@ -819,7 +659,7 @@ async fn execute(runtime: &ToolRuntime, tool: &str, input: Value, json_out: bool
         }
         Err(error) => {
             let class = error.exit_class();
-            let value = runtime_error_output(error);
+            let value = runtime_error_output(error, tool);
             let printed = if json_out {
                 write_json(&value, true)
             } else {
@@ -855,8 +695,9 @@ fn runtime_error_text(value: &Value) -> String {
 /// the error's `errorCode` (as MCP's structuredContent), else an
 /// `{error, errorCode}` envelope (stdout, so a caller discarding stderr still
 /// sees why the call failed). Every string is secret-scrubbed, as at the
-/// N-API boundary.
-fn runtime_error_output(error: octocode_native::runtime::RuntimeError) -> Value {
+/// N-API boundary. `tool` is the tool that failed: a timeout's hint names the
+/// cause that tool can have.
+fn runtime_error_output(error: octocode_native::runtime::RuntimeError, tool: &str) -> Value {
     let mut value = match error.payload {
         Some(payload) => {
             let mut value = *payload;
@@ -868,15 +709,23 @@ fn runtime_error_output(error: octocode_native::runtime::RuntimeError) -> Value 
         None => {
             let mut value = json!({ "error": error.message, "errorCode": error.code });
             if error.code == "timeout" {
-                value["details"] = json!([
-                    "Retry -- the first call initialises the language server (~60 s cold start)."
-                ]);
+                value["details"] = json!([timeout_hint(tool)]);
             }
             value
         }
     };
     octocode_native::security::scrub_error_payload(&mut value);
     value
+}
+
+/// What to try after a timeout. Only lspSearch starts a language server, whose
+/// first call can take about a minute; any other tool timed out on its work.
+fn timeout_hint(tool: &str) -> &'static str {
+    if tool == ToolId::LspSearch.as_str() {
+        "Retry -- the first call initialises the language server (~60 s cold start)."
+    } else {
+        "Retry, or narrow the call: fewer queries, a smaller path or repository scope, or a tighter filter."
+    }
 }
 
 fn exit_code(class: ExitClass) -> u8 {
@@ -887,7 +736,6 @@ fn exit_code(class: ExitClass) -> u8 {
         ExitClass::Failed(FailureKind::NotFound) => 3,
         ExitClass::Failed(FailureKind::Authentication | FailureKind::Permission) => 4,
         ExitClass::Failed(FailureKind::Execution) => 5,
-        ExitClass::Incomplete => 6,
         ExitClass::Failed(FailureKind::RateLimited) => 7,
     }
 }
@@ -947,12 +795,15 @@ mod tests {
             payload: payload.map(Box::new),
             validation_issues: None,
         };
-        let envelope = runtime_error_output(error(None)).to_string();
+        let envelope = runtime_error_output(error(None), "localFetch").to_string();
         assert!(
             !envelope.contains("ghp_") && envelope.contains("[REDACTED-"),
             "{envelope}"
         );
-        let payload = runtime_error_output(error(Some(json!({"detail": [token.clone()]}))));
+        let payload = runtime_error_output(
+            error(Some(json!({"detail": [token.clone()]}))),
+            "localFetch",
+        );
         assert!(!payload.to_string().contains("ghp_"), "{payload}");
     }
 
@@ -971,26 +822,35 @@ mod tests {
         let invalid = octocode_native::runtime::RuntimeError {
             code: "invalidInput".into(),
             message: error.to_string(),
-            payload: Some(Box::new(contracts::format_input_error(tool, &error, false))),
+            payload: Some(Box::new(contracts::format_input_error(tool, &error))),
             validation_issues: None,
         };
-        let envelope = runtime_error_output(invalid);
-        assert_eq!(envelope["kind"], "octocode.toolError", "{envelope}");
+        let envelope = runtime_error_output(invalid, tool);
+        // The envelope is the error itself: no kind/version/tool frame.
+        assert!(envelope.get("kind").is_none(), "{envelope}");
         assert_eq!(envelope["errorCode"], "invalidInput", "{envelope}");
         let text = runtime_error_text(&envelope);
-        assert!(text.starts_with("Unknown field(s): matchstring"), "{text}");
+        assert!(
+            text.starts_with("Remove unknown field 'matchstring'"),
+            "{text}"
+        );
         assert!(text.contains("did you mean 'matchString'?"), "{text}");
-        assert!(text.contains("octocode schema localFetch"), "{text}");
 
-        let timeout = octocode_native::runtime::RuntimeError {
+        let timeout = || octocode_native::runtime::RuntimeError {
             code: "timeout".into(),
             message: "Tool call timed out.".into(),
             payload: None,
             validation_issues: None,
         };
-        let text = runtime_error_text(&runtime_error_output(timeout));
-        assert!(text.starts_with("Tool call timed out."), "{text}");
-        assert!(text.contains("initialises the language server"), "{text}");
+        let lsp = runtime_error_text(&runtime_error_output(timeout(), "lspSearch"));
+        assert!(lsp.starts_with("Tool call timed out."), "{lsp}");
+        assert!(lsp.contains("initialises the language server"), "{lsp}");
+        for other in ["localSearch", "ghSearchCode", "artifactSearch"] {
+            let text = runtime_error_text(&runtime_error_output(timeout(), other));
+            assert!(text.starts_with("Tool call timed out."), "{other}: {text}");
+            assert!(text.contains("Retry, or narrow"), "{other}: {text}");
+            assert!(!text.contains("language server"), "{other}: {text}");
+        }
     }
 
     #[test]

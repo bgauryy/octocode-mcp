@@ -26,7 +26,7 @@ mod drift_tests {
         );
         let query = json!({"mainGoal":"find dead code","reasoning":"test","operation":"deadCode","path":root.path(),"rustWorkspace":"cargo"});
         let out = run(query, root.path()).expect("dead code");
-        let names = out["results"]
+        let names = out["nodes"]
             .as_array()
             .expect("rows")
             .iter()
@@ -69,7 +69,8 @@ mod drift_tests {
             "{}",
             error.message
         );
-        assert_eq!(error.hints.len(), 1);
+        // The leads are the next step; no prose repeats them.
+        assert!(error.hints.is_empty(), "{:?}", error.hints);
         let next = error.next.expect("continuations");
         let narrow = &next["narrowScope"]["query"]["queries"][0];
         assert!(
@@ -193,14 +194,10 @@ mod drift_tests {
         let mut last = first["next"]["nextPage"]["query"]["queries"][0].clone();
         last["page"] = json!(1000);
         let page = run(last, root).expect("ceiling");
-        assert_eq!(
-            page["results"].as_array().expect("results").len(),
-            1,
-            "{page}"
-        );
+        assert_eq!(page["nodes"].as_array().expect("nodes").len(), 1, "{page}");
         assert!(page["next"].get("nextPage").is_none(), "{page}");
         assert_eq!(page["terminalLimit"], true, "{page}");
-        assert_eq!(page["completeness"]["results"], "truncated", "{page}");
+        assert_eq!(page["coverage"]["parts"]["nodes"], "truncated", "{page}");
     }
 
     #[test]
@@ -241,15 +238,18 @@ mod drift_tests {
         .expect("drift result");
 
         assert_eq!(out["operation"], "drift");
-        assert_eq!(out["summary"]["comparable"], json!(true));
-        assert_eq!(out["summary"]["cyclesResolved"], json!(1));
+        assert_eq!(out["graphSummary"]["comparable"], json!(true));
+        assert_eq!(out["graphSummary"]["cyclesResolved"], json!(1));
         assert!(
-            out["summary"]["relationsRemoved"].as_u64().unwrap_or(0) >= 1,
+            out["graphSummary"]["relationsRemoved"]
+                .as_u64()
+                .unwrap_or(0)
+                >= 1,
             "the removed b->a import is a removed relation: {out}"
         );
-        let resolved = out["results"]
+        let resolved = out["nodes"]
             .as_array()
-            .expect("results")
+            .expect("nodes")
             .iter()
             .any(|row| row["category"] == "cycle" && row["change"] == "resolved");
         assert!(resolved, "a resolved-cycle row is present: {out}");
@@ -292,23 +292,29 @@ mod drift_tests {
         let out = topology(root, json!({"operation":"cycles"}));
 
         // The zero is still reported, but no longer as a confident answer.
-        assert_eq!(out["summary"]["cycleCount"], json!(0));
+        assert_eq!(out["graphSummary"]["cycleCount"], json!(0));
         assert_eq!(
             out["confidence"], "low",
             "unresolved edges must lower confidence: {out}"
         );
         assert_eq!(
-            out["summary"]["importResolution"]["status"], "failed",
+            out["graphSummary"]["importResolution"]["status"], "failed",
             "zero resolved imports is a failed resolution: {out}"
         );
-        assert_eq!(out["summary"]["importResolution"]["resolved"], json!(0));
+        assert_eq!(
+            out["graphSummary"]["importResolution"]["resolved"],
+            json!(0)
+        );
         assert!(
             out["coverage"]["imports"]["unresolvedInternal"]
                 .as_u64()
                 .is_some_and(|count| count > 0),
             "unresolved crate:: imports must be counted: {out}"
         );
-        assert_eq!(out["completeness"]["graph"], "coverage-incomplete", "{out}");
+        assert_eq!(
+            out["coverage"]["parts"]["graph"], "coverage-incomplete",
+            "{out}"
+        );
         // A coverage gap is not truncation: nothing more is reachable by paging.
         assert!(out.get("truncated").is_none(), "{out}");
         assert!(out.get("terminalLimit").is_none(), "{out}");
@@ -337,7 +343,10 @@ mod drift_tests {
         // Withheld rows are an opt-in lead, not a page: the answer is complete.
         assert!(out.get("isPartial").is_none(), "{out}");
         assert!(out["next"].get("nextDiagnosticPage").is_none(), "{out}");
-        assert!(out.pointer("/completeness/diagnostics").is_none(), "{out}");
+        assert!(
+            out.pointer("/coverage/parts/diagnostics").is_none(),
+            "{out}"
+        );
         let lead = &out["next"]["readDiagnostics"];
         assert_eq!(
             crate::tools::id::channel(crate::tools::id::ToolId::AstTopology, "readDiagnostics"),
@@ -356,11 +365,11 @@ mod drift_tests {
         );
         // The diagnostics page carries diagnostics only: the results were
         // already delivered by the page that offered the lead.
-        assert_eq!(rows["results"], json!([]), "{rows}");
+        assert_eq!(rows["nodes"], json!([]), "{rows}");
         assert!(rows.get("pagination").is_none(), "{rows}");
-        assert!(rows.get("summary").is_none(), "{rows}");
+        assert!(rows.get("graphSummary").is_none(), "{rows}");
         assert!(
-            rows.pointer("/completeness/diagnostics").is_none(),
+            rows.pointer("/coverage/parts/diagnostics").is_none(),
             "{rows}"
         );
         assert!(rows["next"].get("nextDiagnosticPage").is_none(), "{rows}");
@@ -383,7 +392,7 @@ mod drift_tests {
         std::fs::write(root.join("c.ts"), "import { b } from './b';\n").unwrap();
         let out = run(query(1), root).expect("after a new file");
         assert_eq!(builds(), after_first + 1, "a new file rebuilds the graph");
-        assert_eq!(out["results"].as_array().map(Vec::len), Some(2), "{out}");
+        assert_eq!(out["nodes"].as_array().map(Vec::len), Some(2), "{out}");
     }
 
     #[test]
@@ -432,12 +441,13 @@ mod drift_tests {
         let root = temp.path();
         let out = topology(root, json!({"operation":"dependents","source":"b.ts"}));
         assert_eq!(
-            out["completeness"],
+            out["coverage"]["parts"],
             json!({"graph":"coverage-incomplete"}),
             "the gap's count is in coverage, not restated: {out}"
         );
         assert!(
-            out["summary"].get("source").is_none() && out["summary"].get("depth").is_none(),
+            out["graphSummary"].get("source").is_none()
+                && out["graphSummary"].get("depth").is_none(),
             "the summary does not echo the query: {out}"
         );
         // One copy of each count: import-linking problems are counted by
@@ -497,20 +507,20 @@ mod drift_tests {
             root,
             json!({"operation":"cycles","path":root.join("src").to_string_lossy()}),
         );
-        let cycles = out["results"].as_array().expect("rows");
+        let cycles = out["nodes"].as_array().expect("rows");
         assert_eq!(cycles.len(), 1, "{out}");
         assert_eq!(cycles[0]["files"], json!(["a.rs", "b.rs"]), "{out}");
-        assert_eq!(out["summary"]["cycleCount"], 1, "{out}");
+        assert_eq!(out["graphSummary"]["cycleCount"], 1, "{out}");
         assert!(
-            out["summary"]["moduleTreeCycleCount"].as_u64() >= Some(1),
+            out["graphSummary"]["moduleTreeCycleCount"].as_u64() >= Some(1),
             "{out}"
         );
         // Empty runtime lists say nothing.
-        assert!(cycles[0].get("runtimeCycles").is_none(), "{out}");
+        assert!(cycles[0].get("runtimeGroups").is_none(), "{out}");
         assert!(cycles[0].get("runtimeCycleEdges").is_none(), "{out}");
     }
 
-    /// N6: a cycle item leads with its small facts (counts, runtime cycles,
+    /// A cycle item leads with its small facts (counts, runtime cycles,
     /// edges) and ends with its `files`, so a split item shows them first.
     #[test]
     fn cycle_items_put_counts_before_files() {
@@ -526,13 +536,13 @@ mod drift_tests {
         ]);
         let root = temp.path();
         let out = topology(root, json!({"operation":"cycles"}));
-        let cycle = out["results"][0].as_object().expect("cycle item");
+        let cycle = out["nodes"][0].as_object().expect("cycle item");
         let keys = cycle.keys().map(String::as_str).collect::<Vec<_>>();
         assert_eq!(keys.last(), Some(&"files"), "{out}");
         assert_eq!(cycle["fileCount"], json!(2), "{out}");
         let at = |key: &str| keys.iter().position(|k| *k == key);
         assert!(at("fileCount") < at("files"), "{keys:?}");
-        assert!(at("runtimeCycles") < at("cycleEdges"), "{keys:?}");
+        assert!(at("runtimeGroups") < at("cycleEdges"), "{keys:?}");
     }
 
     #[test]
@@ -552,7 +562,7 @@ mod drift_tests {
             root,
             json!({"operation":"cycles","path":root.join("src").to_string_lossy()}),
         );
-        let cycles = out["results"].as_array().expect("rows");
+        let cycles = out["nodes"].as_array().expect("rows");
         assert_eq!(cycles.len(), 1, "{out}");
         assert_eq!(cycles[0]["files"], json!(["a.rs", "b.rs"]), "{out}");
         // The dependency cites the path's line as its evidence.
@@ -560,7 +570,7 @@ mod drift_tests {
             root,
             json!({"operation":"dependencies","path":root.join("src").to_string_lossy(),"source":"a.rs"}),
         );
-        let row = out["results"]
+        let row = out["nodes"]
             .as_array()
             .expect("rows")
             .iter()
@@ -616,7 +626,7 @@ mod drift_tests {
             temp.path(),
             json!({"operation":"dependents","path":src.to_string_lossy(),"source":"enums/flags.ts"}),
         );
-        assert_eq!(out["results"][0]["file"], "main.ts", "{out}");
+        assert_eq!(out["nodes"][0]["file"], "main.ts", "{out}");
         assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 0, "{out}");
     }
 
@@ -642,12 +652,12 @@ mod drift_tests {
             temp.path(),
             json!({"operation":"dependents","path":src.to_string_lossy(),"source":"enums/flags.ts"}),
         );
-        assert_eq!(out["results"], json!([]), "{out}");
+        assert_eq!(out["nodes"], json!([]), "{out}");
         assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 1, "{out}");
     }
 
     fn dependents_by_file(out: &Value) -> BTreeMap<String, Value> {
-        out["results"]
+        out["nodes"]
             .as_array()
             .expect("rows")
             .iter()
@@ -699,7 +709,7 @@ mod drift_tests {
             ]),
             "{out}"
         );
-        let a = out["results"]
+        let a = out["nodes"]
             .as_array()
             .unwrap()
             .iter()
@@ -708,7 +718,7 @@ mod drift_tests {
         assert_eq!(a["importLine"], 1, "{out}");
         // The line importing the re-exported item, not the first import
         // from the re-exporting module.
-        let d = out["results"]
+        let d = out["nodes"]
             .as_array()
             .unwrap()
             .iter()
@@ -717,7 +727,7 @@ mod drift_tests {
         assert_eq!(d["importLine"], 3, "{out}");
         // A re-export is the dependent's import statement too.
         for file in ["index.ts", "star.ts"] {
-            let row = out["results"]
+            let row = out["nodes"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -786,7 +796,7 @@ mod drift_tests {
         assert!(out.get("truncated").is_none(), "{out}");
         assert!(out.get("terminalLimit").is_none(), "{out}");
         assert!(
-            out["completeness"].get("coverageGapReasons").is_none(),
+            out["coverage"]["parts"].get("coverageGapReasons").is_none(),
             "{out}"
         );
         // Empty diagnostics and a single diagnostic page carry no envelope.
@@ -796,7 +806,7 @@ mod drift_tests {
             out["coverage"].get("diagnosticPagination").is_none(),
             "{out}"
         );
-        let row = &out["results"][0];
+        let row = &out["nodes"][0];
         assert_eq!(row["files"], json!(["a.ts", "b.ts"]), "{out}");
         assert!(row.get("size").is_none(), "size duplicates files: {out}");
         assert!(row.get("outgoingComponentCount").is_none(), "{out}");
@@ -825,7 +835,7 @@ mod drift_tests {
         std::fs::write(root.join("tsdb/db_test.go"), "package tsdb\n").unwrap();
 
         let out = topology(root, json!({"operation":"dependencies","source":"main.go"}));
-        let rows = out["results"].as_array().expect("rows");
+        let rows = out["nodes"].as_array().expect("rows");
         let files = rows
             .iter()
             .map(|r| r["file"].as_str().unwrap_or_default())
@@ -837,7 +847,7 @@ mod drift_tests {
             root,
             json!({"operation":"dependents","source":"tsdb/head.go"}),
         );
-        assert_eq!(dependents["results"][0]["file"], "main.go", "{dependents}");
+        assert_eq!(dependents["nodes"][0]["file"], "main.go", "{dependents}");
     }
 
     /// A scan rooted below the module root still reads the enclosing
@@ -861,7 +871,7 @@ mod drift_tests {
             root,
             json!({"operation":"dependents","path":root.join("tsdb").to_string_lossy(),"source":"chunkenc/chunk.go"}),
         );
-        assert_eq!(out["results"][0]["file"], "db.go", "{out}");
+        assert_eq!(out["nodes"][0]["file"], "db.go", "{out}");
     }
 
     /// A scan rooted at a Python package resolves absolute imports that name
@@ -887,7 +897,7 @@ mod drift_tests {
             root,
             json!({"operation":"dependents","path":root.join("pkg").to_string_lossy(),"source":"utils/text.py"}),
         );
-        assert_eq!(out["results"][0]["file"], "admin.py", "{out}");
+        assert_eq!(out["nodes"][0]["file"], "admin.py", "{out}");
     }
 
     /// Java classes of one package use each other without an import.
@@ -945,7 +955,7 @@ mod drift_tests {
             root,
             json!({"operation":"dependencies","source":"src/com/acme/Multimaps.java"}),
         );
-        let rows = out["results"].as_array().expect("rows");
+        let rows = out["nodes"].as_array().expect("rows");
         let row = |file: &str| {
             rows.iter()
                 .find(|row| row["file"] == file)
@@ -970,19 +980,15 @@ mod drift_tests {
             root,
             json!({"operation":"dependencies","source":"a.ts","page":2,"pageSize":100}),
         );
-        assert_eq!(out["results"], json!([]), "{out}");
+        assert_eq!(out["nodes"], json!([]), "{out}");
         assert_eq!(out["pagination"]["currentPage"], 2, "{out}");
         assert_eq!(out["pagination"]["totalPages"], 1, "{out}");
         assert_eq!(out["pagination"]["outOfRange"], true, "{out}");
         assert_eq!(out["pagination"]["hasMore"], false, "{out}");
-        assert!(
-            out["warnings"]
-                .as_array()
-                .is_some_and(|w| w.iter().any(|w| w
-                    .as_str()
-                    .is_some_and(|w| w.contains("page:2 is out of range")))),
-            "{out}"
-        );
+        // Flipped: the page position is the shared row outcome
+        // (`reason: "page 2 of 1"`, set by the response stage), not a
+        // per-tool warning that said it twice.
+        assert!(out.get("warnings").is_none(), "{out}");
     }
 
     #[test]
@@ -1026,10 +1032,10 @@ mod drift_tests {
             json!({"operation":"dependencies","source":"src/com/acme/App.java"}),
         );
         assert_eq!(
-            out["results"][0]["file"], "src/com/acme/util/Strings.java",
+            out["nodes"][0]["file"], "src/com/acme/util/Strings.java",
             "{out}"
         );
-        assert_eq!(out["results"][0]["importLine"], 3, "{out}");
+        assert_eq!(out["nodes"][0]["importLine"], 3, "{out}");
     }
 
     #[test]
@@ -1048,7 +1054,7 @@ mod drift_tests {
             json!({"operation":"path","source":"a.ts","target":"b.ts"}),
         );
 
-        assert_eq!(out["results"][0]["edges"][0]["importLine"], 2, "{out}");
+        assert_eq!(out["nodes"][0]["edges"][0]["importLine"], 2, "{out}");
     }
 
     #[test]
@@ -1065,15 +1071,18 @@ mod drift_tests {
         let second = run(query(2), root).expect("page 2");
 
         assert_eq!(
-            first["summary"]["entrypointsResolved"],
+            first["graphSummary"]["entrypointsResolved"],
             json!(["a.js"]),
             "{first}"
         );
         assert!(
-            second["summary"].get("entrypointsResolved").is_none(),
+            second["graphSummary"].get("entrypointsResolved").is_none(),
             "{second}"
         );
-        assert_eq!(second["summary"]["entrypointsResolvedCount"], 1, "{second}");
+        assert_eq!(
+            second["graphSummary"]["entrypointsResolvedCount"], 1,
+            "{second}"
+        );
     }
 
     #[test]
@@ -1088,14 +1097,14 @@ mod drift_tests {
         let root = temp.path();
 
         let out = topology(root, json!({"operation":"reachability"}));
-        let rows = out["results"].as_array().expect("rows");
+        let rows = out["nodes"].as_array().expect("rows");
 
         assert_eq!(rows.len(), 2, "{out}");
         assert_eq!(rows[0]["file"], "dead.js", "{out}");
         assert_eq!(rows[0]["reachable"], false, "{out}");
         assert_eq!(rows[1]["files"], json!(["a.js", "b.js", "c.js"]), "{out}");
-        assert_eq!(out["summary"]["reachableCount"], 3, "{out}");
-        assert_eq!(out["summary"]["unreachableCount"], 1, "{out}");
+        assert_eq!(out["graphSummary"]["reachableCount"], 3, "{out}");
+        assert_eq!(out["graphSummary"]["unreachableCount"], 1, "{out}");
     }
 
     #[test]
@@ -1111,9 +1120,12 @@ mod drift_tests {
             json!({"operation":"reachability","entrypoints":["a.js"]}),
         );
 
-        assert!(out["summary"].get("entrypointsResolved").is_none(), "{out}");
-        assert_eq!(out["summary"]["entrypointsResolvedCount"], 1, "{out}");
-        assert!(out.get("completeness").is_none(), "{out}");
+        assert!(
+            out["graphSummary"].get("entrypointsResolved").is_none(),
+            "{out}"
+        );
+        assert_eq!(out["graphSummary"]["entrypointsResolvedCount"], 1, "{out}");
+        assert_eq!(out["coverage"]["state"], "complete", "{out}");
     }
 
     #[test]
@@ -1137,7 +1149,7 @@ mod drift_tests {
         );
         assert_eq!(out["coverage"]["imports"]["resolved"], 0);
         assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 1);
-        assert!(out["results"].as_array().unwrap().is_empty(), "{out}");
+        assert!(out["nodes"].as_array().unwrap().is_empty(), "{out}");
     }
 
     #[test]
@@ -1167,7 +1179,7 @@ mod drift_tests {
         );
 
         assert!(
-            out["results"]
+            out["nodes"]
                 .as_array()
                 .unwrap()
                 .iter()
@@ -1217,13 +1229,13 @@ mod dead_code_root_tests {
         let out = topology(root, json!({"operation":"deadCode"}));
 
         assert!(
-            out["summary"]["entrypointsResolvedCount"]
+            out["graphSummary"]["entrypointsResolvedCount"]
                 .as_u64()
                 .unwrap_or(0)
                 >= 1,
             "src/main.rs must be inferred as a root: {out}"
         );
-        let dead = out["results"].as_array().cloned().unwrap_or_default();
+        let dead = out["nodes"].as_array().cloned().unwrap_or_default();
         // The reachability defect: with a real root the helper is reached
         // through main's `use crate::helper`, so no file may be reported as an
         // unreachable file or dead cluster. (Export-level name-usage heuristics
@@ -1235,7 +1247,7 @@ mod dead_code_root_tests {
             "no file should be unreachable/dead-clustered when main is a root: {out}"
         );
         assert_eq!(
-            out["summary"]["deadClusterCount"],
+            out["graphSummary"]["deadClusterCount"],
             json!(0),
             "a reachable helper must not form a dead cluster: {out}"
         );
@@ -1256,7 +1268,7 @@ mod dead_code_root_tests {
         let out = topology(root, json!({"operation":"deadCode"}));
 
         assert_eq!(
-            out["summary"]["deadExportCount"],
+            out["graphSummary"]["deadExportCount"],
             json!(0),
             "with no resolvable roots the dead list must be suppressed, not everything flagged: {out}"
         );
@@ -1278,9 +1290,9 @@ mod dead_code_root_tests {
             root,
             json!({"operation":"deadCode","entrypoints":["main.ts"]}),
         );
-        let rows = out["results"].as_array().cloned().unwrap_or_default();
+        let rows = out["nodes"].as_array().cloned().unwrap_or_default();
         assert_eq!(
-            out["summary"]["deadExportCount"].as_u64(),
+            out["graphSummary"]["deadExportCount"].as_u64(),
             Some(rows.len() as u64),
             "{out}"
         );
@@ -1339,7 +1351,7 @@ mod dead_code_root_tests {
             root,
             json!({"operation":"deadCode","rustWorkspace":"cargo"}),
         );
-        out["results"]
+        out["nodes"]
             .as_array()
             .cloned()
             .unwrap_or_default()
@@ -1500,9 +1512,9 @@ mod dead_code_root_tests {
             root,
             json!({"operation":"deadCode","entrypoints":["main.ts"]}),
         );
-        assert_eq!(out["results"][0]["name"], "unused", "{out}");
+        assert_eq!(out["nodes"][0]["name"], "unused", "{out}");
         assert_eq!(
-            out["results"][0]["viaHeuristic"], "semantic-references",
+            out["nodes"][0]["viaHeuristic"], "semantic-references",
             "{out}"
         );
     }
@@ -1669,7 +1681,7 @@ mod expand_scan_tests {
 
     /// The rows of one call, as `name` (dead exports) or `file`.
     fn row_keys(out: &Value) -> Vec<String> {
-        out["results"]
+        out["nodes"]
             .as_array()
             .expect("rows")
             .iter()
@@ -1830,7 +1842,7 @@ mod expand_scan_tests {
         assert!(widened.get("isPartial").is_none(), "{widened}");
         assert!(widened["next"].get("expandScan").is_none(), "{widened}");
         let uncut = topology(root, drift_query(root, 100));
-        assert_eq!(widened["results"], uncut["results"]);
+        assert_eq!(widened["nodes"], uncut["nodes"]);
     }
 
     /// A drift that skipped a file or hit the edge cap has no continuation
@@ -1872,6 +1884,542 @@ mod expand_scan_tests {
         assert!(
             diagnostics["next"].get("expandScan").is_none(),
             "{diagnostics}"
+        );
+    }
+
+    /// `coverage.state` and `isPartial` are one fact: a payload is never
+    /// `isPartial` beside a `complete` coverage, and a terminal limit says in
+    /// `warnings` what was cut and that no continuation reaches it.
+    #[test]
+    fn a_skipped_file_is_partial_in_coverage_and_its_terminal_limit_is_explained() {
+        // The skipped file is not imported, so no coverage gap hides it.
+        let temp = fixture(&[("entry.ts", "export const entry = 1;\n")]);
+        let root = temp.path();
+        let big = format!("export const big = 1\n{}", "// pad\n".repeat(160_000));
+        std::fs::write(root.join("big.ts"), big).unwrap();
+
+        let out = topology(
+            root,
+            json!({"operation":"dependencies","source":"entry.ts"}),
+        );
+
+        assert_eq!(out["isPartial"], true, "{out}");
+        assert_eq!(out["terminalLimit"], true, "{out}");
+        assert_eq!(out["coverage"]["state"], "partial", "{out}");
+        assert_eq!(out["coverage"]["parts"]["graph"], "files-skipped", "{out}");
+        let warnings = out["warnings"].to_string();
+        assert!(
+            warnings.contains("terminal") && warnings.contains("coverage.diagnostics"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn a_drift_with_a_skipped_file_is_partial_in_coverage() {
+        let temp = drift_fixture();
+        let root = temp.path();
+        let big = format!("export const big = 1\n{}", "// pad\n".repeat(160_000));
+        write_file(root, "head/big.ts", &big);
+        let out = topology(root, drift_query(root, 100));
+        assert_eq!(out["isPartial"], true, "{out}");
+        assert_eq!(out["coverage"]["state"], "partial", "{out}");
+        assert_eq!(out["coverage"]["parts"]["graph"], "files-skipped", "{out}");
+        assert!(out["warnings"].to_string().contains("terminal"), "{out}");
+    }
+
+    #[test]
+    fn the_result_page_ceiling_is_explained_as_terminal() {
+        let temp = tempfile::tempdir().expect("fixture");
+        let root = temp.path();
+        for i in 0..1001 {
+            std::fs::write(
+                root.join(format!("f{i:04}.ts")),
+                "export const value = 1;\n",
+            )
+            .expect("file");
+        }
+        let first = run(json!({"operation":"reachability","path":root,"entrypoints":["f0000.ts"],"pageSize":1,"mainGoal":"test","reasoning":"test"}), root).expect("first");
+        let mut last = first["next"]["nextPage"]["query"]["queries"][0].clone();
+        last["page"] = json!(1000);
+        let page = run(last, root).expect("ceiling");
+        assert_eq!(page["terminalLimit"], true, "{page}");
+        let warnings = page["warnings"].to_string();
+        assert!(
+            warnings.contains("page ceiling") && warnings.contains("terminal"),
+            "{page}"
+        );
+    }
+}
+
+/// Evidence the graph cannot link stays visible: an importer the resolver
+/// could not link is named, never silently absent from the answer.
+mod unlinked_evidence_tests {
+    use super::super::test_support::*;
+    use super::super::*;
+    use serde_json::{Value, json};
+
+    fn warnings(out: &Value) -> String {
+        out["warnings"].to_string()
+    }
+
+    /// A fixture importing `vs/base/common/marshalling` by a bare specifier
+    /// no tsconfig covers is not a linked dependent, but its specifier names
+    /// the source by path: the answer says so instead of omitting it.
+    #[test]
+    fn dependents_name_unlinked_bare_imports_that_path_match_the_source() {
+        let temp = fixture(&[
+            (
+                "src/vs/base/common/marshalling.ts",
+                "export function revive() {}\n",
+            ),
+            (
+                "src/vs/user.ts",
+                "import { revive } from './base/common/marshalling';\nrevive();\n",
+            ),
+            (
+                "fixtures/editing/a.ts",
+                "import { revive } from 'vs/base/common/marshalling';\nrevive();\n",
+            ),
+            (
+                "fixtures/editing/b.ts",
+                "import { get } from 'lodash/get';\nimport React from 'react';\n",
+            ),
+            ("src/vs/lib/index.ts", "export const lib = 1;\n"),
+            ("fixtures/editing/c.ts", "import { lib } from 'vs/lib';\n"),
+        ]);
+        let root = temp.path();
+        let out = topology(
+            root,
+            json!({"operation":"dependents","source":"src/vs/base/common/marshalling.ts"}),
+        );
+        assert_eq!(result_files(&out), vec!["src/vs/user.ts"], "{out}");
+        let text = warnings(&out);
+        assert!(
+            text.contains("fixtures/editing/a.ts:1") && text.contains("vs/base/common/marshalling"),
+            "{out}"
+        );
+        assert!(
+            !text.contains("b.ts") && !text.contains("lodash"),
+            "unrelated bare specifiers stay quiet: {out}"
+        );
+        // A directory import names the index file it would load.
+        let index = topology(
+            root,
+            json!({"operation":"dependents","source":"src/vs/lib/index.ts"}),
+        );
+        assert!(
+            warnings(&index).contains("fixtures/editing/c.ts:1"),
+            "{index}"
+        );
+        // A source nothing names by path carries no such warning.
+        let quiet = topology(
+            root,
+            json!({"operation":"dependents","source":"src/vs/user.ts"}),
+        );
+        assert!(quiet.get("warnings").is_none(), "{quiet}");
+    }
+
+    /// Skipped files change the answer, so their diagnostic rows lead the
+    /// coverage list: `next.readDiagnostics` page 1 names them.
+    #[test]
+    fn skipped_file_diagnostics_lead_the_grouped_list() {
+        let diagnostic = |file: &str, code: &str, message: &str| types::Diagnostic {
+            file: file.into(),
+            line: None,
+            code: code.into(),
+            message: message.into(),
+        };
+        let rows = page::group_diagnostics(&[
+            diagnostic("a.ts", "parse-recovery", "recovered"),
+            diagnostic("b.ts", "unresolved-internal", "cannot link"),
+            diagnostic(
+                "z.ts",
+                "scan-skip",
+                "file exceeds the graph scan byte limit",
+            ),
+        ]);
+        let codes: Vec<&str> = rows
+            .iter()
+            .map(|row| row["code"].as_str().expect("code"))
+            .collect();
+        assert_eq!(
+            codes,
+            ["scan-skip", "parse-recovery", "unresolved-internal"]
+        );
+    }
+}
+
+/// Refusing a broad scan keeps the complete route first: only a raised
+/// `maxFiles` keeps an answer that spans the repository whole; re-rooting
+/// changes the answer, and the refusal says so.
+mod scope_refusal_tests {
+    use super::super::test_support::*;
+    use super::super::*;
+    use serde_json::json;
+
+    #[test]
+    fn the_complete_route_leads_and_narrowing_is_labelled_as_a_scope_change() {
+        let root = tempfile::tempdir().expect("fixture directory");
+        let over = graph::SCOPE_ADMISSION_FILES as usize + 1;
+        for (package, count) in [("big", over - 10), ("small", 10)] {
+            let dir = root.path().join("packages").join(package);
+            std::fs::create_dir_all(&dir).expect("package dir");
+            for i in 0..count {
+                std::fs::write(dir.join(format!("f{i}.ts")), "export const x = 1;\n")
+                    .expect("fixture file");
+            }
+        }
+        for query in [
+            json!({"operation":"cycles","path":root.path()}),
+            json!({"operation":"deadCode","path":root.path(),"entrypoints":["packages/small/f0.ts"]}),
+        ] {
+            let operation = query["operation"].clone();
+            let error = run(query, root.path()).expect_err("scope refused");
+            assert_eq!(error.code, "scopeTooBroad");
+            let message = &error.message;
+            let complete = message.find("keeps the answer complete").expect(message);
+            let narrow = message.find("narrower directory").expect(message);
+            assert!(complete < narrow, "complete route first: {message}");
+            assert!(
+                message.contains("changes the answer"),
+                "narrowing is labelled: {message}"
+            );
+            let next = error.next.expect("continuations");
+            let order: Vec<&str> = next
+                .as_object()
+                .expect("leads")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            assert_eq!(order, ["expandScan", "narrowScope"], "{operation}");
+        }
+    }
+}
+
+/// An operation whose answer rows are empty is an empty result (like grep
+/// with no match): `status:"empty"`, so every interface exits 1, and the row
+/// carries a recovery that names the operation.
+mod empty_answer_tests {
+    use super::super::test_support::*;
+    use super::super::*;
+    use crate::tools::output::ToolOutput;
+    use serde_json::json;
+
+    fn leaf_fixture() -> tempfile::TempDir {
+        fixture(&[
+            ("a.ts", "export const a = 1;\n"),
+            ("b.ts", "export const b = 2;\n"),
+        ])
+    }
+
+    #[test]
+    fn every_operation_with_no_answer_rows_is_empty() {
+        let temp = leaf_fixture();
+        let root = temp.path();
+        for query in [
+            json!({"operation":"cycles"}),
+            json!({"operation":"dependents","source":"a.ts"}),
+            json!({"operation":"dependencies","source":"a.ts"}),
+            json!({"operation":"deadCode","entrypoints":["a.ts","b.ts"]}),
+            json!({"operation":"path","source":"a.ts","target":"b.ts"}),
+        ] {
+            let out = topology(root, query.clone());
+            assert_eq!(out["status"], "empty", "{query}: {out}");
+        }
+    }
+
+    /// Reachability lists every file it classifies, so a graph with files is
+    /// an answer even when all are reachable.
+    #[test]
+    fn reachability_rows_are_an_answer() {
+        let temp = leaf_fixture();
+        let out = topology(
+            temp.path(),
+            json!({"operation":"reachability","entrypoints":["a.ts","b.ts"]}),
+        );
+        assert!(out.get("status").is_none(), "{out}");
+    }
+
+    #[test]
+    fn an_answered_operation_is_not_empty() {
+        let temp = fixture(&[
+            ("a.ts", "import { b } from './b';\nexport const a = b;\n"),
+            (
+                "b.ts",
+                "import { a } from './a';\nexport const b = 1;\nexport const c = a;\n",
+            ),
+        ]);
+        let root = temp.path();
+        for query in [
+            json!({"operation":"cycles"}),
+            json!({"operation":"dependents","source":"a.ts"}),
+            json!({"operation":"path","source":"a.ts","target":"b.ts"}),
+        ] {
+            let out = topology(root, query.clone());
+            assert!(out.get("status").is_none(), "{query}: {out}");
+        }
+    }
+
+    /// A diagnostics-only page lists no result rows by design: it is not an
+    /// empty answer.
+    #[test]
+    fn a_diagnostic_page_is_not_an_empty_answer() {
+        let temp = fixture(&[
+            ("a.ts", "import x from './missing';\nexport const a = x;\n"),
+            (
+                "b.ts",
+                "import { a } from './a';\nimport { b2 } from './b2';\nexport const b = a;\n",
+            ),
+            ("b2.ts", "import { b } from './b';\nexport const b2 = b;\n"),
+        ]);
+        let root = temp.path();
+        let first = topology(root, json!({"operation":"dependents","source":"a.ts"}));
+        assert!(first.get("status").is_none(), "{first}");
+        let read = first["next"]["readDiagnostics"]["query"]["queries"][0].clone();
+        let page = topology(root, read);
+        assert!(
+            page["nodes"].as_array().is_some_and(Vec::is_empty),
+            "a diagnostics page carries no result rows: {page}"
+        );
+        assert!(page.get("status").is_none(), "{page}");
+    }
+
+    #[test]
+    fn the_empty_recovery_names_the_operation() {
+        let hint = |operation: &str| Output.fallback_hint(&json!({"operation":operation}));
+        let operations = [
+            "dependents",
+            "dependencies",
+            "cycles",
+            "deadCode",
+            "reachability",
+            "path",
+            "drift",
+        ];
+        let hints: std::collections::BTreeSet<&str> =
+            operations.iter().map(|operation| hint(operation)).collect();
+        assert_eq!(hints.len(), operations.len(), "one recovery per operation");
+        assert!(hint("cycles").contains("cycle"), "{}", hint("cycles"));
+        assert!(
+            hint("dependents").contains("import"),
+            "{}",
+            hint("dependents")
+        );
+        assert!(
+            hint("deadCode").contains("entrypoints"),
+            "{}",
+            hint("deadCode")
+        );
+    }
+}
+
+/// Import resolution and coverage accounting a review found wrong: a path
+/// that leaves and re-enters the scan root, TypeScript declaration siblings,
+/// one unit across counters and diagnostics, and confidence scoped to the rows
+/// an unresolved import can change.
+mod resolution_scope_tests {
+    use super::super::test_support::*;
+    use serde_json::{Value, json};
+    use std::path::Path;
+
+    /// Dependents/dependencies rows of one `file`.
+    fn row<'a>(out: &'a Value, file: &str) -> Option<&'a Value> {
+        out["nodes"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .find(|row| row["file"] == file)
+    }
+
+    fn diagnostic_rows(root: &Path, scan: &str, query: Value) -> Vec<Value> {
+        let mut first = query.clone();
+        first["path"] = json!(scan);
+        first["extras"] = json!(["diagnostics"]);
+        let out = topology(root, first.clone());
+        let lead = out["next"]["readDiagnostics"]["query"]["queries"][0].clone();
+        let mut page = lead;
+        page["path"] = json!(scan);
+        let rows = topology(root, page);
+        rows["coverage"]["diagnostics"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_relative_path_that_leaves_and_reenters_the_scan_root_links_by_normalised_path() {
+        let temp = fixture(&[
+            ("packages/config/src/home.ts", "export const home = 1;\n"),
+            (
+                "packages/agents/tests/native.test.mjs",
+                "import { home } from '../../../packages/config/src/home.ts';\nexport const t = home;\n",
+            ),
+            // Leaves the scan root and enters a directory that is not in it.
+            (
+                "packages/agents/tests/outside.test.mjs",
+                "import { x } from '../../../other/x.ts';\nexport const o = x;\n",
+            ),
+            ("other/x.ts", "export const x = 1;\n"),
+        ]);
+        let scan = temp.path().join("packages");
+        let out = topology(
+            temp.path(),
+            json!({"operation":"dependents","path":scan,"source":"config/src/home.ts"}),
+        );
+        let importer = row(&out, "agents/tests/native.test.mjs");
+        assert!(
+            importer.is_some(),
+            "re-entering importer is a dependent: {out}"
+        );
+        // Only the path that never re-enters the root stays an unresolved gap.
+        assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 1, "{out}");
+    }
+
+    #[test]
+    fn declaration_siblings_resolve_like_the_typescript_extension_swap() {
+        let temp = fixture(&[
+            (
+                "src/main.ts",
+                "import { a } from './a.js';\nimport { b } from './b.mjs';\nimport { c } from './c.cjs';\nimport { d } from './d.js';\nimport { e } from './e';\nexport const all = [a, b, c, d, e];\n",
+            ),
+            ("src/a.d.ts", "export declare const a: number;\n"),
+            ("src/b.d.mts", "export declare const b: number;\n"),
+            ("src/c.d.cts", "export declare const c: number;\n"),
+            ("src/d.tsx", "export const d = 1;\n"),
+            ("src/e.d.ts", "export declare const e: number;\n"),
+        ]);
+        let out = topology(
+            temp.path(),
+            json!({"operation":"dependencies","source":"src/main.ts"}),
+        );
+        let files = result_files(&out);
+        for file in [
+            "src/a.d.ts",
+            "src/b.d.mts",
+            "src/c.d.cts",
+            "src/d.tsx",
+            "src/e.d.ts",
+        ] {
+            assert!(
+                files.contains(&file),
+                "{file} missing from {files:?}: {out}"
+            );
+        }
+        assert_eq!(out["coverage"]["imports"]["unresolvedInternal"], 0, "{out}");
+        assert!(out.get("confidence").is_none(), "{out}");
+    }
+
+    #[test]
+    fn import_counters_count_statements_like_the_diagnostics_and_name_the_unit() {
+        let temp = fixture(&[
+            (
+                "src/main.ts",
+                "import { a, b, c } from './missing';\nimport d from './also-missing';\nimport { x, y } from './ok';\nexport const all = [a, b, c, d, x, y];\n",
+            ),
+            ("src/ok.ts", "export const x = 1;\nexport const y = 2;\n"),
+        ]);
+        let query = json!({"operation":"dependents","source":"src/ok.ts"});
+        let out = topology(temp.path(), query.clone());
+        let imports = &out["coverage"]["imports"];
+        assert_eq!(imports["unresolvedInternal"], 2, "{out}");
+        assert_eq!(imports["resolved"], 1, "{out}");
+        assert_eq!(imports["unit"], "statements", "{out}");
+        let rows = diagnostic_rows(temp.path(), &temp.path().to_string_lossy(), query);
+        let statements: usize = rows
+            .iter()
+            .filter(|row| row["code"] == "unresolved-internal")
+            .map(|row| row["files"].as_array().map_or(0, Vec::len))
+            .sum();
+        assert_eq!(statements, 2, "{rows:?}");
+    }
+
+    #[test]
+    fn every_diagnostic_row_has_the_one_files_shape() {
+        let temp = fixture(&[(
+            "src/main.ts",
+            "import { a } from './missing';\nexport const all = a;\n",
+        )]);
+        let rows = diagnostic_rows(
+            temp.path(),
+            &temp.path().to_string_lossy(),
+            json!({"operation":"dependents","source":"src/main.ts"}),
+        );
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert_eq!(rows[0]["files"], json!(["src/main.ts:1"]), "{rows:?}");
+        assert!(
+            rows[0].get("file").is_none() && rows[0].get("line").is_none(),
+            "{rows:?}"
+        );
+    }
+
+    #[test]
+    fn dependency_confidence_is_scoped_to_the_files_whose_imports_were_read() {
+        let temp = fixture(&[
+            (
+                "src/index.ts",
+                "import { u } from './util';\nexport const i = u;\n",
+            ),
+            ("src/util.ts", "export const u = 1;\n"),
+            (
+                "examples/user-cli.ts",
+                "import { g } from './generated';\nexport const c = g;\n",
+            ),
+        ]);
+        let unrelated = topology(
+            temp.path(),
+            json!({"operation":"dependencies","source":"src/index.ts"}),
+        );
+        assert!(unrelated.get("confidence").is_none(), "{unrelated}");
+        assert!(
+            unrelated["graphSummary"].get("importResolution").is_none(),
+            "{unrelated}"
+        );
+        // The scan's own gap is still reported, as coverage.
+        assert_eq!(
+            unrelated["coverage"]["imports"]["unresolvedInternal"], 1,
+            "{unrelated}"
+        );
+        let affected = topology(
+            temp.path(),
+            json!({"operation":"dependencies","source":"examples/user-cli.ts"}),
+        );
+        assert_eq!(affected["confidence"], "low", "{affected}");
+        // A reverse or whole-graph answer can lose any importer: scan-wide.
+        let dependents = topology(
+            temp.path(),
+            json!({"operation":"dependents","source":"src/util.ts"}),
+        );
+        assert_eq!(dependents["confidence"], "low", "{dependents}");
+    }
+
+    #[test]
+    fn a_cycle_row_labels_its_group_and_says_its_edges_are_one_witness() {
+        let temp = fixture(&[
+            (
+                "a.ts",
+                "import { b } from './b';\nimport { c } from './c';\nexport const a = [b, c];\n",
+            ),
+            ("b.ts", "import { a } from './a';\nexport const b = a;\n"),
+            ("c.ts", "import { a } from './a';\nexport const c = a;\n"),
+        ]);
+        let out = topology(temp.path(), json!({"operation":"cycles"}));
+        let group = &out["nodes"][0];
+        assert_eq!(group["fileCount"], 3, "{out}");
+        assert_eq!(
+            group["runtimeGroups"],
+            json!([{"fileCount":3,"files":["a.ts","b.ts","c.ts"]}]),
+            "{out}"
+        );
+        assert!(group.get("runtimeCycles").is_none(), "{out}");
+        assert_eq!(
+            group["cycleEdgesShown"],
+            json!({"kind":"witness","files":2,"of":3}),
+            "{out}"
+        );
+        assert_eq!(
+            group["cycleEdges"].as_array().map(Vec::len),
+            Some(2),
+            "{out}"
         );
     }
 }

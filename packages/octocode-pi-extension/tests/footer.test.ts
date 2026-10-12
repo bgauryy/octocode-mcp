@@ -48,6 +48,12 @@ describe('footer', () => {
     expect(bottom).not.toContain('\u001b');
   });
 
+  it("keeps another extension's multi-line status on one row, as Pi's own footer does", () => {
+    const [, bottom] = footerLines(state, null, new Map([['mcp', 'MCP:\n 3 servers\t ok']]), theme, 160);
+    expect(bottom).toContain('MCP: 3 servers ok');
+    expect(bottom).not.toMatch(/[\r\n\t]/);
+  });
+
   it('says so when context is unknown (right after compaction) and hides empty parts', () => {
     const [top, bottom] = footerLines({ ...state, thinking: undefined, context: { percent: null, window: 200_000 }, usage: { input: 0, output: 0, cost: 0 }, sessionName: undefined }, null, new Map(), theme, 120);
     expect(top).toBe('claude-opus-5-5 · ctx ? of 200k');

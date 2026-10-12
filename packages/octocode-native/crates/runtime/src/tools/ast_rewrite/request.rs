@@ -46,6 +46,14 @@ impl AstRewriteQuery {
         use crate::policy::prune::DefaultsFlag;
         either_kind!(self, default_excludes => default_excludes.defaults())
     }
+    /// Walk `.gitignore`d paths too (like astSearch/localSearch).
+    pub(crate) fn include_ignored(&self) -> bool {
+        either_kind!(self, include_ignored => include_ignored.as_ref().is_some_and(|flag| flag.0))
+    }
+    /// Walk hidden (dot) paths too.
+    pub(crate) fn include_hidden(&self) -> bool {
+        either_kind!(self, include_hidden => include_hidden.as_ref().is_some_and(|flag| flag.0))
+    }
     /// `include` entries as globs, read like every local tool's
     /// ([`crate::policy::include::include_globs`]): a bare word or a plain
     /// path also matches everything under the directory it names.

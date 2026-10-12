@@ -1,8 +1,9 @@
 #![allow(clippy::expect_used, clippy::unwrap_used)]
 
-//! One shell exit code per tool-call outcome: 0 success, 1 empty, 2 rejected
-//! input, 3 not found, 4 authentication/permission, 5 execution failure,
-//! 6 more to read, 7 rate limited, 130 interrupted.
+//! One shell exit code per tool-call outcome: 0 success (a next page is still
+//! success), 1 empty, 2 rejected input, 3 not found, 4
+//! authentication/permission, 5 execution failure, 7 rate limited, 130
+//! interrupted.
 
 use crate::support;
 use serde_json::{Value, json};
@@ -71,19 +72,22 @@ fn local_rows_exit_by_outcome() {
             json!({"queries":[search(&root, "needle"), search(&root, "zzqqxx")]}),
             0,
         ),
-        ("localFetch", json!({"queries":[page.clone()]}), 6),
+        // Paging is success: the page's `next.*` is the continuation.
+        ("localFetch", json!({"queries":[page.clone()]}), 0),
         ("localFetch", json!({"queries":[fetch(&missing)]}), 3),
         (
             "localFetch",
             json!({"queries":[fetch(&missing), fetch(&missing)]}),
             3,
         ),
+        // A failed row is never hidden by an answering one: the worst row
+        // decides (error class over a continuation).
         (
             "localFetch",
             json!({"queries":[fetch(&missing), fetch(&file)]}),
-            0,
+            3,
         ),
-        ("localFetch", json!({"queries":[fetch(&missing), page]}), 6),
+        ("localFetch", json!({"queries":[fetch(&missing), page]}), 3),
         (
             "localSearch",
             json!({"queries":[search(&root, "needle"), {"path":root,"bogus":1}]}),

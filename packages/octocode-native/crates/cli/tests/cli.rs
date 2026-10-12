@@ -18,6 +18,13 @@ fn exit_code(output: &Output) -> Option<i32> {
     output.status.code()
 }
 
+/// A JSON-mode error is the error itself: no `kind`/`version`/`tool` frame.
+fn assert_bare_error(error: &serde_json::Value) {
+    for frame in ["kind", "version", "tool"] {
+        assert!(error.get(frame).is_none(), "{frame}: {error}");
+    }
+}
+
 /// Opens every availability gate so root help lists every contract tool.
 fn all_tools_enabled(command: &mut std::process::Command) -> &mut std::process::Command {
     command
@@ -611,7 +618,7 @@ fn localfetch_pages_expose_a_rerunnable_continuation() {
         .args(["localFetch", &query])
         .output()
         .expect("first read");
-    assert_eq!(first.status.code(), Some(6), "{}", stderr(&first));
+    assert_eq!(first.status.code(), Some(0), "{}", stderr(&first));
     let value: serde_json::Value = serde_json::from_str(stdout(&first)).expect("page JSON");
     let first_content = value["results"][0]["data"]["content"]
         .as_str()
@@ -620,7 +627,7 @@ fn localfetch_pages_expose_a_rerunnable_continuation() {
     assert!(numbered.starts_with(&first_content), "first page prefix");
     // Cursor tokens are per-process, so the response advertises the prefilled
     // continuation query as a directly re-runnable call.
-    let call = &value["results"][0]["data"]["next"]["continue"];
+    let call = &value["results"][0]["data"]["next"]["continueWindow"];
     assert_eq!(call["tool"], "localFetch", "{value}");
     let continuation = serde_json::to_string(&serde_json::json!({"queries":[call["query"]]}))
         .expect("continuation query");
@@ -649,8 +656,7 @@ fn tool_without_query_exits_two_with_schema_hint() {
     assert_eq!(exit_code(&output), Some(2));
     // A pipe is JSON mode: the usage error is the envelope on stdout.
     let error: serde_json::Value = serde_json::from_str(stdout(&output)).expect("JSON error");
-    assert_eq!(error["kind"], "octocode.toolError", "{error}");
-    assert_eq!(error["tool"], "astSearch", "{error}");
+    assert_bare_error(&error);
     assert_eq!(error["errorCode"], "invalidInput", "{error}");
     let message = error["error"].as_str().unwrap_or_default();
     assert!(
@@ -767,8 +773,11 @@ fn catalog_lists_the_machine_catalog_for_the_launcher() {
     };
     assert!(fields_of("ghStructure").contains("owner*"));
     assert!(fields_of("ghSearchCode").contains("owner*"));
-    assert!(fields_of("astSearch").contains("operation=match(rule)"));
-    assert!(fields_of("astTopology").starts_with("operation=deadCode["));
+    // Several row forms list each by its variant name (the embedded CLI
+    // presentation precomputes the lists from the core Zod rows).
+    assert!(fields_of("astSearch").contains("match:rule[path*, rule*"));
+    assert!(fields_of("astTopology").starts_with("deadCode["));
+    assert!(fields_of("lspSearch").starts_with("anchored["));
     assert!(first["availability"]["enabled"].is_boolean());
     let clone_tool = value["tools"]
         .as_array()
@@ -833,9 +842,10 @@ fn schema_and_tool_help_are_served_by_the_binary() {
         "--select",
         "operation=symbols",
     ]);
-    assert_eq!(
-        selected["querySchema"]["anyOf"].as_array().map(Vec::len),
-        Some(1)
+    // One operation's row: its own fields, no branches.
+    assert!(
+        selected["querySchema"]["properties"]["symbolName"].is_object(),
+        "{selected}"
     );
     // A disabled tool is still described, with its gate.
     let gated = json(&["schema", "astRewrite", "--view", "variants"]);
@@ -849,18 +859,7 @@ fn schema_and_tool_help_are_served_by_the_binary() {
         ),
         (
             vec!["schema", "lspSearch", "--view", "query", "--select", "nope"],
-            "--select expects FIELD=VALUE",
-        ),
-        (
-            vec![
-                "schema",
-                "lspSearch",
-                "--view",
-                "query",
-                "--select",
-                "variant=zzz",
-            ],
-            "Unknown variant: zzz",
+            "--select expects operation=VALUE",
         ),
         (
             vec![
@@ -871,7 +870,7 @@ fn schema_and_tool_help_are_served_by_the_binary() {
                 "--select",
                 "operation=zzz",
             ],
-            "matched 0 top-level",
+            "Unknown operation: zzz",
         ),
     ] {
         let output = workspace.cli().args(&args).output().expect("schema error");
@@ -900,13 +899,21 @@ fn schema_and_tool_help_are_served_by_the_binary() {
     assert!(help.status.success(), "{}", stderr(&help));
     let help = stdout(&help);
     assert_eq!(help.matches("Required: ").count(), 1, "{help}");
-    assert!(help.contains("Required: path, matchString"), "{help}");
+    let required = help
+        .lines()
+        .find(|line| line.starts_with("Required: "))
+        .expect("required line");
+    assert!(
+        required.contains("path") && required.contains("matchString"),
+        "{help}"
+    );
     assert!(
         help.contains("Example:\n  octocode localSearch '"),
         "{help}"
     );
     assert!(
-        help.contains("All fields: octocode schema localSearch --view query"),
+        help.trim_end()
+            .ends_with("All fields: octocode schema localSearch"),
         "{help}"
     );
 
@@ -1099,8 +1106,7 @@ fn json_mode_errors_go_to_stdout_without_stderr() {
     assert_eq!(exit_code(&malformed), Some(2));
     let error: serde_json::Value =
         serde_json::from_str(stdout(&malformed)).expect("machine-readable parse error");
-    assert_eq!(error["kind"], "octocode.toolError");
-    assert_eq!(error["tool"], "localSearch");
+    assert_bare_error(&error);
     assert_eq!(error["errorCode"], "invalidInput", "{error}");
     assert!(stderr(&malformed).is_empty(), "{}", stderr(&malformed));
 
@@ -1117,17 +1123,16 @@ fn json_mode_errors_go_to_stdout_without_stderr() {
     assert_eq!(exit_code(&typo), Some(2));
     let error: serde_json::Value =
         serde_json::from_str(stdout(&typo)).expect("machine-readable input error");
-    assert_eq!(error["kind"], "octocode.toolError", "{error}");
-    assert_eq!(error["tool"], "localFetch", "{error}");
+    assert_bare_error(&error);
     assert_eq!(error["errorCode"], "invalidInput", "{error}");
+    // The single repair detail is the error itself; no extra details.
     assert!(
-        error["details"]
-            .as_array()
-            .is_some_and(|details| details.iter().any(|d| d
-                .as_str()
-                .is_some_and(|d| d.contains("did you mean 'matchString'?")))),
+        error["error"]
+            .as_str()
+            .is_some_and(|message| message.contains("did you mean 'matchString'?")),
         "{error}"
     );
+    assert!(error.get("details").is_none(), "{error}");
 
     let unknown = workspace
         .cli()
@@ -1137,7 +1142,7 @@ fn json_mode_errors_go_to_stdout_without_stderr() {
     assert_eq!(exit_code(&unknown), Some(2));
     let error: serde_json::Value =
         serde_json::from_str(stdout(&unknown)).expect("machine-readable clap error");
-    assert_eq!(error["kind"], "octocode.toolError");
+    assert_bare_error(&error);
     assert!(
         error["error"]
             .as_str()
@@ -1198,7 +1203,13 @@ fn install_rejects_unknown_method_and_names_near_miss_ids() {
             .expect("retired alias");
         assert_eq!(exit_code(&near), Some(2), "{alias}: {}", stdout(&near));
         let error: serde_json::Value = serde_json::from_str(stdout(&near)).expect("JSON error");
-        assert_eq!(error["kind"], "octocode.toolError", "{error}");
+        assert_bare_error(&error);
+        assert!(
+            error["error"]
+                .as_str()
+                .is_some_and(|message| message.contains("Did you mean")),
+            "{error}"
+        );
     }
     let near = workspace
         .cli()

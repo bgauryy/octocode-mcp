@@ -3,9 +3,9 @@ import path from 'node:path';
 import { SessionManager, type ExtensionAPI, type ExtensionCommandContext, type SessionInfo } from '@earendil-works/pi-coding-agent';
 import { say, wordCompletions, type Subcommands } from '../shared/commands.js';
 import { sessionDir } from '../shared/home.js';
-import { processAlive } from '../shared/process.js';
 import { contentText, errorMessage } from '../shared/util.js';
 import { shortDuration } from './brief.js';
+import { runningPid } from '../agentdb/liveness.js';
 import { oneLine, type SessionExtra, type SessionIndex } from './store.js';
 
 /** Most sessions listed. */
@@ -25,7 +25,7 @@ interface ListedSession {
 }
 
 /** Whether a session's process is running now (this one included). */
-const live = ({ extra }: ListedSession): boolean => !!extra?.pid && processAlive(extra.pid);
+const live = ({ extra }: ListedSession): boolean => runningPid(extra?.pid, extra?.pid_started) !== undefined;
 
 function title({ info, parentPrompt }: ListedSession): string {
   // A fork has no prompt of its own until its first new one: show what it was forked from.
@@ -56,7 +56,7 @@ function details(row: ListedSession, current: string | undefined): string {
     `started: ${at(info.created)} UTC · last active: ${at(info.modified)} UTC`,
     ...(info.parentSessionPath ? [`forked from: ${info.parentSessionPath}`] : []),
     ...(info.firstMessage && info.name ? [`first prompt: ${oneLine(info.firstMessage, 300)}`] : []),
-    `tokens: ${extra?.tokens ?? 0} · live: ${live(row) ? `yes (pid ${extra?.pid})` : 'no'}`,
+    `tokens: ${extra?.tokens ?? 0} · live: ${live(row) ? `yes (pid ${runningPid(extra?.pid, extra?.pid_started)})` : 'no'}`,
     `octocode data: ${sessionDir(info.id)}`,
   ].join('\n');
 }
@@ -158,7 +158,7 @@ function uniqueLines(lines: string[]): string[] {
 
 async function resume(ctx: ExtensionCommandContext, row: ListedSession, current: string | undefined): Promise<void> {
   if (row.info.id === current) return ctx.ui.notify('That is the current session.', 'info');
-  if (live(row) && !(await ctx.ui.confirm('Session is running', `Another Pi process (pid ${row.extra?.pid}) has this session open. Resume it here as well?`))) return;
+  if (live(row) && !(await ctx.ui.confirm('Session is running', `Another Pi process (pid ${runningPid(row.extra?.pid, row.extra?.pid_started)}) has this session open. Resume it here as well?`))) return;
   await ctx.switchSession(row.info.path);
 }
 

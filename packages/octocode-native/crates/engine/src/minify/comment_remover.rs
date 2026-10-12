@@ -687,7 +687,7 @@ fn find_regex_literal(content: &str, pos: usize) -> Option<usize> {
         let c = bytes[i];
         if escaped {
             // Step over the whole escaped character: one byte would land
-            // inside a multibyte char and skip past the closing `/` (review L8).
+            // inside a multibyte char and skip past the closing `/`.
             escaped = false;
             i += next_char_len(bytes, i);
             continue;
@@ -864,7 +864,7 @@ mod tests {
         assert_eq!(&content[start..end], "/a\\/b*c/g");
     }
 
-    /// Review L8: an escaped multibyte character inside a regex literal is
+    /// An escaped multibyte character inside a regex literal is
     /// stepped over whole, so the closing `/` still ends the literal and the
     /// following comment is stripped.
     #[test]

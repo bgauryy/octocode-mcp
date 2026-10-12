@@ -12,6 +12,7 @@ export interface AgentProfile {
   tools?: string;
   /** Comma-separated tools the child must not have (Pi's --exclude-tools), e.g. `file` for read-only profiles. */
   excludeTools?: string;
+  /** Preferred model: `provider/id` or a bare id, optionally `:thinking`. Unavailable here: the child runs on the parent's model. */
   model?: string;
   /** When set, the child's `browser` tool opens a visible Chrome on the persistent profile (logins stay). */
   visibleBrowser?: boolean;
@@ -28,7 +29,13 @@ const BUNDLED_DIR = path.join(packageRoot(), 'subagents');
  * <repo root>/.pi/agents → <repo root>/.octocode/agents. Project profiles (prompts, tools, models) load only when Pi
  * trusts the project.
  */
-export function loadProfiles(cwd: string, home = os.homedir(), projectTrusted = true, env: NodeJS.ProcessEnv = process.env): Map<string, AgentProfile> {
+export function loadProfiles(
+  cwd: string,
+  home = os.homedir(),
+  projectTrusted = true,
+  env: NodeJS.ProcessEnv = process.env,
+  onSkip: (file: string, error: unknown) => void = () => undefined,
+): Map<string, AgentProfile> {
   const profiles = new Map<string, AgentProfile>();
   const dirs = [BUNDLED_DIR, path.join(piAgentDir(home), 'agents'), globalPaths(env, home).agents, ...(projectTrusted ? projectAgentDirs(cwd) : [])];
   for (const dir of dirs) {
@@ -39,8 +46,13 @@ export function loadProfiles(cwd: string, home = os.homedir(), projectTrusted = 
       continue;
     }
     for (const file of files) {
-      const profile = parseProfile(path.basename(file, '.md'), fs.readFileSync(path.join(dir, file), 'utf8'));
-      profiles.set(profile.name, profile);
+      // Bad YAML or an unreadable entry skips that profile only; the rest still load.
+      try {
+        const profile = parseProfile(path.basename(file, '.md'), fs.readFileSync(path.join(dir, file), 'utf8'));
+        profiles.set(profile.name, profile);
+      } catch (error) {
+        onSkip(path.join(dir, file), error);
+      }
     }
   }
   return profiles;
@@ -52,9 +64,12 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
   const tools = field('tools');
   const excludeTools = field('excludeTools');
   const model = field('model');
-  const visibleBrowser = frontmatter['visibleBrowser'];
-  const mcp = frontmatter['mcp'];
-  const hooks = frontmatter['hooks'];
+  // Switches take YAML booleans only: a quoted "false" is a string, and a string never flips a switch.
+  const flag = (key: string) => {
+    const value = frontmatter[key];
+    if (value === undefined || typeof value === 'boolean') return value;
+    throw new Error(`${key} must be true or false, not ${JSON.stringify(value)}`);
+  };
   return {
     name: field('name') ?? fallbackName,
     description: field('description') ?? '',
@@ -62,8 +77,8 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
     ...(tools ? { tools } : {}),
     ...(excludeTools ? { excludeTools } : {}),
     ...(model ? { model } : {}),
-    ...(visibleBrowser === true || visibleBrowser === 'true' || visibleBrowser === '1' ? { visibleBrowser: true } : {}),
-    ...(mcp === false || mcp === 'false' || mcp === '0' ? { mcp: false as const } : {}),
-    ...(hooks === true || hooks === 'true' || hooks === '1' ? { hooks: true as const } : {}),
+    ...(flag('visibleBrowser') === true ? { visibleBrowser: true } : {}),
+    ...(flag('mcp') === false ? { mcp: false as const } : {}),
+    ...(flag('hooks') === true ? { hooks: true as const } : {}),
   };
 }

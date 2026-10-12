@@ -3,21 +3,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SessionManager, type SessionInfo } from '@earendil-works/pi-coding-agent';
-import { closeSharedAgentDb, repoKey, sharedAgentDb } from '../src/agentdb/db.js';
+import { closeSharedAgentDb, sharedAgentDb } from '../src/agentdb/db.js';
+import { repoKey, sessionDir, setCurrentSession } from '../src/shared/home.js';
 import { Subcommands } from '../src/shared/commands.js';
-import { sessionDir, sessionOutputDir, setCurrentSession } from '../src/shared/home.js';
 import { shortDuration } from '../src/sessions/brief.js';
 import { registerSessions, RESUME_MESSAGE_TYPE, RUNNING_WORK_TYPE } from '../src/sessions/register.js';
 import { describeWork, unreportedWork, workList } from '../src/sessions/work.js';
+import { processStartTime } from '../src/shared/process.js';
 import { SessionIndex } from '../src/sessions/store.js';
-import { sweepSessions } from '../src/sessions/sweep.js';
 import { vi } from 'vitest';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const DEAD_PID = 9_999_999;
 
 let saved: { home?: string; db?: string };
 let home: string;
@@ -50,7 +49,7 @@ afterEach(() => {
 type Entry = { type: string; id: string; timestamp?: string; message?: Record<string, unknown>; customType?: string; details?: unknown };
 
 /** A Pi host with the sessions feature and a session the test can shape. */
-function setup(options: { id?: string; entries?: Entry[]; hasUI?: boolean; name?: string; subagent?: boolean } = {}) {
+function setup(options: { id?: string; entries?: Entry[]; hasUI?: boolean; name?: string; subagent?: boolean} = {}) {
   const fake = fakePi();
   const names: string[] = [];
   const switched: string[] = [];
@@ -88,7 +87,7 @@ describe('session extras', () => {
     const usage = (total: number, tokens: number) => ({ input: tokens, output: 0, totalTokens: tokens, cost: { total } });
     const { fire, ctx, start, id } = setup({ entries: [{ type: 'message', id: 'a0', message: { role: 'assistant', usage: usage(0.25, 15) } }] });
     await start();
-    expect(row(id)).toEqual({ id, branch: null, head: null, cost: 0, tokens: 0, files_changed: 0, pid: process.pid });
+    expect(row(id)).toEqual({ id, branch: null, head: null, cost: 0, tokens: 0, files_changed: 0, pid: process.pid, pid_started: processStartTime(process.pid) ?? null });
     // Totals are read once at start, then each reply adds its usage: agent_end does not rescan the session.
     await fire('message_end', { type: 'message_end', message: { role: 'assistant', usage: usage(0.5, 25) } }, ctx);
     await fire('message_end', { type: 'message_end', message: { role: 'user', usage: usage(9, 9) } }, ctx);
@@ -303,85 +302,6 @@ describe('resume brief', () => {
 
   it('formats short durations', () => {
     expect([shortDuration(10_000), shortDuration(90_000), shortDuration(2 * HOUR), shortDuration(3 * DAY)]).toEqual(['moments', '1m', '2h', '3d']);
-  });
-});
-
-describe('session sweep', () => {
-  const age = (dir: string, ms: number) => {
-    const at = new Date(Date.now() - ms);
-    for (const file of [dir, ...fs.readdirSync(dir, { recursive: true }).map((name) => path.join(dir, String(name)))]) fs.utimesSync(file, at, at);
-  };
-  const folder = (name: string, kinds = ['output']) => {
-    const dir = path.join(home, 'agent', 'pi', 'sessions', name);
-    for (const kind of kinds) fs.mkdirSync(path.join(dir, kind), { recursive: true });
-    return dir;
-  };
-
-  it('removes data of sessions Pi no longer lists, keeps live and current ones, trims old output, and runs at most every 6 hours', async () => {
-    const index = new SessionIndex(sharedAgentDb());
-    const insert = (id: string, pid: number | null) => sharedAgentDb().db.prepare('INSERT INTO sessions (id, pid) VALUES (?, ?)').run(id, pid);
-    const listed = async () => new Set(['kept-file', 'current']);
-    insert('gone-file', null);
-    insert('recent-gone-file', null);
-    insert('kept-file', null);
-    insert('gone-live', process.pid);
-    insert('no-folder', null);
-    insert('current', DEAD_PID);
-    for (const name of ['gone-file', 'kept-file', 'gone-live', 'current']) age(folder(name), 8 * DAY);
-    age(folder('recent-gone-file'), DAY);
-    age(folder(`_pid-${DEAD_PID}`), 2 * DAY);
-    age(folder(`_pid-${process.pid}`), 20 * DAY);
-    age(folder('unindexed-old'), 15 * DAY);
-    age(folder('unindexed-new'), 3 * DAY);
-    const oldLog = path.join(folder('kept-file'), 'output', 'old.txt');
-    const newLog = path.join(folder('kept-file'), 'output', 'new.txt');
-    fs.writeFileSync(oldLog, 'x');
-    fs.writeFileSync(newLog, 'x');
-    fs.utimesSync(oldLog, new Date(Date.now() - 31 * DAY), new Date(Date.now() - 31 * DAY));
-
-    const removed = await sweepSessions(index, 'current', { listed });
-    expect(removed.sort()).toEqual(['_pid-9999999', 'gone-file', 'unindexed-old']);
-    const left = fs.readdirSync(path.join(home, 'agent', 'pi', 'sessions')).sort();
-    expect(left).toEqual(['_pid-' + process.pid, 'current', 'gone-live', 'kept-file', 'recent-gone-file', 'unindexed-new'].sort());
-    expect(index.get('gone-file')).toBeUndefined();
-    expect(index.get('no-folder')).toBeUndefined();
-    expect(index.get('current')).toBeDefined();
-    expect(index.get('kept-file')).toBeDefined();
-    expect(fs.existsSync(oldLog)).toBe(false);
-    expect(fs.existsSync(newLog)).toBe(true);
-
-    age(folder('unindexed-new'), 30 * DAY);
-    expect(await sweepSessions(index, 'current', { listed })).toEqual([]);
-    expect(await sweepSessions(index, 'current', { listed, now: Date.now() + 7 * HOUR })).toEqual(['unindexed-new']);
-  });
-
-  it('removes nothing when Pi cannot list its sessions', async () => {
-    const index = new SessionIndex(sharedAgentDb());
-    age(folder('unindexed-old'), 15 * DAY);
-    expect(await sweepSessions(index, 'current', { force: true, listed: async () => Promise.reject(new Error('no')) })).toEqual([]);
-    expect(fs.existsSync(path.join(home, 'agent', 'pi', 'sessions', 'unindexed-old'))).toBe(true);
-  });
-
-  it('follows OCTOCODE_CLEANUP_DAYS: 0 turns the sweep off, N days sets how long output is kept', async () => {
-    const index = new SessionIndex(sharedAgentDb());
-    const listed = async () => new Set<string>();
-    age(folder('unindexed-old'), 15 * DAY);
-    const log = path.join(folder('current'), 'output', 'log.txt');
-    fs.writeFileSync(log, 'x');
-    fs.utimesSync(log, new Date(Date.now() - 3 * DAY), new Date(Date.now() - 3 * DAY));
-    expect(await sweepSessions(index, 'current', { listed, force: true, env: { ...process.env, OCTOCODE_CLEANUP_DAYS: '0' } })).toEqual([]);
-    expect(fs.existsSync(path.join(home, 'agent', 'pi', 'sessions', 'unindexed-old'))).toBe(true);
-    await sweepSessions(index, 'current', { listed, force: true, env: { ...process.env, OCTOCODE_CLEANUP_DAYS: '5' } });
-    expect(fs.existsSync(log)).toBe(true);
-    await sweepSessions(index, 'current', { listed, force: true, env: { ...process.env, OCTOCODE_CLEANUP_DAYS: '2' } });
-    expect(fs.existsSync(log)).toBe(false);
-  });
-
-  it('writes session output under the current session folder, owner-only', () => {
-    setCurrentSession('a/b');
-    const dir = sessionOutputDir('bash');
-    expect(dir).toBe(path.join(sessionDir('a/b'), 'bash'));
-    if (process.platform !== 'win32') for (const each of [dir, sessionDir('a/b'), path.dirname(sessionDir('a/b'))]) expect(fs.statSync(each).mode & 0o777).toBe(0o700);
   });
 });
 

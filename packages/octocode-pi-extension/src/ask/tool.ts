@@ -73,17 +73,14 @@ export function registerAskUser(pi: ExtensionAPI): void {
     name: 'askUser',
     label: 'Ask user',
     description:
-      'Ask for missing preferences, requirements or facts that tools cannot discover and that materially change the next action. Use existing answers and authorization; make routine reversible decisions yourself. ' +
-      'Ask one focused question or batch up to 4 related ones in a single call instead of asking in sequence. Make each question self-contained. ' +
-      'Supply 2-4 distinct choices when the answer space is known; omit options for a free-text answer. Put a supported recommendation first with \' (Recommended)\' in its label. Do not add an "Other" choice: the UI always offers a write-in field. ' +
-      'Set multiSelect: true when several choices can apply together (the user toggles any number, then confirms); leave it off when choices are mutually exclusive (a single pick answers the question). ' +
-      'Cancellation or an unavailable user supplies no answer or approval; continue independent authorized work and report a required missing decision.',
-    promptSnippet: 'Ask for a decision or fact only the user can supply',
+      'Ask the user for preferences or facts that tools cannot discover and that change your next step. Batch up to 4 related, self-contained questions in one call. ' +
+      'Give 2-4 choices when the answers are known (omit options for free text), with a supported recommendation first labelled \' (Recommended)\'; the UI always adds a write-in field, so do not add "Other".',
+    promptSnippet: 'Ask the user a question only they can answer',
     parameters: Type.Object({
       questions: Type.Array(
         Type.Object({
           question: Type.String({ minLength: 1, description: 'Self-contained question with the context needed to answer' }),
-          header: Type.Optional(Type.String({ description: 'Short tab label; omit for an automatic question number' })),
+          header: Type.Optional(Type.String({ description: 'Tab label, at most 12 characters; omit for an automatic question number' })),
           options: Type.Optional(Type.Array(
             Type.Object({
               label: Type.String({ minLength: 1, description: 'Concise answer label (1-5 words)' }),

@@ -45,7 +45,10 @@ impl ToolArgs {
         let bytes = read
             .map_err(|error| format!("Cannot read {source}: {error}"))?
             .ok_or_else(|| format!("The JSON query exceeds {} MiB.", MAX_QUERY_BYTES >> 20))?;
-        String::from_utf8(bytes)
+        // Editors on Windows save UTF-8 with a byte-order mark; JSON never
+        // starts with one.
+        let text = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
+        String::from_utf8(text.to_vec())
             .map(Some)
             .map_err(|error| format!("Cannot read {source}: {error}"))
     }

@@ -45,7 +45,7 @@ Large requests: save under `<workspace>/.octocode/tmp/` and run `npx octocode cl
 - `best[id]` lists answering windows as `{line, endLine, exists, probability}` (`path`/`resourceId` when several resources): `exists` = this window answers, `probability` = which window. Rows rank by `exists`, then `probability`; never multiply them. `hints.read` is the exact, commit-pinned read of the top row: run it unchanged and read other rows by `line`–`endLine`.
 - While a continuation remains and no window answers, `best` is absent and the ranking travels in `carry`: follow the `next.clasify` page unchanged instead of reading the closest passage.
 - On an open walk (`coverage: partial` with `next.clasify`), `best` ranks only the pages judged so far. If its read lacks the answer, follow `next.clasify` before you search elsewhere.
-- An identifier target adds a `hints.text` tip (and locally `hints.textSearch`): search it instead. An oversized capture fails with `classificationContextTooLarge` and keeps `hints.read`; narrow with `prefilter` or a range.
+- An identifier target adds a `hints.text` tip (and locally `hints.findText`): search it instead. An oversized capture fails with `classificationContextTooLarge` and keeps `hints.read`; narrow with `prefilter` or a range.
 - `partial`, `error`, and `insufficient` mean narrow or read, never "no". High `probability` + low `exists` is the closest passage, not an answer. Verdicts rank attention only: never infer identity, reachability, or mutation safety; verify the deciding source.
 
 Next: read the deciding windows, then return to the route that sent you.

@@ -61,7 +61,7 @@ GitHub App user tokens expire; classic `ghp_` tokens and env tokens are never re
 ### Status and logout
 
 ```bash
-npx octocode auth              # same as `auth status`
+npx octocode auth status
 npx octocode auth status --json
 npx octocode auth logout
 ```
@@ -104,7 +104,7 @@ npx octocode auth login --hostname github.mycompany.com
 | `OCTOCODE_CLASSIFICATION_TYPE` | Vendor; only `jev` |
 
 - Source order: process env → workspace `.env` → home `.env` → `.octocoderc` (`classification.api`). The key never appears in resolved configuration output.
-- **No key:** MCP does not register `clasify`, other tools' descriptions drop their clasify handoffs, and no tool returns a `hints.clasify` lead. The shared instructions keep one line that says clasify needs a provider key. CLI help and `npx octocode schema` list only enabled tools; `npx octocode schema clasify` shows `availability.enabled: false` and `envVar`, and a direct call fails with `missingConfiguration` (exit 5).
+- **No key:** MCP does not register `clasify`, and no tool returns a `hints.clasify` lead. The shared instructions keep one line that says clasify needs a provider key. CLI help and `npx octocode schema` list only enabled tools; `npx octocode schema clasify` shows `availability.enabled: false` and `envVar`, and a direct call fails with `missingConfiguration` (exit 5).
 - **Kill switch:** a present-but-blank `OCTOCODE_CLASSIFICATION_API=` in the process environment disables classification, even when a `.env` file has a key.
 - Get a key from the [provider docs](https://docs.typesafe.ai/introduction). What is sent: [SECURITY.md](SECURITY.md#classification-egress). Usage and the startup provider check: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md#availability).
 

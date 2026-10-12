@@ -85,17 +85,17 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "deepseekApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:DEEPSEEK|deepseek|DeepSeek)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?sk-[a-zA-Z0-9]{32,64}['"]?\b"###,
+        regex: r###"\b['"]?(?:DEEPSEEK|deepseek|DeepSeek)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>sk-[a-zA-Z0-9]{32,64})['"]?\b"###,
     },
     SecretPattern {
         name: "togetherApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:TOGETHER|together)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{40,64}['"]?\b"###,
+        regex: r###"\b['"]?(?:TOGETHER|together)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{40,64})['"]?\b"###,
     },
     SecretPattern {
         name: "fireworksApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:FIREWORKS|fireworks)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{40,64}['"]?\b"###,
+        regex: r###"\b['"]?(?:FIREWORKS|fireworks)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{40,64})['"]?\b"###,
     },
     SecretPattern {
         name: "xaiApiKey",
@@ -115,12 +115,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "ai21ApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:AI21|ai21)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{40,64}['"]?\b"###,
+        regex: r###"\b['"]?(?:AI21|ai21)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{40,64})['"]?\b"###,
     },
     SecretPattern {
         name: "stabilityApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:STABILITY|stability|Stability)_?(?:AI|ai)?_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?sk-[a-zA-Z0-9]{48,}['"]?\b"###,
+        regex: r###"\b['"]?(?:STABILITY|stability|Stability)_?(?:AI|ai)?_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>sk-[a-zA-Z0-9]{48,})['"]?\b"###,
     },
     SecretPattern {
         name: "voyageApiKey",
@@ -130,12 +130,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "elevenLabsApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:ELEVENLABS|elevenlabs)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{32,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:ELEVENLABS|elevenlabs)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{32,})['"]?\b"###,
     },
     SecretPattern {
         name: "assemblyaiApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:ASSEMBLYAI|assemblyai|AssemblyAI)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b"###,
+        regex: r###"\b['"]?(?:ASSEMBLYAI|assemblyai|AssemblyAI)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "pineconeApiKeyPrefixed",
@@ -150,7 +150,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "cometApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:COMET|comet)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{32,64}['"]?\b"###,
+        regex: r###"\b['"]?(?:COMET|comet)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{32,64})['"]?\b"###,
     },
     SecretPattern {
         name: "langchainApiKey",
@@ -160,7 +160,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "unstructuredApiKey",
         file_context: None,
-        regex: r###"\b['"]?(?:UNSTRUCTURED|unstructured)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{32,}['"]?\b"###,
+        regex: r###"\b['"]?(?:UNSTRUCTURED|unstructured)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{32,})['"]?\b"###,
     },
     SecretPattern {
         name: "vercelToken",
@@ -220,7 +220,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "googleOauthRefreshToken",
         file_context: Some("(?:\\.env|config|settings|secrets)"),
-        regex: r###"\b['"]?(?:GOOGLE|google)?_?(?:OAUTH|oauth)?_?(?:REFRESH|refresh)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?(1\/\/0[a-zA-Z0-9._-]{40,})['"]?\b"###,
+        regex: r###"\b['"]?(?:GOOGLE|google)?_?(?:OAUTH|oauth)?_?(?:REFRESH|refresh)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>(1\/\/0[a-zA-Z0-9._-]{40,}))['"]?\b"###,
     },
     SecretPattern {
         name: "onePasswordSecretKey",
@@ -245,17 +245,17 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "auth0ClientSecret",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:AUTH0|auth0)_?(?:CLIENT|client)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9_-]{32,64}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:AUTH0|auth0)_?(?:CLIENT|client)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9_-]{32,64})['"]?\b"###,
     },
     SecretPattern {
         name: "auth0ManagementToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:AUTH0|auth0)_?(?:MANAGEMENT|management|MGMT)?_?(?:API)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{50,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:AUTH0|auth0)_?(?:MANAGEMENT|management|MGMT)?_?(?:API)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>eyJ[a-zA-Z0-9_-]{50,})['"]?\b"###,
     },
     SecretPattern {
         name: "supertokensApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:SUPERTOKENS|supertokens)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9_-]{30,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:SUPERTOKENS|supertokens)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9_-]{30,})['"]?\b"###,
     },
     SecretPattern {
         name: "basicAuthHeader",
@@ -275,7 +275,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "awsAccountId",
         file_context: None,
-        regex: r###"\b['"]?(?:AWS|aws|Aws)?_?(?:ACCOUNT|account|Account)_?(?:ID|id|Id)?['"]?\s*(?::|=>|=)\s*['"]?[0-9]{12}['"]?\b"###,
+        regex: r###"\b['"]?(?:AWS|aws|Aws)?_?(?:ACCOUNT|account|Account)_?(?:ID|id|Id)?['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[0-9]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "awsAppSyncApiKey",
@@ -310,12 +310,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "awsSecretAccessKey",
         file_context: None,
-        regex: r###"\b['"]?(?:AWS|aws|Aws)?_?(?:SECRET|secret|Secret)_?(?:ACCESS|access|Access)_?(?:KEY|key|Key)['"]?\s*(?::|=>|=)\s*['"]?[A-Za-z0-9/+=]{40}['"]?\b"###,
+        regex: r###"\b['"]?(?:AWS|aws|Aws)?_?(?:SECRET|secret|Secret)_?(?:ACCESS|access|Access)_?(?:KEY|key|Key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[A-Za-z0-9/+=]{40})['"]?\b"###,
     },
     SecretPattern {
         name: "awsSessionToken",
         file_context: None,
-        regex: r###"\b['"]?(?:AWS|aws|Aws)?_?(?:SESSION|session|Session)_?(?:TOKEN|token|Token)['"]?\s*(?::|=>|=)\s*['"]?[A-Za-z0-9/+=]{200,}['"]?\b"###,
+        regex: r###"\b['"]?(?:AWS|aws|Aws)?_?(?:SESSION|session|Session)_?(?:TOKEN|token|Token)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[A-Za-z0-9/+=]{200,})['"]?\b"###,
     },
     SecretPattern {
         name: "awsSecretsManagerArn",
@@ -335,7 +335,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "googleOAuthClientSecret",
         file_context: None,
-        regex: r###"\b"client_secret":\s*"[a-zA-Z0-9-_]{24}"\b"###,
+        regex: r###""client_secret":\s*"(?P<secret>[a-zA-Z0-9-_]{24})""###,
     },
     SecretPattern {
         name: "gcpServiceAccountEmail",
@@ -350,7 +350,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "azureSubscriptionId",
         file_context: Some("(?:\\.env|config|settings|secrets)"),
-        regex: r###"(?i)\b['"]?(?:AZURE|azure)?_?(?:SUBSCRIPTION|subscription)_?(?:ID|id)?['"]?\s*(?::|=>|=)\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:AZURE|azure)?_?(?:SUBSCRIPTION|subscription)_?(?:ID|id)?['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "azureTenantDomain",
@@ -480,12 +480,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "cloudflareApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:cloudflare)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9_-]{40}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:cloudflare)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9_-]{40})['"]?\b"###,
     },
     SecretPattern {
         name: "cloudflareGlobalApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:cloudflare)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{37}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:cloudflare)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{37})['"]?\b"###,
     },
     SecretPattern {
         name: "cloudflareOriginCaKey",
@@ -515,7 +515,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "netlifyAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:netlify)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9=_-]{40,46}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:netlify)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9=_-]{40,46})['"]?\b"###,
     },
     SecretPattern {
         name: "scalingoApiToken",
@@ -550,7 +550,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "oktaAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:okta)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?00[\w=-]{40}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:okta)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>00[\w=-]{40})['"]?\b"###,
     },
     SecretPattern {
         name: "openshiftUserToken",
@@ -570,12 +570,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "azureOpenaiApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:AZURE_OPENAI|azure_openai)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:AZURE_OPENAI|azure_openai)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "railwayApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:RAILWAY|railway)_?(?:API|api)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:RAILWAY|railway)_?(?:API|api)?_?(?:TOKEN|token)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "convexDeployKey",
@@ -585,7 +585,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "upstashKafkaCredentials",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:UPSTASH_KAFKA)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9=_-]{40,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:UPSTASH_KAFKA)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9=_-]{40,})['"]?\b"###,
     },
     SecretPattern {
         name: "cloudflareApiTokenPrefixed",
@@ -595,52 +595,46 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "jwtSecrets",
         file_context: None,
-        regex: r###"(?i)\bjwt[_-]?secret\s*[:=]\s*['"][^'"]{16,}['"]\b"###,
+        regex: r###"(?i)\bjwt[_-]?secret['"]?\s*[:=]\s*['"](?P<secret>[^'"\r\n]{16,})['"]"###,
     },
     SecretPattern {
         name: "kubernetesSecrets",
         file_context: Some("\\.ya?ml$"),
-        regex: r###"(?i)\bkind:\s*["']?Secret["']?[\s\S]{0,2000}?\bdata:\s*[\s\S]{0,2000}?[a-zA-Z0-9_-]+:\s*[a-zA-Z0-9+/]{16,}={0,3}\b"###,
+        regex: r###"(?im)\bkind:[ \t]*["']?Secret["']?[\s\S]{0,2000}?^[ \t]*(?:data|stringData):[ \t]*\r?\n(?P<secret>(?:[ \t]+[^\s:#]+:[ \t]*\S.*(?:\r?\n|$))+)|^[ \t]*(?:data|stringData):[ \t]*\r?\n(?P<secret_before_kind>(?:[ \t]+[^\s:#]+:[ \t]*\S.*(?:\r?\n|$))+)[\s\S]{0,2000}?\bkind:[ \t]*["']?Secret\b"###,
     },
     SecretPattern {
         name: "dockerComposeSecrets",
         file_context: Some("docker-compose\\.ya?ml$"),
-        regex: r###"(?i)\b(?:MYSQL_ROOT_PASSWORD|POSTGRES_PASSWORD|REDIS_PASSWORD|MONGODB_PASSWORD)\s*[:=]\s*['"][^'"]{4,}['"]\b"###,
+        regex: r###"(?i)\b(?:MYSQL_ROOT_PASSWORD|POSTGRES_PASSWORD|REDIS_PASSWORD|MONGODB_PASSWORD)['"]?\s*[:=]\s*['"](?P<secret>[^'"\r\n]{4,})['"]"###,
     },
     SecretPattern {
         name: "springBootSecrets",
         file_context: Some("(?:application|bootstrap)(?:-\\w+)?\\.(?:properties|ya?ml)$"),
-        regex: r###"(?i)\b(?:spring\.datasource\.password|spring\.security\.oauth2\.client\.registration\..*\.client-secret)\s*[:=]\s*['"][^'"]{4,}['"]\b"###,
+        regex: r###"(?i)\b(?:spring\.datasource\.password|spring\.security\.oauth2\.client\.registration\..*\.client-secret)\s*[:=]\s*['"](?P<secret>[^'"\r\n]{4,})['"]"###,
     },
     SecretPattern {
         name: "dotnetConnectionStrings",
         file_context: Some("(?:appsettings|web\\.config).*\\.(?:json|config)$"),
-        regex: r###"(?i)\b(?:ConnectionStrings?|connectionString)\s*[:=]\s*['"][^'"]*(?:password|pwd)\s*=\s*[^;'"]{4,}[^'"]*['"]\b"###,
+        regex: r###"(?i)\b(?:ConnectionStrings?|connectionString)\s*[:=]\s*['"][^'"]*(?:password|pwd)\s*=\s*(?P<secret>[^;'"\r\n]{4,})[^'"]*['"]"###,
     },
     SecretPattern {
         name: "base64EncodedSecrets",
         file_context: None,
-        regex: r###"(?i)\b(?:secret|password|key|token)[_-]?(?:base64|encoded)?\s*[:=]\s*['"][A-Za-z0-9+/]{32,}={0,3}['"]\b"###,
+        regex: r###"(?i)\b(?:secret|password|key|token)[_-]?(?:base64|encoded)?['"]?\s*[:=]\s*['"](?P<secret>[A-Za-z0-9+/]{32,}={0,3})['"]"###,
+    },
+    SecretPattern {
+        name: "base64PemPrivateKey",
+        file_context: None,
+        // Base64 of a `-----BEGIN … PRIVATE KEY` armor line (Kubernetes `data:`,
+        // Helm values, JSON): the armor rules never see the decoded markers.
+        // Each alternative spells only whole 3-byte groups of the header, so
+        // the encoded prefix is fixed; a line-wrapped body continues the match.
+        regex: r###"LS0tLS1CRUdJTiB(?:QUklWQVRFIEtFWS|SU0EgUFJJVkFURSBLRVkt|FQyBQUklWQVRFIEtFWS|EU0EgUFJJVkFURSBLRVkt|PUEVOU1NIIFBSSVZBVEUgS0VZ|FTkNSWVBURUQgUFJJVkFURSBLRVkt|QR1AgUFJJVkFURSBLRVkgQkxPQ0st|TU0gyIEVOQ1JZUFRFRCBQUklWQVRFIEtFWS)[A-Za-z0-9+/]*={0,2}(?:\r?\n[ \t]*[A-Za-z0-9+/]{16,}={0,2})*"###,
     },
     SecretPattern {
         name: "rsaPrivateKey",
         file_context: None,
         regex: r###"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----[\s\S]*?-----END\s+(?:RSA\s+)?PRIVATE\s+KEY-----"###,
-    },
-    SecretPattern {
-        name: "pkcs8PrivateKey",
-        file_context: None,
-        regex: r###"\b-----BEGIN (?:ENCRYPTED )?PRIVATE KEY-----\s*[\s\S]*?-----END (?:ENCRYPTED )?PRIVATE KEY-----\b"###,
-    },
-    SecretPattern {
-        name: "ecPrivateKey",
-        file_context: None,
-        regex: r###"\b-----BEGIN EC PRIVATE KEY-----\s*[\s\S]*?-----END EC PRIVATE KEY-----\b"###,
-    },
-    SecretPattern {
-        name: "dsaPrivateKey",
-        file_context: None,
-        regex: r###"\b-----BEGIN DSA PRIVATE KEY-----\s*[\s\S]*?-----END DSA PRIVATE KEY-----\b"###,
     },
     SecretPattern {
         name: "opensshPrivateKey",
@@ -650,7 +644,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "sshPrivateKeyEncrypted",
         file_context: None,
-        regex: r###"\b-----BEGIN SSH2 ENCRYPTED PRIVATE KEY-----\s*[\s\S]*?-----END SSH2 ENCRYPTED PRIVATE KEY-----\b"###,
+        regex: r###"-----BEGIN SSH2 ENCRYPTED PRIVATE KEY-----[\s\S]*?-----END SSH2 ENCRYPTED PRIVATE KEY-----"###,
     },
     SecretPattern {
         name: "puttyPrivateKey",
@@ -658,14 +652,9 @@ pub static PATTERNS: &[SecretPattern] = &[
         regex: r###"\bPuTTY-User-Key-File-[23]:\s*[\s\S]*?Private-MAC:\b"###,
     },
     SecretPattern {
-        name: "pgpPrivateKey",
-        file_context: None,
-        regex: r###"\b-----BEGIN PGP PRIVATE KEY BLOCK-----\s*[\s\S]*?-----END PGP PRIVATE KEY BLOCK-----\b"###,
-    },
-    SecretPattern {
         name: "firebaseServiceAccountPrivateKey",
         file_context: None,
-        regex: r###"\b"private_key":\s*"-----BEGIN PRIVATE KEY-----\\n[a-zA-Z0-9+/=\\n]+\\n-----END PRIVATE KEY-----"\b"###,
+        regex: r###""private_key":\s*"(?P<secret>-----BEGIN PRIVATE KEY-----\\n[a-zA-Z0-9+/=\\n]+\\n-----END PRIVATE KEY-----)""###,
     },
     SecretPattern {
         name: "openvpnClientPrivateKey",
@@ -700,12 +689,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "base64PrivateKeyContent",
         file_context: None,
-        regex: r###"(?i)\b(?:private[_-]?key|secret[_-]?key)\s*[:=]\s*["'][A-Za-z0-9+/]{64,}={0,2}["']\b"###,
+        regex: r###"(?i)\b(?:private[_-]?key|secret[_-]?key)['"]?\s*[:=]\s*["'](?P<secret>[A-Za-z0-9+/]{64,}={0,2})["']"###,
     },
     SecretPattern {
         name: "hexEncodedKey",
         file_context: None,
-        regex: r###"(?i)\b(?:key|secret)\s*[:=]\s*["'][a-fA-F0-9]{32,}["']\b"###,
+        regex: r###"(?i)\b(?:key|secret)['"]?\s*[:=]\s*["'](?P<secret>[a-fA-F0-9]{32,})["']"###,
     },
     SecretPattern {
         name: "postgresqlConnectionString",
@@ -800,17 +789,17 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "tursoDatabaseToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:turso|libsql)(?:[\s\w.-]{0,20})(?:token|auth)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9._-]{50,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:turso|libsql)(?:[\s\w.-]{0,20})(?:token|auth)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9._-]{50,})['"]?\b"###,
     },
     SecretPattern {
         name: "upstashRedisToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:upstash)(?:[\s\w.-]{0,20})(?:token|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9=]{40,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:upstash)(?:[\s\w.-]{0,20})(?:token|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9=]{40,})['"]?\b"###,
     },
     SecretPattern {
         name: "supabaseJwtKey",
         file_context: None,
-        regex: r###"\b['"]?(?:SUPABASE|supabase)_?(?:ANON|SERVICE_ROLE|anon|service_role)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(eyJ[a-zA-Z0-9_-]{100,})['"]?\b"###,
+        regex: r###"\b['"]?(?:SUPABASE|supabase)_?(?:ANON|SERVICE_ROLE|anon|service_role)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>(eyJ[a-zA-Z0-9_-]{100,}))['"]?\b"###,
     },
     SecretPattern {
         name: "cockroachdbConnectionString",
@@ -920,7 +909,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "snykApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:snyk[_.-]?(?:(?:api|oauth)[_.-]?)?(?:key|token))['"]?\s*(?::|=>|=)\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:snyk[_.-]?(?:(?:api|oauth)[_.-]?)?(?:key|token))['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "sonarqubeToken",
@@ -930,17 +919,17 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "travisciAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:travis)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{22}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:travis)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{22})['"]?\b"###,
     },
     SecretPattern {
         name: "codecovAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:codecov)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:codecov)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "droneCiAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:droneci|drone)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:droneci|drone)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "octopusDeployApiKey",
@@ -950,7 +939,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "circleciToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:circleci|circle)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{40}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:circleci|circle)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{40})['"]?\b"###,
     },
     SecretPattern {
         name: "buildkiteAgentToken",
@@ -960,17 +949,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "launchdarklyAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:launchdarkly)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9=_-]{40}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:launchdarkly)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9=_-]{40})['"]?\b"###,
     },
     SecretPattern {
         name: "algoliaApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:algolia)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b"###,
-    },
-    SecretPattern {
-        name: "clerkSecretKey",
-        file_context: None,
-        regex: r###"\bsk_(?:live|test)_[a-zA-Z0-9]{24,}\b"###,
+        regex: r###"(?i)\b['"]?(?:algolia)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "clerkPublishableKey",
@@ -985,12 +969,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "vercelOidcToken",
         file_context: None,
-        regex: r###"\b['"]?(?:VERCEL_OIDC_TOKEN)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{100,}['"]?\b"###,
+        regex: r###"\b['"]?(?:VERCEL_OIDC_TOKEN)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>eyJ[a-zA-Z0-9_-]{100,})['"]?\b"###,
     },
     SecretPattern {
         name: "novuApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:NOVU|novu)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{32,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:NOVU|novu)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{32,})['"]?\b"###,
     },
     SecretPattern {
         name: "triggerDevApiKey",
@@ -1000,7 +984,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "nxCloudAccessToken",
         file_context: None,
-        regex: r###"\b['"]?(?:NX_CLOUD_ACCESS_TOKEN|nxCloudAccessToken)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{36,}['"]?\b"###,
+        regex: r###"\b['"]?(?:NX_CLOUD_ACCESS_TOKEN|nxCloudAccessToken)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{36,})['"]?\b"###,
     },
     SecretPattern {
         name: "depotToken",
@@ -1010,7 +994,7 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "grafbaseApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:GRAFBASE|grafbase)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{50,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:GRAFBASE|grafbase)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>eyJ[a-zA-Z0-9_-]{50,})['"]?\b"###,
     },
     SecretPattern {
         name: "shopifyStorefrontAccessToken",
@@ -1045,7 +1029,26 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "envVarSecrets",
         file_context: None,
-        regex: r###"(?i)\b(?:\w+_)?(?:SECRET|secret|password|key|token|jwt_secret)(?:_\w+)?\s*=\s*["'](?P<secret>[^"']{16,})["']"###,
+        // A quoted value assigned to a credential-named identifier: snake,
+        // kebab or dotted (`API_KEY`, `client-secret`, `db.password`) or
+        // camelCase (`awsSecret`, `clientSecretKey`), optionally quoted as a
+        // JSON/YAML key, with `=`, `:=`, `:` or `=>`.
+        regex: r###"(?:\b(?:[A-Za-z0-9]+[_.-])*(?i:secret|password|passwd|passphrase|key|token|credential)s?(?:[_.-][A-Za-z0-9]+)*|\b[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)*(?:Secret|Password|Passwd|Passphrase|Key|Token|Credential)s?(?:[A-Z][a-z0-9]*)*)["']?\s*(?:=>|:=|=|:)\s*["'](?P<secret>[^"'\r\n]{16,})["']"###,
+    },
+    SecretPattern {
+        name: "dotenvSecretAssignment",
+        file_context: None,
+        // An unquoted dotenv/INI/shell line `NAME=value` whose name holds a
+        // credential word. The value must run to the end of the line (or a
+        // comment), so code such as `SECRET = os.environ["X"]` is left alone.
+        regex: r###"(?m)^[ \t]*(?:export[ \t]+)?(?:[A-Za-z0-9]+[_.])*(?i:secret|password|passwd|passphrase|key|token|credential)s?(?:[_.][A-Za-z0-9]+)*[ \t]*=[ \t]*(?P<secret>[^\s"'$#(){}\[\]:][^\s"'(){}\[\]:]{11,})[ \t]*(?:#.*)?$"###,
+    },
+    SecretPattern {
+        name: "yamlSecretValue",
+        file_context: None,
+        // An unquoted YAML scalar under a credential-named key. A bare `key:`
+        // is too common in YAML (label selectors, tolerations) to count.
+        regex: r###"(?m)^[ \t]*(?:-[ \t]+)?(?:(?:[A-Za-z0-9]+[_.-])*(?i:secret|password|passwd|passphrase|token|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?key|credential)s?(?:[_.-][A-Za-z0-9]+)*|[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)*(?:Secret|Password|Passwd|Passphrase|Token|ApiKey|AccessKey|PrivateKey|AuthKey|Credential)s?(?:[A-Z][a-z0-9]*)*)[ \t]*:[ \t]+(?P<secret>[^\s"'#$&*!|>{}\[\]:%@`][^\s"'#:]{11,})[ \t]*(?:#.*)?$"###,
     },
     SecretPattern {
         name: "mapboxSecretToken",
@@ -1105,22 +1108,22 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "sumoLogicAccessId",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:sumo)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?su[a-zA-Z0-9]{12}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:sumo)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>su[a-zA-Z0-9]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "splunkApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:splunk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:splunk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "logdnaApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:logdna|mezmo)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:logdna|mezmo)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "logglyToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:loggly)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:loggly)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "stripeSecretKey",
@@ -1195,37 +1198,37 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "coinbaseAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:coinbase)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9_-]{64}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:coinbase)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9_-]{64})['"]?\b"###,
     },
     SecretPattern {
         name: "krakenAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:kraken)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9/=_+-]{80,90}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:kraken)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9/=_+-]{80,90})['"]?\b"###,
     },
     SecretPattern {
         name: "kucoinAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:kucoin)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{24}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:kucoin)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{24})['"]?\b"###,
     },
     SecretPattern {
         name: "kucoinSecretKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:kucoin)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:kucoin)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})['"]?\b"###,
     },
     SecretPattern {
         name: "bittrexAccessKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:bittrex)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{32}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:bittrex)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "binanceApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:binance)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[A-Za-z0-9]{64}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:binance)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[A-Za-z0-9]{64})['"]?\b"###,
     },
     SecretPattern {
         name: "bybitApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:bybit)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[A-Za-z0-9]{18,24}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:bybit)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[A-Za-z0-9]{18,24})['"]?\b"###,
     },
     SecretPattern {
         name: "gocardlessApiToken",
@@ -1240,17 +1243,17 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "plaidClientId",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:PLAID|plaid)_?(?:CLIENT|client)_?(?:ID|id)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{24}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:PLAID|plaid)_?(?:CLIENT|client)_?(?:ID|id)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{24})['"]?\b"###,
     },
     SecretPattern {
         name: "lemonSqueezyApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:LEMONSQUEEZY|LEMON_SQUEEZY|lemonsqueezy)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{100,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:LEMONSQUEEZY|LEMON_SQUEEZY|lemonsqueezy)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>eyJ[a-zA-Z0-9_-]{100,})['"]?\b"###,
     },
     SecretPattern {
         name: "paddleApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:PADDLE|paddle)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?pdl_(?:live|sdbx)_[a-zA-Z0-9]{40,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:PADDLE|paddle)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>pdl_(?:live|sdbx)_[a-zA-Z0-9]{40,})['"]?\b"###,
     },
     SecretPattern {
         name: "mollieApiKey",
@@ -1300,22 +1303,22 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "asanaPersonalAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:asana)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[0-9]{16}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:asana)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[0-9]{16})['"]?\b"###,
     },
     SecretPattern {
         name: "mondayApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:monday)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?eyJ[a-zA-Z0-9_-]{100,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:monday)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>eyJ[a-zA-Z0-9_-]{100,})['"]?\b"###,
     },
     SecretPattern {
         name: "trelloApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:trello)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:trello)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{32})['"]?\b"###,
     },
     SecretPattern {
         name: "jiraApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:jira)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{24}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:jira)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{24})['"]?\b"###,
     },
     SecretPattern {
         name: "settlemintApplicationAccessToken",
@@ -1375,27 +1378,27 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "sendbirdAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:sendbird)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{40}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:sendbird)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{40})['"]?\b"###,
     },
     SecretPattern {
         name: "messagebirdApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:messagebird|message_bird|message-bird)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{25}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:messagebird|message_bird|message-bird)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{25})['"]?\b"###,
     },
     SecretPattern {
         name: "mattermostAccessToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:mattermost)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{26}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:mattermost)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{26})['"]?\b"###,
     },
     SecretPattern {
         name: "zendeskSecretKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:zendesk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{40}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:zendesk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{40})['"]?\b"###,
     },
     SecretPattern {
         name: "freshdeskApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:freshdesk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{20}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:freshdesk)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{20})['"]?\b"###,
     },
     SecretPattern {
         name: "sendinblueApiToken",
@@ -1405,12 +1408,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "pusherAppSecret",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:PUSHER|pusher)_?(?:APP|app)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{20}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:PUSHER|pusher)_?(?:APP|app)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{20})['"]?\b"###,
     },
     SecretPattern {
         name: "streamApiSecret",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:STREAM|stream|GETSTREAM)_?(?:API|api)?_?(?:SECRET|secret|KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{40,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:STREAM|stream|GETSTREAM)_?(?:API|api)?_?(?:SECRET|secret|KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{40,})['"]?\b"###,
     },
     SecretPattern {
         name: "postmarkServerToken",
@@ -1420,12 +1423,12 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "vonageApiSecret",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:VONAGE|NEXMO|vonage|nexmo)_?(?:API|api)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9]{16}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:VONAGE|NEXMO|vonage|nexmo)_?(?:API|api)?_?(?:SECRET|secret)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9]{16})['"]?\b"###,
     },
     SecretPattern {
         name: "customerIoApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:CUSTOMERIO|customer_io|CUSTOMER_IO)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?[a-f0-9]{32,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:CUSTOMERIO|customer_io|CUSTOMER_IO)_?(?:API|api)?_?(?:KEY|key)['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-f0-9]{32,})['"]?\b"###,
     },
     SecretPattern {
         name: "twitterBearerToken",
@@ -1465,17 +1468,17 @@ pub static PATTERNS: &[SecretPattern] = &[
     SecretPattern {
         name: "linkedinApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:linkedin|linked_in|linked-in)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-z0-9]{14,16}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:linkedin|linked_in|linked-in)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-z0-9]{14,16})['"]?\b"###,
     },
     SecretPattern {
         name: "youtubeApiKey",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:youtube)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?AIza[a-zA-Z0-9_-]{35}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:youtube)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>AIza[a-zA-Z0-9_-]{35})['"]?\b"###,
     },
     SecretPattern {
         name: "tiktokApiToken",
         file_context: None,
-        regex: r###"(?i)\b['"]?(?:tiktok)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?[a-zA-Z0-9_-]{40,}['"]?\b"###,
+        regex: r###"(?i)\b['"]?(?:tiktok)(?:[\s\w.-]{0,20})['"]?\s*(?::|=>|=)\s*['"]?(?P<secret>[a-zA-Z0-9_-]{40,})['"]?\b"###,
     },
     SecretPattern {
         name: "gitlabPersonalAccessToken",

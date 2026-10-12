@@ -68,14 +68,7 @@ impl ContentScan for Safe {
 /// Read `req` under `paths` with the redacting test scan, no cancellation,
 /// default regex and no response window.
 fn fetch(req: &LocalFetchQuery, paths: &impl PathAccess) -> LocalFetchResult {
-    execute_local_fetch(
-        req,
-        paths,
-        &Safe,
-        &NeverCancel,
-        &LocalFetchRegex::default(),
-        None,
-    )
+    execute_local_fetch(req, paths, &Safe, &NeverCancel, &LocalFetchRegex, None)
 }
 pub(super) fn q(path: &Path) -> LocalFetchQuery {
     LocalFetchQuery {
@@ -101,7 +94,7 @@ fn exact_line_and_continuation_union() {
                 .as_deref()
                 .expect("test fixture operation should succeed"),
         );
-        let Some(next) = r.next.and_then(|n| n.r#continue) else {
+        let Some(next) = r.next.and_then(|n| n.continue_window) else {
             break;
         };
         req = next.query
@@ -175,7 +168,7 @@ fn wire_form_omits_metadata_derivable_from_emitted_fields() {
         wire["pagination"],
         serde_json::json!({"unit":"lines","offset":0,"length":2,"hasMore":true,"nextOffset":2})
     );
-    assert!(wire["next"]["continue"].is_object());
+    assert!(wire["next"]["continueWindow"].is_object());
     paged.offset = Some(4);
     let last = serde_json::to_value(fetch(&paged, &paths)).expect("serializable");
     assert_eq!(
@@ -284,7 +277,7 @@ fn paged_match_windows_map_source_ranges_around_marker() {
     );
     let next = first
         .next
-        .and_then(|n| n.r#continue)
+        .and_then(|n| n.continue_window)
         .expect("second page")
         .query;
     let second = fetch(&next, &paths);
@@ -323,7 +316,7 @@ fn matches_on_minified_lines_default_to_byte_windows() {
         Some(Some(0)),
         "{next:?}"
     );
-    assert!(next.r#continue.is_none(), "{next:?}");
+    assert!(next.continue_window.is_none(), "{next:?}");
     assert_eq!(
         r.source_line_ranges,
         vec![LineRange { start: 1, end: 2 }],
@@ -332,7 +325,7 @@ fn matches_on_minified_lines_default_to_byte_windows() {
     assert!(
         r.warnings
             .iter()
-            .any(|w| w.starts_with("longMatchedLines:") && w.contains("contextBytes")),
+            .any(|w| w.starts_with("longMatchedLines:")),
         "{:?}",
         r.warnings
     );
@@ -419,18 +412,13 @@ fn redacted_chunk_and_range_reads_keep_their_source_anchor() {
         );
     }
 }
+/// Byte windows (the long-line match view) never fabricate text where
+/// windows overlap.
 #[test]
-fn context_bytes_overlapping_windows_do_not_duplicate_source() {
-    let t = Temp::new();
-    let p = t.0.join("a.txt");
+fn byte_windows_overlapping_do_not_duplicate_source() {
     let source = "aaa needle bbb\nline2\nline3\nline4\nccc needle ddd\nneedle x needle\n";
-    fs::write(&p, source).expect("test fixture operation should succeed");
-    let paths = Paths(t.0.clone());
-    let mut req = q(&p);
-    req.match_string = Some("needle".parse().expect("match string"));
-    req.context_bytes = Some(4);
-    let r = fetch(&req, &paths);
-    let content = r.content.expect("content");
+    let spans = super::extraction::literal_ranges(source, "needle", true);
+    let (content, _) = super::extraction::byte_windows(source, spans, 4);
     for part in content.split("\n").filter(|part| !part.is_empty()) {
         assert!(
             part.starts_with("... [") || source.contains(part),
@@ -460,7 +448,7 @@ fn multiline_matches_preserve_every_matched_source_line() {
     }
 }
 
-/// GF2/X8: an omitted caseMode is smart case, like localSearch: a
+/// An omitted caseMode is smart case, like localSearch: a
 /// lowercase pattern ignores case, an uppercase letter makes it exact.
 #[test]
 fn match_case_defaults_to_smart_case() {
@@ -553,22 +541,16 @@ fn pcre2_matches_lookaround_backreferences_and_multiline_spans() {
 }
 
 #[test]
-fn context_bytes_keep_original_offsets_when_unicode_lowercase_expands() {
-    let t = Temp::new();
-    let p = t.0.join("a.txt");
-    let paths = Paths(t.0.clone());
+fn byte_windows_keep_original_offsets_when_unicode_lowercase_expands() {
     for (source, pattern, expected) in [
         ("İneedle tail\n", "needle", "needle"),
         ("İNEEDLE\n", "needle", "NEEDLE"),
         ("prefix İ tail\n", "İ", "İ"),
         ("İİneedle", "needle", "needle"),
     ] {
-        fs::write(&p, source).expect("fixture");
-        let mut req = q(&p);
-        req.match_string = Some(pattern.parse().expect("match string"));
-        req.context_bytes = Some(0);
-        let result = fetch(&req, &paths);
-        let content = result.content.unwrap_or_default();
+        let sensitive = pattern.chars().any(char::is_uppercase);
+        let spans = super::extraction::literal_ranges(source, pattern, sensitive);
+        let (content, _) = super::extraction::byte_windows(source, spans, 0);
         // A window that starts or ends mid-line says so with an omission
         // marker; the matched bytes between them are the original span.
         let span = content
@@ -600,13 +582,36 @@ fn byte_pages_preserve_utf8_and_use_byte_offsets() {
     req = a
         .next
         .expect("test fixture operation should succeed")
-        .r#continue
+        .continue_window
         .expect("test fixture operation should succeed")
         .query;
     let b = fetch(&req, &paths);
     assert_eq!(b.content.as_deref(), Some("b"));
     assert_eq!(b.returned_chars, Some(1))
 }
+/// matchString runs on redacted text, so a match inside a redacted value is
+/// not selected. When other lines do match, the row says how many redacted
+/// lines lie outside the result instead of dropping them silently.
+#[test]
+fn a_partial_match_names_the_redacted_lines_it_could_not_see() {
+    let t = Temp::new();
+    let p = t.0.join("a.txt");
+    fs::write(&p, "CRE one\nvalue SECRET\nlast\n").expect("fixture");
+    let paths = Paths(t.0.clone());
+    let mut req = q(&p);
+    req.match_string = Some("CRE".parse().expect("match string"));
+    req.context_lines = Some(0);
+    let r = fetch(&req, &paths);
+    assert_eq!(r.content.as_deref(), Some("CRE one\n"));
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("1 redacted line") && w.contains("matchString")),
+        "{:?}",
+        r.warnings
+    );
+}
+
 #[test]
 fn ranges_matches_redaction_and_binary() {
     let t = Temp::new();
@@ -658,7 +663,7 @@ fn cancellation_is_checked_around_io() {
         &Paths(t.0.clone()),
         &Safe,
         &Cancel(AtomicUsize::new(0)),
-        &LocalFetchRegex::default(),
+        &LocalFetchRegex,
         None,
     );
     assert_eq!(r.error_code.as_deref(), Some("cancelled"))
@@ -729,21 +734,21 @@ fn full_content_continuation_pages_by_the_byte_budget_not_100_lines() {
         &paths,
         &Safe,
         &NeverCancel,
-        &LocalFetchRegex::default(),
+        &LocalFetchRegex,
         Some(50_000),
     );
     assert_eq!(limited.partial_reasons, vec![PartialReason::FullContent]);
     assert!(limited.pagination.as_ref().expect("first page").length > 1_000);
     let next = limited
         .next
-        .and_then(|next| next.r#continue)
+        .and_then(|next| next.continue_window)
         .expect("continuation");
     let page = execute_local_fetch(
         &next.query,
         &paths,
         &Safe,
         &NeverCancel,
-        &LocalFetchRegex::default(),
+        &LocalFetchRegex,
         Some(50_000),
     );
     let pagination = page.pagination.expect("paged");
@@ -763,19 +768,11 @@ fn full_content_is_cut_at_the_configured_response_window() {
     fs::write(&file, "let value = 1;\n".repeat(1_500)).expect("fixture");
     let mut full = q(&file);
     full.full_content = Some(true);
-    let read = |window| {
-        execute_local_fetch(
-            &full,
-            &paths,
-            &Safe,
-            &NeverCancel,
-            &LocalFetchRegex::default(),
-            window,
-        )
-    };
+    let read =
+        |window| execute_local_fetch(&full, &paths, &Safe, &NeverCancel, &LocalFetchRegex, window);
     let small = read(Some(10_000));
     assert_eq!(small.partial_reasons, vec![PartialReason::FullContent]);
-    assert!(small.next.and_then(|next| next.r#continue).is_some());
+    assert!(small.next.and_then(|next| next.continue_window).is_some());
     let large = read(Some(50_000));
     assert!(
         large.partial_reasons.is_empty(),
@@ -800,7 +797,7 @@ fn full_content_limits_return_executable_continuations() {
         &paths,
         &Safe,
         &NeverCancel,
-        &LocalFetchRegex::default(),
+        &LocalFetchRegex,
         Some(50_000),
     );
     // Page 1 of the view is returned inline with the continuation.
@@ -812,7 +809,7 @@ fn full_content_limits_return_executable_continuations() {
             .is_some_and(|text| !text.is_empty())
     );
     assert_eq!(result.partial_reasons, vec![PartialReason::FullContent]);
-    assert!(result.next.and_then(|next| next.r#continue).is_some());
+    assert!(result.next.and_then(|next| next.continue_window).is_some());
 
     let source_temp = Temp::new();
     let source_limited = source_temp.0.join("source.txt");
@@ -824,7 +821,7 @@ fn full_content_limits_return_executable_continuations() {
         &Paths(source_temp.0.clone()),
         &Safe,
         &NeverCancel,
-        &LocalFetchRegex::default(),
+        &LocalFetchRegex,
         Some(50_000),
     );
     assert_eq!(result.error_code, None);
@@ -835,7 +832,7 @@ fn full_content_limits_return_executable_continuations() {
             .is_some_and(|text| !text.is_empty())
     );
     assert_eq!(result.partial_reasons, vec![PartialReason::FullContent]);
-    assert!(result.next.and_then(|next| next.r#continue).is_some());
+    assert!(result.next.and_then(|next| next.continue_window).is_some());
 }
 
 #[test]
@@ -854,7 +851,7 @@ fn security_limit_is_terminal_but_offers_a_bounded_line_read() {
         &Paths(t.0.clone()),
         &Limited,
         &NeverCancel,
-        &LocalFetchRegex::default(),
+        &LocalFetchRegex,
         None,
     );
     assert_eq!(result.error_code.as_deref(), Some("contentSecurityLimit"));
@@ -941,6 +938,30 @@ fn symbols_view_uses_a_tab_gutter_everywhere() {
     }
 }
 
+/// The outline's lines are the source's own text: spaces between tokens
+/// (`): boolean {`, `a: string, ...rest`) and a member's indentation stay.
+#[test]
+fn symbols_view_keeps_the_sources_spacing() {
+    let t = Temp::new();
+    let paths = Paths(t.0.clone());
+    let p = t.0.join("s.ts");
+    let source = "export function isBlank(str: string, ...rest: any[]): boolean {\n  return !str;\n}\n\nexport class Box {\n  open(a: string, b: number): void {\n    a();\n    b();\n  }\n  close(): void {\n    a();\n    b();\n  }\n}\n";
+    fs::write(&p, source).expect("fixture");
+    let content = fetch(&qj(&p, serde_json::json!({"minify":"symbols"})), &paths)
+        .content
+        .expect("content");
+    for text in [
+        "export function isBlank(str: string, ...rest: any[]): boolean {",
+        "export class Box {",
+        "  open(a: string, b: number): void {",
+    ] {
+        assert!(
+            content.lines().any(|line| line.ends_with(text)),
+            "{text:?} in {content:?}"
+        );
+    }
+}
+
 /// A query built from wire JSON (fields the test does not name default).
 fn qj(path: &Path, fields: serde_json::Value) -> LocalFetchQuery {
     let mut query = serde_json::json!({"path": path.to_string_lossy(), "mainGoal": "test", "reasoning": "test"});
@@ -974,7 +995,7 @@ fn match_ranges_cover_only_the_page_that_shows_them() {
     assert_eq!(wire["matchedLines"], serde_json::json!([10]), "{wire}");
     let next = first
         .next
-        .and_then(|next| next.r#continue)
+        .and_then(|next| next.continue_window)
         .expect("second page")
         .query;
     let second = serde_json::to_value(fetch(&next, &paths)).expect("serialize");
@@ -1024,6 +1045,17 @@ fn ranges_read_several_windows_in_one_row() {
     // Ranges wholly past the end are an error, not an empty success.
     let past = qj(&p, serde_json::json!({"ranges": ["40-41"]}));
     assert!(fetch(&past, &paths).error.is_some());
+    // A reversed range reads the same span and says how it was read.
+    let reversed = fetch(&qj(&p, serde_json::json!({"ranges": ["3-2"]})), &paths);
+    assert_eq!(reversed.content.as_deref(), Some("l2\nl3\n"));
+    assert!(
+        reversed
+            .warnings
+            .iter()
+            .any(|w| w.contains("\"3-2\" is reversed")),
+        "{:?}",
+        reversed.warnings
+    );
 }
 
 #[test]
@@ -1455,51 +1487,89 @@ fn a_long_matched_line_marks_both_cuts_and_offers_the_whole_line() {
     assert_eq!(r.content, Some(format!("{line}\n")), "{:?}", r.warnings);
 }
 
+/// `regex:"rust"` is the Rust regex engine, the one `localSearch` runs: what it
+/// refuses (backreferences, lookaround) is `invalidPattern` with the parser's
+/// reason, and `next.repair` retries the same read as `regex:"pcre2"`, the
+/// engine that owns them. It never needs a worker or an ECMAScript fallback.
 #[test]
-fn ecma_lookbehind_uses_the_isolated_worker_when_available() {
-    let worker =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/octocode-regex-worker");
-    if !worker.exists() {
-        return;
-    }
-    // On macOS a freshly compiled binary triggers a Gatekeeper security scan on first
-    // launch that can easily exceed the 1-second deadline. Spawn the worker once with
-    // no stdin so macOS completes the scan before the timed engine is created.
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new(&worker)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map(|mut c| c.wait());
-    }
+fn rust_regex_refuses_backreferences_and_lookaround_and_repairs_to_pcre2() {
     let t = Temp::new();
     let p = t.0.join("regex.txt");
-    fs::write(&p, "needle one\nneedle two\n").expect("regex fixture should be written");
-    let mut request = q(&p);
-    request.match_string = Some("(?<=needle )one".parse().expect("match string"));
-    request.regex = Some(crate::contracts::tool_types::ReadRegex::Rust);
-    request.context_lines = Some(0);
-    let engine = std::sync::Arc::new(crate::regex::IsolatedRegexEngine::new(
-        worker,
-        crate::regex::IsolatedRegexLimits::default(),
-    ));
-    let regex = LocalFetchRegex::new(Some(engine));
-    let result = execute_local_fetch(
-        &request,
-        &Paths(t.0.clone()),
-        &Safe,
-        &NeverCancel,
-        &regex,
-        None,
-    );
-    assert_eq!(
-        result.content.as_deref(),
-        Some("needle one\n"),
-        "{:?}",
-        result.error
-    );
+    fs::write(&p, "needle one\nhello aa\n").expect("fixture");
+    let paths = Paths(t.0.clone());
+    for (pattern, reason) in [
+        (r"(\w)\1", "backreferences are not supported"),
+        ("(?<=needle )one", "look-around"),
+    ] {
+        let result = fetch(
+            &qj(
+                &p,
+                serde_json::json!({"matchString": pattern, "regex": "rust"}),
+            ),
+            &paths,
+        );
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some("invalidPattern"),
+            "{pattern}: {result:?}"
+        );
+        let error = result.error.clone().unwrap_or_default();
+        assert!(
+            error.starts_with(&format!(
+                "Invalid regex pattern: matchString \"{}\": ",
+                pattern.replace('\\', "\\\\")
+            )) && error.contains(reason),
+            "{error}"
+        );
+        let repaired = result
+            .next
+            .as_ref()
+            .and_then(|next| next.repair.as_ref())
+            .expect("repair lead")
+            .query
+            .clone();
+        assert_eq!(
+            repaired.regex,
+            Some(crate::contracts::tool_types::ReadRegex::Pcre2)
+        );
+        assert_eq!(repaired.match_strings(), vec![pattern], "kept as written");
+        let fixed = fetch(&repaired, &paths);
+        assert_eq!(fixed.error_code, None, "{pattern}: {fixed:?}");
+        assert!(fixed.content.is_some_and(|c| !c.is_empty()), "{pattern}");
+    }
+}
+
+/// The verdict is the pattern's, never the file's size: a pattern that
+/// compiles matches a file past 64 KiB, and one that does not fails there
+/// with the very error it gives on a small file.
+#[test]
+fn rust_regex_verdict_does_not_depend_on_file_size() {
+    let t = Temp::new();
+    let small = t.0.join("small.txt");
+    let big = t.0.join("big.txt");
+    let filler = "word xx yy\n";
+    fs::write(&small, "tail aa\n").expect("fixture");
+    fs::write(&big, format!("{}tail aa\n", filler.repeat(7_000))).expect("fixture");
+    assert!(fs::metadata(&big).expect("meta").len() > 64 * 1024);
+    let paths = Paths(t.0.clone());
+    let run = |file: &Path, pattern: &str| {
+        fetch(
+            &qj(
+                file,
+                serde_json::json!({"matchString": pattern, "regex": "rust", "contextLines": 0}),
+            ),
+            &paths,
+        )
+    };
+    for file in [&small, &big] {
+        let found = run(file, "t[a]il");
+        assert_eq!(found.error_code, None, "{found:?}");
+        assert!(found.content.is_some_and(|c| c.contains("tail aa")));
+    }
+    let on_small = run(&small, r"(\w)\1");
+    let on_big = run(&big, r"(\w)\1");
+    assert_eq!(on_small.error_code.as_deref(), Some("invalidPattern"));
+    assert_eq!(on_big.error, on_small.error);
 }
 
 /// A whole-file read through one oversized (minified) line byte-chunks only
@@ -1530,11 +1600,11 @@ fn full_content_resumes_numbered_lines_after_one_oversized_line() {
             &paths,
             &Safe,
             &NeverCancel,
-            &LocalFetchRegex::default(),
+            &LocalFetchRegex,
             Some(20_000),
         );
         assert_eq!(page.error_code, None, "{page:?}");
-        let next = page.next.clone().and_then(|next| next.r#continue);
+        let next = page.next.clone().and_then(|next| next.continue_window);
         pages.push(page);
         match next {
             Some(next) => query = next.query,
@@ -1592,7 +1662,7 @@ fn workspace_policy(root: &Path) -> crate::policy::path::PathPolicy {
     .expect("policy")
 }
 
-/// LF4: a directory is `notAFile` and leads to its tree.
+/// A directory is `notAFile` and leads to its tree.
 #[test]
 fn directory_path_is_not_a_file_with_tree_lead() {
     let t = Temp::new();
@@ -1613,7 +1683,7 @@ fn directory_path_is_not_a_file_with_tree_lead() {
     }
 }
 
-/// LF4: a missing file leads to a listing by its stem under the closest
+/// A missing file leads to a listing by its stem under the closest
 /// existing directory.
 #[test]
 fn missing_file_leads_to_files_by_stem() {
@@ -1632,10 +1702,29 @@ fn missing_file_leads_to_files_by_stem() {
     let listing = &next["findFile"]["query"]["queries"][0];
     assert_eq!(listing["operation"], "files", "{next}");
     assert_eq!(listing["path"], "src", "{next}");
-    assert_eq!(listing["include"], serde_json::json!(["blok"]), "{next}");
+    assert_eq!(listing["include"], serde_json::json!(["blok.*"]), "{next}");
 }
 
-/// LF4: a matchString miss leads to a localSearch of the file's directory.
+/// The lead keeps the whole stem as a glob, so a short name (`x.md`)
+/// lists only `x.*`, never every name that contains an `x`.
+#[test]
+fn missing_file_lead_never_widens_to_names_containing_the_stem() {
+    let t = Temp::new();
+    fs::create_dir_all(t.0.join("docs")).expect("dirs");
+    for name in ["x.txt", "box.md", "index.md"] {
+        fs::write(t.0.join("docs").join(name), "x\n").expect("fixture");
+    }
+    let mut req = LocalFetchQuery::test_default();
+    req.path = "docs/x.md".parse().expect("path");
+    let result = fetch(&req, &workspace_policy(&t.0));
+    let next = serde_json::to_value(result.next.as_ref().expect("next")).expect("json");
+    let listing = &next["findFile"]["query"]["queries"][0];
+    assert_eq!(listing["include"], serde_json::json!(["x.*"]), "{next}");
+    let globs = crate::policy::include::include_globs(&["x.*".to_owned()]);
+    assert_eq!(globs, vec!["x.*".to_owned()], "a glob is not widened");
+}
+
+/// A matchString miss leads to a localSearch of the file's directory.
 #[test]
 fn match_miss_leads_to_directory_search() {
     let t = Temp::new();
@@ -1646,7 +1735,7 @@ fn match_miss_leads_to_directory_search() {
         &Paths(t.0.clone()),
     );
     let next = serde_json::to_value(result.next.as_ref().expect("next")).expect("json");
-    let search = &next["textSearch"];
+    let search = &next["findText"];
     assert_eq!(search["tool"], "localSearch", "{next}");
     assert_eq!(
         search["query"]["queries"][0]["matchString"], "nowhere_here",
@@ -1659,9 +1748,61 @@ fn match_miss_leads_to_directory_search() {
     );
 }
 
+/// The miss lead searches the directory for exactly what the read looked
+/// for: the regex dialect, the case rule and `wholeWord` carry over, so the
+/// lead never matches more than the read would have.
+#[test]
+fn a_match_miss_lead_keeps_the_reads_dialect_case_and_whole_word() {
+    let t = Temp::new();
+    let p = t.0.join("a.rs");
+    fs::write(&p, "fn a() {}\n").expect("fixture");
+    let result = fetch(
+        &qj(
+            &p,
+            serde_json::json!({
+                "matchString": "(?<=x)nowhere",
+                "regex": "pcre2",
+                "caseMode": "insensitive",
+                "wholeWord": true
+            }),
+        ),
+        &Paths(t.0.clone()),
+    );
+    let next = serde_json::to_value(result.next.as_ref().expect("next")).expect("json");
+    let row = &next["findText"]["query"]["queries"][0];
+    assert_eq!(row["matchString"], "(?<=x)nowhere", "{next}");
+    assert_eq!(row["regex"], "pcre2", "{next}");
+    assert_eq!(row["caseMode"], "insensitive", "{next}");
+    assert_eq!(row["wholeWord"], true, "{next}");
+}
+
+/// Several literal patterns that all missed: the lead searches every one of
+/// them, each escaped, so `a.b` does not widen to any character.
+#[test]
+fn a_match_miss_lead_searches_every_literal_pattern_escaped() {
+    let t = Temp::new();
+    let p = t.0.join("a.rs");
+    fs::write(&p, "fn a() {}\n").expect("fixture");
+    let result = fetch(
+        &qj(
+            &p,
+            serde_json::json!({"matchString": ["no.where", "Elsewhere"]}),
+        ),
+        &Paths(t.0.clone()),
+    );
+    let next = serde_json::to_value(result.next.as_ref().expect("next")).expect("json");
+    let row = &next["findText"]["query"]["queries"][0];
+    assert_eq!(
+        row["matchString"], "(?i:no\\.where)|(?:Elsewhere)",
+        "{next}"
+    );
+    assert_eq!(row["regex"], "rust", "{next}");
+    assert_eq!(row["caseMode"], "sensitive", "{next}");
+}
+
 const PY_TWO: &str = "import os\n\ndef first(a):\n    x = 1\n    return a\n\n\ndef second(b):\n    if b:\n        return first(1)\n    return 2\n";
 
-/// LF3: a symbols outline names each multi-line declaration's line span.
+/// A symbols outline names each multi-line declaration's line span.
 #[test]
 fn symbols_view_heads_carry_line_ranges() {
     let t = Temp::new();
@@ -1678,7 +1819,7 @@ fn symbols_view_heads_carry_line_ranges() {
     assert!(content.contains("1\timport os"), "{content}");
 }
 
-/// LF1: with a declaration hit present, a call-site hit keeps its window
+/// With a declaration hit present, a call-site hit keeps its window
 /// instead of widening to its caller; the widened declaration is named.
 #[test]
 fn block_reports_widened_declarations() {
@@ -1705,7 +1846,7 @@ fn block_reports_widened_declarations() {
     assert!(content.contains("return first(1)"), "{content}");
 }
 
-/// N3: a long-line source's default window is bounded by bytes, with the
+/// A long-line source's default window is bounded by bytes, with the
 /// full window one continuation away.
 #[test]
 fn minified_default_window_is_byte_bounded() {
@@ -1731,11 +1872,6 @@ fn minified_default_window_is_byte_bounded() {
         next["expandContext"]["query"]["queries"][0]["contextLines"], window,
         "{next}"
     );
-    assert_eq!(
-        next["expandContext"]["why"],
-        format!("Show the full ±{window}-line window around each hit."),
-        "{next}"
-    );
     // Short-line sources keep the full default window and no lead.
     let short = t.0.join("a.txt");
     fs::write(&short, numbered(40).replace("l20\n", "l20 HIT\n")).expect("fixture");
@@ -1756,7 +1892,7 @@ fn minified_default_window_is_byte_bounded() {
     );
 }
 
-/// N3: a cut-declaration lead never points at a minified bundle's IIFE.
+/// A cut-declaration lead never points at a minified bundle's IIFE.
 #[test]
 fn read_block_lead_is_byte_capped() {
     let t = Temp::new();
@@ -1837,7 +1973,7 @@ fn read_block_covers_every_cut_declaration() {
 /// repo-sweep: a `unit:"lines"` walk over a file holding one line longer
 /// than a page reaches every source byte exactly once. Line pages continue
 /// at the next line; the oversized line is served as byte pages that each
-/// cite it as `sourceLineRanges: [{line, endLine}]` (the wire names, X1),
+/// cite it as `sourceLineRanges: [{line, endLine}]` (the wire names),
 /// and line paging resumes on the following line.
 #[test]
 fn line_walk_over_an_oversized_line_covers_every_byte_once() {
@@ -1888,7 +2024,7 @@ fn line_walk_over_an_oversized_line_covers_every_byte_once() {
             last_line = ranges.last().map_or(last_line, |r| r.end);
         }
         text.push_str(&content);
-        match page.next.and_then(|next| next.r#continue) {
+        match page.next.and_then(|next| next.continue_window) {
             Some(next) => query = next.query,
             None => break,
         }
@@ -1898,7 +2034,7 @@ fn line_walk_over_an_oversized_line_covers_every_byte_once() {
     assert!(text == source, "pages join into the source exactly once");
 }
 
-/// H1: a regex read with more matches than the old 10,000 in-process cap
+/// A regex read with more matches than the old 10,000 in-process cap
 /// selects every matching line (never a silent prefix of them).
 #[test]
 fn regex_read_selects_every_match_past_ten_thousand() {
@@ -1923,7 +2059,7 @@ fn regex_read_selects_every_match_past_ten_thousand() {
     }
 }
 
-/// H1: a regex read that reaches the in-process match limit discloses it:
+/// A regex read that reaches the in-process match limit discloses it:
 /// isPartial, a warning naming the limit, and a localSearch lead that pages
 /// every match of the same pattern in the same file.
 #[test]
@@ -1954,7 +2090,7 @@ fn regex_read_past_the_match_limit_is_partial_with_a_search_lead() {
             .next
             .as_ref()
             .and_then(|next| next.text_search.clone())
-            .expect("textSearch lead");
+            .expect("findText lead");
         assert_eq!(lead["tool"], "localSearch", "{lead}");
         let row = &lead["query"]["queries"][0];
         assert_eq!(row["matchString"], "x", "{lead}");
@@ -1962,8 +2098,8 @@ fn regex_read_past_the_match_limit_is_partial_with_a_search_lead() {
     }
 }
 
-/// H1 when the read pages: the tool emits the textSearch lead beside the
-/// page continuation (the response moves it to `hints.textSearch`).
+/// When the read pages, the tool emits the findText lead beside the
+/// page continuation (the response moves it to `hints.findText`).
 #[test]
 fn paged_regex_read_past_the_match_limit_keeps_its_search_lead() {
     use crate::contracts::tool_types::ReadRegex;
@@ -1981,7 +2117,7 @@ fn paged_regex_read_past_the_match_limit_keeps_its_search_lead() {
         &Paths(t.0.clone()),
         &Safe,
         &NeverCancel,
-        &LocalFetchRegex::default(),
+        &LocalFetchRegex,
         None,
     );
     assert!(
@@ -1990,10 +2126,251 @@ fn paged_regex_read_past_the_match_limit_keeps_its_search_lead() {
         result.warnings
     );
     let next = result.next.as_ref().expect("next");
-    assert!(next.r#continue.is_some(), "the read pages: {next:?}");
+    assert!(next.continue_window.is_some(), "the read pages: {next:?}");
     let lead = next
         .text_search
         .as_ref()
-        .expect("textSearch lead on a paged read");
+        .expect("findText lead on a paged read");
     assert_eq!(lead["tool"], "localSearch", "{lead}");
+}
+
+/// A matchString read of a JSON file names each hit line's section: a
+/// window that hides the section header still says `devDependencies.vite`
+/// (Q14). Other files carry no `matchKeys`.
+#[test]
+fn json_match_reads_name_each_hit_line_key_path() {
+    let t = Temp::new();
+    let mut text = String::from("{\n  \"dependencies\": {\n");
+    for n in 0..40 {
+        text.push_str(&format!("    \"dep{n}\": \"1\",\n"));
+    }
+    text.push_str("    \"vite\": \"^7\"\n  },\n  \"devDependencies\": {\n");
+    for n in 0..40 {
+        text.push_str(&format!("    \"dev{n}\": \"1\",\n"));
+    }
+    text.push_str("    \"vite\": \"^7\"\n  }\n}\n");
+    let json = t.0.join("package.json");
+    fs::write(&json, &text).expect("fixture");
+    let paths = Paths(t.0.clone());
+    let req = qj(
+        &json,
+        serde_json::json!({"matchString": "\"vite\"", "contextLines": 0}),
+    );
+    let wire = serde_json::to_value(fetch(&req, &paths)).expect("serialize");
+    assert_eq!(
+        wire["matchKeys"],
+        serde_json::json!({"43": "dependencies.vite", "86": "devDependencies.vite"}),
+        "{wire}"
+    );
+    let plain = t.0.join("notes.txt");
+    fs::write(&plain, &text).expect("fixture");
+    let wire = serde_json::to_value(fetch(
+        &qj(&plain, serde_json::json!({"matchString": "\"vite\""})),
+        &paths,
+    ))
+    .expect("serialize");
+    assert!(wire.get("matchKeys").is_none(), "{wire}");
+}
+
+/// A matchString read of a TOML file names each hit's table and key, with
+/// the same `matchKeys` map (Q13: `[target.'cfg(…)'.dependencies]`).
+#[test]
+fn toml_match_reads_name_each_hit_line_key_path() {
+    let t = Temp::new();
+    let toml = t.0.join("Cargo.toml");
+    fs::write(
+        &toml,
+        "[package]\nname = \"demo\"\n\n[dependencies]\nbacktrace = \"0.3\"\n\n[target.'cfg(unix)'.dev-dependencies]\nbacktrace = \"0.3\"\n",
+    )
+    .expect("fixture");
+    let paths = Paths(t.0.clone());
+    let wire = serde_json::to_value(fetch(
+        &qj(
+            &toml,
+            serde_json::json!({"matchString": "backtrace", "contextLines": 0}),
+        ),
+        &paths,
+    ))
+    .expect("serialize");
+    assert_eq!(
+        wire["matchKeys"],
+        serde_json::json!({"5": "dependencies.backtrace", "8": "target.cfg(unix).dev-dependencies.backtrace"}),
+        "{wire}"
+    );
+}
+
+/// A list item that does not compile as a regex is named by index and text
+/// (Q3: `"def post("` in a `regex:"rust"` list), on both regex engines.
+#[test]
+fn invalid_regex_items_are_named_by_index() {
+    let t = Temp::new();
+    let p = t.0.join("a.py");
+    fs::write(&p, "def post(self):\n    pass\n").expect("fixture");
+    let paths = Paths(t.0.clone());
+    for engine in ["rust", "pcre2"] {
+        let list = fetch(
+            &qj(
+                &p,
+                serde_json::json!({"matchString": ["pass", "def post("], "regex": engine}),
+            ),
+            &paths,
+        );
+        assert_eq!(
+            list.error_code.as_deref(),
+            Some("invalidPattern"),
+            "{list:?}"
+        );
+        // The repair keeps the item that compiles and escapes the one that
+        // does not, in the same engine.
+        let repair = &list.next.as_ref().expect("repair lead").repair;
+        let repaired = repair.as_ref().expect("repair").query.clone();
+        assert_eq!(
+            repaired.match_strings(),
+            vec!["pass", "def post\\("],
+            "{engine}"
+        );
+        let fixed = fetch(&repaired, &paths);
+        assert_eq!(fixed.error_code, None, "{engine}: {fixed:?}");
+        let error = list.error.unwrap_or_default();
+        assert!(
+            error.starts_with("Invalid regex pattern: matchString[1] \"def post(\": "),
+            "{engine}: {error}"
+        );
+        let one = fetch(
+            &qj(
+                &p,
+                serde_json::json!({"matchString": "def post(", "regex": engine}),
+            ),
+            &paths,
+        );
+        let error = one.error.unwrap_or_default();
+        assert!(
+            error.starts_with("Invalid regex pattern: matchString \"def post(\": "),
+            "{engine}: {error}"
+        );
+    }
+    assert_eq!(
+        crate::tools::id::ToolId::LocalFetch
+            .output()
+            .error_hint("invalidPattern"),
+        Some(crate::tools::output::NO_HINT)
+    );
+}
+
+/// `ranges` with `matchString` is a region grep: only hits inside the
+/// ranges count, their windows stay inside them, and ranges wholly past the
+/// file end are an error, never a whole-file grep.
+#[test]
+fn ranges_with_match_string_grep_inside_the_ranges_only() {
+    let t = Temp::new();
+    let p = t.0.join("a.txt");
+    let text = (1..=30)
+        .map(|n| {
+            if n % 10 == 5 {
+                format!("hit {n}\n")
+            } else {
+                format!("l{n}\n")
+            }
+        })
+        .collect::<String>();
+    fs::write(&p, text).expect("fixture");
+    let paths = Paths(t.0.clone());
+    let mut req = q(&p);
+    req.match_string = Some("hit".parse().expect("match string"));
+    req.context_lines = Some(3);
+    req.ranges = vec!["10-20".parse().expect("range")];
+    let r = fetch(&req, &paths);
+    assert_eq!(r.matched_lines, vec![15], "{r:?}");
+    assert_eq!(
+        r.source_line_ranges,
+        vec![LineRange { start: 12, end: 18 }],
+        "{r:?}"
+    );
+    req.ranges = vec!["90-100".parse().expect("range")];
+    let past = fetch(&req, &paths);
+    assert!(
+        past.error
+            .as_deref()
+            .is_some_and(|e| e.contains("past the file end")),
+        "{past:?}"
+    );
+}
+
+/// A path-only read of a minified (one huge line) file pages by bytes;
+/// every continuation carries the unit of the page it continues, so walking
+/// `next.continueWindow` verbatim reaches the end byte-identical.
+#[test]
+fn path_only_walk_of_a_minified_file_is_byte_identical() {
+    let t = Temp::new();
+    let paths = Paths(t.0.clone());
+    let file = t.0.join("min.js");
+    let source: String = (0..40_000)
+        .map(|i| format!("needle{i} "))
+        .collect::<String>()
+        .chars()
+        .take(300_000)
+        .collect();
+    fs::write(&file, &source).expect("fixture");
+    let mut query = q(&file);
+    let (mut text, mut pages) = (String::new(), 0);
+    loop {
+        let page = fetch(&query, &paths);
+        assert_eq!(page.error_code, None, "{page:?}");
+        assert!(!page.out_of_range, "continuation left the view: {page:?}");
+        text.push_str(&page.content.clone().unwrap_or_default());
+        pages += 1;
+        assert!(pages < 40, "runaway paging");
+        match page.next.and_then(|next| next.continue_window) {
+            Some(next) => query = next.query,
+            None => break,
+        }
+    }
+    assert!(pages >= 18, "{pages} pages");
+    assert!(text == source, "pages join into the source exactly once");
+}
+
+/// A file whose one line takes many byte pages (a minified bundle or a
+/// one-line JSON dump) names the faster routes on its first page: a
+/// `matchString` window around the part that matters, and the largest page
+/// `length`. Later pages, a few pages, and line pages do not repeat it.
+#[test]
+fn a_many_page_long_line_names_the_faster_routes_on_its_first_page() {
+    let t = Temp::new();
+    let paths = Paths(t.0.clone());
+    let long = t.0.join("data.bin.txt");
+    fs::write(&long, "needle0 ".repeat(40_000)).expect("fixture");
+    let first = fetch(&q(&long), &paths);
+    assert_eq!(first.error_code, None, "{first:?}");
+    let note = first.warnings.join("\n");
+    assert!(note.contains("20 byte pages"), "{note}");
+    assert!(note.contains("matchString"), "{note}");
+    assert!(note.contains("50000"), "{note}");
+    assert!(!note.contains("first 1 lines"), "{note}");
+    let second = fetch(
+        &first
+            .next
+            .and_then(|next| next.continue_window)
+            .expect("next page")
+            .query,
+        &paths,
+    );
+    assert!(second.warnings.is_empty(), "{:?}", second.warnings);
+
+    let few = t.0.join("few.txt");
+    fs::write(&few, "needle0 ".repeat(5_000)).expect("fixture");
+    let few = fetch(&q(&few), &paths);
+    assert!(
+        !few.warnings.join("\n").contains("matchString"),
+        "{:?}",
+        few.warnings
+    );
+
+    let lines = t.0.join("lines.txt");
+    fs::write(&lines, numbered(200_000)).expect("fixture");
+    let lines = fetch(&q(&lines), &paths);
+    assert!(
+        !lines.warnings.join("\n").contains("matchString"),
+        "{:?}",
+        lines.warnings
+    );
 }

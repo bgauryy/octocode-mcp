@@ -33,14 +33,14 @@ flowchart LR
     CLS[clasify]
   end
   LS -->|read| LF
-  LS -->|callers, references| LSP
+  LS -->|findCallers, findReferences| LSP
   LS -->|binarySkipped| SS
   SS -->|read| LF
-  AS -->|callers, references| LSP
-  AT -->|references| LSP
+  AS -->|findCallers, findReferences| LSP
+  AT -->|findReferences| LSP
   LSP -->|read, readDeclaration| LF
-  LSP -->|textSearch| LS
-  LF -->|textSearch| LS
+  LSP -->|findText| LS
+  LF -->|findText| LS
   LS -.->|clasify| CLS
   LF -.->|clasify| CLS
   GC -.->|clasify| CLS
@@ -83,7 +83,7 @@ Pages stay on the same tool (`next.<name>` to the same `tool`) and set only the 
 | ghSearchRepo, ghSearchCode, ghSearchHistory | `nextPage`, `retry` | `page`, `pageSize` |
 | ghStructure | `nextPage`, `continueMaterialize`, `retry` | `page`, `materializeOffset` |
 | ghGetFileContent | `continue` | `offset`, `length`, `unit` |
-| ghGetHistoryItem | `continuePatch`, `nextFilePage`, `nextCommentPage`, `nextReviewPage`, `nextCommitPage`, `continueBody`, `continueReviewBody`, `continueCommentBody` | `offset`, `length`, `filePage`, `commentPage`, `reviewPage`, `commitPage` |
+| ghGetHistoryItem | `continuePatch`, `nextFilePage`, `nextCommentPage`, `nextReviewPage`, `nextCommitPage`, `continueBody`, `continueReviewBody`, `continueCommentBody` | `offset`, `length`, `page` (with the one section it pages) |
 | artifactSearch | `nextPage` | `page` |
 | clasify | `next.clasify` (its own resume) | the whole `{queries:[matrix]}` input, with the unjudged window |
 | every tool | `responsePagination.next` | `responseOffset`, `responseSnapshot`, `responseScope` |
@@ -93,29 +93,29 @@ Pages stay on the same tool (`next.<name>` to the same `tool`) and set only the 
 | Source | Lead | Target | Fields set | Emitted when |
 |---|---|---|---|---|
 | localSearch | `read` | localFetch | `path`, `ranges` | Few files, no `contextLines`; reads the top file's hit windows |
-| localSearch | `callers`, `references` | lspSearch | `path`, `operation` (the lead's name), `symbolName`, `lineHint` | The search term resolves to one declaration: `callers` for a function or method, else `references` |
+| localSearch | `findCallers`, `findReferences` | lspSearch | `path`, `operation` (`callers` or `references`), `symbolName`, `line` | The search term resolves to one declaration: `callers` for a function or method, else `references` |
 | localSearch | `binarySkipped` | structureSearch | `operation:files`, `path`, `entryType`, `nameRegex` | Binary files were skipped; lists every one |
-| localSearch | `includeIgnored` | localSearch | `noIgnore`, `hidden` | Empty result, but ignored or hidden files match |
+| localSearch | `includeIgnored` | localSearch | `includeIgnored`, `includeHidden` | Empty result, but ignored or hidden files match |
 | localSearch | `repair` | localSearch | `matchString` or `regex:literal` | `invalidRegex` error |
 | localSearch | `clasify` | clasify | `mainGoal`, `resources`, `questions` | At least 8 files for a plain multi-word phrase (never a literal, regex, or path) |
 | structureSearch | `read` | localFetch | `path`, `minify:"symbols"` | `files` result of 5 or fewer, complete, page 1 |
 | structureSearch | `includeHidden` | structureSearch | `hidden:true` | Dot entries were skipped |
 | structureSearch | `narrowScope` | structureSearch | `operation:tree`, `path`, `maxDepth:1` | A `files` listing passed `maxEntries`; outlines the subdirectories to list separately |
-| astSearch | `callers`, `references` | lspSearch | `path`, `operation` (the lead's name), `symbolName`, `lineHint` | A name filter singled out one declaration |
+| astSearch | `findCallers`, `findReferences` | lspSearch | `path`, `operation` (`callers` or `references`), `symbolName`, `line` | A name filter singled out one declaration |
 | astSearch | `repair` | astSearch | the repaired query | The pattern did not compile |
-| astTopology | `references` | lspSearch | `path`, `symbolName`, `lineHint`, `includeDeclaration`, `groupByFile` | A `deadCode` candidate (CLI) |
+| astTopology | `findReferences` | lspSearch | `path`, `symbolName`, `line`, `includeDeclaration`, `groupByFile` | A `deadCode` candidate (CLI) |
 | astTopology | `read` | localFetch | `path`, `ranges` (the import line) | The top `dependents`, `dependencies`, `path` or `cycles` row names an import edge |
 | astTopology | `readDiagnostics` | astTopology | `diagnosticPage:1`, `diagnosticSnapshot` | Coverage counts withheld their diagnostic rows |
 | astTopology | `narrowScope` | astTopology | `path` (a narrower subdirectory) | The scan root is too large for the file budget |
 | astTopology | `retrySuffixMatch` | astTopology | `source` (the scanned file that shares the path suffix) | `invalidGraphQuery`: the named file is not in the scan |
 | localFetch | `readBlock`, `readBoundedLines`, `wholeLines` | localFetch | `path`, `ranges`, `contextLines`, `matchString` | A block match was cut or a long line clipped |
 | localFetch | `clasify` | clasify | `resources`, `questions` | File of 1k+ lines, paged, no range, and `mainGoal` asks where something is |
-| localFetch | `textSearch` | localSearch | `path`, `matchString` | Same large read, but `mainGoal` names one identifier; or a `matchString` missed the file (searches its directory) |
+| localFetch | `findText` | localSearch | `path`, `matchString` | Same large read, but `mainGoal` names one identifier; or a `matchString` missed the file (searches its directory) |
 | localFetch | `ignoreCase` | localFetch | the same read, `caseMode:"insensitive"` | A case-sensitive `matchString` selected no line |
 | localFetch | `findFile` | structureSearch | `operation:files`, `path` (the closest existing directory), `include` (the stem) | The file does not exist |
 | lspSearch | `read` | localFetch | `path`, `ranges` or `matchString` | The anchor did not resolve |
-| lspSearch | `didYouMean` | lspSearch | `symbolName`, `lineHint` | A near name exists within 20 lines of `lineHint` |
-| lspSearch | `textSearch` | localSearch | `path`, `matchString` | The server's project cannot see all uses |
+| lspSearch | `didYouMean` | lspSearch | `symbolName`, `line` | A near name exists within 20 lines of `line` |
+| lspSearch | `findText` | localSearch | `path`, `matchString` | The server's project cannot see all uses |
 | lspSearch | `readDeclaration` | localFetch | `path`, `ranges` | A body was capped in the location page |
 | ghSearchRepo | `viewRepo` | ghStructure | `owner`, `repo` | Rows found |
 | ghSearchCode | `read`, `readHits` | ghGetFileContent | `owner`, `repo`, `path`, `ref`, `ranges` or `matchString` | Hits found; one per capped file |
@@ -161,7 +161,7 @@ Gaps:
 
 ## Cycles
 
-- `localSearch` and `lspSearch`: `callers`/`references` to `lspSearch`, `textSearch` back to `localSearch`.
+- `localSearch` and `lspSearch`: `findCallers`/`findReferences` to `lspSearch`, `findText` back to `localSearch`.
 - `ghSearchHistory` and `ghGetHistoryItem`: `readPullRequest` / `readIssue` forward, `findPullRequest` back.
 - `ghGetHistoryItem` to itself: `readIssue` and `readPullRequest` swap when the number is the other kind; each stops after one hop.
 - `clasify` and `localFetch` / `ghGetFileContent`: `clasify` out of a large read, `read` back.
@@ -175,7 +175,7 @@ Every lead field exists in the full contract. `tools/list` publishes a trimmed v
 
 - Paging fields (`page`, `pageSize`, `snapshot`, `offset`, `length`, `unit`, `diagnosticPage`, `diagnosticSnapshot`, `matchPage`, `matchContentLength`, `captureText`) are set only by `next.*`. Copy them; do not write them by hand.
 - Lead-only fields: `entryType`, `nameRegex` (structureSearch), `hidden`, `includeDeclaration` and `groupByFile` (lspSearch), `minify` (ghGetHistoryItem).
-- Paths: local leads, `callers`, `references`, and `textSearch` included, carry a workspace-relative `path`.
+- Paths: local leads, `findCallers`, `findReferences`, and `findText` included, carry a workspace-relative `path`.
 
 Every tool names a file or directory `path` and a revision `ref`.
 

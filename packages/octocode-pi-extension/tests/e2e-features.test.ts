@@ -128,7 +128,10 @@ afterAll(async () => {
 describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), ENTRY)})`, () => {
   it('registers every tool and command, keeps the banner out of the session and picks up ~/.claude skills', async () => {
     const [turn] = await run('hello', [say('ready')]);
-    for (const name of ['read', 'file', 'bash', 'web', 'browser', 'agent', 'askUser', 'coordinate', 'sendMessage', 'backlog', 'memory']) expect(turn!.tools).toContain(name);
+    for (const name of ['read', 'file', 'bash', 'web', 'agent', 'askUser', 'coordinate', 'sendMessage', 'backlog', 'memory']) expect(turn!.tools).toContain(name);
+    // The bundled web profiles carry browser, so the main session leaves its schema out (it stays registered).
+    expect(turn!.tools).not.toContain('browser');
+    expect(session.getAllTools().map((tool) => tool.name)).toContain('browser');
     const commands = session.extensionRunner.getRegisteredCommands().map((command) => command.name);
     for (const name of ['octocode', 'agents', 'hooks', 'sessions', 'backlog', 'memory']) expect(commands).toContain(name);
     // Registering `/mcp` would make Pi drop its built-in MCP (builtin:mcp); ours is `/octocode mcp`.
@@ -178,8 +181,8 @@ describe(`Octocode features through Pi (${path.relative(path.join(HERE, '..'), E
     expect(fine!.text).toMatch(/fine[\s\S]*\[PostToolUse hook\] post hook saw Bash/);
   });
 
-  it('replaces Pi bash: a deadline in the prompt, and a background job wakes the session with its result', async () => {
-    expect(session.systemPrompt).toMatch(/Foreground bash stops after at most 15m/);
+  it('replaces Pi bash: a deadline in its schema, and a background job wakes the session with its result', async () => {
+    expect(JSON.stringify(session.getAllTools().find((tool) => tool.name === 'bash')?.parameters)).toContain('foreground at most 900s');
     const start = turns.length;
     await run('bash in the background', [calls(fauxToolCall('bash', { command: 'echo bg-output', background: true })), say('started'), say('saw it')]);
     const deadline = Date.now() + 5_000;

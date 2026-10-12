@@ -28,8 +28,31 @@ pub use types::{AstGraphResult, AstTopologyQuery, GraphAnalysis};
 /// astTopology's output facts for the shared response stages.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
-    fn fallback_hint(&self, _query: &serde_json::Value) -> &'static str {
-        "Inspect diagnostics, then broaden the graph scope if needed."
+    fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {
+        match query.get("operation").and_then(serde_json::Value::as_str) {
+            Some("dependents") => {
+                "No scanned file imports it: scan the repo root, or localSearch its module name for unlinked importers."
+            }
+            Some("dependencies") => {
+                "It imports no scanned file: its imports are external or unlinked; read coverage.imports and diagnostics."
+            }
+            Some("cycles") => {
+                "No import cycle in the scanned files; coverage.imports counts the imports a cycle could pass through unlinked."
+            }
+            Some("deadCode") => {
+                "No dead export found; without resolved entrypoints the verdict is suppressed: pass entrypoints."
+            }
+            Some("reachability") => {
+                "No files to classify: check that path covers the code and read coverage.diagnostics."
+            }
+            Some("path") => {
+                "No import path from source to target in the scanned files; follow dependencies or dependents one hop at a time."
+            }
+            Some("drift") => {
+                "No graph drift between baseline and path; compare another baseline or widen path."
+            }
+            _ => "Inspect diagnostics, then broaden the graph scope if needed.",
+        }
     }
     fn error_hint(&self, code: &str) -> Option<&'static str> {
         (code == "invalidGraphQuery").then_some(

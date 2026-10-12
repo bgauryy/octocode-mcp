@@ -40,13 +40,13 @@ pub(super) struct Rendered {
 }
 
 /// Render every captured resource with its page assessments (consumed in
-/// resource and page order).
+/// resource and page order). `stats` adds each page's provider usage.
 pub(super) fn render_captured(
     captured: Vec<CapturedResource<'_>>,
     assessments: Vec<PageAssessment>,
     questions: &[Value],
     dispatcher: &DomainDispatcher,
-    debug: bool,
+    stats: bool,
 ) -> Result<Rendered, ExecutionError> {
     let question_ids = questions
         .iter()
@@ -108,9 +108,19 @@ pub(super) fn render_captured(
                 .continuations
                 .push(continued_resource(resource, &context));
         }
+        let scout_ranking = output::scout_ranking(&outcomes, questions).unwrap_or_default();
+        let scout_read = output::scout_top_read(&outcomes, &scout_ranking);
         let mut rendered_resource =
             output::resource(&resource["id"], &question_ids, outcomes, has_continuation);
-        if debug
+        rank_pages(&mut rendered_resource, &scout_ranking);
+        // The top SCOUT candidate reads whole when its page published no read.
+        if let Some((index, read)) = scout_read
+            && let Some(page) = rendered_resource["pages"].get_mut(index)
+            && page.get("next").is_none()
+        {
+            page["next"] = json!({"read": read});
+        }
+        if stats
             && let Some(pages) = rendered_resource["pages"].as_array_mut()
             && pages.len() == page_usage.len()
         {
@@ -126,6 +136,28 @@ pub(super) fn render_captured(
         return Err(ExecutionError::WorkerFailed);
     }
     Ok(rendered)
+}
+
+/// Two or more judged SCOUT pages carry their 1-based `rank`, so the top page
+/// is read without comparing scores. Past the top ranks a page keeps no read
+/// of its own (unless sufficient): its row names it, and the rank-1 read is
+/// the next step.
+fn rank_pages(resource: &mut Value, ranking: &[output::Ranked]) {
+    if ranking.len() < 2 {
+        return;
+    }
+    for (position, ranked) in ranking.iter().enumerate() {
+        let Some(page) = resource["pages"]
+            .get_mut(ranked.index)
+            .and_then(Value::as_object_mut)
+        else {
+            continue;
+        };
+        page.insert("rank".into(), json!(position + 1));
+        if !ranked.keeps_read(position) {
+            page.shift_remove("next");
+        }
+    }
 }
 
 impl Rendered {
@@ -168,13 +200,11 @@ impl Rendered {
     }
 }
 
-/// The tip an open walk's `best` carries: its rows rank only the pages
-/// judged so far, and a confident window there can still be a near miss.
-pub(super) const OPEN_WALK_BEST: &str = "best ranks only pages judged so far; if its read lacks the answer, run next.clasify (it carries this ranking).";
-
-/// The tip a whole-list question over a path list carries: a bare path list
-/// stays one page (`items`), so `relevant`/`sufficient` judge the list, not a path.
-pub(super) const PATH_LIST_CHOICE: &str = "A path list is judged whole: relevant/sufficient give one list verdict. Ask choice over its paths to pick one.";
+/// The fact a whole-list question over a path list carries: a bare path list
+/// stays one page (`items`), so `relevant`/`sufficient` judge the list, not a
+/// path. Asking `choice` over the paths is description advice.
+pub(super) const PATH_LIST_CHOICE: &str =
+    "The path list was judged as one page: relevant/sufficient gave one verdict for every path.";
 
 /// Tools whose results are bare path lists, judged as one page.
 const PATH_LIST_TOOLS: [ToolId; 3] = [
@@ -230,15 +260,12 @@ pub(super) fn matrix_output(
     // skips nothing.
     let answered = rendered
         .iter()
-        .any(|resource| resource["coverage"] != "error" || only_unjudgeable(resource));
+        .any(|resource| resource["coverage"]["state"] != "error" || only_unjudgeable(resource));
     let walk_open = answered && !continuations.is_empty();
     let mut tips = Vec::new();
-    // A strong window's exact read is `hints.read`. On an open walk that
-    // window ranks only the pages judged so far, so one line says so.
+    // A strong window's exact read is `hints.read`; on an open walk the
+    // `next.clasify` continuation carries this ranking on.
     if let Some(visible) = visible {
-        if walk_open {
-            tips.push(OPEN_WALK_BEST.to_owned());
-        }
         output["best"] = visible;
     }
     if whole_list_question_over_paths(query) {
@@ -260,7 +287,7 @@ pub(super) fn matrix_output(
         output["next"] = json!({(ToolId::Clasify.as_str()): walk(query, continuations, best)});
     }
     if let Some(literal) = literal {
-        output["next"]["textSearch"] = literal;
+        output["next"]["findText"] = literal;
     }
     output
 }
@@ -289,9 +316,7 @@ fn disclose_withheld(rendered: &mut [Value], withheld: &[(usize, Option<u64>)]) 
             Some(count) if count > 0 => format!("{count} more search candidates were not captured"),
             _ => "Content past the captured pages was not read".to_owned(),
         };
-        let limitation = json!(format!(
-            "{unread}; nothing was judged, so no next.clasify is offered: rerun this matrix once the provider answers."
-        ));
+        let limitation = json!(format!("{unread}; nothing was judged."));
         match resource
             .get_mut("limitations")
             .and_then(Value::as_array_mut)
@@ -355,12 +380,9 @@ pub(super) fn walk(query: &Value, resources: Vec<Value>, best: Option<Value>) ->
 }
 
 /// A matrix that ran no read and no provider request: every resource fails
-/// with `error` once, and the caller reruns the same input.
-pub(super) fn unjudged_matrix(
-    query: &Value,
-    error: &ClassificationError,
-    limitation: &str,
-) -> DomainResult {
+/// with `error` once (the error says nothing was read or judged), and the
+/// caller reruns the same input.
+pub(super) fn unjudged_matrix(query: &Value, error: &ClassificationError) -> DomainResult {
     let resources = query["resources"]
         .as_array()
         .into_iter()
@@ -371,7 +393,7 @@ pub(super) fn unjudged_matrix(
                 &[],
                 vec![PageOutcome::Failed {
                     error: error.clone(),
-                    receipt: json!({"limitations":[limitation]}),
+                    receipt: json!({}),
                 }],
                 false,
             )
@@ -393,7 +415,7 @@ pub(super) fn shared_kind(
 /// Every question locates a literal over local sources (a bare identifier,
 /// or a target whose only content is one identifier or quoted literal; see
 /// `identifier_target`): one exact search reaches every literal (an
-/// alternation when they differ), so the matrix routes to `hints.textSearch`
+/// alternation when they differ), so the matrix routes to `hints.findText`
 /// without a read or provider request.
 pub(super) fn literal_route(query: &Value) -> Option<Value> {
     let asks = query["questions"]
@@ -422,6 +444,6 @@ pub(super) fn literal_route(query: &Value) -> Option<Value> {
         "id":query["id"],
         "hints":hints,
         "resources":[],
-        "next":{"textSearch":search}
+        "next":{"findText":search}
     }))
 }

@@ -346,14 +346,14 @@ pub(super) struct AliasRecovery {
 pub(super) const ALIAS_SCAN_CAPPED_REASON: &str = "aliasScanCapped";
 
 /// Disclose a capped alias scan: `coverage.aliasScan:"capped"`, a partial
-/// reason with a warning, and the lexical `textSearch` lead that reaches the
+/// reason with a warning, and the lexical `findText` lead that reaches the
 /// aliases left unchecked.
 pub(super) fn disclose_alias_cap(
     row: &mut Value,
     query: &super::LspSearchQuery,
     scope: &super::scope::Scope,
 ) {
-    if let Some(coverage) = row.pointer_mut("/payload/coverage") {
+    if let Some(coverage) = row.pointer_mut("/coverage") {
         coverage["aliasScan"] = serde_json::json!("capped");
     }
     super::failure::flag_partial(
@@ -361,7 +361,7 @@ pub(super) fn disclose_alias_cap(
         query,
         ALIAS_SCAN_CAPPED_REASON,
         Some(&format!(
-            "Alias recovery checked at most {MAX_ALIAS_FILES_READ} files and {MAX_ALIAS_IMPORTS} renaming imports; references through the unchecked aliases may be missing. Confirm with {}.",
+            "Alias recovery checked at most {MAX_ALIAS_FILES_READ} files and {MAX_ALIAS_IMPORTS} renaming imports; references through the unchecked aliases may be missing. This cap is terminal: no page or retry re-checks them. Confirm with {} (the text-search lead: shown on the last page, or on any page with extras [\"hints\"]).",
             super::failure::TEXT_CHECK
         )),
         scope,

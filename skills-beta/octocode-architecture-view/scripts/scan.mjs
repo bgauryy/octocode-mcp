@@ -294,9 +294,7 @@ const findings = []; let topology = null;
 if (args.includes('--octocode')) {
   try {
     const q = { queries: [{ reasoning: 'architecture-view: runtime import cycles for the scanned root', operation: 'cycles', path: ROOT, pageSize: 100, maxFiles: Math.min(MAX_FILES, 50000), excludeDir: [...IGNORE_DIRS] }] };
-    let out;
-    try { out = execFileSync('octocode', ['astTopology', JSON.stringify(q)], { env: { ...process.env, OCTOCODE_BETA: 'true' }, maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180_000 }); }
-    catch (err) { if (err.status !== 6 || !err.stdout?.length) throw err; out = err.stdout; } // 6 = partial result, still usable
+    const out = execFileSync('octocode', ['astTopology', JSON.stringify(q)], { env: { ...process.env, OCTOCODE_BETA: 'true' }, maxBuffer: 64 << 20, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180_000 });
     const data = JSON.parse(out.toString()).results?.[0]?.data; if (!data) throw new Error('no astTopology data');
     const base = data.path && data.path !== '.' ? `${data.path}/` : '';
     for (const r of data.results || []) { if (!r.runtimeCycle) continue;

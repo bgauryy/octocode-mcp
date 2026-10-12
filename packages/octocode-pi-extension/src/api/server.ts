@@ -106,22 +106,27 @@ export class ApiServer {
     };
     let pending = '';
     socket.setEncoding('utf8');
+    // Every frame is held to MAX_FRAME_BYTES in UTF-8 bytes: a complete line after splitting, and the unterminated rest.
+    const tooLarge = (text: string): boolean => {
+      // A UTF-16 unit encodes to at most 3 bytes: skip measuring text that cannot be over the limit.
+      if (text.length * 3 <= MAX_FRAME_BYTES || Buffer.byteLength(text, 'utf8') <= MAX_FRAME_BYTES) return false;
+      write(failure(null, ERR.invalidRequest, 'Frame too large'));
+      socket.destroy();
+      return true;
+    };
     socket.on('data', (chunk: string) => {
       pending += chunk;
-      if (pending.length > MAX_FRAME_BYTES && !pending.includes('\n')) {
-        write(failure(null, ERR.invalidRequest, 'Frame too large'));
-        socket.destroy();
-        return;
-      }
       let newline: number;
       while ((newline = pending.indexOf('\n')) >= 0) {
         const line = pending.slice(0, newline).trim();
         pending = pending.slice(newline + 1);
+        if (tooLarge(line)) return;
         if (!line) continue;
         const parsed = parseRequest(line);
         if (isResponse(parsed)) write(parsed);
         else void answer(parsed, this.dispatch, connection).then((response) => response && write(response));
       }
+      tooLarge(pending);
     });
     const done = (): void => {
       subscription?.close();
@@ -150,9 +155,11 @@ export class ApiServer {
     if (req.method === 'GET' && url.pathname === '/health') return reply(200, { ok: true });
     if (req.method !== 'POST' || url.pathname !== '/rpc') return reply(404, failure(null, ERR.methodNotFound, 'Use POST /rpc, GET /events or GET /health'));
     let body = '';
+    let bytes = 0;
     for await (const chunk of req as AsyncIterable<Buffer>) {
       body += chunk.toString('utf8');
-      if (body.length > MAX_FRAME_BYTES) return reply(413, failure(null, ERR.invalidRequest, 'Body too large'));
+      bytes += chunk.length;
+      if (bytes > MAX_FRAME_BYTES) return reply(413, failure(null, ERR.invalidRequest, 'Body too large'));
     }
     const parsed = parseRequest(body);
     if (isResponse(parsed)) return reply(400, parsed);

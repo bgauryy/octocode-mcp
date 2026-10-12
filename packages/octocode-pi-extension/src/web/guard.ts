@@ -1,6 +1,11 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
+import { pipeline, Readable, type Transform } from 'node:stream';
+import zlib from 'node:zlib';
 import { envFlag } from '../shared/env.js';
+import { errorMessage } from '../shared/util.js';
 
 /** Redirect hops `web` follows; each target is checked before it is fetched. */
 const MAX_REDIRECTS = 10;
@@ -86,6 +91,7 @@ export function isBlockedIp(ip: string): boolean {
     (first & 0xffc0) === 0xfe80 || // link-local fe80::/10
     (first & 0xffc0) === 0xfec0 || // site-local fec0::/10
     (first & 0xff00) === 0xff00 || // multicast
+    (first === 0x0100 && groups[1] === 0 && groups[2] === 0 && groups[3] === 0) || // discard-only 100::/64
     (first === 0x2001 && groups[1] === 0x0db8) // documentation
   );
 }
@@ -95,44 +101,52 @@ export function allowPrivate(env: NodeJS.ProcessEnv = process.env): boolean {
   return envFlag(env, 'OCTOCODE_WEB_ALLOW_PRIVATE');
 }
 
-/**
- * Whether `url`'s host is, or resolves to, a non-public address (loopback, private, link-local cloud metadata, …).
- * A name that does not resolve is not private: the request then fails on its own.
- */
-export async function isPrivateHost(url: URL, lookup: HostLookup = defaultLookup): Promise<boolean> {
-  const hostname = url.hostname.replace(/^\[|\]$/g, '');
-  if (net.isIP(hostname)) return isBlockedIp(hostname);
-  const records = await lookup(hostname).catch(() => undefined);
-  if (records === undefined) return false;
-  return records.length === 0 || records.some(({ address }) => isBlockedIp(address));
-}
+/** What a URL's host reaches: only public addresses (listed), any non-public one, or nothing that resolves here. */
+export type HostClass = { kind: 'public'; addresses: string[] } | { kind: 'private' } | { kind: 'unresolved'; error: unknown };
 
-/** Throws unless `value` is an http(s) URL whose host is, or resolves only to, public addresses. */
-export async function assertPublicUrl(value: string | URL, lookup: HostLookup = defaultLookup): Promise<URL> {
-  const url = new URL(value);
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`web fetches http(s) URLs only, not ${url.protocol}`);
+/**
+ * Classifies `url`'s host by its literal address or every address it resolves to (loopback, private, link-local cloud
+ * metadata, … count as private). A name that does not resolve here is `unresolved`: another resolver (a browser's
+ * own DNS, a hosts entry, a proxy) may still take it somewhere private.
+ */
+export async function classifyHost(url: URL, lookup: HostLookup = defaultLookup): Promise<HostClass> {
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
-  const blocked = () => new Error(`Blocked private or non-public address: ${url.host} (set OCTOCODE_WEB_ALLOW_PRIVATE=1 to allow; use the browser tool for local pages)`);
-  if (net.isIP(hostname)) {
-    if (isBlockedIp(hostname)) throw blocked();
-    return url;
+  if (net.isIP(hostname)) return isBlockedIp(hostname) ? { kind: 'private' } : { kind: 'public', addresses: [hostname] };
+  let records: Array<{ address: string }>;
+  try {
+    records = await lookup(hostname);
+  } catch (error) {
+    return { kind: 'unresolved', error };
   }
-  const records = await lookup(hostname);
-  if (records.length === 0 || records.some(({ address }) => isBlockedIp(address))) throw blocked();
-  return url;
+  if (records.length === 0) return { kind: 'unresolved', error: new Error(`${hostname} has no addresses`) };
+  if (records.some(({ address }) => isBlockedIp(address))) return { kind: 'private' };
+  return { kind: 'public', addresses: records.map(({ address }) => address) };
+}
+
+/** A connection, TLS or DNS failure: worth another try, unlike a refusal, a redirect or a timeout. */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super(errorMessage(cause), { cause });
+    this.name = 'NetworkError';
+  }
+}
+
+export interface PublicFetchInit {
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 /**
- * `fetch` that checks the URL and every redirect target before requesting it. The check resolves the host itself;
- * `fetch` resolves it again, so a DNS answer that changes in between (rebinding) is not caught: pinning the checked
- * address would need undici's dispatcher, which this package does not depend on.
+ * GETs `url`, checking it and every redirect target before requesting it: http(s) only, and (unless
+ * OCTOCODE_WEB_ALLOW_PRIVATE=1) a host that resolves only to public addresses. The connection goes to the checked
+ * addresses, so a DNS answer that changes after the check (rebinding) cannot point it somewhere private.
  */
-export async function publicFetch(url: string, init: RequestInit, options: { env?: NodeJS.ProcessEnv; lookup?: HostLookup; sameHost?: boolean } = {}): Promise<Response> {
+export async function publicFetch(url: string, init: PublicFetchInit, options: { env?: NodeJS.ProcessEnv; lookup?: HostLookup; sameHost?: boolean } = {}): Promise<Response> {
   const anyAddress = allowPrivate(options.env ?? process.env);
   let target = new URL(url);
   for (let hop = 0; ; hop += 1) {
-    if (!anyAddress) await assertPublicUrl(target, options.lookup);
-    const response = await fetch(target, { ...init, redirect: 'manual' });
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new Error(`web fetches http(s) URLs only, not ${target.protocol}`);
+    const response = await get(target, init, anyAddress ? undefined : await publicAddresses(target, options.lookup));
     const location = response.headers.get('location');
     if (response.status < 300 || response.status >= 400 || location === null) return response;
     await response.body?.cancel().catch(() => undefined);
@@ -141,6 +155,98 @@ export async function publicFetch(url: string, init: RequestInit, options: { env
     if (options.sameHost && !sameSite(target, next)) throw new CrossHostRedirect(target, next, response.status);
     target = next;
   }
+}
+
+/** The public addresses `url`'s host resolves to; throws when it is private or does not resolve. */
+async function publicAddresses(url: URL, lookup?: HostLookup): Promise<string[]> {
+  const host = await classifyHost(url, lookup);
+  if (host.kind === 'unresolved') throw new Error(`Could not resolve ${url.hostname}: ${errorMessage(host.error)}`);
+  if (host.kind === 'private') throw new Error(`Blocked private or non-public address: ${url.host}. Do not retry it: only the user can allow private addresses (by starting Pi with OCTOCODE_WEB_ALLOW_PRIVATE=1). For a local page, use \`browser\`, which asks the user first.`);
+  return host.addresses;
+}
+
+/** Statuses whose response has no body. */
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
+/** One GET without following redirects; `addresses` (when given) are the only ones the connection may use. */
+function get(target: URL, init: PublicFetchInit, addresses: string[] | undefined): Promise<Response> {
+  const { signal } = init;
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    let incoming: http.IncomingMessage | undefined;
+    const onAbort = () => {
+      request.destroy(signal!.reason);
+      incoming?.destroy(signal!.reason);
+    };
+    const client = target.protocol === 'https:' ? https : http;
+    // No pooled agent: a reused socket could lead to an address this request did not check.
+    const request = client.request(target, { agent: false, headers: { 'accept-encoding': 'gzip, deflate, br', ...init.headers }, ...(addresses && { lookup: pinnedLookup(addresses) }) }, (response) => {
+      incoming = response;
+      response.once('close', () => signal?.removeEventListener('abort', onAbort));
+      try {
+        resolve(toResponse(target, response));
+      } catch (error) {
+        response.destroy();
+        reject(new NetworkError(error));
+      }
+    });
+    request.once('error', (error) => {
+      signal?.removeEventListener('abort', onAbort);
+      reject(signal?.aborted ? signal.reason : new NetworkError(error));
+    });
+    signal?.addEventListener('abort', onAbort, { once: true });
+    request.end();
+  });
+}
+
+/** The Fetch API view of a Node response: headers as sent, the body decompressed, `url` the address requested. */
+function toResponse(target: URL, response: http.IncomingMessage): Response {
+  const status = response.statusCode ?? 0;
+  if (status < 200 || status > 599) throw new Error(`invalid HTTP status ${status}`);
+  const headers = new Headers();
+  for (let index = 0; index + 1 < response.rawHeaders.length; index += 2) headers.append(response.rawHeaders[index]!, response.rawHeaders[index + 1]!);
+  let body: Readable | null = response;
+  if (NULL_BODY_STATUSES.has(status)) {
+    response.resume();
+    body = null;
+  } else {
+    const decoder = decompressor(response.headers['content-encoding']);
+    if (decoder) body = pipeline(response, decoder, () => undefined);
+  }
+  const result = new Response(body && (Readable.toWeb(body) as ReadableStream<Uint8Array>), {
+    status,
+    statusText: (response.statusMessage ?? '').replace(/[^\t\x20-\x7e\x80-\xff]/g, ''),
+    headers,
+  });
+  Object.defineProperty(result, 'url', { value: target.href });
+  return result;
+}
+
+/** A stream that undoes the Content-Encoding the request accepted; a cut stream yields what arrived. */
+function decompressor(encoding: string | undefined): Transform | undefined {
+  const flush = { flush: zlib.constants.Z_SYNC_FLUSH, finishFlush: zlib.constants.Z_SYNC_FLUSH };
+  switch (encoding?.trim().toLowerCase()) {
+    case 'gzip':
+    case 'x-gzip':
+      return zlib.createGunzip(flush);
+    case 'deflate':
+      return zlib.createInflate(flush);
+    case 'br':
+      return zlib.createBrotliDecompress({ flush: zlib.constants.BROTLI_OPERATION_FLUSH, finishFlush: zlib.constants.BROTLI_OPERATION_FLUSH });
+    default:
+      return undefined;
+  }
+}
+
+/** A DNS lookup that answers only with the checked addresses. */
+function pinnedLookup(addresses: string[]): net.LookupFunction {
+  const entries = addresses.map((address) => ({ address, family: net.isIP(address) }));
+  return (_hostname, options, callback) => {
+    if (options.all) return callback(null, entries);
+    const wanted = options.family === 'IPv4' ? 4 : options.family === 'IPv6' ? 6 : options.family;
+    const entry = entries.find(({ family }) => !wanted || family === wanted) ?? entries[0]!;
+    callback(null, entry.address, entry.family);
+  };
 }
 
 /** A redirect `publicFetch` did not follow because it leaves the host (with `sameHost`); the caller decides. */

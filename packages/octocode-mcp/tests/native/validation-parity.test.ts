@@ -20,8 +20,7 @@ afterAll(() => Promise.all([runtime.close(), mcpRuntime.close()]));
 const brief = { mainGoal: 'g', reasoning: 'r' };
 
 type ToolErrorEnvelope = {
-  kind?: string;
-  tool?: string;
+  error?: string;
   errorCode?: string;
   details?: string[];
 };
@@ -53,7 +52,10 @@ const nativeDetails = async (tool: string, input: unknown) => {
       payload: ToolErrorEnvelope;
     };
     return {
-      text: (thrown.payload.details ?? []).join('\n'),
+      // The first repair is `error`; any others follow in `details`.
+      text: [thrown.payload.error ?? '', ...(thrown.payload.details ?? [])]
+        .filter(Boolean)
+        .join('\n'),
       code: thrown.code,
       envelope: thrown.payload,
     };
@@ -120,7 +122,7 @@ const cases: ReadonlyArray<{
   {
     name: 'a misspelled lspSearch path',
     tool: 'lspSearch',
-    query: { pth: 'package.json', symbolName: 'name', lineHint: 1 },
+    query: { pth: 'package.json', symbolName: 'name', line: 1 },
     says: ["did you mean 'path'?"],
     never: ["did you mean 'page'?"],
   },
@@ -140,19 +142,19 @@ describe('CLI and MCP validation guidance parity', () => {
     const input = { queries: [{ ...brief, ...query }] };
     const mcp = await mcpMessage(tool, input);
     const cli = await nativeDetails(tool, input);
-    // Both surfaces answer with the typed octocode.toolError envelope.
-    expect(mcp.envelope).toMatchObject({
-      kind: 'octocode.toolError',
-      tool,
-      errorCode: 'invalidInput',
-    });
+    // Both surfaces answer with the same typed error envelope: the error
+    // itself, no kind/version/tool frame.
+    for (const envelope of [mcp.envelope, cli.envelope]) {
+      expect(envelope).toMatchObject({
+        error: expect.any(String),
+        errorCode: 'invalidInput',
+      });
+      expect(envelope).not.toHaveProperty('kind');
+      expect(envelope).not.toHaveProperty('version');
+      expect(envelope).not.toHaveProperty('tool');
+    }
     expect(mcp.text).toContain('(errorCode: invalidInput)');
     expect(cli.code).toBe('invalidInput');
-    expect(cli.envelope).toMatchObject({
-      kind: 'octocode.toolError',
-      tool,
-      errorCode: 'invalidInput',
-    });
     const surfaces = { mcp: mcp.text, cli: cli.text };
     for (const [surface, text] of Object.entries(surfaces)) {
       expect(text, surface).not.toBe('');

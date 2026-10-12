@@ -120,13 +120,12 @@ carries a ready-to-run `next` query.
 
 | Exit | Meaning |
 |---:|---|
-| 0 | Success |
+| 0 | Success (a result with a next page is still success: follow `next.*`) |
 | 1 | Empty result / no matches |
 | 2 | Invalid input |
 | 3 | Not found |
 | 4 | Authentication required |
-| 5 | Execution error |
-| 6 | Partial result: run the `next` continuation |
+| 5 | Execution error (including a missing native runtime or a binary that cannot start) |
 | 7 | Rate limited |
 | 130 | Interrupted |
 

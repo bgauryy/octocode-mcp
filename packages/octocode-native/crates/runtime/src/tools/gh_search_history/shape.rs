@@ -2,12 +2,9 @@
 //! partial state.
 use super::{HistoryOperation, HistorySearch, leads, rows};
 use crate::providers::github::HistoryPage;
-use crate::tools::gh_shared::SEARCH_RESULT_CAP;
+use crate::tools::gh_shared::{SEARCH_RESULT_CAP, pick_rows, push_warning};
 use crate::tools::result::remove_null_fields;
 use serde_json::{Value, json};
-
-/// GitHub search stops at 1,000 results; the cap is not the end of history.
-const CAP_PARTITION_HINT: &str = "Search stops at 1,000 results: split by date (created:/merged:/closed:, commit since/until) or narrow keywords.";
 
 /// Where a page sits in the result.
 pub(super) struct Paging {
@@ -26,6 +23,9 @@ pub(super) struct Paging {
     exact_list_total: Option<usize>,
     listed: bool,
     incomplete: bool,
+    /// The page lies past the last one: no rows, though the search has some
+    /// (or the list has an earlier page).
+    past_end: bool,
 }
 
 impl Paging {
@@ -57,6 +57,9 @@ impl Paging {
                 .then_some(result.items.len()),
             listed: result.listed,
             incomplete: result.incomplete_results,
+            past_end: result.items.is_empty()
+                && page > 1
+                && (result.listed || total > 0 && page > total.div_ceil(per)),
         }
     }
     /// The total a page reports: the search total, or an exact list count.
@@ -68,8 +71,9 @@ impl Paging {
         }
     }
     fn pagination(&self, current: usize) -> Value {
-        let mut page =
-            crate::response::pages::PageFacts::open(current, Some(self.per), self.more).to_value();
+        let mut page = crate::response::pages::PageFacts::open(current, Some(self.per), self.more)
+            .out_of_range(self.past_end)
+            .to_value();
         if self.more {
             page["nextPage"] = json!(current + 1);
         }
@@ -93,7 +97,9 @@ pub(super) fn shape(
         HistoryOperation::Commit => commits(query, items, paging),
     };
     if query.operation() == HistoryOperation::Commit
-        && let Some(sha) = value.pointer("/commits/0/sha").and_then(Value::as_str)
+        && let Some(sha) = value
+            .pointer("/commits/0/commitSha")
+            .and_then(Value::as_str)
         && let Some(read) = leads::read_commit(query, sha)
     {
         value["next"]["readCommit"] = read;
@@ -106,8 +112,17 @@ pub(super) fn shape(
     if !warnings.is_empty() {
         value["warnings"] = json!(warnings);
     }
+    // A REST list has no total (a search has): say why the first page of a
+    // longer list shows none, so a caller pages on instead of waiting for one.
+    if paging.listed && paging.more && paging.current == 1 {
+        push_warning(
+            &mut value,
+            "GitHub's commit list gives no total, so pagination has no totalItems: page until hasMore is false.".to_owned(),
+        );
+    }
     if query.operation() == HistoryOperation::Issue
         && !paging.more
+        && !paging.past_end
         && let Some(map) = value.as_object_mut()
     {
         map.remove("pagination");
@@ -125,7 +140,10 @@ pub(super) fn shape(
     }
     remove_null_fields(&mut value);
     mark_empty(&mut value, paging.more);
+    // A page past the end is restarted by the shared response stage, not
+    // broadened: the search has results.
     if value["status"] == "empty"
+        && !paging.past_end
         && let Some(lead) = leads::broaden_search(query)
     {
         value["next"]["broadenSearch"] = lead;
@@ -134,40 +152,43 @@ pub(super) fn shape(
     value
 }
 
+/// Whether pull-request rows keep `createdAt` beside `mergedAt`: when they
+/// are sorted by creation, or filtered on it (`since`/`until` set the
+/// `created:` window, or a `created:` qualifier).
+pub(super) fn keeps_created(query: &HistorySearch) -> bool {
+    query.sort().as_deref() == Some("created")
+        || query.since().is_some()
+        || query.until().is_some()
+        || query
+            .qualifiers()
+            .is_some_and(|qualifiers| qualifiers.contains("created:"))
+}
+
 fn pull_requests(query: &HistorySearch, items: &[Value], paging: &Paging, terms: String) -> Value {
-    // A search beyond one repository names each row's repository: the
-    // row's number alone cannot be read.
-    let scoped = query.owner().zip(query.repo()).is_some();
-    let concise = query.concise() == Some(true);
+    let fields = query.fields();
     let state = query.state();
-    let by_created = query.sort().as_deref() == Some("created");
+    let keep_created = keeps_created(query);
     let rows = items
         .iter()
         .map(|item| {
-            let repository = (!scoped).then(|| rows::item_repo(item)).flatten();
-            match (concise, &repository) {
-                (true, Some((owner, repo))) => match rows::concise_row(item) {
-                    Value::String(text) => json!(format!("{owner}/{repo}{text}")),
-                    row => row,
-                },
-                (true, None) => rows::concise_row(item),
-                (false, _) => {
-                    let mut row = rows::map_pr(item.clone());
-                    rows::drop_implied(&mut row, state.as_deref(), by_created);
-                    if let Some((owner, repo)) = repository {
-                        row["repository"] = json!(format!("{owner}/{repo}"));
-                    }
-                    row
-                }
-            }
+            let mut row = rows::map_pr(item.clone());
+            rows::drop_implied(&mut row, state.as_deref(), keep_created, &fields);
+            rows::name_repository(&mut row, item, query.owner(), query.repo());
+            row
         })
         .collect::<Vec<_>>();
     let mut v = json!({"pullRequests":rows,"effectiveQuery":terms,
         "pagination":paging.pagination(paging.current)});
-    // Pages follow from totalItems and pageSize: no totalPages.
+    pick_rows(
+        &mut v,
+        "pullRequests",
+        &["number", "owner", "repo"],
+        &fields,
+    );
+    // Pages follow from totalItems and pageSize: no totalPages. A capped
+    // total is `partialReasons:["providerResultCap"]`, not a second flag.
     if !paging.listed {
         v["pagination"]["totalItems"] = json!(paging.total);
-        v["pagination"]["totalItemsCapped"] = json!(paging.capped);
     } else if let Some(total) = paging.exact_list_total {
         v["pagination"]["totalItems"] = json!(total);
     }
@@ -188,23 +209,20 @@ fn pull_requests(query: &HistorySearch, items: &[Value], paging: &Paging, terms:
 
 fn issues(query: &HistorySearch, items: &[Value], paging: &Paging, terms: String) -> Value {
     let by_update = query.sort().as_deref() == Some("updated");
-    let concise = query.concise() == Some(true);
+    let fields = query.fields();
     let state = query.state();
     let issues = items
         .iter()
         .map(|item| {
-            if concise {
-                rows::concise_row(item)
-            } else {
-                let mut row = rows::map_issue(item.clone(), by_update);
-                rows::drop_implied(&mut row, state.as_deref(), true);
-                row
-            }
+            let mut row = rows::map_issue(item.clone(), by_update);
+            rows::drop_implied(&mut row, state.as_deref(), true, &fields);
+            row
         })
         .collect::<Vec<_>>();
     // The rows' repository is the query's own owner/repo: not echoed.
     let mut v = json!({"issues":issues,
         "effectiveQuery":terms,"pagination":paging.pagination(paging.current)});
+    pick_rows(&mut v, "issues", &["number"], &fields);
     if let Some(total) = paging.reported_total() {
         v["pagination"]["totalItems"] = json!(total);
     }
@@ -221,30 +239,32 @@ fn issues(query: &HistorySearch, items: &[Value], paging: &Paging, terms: String
 }
 
 fn commits(query: &HistorySearch, items: Vec<Value>, paging: &Paging) -> Value {
+    let fields = query.fields();
     if query.keywords().is_empty() {
         let commits = items
             .into_iter()
             .map(rows::map_commit_list)
             .collect::<Vec<_>>();
         let mut v = json!({"commits":commits});
-        if paging.more {
-            v["pagination"] =
-                crate::response::pages::PageFacts::open(paging.page, Some(paging.per), true)
-                    .to_value();
-            v["pagination"]["nextPage"] = json!(paging.page + 1);
-        }
+        pick_rows(&mut v, "commits", &["commitSha"], &fields);
+        // `shape` adds the reachable `nextPage`. A complete list says so too
+        // (`hasMore:false`): the REST list has no total, so a missing block
+        // would leave the end of the history unstated.
+        v["pagination"] =
+            crate::response::pages::PageFacts::open(paging.page, Some(paging.per), paging.more)
+                .out_of_range(paging.past_end)
+                .to_value();
         return v;
     }
     let commits = items.into_iter().map(rows::map_commit).collect::<Vec<_>>();
     let mut facts =
-        crate::response::pages::PageFacts::open(paging.page, Some(paging.per), paging.more);
+        crate::response::pages::PageFacts::open(paging.page, Some(paging.per), paging.more)
+            .out_of_range(paging.past_end);
     if let Some(total) = paging.reported_total() {
         facts = facts.with_items(total);
     }
-    let mut v = json!({"scope":"defaultBranch","commits":commits,"pagination":facts.to_value()});
-    if !paging.listed {
-        v["pagination"]["totalItemsCapped"] = json!(paging.capped);
-    }
+    let mut v = json!({"commits":commits,"pagination":facts.to_value()});
+    pick_rows(&mut v, "commits", &["commitSha"], &fields);
     v
 }
 
@@ -275,13 +295,12 @@ fn mark_partial(value: &mut Value, paging: &Paging) {
     }]);
     if paging.capped {
         // The reachable `totalItems` is not the match count: state GitHub's.
-        let warning = json!(format!(
-            "GitHub matched {} results. {CAP_PARTITION_HINT}",
-            paging.matched
-        ));
-        match value.get_mut("warnings").and_then(Value::as_array_mut) {
-            Some(warnings) => warnings.push(warning),
-            None => value["warnings"] = json!([warning]),
-        }
+        push_warning(
+            value,
+            format!(
+                "GitHub matched {} results; the first {SEARCH_RESULT_CAP} are reachable.",
+                paging.matched
+            ),
+        );
     }
 }

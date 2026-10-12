@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { atomicWriteFileSync, sha256 } from '../shared/atomic.js';
-import { findRepoRoot, HOME_NAMES, octocodeHome } from '../shared/home.js';
+import { HOME_NAMES, octocodeHome, repoKey } from '../shared/home.js';
 import { processAlive } from '../shared/process.js';
 import { errorMessage } from '../shared/util.js';
 
@@ -55,16 +55,13 @@ interface WorktreeResult {
   stat?: string;
 }
 
-/** The team workspace for `cwd`, as the team store computes it: the nearest directory holding `.git`, else cwd. */
-export const teamWorkspace = findRepoRoot;
-
 export function worktreesDir(repo: string, home = octocodeHome()): string {
   return path.join(home, HOME_NAMES.worktrees, sha256(repo).slice(0, 16));
 }
 
-/** The repository root, found the same way as the team workspace (`findRepoRoot`), so both always agree. */
+/** The repository root, the same `repoKey` root the team workspace uses, so both always agree. */
 function repoRoot(cwd: string): string {
-  const root = findRepoRoot(cwd);
+  const { root } = repoKey(cwd);
   if (!fs.existsSync(path.join(root, '.git'))) throw new Error('isolate needs a git repository; run without isolate here.');
   return root;
 }
@@ -222,6 +219,22 @@ interface PruneReport {
   kept: Array<{ agentId: string; error: string }>;
 }
 
+/** An owner record being pruned is renamed `<agent>.json.pruning-<pid>` by the session that claimed it. */
+const CLAIM_SUFFIX = '.pruning-';
+
+/** Returns the owner records of prunes whose session died mid-way, so this prune can claim them again. */
+function releaseDeadClaims(dir: string): void {
+  for (const entry of fs.readdirSync(dir)) {
+    const at = entry.lastIndexOf(CLAIM_SUFFIX);
+    if (at < 0 || processAlive(Number(entry.slice(at + CLAIM_SUFFIX.length)))) continue;
+    try {
+      fs.renameSync(path.join(dir, entry), path.join(dir, entry.slice(0, at)));
+    } catch {
+      // Another session released it first.
+    }
+  }
+}
+
 /**
  * Removes worktrees of this repository whose owning Pi processes (parent and subagent) are all gone. Their changes are
  * first committed to the agent's ref; a worktree whose changes cannot be saved is kept and reported, so a crash never
@@ -237,6 +250,7 @@ export async function pruneWorktrees(cwd: string, home = octocodeHome()): Promis
   }
   const dir = worktreesDir(repo, home);
   if (!fs.existsSync(dir)) return report;
+  releaseDeadClaims(dir);
   for (const entry of fs.readdirSync(dir)) {
     if (!entry.endsWith('.json')) continue;
     const agentId = entry.slice(0, -'.json'.length);
@@ -248,11 +262,21 @@ export async function pruneWorktrees(cwd: string, home = octocodeHome()): Promis
       if (Date.now() - (fs.statSync(path.join(dir, entry), { throwIfNoEntry: false })?.mtimeMs ?? 0) < UNREADABLE_GRACE_MS) continue;
     }
     if (ownerPids(owner).some(processAlive) || !ID_PATTERN.test(agentId)) continue;
+    // Two sessions starting together both see the orphan: only the one whose rename wins saves and removes it.
+    const claimed = path.join(dir, `${entry}${CLAIM_SUFFIX}${process.pid}`);
+    try {
+      fs.renameSync(path.join(dir, entry), claimed);
+    } catch {
+      continue;
+    }
     const worktree = { agentId, repo, path: path.join(dir, agentId), base: typeof owner.base === 'string' ? owner.base : '' };
     try {
       const { ref } = await finishWorktree(worktree);
+      fs.rmSync(claimed, { force: true });
       report.saved.push({ agentId, ...(ref ? { ref } : {}) });
     } catch (error) {
+      // Kept: its owner record goes back, so the next prune reports it again.
+      fs.renameSync(claimed, path.join(dir, entry));
       report.kept.push({ agentId, error: errorMessage(error) });
     }
   }

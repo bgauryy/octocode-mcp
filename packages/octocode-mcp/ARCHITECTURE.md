@@ -9,7 +9,11 @@ select, sanitize, or execute tools in TypeScript.
 - `src/index.ts` starts the native MCP adapter and reports startup failures.
 - `src/native/index.ts` loads `NativeRuntime`, reads its catalog, registers the
   enabled tools with MCP SDK v2, forwards each call to `executeMcp()`, forwards
-  cancellation, and closes the runtime before it closes the transport.
+  cancellation, and closes the runtime before it closes the transport. A typed
+  native failure (timeout, busy, tool unavailable) comes back as the same
+  `{error, errorCode}` tool error the CLI prints; the addon has already scrubbed
+  it. Any other rejection stays a generic "failed to execute" error with the
+  detail on stderr.
 - `src/public.ts` re-exports the adapter functions and types for embedding;
   the runtime types come from `@octocodeai/octocode-native/runtime`.
 - `@octocodeai/config` (private workspace package, bundled at build time)

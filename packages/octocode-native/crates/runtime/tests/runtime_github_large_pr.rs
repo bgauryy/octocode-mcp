@@ -166,17 +166,17 @@ async fn large_pr_inventory_flags_patchless_files_and_keeps_rename_origin() {
     )
     .await;
     let data = run(&server, json!({"sections":["files"], "extras": []})).await;
-    // Compact rows: consecutive files of one directory share a group.
+    // Compact rows: every file of one directory shares its first group.
     assert_eq!(
         data["pullRequests"][0]["files"],
         json!([
             {"src/": [
                 "M +1 -1 ok.rs",
                 "R +0 -0 new_name.rs <- src/old_name.rs",
-                "M +39550 -39342 !tooLarge checker.ts"
+                "M +39550 -39342 !tooLarge checker.ts",
+                "M !omitted omitted.ts"
             ]},
-            "M +0 -0 !binary assets/logo.png",
-            "M !omitted src/omitted.ts"
+            "M +0 -0 !binary assets/logo.png"
         ]),
         "{data}"
     );
@@ -194,24 +194,26 @@ async fn pr_inventory_carries_the_identity_header_and_its_own_next_steps_only() 
     .await;
     let data = run(&server, json!({"sections":["files"], "extras": ["hints"]})).await;
     let row = &data["pullRequests"][0];
-    for kept in [
-        "number",
+    // A section read keeps the identity and the commits code is read at.
+    for kept in ["number", "state", "headSha", "mergeCommitSha"] {
+        assert!(row.get(kept).is_some(), "{kept} missing: {row}");
+    }
+    // The first page of a file inventory states how many files it lists.
+    assert_eq!(row["changedFilesCount"], 250, "{row}");
+    // The rest of the header rides the summary read only.
+    for dropped in [
         "title",
-        "state",
-        "sourceSha",
-        "mergeCommitSha",
         "additions",
         "deletions",
+        "bodyPreview",
+        "updatedAt",
+        "headBranch",
+        "closedAt",
+        "mergedAt",
+        "baseBranch",
+        "labels",
     ] {
-        assert!(row.get(kept).is_some(), "{kept} missing: {row}");
-    }
-    // A merged PR's close time is its merge time.
-    for dropped in ["bodyPreview", "updatedAt", "sourceBranch", "closedAt"] {
         assert!(row.get(dropped).is_none(), "{dropped} kept: {row}");
-    }
-    // Merge state and labels ride the first page of every read.
-    for kept in ["mergedAt", "targetBranch", "labels"] {
-        assert!(row.get(kept).is_some(), "{kept} missing: {row}");
     }
     // The next steps are the response's leads, not a list nested in the row.
     assert!(row.get("hints").is_none(), "{row}");
@@ -355,15 +357,25 @@ async fn pr_file_list_stopped_by_the_provider_cap_is_not_complete() {
         json!({"sections":["files"], "pageSize": 100, "extras": []}),
     )
     .await;
-    let page = &data["pullRequests"][0]["contentPagination"]["files"];
-    assert_ne!(page["countScope"], "complete", "{page}");
-    assert_eq!(page["terminalLimit"], true, "{page}");
-    assert_eq!(
-        page["providerLimit"]["reason"], "providerFileListLimit",
-        "{page}"
+    // The section cursors always show; the provider limit is the
+    // row's evidence beside them.
+    assert!(
+        data["pullRequests"][0].get("contentPagination").is_some(),
+        "{data}"
     );
-    assert_eq!(page["providerLimit"]["listed"], 100, "{page}");
-    assert_eq!(page["providerLimit"]["changedFilesCount"], 3500, "{page}");
+    assert_eq!(data["terminalLimit"], true, "{data}");
+    assert_eq!(
+        data["providerLimit"]["reason"], "providerFileListLimit",
+        "{data}"
+    );
+    assert_eq!(data["providerLimit"]["listed"], 100, "{data}");
+    assert_eq!(data["providerLimit"]["changedFilesCount"], 3500, "{data}");
+    assert!(
+        data["partialReasons"]
+            .as_array()
+            .is_some_and(|reasons| reasons.contains(&json!("providerFileListLimit"))),
+        "{data}"
+    );
 }
 
 #[tokio::test]
@@ -378,7 +390,7 @@ async fn pr_inventory_page_reports_the_provider_total() {
     .await;
     let data = run(
         &server,
-        json!({"sections":["files"], "pageSize": 100, "extras": []}),
+        json!({"sections":["files"], "pageSize": 100, "extras": ["stats"]}),
     )
     .await;
     let page = &data["pullRequests"][0]["contentPagination"]["files"];
@@ -398,12 +410,14 @@ async fn pr_continuation_reads_carry_only_the_identity_header() {
         Duration::ZERO,
     )
     .await;
-    // Page one carries the header and menu; a later page re-proves identity only.
+    // Page one carries the identity header and the menu; a later page
+    // re-proves identity only (the summary read owns the rest of the header).
     let query = json!({"sections":["files"], "pageSize": 100, "extras": ["hints"]});
-    let follow = json!({"sections":["files"], "pageSize": 100, "filePage": 2, "extras": ["hints"]});
+    let follow = json!({"sections":["files"], "pageSize": 100, "page": 2, "extras": ["hints"]});
     let first = run(&server, query).await;
     let first_row = &first["pullRequests"][0];
-    assert_eq!(first_row["title"], "Large refactor", "{first_row}");
+    assert_eq!(first_row["headSha"], SHA, "{first_row}");
+    assert!(first_row.get("title").is_none(), "{first_row}");
     assert!(first_row.get("hints").is_none(), "{first_row}");
     assert!(first.get("hints").is_some(), "{first}");
     // A literal search of every patch needs the caller's literal: it is
@@ -412,23 +426,17 @@ async fn pr_continuation_reads_carry_only_the_identity_header() {
 
     let data = run(&server, follow).await;
     let row = &data["pullRequests"][0];
-    for kept in [
-        "number",
-        "title",
-        "state",
-        "sourceSha",
-        "mergeCommitSha",
-        "changedFilesCount",
-    ] {
-        assert!(row.get(kept).is_some(), "{kept} missing: {row}");
-    }
-    for kept in ["mergedAt", "targetBranch"] {
+    for kept in ["number", "state", "headSha", "mergeCommitSha"] {
         assert!(row.get(kept).is_some(), "{kept} missing: {row}");
     }
     for dropped in [
+        "title",
+        "changedFilesCount",
+        "mergedAt",
+        "baseBranch",
         "closedAt",
         "labels",
-        "sourceBranch",
+        "headBranch",
         "updatedAt",
         "commentsCount",
         "additions",
@@ -444,8 +452,7 @@ async fn pr_continuation_reads_carry_only_the_identity_header() {
     assert!(data["next"]["nextFilePage"].is_object(), "{data}");
 
     // The details extra keeps the full header.
-    let details =
-        json!({"sections":["files"], "pageSize": 100, "filePage": 2, "extras": ["details"]});
+    let details = json!({"sections":["files"], "pageSize": 100, "page": 2, "extras": ["details"]});
     let details = run(&server, details).await;
     assert_eq!(details["pullRequests"][0]["labels"], json!(["refactor"]));
 }
@@ -548,32 +555,35 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
     // The narrowed-view marker selects the continuation; rows omit it.
     assert!(files[0].get("fullPatchChars").is_none(), "{data}");
     // A patch read carries the identity it re-proves (number, state, the
-    // head it read) and no follow-up menu; the metadata read names the PR.
+    // head it read) and no follow-up menu; the summary read names the PR.
     let row = &data["pullRequests"][0];
     assert!(no_continuation(row), "{row}");
-    for dropped in ["additions", "deletions", "title", "author", "createdAt"] {
+    for dropped in [
+        "additions",
+        "deletions",
+        "title",
+        "author",
+        "createdAt",
+        "mergedAt",
+        "baseBranch",
+    ] {
         assert!(row.get(dropped).is_none(), "{dropped} kept: {row}");
     }
-    // HI4: every view names the merge commit beside the head it read.
-    for kept in [
-        "number",
-        "state",
-        "sourceSha",
-        "mergeCommitSha",
-        "mergedAt",
-        "targetBranch",
-    ] {
+    // Every view names the merge commit beside the head it read.
+    for kept in ["number", "state", "headSha", "mergeCommitSha"] {
         assert!(row.get(kept).is_some(), "{kept} dropped: {row}");
     }
-    // Without a patch row the read proves nothing about files: it keeps the
-    // full identity.
+    // Without a patch row the read carries the same slim identity header.
     let (status, none) = run_status(
         &server,
         json!({"sections":["patches"], "matchString": "absent-term",
                "minify": "none", "extras": []}),
     )
     .await;
-    assert_eq!(none["pullRequests"][0]["title"], "Large refactor", "{none}");
+    let none_row = &none["pullRequests"][0];
+    assert_eq!(none_row["headSha"], SHA, "{none}");
+    assert_eq!(none_row["state"], "merged", "{none}");
+    assert!(none_row.get("title").is_none(), "{none}");
     // A matchString that hits no patch line is an empty read that says so,
     // not a summary that looks like an ignored filter.
     assert_eq!(status, "empty", "{none}");
@@ -589,24 +599,29 @@ async fn match_string_returns_matching_hunks_and_offers_the_whole_patch() {
         only_hits["pullRequests"][0]["files"][0]["patch"],
         "@@ -201,1 +201,1 @@\n201\t-old esbuild\n201\t+new esbuild\n"
     );
-    // An explicit contextLines still narrows the patch: the whole patch
-    // stays reachable.
-    assert_eq!(
-        only_hits["next"]["readFullPatches"]["query"]["queries"][0]["include"],
-        json!(["src/big.rs"]),
+    // The grep shows what was asked: the whole patch is not a page (no
+    // `next`, the read is complete), it is an opt-in lead.
+    assert!(
+        only_hits["next"].get("readFullPatches").is_none(),
         "{only_hits}"
     );
-    assert_eq!(
-        data["next"]["readFullPatches"]["query"]["queries"][0]["include"],
-        json!(["src/big.rs"]),
-        "{data}"
-    );
-    // Following the read returns the whole patch, numbered.
-    let mut full = data["next"]["readFullPatches"]["query"]["queries"][0].clone();
-    for key in ["operation", "owner", "repo", "number"] {
-        full.as_object_mut().map(|q| q.remove(key));
-    }
-    let full = run(&server, full).await;
+    assert!(data.get("isPartial").is_none(), "{data}");
+    let hinted = run(
+        &server,
+        json!({"sections":["patches"], "matchString": "esbuild",
+               "minify": "none", "extras": ["hints"]}),
+    )
+    .await;
+    // A one-file answer offers one lead: the code read outranks the
+    // low-confidence whole-patch re-read.
+    assert!(hinted["hints"]["readAtCommit"].is_object(), "{hinted}");
+    assert!(hinted["hints"].get("readFullPatches").is_none(), "{hinted}");
+    // The whole patch is the same read without the grep, numbered.
+    let full = run(
+        &server,
+        json!({"sections":["patches"], "include": ["src/big.rs"], "minify": "none", "extras": []}),
+    )
+    .await;
     let whole = full["pullRequests"][0]["files"][0]["patch"]
         .as_str()
         .unwrap_or("");
@@ -688,7 +703,7 @@ async fn minified_pr_views_carry_lossless_raw_reads() {
     assert!(plain.pointer("/hints/readRawBody").is_none(), "{plain}");
 }
 
-/// D1: `matchString` searches patches, so a pull-request read with a
+/// `matchString` searches patches, so a pull-request read with a
 /// literal and no content selection searches every patch (within
 /// `include`) instead of silently returning only the summary.
 #[tokio::test]
@@ -729,7 +744,7 @@ async fn match_string_without_content_searches_the_filtered_patches() {
     );
 }
 
-/// D2: a patch search never implies absence for files GitHub sent without a
+/// A patch search never implies absence for files GitHub sent without a
 /// patch: it lists them, marks the row partial, and offers a source read at
 /// the PR head.
 #[tokio::test]
@@ -776,10 +791,11 @@ async fn match_string_lists_the_patchless_files_it_could_not_search() {
     );
 }
 
-/// A merged PR's merge state rides every PR row, whatever the
-/// content selection: summary, body + inventory, inventory, patch read and a
-/// later file page all carry `mergedAt`/`closedAt`/`targetBranch`; the first
-/// page also keeps the labels.
+/// A merged PR's merge state rides every PR row, whatever the content
+/// selection: summary, body + inventory, inventory, patch read and a later
+/// file page all carry `state:"merged"` and the `mergeCommitSha`; a read that
+/// names no section (the summary, a bare `matchString`) also carries
+/// `mergedAt`, `baseBranch` and the labels (never `closedAt`).
 #[tokio::test]
 async fn merged_pr_rows_keep_merge_state_on_every_read() {
     let server = MockServer::builder().start().await;
@@ -787,23 +803,23 @@ async fn merged_pr_rows_keep_merge_state_on_every_read() {
     let mut batches = vec![numbered(1, 100), numbered(2, 100), numbered(3, 50)];
     batches[0][0] = rest_file("src/hit.rs", Some("@@ -1 +1 @@\n-a\n+needle"), 1, 1);
     mount_file_batches(&server, batches, Duration::ZERO).await;
-    for (label, query, first_page) in [
+    for (label, query, full_header) in [
         ("summary", json!({"extras": []}), true),
         (
             "body+inventory",
             json!({"sections":["body","files"], "extras": []}),
-            true,
+            false,
         ),
         (
             "inventory",
             json!({"sections":["files"], "extras": []}),
-            true,
+            false,
         ),
         (
             "patches",
             json!({"sections":["patches"],"include":["src/hit.rs"],
                    "minify": "none", "extras": []}),
-            true,
+            false,
         ),
         (
             "matchString",
@@ -812,20 +828,28 @@ async fn merged_pr_rows_keep_merge_state_on_every_read() {
         ),
         (
             "later page",
-            json!({"sections":["files"], "pageSize": 100, "filePage": 2,
+            json!({"sections":["files"], "pageSize": 100, "page": 2,
                    "extras": []}),
             false,
         ),
     ] {
         let data = run(&server, query).await;
         let row = &data["pullRequests"][0];
-        assert_eq!(row["mergedAt"], "2024-01-03T00:00:00Z", "{label}: {row}");
+        assert_eq!(row["state"], "merged", "{label}: {row}");
+        assert_eq!(
+            row["mergeCommitSha"], "fedcba9876543210fedcba9876543210fedcba98",
+            "{label}: {row}"
+        );
         // The merge time is the close time; it is not stated twice.
         assert!(row.get("closedAt").is_none(), "{label}: {row}");
-        assert_eq!(row["targetBranch"], "main", "{label}: {row}");
-        assert_eq!(row["state"], "merged", "{label}: {row}");
-        if first_page {
+        if full_header {
+            assert_eq!(row["mergedAt"], "2024-01-03T00:00:00Z", "{label}: {row}");
+            assert_eq!(row["baseBranch"], "main", "{label}: {row}");
             assert_eq!(row["labels"], json!(["refactor"]), "{label}: {row}");
+        } else {
+            for dropped in ["mergedAt", "baseBranch", "labels"] {
+                assert!(row.get(dropped).is_none(), "{label}: {dropped}: {row}");
+            }
         }
     }
 }
@@ -1204,8 +1228,8 @@ async fn read_at_merge_picks_the_code_file_of_the_whole_pr_not_the_first_window(
     for (field, value) in [
         ("ref", json!("fedcba9876543210fedcba9876543210fedcba98")),
         ("path", json!("pkg/client/client.go")),
-        // HI11: the merge commit is searched for the added code, not read
-        // at `sourceSha` line numbers.
+        // The merge commit is searched for the added code, not read
+        // at `headSha` line numbers.
         ("matchString", json!(["func Alpha() {}"])),
     ] {
         assert_eq!(read[field], value, "{field}: {data}");
@@ -1304,7 +1328,7 @@ async fn later_review_comment_pages_load_provider_batches_concurrently() {
     }
     let data = run(
         &server,
-        json!({"sections":["reviewComments"], "commentPage": 15, "pageSize": 30, "extras": []}),
+        json!({"sections":["reviewComments"], "page": 15, "pageSize": 30, "extras": []}),
     )
     .await;
     let elapsed = first_request.get().expect("the PR was read").elapsed();
@@ -1337,7 +1361,7 @@ fn hunk_at_53() -> (String, String) {
 }
 
 /// contextLines past GitHub's hunk context: the read widens the run from
-/// the file at the PR head (`sourceSha`), so the default 10 lines are not
+/// the file at the PR head (`headSha`), so the default 10 lines are not
 /// silently cut to the hunk's 3.
 #[tokio::test]
 async fn match_context_past_the_hunk_reads_the_head_text() {
@@ -1381,7 +1405,7 @@ async fn match_context_past_the_hunk_reads_the_head_text() {
 }
 
 /// Without the head text (the read failed), the clip is explicit: the file
-/// is flagged and `next.expandContext` reads the wanted lines at sourceSha.
+/// is flagged and `next.expandContext` reads the wanted lines at headSha.
 #[tokio::test]
 async fn match_context_clipped_by_the_hunk_is_flagged_with_a_head_read() {
     let server = MockServer::builder().start().await;
@@ -1532,8 +1556,8 @@ async fn default_large_pr_patch_walk_reaches_every_patch_once() {
     runtime.close().await;
 }
 
-/// HI10 pin: a merged pull request's `matchString` read offers the hit
-/// file at the PR head (`readAtCommit` at `sourceSha`, where the gutter
+/// A merged pull request's `matchString` read offers the hit
+/// file at the PR head (`readAtCommit` at `headSha`, where the gutter
 /// numbers hold) and no `readAtMerge` (a targeted answer already).
 #[tokio::test]
 async fn history_b_merged_match_string_read_offers_the_source_side_only() {
@@ -1569,14 +1593,14 @@ async fn history_b_merged_match_string_read_offers_the_source_side_only() {
     assert_eq!(row["ref"], SHA, "{data}");
     assert_eq!(row["path"], "src/hit.rs", "{data}");
     assert!(lead("readAtMerge").is_none(), "{data}");
-    // X6: the hit row counts the hits it shows.
+    // The hit row counts the hits it shows.
     assert_eq!(
         data["pullRequests"][0]["files"][0]["matchCount"], 2,
         "{data}"
     );
 }
 
-/// HI9: a 115-file, ~560k-char pull request walked by following its leads
+/// A 115-file, ~560k-char pull request walked by following its leads
 /// only (`continuePatch`, then `nextFilePage`) at a 20k configured page reads
 /// every patch byte-identical (after the gutters) with no gap and no
 /// repeat, and never overflows its page. Every hop runs at the first call's
@@ -1688,7 +1712,7 @@ async fn history_b_large_pr_lead_walk_is_lossless_at_the_first_page_size() {
     runtime.close().await;
 }
 
-/// P2: a patch-walk hop that outgrows its page pages its response by
+/// A patch-walk hop that outgrows its page pages its response by
 /// whole rows (automatic `responseScope:"rows"`), never by text windows
 /// that empty the structured `results` and bury the walk's `next.*`. File
 /// page 2 lists 96 patch-less files with long names beside a few patches:

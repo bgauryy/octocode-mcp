@@ -105,9 +105,9 @@ pub fn query_schema_value(
     found
 }
 
-/// Top-level query fields validation can restore when absent: observed
-/// defaults and schema `default`s (at any depth, so the set over-approximates).
-/// A present field outside it never validates back after removal.
+/// Top-level query fields validation can restore when absent: those with a
+/// schema `default` (at any depth, so the set over-approximates). A present
+/// field outside it never validates back after removal.
 pub(crate) fn restorable_fields(tool: ToolId) -> Option<&'static HashSet<&'static str>> {
     static FIELDS: [OnceLock<HashSet<&'static str>>; ToolId::ALL.len()] =
         [const { OnceLock::new() }; ToolId::ALL.len()];
@@ -117,16 +117,6 @@ pub(crate) fn restorable_fields(tool: ToolId) -> Option<&'static HashSet<&'stati
         let Ok(contract) = super::tool_contract(tool) else {
             return fields;
         };
-        for candidate in contract["defaults"].as_array().into_iter().flatten() {
-            for path in candidate["values"]
-                .as_object()
-                .into_iter()
-                .flatten()
-                .map(|(path, _)| path)
-            {
-                fields.extend(path.split('.').next());
-            }
-        }
         for schema in [&contract["querySchema"], &contract["inputSchema"]] {
             collect_defaulted(schema, &mut fields);
         }

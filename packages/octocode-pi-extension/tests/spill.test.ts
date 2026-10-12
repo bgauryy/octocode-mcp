@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { setCurrentSession } from '../src/shared/home.js';
-import { capOutputToFile, saveFullOutput, spillLabel } from '../src/shared/spill.js';
+import { IMAGE_MAX_CHARS, boundImagePart, capOutputToFile, saveFullOutput, saveImageFile, spillLabel } from '../src/shared/spill.js';
 import { tmp } from './helpers.js';
 
 let home: string;
@@ -41,7 +41,7 @@ describe('capOutputToFile', () => {
     expect(out.startsWith('line 1\n')).toBe(true);
     expect(out).toContain('\nline 5000\n');
     expect(out).toMatch(/\[… \d+ lines omitted …\]/);
-    expect(out).toMatch(/\[Output truncated: showing \d+ of 5000 lines \(.+ of .+\)\. Full output: .+; search it or read it by line range\.\]$/);
+    expect(out).toMatch(/\[Output trimmed: showing \d+ of 5000 lines \(.+ of .+\)\. Full output: .+; search it or read it by line range\.\]$/);
     expect(out.split('\n').length).toBeLessThan(2_000);
   });
 
@@ -55,7 +55,7 @@ describe('capOutputToFile', () => {
     const text = `START${'y'.repeat(120_000)}END`;
     const out = capOutputToFile(text, { label: 'one' });
     expect(out.startsWith('START')).toBe(true);
-    expect(out).toContain('END\n\n[Output truncated');
+    expect(out).toContain('END\n\n[Output trimmed');
     expect(Buffer.byteLength(out)).toBeLessThan(52_000);
     expect(fs.readFileSync(savedPath(out)!, 'utf8')).toBe(text);
   });
@@ -65,7 +65,7 @@ describe('capOutputToFile', () => {
     fs.writeFileSync(blocker, '');
     process.env['OCTOCODE_HOME'] = blocker;
     const out = capOutputToFile(manyLines(5_000), { label: 'x' });
-    expect(out).toContain('[Output truncated: ');
+    expect(out).toContain('[Output trimmed: ');
     expect(out.endsWith('[full output could not be saved]')).toBe(true);
     expect(saveFullOutput('x', 'x')).toBeUndefined();
   });
@@ -76,3 +76,30 @@ describe('capOutputToFile', () => {
   });
 });
 
+
+describe('image bounds', () => {
+  it('saves an image owner-only under the session output folder with an extension for its type', () => {
+    const file = saveImageFile(Buffer.from('jpeg-bytes').toString('base64'), 'image/jpeg', 'browser screenshot')!;
+    expect(path.dirname(file)).toBe(path.join(home, 'agent', 'pi', 'sessions', `_pid-${process.pid}`, 'output'));
+    expect(path.basename(file)).toMatch(/^browser_screenshot-\d+-\d+\.jpg$/);
+    expect(fs.readFileSync(file, 'utf8')).toBe('jpeg-bytes');
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o600);
+    expect(path.extname(saveImageFile('AA', 'image/png', 'x')!)).toBe('.png');
+    expect(path.extname(saveImageFile('AA', 'image/x-weird', 'x')!)).toBe('.img');
+  });
+
+  it('passes an image within the budget through as the same object', () => {
+    const part = { type: 'image' as const, data: 'A'.repeat(IMAGE_MAX_CHARS), mimeType: 'image/png' };
+    expect(boundImagePart(part, 'x')).toBe(part);
+  });
+
+  it('replaces an over-budget image by a note naming the saved full file', () => {
+    const data = 'A'.repeat(IMAGE_MAX_CHARS + 4);
+    const out = boundImagePart({ type: 'image', data, mimeType: 'image/png' }, 'mcp_shot');
+    expect(out.type).toBe('text');
+    const file = /Saved to (\S+)\./.exec((out as { text: string }).text)?.[1];
+    expect(file).toBeDefined();
+    expect(fs.readFileSync(file!).length).toBe(Buffer.from(data, 'base64').length);
+    expect((out as { text: string }).text).toContain('image/png');
+  });
+});

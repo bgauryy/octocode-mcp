@@ -1,4 +1,6 @@
+use crate::contracts::tool_types::DefaultExcludes;
 use crate::policy::prune::DefaultsFlag;
+use crate::tools::empty_walk::Walk;
 use crate::tools::result::ToolError;
 use crate::{
     policy::{path::PathPolicy, prune::PruneMode},
@@ -44,8 +46,17 @@ impl StructureSearchQueryFiles {
     pub(crate) fn access(&self) -> Option<String> {
         self.access.map(|access| access.to_string())
     }
+    /// `full` (line counts and modified times in each entry) is what
+    /// `extras: ["details"]` asks for; otherwise entries carry sizes only.
     pub(crate) fn detail(&self) -> String {
-        self.detail.to_string()
+        if self
+            .extras
+            .contains(&crate::contracts::tool_types::ExtraKind::Details)
+        {
+            "full".to_owned()
+        } else {
+            "basic".to_owned()
+        }
     }
     pub(crate) fn sort(&self) -> String {
         self.sort.to_string()
@@ -157,7 +168,7 @@ pub fn execute_files(
         requested,
         q.scan_offset(),
         q.page_size(),
-        q.no_ignore,
+        q.include_ignored,
         q.default_excludes,
         q.time,
         q.size,
@@ -194,7 +205,7 @@ pub fn execute_files(
     if !stored && pages.len() > 1 {
         super::memo::put(snapshot.clone(), policy, &validated.canonical, &walk);
     }
-    files_page(
+    let mut out = files_page(
         q,
         &walk,
         &pages,
@@ -203,7 +214,39 @@ pub fn execute_files(
         requested,
         paths,
         cancel,
-    )
+    )?;
+    // `defaultExcludes:false` walks `.gitignore`d entries too (see
+    // `walk_files`), so it counts as lifting the ignore files.
+    let shown = Walk {
+        ignored: q.include_ignored == Some(true) || !q.default_excludes.defaults(),
+        hidden: true,
+        default_excludes: q.default_excludes.defaults(),
+    };
+    super::note_empty(
+        &mut out,
+        q,
+        &validated.canonical,
+        &walk.uncovered,
+        shown,
+        |relaxed| {
+            let mut relaxed_query = q.clone();
+            relaxed_query.include_ignored = Some(relaxed.ignored);
+            relaxed_query.default_excludes = Some(DefaultExcludes(relaxed.default_excludes));
+            relaxed_query.scan_offset = None;
+            let found = walk_files(
+                &relaxed_query,
+                &validated.canonical,
+                paths,
+                security,
+                cancel,
+                requested,
+            )?;
+            Ok(super::found_entries(
+                found.rows.into_iter().map(|row| row.source),
+            ))
+        },
+    )?;
+    Ok(out)
 }
 
 /// Path order is the walk order (name-sorted, depth-first), so the first
@@ -228,7 +271,7 @@ fn walk_files(
     let access = access.as_deref();
     // Leave out what the tree and localSearch leave out: `.gitignore`d
     // entries, pruned during the walk. `defaultExcludes:false` walks them too.
-    let gitignore = (q.default_excludes.defaults() && q.no_ignore != Some(true))
+    let gitignore = (q.default_excludes.defaults() && q.include_ignored != Some(true))
         .then(|| crate::policy::gitignore::GitignoreFilter::new(root));
     let probe = super::FilterProbe::new(
         root,
@@ -237,7 +280,6 @@ fn walk_files(
         q.name_regex.as_deref(),
     );
     let ignored = std::sync::atomic::AtomicUsize::new(0);
-    let ignored_dirs = super::IgnoredDirs::default();
     let withheld = std::sync::Mutex::new(crate::policy::discovery::Withheld::default());
     let detail = q.detail();
     let sort = q.sort();
@@ -280,7 +322,6 @@ fn walk_files(
                 filter.is_ignored_as(path, file_type.map(|kind| kind.is_dir()))
             }) {
                 ignored.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                ignored_dirs.record(path);
                 return Ok(false);
             }
             let allowed = super::allow_discovery(path, file_type, &discovery, cancel)?;
@@ -294,7 +335,7 @@ fn walk_files(
             Ok(allowed)
         },
     )
-    .map_err(|error| super::walk_error(error, q.path.as_str()))?;
+    .map_err(|error| super::walk_error(error, q.path.as_str(), cancel))?;
     cancel.check().map_err(ToolError::cancelled)?;
     let count_lines = sort == "lines";
     // A directory root is the listing itself, never one of its rows.
@@ -337,7 +378,6 @@ fn walk_files(
         was_capped: native.was_capped,
         uncovered: super::Uncovered {
             ignored: ignored.into_inner(),
-            ignored_dirs: ignored_dirs.into_names(),
             withheld: withheld
                 .into_inner()
                 .unwrap_or_else(|error| error.into_inner()),
@@ -356,11 +396,16 @@ fn walk_files(
 /// bare `"name/"` entry for it under its parent would show it twice, even
 /// across pages. One with fields (`modifiedMs`) keeps them.
 fn drop_grouped_dirs(rows: &mut Vec<Row>) {
-    let grouped = super::group_dirs(rows.iter().map(|row| &row.dir));
-    rows.retain(|row| {
-        !(row.entry.strip_suffix('/').is_some_and(|name| name != ".")
-            && grouped.contains(&row.path))
-    });
+    super::drop_grouped_dirs(
+        rows,
+        |row| row.dir.as_str(),
+        |row| {
+            row.entry
+                .strip_suffix('/')
+                .is_some_and(|name| name != ".")
+                .then(|| row.path.clone())
+        },
+    );
 }
 
 /// A row costs its serialized entry, plus its group's header with the
@@ -378,11 +423,12 @@ fn files_costs(rows: &[Row], prefix: &str, deferred_detail: bool) -> Vec<super::
                 ) + 1
             });
             super::RowCost {
-                // Reserve the maximum `, lineCount=<usize>` field before
-                // paging so deferred detail cannot overflow the window.
+                // Reserve the deferred detail fields before paging so
+                // they cannot overflow the window.
                 entry: crate::tools::stream_page::json_chars(&row.entry)
                     + 1
-                    + usize::from(deferred_detail && row.kind != "directory") * 40,
+                    + usize::from(deferred_detail && row.kind != "directory")
+                        * DETAIL_FIELDS_RESERVE,
                 header,
                 continues: index > 0 && rows[index - 1].dir == row.dir,
             }
@@ -459,15 +505,21 @@ fn files_page(
     let mut warnings = walk.warnings.clone();
     cut.finish(&mut out, q, &mut warnings);
     if page == 1 {
-        let ignored = (walk.uncovered.ignored > 0)
-            .then(|| format!("{} .gitignore'd entries not walked", walk.uncovered.ignored));
-        let notes = ignored
-            .into_iter()
-            .chain(walk.uncovered.pruned_note())
-            .collect::<Vec<_>>();
-        if !notes.is_empty() {
-            out["summary"] = json!(notes.join("; "));
+        let (files, dirs, bytes) = walk.rows.iter().fold((0, 0, 0), |(f, d, b), row| {
+            if row.kind == "directory" {
+                (f, d + 1, b)
+            } else {
+                (f + 1, d, b + row.size)
+            }
+        });
+        let mut summary = json!({"files": files, "dirs": dirs, "bytes": bytes});
+        if walk.uncovered.ignored > 0 {
+            summary["ignored"] = json!(walk.uncovered.ignored);
         }
+        if let Some(pruned) = walk.uncovered.pruned_names() {
+            summary["pruned"] = json!(pruned);
+        }
+        out["summary"] = summary;
     }
     if page == 1
         && let Some(read) = outline_read(&walk.rows[shown], root)
@@ -484,7 +536,6 @@ fn files_page(
     if !warnings.is_empty() {
         out["warnings"] = json!(warnings)
     }
-    walk.uncovered.note_empty(&mut out, q);
     Ok(out)
 }
 
@@ -585,10 +636,12 @@ fn make_row(
         name,
         kind,
         e.size.filter(|_| kind != "directory"),
-        (full && lines > 0).then_some(lines),
+        // The line sort's own key, counted for every file it ranks, shows
+        // whatever the detail.
+        (count_lines && kind != "directory").then_some(lines),
         // Whole epoch milliseconds: a float would print as `…737.0`.
         e.modified_ms
-            .filter(|_| full || detail == "modified")
+            .filter(|_| full)
             .map(|modified| modified.round() as i64),
     );
     Ok(Row {
@@ -609,15 +662,19 @@ fn make_row(
         },
     })
 }
+/// Characters the deferred detail fields add to one entry at most:
+/// `, totalLines=<usize>` and `, modifiedMs=<i64>`, 33 each.
+pub(super) const DETAIL_FIELDS_RESERVE: usize = 66;
+
 /// Page layout tag folded into the snapshot: rows grouped by directory.
 const ROW_LAYOUT: &str = "workspaceRelativeDirGroups";
 
 /// One listed entry inside its directory group: the name, `/` after a
 /// directory, then ` (<fields>)` naming the size in bytes (every non-directory
-/// entry), `symlink`, `lineCount=N` and `modifiedMs=N` as they apply. The
+/// entry), `symlink`, `totalLines=N` and `modifiedMs=N` as they apply. The
 /// fields never contain ` (`, so the last ` (` of an entry ending in `)`
 /// opens them, whatever the name holds.
-fn entry_text(
+pub(super) fn entry_text(
     name: &str,
     kind: &str,
     size: Option<i64>,
@@ -636,7 +693,7 @@ fn entry_text(
         fields.push("symlink".to_owned());
     }
     if let Some(lines) = line_count {
-        fields.push(format!("lineCount={lines}"));
+        fields.push(format!("totalLines={lines}"));
     }
     if let Some(modified) = modified_ms {
         fields.push(format!("modifiedMs={modified}"));
@@ -658,7 +715,7 @@ fn sort_rows(r: &mut [Row], sort: &str) {
         _ => std::path::Path::new(&a.path).cmp(std::path::Path::new(&b.path)),
     })
 }
-fn line_count(
+pub(super) fn line_count(
     path: &std::path::Path,
     paths: &PathPolicy,
     cancel: &dyn CancellationCheck,
@@ -704,20 +761,6 @@ thread_local! {
 #[cfg(test)]
 pub(super) fn line_count_reads() -> usize {
     LINE_COUNT_READS.with(std::cell::Cell::get)
-}
-pub(super) fn format_size(n: i64) -> String {
-    let b = n as f64;
-    if n < 1024 {
-        format!("{n}B")
-    } else if n < 1_048_576 {
-        format!("{:.1}KB", b / 1024.)
-    } else if n < 1_073_741_824 {
-        format!("{:.1}MB", b / 1_048_576.)
-    } else if n < 1_099_511_627_776 {
-        format!("{:.1}GB", b / 1_073_741_824.)
-    } else {
-        format!("{:.1}TB", b / 1_099_511_627_776.)
-    }
 }
 fn validate_time(time: Option<&StructureSearchQueryFilesTime>) -> Result<(), ToolError> {
     let Some(t) = time else {
@@ -766,12 +809,6 @@ pub(super) fn walk_warnings(s: u32, d: u32) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn formatting() {
-        assert_eq!(format_size(1536), "1.5KB");
-        assert_eq!(format_size(162), "162B");
-    }
-
     #[test]
     fn line_count_can_be_cancelled_between_bounded_reads() {
         use std::sync::atomic::{AtomicUsize, Ordering};

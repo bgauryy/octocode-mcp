@@ -164,6 +164,70 @@ async fn a_default_local_search_walk_fits_the_window_and_reaches_every_hit_once(
     runtime.close().await;
 }
 
+/// Every hit row of every default page keeps its `enclosing` name:
+/// the page cut reserves the names before it fills rows, so a wide result
+/// pages into more, smaller pages instead of dropping names.
+#[tokio::test]
+async fn every_default_local_search_page_names_the_enclosing_declaration_of_every_row() {
+    let workspace = Workspace::new();
+    let mut total = 0;
+    let mut root = None;
+    for file in 0..48 {
+        let rows = 5 + (file * 7) % 45;
+        let body = (0..rows)
+            .map(|line| format!("    let s{line} = needle_value_{file}_{line}();\n"))
+            .collect::<String>();
+        total += rows;
+        let path = workspace.write(
+            &format!("src/m{file:02}/file_{file:02}.rs"),
+            format!("fn holder_{file:02}() {{\n{body}}}\n"),
+        );
+        root = path
+            .parent()
+            .and_then(|dir| dir.parent())
+            .map(|dir| dir.to_path_buf());
+    }
+    let root = root.unwrap().to_string_lossy().into_owned();
+    let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
+    let mut input = json!({"queries": [search(&root, "Walk the hits.")]});
+    let mut seen = 0;
+    for calls in 1.. {
+        assert!(calls < 60, "the walk terminates");
+        let envelope = call(&runtime, false, calls, "localSearch", input).await;
+        let data = &envelope["results"][0]["data"];
+        let warnings = data["warnings"].to_string();
+        assert!(!warnings.contains("enclosing"), "page {calls}: {warnings}");
+        for file in data["files"].as_array().into_iter().flatten() {
+            // A row names its declaration, or references the nearest earlier
+            // row of the file that names the line it gives.
+            let mut named = std::collections::HashMap::new();
+            for row in file["matches"].as_array().into_iter().flatten() {
+                seen += 1;
+                if let Some(enclosing) = row.get("enclosing") {
+                    named.insert(enclosing["line"].clone(), enclosing["symbolName"].clone());
+                }
+                let owner = row
+                    .get("enclosing")
+                    .map(|enclosing| &enclosing["symbolName"])
+                    .or_else(|| named.get(&row["enclosingLine"]));
+                assert!(
+                    owner
+                        .and_then(|name| name.as_str())
+                        .is_some_and(|name| name.starts_with("holder_")),
+                    "page {calls}: {} row {row} has no enclosing",
+                    file["path"]
+                );
+            }
+        }
+        match data["next"].get("nextPage") {
+            Some(next) => input = json!({"queries": [next["query"].clone()]}),
+            None => break,
+        }
+    }
+    assert_eq!(seen, total, "every hit once");
+    runtime.close().await;
+}
+
 /// Every entry of a structureSearch `files` page as `base/dir/name`: groups
 /// list each entry as its name plus a ` (<size>[, …])` suffix, and every
 /// group names its `dir`, also when it continues one from the last page.
@@ -207,9 +271,14 @@ async fn a_default_structure_listing_walk_fits_the_window_and_lists_every_file_o
     }
     let root = root.unwrap().to_string_lossy().into_owned();
     let runtime = workspace.runtime(&[("OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH", WINDOW.to_string())]);
-    for (mcp, detail) in [(false, "basic"), (true, "basic"), (false, "full")] {
+    for (mcp, detail) in [(false, "basic"), (true, "basic"), (false, "details")] {
+        let extras = if detail == "details" {
+            vec!["details"]
+        } else {
+            vec![]
+        };
         let first = json!({"operation": "files", "path": root, "include": ["**/*.rs"],
-            "detail": detail, "mainGoal": "List every file.", "reasoning": "Walk the listing."});
+            "extras": extras, "mainGoal": "List every file.", "reasoning": "Walk the listing."});
         let (seen, calls) = walk_row_continuations(
             &runtime,
             mcp,

@@ -1,79 +1,49 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CONFIG_DIR_NAME, getAgentDir, type ExtensionAPI, type McpServerConfig, type ToolResultEvent, type ToolResultEventResult } from '@earendil-works/pi-coding-agent';
-import { MCP_DIRECT_ENV, MCP_ENV, envFlag } from '../shared/env.js';
+import { CONFIG_DIR_NAME, getAgentDir, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { MCP_ENV, MCP_WAIT_ENV, envFlag, envInt } from '../shared/env.js';
 import { octocodeHome } from '../shared/home.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
+import type { Tool } from '@earendil-works/pi-mcp';
+import { OctocodeServer, type Launch, type ServerStatus } from './client.js';
+import { octocodeToolDefinition } from './tools.js';
 
 /**
- * Octocode MCP (local code, LSP, GitHub and package registry research) runs on Pi's built-in MCP support: one
- * `pi.registerMcpServer` call, so connection, reconnects, OAuth, `/mcp` and exposure are Pi's. A server named
- * `octocode` in Pi's `mcp.json` (`~/.pi/agent/mcp.json`, `.pi/mcp.json`) takes precedence, which is how users override
- * or disable it.
+ * Octocode MCP (local code, LSP, GitHub and package registry research) runs on this extension's own MCP client
+ * (`OctocodeServer`): it starts the `octocode-mcp` server at `session_start`, registers every tool the server lists as
+ * `mcp__octocode__<name>` and keeps the server's instructions for the prompt. A server named `octocode` in Pi's
+ * `mcp.json` (`~/.pi/agent/mcp.json`, `.pi/mcp.json`) takes precedence, which is how users override or disable it: then
+ * Pi's MCP owns the server and this extension starts nothing.
  */
 export const OCTOCODE_SERVER = 'octocode';
 
-/** Pi names MCP tools `mcp__<server>__<tool>`. */
+/** Octocode tools are named `mcp__<server>__<tool>`, as Pi names tools of an MCP server it runs. */
 export const OCTOCODE_TOOL_PREFIX = `mcp__${OCTOCODE_SERVER}__`;
 
-/** The octocode-mcp release this extension depends on (package.json); the npx fallback pins it too. */
-export const OCTOCODE_MCP_VERSION = '19.1.0';
+/**
+ * The octocode-mcp release this extension runs: the newest (`latest`). The package.json dependency is `latest` too, so
+ * installing or updating the extension fetches the newest server; in this monorepo `dev setup` resolves it to the
+ * workspace build (`packages/octocode-mcp`).
+ */
+export const OCTOCODE_MCP_SPEC = 'octocode-mcp@latest';
 
 /** Whether `name` is an Octocode MCP tool. */
 export const isOctocodeTool = (name: string): boolean => name.startsWith(OCTOCODE_TOOL_PREFIX);
 
-/**
- * Tools declared only once `tool_search` loads them: the GitHub tools (`gh*`) and the package tool (`artifactSearch`),
- * which carry most of the schema text and which a local coding task rarely needs. Local search, reads, structure, AST
- * and LSP stay declared. `OCTOCODE_MCP_DIRECT=1` declares everything.
- */
-export const DEFERRED_TOOL_EXPOSURE: Readonly<Record<string, 'deferred'>> = { 'gh*': 'deferred', artifactSearch: 'deferred' };
-
-/** Whether the GitHub and package registry tools are deferred (the default) rather than declared directly. */
-export const octocodeToolsDeferred = (env: NodeJS.ProcessEnv = process.env): boolean => !envFlag(env, MCP_DIRECT_ENV);
-
-/**
- * Pi expands `$NAME`, `${NAME}` and a leading `!command` in env values. Literal paths must stay literal: `$$` is a
- * literal `$`, and a leading `!` gets a `$` in front (`$!` is a literal `!`).
- */
-export function literalConfigValue(value: string): string {
-  const escaped = value.replace(/\$/g, '$$$$');
-  return escaped.startsWith('!') ? `$${escaped}` : escaped;
-}
-
-/** The server config: the bundled octocode-mcp bin under this Node, else the pinned npm release. */
-export function octocodeServerConfig(cwd: string, env: NodeJS.ProcessEnv = process.env, entry = octocodeMcpEntry()): McpServerConfig {
+/** The server process: the installed octocode-mcp bin under this Node, else the newest npm release through npx. */
+export function octocodeLaunch(cwd: string, env: NodeJS.ProcessEnv = process.env, entry = octocodeMcpEntry()): Launch {
   // Octocode reads only under the home directory unless told otherwise: allow the workspace and the Octocode home.
-  // Tokens (GITHUB_TOKEN, …) need no forwarding: stdio servers inherit Pi's environment.
+  // Tokens (GITHUB_TOKEN, …) need no forwarding: the server inherits this process's environment.
   const allowed = [...new Set([cwd, octocodeHome(env)])].join(',');
-  const launch = entry ? { command: process.execPath, args: [entry] } : { command: 'npx', args: ['-y', `octocode-mcp@${OCTOCODE_MCP_VERSION}`] };
-  return {
-    ...launch,
-    cwd,
-    env: { WORKSPACE_ROOT: literalConfigValue(cwd), ALLOWED_PATHS: literalConfigValue(allowed) },
-    exposure: 'direct',
-    ...(octocodeToolsDeferred(env) ? { toolExposure: { ...DEFERRED_TOOL_EXPOSURE } } : {}),
-    description: 'Repository and package evidence: local code search and reads, LSP, GitHub code/PRs/history and package registry metadata (npm, PyPI, crates, Maven, NuGet, Go, Packagist, RubyGems). Use the connected tools\' schemas and result pagination hints; availability follows Pi MCP configuration.',
-  };
+  const command = entry ? { command: process.execPath, args: [entry] } : { command: 'npx', args: ['-y', OCTOCODE_MCP_SPEC] };
+  return { ...command, cwd, env: { WORKSPACE_ROOT: cwd, ALLOWED_PATHS: allowed } };
 }
 
-/**
- * Registers the Octocode server for each session's workspace unless `OCTOCODE_MCP=0` (profiles with `mcp: false`).
- * Registered on `session_start`, which runs before Pi's MCP connects its servers, so the first prompt still waits for
- * it; registering the same name again (a session in another folder) replaces the earlier registration.
- */
-export function registerOctocodeMcp(pi: ExtensionAPI): boolean {
-  // Also for a user's own `octocode` server: its text reaches the model and the terminal either way.
-  pi.on('tool_result', async (event) => sanitizeOctocodeResult(event));
-  if (!octocodeMcpEnabled()) return false;
-  pi.on('session_start', async (_event, ctx) => {
-    pi.registerMcpServer(OCTOCODE_SERVER, octocodeServerConfig(ctx.cwd));
-  });
-  return true;
-}
+/** The longest the first prompt waits for the server to connect, in seconds. */
+const DEFAULT_CONNECT_WAIT_SECONDS = 10;
 
-/** Whether the Octocode MCP server is registered for this process (the same switch `registerOctocodeMcp` reads). */
+/** Whether the Octocode MCP server is switched on for this process (`OCTOCODE_MCP=0` turns it off). */
 export const octocodeMcpEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => envFlag(env, MCP_ENV, true);
 
 /**
@@ -94,37 +64,138 @@ export function configuredOctocodeServer(cwd: string, projectTrusted: boolean, a
   return entry;
 }
 
-/** Every string in a JSON value, sanitized; the same object when nothing changed. */
-function sanitizeJson(value: unknown): unknown {
-  if (typeof value === 'string') return sanitizeTerminalText(value);
-  if (Array.isArray(value)) {
-    const next = value.map(sanitizeJson);
-    return next.some((item, i) => item !== value[i]) ? next : value;
+/** Who runs the `octocode` server: the user (an `octocode` entry in `mcp.json`, through Pi's MCP), this extension, or nobody. */
+export type OctocodeOwner = { by: 'user'; enabled: boolean } | { by: 'extension' } | { by: 'off' };
+
+/**
+ * The Octocode server for a session, on this extension's MCP client: started at `session_start`, its tools registered
+ * with Pi, its instructions kept for the prompt, closed at `session_shutdown`.
+ */
+export class OctocodeMcp {
+  private readonly server: OctocodeServer;
+  /** What is registered with Pi under each tool name; Pi cannot unregister, so a withdrawn tool is registered hidden. */
+  private readonly registered = new Map<string, ToolDefinition>();
+  private ctx: ExtensionContext | undefined;
+  /** Who ran the server when the session started. */
+  private owned: OctocodeOwner = { by: 'off' };
+
+  private readonly env: NodeJS.ProcessEnv;
+
+  constructor(
+    private readonly pi: Pick<ExtensionAPI, 'registerTool'>,
+    options: { env?: NodeJS.ProcessEnv; version?: string; launch?: (cwd: string) => Launch } = {},
+  ) {
+    this.env = options.env ?? process.env;
+    this.server = new OctocodeServer({
+      launch: options.launch ?? ((cwd) => octocodeLaunch(cwd, this.env)),
+      clientInfo: { name: 'octocode-pi-extension', version: options.version ?? '0' },
+      onTools: (tools, instructions) => this.register(tools, instructions),
+      onFailure: (message) => this.notifyFailure(message),
+    });
   }
-  if (value && typeof value === 'object') {
-    let changed = false;
-    const next: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value)) {
-      next[key] = sanitizeJson(item);
-      if (next[key] !== item) changed = true;
+
+  /** The user's `mcp.json` entry wins; else this extension runs the server unless `OCTOCODE_MCP=0`. */
+  owner(ctx: Pick<ExtensionContext, 'cwd' | 'isProjectTrusted'>): OctocodeOwner {
+    const configured = configuredOctocodeServer(ctx.cwd, ctx.isProjectTrusted?.() ?? false);
+    if (configured) return { by: 'user', enabled: configured.enabled !== false };
+    return { by: octocodeMcpEnabled(this.env) ? 'extension' : 'off' };
+  }
+
+  /** Starts the server for this session's folder (without waiting), or stops it when the session has none to run. */
+  async start(ctx: ExtensionContext): Promise<void> {
+    this.ctx = ctx;
+    this.owned = this.owner(ctx);
+    if (this.owned.by === 'extension') this.server.start(ctx.cwd);
+    else await this.server.close();
+  }
+
+  /** Waits for the server to connect, at most `OCTOCODE_MCP_WAIT_SECONDS` (default 10); false when it is not connected. */
+  ready(ctx: ExtensionContext): Promise<boolean> {
+    this.ctx = ctx;
+    return this.server.ready(envInt(this.env, MCP_WAIT_ENV, DEFAULT_CONNECT_WAIT_SECONDS, { min: 0 }) * 1000, ctx.signal);
+  }
+
+  /** The server's `initialize` instructions (how its tools work together), sanitized: the server's text is not trusted. */
+  get instructions(): string | undefined {
+    const text = this.server.instructions;
+    return text ? sanitizeTerminalText(text).trim() || undefined : undefined;
+  }
+
+  /** Stops the server and starts it again for this session, whatever state it was in. */
+  async restart(ctx: ExtensionContext): Promise<ServerStatus> {
+    this.ctx = ctx;
+    await this.server.restart(ctx.cwd);
+    return this.server.status();
+  }
+
+  status(): ServerStatus {
+    return this.server.status();
+  }
+
+  /** `/octocode mcp`: what runs the server and how it is doing; the first line is the summary. */
+  describe(): string {
+    const owner = this.owned;
+    if (owner.by === 'user') return `Octocode MCP: your own \`octocode\` server from mcp.json (${owner.enabled ? "Pi's MCP, see /mcp" : 'disabled there'})`;
+    if (owner.by === 'off') return `Octocode MCP: off (${MCP_ENV}=0)`;
+    const status = this.server.status();
+    const server = status.serverName ? `${status.serverName} ${status.serverVersion ?? ''}`.trim() : 'octocode-mcp';
+    switch (status.state) {
+      case 'connected':
+        return `Octocode MCP: connected (${server}, ${status.tools} tools, pid ${status.pid ?? '?'})`;
+      case 'connecting':
+        return 'Octocode MCP: connecting…';
+      case 'failed':
+        return `Octocode MCP: failed to start: ${status.error ?? 'unknown error'}\nRetry with /octocode mcp restart.`;
+      case 'disconnected':
+        return `Octocode MCP: stopped: ${status.error ?? 'the server exited'}\nThe next tool call starts it again once; or run /octocode mcp restart.`;
+      default:
+        return 'Octocode MCP: not started';
     }
-    return changed ? next : value;
   }
-  return value;
+
+  /** Stops the server and its process tree. */
+  async close(): Promise<void> {
+    this.ctx = undefined;
+    await this.server.close();
+  }
+
+  /** Registers every listed tool with Pi, and withdraws the ones the server no longer lists. */
+  private register(tools: readonly Tool[], instructions: string | undefined): void {
+    const namespace = { name: OCTOCODE_TOOL_PREFIX.replace(/__$/, ''), ...(instructions ? { instructions: sanitizeTerminalText(instructions).trim() } : {}) };
+    const listed = new Set<string>();
+    for (const tool of tools) {
+      const definition = octocodeToolDefinition(tool, { prefix: OCTOCODE_TOOL_PREFIX, namespace, call: (name, args, signal) => this.server.call(name, args, signal) });
+      listed.add(definition.name);
+      this.registered.set(definition.name, definition);
+      this.pi.registerTool(definition);
+    }
+    for (const [name, definition] of this.registered) {
+      if (listed.has(name)) continue;
+      this.registered.delete(name);
+      this.pi.registerTool({ ...definition, exposure: 'hidden' });
+    }
+  }
+
+  private notifyFailure(message: string): void {
+    const ctx = this.ctx;
+    if (!ctx?.hasUI) return;
+    try {
+      ctx.ui.notify(`Octocode MCP failed to start: ${message}\nThe model has no Octocode tools this session. See /octocode mcp.`, 'warning');
+    } catch {
+      // The session ended before the server gave up.
+    }
+  }
 }
 
 /**
- * Octocode returns repository, GitHub and package registry text verbatim, and any of it is untrusted: strip terminal control
- * sequences, bidi overrides and invisible characters (Unicode tags among them) from its text parts and structured
- * content before the model reads it or the terminal draws it. Undefined when the result is clean or not Octocode's.
+ * Wires the Octocode server to the session: its client starts at `session_start` (`OctocodeMcp.start` decides whether
+ * this extension or the user's `mcp.json` runs it) and closes at `session_shutdown`.
  */
-export function sanitizeOctocodeResult(event: Pick<ToolResultEvent, 'toolName' | 'content' | 'structuredContent'>): ToolResultEventResult | undefined {
-  if (!isOctocodeTool(event.toolName)) return undefined;
-  const content = sanitizeJson(event.content) as ToolResultEvent['content'];
-  const structured = event.structuredContent === undefined ? undefined : sanitizeJson(event.structuredContent);
-  if (content === event.content && structured === event.structuredContent) return undefined;
-  // Replacing content alone would drop the structured content, so return both.
-  return { content, ...(structured !== undefined ? { structuredContent: structured as ToolResultEventResult['structuredContent'] } : {}) };
+export function registerOctocodeMcp(pi: ExtensionAPI, version?: string): OctocodeMcp {
+  const mcp = new OctocodeMcp(pi, { ...(version ? { version } : {}) });
+  pi.on('session_start', async (_event, ctx) => mcp.start(ctx));
+  pi.on('session_shutdown', async () => mcp.close());
+  return mcp;
 }
 
 /** Absolute path of the bundled octocode-mcp bin (its `exports` hide package.json, so walk up from the entry). */

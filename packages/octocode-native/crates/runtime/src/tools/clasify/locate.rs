@@ -616,18 +616,16 @@ fn is_candidate_row(row: &Value) -> bool {
 
 /// A target whose answer is one literal (see [`identifier_target`]) is
 /// cheaper and exact with localSearch. Locate earns its cost on described
-/// behavior, so a target that only mentions an identifier gets no hint.
+/// behavior, so a target that only mentions an identifier gets no hint. The
+/// hint states the per-call fact; the lead is the literal search, and the
+/// routing advice lives in the tool description.
 pub(super) fn literal_target_hint(target: &str) -> Option<String> {
     let identifier = identifier_target(target)?;
-    Some(format!(
-        "Target names `{identifier}`; if that literal is what you need, localSearch finds it exactly and cheaper than locate."
-    ))
+    Some(format!("Target names the literal `{identifier}`."))
 }
 
 pub(super) fn bare_target_hint(literal: &str) -> String {
-    format!(
-        "Target `{literal}` is a literal lookup: locate skipped (no read or provider call); run hints.textSearch (localSearch)."
-    )
+    format!("Target `{literal}` is a literal lookup: locate skipped (no read or provider call).")
 }
 
 /// Words a literal-lookup target may hold besides its one literal: question
@@ -768,7 +766,7 @@ fn subject_verb(words: &[Word<'_>], index: usize) -> Option<usize> {
 /// literal, around lookup words (`where is X reported`, `find X`, `the
 /// definition of X`). A target with any other content word (`where does
 /// QuerySet filter after a slice`) describes behavior and returns `None`.
-/// The short-circuit, the routing hint, and `hints.textSearch` all use this
+/// The short-circuit, the routing hint, and `hints.findText` all use this
 /// one classifier.
 pub(super) fn identifier_target(target: &str) -> Option<&str> {
     let words = target_words(main_clause(target))?;
@@ -799,7 +797,7 @@ pub(super) fn identifier_target(target: &str) -> Option<&str> {
     literal
 }
 
-/// `hints.textSearch`: every distinct literal the locate targets ask for
+/// `hints.findText`: every distinct literal the locate targets ask for
 /// (see [`identifier_target`]), searched over the local resources (their
 /// one path, or the deepest directory they share): one literal search, or
 /// one regex alternation of the escaped literals so no literal goes
@@ -893,11 +891,15 @@ fn looks_like_identifier(token: &str) -> bool {
     {
         return false;
     }
-    let camel = token
-        .chars()
-        .zip(token.chars().skip(1))
-        .any(|(a, b)| a.is_lowercase() && b.is_uppercase());
-    token.contains("::") || token.contains('_') || camel
+    token.contains("::") || token.contains('_') || has_camel_case(token)
+}
+
+/// Whether `word` has a lowercase letter followed by an uppercase one
+/// (`newElementWith`).
+pub(crate) fn has_camel_case(word: &str) -> bool {
+    word.chars()
+        .zip(word.chars().skip(1))
+        .any(|(a, b)| a.is_lowercase() && b.is_uppercase())
 }
 
 #[cfg(test)]
@@ -1405,12 +1407,12 @@ mod tests {
         }
     }
 
-    /// The clasify evaluation's described targets (A1–A7, plus the fix's
-    /// `QuerySet` example and B1, whose identifier sits in a because-clause)
+    /// The clasify evaluation's described targets (plus the fix's
+    /// `QuerySet` example and one whose identifier sits in a because-clause)
     /// name behavior: they run locate and get no literal hint. Its literal
-    /// targets (B2–B4, and identifier sentences) are literal lookups: one
+    /// targets (and identifier sentences) are literal lookups: one
     /// classifier returns the literal for the short-circuit, the hint, and
-    /// `hints.textSearch`.
+    /// `hints.findText`.
     #[test]
     fn only_a_target_whose_content_is_one_literal_is_a_literal_lookup() {
         for described in [

@@ -2,9 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { sweepStaleOutputs, workspacePaths, workspaceScratchDir } from '../shared/home.js';
-import { processAlive } from '../shared/process.js';
+import { processStartTime, sameProcess } from '../shared/process.js';
 import type { ResultDetails } from './render.js';
-import { teamWorkspace } from './worktree.js';
+import { teamWorkspace } from '../team/store.js';
 
 /**
  * Handoff between a subagent and the session that started it: the scratch folder it leaves files in, and the delivery
@@ -20,7 +20,7 @@ const SCRATCH_MAX_AGE_MS = 7 * 24 * 60 * 60_000;
 /** `<workspace>/.octocode/tmp/agents`: one folder per subagent for the files it hands back. */
 export const scratchRoot = (cwd: string) => path.join(workspacePaths(cwd).tmp, 'agents');
 
-/** File in a scratch folder naming the pid of the Pi process that started the subagent. */
+/** File in a scratch folder naming the Pi process that started the subagent: its pid, then its start time (so a reused pid is not mistaken for it). */
 const OWNER_FILE = '.owner';
 
 /**
@@ -30,19 +30,20 @@ const OWNER_FILE = '.owner';
 export function agentScratch(cwd: string, id: string): string | undefined {
   try {
     const dir = workspaceScratchDir(teamWorkspace(cwd), path.join('agents', id));
-    fs.writeFileSync(path.join(dir, OWNER_FILE), String(process.pid));
+    fs.writeFileSync(path.join(dir, OWNER_FILE), [process.pid, processStartTime(process.pid)].filter(Boolean).join(' '));
     return dir;
   } catch {
     return undefined;
   }
 }
 
-/** The owner pid of a scratch folder; 0 when unknown. */
-function scratchOwner(dir: string): number {
+/** Whether the process that owns a scratch folder still runs. An owner file with only a pid (older) is judged by the pid. */
+function ownerRunning(dir: string): boolean {
   try {
-    return Number(fs.readFileSync(path.join(dir, OWNER_FILE), 'utf8')) || 0;
+    const [pid, ...started] = fs.readFileSync(path.join(dir, OWNER_FILE), 'utf8').trim().split(' ');
+    return sameProcess(Number(pid), started.join(' '));
   } catch {
-    return 0;
+    return false;
   }
 }
 
@@ -54,10 +55,7 @@ export function sweepScratch(root: string): void {
   } catch {
     return;
   }
-  const owned = new Set(names.filter((name) => {
-    const pid = scratchOwner(path.join(root, name));
-    return pid > 0 && processAlive(pid);
-  }));
+  const owned = new Set(names.filter((name) => ownerRunning(path.join(root, name))));
   sweepStaleOutputs(root, SCRATCH_MAX_AGE_MS, owned);
 }
 
@@ -106,7 +104,7 @@ export class ReportQueue {
 }
 
 /**
- * Report files the parent has read (`read`/`localFetch` of `<scratch>/report.md`), by agent id, with the time.
+ * Report files the parent has read (Pi's `read` of `<scratch>/report.md`), by agent id, with the time.
  * A report whose file was read after its last change reaches the parent without starting a turn.
  */
 export class ReadReports {
@@ -118,7 +116,7 @@ export class ReadReports {
   }
 
   observe(toolName: string, input: Record<string, unknown>, cwd: string): void {
-    const paths = toolName === 'read' ? [input['path']] : toolName.endsWith('localFetch') && Array.isArray(input['queries']) ? input['queries'].map((query: unknown) => (query && typeof query === 'object' ? (query as Record<string, unknown>)['path'] : undefined)) : [];
+    const paths = toolName === 'read' ? [input['path']] : [];
     for (const file of paths) {
       if (typeof file !== 'string' || !file) continue;
       const id = this.scratch.get(path.resolve(cwd, file.replace(/^@/, '')));

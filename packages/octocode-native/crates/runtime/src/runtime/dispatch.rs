@@ -140,7 +140,7 @@ pub(super) fn execute_local(
     context: &ExecutionContext,
     regex: &LocalFetchRegex,
     views: &crate::security::scan::SanitizedViewMemo,
-    allow_ast_rewrite_apply: bool,
+    rewrite: &AstRewriteRuntimeOptions,
     cargo: Option<&str>,
 ) -> Result<DomainResult, ExecutionError> {
     // Generated query types carry the meta fields, so every tool parses the
@@ -221,10 +221,12 @@ pub(super) fn execute_local(
         }
         ToolId::AstSearch => {
             let request = parsed!(AstSearchQuery);
-            Ok(match execute_ast(&request, paths, security, context) {
-                Ok(data) => value_result(data),
-                Err(error) => error.into(),
-            })
+            Ok(
+                match execute_ast(&request, paths, security, context, context.response_window) {
+                    Ok(data) => value_result(data),
+                    Err(error) => error.into(),
+                },
+            )
         }
         ToolId::AstTopology => {
             let request = parsed!(AstTopologyQuery);
@@ -237,16 +239,7 @@ pub(super) fn execute_local(
         }
         ToolId::AstRewrite => {
             let request = parsed!(RewriteRequest);
-            let data = execute_ast_rewrite_with_options(
-                request,
-                paths,
-                security,
-                context,
-                &AstRewriteRuntimeOptions {
-                    allow_apply: allow_ast_rewrite_apply,
-                    ..Default::default()
-                },
-            );
+            let data = execute_ast_rewrite_with_options(request, paths, security, context, rewrite);
             Ok(value_result(data))
         }
         ToolId::GhSearchRepo
@@ -453,9 +446,9 @@ mod provider_failure_tests {
                 &paths,
                 &security,
                 &context,
-                &LocalFetchRegex::default(),
+                &LocalFetchRegex,
                 &views,
-                false,
+                &AstRewriteRuntimeOptions::default(),
                 None,
             )
             .unwrap_or_else(|_| panic!("{tool} returns a row"));
@@ -491,9 +484,9 @@ mod provider_failure_tests {
                 &paths,
                 &ContentSecurity::new(),
                 &context,
-                &LocalFetchRegex::default(),
+                &LocalFetchRegex,
                 &crate::security::scan::SanitizedViewMemo::default(),
-                false,
+                &AstRewriteRuntimeOptions::default(),
                 None,
             );
             assert!(

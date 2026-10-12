@@ -59,6 +59,87 @@ pub(crate) fn safe_url(value: Option<&Value>) -> Option<String> {
     Some(url.into())
 }
 
+/// The one repository-link normalizer every registry's `repository` passes:
+/// the link as a canonical `https://host/path` without `git+`, a trailing
+/// `/` or `.git`. It reads `git+https://…`, scp (`git@host:o/r.git`),
+/// `ssh://`/`git://`, Maven `scm:git:…`, and npm's `github:`/`gitlab:`/
+/// `bitbucket:` and `owner/repo` shorthands. A link with credentials or
+/// another scheme is no repository.
+pub(crate) fn repository_url(value: Option<&Value>) -> Option<String> {
+    canonical_repository(&string(value)?)
+}
+
+/// [`repository_url`] of one link text.
+pub(crate) fn canonical_repository(link: &str) -> Option<String> {
+    let link = link.trim();
+    let link = link.strip_prefix("git+").unwrap_or(link);
+    // `scm:git:<url>` (Maven SCM): the provider tag before the link.
+    let link = link.strip_prefix("scm:").map_or(link, |rest| {
+        rest.split_once(':').map_or(rest, |(_, tail)| tail)
+    });
+    let lower = link.to_ascii_lowercase();
+    let shorthand = [
+        ("github:", "github.com"),
+        ("gitlab:", "gitlab.com"),
+        ("bitbucket:", "bitbucket.org"),
+    ]
+    .into_iter()
+    .find(|(prefix, _)| lower.starts_with(prefix));
+    let https = if let Some((prefix, host)) = shorthand {
+        format!("https://{host}/{}", &link[prefix.len()..])
+    } else if let Some((scheme, rest)) = link.split_once("://") {
+        match scheme.to_ascii_lowercase().as_str() {
+            "http" | "https" => link.to_owned(),
+            // `ssh://git@host[:port]/o/r`: the host serves the same
+            // repository over HTTPS; user and port are transport details.
+            "ssh" | "git" => {
+                let rest = rest.split_once('@').map_or(rest, |(_, tail)| tail);
+                let (authority, path) = rest.split_once('/')?;
+                let host = authority
+                    .split_once(':')
+                    .map_or(authority, |(host, _)| host);
+                format!("https://{host}/{path}")
+            }
+            _ => return None,
+        }
+    } else if let Some((user_host, path)) = link.split_once(':')
+        && let Some((_, host)) = user_host.split_once('@')
+    {
+        // scp form `git@host:o/r.git`.
+        format!("https://{host}/{path}")
+    } else {
+        let first = link.split('/').next().unwrap_or_default();
+        match link.matches('/').count() {
+            // npm `owner/repo` is a GitHub repository.
+            1 if !first.contains('.') && !link.contains(':') => {
+                format!("https://github.com/{link}")
+            }
+            // `host.tld/o/r` without a scheme.
+            count if count >= 2 && first.contains('.') => format!("https://{link}"),
+            _ => return None,
+        }
+    };
+    let url = Url::parse(&https).ok()?;
+    if !matches!(url.scheme(), "http" | "https")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.host_str().is_none_or(str::is_empty)
+    {
+        return None;
+    }
+    let text: String = url.into();
+    let text = text.trim_end_matches('/');
+    let text = text.strip_suffix(".git").unwrap_or(text);
+    Some(text.trim_end_matches('/').to_owned())
+}
+
+/// `https://github.com/<owner>/<repo>` of a link into a GitHub repository
+/// (a homepage or module path that names one), the repository a registry
+/// row without its own `repository` still points at.
+pub(crate) fn github_repository(link: &str) -> Option<String> {
+    github_slug(link).map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"))
+}
+
 pub(crate) fn license(value: Option<&Value>) -> Option<String> {
     match value? {
         Value::Array(values) => {
@@ -145,6 +226,156 @@ pub(crate) fn date_prefix(value: Option<&Value>) -> Option<String> {
     let value = string(value)?;
     let date = value.get(..10)?;
     (date.as_bytes()[4] == b'-' && date.as_bytes()[7] == b'-').then(|| date.to_owned())
+}
+
+/// `(owner, repo)` of a link into a GitHub repository, in any common
+/// registry form (`https://github.com/o/r`, `git+https://github.com/o/r.git`,
+/// `git@github.com:o/r`, `github.com/o/r/tree/…`, a file or tree page).
+/// `None` for another host and for an account-level page such as
+/// `github.com/sponsors/<user>`.
+pub(crate) fn github_slug(link: &str) -> Option<(String, String)> {
+    let link = link.trim();
+    let rest = match link.strip_prefix("git@github.com:") {
+        Some(rest) => rest,
+        None => {
+            let after_scheme = link.split_once("://").map_or(link, |(_, rest)| rest);
+            let (authority, path) = after_scheme.split_once('/')?;
+            let host = authority
+                .rsplit_once('@')
+                .map_or(authority, |(_, host)| host);
+            let host = host.split_once(':').map_or(host, |(host, _)| host);
+            if !host.eq_ignore_ascii_case("github.com")
+                && !host.eq_ignore_ascii_case("www.github.com")
+            {
+                return None;
+            }
+            path
+        }
+    };
+    let path = rest.split(['#', '?']).next()?;
+    let mut segments = path.split('/').filter(|part| !part.is_empty());
+    let owner = segments.next()?;
+    let repo = segments.next()?.trim_end_matches(".git");
+    (!repo.is_empty() && !matches!(owner, "sponsors" | "orgs" | "users" | "apps"))
+        .then(|| (owner.to_owned(), repo.to_owned()))
+}
+
+/// Monorepo subdirectory from a `/tree/<ref>/<dir>` or `/blob/<ref>/<file>`
+/// repository URL. The ref is dropped: refs may contain slashes, and URL refs
+/// are often stale; only viewReleaseSource pins the registry's source ref.
+pub(crate) fn github_repo_dir(url: &str) -> Option<String> {
+    let rest = url.split_once("github.com/")?.1;
+    let rest = rest.split(['#', '?']).next()?;
+    let mut parts = rest.split('/').filter(|part| !part.is_empty());
+    let (_owner, _repo, kind, _ref) = (parts.next()?, parts.next()?, parts.next()?, parts.next()?);
+    let mut segments: Vec<&str> = parts.collect();
+    match kind {
+        "tree" => {}
+        "blob" => {
+            segments.pop();
+        }
+        _ => return None,
+    }
+    (!segments.is_empty()).then(|| segments.join("/"))
+}
+
+#[cfg(test)]
+mod github_slug_tests {
+    use super::github_slug;
+
+    #[test]
+    fn github_slugs_come_only_from_repository_links() {
+        let slug = |owner: &str, repo: &str| Some((owner.to_owned(), repo.to_owned()));
+        for (link, expected) in [
+            ("https://github.com/o/r", slug("o", "r")),
+            ("git+https://github.com/o/r.git", slug("o", "r")),
+            ("git@github.com:o/r.git", slug("o", "r")),
+            ("ssh://git@github.com/o/r.git", slug("o", "r")),
+            (
+                "https://github.com/o/r/tree/main/packages/x",
+                slug("o", "r"),
+            ),
+            ("https://github.com/o/r.git/tree/main", slug("o", "r")),
+            ("github.com/o/r#readme", slug("o", "r")),
+            ("https://www.GitHub.com/o/r?tab=readme", slug("o", "r")),
+            (
+                "https://github.com/Textualize/rich/blob/master/CHANGELOG.md",
+                slug("Textualize", "rich"),
+            ),
+            ("https://github.com/sponsors/hynek", None),
+            ("https://github.com/orgs/o/r", None),
+            ("https://github.com/hynek", None),
+            ("https://github.com/o", None),
+            ("https://gitlab.com/o/r", None),
+            ("https://gist.github.com/o/r", None),
+            ("https://notgithub.com/o/r", None),
+        ] {
+            assert_eq!(github_slug(link), expected, "{link}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod repository_tests {
+    use super::{canonical_repository, github_slug};
+
+    /// Every registry link form normalizes to one canonical URL, and that
+    /// URL names the same owner/repo the GitHub tools take.
+    #[test]
+    fn every_repository_link_form_is_one_canonical_url() {
+        for (input, expected) in [
+            (
+                "github:octokit/rest.js",
+                Some("https://github.com/octokit/rest.js"),
+            ),
+            (
+                "git+https://github.com/a/b.git",
+                Some("https://github.com/a/b"),
+            ),
+            ("git@github.com:a/b.git", Some("https://github.com/a/b")),
+            (
+                "ssh://git@github.com/a/b.git",
+                Some("https://github.com/a/b"),
+            ),
+            (
+                "ssh://git@github.com:22/a/b",
+                Some("https://github.com/a/b"),
+            ),
+            ("git://github.com/a/b.git", Some("https://github.com/a/b")),
+            (
+                "scm:git:git@github.com:a/b.git",
+                Some("https://github.com/a/b"),
+            ),
+            (
+                "scm:git:https://github.com/a/b",
+                Some("https://github.com/a/b"),
+            ),
+            ("https://github.com/a/b/", Some("https://github.com/a/b")),
+            (
+                "https://github.com/a/b.git/",
+                Some("https://github.com/a/b"),
+            ),
+            ("a/b", Some("https://github.com/a/b")),
+            ("github.com/a/b", Some("https://github.com/a/b")),
+            (
+                "https://github.com/rails/rails/tree/v8.1.4",
+                Some("https://github.com/rails/rails/tree/v8.1.4"),
+            ),
+            ("https://gitlab.com/g/x", Some("https://gitlab.com/g/x")),
+            ("https://user:secret@github.com/a/b", None),
+            ("ftp://github.com/a/b", None),
+            ("", None),
+            ("not a link", None),
+        ] {
+            assert_eq!(canonical_repository(input).as_deref(), expected, "{input}");
+            if let Some(expected) = expected.filter(|url| url.contains("github.com/a/b")) {
+                assert_eq!(
+                    github_slug(expected),
+                    Some(("a".to_owned(), "b".to_owned()))
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]

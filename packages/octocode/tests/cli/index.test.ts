@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   delegate: vi.fn(() => 0),
   configView: vi.fn(async () => 0),
-  resolve: vi.fn((): string | null => '/native/octocode'),
+  resolve: vi.fn((): { bin: string } | { error: string } => ({
+    bin: '/native/octocode',
+  })),
   skillHandler: vi.fn(),
 }));
 
@@ -45,7 +47,7 @@ describe('runCLI native boundary', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.exitCode = undefined;
-    mocks.resolve.mockReturnValue('/native/octocode');
+    mocks.resolve.mockReturnValue({ bin: '/native/octocode' });
     mocks.delegate.mockReturnValue(0);
   });
 
@@ -146,7 +148,7 @@ describe('runCLI native boundary', () => {
   });
 
   it('normalizes boolean flags given as --flag=value', async () => {
-    const { isTrueFlag } = await import('../../src/cli/index.js');
+    const { isTrueFlag } = await import('../../src/cli/parser.js');
     expect(isTrueFlag(true)).toBe(true);
     expect(isTrueFlag('true')).toBe(true);
     expect(isTrueFlag('TRUE')).toBe(true);
@@ -231,23 +233,44 @@ describe('runCLI native boundary', () => {
     expect(mocks.delegate).not.toHaveBeenCalled();
   });
 
-  it('fails closed with exit 5 when the native runtime is unavailable', async () => {
-    mocks.resolve.mockReturnValue(null);
+  const unresolved = {
+    error:
+      "octocode: platform package '@octocodeai/octocode-native-linux-x64-gnu' is not installed.\nTry: npm install @octocodeai/octocode-native-linux-x64-gnu",
+  };
+
+  it('fails closed with exit 5 and the resolver cause when the native runtime is unavailable', async () => {
+    mocks.resolve.mockReturnValue(unresolved);
     const { runCLI } = await import('../../src/cli/index.js');
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    const previousExit = process.exitCode;
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
       const result = await runCLI(['tools']);
       // Execution failure (exit 5), matching the native exit-code table and the
       // `schema` path — not a thrown generic exit 1.
       expect(result).toBe(false);
       expect(process.exitCode).toBe(5);
-      expect(stderr).toHaveBeenCalledWith(
-        expect.stringContaining('native Octocode runtime is unavailable')
+      const text = String(stderr.mock.calls[0]![0]);
+      expect(text).toContain('native Octocode runtime is unavailable');
+      expect(text).toContain(
+        'npm install @octocodeai/octocode-native-linux-x64-gnu'
       );
     } finally {
-      process.exitCode = previousExit;
       stderr.mockRestore();
+    }
+  });
+
+  it('answers --json with the native error envelope on stdout', async () => {
+    mocks.resolve.mockReturnValue(unresolved);
+    const { runCLI } = await import('../../src/cli/index.js');
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await runCLI(['tools', '--json']);
+      expect(process.exitCode).toBe(5);
+      expect(JSON.parse(String(stdout.mock.calls[0]![0]))).toEqual({
+        error: expect.stringContaining('npm install'),
+        errorCode: 'toolUnavailable',
+      });
+    } finally {
+      stdout.mockRestore();
     }
   });
 });

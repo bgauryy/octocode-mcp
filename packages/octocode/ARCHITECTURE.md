@@ -10,7 +10,7 @@
 npx octocode → Node launcher → native CLI → Rust ToolRuntime
 ```
 
-The native path is mandatory for public tools. If its platform package cannot be resolved, the launcher fails closed. Rust owns contract validation, availability, security, GitHub and artifact providers, local/AST/LSP behavior, bulk orchestration, pagination, response shaping, cancellation, and exit classification. `@octocodeai/octocode-core` authors public schemas and instructions; the CLI reads them through `@octocodeai/config` (`./schema`, `./mcp`), never from core directly.
+The native path is mandatory for public tools. If its platform package cannot be resolved, the launcher fails closed with the resolver's own message (for example the missing platform package and its `npm install` fix). A binary that cannot start, a missing runtime and a Node crash all report as an execution failure, exit `5`: with `--json`, the native `{error, errorCode}` envelope on stdout, else text on stderr. Rust owns contract validation, availability, security, GitHub and artifact providers, local/AST/LSP behavior, bulk orchestration, pagination, response shaping, cancellation, and exit classification. `@octocodeai/octocode-core` authors public schemas and instructions; the CLI reads them through `@octocodeai/config` (`./schema`, `./mcp`), never from core directly.
 
 ## TypeScript management surface
 

@@ -2,8 +2,8 @@
 //! to a local directory (`materialize`).
 use crate::contracts::tool_types::ExtraKind;
 use crate::tools::gh_shared::{
-    GhFailure, PathRecovery, RepoPath, locate_path, missing_path, parent_dir, search_failure,
-    tree_recovery, with_ref_recovery,
+    GhFailure, PathRecovery, RepoPath, locate_path, missing_path, parent_dir, push_warning_front,
+    search_failure, tree_recovery, with_ref_recovery,
 };
 use crate::tools::id::ToolId;
 use crate::tools::result::remove_nulls;
@@ -22,7 +22,7 @@ pub use crate::contracts::tool_types::GhStructureQuery;
 
 mod dates;
 mod listing;
-mod materialize;
+pub(crate) mod materialize;
 mod refs;
 mod traverse;
 use listing::*;
@@ -38,7 +38,7 @@ pub async fn run<C: crate::providers::github::ConditionalCache>(
     request: Result<&RequestContext, ProviderError>,
     home: &Path,
 ) -> Result<ToolData, GhFailure> {
-    let context = request.map_err(|error| search_failure(error, WINDOW_HINT))?;
+    let context = request.map_err(|error| search_failure(error, None))?;
     let error = match execute(provider, query, context, home).await {
         Ok(output) => return Ok(output),
         Err(error) => error,
@@ -50,9 +50,12 @@ pub async fn run<C: crate::providers::github::ConditionalCache>(
         path: query.path.as_deref().unwrap_or_default().trim_matches('/'),
         reference: query.ref_.as_deref(),
     };
+    if error.reason == Some(ProviderErrorReason::PathIsFile) {
+        return Err(file_failure(error, &at));
+    }
     if !missing_path(&error, Some(at.path)) {
         return Err(with_ref_recovery(
-            search_failure(error, WINDOW_HINT),
+            search_failure(error, None),
             at.owner,
             at.repo,
         ));
@@ -97,8 +100,20 @@ async fn classify_unresolved_sha<C: crate::providers::github::ConditionalCache>(
     }
 }
 
-const WINDOW_HINT: &str =
-    "Lower page, or narrow with path, extensions, or filename to reach deeper results.";
+/// A listing of a file: the repair is that file's read at the same ref.
+fn file_failure(error: ProviderError, at: &RepoPath<'_>) -> GhFailure {
+    let mut read = json!({"owner": at.owner, "repo": at.repo, "path": at.path});
+    if let Some(reference) = at.reference {
+        read["ref"] = json!(reference);
+    }
+    let mut failure = search_failure(error, None);
+    failure.next = Some(json!({
+        "read": crate::tools::result::Continuation::new(ToolId::GhGetFileContent, read)
+            .confidence("exact")
+            .build()
+    }));
+    failure
+}
 
 fn path_failure(
     error: ProviderError,
@@ -106,7 +121,7 @@ fn path_failure(
     max_depth: Option<std::num::NonZeroU64>,
     found: Option<PathRecovery>,
 ) -> GhFailure {
-    let mut failure = search_failure(error, WINDOW_HINT);
+    let mut failure = search_failure(error, None);
     let requested = at.path;
     let (directory, confidence, hint) = match &found {
         Some(found) => {
@@ -116,20 +131,19 @@ fn path_failure(
             } else {
                 found.directory.clone()
             };
+            // The listing lead targets the deepest existing prefix; only a
+            // case-only difference is a fact the lead does not state.
             let hint = if found.file.is_some() {
-                "The path names a file (its case differs); read it with ghGetFileContent, or list its directory with hints.viewTree."
+                Some("The path names a file (its case differs).")
             } else if found.directory.eq_ignore_ascii_case(requested) {
-                "Only the path's case differs; run the viewTree continuation."
+                Some("Only the path's case differs.")
             } else {
-                "The rest of the path does not exist; hints.viewTree lists the nearest existing directory."
+                None
             };
             (directory, "exact", hint)
         }
-        None => (
-            parent_dir(requested),
-            "low",
-            "Check the path's exact case (no leading slash) and the ref; list the parent directory with hints.viewTree.",
-        ),
+        // Without a walk answer the parent listing is the whole recovery.
+        None => (parent_dir(requested), "low", None),
     };
     let depth = max_depth.map(|depth| i64::try_from(depth.get()).unwrap_or(i64::MAX));
     let listing = RepoPath {
@@ -137,7 +151,10 @@ fn path_failure(
         ..*at
     };
     failure.next = Some(json!({ "viewTree": tree_recovery(&listing, depth, confidence) }));
-    failure.hint(hint)
+    match hint {
+        Some(hint) => failure.hint(hint),
+        None => failure,
+    }
 }
 
 /// Largest listing page (contract `pageSize` maximum). Path-only rows stay
@@ -241,13 +258,10 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
     });
     let page = ListingPage::of(query, &traversal.entries);
     let mut value = json!({
-        "entries": build_structure(page.entries),
-        "summary": summary(page.entries),
+        "files": build_structure(page.entries),
+        "summary": summary(&traversal.entries),
         "resolvedRef": resolved_branch,
     });
-    if !query.include.is_empty() {
-        value["summary"]["include"] = json!(query.include);
-    }
     // A caller-supplied full SHA is not restated.
     if !resolved_branch.eq_ignore_ascii_case(&commit_sha) {
         value["commitSha"] = json!(commit_sha);
@@ -257,6 +271,7 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
     // changed (one GraphQL request per page, so only when asked); a
     // materialized page hands its files to local tools and stays undated.
     let mut undated = 0;
+    let mut dates_failed = false;
     let dated = query.extras.contains(&ExtraKind::Details);
     if dated && query.materialize != Some(true) {
         let page_dates = dates::page_dates(
@@ -269,6 +284,8 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
         )
         .await;
         undated = page_dates.undated;
+        // A failed dating request is retried by the same page.
+        dates_failed = page_dates.warning.is_some();
         dates::attach(&mut value, page_dates);
     }
     // Sizes and dates join the names last: dates key bare names.
@@ -290,12 +307,11 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
         None
     };
     disclose_limits(&traversal, &mut value, &mut output);
+    if traversal.contents_limit {
+        value["next"]["cloneRepo"] = clone_lead(query, &scope, &commit_sha);
+    }
     if let Some(warning) = renamed_warning {
-        let warning = json!(warning);
-        match value.get_mut("warnings").and_then(Value::as_array_mut) {
-            Some(warnings) => warnings.insert(0, warning),
-            None => value["warnings"] = json!([warning]),
-        }
+        push_warning_front(&mut value, warning);
     }
     // Continuations read the same commit.
     let pinned = GhStructureQuery {
@@ -306,7 +322,7 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
         &mut value,
         &pinned,
         &page,
-        traversal.failed_subtrees > 0,
+        traversal.failed_subtrees > 0 || dates_failed,
         query.materialize == Some(true),
         materialize_resume,
     )?;
@@ -317,15 +333,10 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
         && query.materialize_offset.is_some_and(|offset| offset > 0)
         && value.get("location").is_some();
     if resumed && let Some(map) = value.as_object_mut() {
-        map.remove("entries");
+        map.remove("files");
     }
     if !resumed && structure_is_empty(&value) && value.get("isPartial").is_none() {
         output.status = Some("empty");
-        if scope.filter.is_some() {
-            value["hints"] = json!([
-                "No path matched include; try a bare word, or \"**/name\" for an exact file name."
-            ]);
-        }
     } else if value.pointer("/location/localPath").is_some() {
         // A materialized listing continues with the local tools at
         // `location.localPath`; re-listing the tree it just returned adds
@@ -378,8 +389,12 @@ impl Scope {
 /// This tool's output facts for the shared response stages.
 pub(crate) struct Output;
 impl crate::tools::output::ToolOutput for Output {
-    fn fallback_hint(&self, _query: &serde_json::Value) -> &'static str {
-        "Verify owner/repo/ref, or broaden path/depth."
+    fn fallback_hint(&self, query: &serde_json::Value) -> &'static str {
+        if crate::tools::output::has_value(query, "include") {
+            "Loosen the include glob, raise maxDepth, or list the tree without include."
+        } else {
+            "Check ref and path, raise maxDepth, or list the parent path."
+        }
     }
     fn evidence_kind(&self, _query: &serde_json::Value, _data: &serde_json::Value) -> &'static str {
         "provider"
@@ -406,7 +421,7 @@ mod tests {
         use crate::tools::output::ToolOutput;
         let sha = "63c5760d8a672cee96e1e523d84bfa1c77d9ee4c";
         let listing =
-            serde_json::json!({"entries":[{"dir":"src","files":["a.rs"]}],"resolvedRef":sha});
+            serde_json::json!({"files":[{"dir":"src","files":["a.rs"]}],"resolvedRef":sha});
         let mut pinned = listing.as_object().cloned().unwrap_or_default();
         Output.compact(&mut pinned, &serde_json::json!({"ref": sha}));
         assert!(pinned.get("resolvedRef").is_none(), "{pinned:?}");
@@ -426,7 +441,6 @@ mod tests {
             written: 0,
             total_bytes: 0,
             cursor: 0,
-            reason: "listing",
             skips: MaterializeSkips::default(),
             recorded: Vec::new(),
         };
@@ -501,7 +515,7 @@ mod tests {
             "path": "", "mainGoal": "Read every materialized file", "reasoning": "Preserve the remaining listing"
         })).expect("query");
         let mut value = json!({
-            "entries": [{"dir": ".", "files": ["a.rs"]}],
+            "files": [{"dir": ".", "files": ["a.rs"]}],
             "location": {"localPath": "/t"}
         });
         let page = |current| ListingPage {
@@ -529,16 +543,16 @@ mod tests {
             "a".repeat(40)
         );
         for materialize in [false, true] {
-            let mut value = json!({"entries": [{"dir": ".", "files": ["last.rs"]}]});
+            let mut value = json!({"files": [{"dir": ".", "files": ["last.rs"]}]});
             attach_continuations(&mut value, &query, &page(1000), false, materialize, None)
                 .expect("terminal");
             assert_eq!(value["terminalLimit"], true);
             assert!(value.get("next").is_none());
-            assert_eq!(value["entries"][0]["files"][0], "last.rs");
+            assert_eq!(value["files"][0]["files"][0], "last.rs");
         }
     }
 
-    /// D9: a recursive git-tree listing of a path the tree lacks is a
+    /// A recursive git-tree listing of a path the tree lacks is a
     /// missing path (not an empty listing), so the viewTree recovery runs.
     #[test]
     fn a_root_missing_from_the_git_tree_is_not_found() {
@@ -556,6 +570,41 @@ mod tests {
         let file = root_is_directory(&tree, "src/lib.rs").expect_err("file");
         assert_eq!(file.kind, ProviderErrorKind::Validation);
     }
+    /// A submodule is not listed, and not dropped silently: the listing
+    /// names it beside the directories it skips by design.
+    #[test]
+    fn a_submodule_is_named_not_silently_dropped() {
+        let tree: crate::providers::github::TreeResponse = serde_json::from_value(json!({
+            "sha":"s","truncated":false,"tree":[
+                {"path":"src","type":"tree"},
+                {"path":"third_party/zlib","type":"commit"},
+                {"path":"README.md","type":"blob","size":1}
+            ]
+        }))
+        .expect("tree");
+        let traversal = traverse::traversal_from_git_tree(tree, "", 3);
+        assert_eq!(traversal.entries.len(), 2);
+        assert_eq!(
+            serde_json::to_value(&traversal.omitted).expect("omitted"),
+            json!({"zlib (submodule)": 1})
+        );
+    }
+
+    /// A Contents listing types a submodule `file` with size 0; its git
+    /// URL names another repository's tree.
+    #[test]
+    fn a_submodule_typed_file_is_not_a_zero_byte_file() {
+        let entries: Vec<ContentsEntry> = serde_json::from_value(json!([
+            {"name":"book","path":"src/doc/book","type":"file","size":0,
+             "git_url":"https://api.github.com/repos/rust-lang/book/git/trees/abc"},
+            {"name":"empty.txt","path":"src/doc/empty.txt","type":"file","size":0,
+             "git_url":"https://api.github.com/repos/rust-lang/rust/git/blobs/def"}
+        ]))
+        .expect("entries");
+        assert!(entry_kind(&entries[0]).is_none());
+        assert_eq!(entry_kind(&entries[1]), Some(EntryKind::File));
+    }
+
     #[test]
     fn skips_symlinks_and_submodules() {
         for kind in ["symlink", "submodule"] {
@@ -566,6 +615,7 @@ mod tests {
                     kind: kind.into(),
                     size: None,
                     sha: None,
+                    git_url: None,
                 })
                 .is_none()
             );
@@ -604,5 +654,240 @@ mod tests {
             size: Some(1),
         }]);
         assert_eq!(root, vec![json!({"dir":".","files":["README.md"]})]);
+    }
+
+    mod provider_tests {
+        use super::*;
+        use crate::providers::github::RetryPolicy;
+        use crate::tools::gh_shared::test_support::{fixture_context, mock_provider, mount_json};
+        use std::time::Duration;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+        async fn server() -> MockServer {
+            let server = MockServer::start().await;
+            for reference in ["main", "HEAD"] {
+                Mock::given(method("GET"))
+                    .and(path(format!("/api/v3/repos/a/b/commits/{reference}")))
+                    .respond_with(ResponseTemplate::new(200).set_body_string(SHA))
+                    .mount(&server)
+                    .await;
+            }
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b",
+                200,
+                json!({"default_branch":"main","full_name":"a/b"}),
+            )
+            .await;
+            server
+        }
+
+        fn query(value: Value) -> GhStructureQuery {
+            serde_json::from_value(value).expect("ghStructure query")
+        }
+
+        /// A `refs` read of one `ref` says what the name resolved to
+        /// (branch, tag or commit), not only the commit it points at.
+        #[tokio::test]
+        async fn a_named_ref_states_its_kind() {
+            let server = server().await;
+            for (reference, branch, tag) in [
+                ("main", Some(SHA), None),
+                ("v1.0", None, Some(SHA)),
+                (SHA, None, None),
+            ] {
+                if reference != "main" && reference != SHA {
+                    Mock::given(method("GET"))
+                        .and(path(format!("/api/v3/repos/a/b/commits/{reference}")))
+                        .respond_with(ResponseTemplate::new(200).set_body_string(SHA))
+                        .mount(&server)
+                        .await;
+                }
+                for (kind, found) in [("heads", branch), ("tags", tag)] {
+                    let route = format!("/api/v3/repos/a/b/git/ref/{kind}/{reference}");
+                    match found {
+                        Some(sha) => {
+                            mount_json(&server, route, 200, json!({"object":{"sha":sha}})).await
+                        }
+                        None => {
+                            mount_json(&server, route, 404, json!({"message":"Not Found"})).await
+                        }
+                    }
+                }
+            }
+            for (reference, kind) in [("main", "branch"), ("v1.0", "tag"), (SHA, "commit")] {
+                let out = list(
+                    &server,
+                    json!({"owner":"a","repo":"b","operation":"refs","ref":reference}),
+                )
+                .await
+                .expect("refs");
+                assert_eq!(out.data["commitSha"], SHA, "{reference}: {}", out.data);
+                assert_eq!(out.data["refKind"], kind, "{reference}: {}", out.data);
+            }
+        }
+
+        async fn list(server: &MockServer, value: Value) -> Result<ToolData, ProviderError> {
+            let home = tempfile::tempdir().expect("home");
+            let provider = mock_provider(server, RetryPolicy::default());
+            let context = fixture_context(Duration::from_secs(5), 1 << 20);
+            execute(&provider, &query(value), &context, home.path()).await
+        }
+
+        /// The happy-path anchors: each `dir` with its entry names (the
+        /// next read's path), the resolved branch and its `commitSha` (the
+        /// next read's ref); no query field is echoed.
+        #[tokio::test]
+        async fn a_listing_row_carries_dir_entries_commit_and_resolved_ref() {
+            let server = server().await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents",
+                200,
+                json!([
+                    {"name":"lib.rs","path":"lib.rs","type":"file","size":3},
+                    {"name":"src","path":"src","type":"dir"}
+                ]),
+            )
+            .await;
+            let out = list(&server, json!({"owner":"a","repo":"b"}))
+                .await
+                .expect("listing");
+            let data = &out.data;
+            assert_eq!(
+                data["files"],
+                json!([{"dir":".","files":["lib.rs (3)"],"folders":["src"]}]),
+                "{data}"
+            );
+            assert_eq!(data["resolvedRef"], "main", "{data}");
+            assert_eq!(data["commitSha"], SHA, "{data}");
+            for echo in ["owner", "repo", "path", "operation", "ref"] {
+                assert!(data.get(echo).is_none(), "{echo} echoed: {data}");
+            }
+            let read = &data["next"]["read"]["query"]["queries"][0];
+            assert_eq!(read["path"], "lib.rs", "{data}");
+            assert_eq!(read["ref"], SHA, "{data}");
+        }
+
+        /// A recursive tree past GitHub's limit is read subtree by subtree:
+        /// a folder's whole subtree comes from one recursive read by its
+        /// tree SHA (no per-folder Contents walk), so a bare-word `include`
+        /// finds names at any depth. Pages are disjoint, and each page's
+        /// continuation is the whole query pinned to the listed commit.
+        #[tokio::test]
+        async fn a_truncated_tree_is_read_by_subtree_and_pages_without_overlap() {
+            let server = server().await;
+            mount_json(
+                &server,
+                format!("/api/v3/repos/a/b/git/trees/{SHA}"),
+                200,
+                json!({"sha":SHA,"truncated":true,"tree":[]}),
+            )
+            .await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents",
+                200,
+                json!([
+                    {"name":"README.md","path":"README.md","type":"file","size":1},
+                    {"name":"src","path":"src","type":"dir","sha":"d".repeat(40)}
+                ]),
+            )
+            .await;
+            mount_json(
+                &server,
+                format!("/api/v3/repos/a/b/git/trees/{}", "d".repeat(40)),
+                200,
+                json!({"sha":"d".repeat(40),"truncated":false,"tree":[
+                    {"path":"a","type":"tree"},
+                    {"path":"a/b","type":"tree"},
+                    {"path":"a/b/handler.rs","type":"blob","size":5},
+                    {"path":"a/b/other.rs","type":"blob","size":5},
+                    {"path":"a/handler_test.rs","type":"blob","size":5},
+                    {"path":"node_modules","type":"tree"},
+                    {"path":"node_modules/handler.js","type":"blob","size":5}
+                ]}),
+            )
+            .await;
+            Mock::given(method("GET"))
+                .and(path("/api/v3/repos/a/b/contents/src"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+                .expect(0)
+                .mount(&server)
+                .await;
+            let base =
+                json!({"owner":"a","repo":"b","ref":"main","include":["handler"],"pageSize":1});
+            let first = list(&server, base.clone()).await.expect("page 1");
+            let next = &first.data["next"]["nextPage"]["query"]["queries"][0];
+            assert_eq!(next["include"], json!(["handler"]), "{}", first.data);
+            assert_eq!(next["ref"], SHA, "{}", first.data);
+            assert_eq!(next["pageSize"], 1, "{}", first.data);
+            assert_eq!(next["page"], 2, "{}", first.data);
+            assert!(first.data.get("terminalLimit").is_none(), "{}", first.data);
+            let second = list(&server, next.clone()).await.expect("page 2");
+            assert!(
+                second.data["next"].get("nextPage").is_none(),
+                "{}",
+                second.data
+            );
+            let rows = [&first.data, &second.data].map(|data| data["files"].clone());
+            assert_eq!(
+                json!(rows),
+                json!([
+                    [{"dir":"src/a","files":["handler_test.rs (5)"]}],
+                    [{"dir":"src/a/b","files":["handler.rs (5)"]}]
+                ]),
+                "{} {}",
+                first.data,
+                second.data
+            );
+            assert_eq!(
+                first.data["omitted"],
+                json!({"node_modules":1}),
+                "{}",
+                first.data
+            );
+        }
+
+        /// A listing of a file is typed; its one repair is that file's read
+        /// at the same ref, with no prose beside it.
+        #[tokio::test]
+        async fn a_listing_of_a_file_leads_to_its_read() {
+            let server = server().await;
+            mount_json(
+                &server,
+                "/api/v3/repos/a/b/contents/src%2Flib.rs",
+                200,
+                json!({"name":"lib.rs","path":"src/lib.rs","type":"file","size":3}),
+            )
+            .await;
+            let provider = mock_provider(&server, RetryPolicy::default());
+            let context = fixture_context(Duration::from_secs(5), 1 << 20);
+            let home = tempfile::tempdir().expect("home");
+            let failure = run(
+                &provider,
+                &query(json!({"owner":"a","repo":"b","path":"src/lib.rs","ref":"main"})),
+                Ok(&context),
+                home.path(),
+            )
+            .await
+            .expect_err("a file is not a tree");
+            assert_eq!(failure.error.reason, Some(ProviderErrorReason::PathIsFile));
+            assert_eq!(
+                failure.message,
+                "Path \"src/lib.rs\" is a file, not a directory"
+            );
+            assert!(failure.hints.is_empty(), "{:?}", failure.hints);
+            let next = failure.next.expect("read lead");
+            assert_eq!(next["read"]["tool"], "ghGetFileContent", "{next}");
+            assert_eq!(
+                next["read"]["query"]["queries"][0],
+                json!({"owner":"a","repo":"b","path":"src/lib.rs","ref":"main"}),
+                "{next}"
+            );
+        }
     }
 }

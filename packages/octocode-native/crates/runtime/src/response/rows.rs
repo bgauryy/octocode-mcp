@@ -1,4 +1,5 @@
 //! Transport-neutral structured result metadata and lossless path compaction.
+use crate::contracts::tool_types::ExtraKind;
 use crate::policy::path::PathPolicy;
 use crate::tools::id::ToolId;
 use crate::tools::output::{PathAnchor, SANDBOX_HINT};
@@ -36,7 +37,7 @@ pub(crate) fn attach_diagnostics(
     }
 }
 
-/// Budget every hint and lead `why` source fits (X11): the runtime never
+/// Budget every hint and lead `why` source fits: the runtime never
 /// clips guidance, so each source is written within it
 /// (`every_hint_source_fits_the_guidance_budget`).
 #[cfg(test)]
@@ -50,14 +51,13 @@ const METADATA_CONTAINERS: &[&str] = &[
     "error",
     "files",
     "directories",
-    "results",
+    "nodes",
     "packages",
-    "entries",
     "items",
 ];
 
 /// One guidance line: whitespace collapsed and a closing period. Never
-/// clipped: a cut hint loses the recovery it names (X11).
+/// clipped: a cut hint loses the recovery it names.
 pub(super) fn concise(value: &str) -> String {
     let mut text = value.split_whitespace().collect::<Vec<_>>().join(" ");
     if !text.is_empty() && !matches!(text.chars().last(), Some('.' | '!' | '?' | '…')) {
@@ -114,23 +114,34 @@ fn has_recovery(value: &Value) -> bool {
     false
 }
 
-/// Recovery keyed by the exact `errorCode` values the runtime emits
-/// (provider kinds, policy/AST/LSP/clone/classification codes). Codes not
-/// listed fall back to the tool hint.
+/// The one recovery table for the `errorCode` values every tool shares
+/// (provider kinds, policy, locks, input). A tool answers only for the codes
+/// it alone emits (`ToolOutput::error_hint`); any other code gets the tool's
+/// fallback hint.
 pub(super) fn error_code_hint(tool: ToolId, code: &str) -> Option<&'static str> {
     Some(match code {
         "outsideAllowedRoots" | "symlinkEscape" => SANDBOX_HINT,
-        "authentication" => "Authenticate or correct credentials; do not broaden the query.",
+        "authentication" => crate::tools::gh_shared::GITHUB_AUTH_RECOVERY_HINT,
         "permission" | "permissionDenied" => {
             "Verify access and token scopes; do not treat denial as absence."
         }
         "rateLimited" | "classificationRateLimited" => {
-            "Wait for Retry-After or the provider reset before retrying."
+            "Wait for Retry-After or the rate-limit reset before retrying."
         }
-        "timeout" | "transport" | "lockTimeout" => {
+        "timeout" | "transport" | "server" | "lockTimeout" => {
             "Retry once; if it persists, narrow scope and verify provider availability."
         }
-        "staleSnapshot" => "Discard prior pages and restart without the stale snapshot.",
+        "cancelled" => "Retry only if the operation is still needed.",
+        "responseTooLarge" => "Narrow the requested scope.",
+        "redirectDenied" => "Use the canonical allowed host and repository.",
+        "decode" => "Retry once; report a provider response incompatibility if it persists.",
+        "configuration" | "credentialStoreUnavailable" => {
+            "Correct the provider authentication and configuration."
+        }
+        "unavailable" => {
+            "The provider blocks this resource for legal reasons; retrying will not help."
+        }
+        "httpStatus" => "Check httpStatus and the message; this status is not a network failure.",
         // One code, one recovery on every tool.
         crate::policy::PATH_NOT_FOUND => crate::tools::output::VERIFY_PATH_HINT,
         crate::policy::PATH_POLICY_DENIED => crate::policy::discovery::WITHHELD_HINT,
@@ -157,8 +168,11 @@ fn error_fallback_hint(tool: ToolId, query: &Value, row: &Value) -> &'static str
 }
 
 fn add_fallback_hint(row: &mut Value, position: usize, tool: ToolId, queries: &[Value]) {
+    // An empty or failed row without a recovery of its own gets one: the
+    // code's recovery for a failure, the tool's fallback for both (an
+    // empty answer never ends bare).
     let status = row.get("status").and_then(Value::as_str);
-    if !matches!(status, Some("empty" | "error")) || has_recovery(row) {
+    if !matches!(status, Some("error" | "empty")) || has_recovery(row) {
         return;
     }
     let index = row
@@ -171,20 +185,13 @@ fn add_fallback_hint(row: &mut Value, position: usize, tool: ToolId, queries: &[
     } else {
         tool.output().fallback_hint(&query)
     };
+    if hint == crate::tools::output::NO_HINT {
+        return;
+    }
     let Some(data) = row.get_mut("data").and_then(Value::as_object_mut) else {
         return;
     };
     data.insert("hints".into(), json!([hint]));
-}
-
-fn actionable(hint: &str) -> bool {
-    const WORDS: &[&str] = &[
-        "broaden", "check", "choose", "correct", "disable", "enable", "pass", "provide", "refresh",
-        "remove", "retry", "run", "select", "set", "specify", "supply", "try", "use", "verify",
-        "wait",
-    ];
-    hint.split(|character: char| !character.is_ascii_alphabetic())
-        .any(|part| WORDS.iter().any(|word| part.eq_ignore_ascii_case(word)))
 }
 
 fn visit(value: &mut Value, recovery: bool, seen: &mut std::collections::BTreeSet<String>) {
@@ -222,19 +229,18 @@ fn visit(value: &mut Value, recovery: bool, seen: &mut std::collections::BTreeSe
     if node.contains_key("hints") {
         let mut hints = Vec::new();
         if needs_help && let Some(candidates) = node.get("hints").and_then(Value::as_array) {
-            let mut candidates: Vec<String> = candidates
+            // An ordered list: the first hint is the recovery, later ones are
+            // further findings; each keeps the one-hint budget, and a repeat
+            // anywhere in the row is stated once.
+            let candidates = candidates
                 .iter()
                 .filter_map(Value::as_str)
                 .map(concise)
-                .filter(|hint| !hint.is_empty())
-                .collect();
-            candidates.sort_by_key(|hint| std::cmp::Reverse(actionable(hint)));
+                .filter(|hint| !hint.is_empty());
             for short in candidates {
-                if seen.contains(&short) || !seen.is_empty() {
-                    continue;
+                if seen.insert(short.clone()) {
+                    hints.push(short);
                 }
-                seen.insert(short.clone());
-                hints.push(short);
             }
         }
         if hints.is_empty() {
@@ -254,14 +260,17 @@ pub(crate) fn apply_hint_policy(row: &mut Value, tool: ToolId, query: &Value) {
 
 /// Sanitize every string field, including provider diagnostics and metadata.
 /// Domain content scans alone cannot protect errors returned by a remote server.
+/// A leaf of a result that names a source-code `path` is scanned as source code
+/// (see [`ContentSecurity::sanitize_leaf`]); every other leaf, and every
+/// credential pattern, applies as before.
 pub(crate) fn sanitize_fields(
     value: &mut Value,
     security: &crate::security::ContentSecurity,
     context: &crate::runtime::ExecutionContext,
 ) -> Result<(), crate::runtime::ExecutionError> {
     context.check()?;
-    crate::security::sanitize_json(value, &mut |text| {
-        Ok::<_, crate::runtime::ExecutionError>(security.sanitize_text(text, None).content)
+    crate::security::sanitize_json(value, &mut |text, path| {
+        Ok::<_, crate::runtime::ExecutionError>(security.sanitize_leaf(text, path).content)
     })
 }
 
@@ -274,7 +283,7 @@ pub(super) fn redact_email_fields(
     context: &crate::runtime::ExecutionContext,
 ) -> Result<(), crate::runtime::ExecutionError> {
     context.check()?;
-    crate::security::sanitize_json(value, &mut |text| {
+    crate::security::sanitize_json(value, &mut |text, _| {
         Ok::<_, crate::runtime::ExecutionError>(security.redact_emails(text))
     })
 }
@@ -305,6 +314,12 @@ pub fn result_row(
     if data.get("errorCode").and_then(Value::as_str) == Some("staleSnapshot") {
         super::pages::restart_stale(tool, query, &mut data);
     }
+    let status =
+        if status != Some("error") && super::pages::settle_out_of_range(tool, query, &mut data) {
+            Some("empty")
+        } else {
+            status
+        };
     let paged = !tool.output().resource_major()
         && !super::pages::is_complete(&data)
         && super::pages::has_remaining_page(tool, &data);
@@ -314,20 +329,20 @@ pub fn result_row(
         object.insert("isPartial".into(), Value::Bool(false));
     }
     // A remaining page makes the row itself partial, whatever its nested
-    // items say.
-    if paged
-        && data.get("isPartial") != Some(&Value::Bool(true))
-        && let Some(object) = data.as_object_mut()
-    {
-        object.insert("isPartial".into(), Value::Bool(true));
+    // items say. The row's own `pagination.hasMore` with its `next` page
+    // already says so, so the flag is left to what they do not say.
+    if let Some(object) = data.as_object_mut() {
+        if paged && states_remaining_page(object) {
+            object.remove("isPartial");
+        } else if paged {
+            object.insert("isPartial".into(), Value::Bool(true));
+        }
     }
     if let Some(object) = data.as_object_mut() {
         // Request echoes: the row answers its query, it does not repeat it.
-        let echoes = crate::tools::result::INTENT_FIELDS.into_iter().chain([
-            "cache",
-            "researchSuggestions",
-            "query",
-        ]);
+        let echoes = crate::tools::result::INTENT_FIELDS
+            .into_iter()
+            .chain(["cache", "query"]);
         for key in echoes {
             object.remove(key);
         }
@@ -336,14 +351,33 @@ pub fn result_row(
             object.remove("error");
         }
     }
-    // `meta` is verbose: the verbose stage drops it unless the row asked
-    // for `extras: ["diagnostics"]`.
-    let meta = row_meta(tool, query, &data, status);
-    let mut row = json!({"index":index,"meta":meta,"data":data});
-    if let Some(status) = status {
-        row["status"] = json!(status);
+    // `meta` is a diagnostics extra: built only for a row that keeps it
+    // (`extras: ["diagnostics"]`, or a `fields` pick naming it).
+    let mut row = Map::new();
+    row.insert("index".into(), json!(index));
+    if super::extras::keeps(tool, query, "results[].meta") {
+        row.insert("meta".into(), row_meta(tool, query, &data, status));
     }
-    row
+    row.insert("data".into(), data);
+    if let Some(status) = status {
+        row.insert("status".into(), json!(status));
+    }
+    Value::Object(row)
+}
+
+/// Whether the row's own pagination (`pagination`, `filePagination`,
+/// `contentPagination`) reports `hasMore` and nothing beyond the pages makes
+/// it partial: `isPartial` would restate it. A `partialReasons` list or a
+/// `terminalLimit` is another cause, which the flag still sums up.
+fn states_remaining_page(data: &Map<String, Value>) -> bool {
+    data.get("terminalLimit") != Some(&Value::Bool(true))
+        && data
+            .get("partialReasons")
+            .and_then(Value::as_array)
+            .is_none_or(Vec::is_empty)
+        && data
+            .iter()
+            .any(|(key, block)| super::pages::is_pagination_key(key) && block["hasMore"] == true)
 }
 
 /// The diagnostics view of a row: its evidence kind and confidence, and the
@@ -387,14 +421,17 @@ fn row_meta(tool: ToolId, query: &Value, data: &Value, status: Option<&str>) -> 
 /// shared rules below remove only structure that asserts nothing: finished
 /// single-page pagination, snapshots that every continuation already
 /// carries, false/zero defaults, info-level notes, and echoes of the request.
-/// `extras: ["echo"]` keeps everything. Error rows stay whole: every field there
-/// explains the failure. Clasify rows never reach this pass; they have their
-/// own resource-major projection.
+/// `extras: ["echo"]` keeps the request echoes and `extras: ["stats"]` the
+/// full statistics block; every other rule still applies.
+/// A failed row keeps every field that explains the failure and drops only
+/// what asserts nothing there: empty arrays, the snapshot and a finished
+/// page. Clasify rows never reach this pass; they have their own
+/// resource-major projection.
 pub fn minimize_row(row: &mut Value, tool: ToolId, query: &Value) {
-    if super::extras::wants(query, crate::contracts::tool_types::ExtraKind::Echo) {
-        return;
-    }
     if row["status"] == "error" {
+        if let Some(data) = row.get_mut("data").and_then(Value::as_object_mut) {
+            minimize_error_data(data);
+        }
         return;
     }
     let Some(data) = row.get_mut("data").and_then(Value::as_object_mut) else {
@@ -414,8 +451,11 @@ pub fn minimize_row(row: &mut Value, tool: ToolId, query: &Value) {
         .filter(|key| is_removable(key))
         .filter_map(|key| data.get(key).map(|value| (key.clone(), value.clone())))
         .collect::<std::collections::BTreeMap<_, _>>();
-    minimize_data(data, query);
-    tool.output().compact(data, query);
+    let echo = super::extras::wants(query, ExtraKind::Echo);
+    minimize_data(data, tool, query, echo);
+    if !echo {
+        tool.output().compact(data, query);
+    }
     let still = |variant: &&std::collections::BTreeSet<String>| {
         variant.iter().all(|key| data.contains_key(key))
     };
@@ -434,33 +474,50 @@ pub fn minimize_row(row: &mut Value, tool: ToolId, query: &Value) {
     }
 }
 
+fn minimize_error_data(data: &mut Map<String, Value>) {
+    data.remove("snapshot");
+    data.retain(|key, value| {
+        !value.as_array().is_some_and(Vec::is_empty)
+            && (!super::pages::is_pagination_key(key) || walks_on(value))
+    });
+}
+
+/// A pagination block that routes somewhere: more pages to read, or a page
+/// past the first (it names where the page starts, and a byte window's
+/// unit).
+fn walks_on(block: &Value) -> bool {
+    block["hasMore"] == true
+        || block
+            .get("currentPage")
+            .or_else(|| block.get("page"))
+            .and_then(Value::as_u64)
+            .is_some_and(|page| page > 1)
+        || block
+            .get("offset")
+            .and_then(Value::as_u64)
+            .is_some_and(|offset| offset > 0)
+}
+
 /// Every top-level field a minimization rule can remove for this tool.
 fn is_removable(key: &str) -> bool {
     super::pages::is_pagination_key(key)
         || matches!(
             key,
-            "truncated"
-                | "isPartial"
-                | "capped"
+            "isPartial"
                 | "filesSkipped"
                 | "contentView"
                 | "operation"
                 | "type"
-                | "owner"
-                | "repo"
                 | "snapshot"
                 | "diagnostics"
-                | "stats"
-                | "committer"
-                | "messageHeadline"
+                | "matchCount"
+                | "matchedLineCount"
+                | "filesScanned"
         )
 }
 
-fn minimize_data(data: &mut Map<String, Value>, query: &Value) {
-    let more = data
-        .iter()
-        .any(|(key, value)| super::pages::is_pagination_key(key) && value["hasMore"] == true);
-    for flag in ["truncated", "isPartial", "capped"] {
+fn minimize_data(data: &mut Map<String, Value>, tool: ToolId, query: &Value, echo: bool) {
+    for flag in ["isPartial"] {
         if data.get(flag) == Some(&Value::Bool(false)) {
             data.remove(flag);
         }
@@ -471,9 +528,18 @@ fn minimize_data(data: &mut Map<String, Value>, query: &Value) {
     if data.get("contentView").and_then(Value::as_str) == Some("none") {
         data.remove("contentView");
     }
-    for key in ["operation", "type", "owner", "repo"] {
-        if data.get(key).is_some() && data.get(key) == query.get(key) {
-            data.remove(key);
+    if !echo {
+        for key in ["operation", "type", "owner", "repo"] {
+            if data.get(key).is_some() && data.get(key) == query.get(key) {
+                data.remove(key);
+            }
+        }
+    }
+    data.remove("snapshot");
+    if let Some(diagnostics) = data.get_mut("diagnostics").and_then(Value::as_array_mut) {
+        diagnostics.retain(|entry| entry["severity"] != "info");
+        if diagnostics.is_empty() {
+            data.remove("diagnostics");
         }
     }
     let limited = data.contains_key("providerLimit");
@@ -487,40 +553,17 @@ fn minimize_data(data: &mut Map<String, Value>, query: &Value) {
     }
     // A later page keeps its pagination: it names where the page starts
     // (and a byte window's unit, which keeps its text verbatim).
-    data.retain(|key, value| {
-        !super::pages::is_pagination_key(key)
-            || value["hasMore"] == true
-            || value
-                .get("currentPage")
-                .or_else(|| value.get("page"))
-                .and_then(Value::as_u64)
-                .is_some_and(|page| page > 1)
-            || value
-                .get("offset")
-                .and_then(Value::as_u64)
-                .is_some_and(|offset| offset > 0)
-    });
-    data.remove("snapshot");
-    if let Some(diagnostics) = data.get_mut("diagnostics").and_then(Value::as_array_mut) {
-        diagnostics.retain(|entry| entry["severity"] != "info");
-        if diagnostics.is_empty() {
-            data.remove("diagnostics");
-        }
-    }
-    minimize_stats(data, more);
-    // A commit's committer usually repeats its author, and the headline
-    // repeats the message's first line. A committer that differs in any
-    // field (date or email after a rebase, cherry-pick or web merge) is
-    // evidence and stays.
-    if data.get("committer").is_some() && data.get("committer") == data.get("author") {
-        data.remove("committer");
-    }
-    if let (Some(headline), Some(message)) = (
-        data.get("messageHeadline").and_then(Value::as_str),
-        data.get("message").and_then(Value::as_str),
-    ) && message.starts_with(headline)
+    // The `echo` extra keeps the pagination of a finished single page: the
+    // caller asked to see what the request resolved to, `hasMore:false`
+    // included.
+    data.retain(|key, value| !super::pages::is_pagination_key(key) || echo || walks_on(value));
+    // The stats extra asks for every total.
+    // Only the two text searches carry scan totals; astRewrite's `matchCount`
+    // sizes its edit.
+    if matches!(tool, ToolId::LocalSearch | ToolId::AstSearch)
+        && !super::extras::wants(query, ExtraKind::Stats)
     {
-        data.remove("messageHeadline");
+        minimize_search_totals(data);
     }
 }
 
@@ -594,55 +637,31 @@ fn variants_of(
     variants
 }
 
-/// Search statistics: the listed files already carry the counts. Keep the
-/// totals (occurrences, matched lines, files) only while more pages exist,
-/// and the scan scope only when nothing
-/// matched (it shows the search ran where intended). Coverage limits and
-/// unreadable-path errors remain public even on the final page: they explain
+/// Search totals, flat on `data`. The occurrence and matched-line totals
+/// stay on every page, so a view never needs a sum over its rows to say how
+/// much matched; the scan scope (`filesScanned`) stays only when nothing
+/// matched (it shows the search ran where intended). Coverage limits
+/// (`partialReasons`, `terminalLimit`), `binarySkipped` and unreadable-path
+/// errors (`fileErrors`) remain public even on the final page: they explain
 /// evidence that was not returned.
-fn minimize_stats(data: &mut Map<String, Value>, more: bool) {
+fn minimize_search_totals(data: &mut Map<String, Value>) {
+    if !data.contains_key("matchCount") {
+        return;
+    }
     let has_rows = data
         .get("files")
         .and_then(Value::as_array)
         .is_some_and(|files| !files.is_empty());
-    let Some(stats) = data.get_mut("stats").and_then(Value::as_object_mut) else {
-        return;
+    let keep = |key: &str| {
+        if has_rows {
+            matches!(key, "matchCount" | "matchedLineCount")
+        } else {
+            matches!(key, "matchCount" | "filesScanned")
+        }
     };
-    let capped = stats.get("capped").and_then(Value::as_bool) == Some(true);
-    let cap_reason = stats
-        .get("capReason")
-        .and_then(Value::as_str)
-        .is_some_and(|reason| !reason.trim().is_empty());
-    let unreadable = stats
-        .get("errorCount")
-        .and_then(Value::as_u64)
-        .is_some_and(|count| count > 0);
-    let keep_cap = |key: &str| {
-        (key == "capped" && capped)
-            || (key == "capReason" && cap_reason)
-            || (unreadable && matches!(key, "errorCount" | "firstError"))
-    };
-    if !has_rows {
-        stats.retain(|key, _| {
-            matches!(key.as_str(), "filesScanned" | "matchCount") || keep_cap(key)
-        });
-        return;
-    }
-    if more {
-        stats.retain(|key, _| {
-            matches!(
-                key.as_str(),
-                "matchCount" | "matchedLineCount" | "fileCount"
-            ) || keep_cap(key)
-        });
-    } else {
-        stats.retain(|key, _| {
-            keep_cap(key)
-                || ((capped || cap_reason || unreadable)
-                    && matches!(key.as_str(), "matchCount" | "fileCount"))
-        });
-        if stats.is_empty() {
-            data.remove("stats");
+    for key in ["matchCount", "matchedLineCount", "filesScanned"] {
+        if !keep(key) {
+            data.remove(key);
         }
     }
 }
@@ -1098,7 +1117,7 @@ mod tests {
         assert!(
             clone
                 .iter()
-                .any(|variant| variant.contains("location") && variant.contains("totalSize")),
+                .any(|variant| variant.contains("location") && variant.contains("bytes")),
             "{clone:?}"
         );
         let row = minimized(
@@ -1111,13 +1130,13 @@ mod tests {
         let clone_row = minimized(
             ToolId::GhCloneRepo,
             json!({"owner":"o","repo":"r"}),
-            json!({"totalSize":1,"location":{"localPath":"/x"}}),
+            json!({"bytes":1,"location":{"localPath":"/x"}}),
         );
         assert_eq!(
             clone_row["data"]["location"]["localPath"], "/x",
             "{clone_row}"
         );
-        assert_eq!(clone_row["data"]["totalSize"], 1, "{clone_row}");
+        assert_eq!(clone_row["data"]["bytes"], 1, "{clone_row}");
     }
 
     /// The last page of a window read keeps its pagination: its offset
@@ -1146,9 +1165,10 @@ mod tests {
     fn pagination_blocks_keep_stable_keys_on_every_tool() {
         let next = json!({"nextPage":{"tool":"ghSearchCode","query":{"queries":[{"owner":"o","page":2}]}}});
         for tool in [ToolId::GhSearchCode, ToolId::LocalSearch, ToolId::LspSearch] {
+            // The block is a stats extra; asked for, its keys are stable.
             let row = minimized(
                 tool,
-                json!({}),
+                json!({"extras":["stats"]}),
                 json!({"files":[{"path":"a"}],"next":next.clone(),"pagination":{"currentPage":1,"totalPages":2,"pageSize":5,"totalItems":7,
                     "totalItemsCapped":false,"hasMore":true,"nextPage":2,"snapshot":"s","resultId":"r"}}),
             );
@@ -1160,7 +1180,7 @@ mod tests {
         }
         let capped = minimized(
             ToolId::GhSearchRepo,
-            json!({}),
+            json!({"extras":["stats"]}),
             json!({"repositories":[],"pagination":{"totalItems":1000,"totalItemsCapped":true,"hasMore":true,"currentPage":3},
                 "providerLimit":{"reason":"providerResultCap","maxResults":1000}}),
         );
@@ -1184,20 +1204,16 @@ mod tests {
         let row = minimized(
             ToolId::LocalSearch,
             json!({"path":"/r","matchString":"x"}),
-            json!({"files":[{"path":"a.rs"}],"stats":{"matchCount":1,"filesScanned":9},
+            json!({"files":[{"path":"a.rs"}],"matchCount":1,"filesScanned":9,
                 "pagination":{"currentPage":1,"totalPages":1,"hasMore":false},
-                "snapshot":"s","searchEngine":"native","truncated":false,
+                "snapshot":"s","searchEngine":"native",
                 "diagnostics":[{"severity":"info","message":"routine"},{"severity":"warning","message":"keep"}]}),
         );
         assert!(row.get("cache").is_none(), "{row}");
         let data = &row["data"];
-        for gone in [
-            "stats",
-            "pagination",
-            "snapshot",
-            "searchEngine",
-            "truncated",
-        ] {
+        // The occurrence total stays on every view; scan accounting goes.
+        assert_eq!(data["matchCount"], 1, "{row}");
+        for gone in ["filesScanned", "pagination", "snapshot", "searchEngine"] {
             assert!(data.get(gone).is_none(), "{gone}: {row}");
         }
         assert_eq!(
@@ -1207,9 +1223,43 @@ mod tests {
         assert_eq!(data["files"][0]["path"], "a.rs");
     }
 
-    /// A committer is removed only when it repeats the author whole (the
-    /// email is a detail); a different date (rebase, cherry-pick) is commit
-    /// evidence. The parent list and emails are `extras: ["details"]`.
+    /// The parent list and emails are `extras: ["details"]`; a committer
+    /// row field the tool emitted (it differs from the author) stays.
+    /// A failed row states the error and what is evidence; empty arrays, a
+    /// finished single page and the snapshot assert nothing there.
+    #[test]
+    fn terminal_error_rows_drop_empty_single_page_and_snapshot_fields() {
+        for tool in [ToolId::AstSearch, ToolId::LocalSearch, ToolId::GhSearchCode] {
+            let mut row = json!({"index":0,"status":"error","data":{
+                "error":"boom","errorCode":"executionFailed","path":"a.rs",
+                "nodes":[],"files":[],"snapshot":"s",
+                "pagination":{"currentPage":1,"totalPages":1,"pageSize":100,"totalItems":0,"hasMore":false},
+                "diagnostics":[{"severity":"error","message":"kept evidence"}],
+                "warnings":["kept"]}});
+            minimize_row(&mut row, tool, &json!({"path":"a.rs"}));
+            let data = row["data"].as_object().expect("data");
+            let mut keys: Vec<&str> = data.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            assert_eq!(
+                keys,
+                ["diagnostics", "error", "errorCode", "path", "warnings"],
+                "{tool:?}: {row}"
+            );
+        }
+    }
+
+    /// An error row that still has a page to walk keeps its pagination.
+    #[test]
+    fn terminal_error_rows_keep_an_open_pagination() {
+        let mut row = json!({"index":0,"status":"error","data":{
+            "error":"boom","errorCode":"executionFailed",
+            "pagination":{"currentPage":1,"totalPages":3,"hasMore":true}}});
+        minimize_row(&mut row, ToolId::LocalSearch, &json!({"path":"a"}));
+        assert_eq!(row["data"]["pagination"]["hasMore"], true, "{row}");
+    }
+
+    /// The parent list and emails are `extras: ["details"]`; a committer
+    /// row field the tool emitted (it differs from the author) stays.
     #[test]
     fn commit_rows_keep_a_differing_committer_and_detail_the_parents() {
         let author = json!({"name":"Ada","email":"ada@x.dev","date":"2024-01-01T00:00:00Z"});
@@ -1224,7 +1274,7 @@ mod tests {
         let mut other_email = author.clone();
         other_email["email"] = json!("ada@y.dev");
         let same = commit(other_email, json!([]));
-        assert!(same["data"].get("committer").is_none(), "{same}");
+        assert!(same["data"]["committer"].get("email").is_none(), "{same}");
         assert!(same["data"].get("parents").is_none(), "{same}");
         assert!(same["data"]["author"].get("email").is_none(), "{same}");
         let detailed = commit(author.clone(), json!(["details"]));
@@ -1269,21 +1319,29 @@ mod tests {
         let row = minimized(
             ToolId::LocalSearch,
             json!({}),
-            json!({"files":[{"path":"a.rs"}],"stats":{"matchCount":40,"matchedLineCount":31,"fileCount":9,"bytesSearched":7},
+            json!({"files":[{"path":"a.rs"}],"matchCount":40,"matchedLineCount":31,"filesScanned":9,"bytesSearched":7,
                 "pagination":{"currentPage":1,"hasMore":true},"next":{"nextPage":{"tool":"localSearch","query":{"queries":[{"snapshot":"s"}]}}}}),
         );
         let data = &row["data"];
-        assert_eq!(data["pagination"]["hasMore"], true);
+        // An open page shows its
+        // position by default, beside the page in `next`.
+        assert_eq!(
+            data["pagination"],
+            json!({"currentPage":1,"hasMore":true}),
+            "{data}"
+        );
         // Occurrences and matched lines (the rows a walk shows) are both
         // named, so the two totals never read as one disagreeing count.
-        assert_eq!(
-            data["stats"],
-            json!({"matchCount":40,"matchedLineCount":31,"fileCount":9})
-        );
+        assert_eq!(data["matchCount"], 40, "{data}");
+        assert_eq!(data["matchedLineCount"], 31, "{data}");
+        for gone in ["filesScanned", "bytesSearched"] {
+            assert!(data.get(gone).is_none(), "{gone}: {data}");
+        }
         assert_eq!(
             data["next"]["nextPage"]["query"]["queries"][0]["snapshot"],
             "s"
         );
+        // A later page stays located without any extra.
         let later = minimized(
             ToolId::LocalSearch,
             json!({}),
@@ -1300,12 +1358,11 @@ mod tests {
         let row = minimized(
             ToolId::LocalSearch,
             json!({}),
-            json!({"stats":{"matchCount":0,"filesScanned":176,"bytesSearched":9}}),
+            json!({"matchCount":0,"filesScanned":176,"bytesSearched":9}),
         );
-        assert_eq!(
-            row["data"]["stats"],
-            json!({"matchCount":0,"filesScanned":176})
-        );
+        assert_eq!(row["data"]["matchCount"], 0, "{row}");
+        assert_eq!(row["data"]["filesScanned"], 176, "{row}");
+        assert!(row["data"].get("bytesSearched").is_none(), "{row}");
     }
 
     #[test]
@@ -1320,28 +1377,28 @@ mod tests {
                 json!({}),
                 json!({
                     "files": files,
-                    "stats": {"capped": true, "capReason": "maxCollectedFiles", "matchCount": 10002,
-                        "fileCount": 10002, "filesScanned": 10002, "bytesSearched": 70014},
+                    "partialReasons": ["maxCollectedFiles"], "matchCount": 10002,
+                    "filesScanned": 10002, "bytesSearched": 70014,
                     "pagination": {"currentPage": if more { 1 } else { 20 }, "hasMore": more},
                     "isPartial": true,
                     "terminalLimit": !more,
                 }),
             );
-            assert_eq!(row["data"]["stats"]["capped"], true, "{row}");
             assert_eq!(
-                row["data"]["stats"]["capReason"], "maxCollectedFiles",
+                row["data"]["partialReasons"],
+                json!(["maxCollectedFiles"]),
                 "{row}"
             );
             assert_eq!(row["data"]["isPartial"], true, "{row}");
-            assert_eq!(row["data"]["stats"]["matchCount"], 10002, "{row}");
+            assert_eq!(row["data"]["matchCount"], 10002, "{row}");
             assert_eq!(row["data"]["terminalLimit"] == true, !more, "{row}");
-            assert!(row["data"]["stats"].get("bytesSearched").is_none(), "{row}");
+            assert!(row["data"].get("bytesSearched").is_none(), "{row}");
             crate::contracts::validate_output("localSearch", &json!({"results": [row]}))
                 .expect("minimized cap diagnostics obey the canonical output schema");
         }
     }
 
-    /// The unreadable-path warning names `stats.firstError`: the failure
+    /// The unreadable-path warning names `fileErrors.first`: the failure
     /// count and first failure stay public on every page shape.
     #[test]
     fn unreadable_paths_keep_their_error_stats_on_every_page() {
@@ -1355,25 +1412,45 @@ mod tests {
                 json!({}),
                 json!({
                     "files": files,
-                    "stats": {"matchCount": 1, "fileCount": 1, "filesScanned": 2,
-                        "bytesSearched": 9, "errorCount": 1,
-                        "firstError": "/r/b.txt: Permission denied (os error 13)"},
+                    "matchCount": 1, "filesScanned": 2, "bytesSearched": 9,
+                    "fileErrors": {"count": 1,
+                        "first": "/r/b.txt: Permission denied (os error 13)"},
                     "pagination": {"currentPage": 1, "hasMore": more},
-                    "warnings": ["1 path(s) could not be read (see stats.firstError), so absence is not proven."],
+                    "warnings": ["1 path(s) could not be read (see fileErrors.first), so absence is not proven."],
                     "isPartial": true,
                     "terminalLimit": !more,
                 }),
             );
-            let stats = &row["data"]["stats"];
-            assert_eq!(stats["errorCount"], 1, "{row}");
+            let errors = &row["data"]["fileErrors"];
+            assert_eq!(errors["count"], 1, "{row}");
             assert_eq!(
-                stats["firstError"], "/r/b.txt: Permission denied (os error 13)",
+                errors["first"], "/r/b.txt: Permission denied (os error 13)",
                 "{row}"
             );
-            assert!(stats.get("bytesSearched").is_none(), "{row}");
+            assert!(row["data"].get("bytesSearched").is_none(), "{row}");
             crate::contracts::validate_output("localSearch", &json!({"results": [row]}))
                 .expect("minimized error stats obey the canonical output schema");
         }
+    }
+
+    #[test]
+    fn a_complete_page_that_keeps_binary_skipped_keeps_the_required_match_count() {
+        let row = minimized(
+            ToolId::LocalSearch,
+            json!({}),
+            json!({
+                "files": [{ "path": "a.rs", "matches": [{"line": 1, "value": "fn parse()"}] }],
+                "matchCount": 1, "matchedLineCount": 1,
+                "filesScanned": 3, "bytesSearched": 9, "binarySkipped": 2,
+                "pagination": {"currentPage": 1, "hasMore": false},
+            }),
+        );
+        let data = &row["data"];
+        assert_eq!(data["binarySkipped"], 2, "{row}");
+        assert_eq!(data["matchCount"], 1, "{row}");
+        assert!(data.get("bytesSearched").is_none(), "{row}");
+        crate::contracts::validate_output("localSearch", &json!({"results": [row]}))
+            .expect("surviving totals obey the canonical output schema");
     }
 
     #[test]
@@ -1382,17 +1459,17 @@ mod tests {
             ToolId::AstTopology,
             json!({"operation":"dependencies"}),
             json!({"operation":"dependencies","confidence":"low",
-                "coverage":{"basis":"syntactic","diagnosticCounts":{"x":5},"diagnostics":[{"file":"a"}]},
-                "completeness":{"graph":"coverage-incomplete"}}),
+                "coverage":{"state":"partial","parts":{"graph":"coverage-incomplete"},
+                    "basis":"syntactic","diagnosticCounts":{"x":5},"diagnostics":[{"file":"a"}]}}),
         );
         let data = &topology["data"];
         assert!(data.get("source").is_none(), "request echo: {topology}");
         assert_eq!(data["confidence"], "low");
         assert_eq!(
             data["coverage"],
-            json!({"basis":"syntactic","diagnosticCounts":{"x":5},"diagnostics":[{"file":"a"}]})
+            json!({"state":"partial","parts":{"graph":"coverage-incomplete"},
+                "basis":"syntactic","diagnosticCounts":{"x":5},"diagnostics":[{"file":"a"}]})
         );
-        assert_eq!(data["completeness"]["graph"], "coverage-incomplete");
         let fetch = minimized(
             ToolId::LocalFetch,
             json!({}),
@@ -1411,8 +1488,40 @@ mod tests {
         assert_eq!(stats["data"], file);
     }
 
+    /// `extras: ["stats"]` returns the whole statistics block, also on a
+    /// complete page where the default keeps only the match totals.
     #[test]
-    fn echoes_go_only_when_they_equal_the_request_and_echo_extras_keep_all() {
+    fn the_stats_extra_keeps_full_stats() {
+        let totals = json!({"matchCount":1,"matchedLineCount":1,
+            "filesScanned":24,"bytesSearched":442552});
+        let mut data = json!({"path":"/r","files":[{"path":"a","matches":[{"line":1}]}]});
+        data.as_object_mut()
+            .expect("object")
+            .extend(totals.as_object().expect("object").clone());
+        let row = minimized(
+            ToolId::LocalSearch,
+            json!({"path":"/r","matchString":"x","extras":["stats"]}),
+            data.clone(),
+        );
+        for (key, value) in totals.as_object().expect("object") {
+            assert_eq!(&row["data"][key], value, "{key}: {row}");
+        }
+        let default = minimized(
+            ToolId::LocalSearch,
+            json!({"path":"/r","matchString":"x"}),
+            data,
+        );
+        // The occurrence and matched-line totals show on every view with
+        // rows; only the scan accounting is a stats extra.
+        assert_eq!(default["data"]["matchCount"], 1, "{default}");
+        assert_eq!(default["data"]["matchedLineCount"], 1, "{default}");
+        for gone in ["filesScanned", "bytesSearched"] {
+            assert!(default["data"].get(gone).is_none(), "{gone}: {default}");
+        }
+    }
+
+    #[test]
+    fn echoes_go_only_when_they_equal_the_request_and_echo_extras_keep_them() {
         let data = json!({"owner":"o","repo":"other","path":"a.rs"});
         let row = minimized(
             ToolId::GhGetFileContent,
@@ -1430,9 +1539,34 @@ mod tests {
             data.clone(),
         );
         assert_eq!(echo["data"], data);
+        // Echo keeps request echoes only: snapshots and finished stats that
+        // restate nothing of the request still go.
+        let echo = minimized(
+            ToolId::LocalSearch,
+            json!({"path":"/r","matchString":"x","extras":["echo"]}),
+            json!({"path":"/r","snapshot":"s","files":[{"path":"a","matches":[{"line":1}]}],
+                "matchCount":1,"bytesSearched":9}),
+        );
+        assert!(echo["data"].get("snapshot").is_none(), "{echo}");
+        assert!(echo["data"].get("bytesSearched").is_none(), "{echo}");
+        // A finished single page drops its pagination by default and
+        // states it (`hasMore:false`) when the caller asks for echoes.
+        let finished = json!({"commits":[{"commitSha":"a"}],
+            "pagination":{"currentPage":1,"pageSize":100,"hasMore":false}});
+        let query = json!({"operation":"commit","owner":"o","repo":"r","pageSize":100});
+        let default = minimized(ToolId::GhSearchHistory, query.clone(), finished.clone());
+        assert!(default["data"].get("pagination").is_none(), "{default}");
+        let mut asked = query;
+        asked["extras"] = json!(["echo"]);
+        let echo = minimized(ToolId::GhSearchHistory, asked, finished.clone());
+        assert_eq!(echo["data"]["pagination"], finished["pagination"], "{echo}");
         let mut error = json!({"index":0,"status":"error","data":{"error":"x","snapshot":"s"}});
         minimize_row(&mut error, ToolId::LocalSearch, &json!({}));
-        assert_eq!(error["data"]["snapshot"], "s", "error rows stay whole");
+        assert!(
+            error["data"].get("snapshot").is_none(),
+            "an error row has no pages to pin: {error}"
+        );
+        assert_eq!(error["data"]["error"], "x", "{error}");
     }
 
     use super::*;
@@ -1497,10 +1631,9 @@ mod tests {
             error_hint("ghSearchCode", &query, "rateLimited", "slow down").contains("Retry-After")
         );
         // A code merely containing "auth" is not an authentication failure.
-        assert_eq!(
-            error_hint("ghSearchCode", &query, "authorizationPending", "x"),
-            "Broaden keywords or remove filters."
-        );
+        // The tool's fallback names its own advice.
+        let fallback = error_hint("ghSearchCode", &query, "authorizationPending", "x");
+        assert!(fallback.contains("unproven absence"), "{fallback}");
         // The sandbox hint keys on the dedicated code, never on message text.
         for tool in ["localSearch", "localFetch", "lspSearch", "astRewrite"] {
             assert!(
@@ -1953,7 +2086,7 @@ mod tests {
 
     #[test]
     fn path_compaction_never_rewrites_evidence_or_executable_queries() {
-        let data = json!({"path":"/repo/src/a.ts","content":"/repo/src/a.ts","pagination":{"hasMore":true},"next":{"continue":{"tool":"localFetch","query":{"queries":[{"path":"/repo/src/a.ts","offset":2}]}}}});
+        let data = json!({"path":"/repo/src/a.ts","content":"/repo/src/a.ts","pagination":{"hasMore":true},"next":{"continueWindow":{"tool":"localFetch","query":{"queries":[{"path":"/repo/src/a.ts","offset":2}]}}}});
         let output = envelope(vec![result_row(
             ToolId::from_name("localFetch").expect("known tool"),
             0,
@@ -1965,7 +2098,7 @@ mod tests {
         assert_eq!(output["results"][0]["data"]["path"], "a.ts");
         assert_eq!(output["results"][0]["data"]["content"], "/repo/src/a.ts");
         assert_eq!(
-            output.pointer("/results/0/data/next/continue/query/queries/0/path"),
+            output.pointer("/results/0/data/next/continueWindow/query/queries/0/path"),
             Some(&json!("/repo/src/a.ts"))
         );
         assert_eq!(
@@ -2101,6 +2234,28 @@ mod tests {
         );
     }
 
+    /// A stale row ends the page: its pagination says `hasMore:false` and no
+    /// page continuation survives beside the restart.
+    #[test]
+    fn a_stale_snapshot_row_ends_the_page() {
+        let query = json!({"path":"src","matchString":"f","page":2,"snapshot":"s1"});
+        let row = result_row(
+            ToolId::LocalSearch,
+            0,
+            &query,
+            json!({
+                "errorCode":"staleSnapshot","error":"x",
+                "pagination":{"currentPage":2,"totalPages":5,"hasMore":true},
+                "next":{"nextPage":{"tool":"localSearch","query":{"queries":[{"page":3}]}}}
+            }),
+            Some("error"),
+        );
+        let data = &row["data"];
+        assert_eq!(data["pagination"]["hasMore"], false, "{data}");
+        assert!(data["next"].get("nextPage").is_none(), "{data}");
+        assert_eq!(data["next"]["restart"]["tool"], "localSearch", "{data}");
+    }
+
     #[test]
     fn incomplete_evidence_requires_executable_continuation_or_terminal_diagnostic() {
         let missing = result_row(
@@ -2131,12 +2286,12 @@ mod tests {
     /// `expand*`, `retry*`) is not complete, whatever the tool reported.
     #[test]
     fn a_row_with_a_next_page_is_never_complete() {
-        let page = json!({"tool":"astSearch","query":{"queries":[{"path":".","pattern":"f($A)","captureText":true}]}});
+        let page = json!({"tool":"astSearch","query":{"queries":[{"path":".","pattern":"f($A)","scanOffset":100}]}});
         let row = result_row(
             ToolId::AstSearch,
             0,
             &json!({"extras":["diagnostics"]}),
-            json!({"files":[],"next":{"expandCaptures":page}}),
+            json!({"files":[],"next":{"expandScan":page}}),
             None,
         );
         assert_eq!(row.pointer("/data/isPartial"), Some(&json!(true)), "{row}");
@@ -2149,7 +2304,7 @@ mod tests {
             ToolId::LocalFetch,
             0,
             &json!({}),
-            json!({"path":"a","isPartial":false,"next":{"continue":page}}),
+            json!({"path":"a","isPartial":false,"next":{"continueWindow":page}}),
             None,
         );
         assert_eq!(
@@ -2176,15 +2331,74 @@ mod tests {
             ToolId::AstRewrite,
             0,
             &json!({}),
-            json!({"complete":true,"next":{"apply":page,"restart":page}}),
+            json!({"coverage":{"state":"complete"},"next":{"apply":page,"restart":page}}),
             None,
         );
         assert_eq!(
-            preview.pointer("/data/complete"),
-            Some(&json!(true)),
+            preview.pointer("/data/coverage/state"),
+            Some(&json!("complete")),
             "{preview}"
         );
         assert!(preview.pointer("/data/isPartial").is_none(), "{preview}");
+    }
+
+    /// `isPartial` is the umbrella flag for a row that does not cover its
+    /// scope. A row whose own `pagination.hasMore` and `next` page already say
+    /// so, with no other reason, states it once; any other cause keeps it.
+    #[test]
+    fn is_partial_is_dropped_only_where_pagination_and_next_already_say_it() {
+        let page = json!({"tool":"localSearch","query":{"queries":[{"path":".","matchString":"x","page":2}]}});
+        let paged = |extra: Value| {
+            let mut data = json!({"files":[{"path":"a"}],"isPartial":true,
+                "pagination":{"currentPage":1,"totalPages":2,"hasMore":true},
+                "next":{"nextPage":page}});
+            for (key, value) in extra.as_object().expect("object") {
+                data[key] = value.clone();
+            }
+            result_row(ToolId::LocalSearch, 0, &json!({}), data, None)
+        };
+        let plain = paged(json!({}));
+        assert!(plain["data"].get("isPartial").is_none(), "{plain}");
+        assert_eq!(plain["data"]["pagination"]["hasMore"], true, "{plain}");
+        assert!(plain["data"]["next"]["nextPage"].is_object(), "{plain}");
+        let injected = result_row(
+            ToolId::LocalSearch,
+            0,
+            &json!({}),
+            json!({"files":[{"path":"a"}],"pagination":{"currentPage":1,"hasMore":true},
+                "next":{"nextPage":page}}),
+            None,
+        );
+        assert!(injected["data"].get("isPartial").is_none(), "{injected}");
+        for (name, extra) in [
+            (
+                "partialReasons",
+                json!({"partialReasons":["providerResultCap"]}),
+            ),
+            ("terminalLimit", json!({"terminalLimit":true})),
+        ] {
+            let row = paged(extra);
+            assert_eq!(row["data"]["isPartial"], true, "{name}: {row}");
+        }
+        // Only a file's own match pagination says more: the row still must.
+        let nested = result_row(
+            ToolId::LocalSearch,
+            0,
+            &json!({}),
+            json!({"files":[{"path":"a","pagination":{"hasMore":true}}],
+                "next":{"nextMatchPage":page}}),
+            None,
+        );
+        assert_eq!(nested["data"]["isPartial"], true, "{nested}");
+        // A partial row with no page to read keeps the flag.
+        let stopped = result_row(
+            ToolId::LocalSearch,
+            0,
+            &json!({}),
+            json!({"files":[{"path":"a"}],"isPartial":true}),
+            None,
+        );
+        assert_eq!(stopped["data"]["isPartial"], true, "{stopped}");
     }
 
     #[test]
@@ -2205,10 +2419,10 @@ mod tests {
             ToolId::from_name("ghGetHistoryItem").expect("known tool"),
             0,
             &json!({"operation":"compare"}),
-            json!({"compareStatus":"ahead","commits":[]}),
+            json!({"aheadBy":2,"commits":[]}),
             None,
         );
-        assert_eq!(row.pointer("/data/compareStatus"), Some(&json!("ahead")));
+        assert_eq!(row.pointer("/data/aheadBy"), Some(&json!(2)));
     }
 
     #[test]
@@ -2252,6 +2466,28 @@ mod tests {
         assert_eq!(
             row["meta"]["diagnostics"]["hints"].as_array().map(Vec::len),
             Some(1)
+        );
+    }
+
+    /// `hints.text` is an ordered list: the recovery first, then each further
+    /// finding in the order the tool wrote it, a repeat once, none lost.
+    #[test]
+    fn hints_are_an_ordered_list_that_keeps_every_finding() {
+        let mut row = json!({"index":0,"status":"empty",
+        "data":{"hints":[
+            "No matches under src.",
+            "2 entries sit behind skipped paths (build/); the lead lists them.",
+            "No matches under src.",
+            "Another finding."
+        ]}});
+        apply_hint_policy(&mut row, ToolId::LocalSearch, &json!({}));
+        assert_eq!(
+            row["data"]["hints"],
+            json!([
+                "No matches under src.",
+                "2 entries sit behind skipped paths (build/); the lead lists them.",
+                "Another finding."
+            ])
         );
     }
 
@@ -2326,7 +2562,7 @@ mod tests {
         );
     }
 
-    /// E6: one code, one recovery hint. A missing path gets the same hint
+    /// One code, one recovery hint. A missing path gets the same hint
     /// on every tool that reports `pathNotFound`.
     #[test]
     fn path_errors_have_one_hint_on_every_tool() {
@@ -2430,7 +2666,6 @@ mod tests {
         for (code, expected) in [
             ("outsideAllowedRoots", "allowed root"),
             ("structural.query.compileFailed", "syntaxTree"),
-            ("fileTooLarge", "smaller"),
             ("languageRequired", "language"),
             ("languageUnsupported", "language"),
             ("languageFileRequired", "languageGlobs"),
@@ -2450,6 +2685,176 @@ mod tests {
             assert!(hint.contains(expected), "{code}: {hint}");
             assert!(!hint.contains("Broaden the syntax"), "{code}: {hint}");
         }
+        // A parse limit is its typed error alone: no fallback text.
+        let mut row = json!({"index":0,"status":"error",
+            "data":{"error":"failed","errorCode":"fileTooLarge","terminalLimit":true}});
+        apply_hint_policy(&mut row, ToolId::AstSearch, &query);
+        assert!(row["data"].get("hints").is_none(), "{row}");
+    }
+
+    /// A page past the end is one shared outcome on every tool: status
+    /// `empty`, a `reason` naming the page and the page count, and a
+    /// `next.restart` at page 1 without the page cursors.
+    /// The empty fallback names the filter that most likely hid the
+    /// answer, in each tool's own vocabulary.
+    #[test]
+    fn empty_fallbacks_name_the_tools_own_filters() {
+        let hint = |tool: ToolId, query: Value| tool.output().fallback_hint(&query);
+        for (tool, query, needle) in [
+            (
+                ToolId::GhSearchCode,
+                json!({"extensions":["rs"]}),
+                "extensions",
+            ),
+            (ToolId::GhSearchCode, json!({"matchIn":"path"}), "path"),
+            (
+                ToolId::GhSearchCode,
+                json!({"keywords":["x"]}),
+                "unproven absence",
+            ),
+            (
+                ToolId::GhSearchCode,
+                json!({"keywords":["x","y"]}),
+                "keywords",
+            ),
+            (ToolId::GhSearchRepo, json!({"topics":["a"]}), "topics"),
+            (ToolId::GhSearchRepo, json!({"keywords":["x"]}), "keywords"),
+            (ToolId::GhStructure, json!({"include":["*.rs"]}), "include"),
+            (ToolId::GhStructure, json!({"path":"src"}), "path"),
+            (
+                ToolId::ArtifactSearch,
+                json!({"packageName":"x"}),
+                "packageName",
+            ),
+            (
+                ToolId::ArtifactSearch,
+                json!({"keywords":["x"]}),
+                "keywords",
+            ),
+            (
+                ToolId::StructureSearch,
+                json!({"operation":"files","extensions":["rs"]}),
+                "extensions",
+            ),
+            (
+                ToolId::StructureSearch,
+                json!({"operation":"tree","path":"."}),
+                "path",
+            ),
+        ] {
+            let text = hint(tool, query.clone());
+            assert!(text.contains(needle), "{tool:?} {query}: {text}");
+            assert!(
+                text.chars().count() <= MAX_GUIDANCE_CHARS,
+                "{tool:?}: {text}"
+            );
+        }
+        // Filters differ, so the advice differs.
+        assert_ne!(
+            hint(ToolId::GhSearchCode, json!({"extensions":["rs"]})),
+            hint(ToolId::GhSearchCode, json!({"keywords":["x"]}))
+        );
+    }
+
+    #[test]
+    fn an_out_of_range_page_is_one_shared_empty_outcome() {
+        let lsp = json!({"operation":"references","path":"a.rs","symbolName":"x","line":1});
+        for (tool, base) in [
+            (ToolId::LocalSearch, json!({"path":".","matchString":"x"})),
+            (ToolId::LspSearch, lsp),
+            (ToolId::StructureSearch, json!({"path":"."})),
+            (
+                ToolId::AstSearch,
+                json!({"path":".","operation":"match","pattern":"x"}),
+            ),
+            (ToolId::LocalFetch, json!({"path":"a.rs"})),
+        ] {
+            let mut query = base.clone();
+            query["page"] = json!(99);
+            query["snapshot"] = json!("s");
+            // A tool's own partial signals on a page past the end restate
+            // nothing: no page is left to read, `next.restart` is the lead.
+            let data = json!({"files":[],"isPartial":true,"terminalLimit":true,
+                "partialReasons":["pageOutOfRange"],"pagination":{"currentPage":99,
+                "totalPages":4,"totalItems":10,"hasMore":false,"outOfRange":true}});
+            let row = result_row(tool, 0, &query, data, None);
+            assert_eq!(row["status"], "empty", "{tool}: {row}");
+            for signal in ["isPartial", "terminalLimit", "partialReasons"] {
+                assert!(row["data"].get(signal).is_none(), "{tool} {signal}: {row}");
+            }
+            assert_eq!(row["data"]["reason"], "page 99 of 4", "{tool}: {row}");
+            assert_eq!(
+                row["data"]["next"]["restart"]["query"]["queries"][0], base,
+                "{tool}: {row}"
+            );
+            assert!(row["data"].get("error").is_none(), "{tool}: {row}");
+        }
+        // A tool that already led with its own restart keeps it.
+        let own = json!({"files":[],"next":{"restart":{"tool":"localFetch","query":{"queries":[{"path":"x"}]}}},
+            "pagination":{"currentPage":3,"totalPages":2,"hasMore":false,"outOfRange":true}});
+        let row = result_row(ToolId::LocalFetch, 0, &json!({"path":"a.rs"}), own, None);
+        assert_eq!(
+            row["data"]["next"]["restart"]["query"]["queries"][0]["path"], "x",
+            "{row}"
+        );
+        // An in-range last page is a plain result, never this outcome.
+        let last = json!({"files":[{"path":"a"}],"pagination":{"currentPage":4,"totalPages":4,"hasMore":false}});
+        let row = result_row(
+            ToolId::LocalSearch,
+            0,
+            &json!({"path":".","matchString":"x"}),
+            last,
+            None,
+        );
+        assert!(row.get("status").is_none(), "{row}");
+        assert!(row["data"].get("reason").is_none(), "{row}");
+    }
+
+    /// A named file page past the end (`filePagination`) settles like the row's
+    /// own `pagination`: an empty row, the page named, and a restart.
+    #[test]
+    fn a_file_page_past_the_end_is_the_same_shared_empty_outcome() {
+        let query = json!({"operation":"commit","owner":"o","repo":"r","ref":"abc","page":99});
+        let data = json!({"commitSha":"abc","files":[],"isPartial":true,
+            "filePagination":{"currentPage":99,"totalPages":1,"pageSize":30,"totalItems":2,
+                "hasMore":false,"outOfRange":true}});
+        let row = result_row(ToolId::GhGetHistoryItem, 0, &query, data, None);
+        assert_eq!(row["status"], "empty", "{row}");
+        assert_eq!(row["data"]["reason"], "page 99 of 1", "{row}");
+        assert!(row["data"].get("isPartial").is_none(), "{row}");
+        let restart = &row["data"]["next"]["restart"]["query"]["queries"][0];
+        assert_eq!(restart["ref"], "abc", "{row}");
+        assert!(restart.get("page").is_none(), "{row}");
+    }
+
+    /// A bare empty row (no hint, no lead) gets its tool's own fallback
+    /// tip, shaped by the query; a recovery the tool already stated stays the
+    /// row's one hint.
+    #[test]
+    fn a_bare_empty_row_gets_its_tools_fallback_hint() {
+        for tool in ToolId::ALL {
+            let query = json!({});
+            let mut row = json!({"index":0,"status":"empty","data":{"files":[]}});
+            apply_hint_policy(&mut row, tool, &query);
+            let hint = row["data"]["hints"][0].as_str().unwrap_or_default();
+            assert_eq!(
+                hint,
+                concise(tool.output().fallback_hint(&query)),
+                "{tool}: {row}"
+            );
+        }
+        let mut stated = json!({"index":0,"status":"empty",
+            "data":{"hints":["Own recovery."],"files":[]}});
+        apply_hint_policy(&mut stated, ToolId::LocalSearch, &json!({}));
+        assert_eq!(stated["data"]["hints"], json!(["Own recovery."]));
+        let mut led = json!({"index":0,"status":"empty",
+            "data":{"next":{"restart":{"tool":"localSearch","query":{"queries":[{"path":"."}]}}}}});
+        apply_hint_policy(&mut led, ToolId::LocalSearch, &json!({}));
+        assert!(led["data"].get("hints").is_none(), "{led}");
+        // A successful row is never given one.
+        let mut found = json!({"index":0,"data":{"files":[{"path":"a"}]}});
+        apply_hint_policy(&mut found, ToolId::LocalSearch, &json!({}));
+        assert!(found["data"].get("hints").is_none(), "{found}");
     }
 
     fn sanitize_context() -> crate::runtime::ExecutionContext {
@@ -2469,7 +2874,7 @@ mod tests {
         let mut value = json!({
             "content": "token ghp_secretvalue12",
             "next": {
-                "continue": {
+                "continueWindow": {
                     "tool": "localFetch",
                     "query": {"queries":[{"path": "/repo/ghp_secretvalue12.rs", "offset": 2}]},
                     "confidence": "exact"
@@ -2481,7 +2886,7 @@ mod tests {
         let security = crate::security::ContentSecurity::new();
         sanitize_fields(&mut value, &security, &context).expect("sanitize");
         assert_eq!(
-            value.pointer("/next/continue/query/queries/0/path"),
+            value.pointer("/next/continueWindow/query/queries/0/path"),
             Some(&json!("/repo/ghp_secretvalue12.rs"))
         );
         assert_eq!(
@@ -2490,7 +2895,7 @@ mod tests {
         );
         // The executable tool identifier survives verbatim.
         assert_eq!(
-            value.pointer("/next/continue/query/queries/0/offset"),
+            value.pointer("/next/continueWindow/query/queries/0/offset"),
             Some(&json!(2))
         );
     }
@@ -2529,6 +2934,46 @@ mod tests {
         );
     }
 
+    /// File text a tool returns beside its source-code `path`
+    /// is not re-redacted as YAML by the output net, while every credential in
+    /// it, and `password:` in config files, stay redacted.
+    #[test]
+    fn output_net_applies_source_code_context_from_the_result_path() {
+        let context = sanitize_context();
+        let security = crate::security::ContentSecurity::new();
+        let member = "interface Cfg {\n  password: hunter2hunter2hunter2;\n}\n";
+        let token = format!("ghp_{}", "a".repeat(37));
+        let pem =
+            "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAxyz\n-----END RSA PRIVATE KEY-----";
+        let run = |path: &str, content: &str| {
+            let mut value = json!({"files":[{"path": path, "matches":[{"value": content}]}]});
+            sanitize_fields(&mut value, &security, &context).expect("sanitize");
+            value["files"][0]["matches"][0]["value"]
+                .as_str()
+                .expect("value")
+                .to_owned()
+        };
+        for path in ["src/a.ts", "crates/b.rs"] {
+            assert_eq!(run(path, member), member, "{path}");
+            let credential = format!("const t = \"{token}\";\n{pem}\n");
+            let out = run(path, &credential);
+            assert!(!out.contains(&token) && !out.contains("MIIEow"), "{out}");
+        }
+        for path in ["config/app.yaml", ".env", "Procfile", ""] {
+            let out = run(path, member);
+            assert!(!out.contains("hunter2"), "{path}: {out}");
+        }
+        // No `path` anywhere: the pathless net applies as before.
+        let mut bare = json!({"content": member});
+        sanitize_fields(&mut bare, &security, &context).expect("sanitize");
+        assert!(
+            !bare["content"]
+                .as_str()
+                .expect("content")
+                .contains("hunter2")
+        );
+    }
+
     #[test]
     fn sanitizer_redacts_real_secret_in_next_query_and_location() {
         // A real GitHub token embedded in a continuation query or a location
@@ -2536,7 +2981,7 @@ mod tests {
         let token = format!("ghp_{}", "a".repeat(37));
         let mut value = json!({
             "next": {
-                "continue": {
+                "continueWindow": {
                     "tool": "localFetch",
                     "query": {"queries":[{"path": format!("/repo/{token}.rs")}]}
                 }
@@ -2548,11 +2993,11 @@ mod tests {
         sanitize_fields(&mut value, &security, &context).expect("sanitize");
         // Tool preserved so the call is still routable.
         assert_eq!(
-            value.pointer("/next/continue/tool"),
+            value.pointer("/next/continueWindow/tool"),
             Some(&json!("localFetch"))
         );
         let query_path = value
-            .pointer("/next/continue/query/queries/0/path")
+            .pointer("/next/continueWindow/query/queries/0/path")
             .and_then(Value::as_str)
             .expect("query path");
         assert!(!query_path.contains("ghp_"), "token leaked in query path");

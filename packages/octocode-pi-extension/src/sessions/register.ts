@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { Text } from '@earendil-works/pi-tui';
-import { repoKey, sharedAgentDb } from '../agentdb/db.js';
+import { sharedAgentDb } from '../agentdb/db.js';
+import { currentSessionId, repoKey } from '../shared/home.js';
 import type { Subcommands } from '../shared/commands.js';
-import { currentSessionId } from '../shared/home.js';
 import { expandKey, plural } from '../shared/render.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { addUsage, clipText, contentText, emptyUsage, errorMessage } from '../shared/util.js';
@@ -30,10 +30,19 @@ interface SessionsOptions {
 
 type Entry = { type?: string; timestamp?: string; message?: { role?: string; usage?: unknown } };
 
-/** Cost and tokens of a whole session, read once at start; later replies are added as they end. */
-function totals(entries: readonly Entry[]): ReturnType<typeof emptyUsage> {
+/**
+ * Cost and tokens of a session, read once at start; later replies are added as they end. A fork (or clone) starts with
+ * its parent's history copied in, entries keeping their original times: those were paid for in the parent, so with a
+ * `parentSession` only entries from the fork's own start (its header time) on count.
+ */
+function totals(entries: readonly Entry[], header?: { timestamp?: string; parentSession?: string } | null): ReturnType<typeof emptyUsage> {
+  const forkedAt = header?.parentSession ? Date.parse(header.timestamp ?? '') : Number.NaN;
   const usage = emptyUsage();
-  for (const entry of entries) if (entry.type === 'message' && entry.message?.role === 'assistant') addUsage(usage, entry.message.usage);
+  for (const entry of entries) {
+    if (entry.type !== 'message' || entry.message?.role !== 'assistant') continue;
+    if (Number.isFinite(forkedAt) && Date.parse(entry.timestamp ?? '') < forkedAt) continue;
+    addUsage(usage, entry.message.usage);
+  }
   return usage;
 }
 
@@ -119,7 +128,7 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
     pending = undefined;
     const id = ctx.sessionManager.getSessionId();
     const entries = (ctx.sessionManager.getEntries?.() ?? []) as readonly Entry[];
-    usage = totals(entries);
+    usage = totals(entries, ctx.sessionManager.getHeader?.());
     safely(ctx, (sessions) => {
       const previous = sessions.get(id);
       const resumed = event?.reason === 'resume' || (event?.reason === 'startup' && hasUserMessage(entries));

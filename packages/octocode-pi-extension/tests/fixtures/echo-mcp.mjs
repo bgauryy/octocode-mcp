@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 
-const server = new McpServer({ name: 'echo', version: '1.0.0' }, { instructions: 'Echo test server.' });
+const server = new McpServer({ name: 'echo', version: '1.0.0' }, { instructions: process.env.ECHO_INSTRUCTIONS ?? 'Echo test server.' });
 server.registerTool(
   'shout',
   { description: 'Uppercase the given text', inputSchema: z.object({ text: z.string() }) },
@@ -33,12 +33,22 @@ server.registerTool(
   { description: 'Report the client roots', inputSchema: z.object({}) },
   async () => ({ content: [{ type: 'text', text: JSON.stringify((await server.server.listRoots()).roots) }] }),
 );
+let late;
 server.registerTool(
   'grow',
   { description: 'Register a new tool at runtime', inputSchema: z.object({}) },
   async () => {
-    server.registerTool('late', { description: 'Added after startup', inputSchema: z.object({}) }, async () => ({ content: [{ type: 'text', text: 'late tool works' }] }));
+    late ??= server.registerTool('late', { description: 'Added after startup', inputSchema: z.object({}) }, async () => ({ content: [{ type: 'text', text: 'late tool works' }] }));
     return { content: [{ type: 'text', text: 'grown' }] };
+  },
+);
+server.registerTool(
+  'shrink',
+  { description: 'Remove the runtime tool again', inputSchema: z.object({}) },
+  async () => {
+    late?.remove();
+    late = undefined;
+    return { content: [{ type: 'text', text: 'shrunk' }] };
   },
 );
 server.registerTool(
@@ -53,5 +63,10 @@ server.registerTool(
     setTimeout(() => process.exit(0), 50);
     return { content: [{ type: 'text', text: 'bye' }] };
   },
+);
+server.registerTool(
+  'crash',
+  { description: 'Die while answering', inputSchema: z.object({}) },
+  async () => process.exit(0),
 );
 await server.connect(new StdioServerTransport());

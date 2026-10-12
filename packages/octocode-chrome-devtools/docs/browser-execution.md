@@ -58,7 +58,7 @@ Typed CLI/MCP execution replies return direct `data`, a compact `flow`, or a cap
 For web content and arbitrary CDP text, use Octocode on the returned `search.paths`. Supply a task-specific literal; preserve the returned capture-search flags because artifacts are hidden and ignored. Run from the capture workspace. Inspect Octocode's live schema before constructing an unfamiliar query.
 
 ```sh
-npx octocode localSearch '{"queries":[{"path":"<capture-directory>","matchString":"<task anchor>","regex":"literal","hidden":true,"noIgnore":true,"defaultExcludes":false}]}'
+npx octocode localSearch '{"queries":[{"path":"<capture-directory>","matchString":"<task anchor>","regex":"literal","includeHidden":true,"includeIgnored":true,"defaultExcludes":false}]}'
 npx octocode localFetch '{"queries":[{"path":"<observed-result-file>","ranges":["<observed-start>-<observed-end>"]}]}'
 ```
 

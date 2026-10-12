@@ -29,9 +29,31 @@ static FILE_CONTEXT_REGEXES: LazyLock<Vec<Option<regex::Regex>>> = LazyLock::new
 static REPLACEMENTS: LazyLock<Vec<String>> = LazyLock::new(|| {
     PATTERNS
         .iter()
-        .map(|p| format!("[REDACTED-{}]", p.name.to_ascii_uppercase()))
+        .map(|p| super::redaction_placeholder(p.name))
         .collect()
 });
+
+/// Patterns that read configuration syntax (`name: value`). In a source-code
+/// file the same line is a type member, parameter or object key, never a
+/// literal secret (quoted literals are caught by `envVarSecrets`).
+const CONFIG_SYNTAX_PATTERNS: &[&str] = &["yamlSecretValue"];
+
+/// Index-aligned with PATTERNS: the pattern is skipped for source-code paths.
+static SKIPS_SOURCE_CODE: LazyLock<Vec<bool>> = LazyLock::new(|| {
+    PATTERNS
+        .iter()
+        .map(|p| CONFIG_SYNTAX_PATTERNS.contains(&p.name))
+        .collect()
+});
+
+/// Whether `path` names a source-code file: its extension belongs to a
+/// grammar language the engine parses.
+fn is_source_code_path(path: &str) -> bool {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    name.rsplit_once('.').is_some_and(|(_, ext)| {
+        crate::signatures::languages::find_entry(&ext.to_ascii_lowercase()).is_some()
+    })
+}
 
 fn replacement_for(idx: usize) -> &'static str {
     &REPLACEMENTS[idx]
@@ -189,14 +211,26 @@ fn empty_result(content: &str) -> DetectResult {
 ///
 /// A pattern with a `secret` group redacts only that group: an assignment
 /// (`API_TOKEN = "…"`) keeps its identifier and quotes, so redacted source
-/// still reads, and parses, as the same statement.
+/// still reads, and parses, as the same statement. An alternation names one
+/// group per branch (`secret`, `secret_…`); the participating one is redacted.
 fn replace_preserving_lines(regex: &regex::Regex, content: &str, replacement: &str) -> String {
+    let secret_groups: Vec<usize> = regex
+        .capture_names()
+        .enumerate()
+        .filter_map(|(index, name)| {
+            name.filter(|name| name.starts_with(SECRET_GROUP))
+                .map(|_| index)
+        })
+        .collect();
     regex
         .replace_all(content, |captures: &regex::Captures<'_>| {
             let Some(whole) = captures.get(0) else {
                 return String::new();
             };
-            let secret = captures.name(SECRET_GROUP).unwrap_or(whole);
+            let secret = secret_groups
+                .iter()
+                .find_map(|&index| captures.get(index))
+                .unwrap_or(whole);
             let line_breaks = secret
                 .as_str()
                 .bytes()
@@ -212,13 +246,15 @@ fn replace_preserving_lines(regex: &regex::Regex, content: &str, replacement: &s
         .into_owned()
 }
 
-/// Capture group naming the secret part of a match that also spells its
-/// non-secret context (an assignment's identifier).
+/// Capture group name prefix marking the secret part of a match that also
+/// spells its non-secret context (an assignment's identifier).
 const SECRET_GROUP: &str = "secret";
 
 /// Returns `true` if pattern at `idx` should be applied for the given file path
 /// and content.
 ///
+/// - A config-syntax pattern ([`CONFIG_SYNTAX_PATTERNS`]) and a source-code
+///   `file_path`                            → never apply.
 /// - No `file_context` on the pattern       → always apply.
 /// - Has `file_context`, `file_path` given  → apply only when the path matches.
 /// - Has `file_context`, no `file_path`     → the global output net (tool
@@ -231,13 +267,40 @@ const SECRET_GROUP: &str = "secret";
 ///   the global net does not reintroduce mass false positives. Strict
 ///   filename-glob anchors (e.g. `\.ya?ml$`, `docker-compose\.ya?ml$`) do not
 ///   match arbitrary content, so those remain effectively path-gated.
-fn should_apply(idx: usize, file_path: Option<&str>, content: &str) -> bool {
+fn should_apply(idx: usize, scope: Scope<'_>, content: &str) -> bool {
+    if SKIPS_SOURCE_CODE[idx] && scope.source_path().is_some_and(is_source_code_path) {
+        return false;
+    }
     match &FILE_CONTEXT_REGEXES[idx] {
         None => true,
-        Some(re) => match file_path {
-            Some(path) => re.is_match(path),
-            None => re.is_match(content),
+        Some(re) => match scope {
+            Scope::File(path) => re.is_match(path),
+            Scope::Pathless | Scope::Leaf(_) => re.is_match(content),
         },
+    }
+}
+
+/// Where the scanned text came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Scope<'a> {
+    /// No known origin: the global output net.
+    Pathless,
+    /// The text is the content of the file at this path; the path gates
+    /// file-context patterns.
+    File(&'a str),
+    /// The text is one leaf of a result about the file at this path (a
+    /// returned line, match or snippet). The path says only what language
+    /// the text is in; file-context patterns stay content-gated exactly as
+    /// in the pathless net, so the net is never weaker than without a path.
+    Leaf(&'a str),
+}
+
+impl<'a> Scope<'a> {
+    fn source_path(self) -> Option<&'a str> {
+        match self {
+            Scope::Pathless => None,
+            Scope::File(path) | Scope::Leaf(path) => Some(path),
+        }
     }
 }
 
@@ -255,7 +318,13 @@ pub(crate) struct DetectResult {
 ///
 /// `file_path` gates file-context patterns (e.g. Kubernetes YAML secrets, `.env`
 /// fine-grained GitHub tokens) so they fire only when the path matches.
+#[cfg(test)]
 pub(crate) fn detect(content: &str, file_path: Option<&str>) -> DetectResult {
+    detect_in(content, file_path.map_or(Scope::Pathless, Scope::File))
+}
+
+/// [`detect`] for text of a known [`Scope`].
+pub(crate) fn detect_in(content: &str, scope: Scope<'_>) -> DetectResult {
     let matched_indices = matching_pattern_indices(content);
 
     if matched_indices.is_empty() {
@@ -266,7 +335,7 @@ pub(crate) fn detect(content: &str, file_path: Option<&str>) -> DetectResult {
     let mut secrets_detected = Vec::with_capacity(matched_indices.len());
 
     for idx in matched_indices {
-        if !should_apply(idx, file_path, content) {
+        if !should_apply(idx, scope, content) {
             continue;
         }
         let pattern = &PATTERNS[idx];

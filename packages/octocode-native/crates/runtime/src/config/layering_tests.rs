@@ -316,6 +316,65 @@ fn non_object_section_drops_that_section_only() {
     );
 }
 
+/// A number outside its contract range is clamped; the clamp is reported, so
+/// a `REQUEST_TIMEOUT` below the floor is never silently raised.
+#[test]
+fn a_clamped_number_is_reported_with_its_given_and_used_values() {
+    let out = resolve(Layers {
+        env: &[("REQUEST_TIMEOUT", "2000"), ("MAX_RETRIES", "99")],
+        ..NONE
+    });
+    assert_eq!(out.resolved.network.timeout, 5000.0);
+    let clamp = |path: &str| {
+        out.diagnostics
+            .iter()
+            .find(|d| d.code == "value_clamped" && d.field_path.as_deref() == Some(path))
+            .unwrap_or_else(|| panic!("{path}: {:?}", out.diagnostics))
+    };
+    let timeout = clamp("network.timeout");
+    assert_eq!(timeout.severity, Severity::Warning);
+    assert!(
+        timeout
+            .message
+            .contains("REQUEST_TIMEOUT 2000 is below the minimum 5000; using 5000"),
+        "{}",
+        timeout.message
+    );
+    assert!(
+        clamp("network.maxRetries")
+            .message
+            .contains("above the maximum"),
+    );
+    // An in-range value reports nothing.
+    let ok = resolve(Layers {
+        env: &[("REQUEST_TIMEOUT", "6000")],
+        ..NONE
+    });
+    assert!(ok.diagnostics.iter().all(|d| d.code != "value_clamped"));
+}
+
+/// `2e9` or `30s` is not a number a setting can take: it is reported and the
+/// setting keeps its default, instead of reading as `2` or `30` and clamping.
+#[test]
+fn a_number_with_trailing_text_is_invalid_not_truncated() {
+    let out = resolve(Layers {
+        env: &[("REQUEST_TIMEOUT", "30s"), ("MAX_RETRIES", "2e9")],
+        ..NONE
+    });
+    assert_eq!(out.resolved.network.timeout, 30000.0);
+    assert_eq!(out.resolved.network.max_retries, 3.0);
+    for path in ["network.timeout", "network.maxRetries"] {
+        assert!(
+            out.diagnostics
+                .iter()
+                .any(|d| d.code == "invalid_env_value" && d.field_path.as_deref() == Some(path)),
+            "{path}: {:?}",
+            out.diagnostics
+        );
+    }
+    assert!(out.diagnostics.iter().all(|d| d.code != "value_clamped"));
+}
+
 #[test]
 fn invalid_environment_values_warn_with_their_source_and_never_the_value() {
     let out = resolve(Layers {
@@ -687,6 +746,30 @@ fn workspace_cannot_redirect_credentials_widen_the_sandbox_or_pick_executables()
         home.resolved.local.allowed_paths,
         vec!["/shared".to_owned()]
     );
+}
+
+/// The astRewrite state directory holds the journals a later apply replays,
+/// so a checkout's `.env` must not choose it; the home layers and the process
+/// environment may.
+#[test]
+fn only_trusted_layers_choose_the_ast_rewrite_state_dir() {
+    const KEY: &str = "OCTOCODE_AST_REWRITE_STATE_DIR";
+    let workspace = resolve(Layers {
+        project_env: Some("OCTOCODE_AST_REWRITE_STATE_DIR=/repo/state"),
+        ..NONE
+    });
+    assert!(workspace.dotenv.skipped_protected.iter().any(|k| k == KEY));
+    assert_eq!(workspace.env_value(KEY), None);
+    let home = resolve(Layers {
+        global_env: Some("OCTOCODE_AST_REWRITE_STATE_DIR=/home/state"),
+        ..NONE
+    });
+    assert_eq!(home.env_value(KEY), Some("/home/state"));
+    let process = resolve(Layers {
+        env: &[(KEY, "/process/state")],
+        ..NONE
+    });
+    assert_eq!(process.env_value(KEY), Some("/process/state"));
 }
 
 #[test]

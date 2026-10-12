@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import { tildePath } from '../shared/home.js';
 import { clipText, isRecord } from '../shared/util.js';
+import { JOB_TYPE } from '../files/bash-jobs.js';
+import { RESULT_TYPE } from '../subagents/handoff.js';
 import { oneLine } from './store.js';
 
 /**
  * Background work recorded in a session's entries: `bash` calls with `background: true` (result `details.job` and
- * `details.log`, report `octocode-bash-job` with the same log) and background `agent` calls (result `details.status`
- * `background` and `details.id`, report `octocode-agent-result` with the same id). A start without its report is work
+ * `details.log`, report `JOB_TYPE` with the same log) and background `agent` calls (result `details.status`
+ * `background` and `details.id`, report `RESULT_TYPE` with the same id). A start without its report is work
  * still running in this process, or, read when a session starts, work that ended with an earlier process unreported.
  */
 export interface BackgroundWork {
@@ -18,8 +20,6 @@ export interface BackgroundWork {
   log?: string;
 }
 
-const JOB_REPORT_TYPE = 'octocode-bash-job';
-const AGENT_RESULT_TYPE = 'octocode-agent-result';
 /** Longest command or task shown for one item. */
 const LABEL_CHARS = 60;
 
@@ -37,10 +37,10 @@ export function unreportedWork(entries: readonly unknown[], since?: number): Bac
       const details = isRecord(entry['details']) ? entry['details'] : {};
       const id = typeof details['id'] === 'string' ? details['id'] : undefined;
       if (!id) continue;
-      if (entry['customType'] === JOB_REPORT_TYPE) {
+      if (entry['customType'] === JOB_TYPE) {
         const log = typeof details['log'] === 'string' ? details['log'] : undefined;
         reported.add(jobKey(id, log));
-      } else if (entry['customType'] === AGENT_RESULT_TYPE) reported.add(`agent:${id}`);
+      } else if (entry['customType'] === RESULT_TYPE) reported.add(`agent:${id}`);
       continue;
     }
     const message = entry['type'] === 'message' && isRecord(entry['message']) ? entry['message'] : undefined;
@@ -60,8 +60,7 @@ export function unreportedWork(entries: readonly unknown[], since?: number): Bac
       started.set(`agent:${details['id']}`, { kind: 'agent', id: details['id'], label: oneLine(String(input['task'] ?? ''), LABEL_CHARS) });
     }
   }
-  // A report written before reports carried their log matches by id.
-  return [...started].filter(([key, work]) => !reported.has(key) && !(work.kind === 'bash' && reported.has(`id:${work.id}`))).map(([, work]) => work);
+  return [...started].filter(([key]) => !reported.has(key)).map(([, work]) => work);
 }
 
 /**

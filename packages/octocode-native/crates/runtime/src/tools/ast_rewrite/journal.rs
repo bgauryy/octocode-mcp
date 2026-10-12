@@ -28,8 +28,8 @@ fn sync_path(path: &Path) -> Result<(), RewriteError> {
         .map_err(io_error)
 }
 
-pub(super) fn journal_directory(boundary: &Path) -> PathBuf {
-    super::state_base_dir()
+pub(super) fn journal_directory(state_base: &Path, boundary: &Path) -> PathBuf {
+    state_base
         .join(format!(
             "octocode-ast-rewrite-transactions-v1-{}",
             super::state_dir_uid_suffix()
@@ -38,12 +38,13 @@ pub(super) fn journal_directory(boundary: &Path) -> PathBuf {
 }
 
 pub(super) fn commit_transaction(
+    state_base: &Path,
     boundary: &Path,
     files: &[PreparedFile],
     cancellation: &dyn CancellationCheck,
 ) -> Result<Value, RewriteError> {
     let id = transaction_id(boundary, files);
-    let journal_dir = journal_directory(boundary);
+    let journal_dir = journal_directory(state_base, boundary);
     create_private_dir_all(&journal_dir)?;
     let journal_path = journal_dir.join(format!("{JOURNAL_PREFIX}{id}.json"));
     let mut journal = plan_journal(boundary, files, &id);
@@ -215,10 +216,11 @@ fn promote_files(
 /// rejects overlapping roots). A pending journal of an enclosing root is
 /// left to that root's lock and named in a warning.
 pub(super) fn recover_transactions(
+    state_base: &Path,
     boundary: &Path,
     cancellation: &dyn CancellationCheck,
 ) -> Result<Vec<String>, RewriteError> {
-    let own = journal_directory(boundary);
+    let own = journal_directory(state_base, boundary);
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     for directory in journal_directories(&own)? {
@@ -229,7 +231,7 @@ pub(super) fn recover_transactions(
                 boundary
             } else if journal.root != boundary
                 && journal.root.starts_with(boundary)
-                && directory == journal_directory(&journal.root)
+                && directory == journal_directory(state_base, &journal.root)
             {
                 journal.root.as_path()
             } else {

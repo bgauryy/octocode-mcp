@@ -2,9 +2,7 @@
 //! public response so every interface reports the same status.
 
 use super::engine::{RuntimeError, ToolOutcome};
-use crate::response::pages::{has_remaining_page, is_partial};
 use crate::response::rows::is_invalid_input_code;
-use crate::tools::id::ToolId;
 use crate::tools::id::error_class;
 use crate::tools::id::error_codes::ErrorClass;
 use crate::tools::result::FailureKind;
@@ -13,15 +11,14 @@ use serde_json::Value;
 /// How a call ended.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExitClass {
-    /// Results with nothing left to read.
+    /// Results, whether or not a page, a partial source read or a clasify walk
+    /// remains: more to read is a continuation (`next.*`, `pagination.hasMore`),
+    /// never a different outcome.
     Success,
     /// Every row ran and found nothing, even when it offers a recovery call.
     Empty,
     /// The call, or any row of it, rejected the caller's input.
     InvalidInput,
-    /// Results with more to read: a remaining page, a partial source read,
-    /// or `next.clasify`.
-    Incomplete,
     /// Nothing succeeded.
     Failed(FailureKind),
 }
@@ -30,6 +27,7 @@ impl ToolOutcome {
     #[must_use]
     pub fn exit_class(&self) -> ExitClass {
         let value = &self.structured_content;
+        let rows: &[Value] = value["results"].as_array().map_or(&[], Vec::as_slice);
         if self.all_failed {
             return clasify_failure(value, self.failure).unwrap_or(match self.failure {
                 Some(FailureKind::Execution) if all_rows_invalid_input(value) => {
@@ -41,16 +39,16 @@ impl ToolOutcome {
                 None => ExitClass::InvalidInput,
             });
         }
-        let rows: &[Value] = value["results"].as_array().map_or(&[], Vec::as_slice);
+        // Batch precedence, worst row first: a rejected row (2), a failed
+        // row (its shared failure, else execution; a retryable failure is
+        // still a failure), an empty batch (1), success (0). An answering row
+        // never hides a failed one.
         if rows.iter().any(is_invalid_input_row) {
             ExitClass::InvalidInput
+        } else if let Some(kind) = failed_rows(rows) {
+            ExitClass::Failed(kind)
         } else if !rows.is_empty() && rows.iter().all(|row| row["status"] == "empty") {
             ExitClass::Empty
-        } else if rows.iter().any(|row| has_row_continuation(self.tool, row))
-            || has_resource_continuation(self.tool, value)
-            || value.pointer("/responsePagination/hasMore") == Some(&Value::Bool(true))
-        {
-            ExitClass::Incomplete
         } else {
             ExitClass::Success
         }
@@ -136,38 +134,29 @@ fn is_invalid_input_row(row: &Value) -> bool {
             .is_some_and(is_invalid_input_code)
 }
 
+/// The failure of a batch's error rows: their shared failure, else an
+/// execution failure.
+fn failed_rows(rows: &[Value]) -> Option<FailureKind> {
+    let mut kinds = rows
+        .iter()
+        .filter(|row| row["status"] == "error")
+        .map(|row| {
+            row.pointer("/data/errorCode")
+                .and_then(Value::as_str)
+                .map_or(FailureKind::Execution, failure_kind)
+        });
+    let first = kinds.next()?;
+    Some(if kinds.all(|kind| kind == first) {
+        first
+    } else {
+        FailureKind::Execution
+    })
+}
+
 fn all_rows_invalid_input(value: &Value) -> bool {
     value["results"]
         .as_array()
         .is_some_and(|rows| !rows.is_empty() && rows.iter().all(is_invalid_input_row))
-}
-
-/// A resource-major tool (clasify) resumes its own walk with
-/// `queries[].next.<tool>`, a complete query rather than a `{tool, query}`
-/// row continuation.
-fn has_resource_continuation(tool: ToolId, value: &Value) -> bool {
-    tool.output().resource_major()
-        && value["queries"].as_array().is_some_and(|queries| {
-            queries.iter().any(|query| {
-                query
-                    .get("next")
-                    .and_then(|next| next.get(tool.as_str()))
-                    .is_some_and(Value::is_object)
-            })
-        })
-}
-
-/// A row with more of its result remaining: a page that leaves more to read
-/// or a partial source read. A `complete:true` row has nothing left to page;
-/// any `next.*` it carries (e.g. astSearch `expandCaptures`) is a drill-down.
-fn has_row_continuation(tool: ToolId, row: &Value) -> bool {
-    let data = &row["data"];
-    let complete = crate::response::pages::is_complete(data);
-    (!complete && has_remaining_page(tool, data))
-        || (is_partial(data)
-            && data["content"]
-                .as_str()
-                .is_some_and(|text| !text.is_empty()))
 }
 
 #[cfg(test)]
@@ -229,7 +218,7 @@ mod tests {
             "a rejected request stays a caller error"
         );
         assert_eq!(clasify_failure(&json!({"queries":[]}), None), None);
-        // N13: compact output hoists one shared page error to the resource
+        // Compact output hoists one shared page error to the resource
         // while pages keep their `next.read`; the resource error still counts.
         let hoisted = json!({"queries":[{"id":"q","resources":[{"id":"s",
             "error":{"errorCode":"classificationQuotaExhausted","error":"m"},
@@ -238,30 +227,7 @@ mod tests {
         assert_eq!(clasify_failure(&hoisted, None), execution);
     }
 
-    #[test]
-    fn optional_drill_downs_are_not_remaining_pages() {
-        let call = json!({"tool":"ghGetHistoryItem","query":{"queries":[{"number":1}]}});
-        let menu =
-            json!({"data":{"next":{"readBody":call,"readPullRequest":call,"references":call}}});
-        assert!(!has_row_continuation(ToolId::LocalSearch, &menu));
-        for name in ["nextPage", "continue", "expandScan", "retry"] {
-            let row = json!({"data":{"next":{name:call}}});
-            assert!(has_row_continuation(ToolId::LocalSearch, &row), "{name}");
-        }
-        let nested = json!({"data":{"nestedEvidence":{"next":{"nextPage":call}}}});
-        assert!(has_row_continuation(ToolId::LocalSearch, &nested));
-    }
-
-    #[test]
-    fn complete_rows_with_only_drill_downs_are_not_partial() {
-        let call = json!({"tool":"astSearch","query":{"captureText":true}});
-        let complete = json!({"data":{"complete":true,"next":{"expandCaptures":call}}});
-        assert!(!has_row_continuation(ToolId::LocalSearch, &complete));
-        let open = json!({"data":{"complete":false,"next":{"expandCaptures":call}}});
-        assert!(has_row_continuation(ToolId::LocalSearch, &open));
-    }
-
-    /// LF4/P8: a directory given to a file read (or a file to a listing) is
+    /// A directory given to a file read (or a file to a listing) is
     /// the caller's mistake: exit 2, not an execution failure.
     #[test]
     fn not_a_file_and_not_a_directory_are_invalid_input() {
@@ -276,7 +242,7 @@ mod tests {
         }
     }
 
-    /// X13: the contract's `errorCodes` table decides every exit; one code,
+    /// The contract's `errorCodes` table decides every exit; one code,
     /// one class, whichever tool or runtime layer reports it.
     #[test]
     fn every_declared_code_maps_to_one_exit_class() {
@@ -327,34 +293,6 @@ mod tests {
         assert!(!all_rows_invalid_input(&json!({"results":[]})));
     }
 
-    #[test]
-    fn clasify_remaining_coverage_is_incomplete() {
-        let pending = json!({"queries":[
-            {"id":"a","results":[]},
-            {"id":"b","results":[],"next":{"clasify":{"queries":[{"id":"b","resources":[]}]}}}
-        ]});
-        assert!(has_resource_continuation(ToolId::Clasify, &pending));
-        assert!(!has_resource_continuation(
-            ToolId::Clasify,
-            &json!({"queries":[{"id":"a","results":[]}]})
-        ));
-        assert!(!has_resource_continuation(ToolId::LocalSearch, &pending));
-    }
-
-    #[test]
-    fn nested_executable_continuation_is_incomplete() {
-        let row = json!({"data":{"files":[{"path":"src/lib.rs","isPartial":true,
-            "next":{"continue":{"tool":"ghGetFileContent",
-                "query":{"owner":"a","repo":"b","path":"src/lib.rs","offset":64}}}}]}});
-        assert!(has_row_continuation(ToolId::LocalSearch, &row));
-    }
-
-    #[test]
-    fn informational_nested_partial_without_executable_next_stays_success() {
-        let row = json!({"data":{"pages":[{"isPartial":true,"coverage":"partial"}]}});
-        assert!(!has_row_continuation(ToolId::LocalSearch, &row));
-    }
-
     fn outcome(
         structured_content: Value,
         failure: Option<FailureKind>,
@@ -366,13 +304,20 @@ mod tests {
             source_digest: None,
             failure,
             all_failed,
-            tool: ToolId::LocalSearch,
         }
     }
 
     #[test]
     fn outcomes_classify_by_their_rows() {
         let row = |status: &str, code: &str| json!({"status":status,"data":{"errorCode":code}});
+        let retry_row = |code: &str| {
+            json!({"status":"error","data":{"errorCode":code,"retryable":true,
+                "next":{"retry":{"tool":"ghSearchRepo","query":{"queries":[{}]}}}}})
+        };
+        let page_row = json!({"status":"success","data":{"next":{"nextPage":{
+            "tool":"localSearch","query":{"queries":[{}]}}}}});
+        let stale_row = json!({"results":[{"status":"error","data":{"errorCode":"staleSnapshot",
+            "next":{"restart":{"tool":"localSearch","query":{}}}}}]});
         let cases = [
             (
                 json!({"results":[{"data":{}}]}),
@@ -396,7 +341,7 @@ mod tests {
                 json!({"results":[{"data":{}}],"responsePagination":{"hasMore":true}}),
                 None,
                 false,
-                ExitClass::Incomplete,
+                ExitClass::Success,
             ),
             (
                 json!({"results":[row("error", "invalidPattern")]}),
@@ -417,6 +362,121 @@ mod tests {
                 ExitClass::Failed(FailureKind::Execution),
             ),
             (json!({"results":[]}), None, true, ExitClass::InvalidInput),
+            // No row succeeded, so the batch failed like its error rows.
+            (
+                json!({"results":[row("empty", ""), row("error", "pathNotFound")]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::NotFound),
+            ),
+            (
+                json!({"results":[row("empty", ""), row("error", "pathNotFound"),
+                    row("error", "fileAccessFailed")]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::Execution),
+            ),
+            // A failed row is never hidden by an answering one, whichever
+            // order the batch lists them in.
+            (
+                json!({"results":[{"data":{}}, row("error", "pathNotFound")]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::NotFound),
+            ),
+            (
+                json!({"results":[row("error", "pathNotFound"), {"data":{}}]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::NotFound),
+            ),
+            (
+                json!({"results":[page_row.clone(), row("error", "pathNotFound")]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::NotFound),
+            ),
+            (
+                json!({"results":[{"data":{}}, row("error", "pathNotFound"),
+                    row("error", "fileAccessFailed")]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::Execution),
+            ),
+            // A rejected row outranks every failed row (the documented 2).
+            (
+                json!({"results":[row("error", "pathNotFound"), row("error", "invalidInput")]}),
+                None,
+                false,
+                ExitClass::InvalidInput,
+            ),
+            (
+                json!({"results":[row("error", "invalidInput"), row("error", "pathNotFound")]}),
+                None,
+                false,
+                ExitClass::InvalidInput,
+            ),
+            // A remaining page, a partial read or a pending clasify walk
+            // is success; the continuation is the page's `next.*`.
+            (
+                json!({"results":[{"data":{}}, page_row.clone()]}),
+                None,
+                false,
+                ExitClass::Success,
+            ),
+            (
+                json!({"results":[page_row.clone()]}),
+                None,
+                false,
+                ExitClass::Success,
+            ),
+            (
+                json!({"results":[{"status":"success","data":{"isPartial":true,"content":"x"}}]}),
+                None,
+                false,
+                ExitClass::Success,
+            ),
+            (
+                json!({"queries":[{"id":"b","results":[],
+                    "next":{"clasify":{"queries":[{"id":"b","resources":[]}]}}}]}),
+                None,
+                false,
+                ExitClass::Success,
+            ),
+            // A stale snapshot is an error row: exit 5, alone or beside
+            // answering rows, even when a healthy page is offered.
+            (
+                stale_row.clone(),
+                Some(FailureKind::Execution),
+                true,
+                ExitClass::Failed(FailureKind::Execution),
+            ),
+            (
+                json!({"results":[page_row.clone(), stale_row["results"][0].clone()]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::Execution),
+            ),
+            // A retryable failure (`next.retry`) is still a failure: it keeps
+            // its own exit whether the other rows answered or found nothing.
+            (
+                json!({"results":[{"data":{}}, retry_row("rateLimited")]}),
+                None,
+                false,
+                ExitClass::Failed(FailureKind::RateLimited),
+            ),
+            (
+                json!({"results":[row("empty", ""), retry_row("server")]}),
+                None,
+                false,
+                ExitClass::Failed(failure_kind("server")),
+            ),
+            (
+                json!({"results":[retry_row("rateLimited")]}),
+                Some(FailureKind::RateLimited),
+                true,
+                ExitClass::Failed(FailureKind::RateLimited),
+            ),
         ];
         for (value, failure, all_failed, expected) in cases {
             assert_eq!(

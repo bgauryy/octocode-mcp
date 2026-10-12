@@ -7,10 +7,12 @@ use super::layout::*;
 use super::types::*;
 use crate::policy::path::PathPolicy;
 use crate::policy::prune::DefaultsFlag;
+use crate::policy::prune::PruneMode;
 use crate::security::ContentSecurity;
 use crate::tools::cancel::CancellationCheck;
+use crate::tools::empty_walk::{Cause, Hits, SAMPLE_FILES, Verdict, Walk, diagnose, lift};
 use crate::tools::id::ToolId;
-use crate::tools::local_fetch::MAX_READ_RANGES;
+use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 use crate::tools::result::Continuation;
 use octocode_engine::{portable::search_text_cancellable, types::TextSearchOptions};
 use serde_json::{Value, json};
@@ -20,6 +22,8 @@ use std::sync::Arc;
 /// What the scan could not cover, and how the row says so.
 pub(super) struct Coverage {
     pub(super) error_count: u32,
+    /// Of `error_count`: readable files the regex failed on (a match limit).
+    pub(super) pattern_error_count: u32,
     /// A file was searched only up to its first NUL (`binaryQuit`).
     pub(super) binary_cut: bool,
     pub(super) binary_files: String,
@@ -29,7 +33,12 @@ pub(super) struct Coverage {
     pub(super) scope_miss: bool,
     /// Entries the security path policy withheld from the walk.
     pub(super) withheld: usize,
+    /// Files the scan searched: an empty row's one fact.
+    pub(super) files_searched: u32,
 }
+
+/// The empty row's fact when include/exclude left the walk no file.
+const SCOPE_MISS_HINT: &str = "Nothing searched: include/exclude matched no file.";
 
 impl Coverage {
     pub(super) fn of(
@@ -58,6 +67,7 @@ impl Coverage {
         });
         Self {
             error_count: stats.error_count.unwrap_or(0),
+            pattern_error_count: scanned.pattern_error_count.unwrap_or(0),
             binary_cut: cap_has("binaryQuit"),
             binary_files: binary_file_list(
                 scanned.binary_files.as_deref().unwrap_or_default(),
@@ -71,6 +81,7 @@ impl Coverage {
                 && (!query.include.is_empty() || !query.exclude.is_empty()),
             skip_hint,
             withheld: skipped.withheld.total(),
+            files_searched: stats.files_searched,
         }
     }
 
@@ -83,27 +94,14 @@ impl Coverage {
 
     pub(super) fn warnings(
         &self,
-        files: &[SearchFile],
         layout: &Layout,
         shown_redacted: usize,
         unverified: bool,
         empty: bool,
     ) -> Vec<String> {
         let mut warnings = vec![];
-        let any_truncated = files.iter().any(|file| {
-            file.matches
-                .as_ref()
-                .is_some_and(|matches| matches.iter().any(|matched| matched.truncated))
-        });
-        if layout.budget_binds && any_truncated {
-            warnings.push(
-                "Match values were shortened to keep the total response within its size budget. Every match row and its line anchor is preserved; next.expandValues reads the shortened values whole.".into(),
-            );
-        } else if any_truncated {
-            warnings.push(
-                "Some match values were truncated to matchContentLength; originalChars and returnedChars describe each shortened value. Counts and row pagination are unchanged. next.expandValues reads them whole.".into(),
-            );
-        }
+        // A clipped value is flagged on its row (`originalChars`,
+        // `returnedChars`) and read whole by its `expandValues` lead.
         if shown_redacted > 0 && !layout.list {
             warnings.push(format!(
                 "redactedMatches: {shown_redacted} returned match value(s) had secret-shaped text replaced by [REDACTED…] placeholders; those values are not verbatim source."
@@ -116,45 +114,57 @@ impl Coverage {
         }
         if self.pcre2_deadline {
             warnings.push(
-                "The PCRE2 (regex:\"pcre2\") search hit its wall-clock deadline and was stopped; results cover only the files finished before it. Narrow the pattern/scope, or use regex:\"literal\" or the default engine.".into(),
+                "The PCRE2 (regex:\"pcre2\") search stopped at its wall-clock deadline; results cover only the files finished before it.".into(),
             );
         }
         if self.binary_cut {
             warnings.push(format!(
-                "binaryFileSkipped: {} searched only up to the first NUL byte; no text tool reads past it.",
+                "binaryFileSkipped: {} searched only up to the first NUL byte.",
                 self.binary_files
             ));
         }
         // Hints are shown only on empty/error rows; a partial row keeps the
         // unreadable-path explanation as a warning.
-        if self.error_count > 0 && empty {
-            warnings.push(unreadable_hint(self.error_count));
+        if self.pattern_error_count > 0 {
+            warnings.push(format!(
+                "patternLimit: the regex hit the engine's matching limit in {}, which went unsearched; simplify nested repetition, or use regex:\"rust\".",
+                crate::response::pages::counted(u64::from(self.pattern_error_count), "file", "files")
+            ));
+        }
+        let unreadable = self.error_count - self.pattern_error_count.min(self.error_count);
+        if unreadable > 0 && empty {
+            warnings.push(unreadable_hint(unreadable));
         }
         warnings
     }
 
-    /// Rows carry prose hints only when empty or failed.
-    pub(super) fn empty_hints(&self, query: &LocalSearchQuery, empty: bool) -> Vec<String> {
+    /// A scope miss stands only while no skipped path may hold a match: then
+    /// the skip, not include/exclude, is why nothing was searched, and the
+    /// skip's own hint replaces the generic count of searched files.
+    pub(super) fn skipped_paths_hold_matches(&mut self, hints: &mut Vec<String>) {
+        self.scope_miss = false;
+        let counted = empty_hint(self.files_searched);
+        hints.retain(|hint| hint != SCOPE_MISS_HINT && *hint != counted);
+    }
+
+    /// An empty row's one per-call fact; unreadable paths and a binary cut
+    /// are stated once, in `warnings`.
+    pub(super) fn empty_hints(&self, empty: bool) -> Vec<String> {
         if !empty {
             return vec![];
         }
         if self.scope_miss {
-            vec!["Nothing searched: include/exclude matched no file. hints.viewTree lists what they match.".into()]
+            vec![SCOPE_MISS_HINT.into()]
         } else if self.error_count > 0 {
-            vec![unreadable_hint(self.error_count)]
+            vec![]
         } else if let Some(hint) = &self.skip_hint {
             vec![hint.clone()]
         } else if self.withheld > 0 {
             // Not a spelling problem: the policy notice in `warnings` names
             // what was withheld (once, there).
             vec!["No matches where searched; the withheld entries named in warnings may hold it (unproven).".into()]
-        } else if self.binary_cut {
-            vec![
-                "No matches, but binary file(s) were searched only up to their first NUL byte; absence is not proven for them.".into(),
-                empty_hint(query),
-            ]
         } else {
-            vec![empty_hint(query)]
+            vec![empty_hint(self.files_searched)]
         }
     }
 }
@@ -180,16 +190,16 @@ pub(super) struct Found<'a> {
 impl Found<'_> {
     /// Leads in the tool's own rank: a read of the top hit, the symbol's
     /// lspSearch lead, then reads of clipped values, the skipped binaries
-    /// and the literal search.
+    /// and the literal search. Returns whether skipped paths hold a match.
     pub(super) fn add_leads(
         &self,
+        stats: &mut SearchStats,
         next: &mut Option<Value>,
         hints: &mut Vec<String>,
         warnings: &mut Vec<String>,
         search_options: &TextSearchOptions,
-        probe_options: Option<TextSearchOptions>,
         cancel: &impl CancellationCheck,
-    ) {
+    ) -> bool {
         let query = self.query;
         let mut add = |name: String, lead: Value| {
             if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
@@ -200,18 +210,16 @@ impl Found<'_> {
             add("read".into(), read);
         }
         if let (Some(symbol), Some(definition)) = (self.symbol, self.definition)
-            && let Some(row) = crate::tools::lsp_search::verify_query(
+            && let Some(row) = crate::tools::leads::lsp::verify_query(
                 &definition.source,
                 symbol,
                 u64::from(definition.line),
-                crate::tools::lsp_search::Verify::for_kind(&definition.kind),
+                crate::tools::leads::lsp::Verify::for_kind(&definition.kind),
             )
         {
             add(
-                crate::tools::lsp_search::lead_name(&row),
-                Continuation::new(ToolId::LspSearch, row)
-                    .why("Uses of the searched symbol's declaration.")
-                    .build(),
+                crate::tools::leads::lsp::lead_name(&row),
+                Continuation::new(ToolId::LspSearch, row).build(),
             );
         }
         // Every clipped value on the page stays reachable whole.
@@ -236,8 +244,15 @@ impl Found<'_> {
             };
             add(name, expansion);
         }
+        // Binaries were never text to search: a row with hits states their
+        // count in `stats`, an empty row says it in `warnings`, where the
+        // count may explain the miss.
         if let Some((warning, listing)) = self.skipped_binaries() {
-            warnings.extend(Some(warning).filter(|warning| !warning.is_empty()));
+            if self.empty {
+                warnings.extend(Some(warning).filter(|warning| !warning.is_empty()));
+            } else {
+                stats.binary_skipped = self.leading_binaries();
+            }
             add("binarySkipped".into(), listing);
         }
         // What the walk left out is disclosed once, on the first page: the
@@ -251,7 +266,10 @@ impl Found<'_> {
                 warnings.push(format!(
                     "Default excludes skipped {names}; the same search with defaultExcludes:false covers them."
                 ));
-                add("includeIgnored".into(), excluded_lead(query));
+                add(
+                    "includeIgnored".into(),
+                    lifting_lead(query, &[Cause::DefaultExcluded]),
+                );
             }
         }
         // Thousands of hits page for dozens of calls: one count call ranks
@@ -263,38 +281,38 @@ impl Found<'_> {
                 .match_count
                 .filter(|total| *total >= LARGE_RESULT_MATCHES)
         {
-            add("countFiles".into(), count_lead(query));
-            hints.push(format!(
-                "{total} matches: run hints.countFiles to rank files by hits, or narrow path/include."
-            ));
+            add("viewFileCount".into(), count_lead(query));
+            hints.push(format!("{total} matches."));
         }
-        // An unset `regex` is inferred from the text: say which reading ran
-        // when the literal and regex readings differ.
-        let inferred = match query.regex_mode() {
-            _ if query.regex.is_some() => None,
-            // Only a `.` or a balanced group reads differently as a regex.
-            LocalSearchQueryRegex::Literal => (query.match_string.contains('.')
-                || query.match_string.contains('(') && query.match_string.contains(')'))
-            .then_some("matchString ran as literal text; regex:\"rust\" runs it as a regex."),
-            // An obvious regex (`a.*b`, `\bfoo`, `a|b`) ran as one: no note.
-            _ if unambiguous_regex(&query.match_string) => None,
-            _ => Some("matchString ran as a regex; regex:\"literal\" matches it exactly."),
-        };
-        warnings.extend(inferred.map(str::to_owned));
+        // An unset `regex` runs as a regex only when the text reads only as
+        // one; an empty literal search whose text has regex characters says
+        // the other reading exists.
+        let literal_missed = self.empty
+            && query.regex.is_none()
+            && query.regex_mode() == LocalSearchQueryRegex::Literal
+            && query
+                .match_string
+                .contains(super::types::REGEX_METACHARACTERS);
+        if literal_missed {
+            warnings.push(
+                "matchString ran as literal text; regex:\"rust\" runs it as a regex.".to_owned(),
+            );
+        }
         if self.empty && self.complete && self.first_page() {
             disclose_variants(query, self.paths, search_options, next, hints, cancel);
         }
-        if self.empty && self.complete && !self.root.is_file() {
-            disclose_unsearched(
+        self.empty
+            && self.complete
+            && !self.root.is_file()
+            && disclose_unsearched(
                 query,
                 self.paths,
-                probe_options,
+                search_options,
                 excluded_names(self.scanned, self.skipped),
                 next,
                 hints,
                 cancel,
-            );
-        }
+            )
     }
 
     pub(super) fn first_page(&self) -> bool {
@@ -354,6 +372,19 @@ impl Found<'_> {
                 .find(text_file)
                 .and_then(|top| read_handoff(query, self.root, top)),
         }
+    }
+
+    /// Files skipped as binary from their leading bytes, when any.
+    pub(super) fn leading_binaries(&self) -> Option<u32> {
+        let total: u32 = self
+            .scanned
+            .skipped_binary_extensions
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(|group| group.count)
+            .sum();
+        (total > 0).then_some(total)
     }
 
     /// Files binary from their leading bytes are outside a text search, not
@@ -416,7 +447,30 @@ pub(super) fn declaration_read(
         ToolId::LocalFetch,
         json!({"path": joined_path(query, root, file), "ranges": [format!("{start}-{end}")]}),
     )
-    .why("Read the declaration whole.")
+    .build()
+}
+
+/// A hit whose value was clipped out of a line longer than one read page:
+/// a line-range read of it shows the line's start, not the hit.
+pub(super) fn is_long_line_hit(hit: &SearchMatch) -> bool {
+    hit.clipped
+        && hit
+            .original_chars
+            .is_some_and(|chars| chars > crate::tools::local_fetch::LINE_PAGE_BYTES)
+}
+
+/// A byte window of the hit's line, starting at the hit.
+pub(super) fn long_line_read(path: &str, hit: &SearchMatch) -> Value {
+    Continuation::new(
+        ToolId::LocalFetch,
+        json!({
+            "path": path,
+            "ranges": [format!("{0}-{0}", hit.line)],
+            "unit": "bytes",
+            "offset": hit.byte_offset,
+        }),
+    )
+    .confidence("exact")
     .build()
 }
 
@@ -437,56 +491,132 @@ pub(super) fn joined_path(
     }
 }
 
-/// Re-run an empty search over what the defaults leave out: ignored and
-/// hidden entries, and the default-excluded directories (`build/`,
-/// `node_modules/`, …). A match there, or default-excluded directories the
-/// re-run could not finish, is named with the lead that searches them.
+/// Re-run an empty search over what the defaults leave out (ignored and
+/// hidden entries, the default-excluded directories) to say which of them
+/// hold a match: the hint names the rule, entry or directory, and the lead
+/// searches again with only those lifted. Default-excluded directories the
+/// re-run could not finish are named with the lead that searches them.
+/// Returns whether skipped paths were shown to hold a match.
 pub(super) fn disclose_unsearched(
     query: &LocalSearchQuery,
     paths: &PathPolicy,
-    probe_options: Option<TextSearchOptions>,
+    search_options: &TextSearchOptions,
     excluded: Option<String>,
     next: &mut Option<Value>,
     hints: &mut Vec<String>,
     cancel: &impl CancellationCheck,
-) {
-    let Some(options) = probe_options else {
-        return;
+) -> bool {
+    let walk = Walk {
+        ignored: query.include_ignored == Some(true),
+        hidden: query.include_hidden == Some(true),
+        default_excludes: query.default_excludes.defaults(),
     };
-    let probe = ignored_probe(options, paths, cancel);
-    let (count, cut, reasons) = match probe {
-        Some(found) => (found.count, found.cut, found.reasons),
-        None => (0, true, Vec::new()),
-    };
-    if count == 0 && (!cut || excluded.is_none()) {
-        return;
-    }
+    let root = std::path::PathBuf::from(&search_options.path);
+    let since = std::time::Instant::now();
+    let verdict = diagnose(&root, PruneMode::SearchSafe, walk, |relaxed| {
+        Ok::<_, std::convert::Infallible>(probe_found(
+            search_options,
+            relaxed,
+            paths,
+            cancel,
+            since,
+        ))
+    });
     // The action leads: the response stage clips long hints at the end.
-    let hint = if count == 0 {
-        let names = excluded
-            .map(|names| format!(" ({names})"))
-            .unwrap_or_default();
-        format!(
-            "Run hints.includeIgnored before claiming absence: default-excluded paths were not searched{names}."
-        )
-    } else {
-        let at_least = if cut { "at least " } else { "" };
-        let why: Vec<String> = reasons.into_iter().chain(excluded).collect();
-        if why.is_empty() {
-            format!(
-                "Run hints.includeIgnored: {at_least}{count} file(s) match in ignored, hidden or default-excluded paths."
-            )
-        } else {
-            format!(
-                "Run hints.includeIgnored: {at_least}{count} file(s) match in skipped paths ({}).",
-                why.join(", ")
+    let (found, causes, may_hold_matches) = match verdict {
+        Ok(Verdict::Skipped(diagnosis)) => {
+            let at_least = if diagnosis.found().cut {
+                "at least "
+            } else {
+                ""
+            };
+            (
+                vec![format!(
+                    "{at_least}{} file(s) match in skipped paths ({}).",
+                    diagnosis.found().count,
+                    diagnosis.because()
+                )],
+                diagnosis.causes().to_vec(),
+                true,
             )
         }
+        // The probe ran out of time before it found anything: it proved
+        // nothing about what the walk skipped, so the row names the skipped
+        // paths it can and the lead searches them.
+        Ok(Verdict::Unproven) => {
+            let ignored = unsearched_ignored(&root, walk);
+            let mut found = vec![];
+            let mut causes = vec![];
+            let may_hold_matches = !ignored.is_empty();
+            if !ignored.is_empty() {
+                found.push(unsearched_ignored_hint(&root, &ignored));
+                causes.push(Cause::Ignored);
+            }
+            if let Some(names) = excluded.filter(|_| walk.default_excludes) {
+                found.push(format!(
+                    "Default-excluded paths were not searched ({names})."
+                ));
+                causes.push(Cause::DefaultExcluded);
+            }
+            if causes.is_empty() {
+                return false;
+            }
+            (found, causes, may_hold_matches)
+        }
+        _ => return false,
     };
-    hints.insert(0, hint);
-    if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
-        map.insert("includeIgnored".into(), unsearched_lead(query));
+    for hint in found.into_iter().rev() {
+        hints.insert(0, hint);
     }
+    if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
+        map.insert("includeIgnored".into(), lifting_lead(query, &causes));
+    }
+    may_hold_matches
+}
+
+/// The ignored directories a walk skipped, named, within [`NAMING_MS`] of
+/// their own (the probe that ran out of time left none of the diagnosis'
+/// budget): the rules the lead lifts.
+fn unsearched_ignored(root: &std::path::Path, walk: Walk) -> Vec<crate::tools::empty_walk::Skip> {
+    let started = std::time::Instant::now();
+    let allowance = std::time::Duration::from_millis(NAMING_MS);
+    crate::tools::empty_walk::ignored_directories(root, PruneMode::SearchSafe, walk, &|| {
+        started.elapsed() > allowance
+    })
+}
+
+/// Time to name the ignored directories after an unproven probe.
+const NAMING_MS: u64 = 400;
+
+/// How many skipped paths a hint names before it counts the rest.
+const NAMED_SKIPPED: usize = 3;
+
+/// The hint naming the ignored directories an unproven probe could not search
+/// and the rule that skips them.
+fn unsearched_ignored_hint(
+    root: &std::path::Path,
+    ignored: &[crate::tools::empty_walk::Skip],
+) -> String {
+    let mut names = ignored
+        .iter()
+        .take(NAMED_SKIPPED)
+        .map(|skip| {
+            let relative = skip.entry.strip_prefix(root).unwrap_or(&skip.entry);
+            format!("{}/", relative.to_string_lossy().replace('\\', "/"))
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    if let Some(more) = ignored
+        .len()
+        .checked_sub(NAMED_SKIPPED)
+        .filter(|more| *more > 0)
+    {
+        names.push_str(&format!(", +{more} more"));
+    }
+    format!(
+        "Ignored paths were not searched ({names}; {}); the check of them timed out.",
+        ignored[0].reason
+    )
 }
 
 /// Distinct names of the pruned directories, each with how many were
@@ -510,6 +640,9 @@ pub(super) fn pruned_names(pruned: &[String]) -> String {
         .join(", ")
 }
 
+/// Default-excluded files named by path before the rest is a count.
+const EXCLUDED_FILES_NAMED: usize = 5;
+
 /// What the default excludes left out of the walk, as one clause: the
 /// pruned directories and the skipped generated files, each by name with
 /// its count (`2 dirs (target/, dist/) and 3 files (*.lock ×2, *.min.js)`).
@@ -527,22 +660,19 @@ pub(super) fn excluded_names(
             pruned_names(pruned)
         ));
     }
-    let files: usize = skipped.generated.values().sum();
+    let files = skipped.generated.len();
     if files > 0 {
         let noun = if files == 1 { "file" } else { "files" };
-        let patterns = skipped
+        let mut named = skipped
             .generated
             .iter()
-            .map(|(pattern, count)| {
-                if *count > 1 {
-                    format!("{pattern} ×{count}")
-                } else {
-                    pattern.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        parts.push(format!("{files} {noun} ({patterns})"));
+            .take(EXCLUDED_FILES_NAMED)
+            .cloned()
+            .collect::<Vec<_>>();
+        if files > named.len() {
+            named.push(format!("+{} more", files - named.len()));
+        }
+        parts.push(format!("{files} {noun} ({})", named.join(", ")));
     }
     (!parts.is_empty()).then(|| parts.join(" and "))
 }
@@ -660,9 +790,7 @@ fn variants_lead(query: &LocalSearchQuery, variants: &[String]) -> Value {
         fields.insert("regex".into(), json!("rust"));
         fields.remove("caseMode");
     }
-    Continuation::new(ToolId::LocalSearch, lead)
-        .why("The identifier's other case styles.")
-        .build()
+    Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
 /// An empty search for a compound identifier: say when its other case
@@ -691,12 +819,12 @@ pub(super) fn disclose_variants(
     hints.insert(
         0,
         format!(
-            "No match for {}; its other spellings match in {count} file(s): run hints.didYouMean.",
+            "No match for {}; its other spellings match in {count} file(s).",
             query.match_string
         ),
     );
     if let Some(map) = next.get_or_insert_with(|| json!({})).as_object_mut() {
-        map.insert("didYouMean".into(), variants_lead(query, &variants));
+        map.insert("findSimilar".into(), variants_lead(query, &variants));
     }
 }
 
@@ -719,25 +847,25 @@ pub(super) fn count_lead(query: &LocalSearchQuery) -> Value {
     let mut lead = restart_fields(query);
     if let Some(fields) = lead.as_object_mut() {
         fields.insert("resultView".into(), json!("countMatches"));
+        // Fields that shape match rows (or are valid only under matchOnly)
+        // have no meaning in a count view.
         for field in [
             "contextLines",
             "matchContentLength",
             "pageSize",
             "matchPageSize",
+            "unique",
         ] {
             fields.remove(field);
         }
     }
-    Continuation::new(ToolId::LocalSearch, lead)
-        .why("Per-file match counts, most hits first.")
-        .build()
+    Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
-pub(super) fn excluded_lead(query: &LocalSearchQuery) -> Value {
+/// The same search from page 1 with the walk's `causes` lifted.
+pub(super) fn lifting_lead(query: &LocalSearchQuery, causes: &[Cause]) -> Value {
     let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
-        fields.insert("defaultExcludes".into(), json!(false));
-    }
+    lift(&mut lead, causes);
     Continuation::new(ToolId::LocalSearch, lead).build()
 }
 
@@ -753,7 +881,9 @@ pub(super) fn restart_fields(query: &LocalSearchQuery) -> Value {
 }
 
 /// A structureSearch `files` listing of the searched scope with the query's
-/// own include/exclude globs: what a scope-miss row's globs match there.
+/// own include/exclude globs and walk scope (`includeIgnored`, `defaultExcludes`;
+/// a `files` listing always shows dot entries): what the search's globs
+/// match there.
 pub(super) fn scope_listing(query: &LocalSearchQuery) -> Value {
     let mut listing = json!({"operation": "files", "path": query.path.as_str()});
     if !query.include.is_empty() {
@@ -762,49 +892,13 @@ pub(super) fn scope_listing(query: &LocalSearchQuery) -> Value {
     if !query.exclude.is_empty() {
         listing["exclude"] = json!(query.exclude);
     }
-    Continuation::new(ToolId::StructureSearch, listing)
-        .why("List what the include/exclude globs match.")
-        .build()
-}
-
-/// Whether `text` reads only as a regex: it holds `.*`, `.+`, `.?`, a
-/// `\` + letter class (`\w`, `\d`, `\s`, `\b`), or a `|` outside `||`.
-/// Ambiguous texts (`a?.b`, `$scope`, `arr[0]`, `x + y`) keep the inferred-
-/// regex note: their literal reading is plausible.
-pub(super) fn unambiguous_regex(text: &str) -> bool {
-    let bytes = text.as_bytes();
-    let wildcard = text.contains(".*") || text.contains(".+") || text.contains(".?");
-    // `\w`, `\b`, or escaped punctuation such as `\(`: only a regex escapes.
-    let escape = bytes.windows(2).any(|pair| {
-        pair[0] == b'\\' && (pair[1].is_ascii_alphabetic() || pair[1].is_ascii_punctuation())
-    });
-    let alternation = bytes.iter().enumerate().any(|(index, byte)| {
-        *byte == b'|'
-            && bytes.get(index + 1) != Some(&b'|')
-            && (index == 0 || bytes[index - 1] != b'|')
-    });
-    // A repeated class or group: `[a-z_]+`, `(ab)*`. A trailing `?` stays
-    // ambiguous: Rust's `list[i]?` and `read(path)?` are code.
-    let quantified = bytes
-        .windows(2)
-        .any(|pair| matches!(pair[0], b']' | b')') && matches!(pair[1], b'+' | b'*' | b'{'));
-    // A class range: `[a-z]`, `[0-9_]`.
-    let range = text.split('[').skip(1).any(|rest| {
-        rest.split_once(']')
-            .is_some_and(|(class, _)| class.len() >= 3 && class[1..class.len() - 1].contains('-'))
-    });
-    wildcard || escape || alternation || quantified || range || text.starts_with('^')
-}
-
-/// The same search over everything the defaults leave out, from page 1.
-pub(super) fn unsearched_lead(query: &LocalSearchQuery) -> Value {
-    let mut lead = restart_fields(query);
-    if let Some(fields) = lead.as_object_mut() {
-        fields.insert("noIgnore".into(), json!(true));
-        fields.insert("hidden".into(), json!(true));
-        fields.insert("defaultExcludes".into(), json!(false));
+    if query.include_ignored == Some(true) {
+        listing["includeIgnored"] = json!(true);
     }
-    Continuation::new(ToolId::LocalSearch, lead).build()
+    if !query.default_excludes.defaults() {
+        listing["defaultExcludes"] = json!(false);
+    }
+    Continuation::new(ToolId::StructureSearch, listing).build()
 }
 
 /// Shown files a page parses for enclosing names and the searched
@@ -815,6 +909,11 @@ pub(super) const ENCLOSING_MAX_FILES: usize = DEFAULT_SNIPPET_PAGE_SIZE as usize
 /// Serialized chars an `enclosing` field adds besides its value: `,"enclosing":`.
 pub(super) const ENCLOSING_FIELD_CHARS: usize = 13;
 
+/// What a page cut reserves per hit row for its `enclosing` name: the field,
+/// the object's keys, a kind, two line numbers and a typical symbol name. A
+/// longer name still goes on its row; the page runs that much over budget.
+pub(super) const ENCLOSING_RESERVE_CHARS: usize = ENCLOSING_FIELD_CHARS + 80;
+
 /// The current outline of a shown file, or `None` when it is too large,
 /// unreadable, unsupported, or no longer the bytes a stored scan matched.
 pub(super) fn shown_outline(
@@ -822,15 +921,85 @@ pub(super) fn shown_outline(
     expected: Option<Option<super::manifest::Digest>>,
     security: &ContentSecurity,
 ) -> Option<super::enclosing::Outline> {
-    let limit = crate::tools::ast_search::MAX_PARSE_SOURCE_BYTES;
+    let bytes = shown_bytes(source, expected)?;
+    outline_of(&bytes, source, security)
+}
+
+/// The current bytes of a shown file within the parse cap, or `None` when
+/// it is larger, unreadable, or no longer the bytes a stored scan matched.
+pub(super) fn shown_bytes(
+    source: &std::path::Path,
+    expected: Option<Option<super::manifest::Digest>>,
+) -> Option<Vec<u8>> {
+    let limit = octocode_engine::signatures::MAX_PARSE_SIZE;
     let bytes = crate::tools::source::read_bounded(source, limit).ok()?;
     if let Some(expected) = expected
         && expected != Some(<[u8; 32]>::from(Sha256::digest(&bytes)))
     {
         return None;
     }
-    outline_of(&bytes, source, security)
+    Some(bytes)
 }
+
+/// Set `matchKeys` on each shown JSON or TOML file with hit rows: the key
+/// path of every hit line, read from the file's current bytes, in page
+/// order while the page stays within `page_budget`. Returns the note for
+/// files whose keys did not fit, never dropped silently.
+pub(super) fn annotate_match_keys(
+    files: &mut [SearchFile],
+    output_root: &std::path::Path,
+    page_budget: usize,
+    expected: &dyn Fn(&std::path::Path) -> Option<Option<super::manifest::Digest>>,
+    security: &ContentSecurity,
+) -> Option<String> {
+    let mut used = json_bytes(&*files);
+    let mut over_budget = 0usize;
+    for file in files.iter_mut() {
+        let source = output_root.join(&file.path);
+        let Some(rows) = file.matches.as_ref().filter(|rows| !rows.is_empty()) else {
+            continue;
+        };
+        if !crate::tools::match_keys::is_keyed_path(&source) {
+            continue;
+        }
+        let mut lines = rows
+            .iter()
+            .flat_map(row_lines)
+            .filter(|line| *line > 0)
+            .map(|line| line as usize)
+            .collect::<Vec<_>>();
+        lines.sort_unstable();
+        lines.dedup();
+        let limit = octocode_engine::signatures::MAX_PARSE_SIZE;
+        let Some(bytes) = shown_bytes(&source, expected(&source)) else {
+            continue;
+        };
+        let Ok(text) = security.decode_source_bytes(&bytes, limit) else {
+            continue;
+        };
+        let keys = crate::tools::match_keys::line_key_paths(&source, &text, &lines);
+        if keys.is_empty() {
+            continue;
+        }
+        let added = json_bytes(&crate::tools::match_keys::MatchKeys(&keys))
+            .saturating_add(MATCH_KEYS_FIELD_CHARS);
+        if over_budget == 0 && used.saturating_add(added) <= page_budget {
+            used += added;
+            file.match_keys = keys;
+        } else {
+            over_budget += 1;
+        }
+    }
+    (over_budget > 0).then(|| {
+        let noun = if over_budget == 1 { "file" } else { "files" };
+        format!(
+            "Key paths (matchKeys) omitted on {over_budget} later {noun} to keep the page within its size budget."
+        )
+    })
+}
+
+/// `,"matchKeys":` around a file's key map.
+const MATCH_KEYS_FIELD_CHARS: usize = 13;
 
 /// Largest file outlined for `enclosing` names. Parsing is linear (a 4.5 MB
 /// generated Rust file took 1 s of a 1.2 s search, 2026-10-08) and files this
@@ -847,7 +1016,7 @@ pub(super) fn outline_of(
     if bytes.len() > ENCLOSING_MAX_BYTES {
         return None;
     }
-    let limit = crate::tools::ast_search::MAX_PARSE_SOURCE_BYTES;
+    let limit = octocode_engine::signatures::MAX_PARSE_SIZE;
     let text = security.decode_source_bytes(bytes, limit).ok()?;
     super::enclosing::Outline::of(&text, &source.to_string_lossy())
 }
@@ -857,18 +1026,18 @@ pub(super) fn row_lines(row: &SearchMatch) -> Vec<u32> {
     row.match_lines.clone().unwrap_or_else(|| vec![row.line])
 }
 
-/// Set `enclosing` on the hit rows of a page's first [`ENCLOSING_MAX_FILES`]
-/// files, in page order while the names fit the page budget, and find the
-/// first shown hit that declares `symbol`. Each file is parsed once. Rows a
-/// name was found for but not shown (budget or parse bound) are counted in
-/// the returned note, never dropped silently.
-#[allow(clippy::too_many_arguments)]
+/// Name the enclosing declaration of every hit row of a page's first
+/// [`ENCLOSING_MAX_FILES`] files (`enclosing` on the first row inside a
+/// declaration, `enclosingLine` on the later ones) and find the first shown hit that declares `symbol`. Each file is
+/// parsed once. The page cut reserved the names' size, so a name is never
+/// traded for budget; a default page never shows more files than this, and
+/// rows past the parse bounds of a caller-sized page or a file over 1 MiB are
+/// counted in the returned note, never dropped silently.
 pub(super) fn annotate_enclosing(
     files: &mut [SearchFile],
     symbol: Option<&str>,
     declaring: Option<&str>,
     output_root: &std::path::Path,
-    page_budget: usize,
     expected: &dyn Fn(&std::path::Path) -> Option<Option<super::manifest::Digest>>,
     mut outlines: super::verify::Outlines,
     security: &ContentSecurity,
@@ -894,7 +1063,11 @@ pub(super) fn annotate_enclosing(
             None => shown_outline(&source, expected(&source), security),
         };
         let Some(outline) = outline else {
-            if std::fs::metadata(&source).is_ok_and(|meta| meta.len() > ENCLOSING_MAX_BYTES as u64)
+            // Only a file whose language has declarations lost them to its
+            // size (a 3 MiB `uv.lock` never had any).
+            if outlined_language(&source)
+                && std::fs::metadata(&source)
+                    .is_ok_and(|meta| meta.len() > ENCLOSING_MAX_BYTES as u64)
             {
                 oversized_rows += matches.len();
             }
@@ -918,34 +1091,33 @@ pub(super) fn annotate_enclosing(
         }
         names.push(row_owners(&outline, matches, declaring));
     }
-    // Names go on in page order while the page stays within its budget
-    // (the caller's budget already leaves out the rendered path prefixes).
-    let mut used = json_bytes(&*files);
-    let mut over_budget = 0usize;
     for (file, names) in files.iter_mut().zip(names) {
+        let mut named = std::collections::HashMap::new();
         for (row, name) in file.matches.iter_mut().flatten().zip(names) {
             let Some(name) = name else { continue };
-            let added = json_bytes(&name).saturating_add(ENCLOSING_FIELD_CHARS);
-            if over_budget == 0 && used.saturating_add(added) <= page_budget {
-                used += added;
-                row.enclosing = Some(name);
+            // A name already given by the nearest earlier row at its line
+            // is a reference; a different declaration on that line is named
+            // in full, and becomes what the line refers to.
+            if named.get(&name.line) == Some(&name) {
+                row.enclosing_line = Some(name.line);
             } else {
-                over_budget += 1;
+                named.insert(name.line, name.clone());
+                row.enclosing = Some(name);
             }
         }
     }
-    let mut note = match (over_budget, unparsed_rows) {
-        (0, 0) => None,
-        (0, rows) => Some(format!(
-            "Enclosing declarations (enclosing) are named for the first {ENCLOSING_MAX_FILES} files only; {rows} hit rows after them have none."
-        )),
-        (rows, _) => Some(format!(
-            "Enclosing declarations (enclosing) omitted on {rows} later rows to keep the page within its size budget."
-        )),
-    };
+    let mut note = (unparsed_rows > 0).then(|| {
+        format!(
+            "Enclosing declarations (enclosing) are named for the first {ENCLOSING_MAX_FILES} files of a page only; {} after them {} none. Rerun with pageSize {ENCLOSING_MAX_FILES} or less to name them.",
+            hit_rows(unparsed_rows),
+            have(unparsed_rows)
+        )
+    });
     if oversized_rows > 0 {
         let oversized = format!(
-            "Enclosing declarations (enclosing) are not named in files over 1 MiB; {oversized_rows} hit rows there have none."
+            "Enclosing declarations (enclosing) are not named in files over 1 MiB; {} there {} none.",
+            hit_rows(oversized_rows),
+            have(oversized_rows)
         );
         note = Some(match note {
             Some(note) => format!("{note} {oversized}"),
@@ -953,6 +1125,26 @@ pub(super) fn annotate_enclosing(
         });
     }
     (definition, note)
+}
+
+/// `1 hit row`, `3 hit rows`.
+fn hit_rows(rows: usize) -> String {
+    format!("{rows} hit {}", if rows == 1 { "row" } else { "rows" })
+}
+
+fn have(rows: usize) -> &'static str {
+    if rows == 1 { "has" } else { "have" }
+}
+
+/// Whether `source`'s language has a declaration outline (by extension).
+pub(super) fn outlined_language(source: &std::path::Path) -> bool {
+    source
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            octocode_engine::signatures::languages::find_entry(&extension.to_ascii_lowercase())
+                .is_some()
+        })
 }
 
 /// Bytes `value` serializes to as JSON, counted without building the text;
@@ -972,35 +1164,25 @@ pub(super) fn json_bytes<T: serde::Serialize + ?Sized>(value: &T) -> usize {
     serde_json::to_writer(&mut count, value).map_or(usize::MAX, |()| count.0)
 }
 
-/// Each row's `enclosing` declaration. A run of consecutive rows in one declaration names
-/// it once, on its first row, with the declaration's last line; the rows
-/// after it inside that range share it. With `declaring` (a declaration
-/// search), only rows that declare that symbol are named.
+/// Each row's enclosing declaration, on every row inside one: so no row
+/// reads as having none. With `declaring` (a declaration search), only rows that declare
+/// that symbol are named.
 pub(super) fn row_owners(
     outline: &super::enclosing::Outline,
     rows: &[SearchMatch],
     declaring: Option<&str>,
 ) -> Vec<Option<super::types::Enclosing>> {
-    let owners = rows
-        .iter()
+    rows.iter()
         .map(|row| {
             let named = declaring.is_none_or(|symbol| {
                 row_lines(row)
                     .iter()
                     .any(|line| outline.declares(symbol, *line))
             });
-            named.then(|| outline.owner(row_lines(row)[0])).flatten()
-        })
-        .collect::<Vec<_>>();
-    owners
-        .iter()
-        .enumerate()
-        .map(|(index, owner)| {
-            let owner = (*owner)?;
-            if index > 0 && owners[index - 1] == Some(owner) {
-                return None;
-            }
-            outline.label(owner)
+            named
+                .then(|| outline.owner(row_lines(row)[0]))
+                .flatten()
+                .and_then(|owner| outline.label(owner))
         })
         .collect()
 }
@@ -1041,16 +1223,22 @@ pub(super) fn read_handoff(
         return None;
     }
     let path = joined_path(query, root, top);
-    let windows = hit_windows(hits.iter().flat_map(row_lines), READ_HANDOFF_CONTEXT);
-    if windows.len() <= MAX_READ_RANGES {
+    // A line longer than a read page is read from the hit, not from its
+    // start: that hit alone, when no other hit is a plain line.
+    let (long, plain): (Vec<_>, Vec<_>) = hits.iter().partition(|hit| is_long_line_hit(hit));
+    if plain.is_empty()
+        && let Some(hit) = long.first()
+    {
+        return Some(long_line_read(&path, hit));
+    }
+    let windows = hit_windows(plain.into_iter().flat_map(row_lines), READ_HANDOFF_CONTEXT);
+    if windows.len() <= RANGES_MAX_ITEMS {
         let ranges = windows
             .iter()
             .map(|(start, end)| format!("{start}-{end}"))
             .collect::<Vec<_>>();
         return Some(
-            Continuation::new(ToolId::LocalFetch, json!({"path": path, "ranges": ranges}))
-                .why("Read the top file's hits in context.")
-                .build(),
+            Continuation::new(ToolId::LocalFetch, json!({"path": path, "ranges": ranges})).build(),
         );
     }
     let mut read = json!({
@@ -1066,11 +1254,7 @@ pub(super) fn read_handoff(
     if query.case_mode != LocalSearchQueryCaseMode::Insensitive {
         read["caseMode"] = json!(query.case_mode);
     }
-    Some(
-        Continuation::new(ToolId::LocalFetch, read)
-            .why("Read the top file's hits in context.")
-            .build(),
-    )
+    Some(Continuation::new(ToolId::LocalFetch, read).build())
 }
 
 /// A query that explicitly targets a single file which the engine then skips
@@ -1085,7 +1269,7 @@ pub(super) fn skipped_target_hint(
     let reason = cap_reason?;
     if single_file && reason.contains("binaryQuit") {
         return Some(
-            "The target file is binary (NUL byte found); it was not searched past that point, and no text tool reads past it."
+            "The target file is binary (NUL byte found); it was not searched past that point."
                 .into(),
         );
     }
@@ -1096,129 +1280,84 @@ pub(super) fn skipped_target_hint(
     })
 }
 
+/// The engine collects at most [`MAX_COLLECTED_FILES`] files; the rest of
+/// the matched files are counted but on no page. Names how many, and how to
+/// reach them.
+pub(super) fn uncollected_warning(stats: &SearchStats, collected: u32) -> Option<String> {
+    let capped = stats
+        .cap_reason
+        .as_deref()
+        .is_some_and(|reason| reason.split(", ").any(|r| r == "maxCollectedFiles"));
+    let beyond = stats.files_matched.saturating_sub(collected);
+    (capped && beyond > 0).then(|| {
+        format!(
+            "maxCollectedFiles: {beyond} of {} matched files are past the {MAX_COLLECTED_FILES}-file collection cap and no page reaches them; split the search by path or include.",
+            stats.files_matched
+        )
+    })
+}
+
 pub(super) fn unreadable_hint(count: u32) -> String {
     format!(
-        "{count} path(s) unreadable (check permissions, stats.firstError); absence is unproven, so narrow path to readable dirs."
+        "{} unreadable",
+        crate::response::pages::counted(u64::from(count), "path", "paths")
     )
 }
 
-pub(super) fn empty_hint(query: &LocalSearchQuery) -> String {
-    let mut tips = Vec::new();
-    // Published fields only: smart case (the default) matches any case for
-    // an all-lowercase term; `caseMode` is named only to a caller who set it.
-    match query.case_mode {
-        LocalSearchQueryCaseMode::Sensitive => tips.push("caseMode:\"insensitive\""),
-        LocalSearchQueryCaseMode::Smart if query.match_string.chars().any(char::is_uppercase) => {
-            tips.push("an all-lowercase matchString")
-        }
-        _ => {}
-    }
-    tips.push("a shorter term");
-    if query.regex_mode() == LocalSearchQueryRegex::Literal {
-        tips.push("regex:\"rust\"");
-    } else {
-        tips.push("regex:\"literal\" if matchString has metacharacters");
-    }
-    format!("No matches. Try {}.", tips.join(", "))
+/// An empty search's fact: how many files it read.
+pub(super) fn empty_hint(files_searched: u32) -> String {
+    format!(
+        "No matches in {} searched.",
+        crate::response::pages::counted(u64::from(files_searched), "file", "files")
+    )
 }
 
-/// Wall-clock bound of the ignored/hidden re-walk behind an empty result.
+/// Wall-clock bound of one ignored/hidden/default-excluded re-walk behind an
+/// empty result.
 pub(super) const IGNORED_PROBE_MS: u64 = 400;
 
-/// Files an empty search's re-run found where the defaults do not look.
-pub(super) struct IgnoredMatches {
-    pub(super) count: usize,
-    /// The re-run stopped early (deadline or cap): there may be more.
-    pub(super) cut: bool,
-    /// Why the first matches were skipped, distinct: `gen/.gitignore:2 '*'`
-    /// or `hidden .notes/`. A default-excluded directory is named by the
-    /// walk's pruned names instead.
-    pub(super) reasons: Vec<String>,
+#[cfg(test)]
+thread_local! {
+    static PROBE_BUDGET: std::cell::Cell<Option<std::time::Duration>> =
+        const { std::cell::Cell::new(None) };
 }
 
-/// Probe matches whose skip reason the hint names.
-const EXPLAINED_MATCHES: usize = 8;
-/// Distinct skip reasons one hint names.
-const NAMED_REASONS: usize = 3;
-
-/// Why the default walk skipped `file` under `root`: the deciding ignore
-/// rule (deepest ignore file first; a `!` re-include there ends the search),
-/// else its first hidden component. `None` for a default-excluded directory.
-pub(super) fn skip_reason(root: &std::path::Path, file: &std::path::Path) -> Option<String> {
-    use ignore::Match;
-    use ignore::gitignore::GitignoreBuilder;
-    let shown = |path: &std::path::Path| {
-        path.strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/")
-    };
-    let in_git = file.ancestors().any(|dir| dir.join(".git").exists());
-    for dir in file.ancestors().skip(1) {
-        let mut candidates = vec![dir.join(".ignore")];
-        if in_git {
-            candidates.push(dir.join(".gitignore"));
-            candidates.push(dir.join(".git/info/exclude"));
-        }
-        for source in candidates.into_iter().filter(|path| path.is_file()) {
-            let mut builder = GitignoreBuilder::new(dir);
-            if builder.add(&source).is_some() {
-                continue;
-            }
-            let Ok(rules) = builder.build() else {
-                continue;
-            };
-            match rules.matched_path_or_any_parents(file, false) {
-                Match::Ignore(glob) => {
-                    let pattern = glob.original();
-                    let line = std::fs::read_to_string(&source)
-                        .ok()
-                        .and_then(|text| {
-                            text.lines()
-                                .enumerate()
-                                .filter(|(_, line)| line.trim_end() == pattern)
-                                .last()
-                                .map(|(index, _)| index + 1)
-                        })
-                        .map(|line| format!(":{line}"))
-                        .unwrap_or_default();
-                    return Some(format!("{}{line} '{pattern}'", shown(&source)));
-                }
-                Match::Whitelist(_) => return hidden_component(root, file),
-                Match::None => {}
-            }
-        }
-        if dir.join(".git").exists() {
-            break;
-        }
+/// The bound of one re-walk: [`IGNORED_PROBE_MS`], or a test's own.
+fn probe_budget() -> std::time::Duration {
+    #[cfg(test)]
+    if let Some(budget) = PROBE_BUDGET.with(std::cell::Cell::get) {
+        return budget;
     }
-    hidden_component(root, file)
+    std::time::Duration::from_millis(IGNORED_PROBE_MS)
 }
 
-fn hidden_component(root: &std::path::Path, file: &std::path::Path) -> Option<String> {
-    let relative = file.strip_prefix(root).ok()?;
-    let mut prefix = std::path::PathBuf::new();
-    let count = relative.components().count();
-    for (index, part) in relative.components().enumerate() {
-        prefix.push(part);
-        if part.as_os_str().to_string_lossy().starts_with('.') {
-            let slash = if index + 1 < count { "/" } else { "" };
-            return Some(format!("hidden {}{slash}", prefix.to_string_lossy()));
-        }
-    }
-    None
+/// Runs `body` with the re-walk bound set to `budget` on this thread.
+#[cfg(test)]
+pub(super) fn with_probe_budget<T>(budget: std::time::Duration, body: impl FnOnce() -> T) -> T {
+    PROBE_BUDGET.with(|cell| cell.set(Some(budget)));
+    let out = body();
+    PROBE_BUDGET.with(|cell| cell.set(None));
+    out
 }
+/// Wall-clock bound of all the re-walks of one diagnosis.
+const DIAGNOSIS_MS: u64 = 1200;
 
-/// Re-run an empty search with `noIgnore`, `hidden` and no default prune
-/// (files only, within [`IGNORED_PROBE_MS`]); `None` when it could not run.
-pub(super) fn ignored_probe(
-    mut options: TextSearchOptions,
+/// The files `options`' search finds under the relaxed `walk` (files only):
+/// the probe [`diagnose`] asks about each set of lifted causes. A search that
+/// cannot run, or is cut by its deadline, reports a cut find.
+fn probe_found(
+    options: &TextSearchOptions,
+    walk: Walk,
     paths: &PathPolicy,
     cancel: &impl CancellationCheck,
-) -> Option<IgnoredMatches> {
-    options.no_ignore = Some(true);
-    options.hidden = Some(true);
-    options.exclude_dir = None;
+    diagnosing_since: std::time::Instant,
+) -> Hits {
+    let mut options = options.clone();
+    options.no_ignore = Some(walk.ignored);
+    options.hidden = Some(walk.hidden);
+    if !walk.default_excludes {
+        options.exclude_dir = None;
+    }
     options.files_only = Some(true);
     options.files_without_match = Some(false);
     options.count_lines_per_file = Some(false);
@@ -1231,28 +1370,43 @@ pub(super) fn ignored_probe(
     options.digest_max_bytes = None;
     let root = std::path::PathBuf::from(&options.path);
     let started = std::time::Instant::now();
-    let deadline = std::time::Duration::from_millis(IGNORED_PROBE_MS);
-    let found = search_text_cancellable(options, Arc::new(paths.clone()), &|| {
-        cancel.check().is_err() || started.elapsed() > deadline
-    })
-    .ok()?;
-    let mut reasons = Vec::new();
-    for file in found.files.iter().take(EXPLAINED_MATCHES) {
-        let reason = skip_reason(&root, &root.join(&file.path));
-        if let Some(reason) = reason.filter(|reason| !reasons.contains(reason)) {
-            reasons.push(reason);
-        }
-    }
-    reasons.truncate(NAMED_REASONS);
-    Some(IgnoredMatches {
-        reasons,
-        count: found.files.len(),
-        cut: found
+    let (probe, total) = (
+        probe_budget(),
+        std::time::Duration::from_millis(DIAGNOSIS_MS),
+    );
+    let searched = search_text_cancellable(
+        options,
+        Arc::new(crate::policy::discovery::SearchWalk::new(
+            paths.clone(),
+            root.clone(),
+            walk.default_excludes,
+        )),
+        &|| {
+            cancel.check().is_err()
+                || started.elapsed() > probe
+                || diagnosing_since.elapsed() > total
+        },
+    );
+    let Ok(searched) = searched else {
+        return Hits {
+            cut: true,
+            ..Hits::default()
+        };
+    };
+    Hits {
+        count: searched.files.len(),
+        sample: searched
+            .files
+            .iter()
+            .take(SAMPLE_FILES)
+            .map(|file| root.join(&file.path))
+            .collect(),
+        cut: searched
             .stats
             .cap_reason
             .as_deref()
             .is_some_and(|reason| !reason.is_empty()),
-    })
+    }
 }
 
 /// `binarySkipped` warning: how many files were skipped as binary from
@@ -1336,11 +1490,10 @@ pub(super) fn leading_binary_listing(
     if !query.default_excludes.defaults() {
         listing["defaultExcludes"] = json!(false);
     }
-    if query.no_ignore == Some(true) {
-        listing["noIgnore"] = json!(true);
+    if query.include_ignored == Some(true) {
+        listing["includeIgnored"] = json!(true);
     }
     Continuation::new(ToolId::StructureSearch, listing)
-        .why("List the files skipped as binary.")
         .confidence("high")
         .build()
 }
@@ -1506,32 +1659,16 @@ mod enclosing_cap_tests {
 
 #[cfg(test)]
 mod empty_hint_tests {
-    use super::{LocalSearchQuery, empty_hint};
+    use super::empty_hint;
 
-    fn query(row: serde_json::Value) -> LocalSearchQuery {
-        serde_json::from_value(row).expect("localSearch row")
-    }
-
-    /// An empty-result tip names only published fields: smart case already
-    /// matches any case for an all-lowercase term, so a mixed-case term gets
-    /// that tip; only a caller who set `caseMode` is told about it.
+    /// An empty row states its count, never static search advice.
     #[test]
-    fn empty_tips_name_published_fields() {
-        let mixed = empty_hint(&query(
-            serde_json::json!({"path":".","matchString":"FooBar"}),
-        ));
-        assert!(!mixed.contains("caseMode"), "{mixed}");
-        assert!(mixed.contains("all-lowercase matchString"), "{mixed}");
-        let lower = empty_hint(&query(
-            serde_json::json!({"path":".","matchString":"foobar"}),
-        ));
-        assert!(
-            !lower.contains("caseMode") && !lower.contains("lowercase"),
-            "{lower}"
-        );
-        let strict = empty_hint(&query(
-            serde_json::json!({"path":".","matchString":"FooBar","caseMode":"sensitive"}),
-        ));
-        assert!(strict.contains("caseMode:\"insensitive\""), "{strict}");
+    fn empty_hint_is_the_scanned_count() {
+        assert_eq!(empty_hint(1), "No matches in 1 file searched.");
+        let many = empty_hint(12);
+        assert_eq!(many, "No matches in 12 files searched.");
+        for advice in ["Try", "caseMode", "regex", "shorter"] {
+            assert!(!many.contains(advice), "{many}");
+        }
     }
 }

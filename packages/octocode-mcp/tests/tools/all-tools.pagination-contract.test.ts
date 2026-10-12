@@ -30,14 +30,7 @@ const TOOL_PAGINATION_CONTRACT: Record<
   ghGetFileContent: { controls: ['unit', 'offset', 'length'] },
   ghSearchHistory: { controls: ['page', 'pageSize'] },
   ghGetHistoryItem: {
-    controls: [
-      'filePage',
-      'commentPage',
-      'commitPage',
-      'pageSize',
-      'offset',
-      'length',
-    ],
+    controls: ['page', 'pageSize', 'offset', 'length'],
   },
   artifactSearch: { controls: ['page', 'pageSize'] },
   ghCloneRepo: {

@@ -29,10 +29,7 @@ pub(crate) async fn nuget(
         });
     }
     let base = service_endpoint("SearchQueryService", client).await?;
-    let size = query
-        .page_size()
-        .unwrap_or(10)
-        .min((REACHABLE_END - offset) as usize);
+    let size = query.page_size().min((REACHABLE_END - offset) as usize);
     // NuGet rejects skip > 3000. Past it, fetch one window from skip=3000
     // (take stays <= 1000) and slice the caller's page out locally.
     let (skip, drop) = if offset > MAX_SKIP {
@@ -111,8 +108,7 @@ fn requested_version(version: Option<&str>) -> Result<Option<&str>, ArtifactErro
         return Err(ArtifactError::new(
             "capabilityUnavailable",
             format!("NuGet lookups take an exact version or latest, not \"{version}\"."),
-        )
-        .with_hint("Pass an exact package version, e.g. 13.0.3."));
+        ));
     }
     Ok(Some(version))
 }
@@ -299,7 +295,7 @@ async fn nuspec_repository(
             .next()
             .map(str::to_owned)
     };
-    let url = safe_url(Some(&Value::String(attribute("url")?)))?;
+    let url = super::util::canonical_repository(&attribute("url")?)?;
     Some((
         url,
         commit_sha(attribute("commit").map(Value::String).as_ref()),
@@ -419,8 +415,8 @@ fn is_source_repo(url: &str) -> bool {
 
 fn repository_url(value: Option<&Value>) -> Option<String> {
     match value? {
-        Value::Object(row) => safe_url(row.get("url")),
-        value => safe_url(Some(value)),
+        Value::Object(row) => super::util::repository_url(row.get("url")),
+        value => super::util::repository_url(Some(value)),
     }
 }
 
@@ -708,7 +704,7 @@ mod tests {
             .expect_err("missing version");
         assert_eq!(missing.code, "versionNotFound", "{missing:?}");
         assert!(
-            missing.hints.iter().any(|hint| hint.contains("13.0.3")),
+            missing.nearest.iter().any(|version| version == "13.0.3"),
             "{missing:?}"
         );
         let range = nuget(&lookup("[13.0,14.0)"), &state, &client)

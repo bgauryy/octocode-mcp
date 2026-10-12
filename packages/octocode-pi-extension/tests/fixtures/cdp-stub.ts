@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo, Socket } from 'node:net';
 
@@ -27,6 +27,8 @@ export interface CdpStubOptions {
 
 export interface CdpStub {
   port: number;
+  /** The browser's DevTools path `/json/version` reports (`/devtools/browser/<id>`), unique per stub like per Chrome run. */
+  browserPath: string;
   /** Every CDP command received, in order. */
   commands: Array<{ target: string; method: string; params: Record<string, unknown> }>;
   /** HTTP requests as `METHOD path`. */
@@ -89,6 +91,7 @@ export async function startCdpStub(options: CdpStubOptions = {}): Promise<CdpStu
   const sockets = new Set<Socket>();
   let targets = options.targets ?? [{ id: 'page-1', type: 'page' }];
   let tabs = 0;
+  const browserPath = `/devtools/browser/${randomUUID()}`;
   const server = http.createServer((req, res) => {
     const url = req.url ?? '/';
     requests.push(`${req.method} ${url}`);
@@ -97,7 +100,7 @@ export async function startCdpStub(options: CdpStubOptions = {}): Promise<CdpStu
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(body));
     };
-    if (url === '/json/version') return json(200, { Browser: 'Stub/1.0' });
+    if (url === '/json/version') return json(200, { Browser: 'Stub/1.0', webSocketDebuggerUrl: `ws://127.0.0.1:${(server.address() as AddressInfo).port}${browserPath}` });
     if (url === '/json/list') return json(200, targets.map((target) => ({ id: target.id, type: target.type, ...(target.ws === false ? {} : { webSocketDebuggerUrl: wsUrl(target.id) }) })));
     if (url.startsWith('/json/new')) {
       if (req.method !== 'PUT') return json(405, {});
@@ -168,6 +171,7 @@ export async function startCdpStub(options: CdpStubOptions = {}): Promise<CdpStu
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
     port: (server.address() as AddressInfo).port,
+    browserPath,
     commands,
     requests,
     pages,

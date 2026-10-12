@@ -138,6 +138,22 @@ describe('fetchUrl against a local server', () => {
     expect(languages).toEqual(['en-US,en;q=0.9', 'he-IL']);
   });
 
+  it('bounds the cache by total size and evicts the least recently used page', async () => {
+    const hits: Record<string, number> = {};
+    const body = 'x'.repeat(4_500_000);
+    const base = await serve((req, res) => {
+      hits[req.url!] = (hits[req.url!] ?? 0) + 1;
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(body);
+    });
+    for (let page = 0; page < 7; page++) await fetchUrl(`${base}/p${page}`, undefined, privateOk); // ~31.5 MB
+    await fetchUrl(`${base}/p0`, undefined, privateOk); // a hit: p0 is now the most recently used
+    await fetchUrl(`${base}/p7`, undefined, privateOk); // over 32 MB: p1 goes
+    await fetchUrl(`${base}/p0`, undefined, privateOk);
+    await fetchUrl(`${base}/p1`, undefined, privateOk);
+    expect([hits['/p0'], hits['/p1'], hits['/p7']]).toEqual([1, 2, 1]);
+  }, 30_000);
+
   it('follows same-host redirects and reports ones to another host', async () => {
     const base = await serve((req, res) => {
       if (req.url === '/old') {
@@ -223,7 +239,10 @@ describe('web tool', () => {
     const blocker = `${tmp()}/file`;
     fs.writeFileSync(blocker, '');
     vi.stubEnv('OCTOCODE_HOME', blocker);
-    expect(text(await tool.execute('id', { url: `${base}/`, maxChars: 1e9 }))).toMatch(/30000 more characters cut; call web again with a larger maxChars \(up to 50000\)\]$/);
+    expect(text(await tool.execute('id', { url: `${base}/`, maxChars: 1e9 }))).toMatch(
+      /^x{50000}\n\[\u2026 30000 more characters cut; the whole page could not be saved to a file; the last 30000 characters are beyond web's 50000-character limit: download the page with bash \(curl -o\) to read them\]$/,
+    );
+    expect(text(await tool.execute('id', { url: `${base}/` }))).toMatch(/60000 more characters cut; the whole page could not be saved to a file; maxChars 50000 shows up to 50000; the last 30000 characters are beyond/);
   });
 
   it('searches through each configured provider with its own request shape', async () => {
@@ -284,7 +303,7 @@ describe('web tool', () => {
 
     status['www.bing.com'] = 429;
     status['lite.duckduckgo.com'] = 202;
-    await expect(tool.execute('id', { query: 'example' })).rejects.toThrow(/^Search failed: every provider failed \(duckduckgo: HTTP 202 .*; bing: HTTP 429 .*; duckduckgo-lite: HTTP 202 .*\)\. Set TAVILY_API_KEY/);
+    await expect(tool.execute('id', { query: 'example' })).rejects.toThrow(/^Search failed: every provider failed \(duckduckgo: HTTP 202 .*; bing: HTTP 429 .*; duckduckgo-lite: HTTP 202 .*\)\. Do not repeat the same search: fetch a URL you already know with `web`, or ask the user to set TAVILY_API_KEY/);
 
     delete status['html.duckduckgo.com'];
     vi.stubEnv('TAVILY_API_KEY', 'tv');
@@ -375,7 +394,7 @@ describe('search provider chain', () => {
   it('reports keyed and keyless failures (bad JSON, network errors) when every provider failed', async () => {
     route({ 'api.search.brave.com': () => new Response('<html>not json</html>') });
     await expect(search('q', 3, { BRAVE_API_KEY: 'b' })).rejects.toThrow(
-      /^every provider failed \(brave: .*JSON.*; duckduckgo: connect ECONNREFUSED html\.duckduckgo\.com; bing: connect ECONNREFUSED www\.bing\.com; duckduckgo-lite: connect ECONNREFUSED lite\.duckduckgo\.com\)\. Set TAVILY_API_KEY/,
+      /^every provider failed \(brave: .*JSON.*; duckduckgo: connect ECONNREFUSED html\.duckduckgo\.com; bing: connect ECONNREFUSED www\.bing\.com; duckduckgo-lite: connect ECONNREFUSED lite\.duckduckgo\.com\)\. Do not repeat the same search: fetch a URL you already know with `web`, or ask the user to set TAVILY_API_KEY/,
     );
   });
 

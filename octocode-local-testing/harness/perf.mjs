@@ -22,7 +22,7 @@ const rows = [];
   const file = path.join(REPOS, 'huge-ts/src/vs/base/common/uri.ts');
   const line = fs.readFileSync(file, 'utf8').split('\n').findIndex(l => /^export class URI\b/.test(l)) + 1;
   // pageSize stays below the reference count so page 2 exists.
-  const first = await timed('lspSearch', { path: file, symbolName: 'URI', lineHint: line, operation: 'references', pageSize: 20 });
+  const first = await timed('lspSearch', { path: file, symbolName: 'URI', line: line, operation: 'references', pageSize: 20 });
   const next = rowData(first.out)?.next?.nextPage;
   const second = next ? await timed('lspSearch', null, next) : null;
   const refs = rowData(first.out)?.pagination?.totalItems;
@@ -49,7 +49,7 @@ const rows = [];
     const out = lead ? await cliClient.follow(lead) : cliEntry('astTopology', { queries: [query] });
     return { out, ms: Math.round(performance.now() - started) };
   };
-  const first = await topology({ ...base, operation: 'dependents', source: 'tokio/src/sync/mpsc/bounded.rs', depth: 6, pageSize: 5 });
+  const first = await topology({ ...base, operation: 'dependents', source: 'tokio/src/sync/mpsc/bounded.rs', graphDepth: 6, pageSize: 5 });
   const next = rowData(first.out)?.next?.nextPage;
   const second = next ? await topology(null, next) : null;
   const other = await topology({ ...base, operation: 'cycles', pageSize: 5 });

@@ -167,7 +167,7 @@ npx octocode schema
 npx octocode schema localFetch
 npx octocode schema ghSearchHistory --view query --select operation=commit  # workflow + one union branch
 
-# local file read (paginated; exit 6 + a re-runnable next.* continuation in the JSON)
+# local file read (paginated; exit 0 + a re-runnable next.* continuation in the JSON)
 npx octocode localFetch '{"queries":[{"path":"src/cli/mod.rs","ranges":["1-50"],"reasoning":"Read the dispatch entry."}]}'
 
 # continue a paginated read: re-run results[].data.next.continue.query verbatim
@@ -251,13 +251,12 @@ Hidden maintenance commands (not part of the agent surface, still available):
 
 | Code | Meaning |
 |---|---|
-| `0` | Success |
+| `0` | Success; a result with a next page is still success (follow `next.*`) |
 | `1` | Empty result / no matches |
 | `2` | Invalid input, including any rejected batch row |
 | `3` | Not found |
 | `4` | Auth required |
 | `5` | Execution error |
-| `6` | Partial result: the response carries a re-runnable `next.*` continuation |
 | `7` | Rate limited |
 | `130` | Interrupted (Ctrl-C) |
 

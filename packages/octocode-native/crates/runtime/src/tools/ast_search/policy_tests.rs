@@ -20,7 +20,7 @@ fn execute_row(
         .get("queries")
         .map_or(query.clone(), |rows| rows[0].clone());
     let query: AstSearchQuery = serde_json::from_value(row).expect("typed astSearch row");
-    execute_ast(&query, paths, security, cancellation)
+    execute_ast(&query, paths, security, cancellation, None)
 }
 
 /// A match row `{line, column, endLine?, value}` as (line, endLine, value).
@@ -127,14 +127,14 @@ fn descendant_policy_precedes_discovery_totals_and_line_reads() {
     let matches = execute_row(
         json!({
             "operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"typescript",
-            "pattern":"oldCall($A)","hidden":true
+            "pattern":"oldCall($A)","includeHidden":true
         }),
         &paths,
         &security,
         &NeverCancel,
     )
     .expect("structural matches");
-    assert_eq!(matches["stats"]["matchCount"], 1);
+    assert_eq!(matches["matchCount"], 1);
     assert_eq!(matches["files"].as_array().expect("files").len(), 1);
     let root_name = root.0.file_name().expect("root name").to_string_lossy();
     assert_eq!(
@@ -147,12 +147,16 @@ fn descendant_policy_precedes_discovery_totals_and_line_reads() {
 
 /// A directory scan whose path policy withheld candidate entries says so,
 /// as localSearch and structureSearch do: an empty or "complete" result
-/// over a `secrets/` directory is not proof of absence.
+/// over a credential-store directory is not proof of absence. A source
+/// folder merely named `secrets/` or `private/` is scanned, not withheld.
 #[test]
 fn directory_scans_disclose_policy_withheld_entries() {
     let root = Fixture::new();
-    std::fs::create_dir_all(root.0.join("secrets")).expect("secrets dir");
-    std::fs::write(root.0.join("secrets/store.ts"), "register(secret);\n").expect("withheld");
+    std::fs::create_dir_all(root.0.join(".aws")).expect("aws dir");
+    std::fs::write(root.0.join(".aws/store.ts"), "register(secret);\n").expect("withheld");
+    // The repository's own `.git` is a dot entry out of the walk's
+    // view, so it is not disclosed on every scan.
+    std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
     std::fs::write(
         root.0.join("visible.ts"),
         "register(visible);\nexport function shown() {}\n",
@@ -162,27 +166,30 @@ fn directory_scans_disclose_policy_withheld_entries() {
         out["warnings"].as_array().is_some_and(|warnings| {
             warnings.iter().any(|w| {
                 w.as_str().is_some_and(|w| {
-                    w.contains("withheld by path policy: security-policy dirs secrets/")
+                    w.contains("withheld by path policy: security-policy dirs .aws/")
+                        && !w.contains(".git")
                 })
             })
         })
     };
     let matches = run(
         &root.0,
-        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"register($A)"}),
+        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"register($A)","includeHidden":true}),
     )
     .expect("match");
-    assert_eq!(matches["stats"]["matchCount"], 1, "{matches}");
+    assert_eq!(matches["matchCount"], 1, "{matches}");
     assert!(disclosed(&matches), "{matches}");
     assert!(matches.get("complete").is_none(), "{matches}");
     let empty = run(
         &root.0,
-        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"register(secret)"}),
+        json!({"operation":"match","path":root.0,"language":"typescript","pattern":"register(secret)","includeHidden":true}),
     )
     .expect("empty match");
     assert!(disclosed(&empty), "{empty}");
     let symbols = run(&root.0, json!({"operation":"symbols","path":root.0})).expect("symbols");
-    assert!(disclosed(&symbols), "{symbols}");
+    // Dot directories are out of a symbols walk's view, disclosed or not.
+    assert_eq!(symbols["filesScanned"], 1, "{symbols}");
+    assert!(!symbols.to_string().contains("store.ts"), "{symbols}");
 }
 
 #[test]
@@ -204,10 +211,13 @@ fn structural_zero_is_empty_with_actionable_pattern_guidance() {
         !missing["isPartial"].as_bool().unwrap_or(false),
         "{missing}"
     );
-    let guidance = missing["diagnostics"][0]["message"]
-        .as_str()
-        .expect("no-match guidance");
-    assert!(guidance.contains("operation:\"syntaxTree\""), "{guidance}");
+    let guidance = missing["hints"][0].as_str().expect("no-match guidance");
+    assert!(
+        guidance.starts_with("0 matches in 1 typescript file."),
+        "{guidance}"
+    );
+    assert!(guidance.contains("whole nodes"), "{guidance}");
+    assert!(!guidance.contains("next."), "{guidance}");
 
     // Trailing punctuation the pattern omits is not required (ast-grep
     // smart strictness, as astRewrite matches).
@@ -219,7 +229,7 @@ fn structural_zero_is_empty_with_actionable_pattern_guidance() {
             &NeverCancel,
         )
         .expect("structural match");
-        assert_eq!(found["stats"]["matchCount"], 1, "{found}");
+        assert_eq!(found["matchCount"], 1, "{found}");
         assert!(found.get("status").is_none(), "{found}");
     }
 }
@@ -301,10 +311,11 @@ fn match_directory_scan_truncation_is_surfaced_not_silent() {
     )
     .expect("match runs");
 
+    assert!(out.get("truncated").is_none(), "undeclared field: {out}");
     assert_eq!(
-        out["truncated"],
-        json!(true),
-        "capped scan must set truncated=true; got {out}"
+        out["partialReasons"],
+        json!(["maxFiles"]),
+        "a capped scan names its cap; got {out}"
     );
     assert_eq!(
         out["isPartial"],
@@ -470,6 +481,83 @@ fn run(root: &std::path::Path, query: serde_json::Value) -> Result<serde_json::V
     execute_row(query, &paths, &security, &NeverCancel)
 }
 
+/// A page past the end of an astSearch match listing is the shared
+/// out-of-range outcome (`pagination.outOfRange`), with or without the
+/// snapshot: a missing snapshot is a fresh scan of that page, never a
+/// `staleSnapshot` error, and only a snapshot that no longer matches is stale.
+#[test]
+fn match_page_past_the_end_is_out_of_range_not_stale() {
+    let root = Fixture::new();
+    for name in ["a.ts", "b.ts", "c.ts"] {
+        std::fs::write(root.0.join(name), "console.log(1);\n").expect("file");
+    }
+    let base = json!({"operation":"match","path":root.0,"language":"typescript",
+        "pattern":"console.log($A)","pageSize":2});
+    let first = run(&root.0, base.clone()).expect("first");
+    let snapshot = first["next"]["nextPage"]["query"]["queries"][0]["snapshot"].clone();
+    let mut bare = base.clone();
+    bare["page"] = json!(99);
+    let mut pinned = bare.clone();
+    pinned["snapshot"] = snapshot;
+    for query in [bare, pinned] {
+        let out = run(&root.0, query).expect("out of range page");
+        assert!(out.get("errorCode").is_none(), "{out}");
+        assert_eq!(out["files"], json!([]), "{out}");
+        assert_eq!(out["pagination"]["outOfRange"], true, "{out}");
+        assert_eq!(out["pagination"]["currentPage"], 99, "{out}");
+        assert_eq!(out["pagination"]["totalPages"], 2, "{out}");
+    }
+    let mut wrong = base;
+    wrong["page"] = json!(2);
+    wrong["snapshot"] = json!("not-the-snapshot");
+    let stale = run(&root.0, wrong).expect("stale");
+    assert_eq!(stale["errorCode"], "staleSnapshot", "{stale}");
+}
+
+/// A syntax tree of a file with no registered grammar is a failed row
+/// (`status: "error"`, a declared code, the engine's message), not a partial
+/// payload that exits 0.
+#[test]
+fn syntax_tree_of_an_unsupported_file_is_an_error_row() {
+    let root = Fixture::new();
+    let file = root.0.join("data.json");
+    std::fs::write(&file, "{\"a\":1}\n").expect("file");
+    let out = run(&root.0, json!({"operation":"syntaxTree","path":file})).expect("row");
+    assert_eq!(out["status"], "error", "{out}");
+    assert_eq!(out["errorCode"], "languageUnsupported", "{out}");
+    assert!(
+        out["error"]
+            .as_str()
+            .is_some_and(|message| message.contains(".json")),
+        "{out}"
+    );
+    assert!(out.get("isPartial").is_none(), "{out}");
+}
+
+/// A failed inspection states its error once: the row carries no empty
+/// page, no snapshot, no single-page block and no diagnostics that repeat
+/// `error`, and no recovery text about paging.
+#[test]
+fn syntax_tree_error_row_states_the_error_once() {
+    let root = Fixture::new();
+    let file = root.0.join("data.json");
+    std::fs::write(&file, "{\"a\":1}\n").expect("file");
+    let out = run(&root.0, json!({"operation":"syntaxTree","path":file})).expect("row");
+    let mut keys: Vec<&str> = out
+        .as_object()
+        .expect("row")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        ["error", "errorCode", "operation", "path", "status"],
+        "{out}"
+    );
+    assert!(!out.to_string().contains("next page"), "{out}");
+}
+
 #[test]
 fn directory_pattern_that_compiles_in_no_file_is_an_error_not_empty() {
     let root = Fixture::new();
@@ -511,7 +599,11 @@ fn match_pagination_limits_next_match_page_to_the_current_file_page() {
     );
     let next = page1["next"]["nextPage"]["query"]["queries"][0].clone();
     let page2 = run(&root.0, next).expect("page2");
-    assert_eq!(page2["files"][0]["returnedMatchRows"], 2, "{page2}");
+    assert_eq!(
+        page2["files"][0]["matches"].as_array().map(Vec::len),
+        Some(2),
+        "{page2}"
+    );
     assert!(
         page2["next"]["nextMatchPage"].is_object(),
         "unreturned matches remain: {page2}"
@@ -520,7 +612,11 @@ fn match_pagination_limits_next_match_page_to_the_current_file_page() {
     assert_eq!(deeper["matchPage"], 2, "{page2}");
     assert_eq!(deeper["page"], 2, "{page2}");
     let page2b = run(&root.0, deeper.clone()).expect("page2 matchPage2");
-    assert_eq!(page2b["files"][0]["returnedMatchRows"], 1, "{page2b}");
+    assert_eq!(
+        page2b["files"][0]["matches"].as_array().map(Vec::len),
+        Some(1),
+        "{page2b}"
+    );
 
     // A nextPage continuation always restarts per-file match pagination.
     let mut mid = base;
@@ -638,17 +734,14 @@ fn cpp_header_can_use_explicit_cpp_grammar_without_changing_h_default() {
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":header,"language":"cpp","rule":"kind: class_specifier"}),
     )
     .expect("explicit C++ match");
-    assert_eq!(selected["stats"]["matchCount"], 1, "{selected}");
+    assert_eq!(selected["matchCount"], 1, "{selected}");
 
     let selected_directory = run(
         &root.0,
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"language":"cpp","include":["*.h"],"rule":"kind: class_specifier"}),
     )
     .expect("explicit C++ directory match");
-    assert_eq!(
-        selected_directory["stats"]["matchCount"], 1,
-        "{selected_directory}"
-    );
+    assert_eq!(selected_directory["matchCount"], 1, "{selected_directory}");
 
     let selected_directory_default = run(
         &root.0,
@@ -656,7 +749,7 @@ fn cpp_header_can_use_explicit_cpp_grammar_without_changing_h_default() {
     )
     .expect("C++ directory includes ambiguous headers");
     assert_eq!(
-        selected_directory_default["stats"]["matchCount"], 1,
+        selected_directory_default["matchCount"], 1,
         "{selected_directory_default}"
     );
 
@@ -794,8 +887,8 @@ fn clipped_values_do_not_mark_the_row_partial() {
     assert!(out.get("partialReasons").is_none(), "{out}");
     let rows = out["files"][0]["matches"].as_array().expect("rows");
     assert_eq!(rows.len(), 2, "{out}");
-    assert!(rows[0].get("truncated").is_none(), "{out}");
-    assert_eq!(rows[1]["truncated"], true, "{out}");
+    assert!(rows[0].get("clipped").is_none(), "{out}");
+    assert_eq!(rows[1]["clipped"], true, "{out}");
     assert!(
         rows[1]["value"].as_str().is_some_and(|v| v.ends_with('…')),
         "{out}"
@@ -828,9 +921,8 @@ fn clipped_values_do_not_mark_the_row_partial() {
 
 /// A match row with every file and match page shown and no scope gap is
 /// `complete`: its expansions (`expandCaptures`, `expandValues*`) and the
-/// hits read are drill-downs, so the response stage neither marks it partial
-/// nor lets the CLI exit as "more to read". A file page left, or a scope gap,
-/// keeps it open.
+/// hits read are drill-downs, so the response stage does not mark it
+/// partial. A file page left, or a scope gap, keeps it open.
 #[test]
 fn match_rows_without_unread_pages_are_complete() {
     let root = Fixture::new();
@@ -891,7 +983,7 @@ fn clipped_values_read_per_file_in_range_batches() {
         .collect::<Vec<_>>();
     // 15 clipped calls in a.rs (lines 2, 4, … 30) and one in b.rs (line 2).
     assert_eq!(ranges.len(), 16, "{out}");
-    let max = crate::tools::local_fetch::MAX_READ_RANGES;
+    let max = crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
     assert!(
         reads
             .iter()
@@ -1007,7 +1099,43 @@ fn unknown_symbol_kinds_are_rejected_and_source_limits_are_errors() {
         let out = run(&root.0, query).expect("limit row");
         assert_eq!(out["errorCode"], "fileTooLarge", "{out}");
         assert_eq!(out["status"], "error", "{out}");
+        // No literal searched: the typed error is the whole answer.
+        assert!(
+            out.get("next").is_none() && out.get("hints").is_none(),
+            "{out}"
+        );
     }
+    // A searched name leads to a text search of it in the same file.
+    let named = run(
+        &root.0,
+        json!({"operation":"symbols","path":large,"symbolName":"visible"}),
+    )
+    .expect("limit row");
+    let lead = &named["next"]["findText"];
+    assert_eq!(lead["tool"], "localSearch", "{named}");
+    assert_eq!(
+        lead["query"]["queries"][0]["matchString"], "visible",
+        "{named}"
+    );
+    assert!(
+        lead["query"]["queries"][0]["path"]
+            .as_str()
+            .is_some_and(|path| path.ends_with("large.rs")),
+        "{named}"
+    );
+    let pattern = run(
+        &root.0,
+        json!({"operation":"match","path":large,"pattern":"console.log"}),
+    );
+    let error = pattern.expect_err("pattern over the parse limit");
+    assert_eq!(error.code, "fileTooLarge");
+    let next = error.next.expect("findText lead");
+    assert_eq!(next["findText"]["query"]["queries"][0]["regex"], "literal");
+    use crate::tools::output::ToolOutput;
+    assert_eq!(
+        super::output::Output.error_hint("fileTooLarge"),
+        Some(crate::tools::output::NO_HINT)
+    );
 }
 
 #[test]
@@ -1272,7 +1400,7 @@ fn match_rows_withhold_captures_by_default_and_omit_single_line_ends() {
     let query = json!({"operation":"match","mainGoal":"test","reasoning":"test","path":source,"pattern":"oldCall($A)"});
     let out = run(&root.0, query.clone()).expect("match");
     let matches = out["files"][0]["matches"].as_array().expect("matches");
-    // Lean rows (X1 objects): the line and 1-based column (a span adds its
+    // Lean rows (objects): the line and 1-based column (a span adds its
     // end line) and the normalized text; no captures.
     assert_eq!(
         matches,
@@ -1398,7 +1526,7 @@ fn rust_item_pattern_without_visibility_also_matches_pub_items() {
             "pattern":"fn $N() -> Result<$T, String> { $$$B }"}),
     )
     .expect("match");
-    assert_eq!(out["stats"]["matchCount"], 2, "{out}");
+    assert_eq!(out["matchCount"], 2, "{out}");
     assert!(relaxed(&out), "{out}");
     assert!(!out.to_string().contains("visibilityExact"), "{out}");
     // A pattern that already names the visibility is run as written.
@@ -1408,12 +1536,15 @@ fn rust_item_pattern_without_visibility_also_matches_pub_items() {
             "pattern":"pub fn $N() -> Result<$T, String> { $$$B }"}),
     )
     .expect("match");
-    assert_eq!(out["stats"]["matchCount"], 1, "{out}");
+    assert_eq!(out["matchCount"], 1, "{out}");
     assert!(!relaxed(&out), "{out}");
 }
 
+/// A rule that does not compile on a file states the compiler's error and
+/// leads to the file's syntax tree; no static advice rides along (the rule
+/// shape is in the field description).
 #[test]
-fn yaml_rule_compile_errors_get_a_rule_hint_not_a_pattern_hint() {
+fn yaml_rule_compile_errors_lead_to_the_syntax_tree_not_a_pattern_hint() {
     let root = Fixture::new();
     let source = root.0.join("lib.rs");
     std::fs::write(&source, "fn a() {}\n").expect("source");
@@ -1424,9 +1555,13 @@ fn yaml_rule_compile_errors_get_a_rule_hint_not_a_pattern_hint() {
     )
     .expect_err("invalid rule");
     assert_eq!(error.code, "invalidPattern");
-    let hint = error.hints.join(" ");
-    assert!(hint.contains("rule"), "{hint}");
-    assert!(!hint.contains("add `;`"), "{hint}");
+    assert!(error.hints.is_empty(), "{error:?}");
+    let next = error.next.as_ref().expect("viewTree");
+    assert_eq!(
+        next["viewTree"]["query"]["queries"][0]["path"],
+        json!(source.canonicalize().expect("source").to_string_lossy()),
+        "{next}"
+    );
 }
 
 #[test]
@@ -1464,6 +1599,8 @@ fn flow_js_symbols_list_hooks_and_mark_a_recovered_parse_partial() {
         "the Flow type alias forces a recovered parse: {out}"
     );
     assert_eq!(out["isPartial"], json!(true), "{out}");
+    // A partial page without `next` still names why it is partial.
+    assert_eq!(out["partialReasons"], json!(["parseRecovered"]), "{out}");
 }
 
 /// A single-file match parses the file as a directory scan does: raw.
@@ -1556,7 +1693,7 @@ fn directory_match_infers_the_only_grammar_present() {
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"hit($A)","pageSize":1}),
     )
     .expect("language inferred from the .rs files");
-    assert_eq!(out["stats"]["matchCount"], 2, "{out}");
+    assert_eq!(out["matchCount"], 2, "{out}");
     assert_eq!(out["inferredLanguage"], "rust", "{out}");
     assert_eq!(
         out["next"]["nextPage"]["query"]["queries"][0]["language"], "rust",
@@ -1579,6 +1716,9 @@ fn directory_match_with_several_parsing_grammars_names_the_candidates() {
     let root = Fixture::new();
     std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); }\n").expect("a");
     std::fs::write(root.0.join("b.ts"), "hit(2);\n").expect("b");
+    // The scope is mostly TypeScript, so its grammar leads the repair
+    // (hints keep a lead's first row) although `rust` sorts first by name.
+    std::fs::write(root.0.join("c.ts"), "hit(3);\n").expect("c");
     let error = run(
         &root.0,
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"hit($A)"}),
@@ -1588,10 +1728,15 @@ fn directory_match_with_several_parsing_grammars_names_the_candidates() {
     for language in ["rust", "typescript"] {
         assert!(error.message.contains(language), "{error:?}");
     }
-    // Every candidate grammar is its own runnable lead.
-    let next = error.next.as_ref().expect("per-grammar leads");
-    for (lead, language) in [("withRust", "rust"), ("withTypescript", "typescript")] {
-        let row = &next[lead]["query"]["queries"][0];
+    // One repair lead runs the query once per candidate grammar; no text.
+    let next = error.next.as_ref().expect("repair lead");
+    assert_eq!(next.as_object().map(|next| next.len()), Some(1), "{next}");
+    assert!(error.hints.is_empty(), "{error:?}");
+    let rows = next["repair"]["query"]["queries"]
+        .as_array()
+        .expect("batch");
+    assert_eq!(rows.len(), 2, "{next}");
+    for (row, language) in rows.iter().zip(["typescript", "rust"]) {
         assert_eq!(row["language"], language, "{next}");
         assert_eq!(row["pattern"], "hit($A)", "{next}");
     }
@@ -1601,7 +1746,7 @@ fn directory_match_with_several_parsing_grammars_names_the_candidates() {
         json!({"operation":"match","mainGoal":"test","reasoning":"test","path":root.0,"pattern":"hit($A)","language":"rust"}),
     )
     .expect("explicit language");
-    assert_eq!(out["stats"]["matchCount"], 1, "{out}");
+    assert_eq!(out["matchCount"], 1, "{out}");
     assert!(out.get("inferredLanguage").is_none(), "{out}");
 }
 
@@ -1644,7 +1789,7 @@ fn object_and_yaml_rules_match_identically() {
     );
 }
 
-/// X14: matches inside a `macro_rules!` template body are listed (no
+/// Matches inside a `macro_rules!` template body are listed (no
 /// silent omission behind `complete:true`).
 #[test]
 fn macro_rules_template_bodies_are_listed() {
@@ -1773,23 +1918,23 @@ fn a_single_named_declaration_leads_to_its_callers() {
     assert_eq!(symbols(json!("helper")), symbols(json!(["helper"])));
     let one = symbols(json!(["helper"]));
     // Offered only where a language server runs for the file.
-    if crate::tools::lsp_search::verify_query(
+    if crate::tools::leads::lsp::verify_query(
         &source.to_string_lossy(),
         "helper",
         3,
-        crate::tools::lsp_search::Verify::Callers,
+        crate::tools::leads::lsp::Verify::Callers,
     )
     .is_none()
     {
         assert!(one.get("next").is_none(), "{one}");
         return;
     }
-    let lead = &one["next"]["callers"];
+    let lead = &one["next"]["findCallers"];
     assert_eq!(lead["tool"], "lspSearch", "{one}");
     // A function's usual next question is its call sites.
     assert_eq!(lead["query"]["queries"][0]["operation"], "callers", "{one}");
     assert_eq!(lead["query"]["queries"][0]["symbolName"], "helper", "{one}");
-    assert_eq!(lead["query"]["queries"][0]["lineHint"], 3, "{one}");
+    assert_eq!(lead["query"]["queries"][0]["line"], 3, "{one}");
     let uri = lead["query"]["queries"][0]["path"].as_str().expect("uri");
     assert!(
         std::path::Path::new(uri).is_absolute() && uri.ends_with("lead.rs"),
@@ -1805,7 +1950,7 @@ fn a_single_named_declaration_leads_to_its_callers() {
         json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"symbolName":["helper"]}),
     )
     .expect("directory symbols");
-    let uri = dir["next"]["callers"]["query"]["queries"][0]["path"]
+    let uri = dir["next"]["findCallers"]["query"]["queries"][0]["path"]
         .as_str()
         .expect("directory path");
     assert_eq!(
@@ -1831,7 +1976,7 @@ fn a_bare_include_word_matches_file_names_containing_it() {
             "language":"rust","pattern":"hit($A)","include":["test"]}),
     )
     .expect("match");
-    assert_eq!(out["stats"]["matchCount"], 1, "{out}");
+    assert_eq!(out["matchCount"], 1, "{out}");
     assert!(out.to_string().contains("handler_test.rs"), "{out}");
 }
 
@@ -1912,29 +2057,29 @@ fn an_empty_declaration_pattern_retries_with_the_parts_it_omitted() {
     // Every function has a return type: the pattern as written matches
     // nothing, so the retry spells the return type it omitted.
     let out = matched(&typed, "export function $N($$$A) { $$$B }");
-    assert_eq!(out["stats"]["matchCount"], 1, "{out}");
+    assert_eq!(out["matchCount"], 1, "{out}");
     assert!(out.get("status").is_none(), "{out}");
     assert!(relaxed(&out), "{out}");
     let out = matched(&typed, "function $N($$$A) { $$$B }");
-    assert_eq!(out["stats"]["matchCount"], 2, "{out}");
+    assert_eq!(out["matchCount"], 2, "{out}");
 
     // A pattern that matches as written still gains the spellings it
     // omitted: the untyped function and the typed one.
     let out = matched(&mixed, "export function $N($$$A) { $$$B }");
-    assert_eq!(out["stats"]["matchCount"], 2, "{out}");
+    assert_eq!(out["matchCount"], 2, "{out}");
     assert!(relaxed(&out), "{out}");
 
     // Rust: visibility and the return type; Python: the return annotation.
     let out = matched(&rust, "fn $N() { $$$B }");
-    assert_eq!(out["stats"]["matchCount"], 3, "{out}");
+    assert_eq!(out["matchCount"], 3, "{out}");
     assert!(relaxed(&out), "c as written, a and b relaxed: {out}");
     let only_pub = root.0.join("pub.rs");
     std::fs::write(&only_pub, "pub fn a() -> u8 { 1 }\npub(crate) fn b() {}\n").expect("pub");
     let out = matched(&only_pub, "fn $N() { $$$B }");
-    assert_eq!(out["stats"]["matchCount"], 2, "{out}");
+    assert_eq!(out["matchCount"], 2, "{out}");
     assert!(relaxed(&out), "{out}");
     let out = matched(&python, "def $F($$$A): $$$B");
-    assert_eq!(out["stats"]["matchCount"], 1, "{out}");
+    assert_eq!(out["matchCount"], 1, "{out}");
     assert!(relaxed(&out), "{out}");
 
     // Nothing to add, or nothing found either way: the plain empty result.
@@ -1944,7 +2089,7 @@ fn an_empty_declaration_pattern_retries_with_the_parts_it_omitted() {
 }
 
 /// A single-file outline leads to its natural next read: the top
-/// declaration's lines (C8); a directory outline names no single read.
+/// declaration's lines; a directory outline names no single read.
 #[test]
 fn a_single_file_outline_leads_to_its_top_declaration() {
     let root = Fixture::new();
@@ -1992,7 +2137,7 @@ fn directory_match_over_a_grammar_family_infers_the_family() {
     )
     .expect("one family");
     assert_eq!(out["inferredLanguage"], "typescript", "{out}");
-    assert_eq!(out["stats"]["matchCount"], 2, "{out}");
+    assert_eq!(out["matchCount"], 2, "{out}");
 }
 
 /// Parse-recovery notes stay on files that list a declaration; the other
@@ -2023,7 +2168,7 @@ fn symbols_group_recovery_notes_of_files_without_a_listed_declaration() {
         "{out}"
     );
     assert_eq!(out["isPartial"], true, "{out}");
-    let lead = &out["next"]["textSearch"];
+    let lead = &out["next"]["findText"];
     assert_eq!(lead["tool"], "localSearch", "{out}");
     assert_eq!(
         lead["query"]["queries"][0]["matchString"], "sdsnewlen",
@@ -2031,7 +2176,7 @@ fn symbols_group_recovery_notes_of_files_without_a_listed_declaration() {
     );
 }
 
-/// N11: a recovered parse can hide a declaration of the queried name only
+/// A recovered parse can hide a declaration of the queried name only
 /// where its syntax errors spell that name. A file that only calls the name
 /// in code that parsed keeps no note and leaves the outline complete.
 #[test]
@@ -2102,7 +2247,7 @@ fn empty_symbols_hint_names_file_count_and_text_lead() {
             .is_some_and(|text| text.contains("0 declarations named missing_name in 2 files"))),
         "{out}"
     );
-    let lead = &out["next"]["textSearch"];
+    let lead = &out["next"]["findText"];
     assert_eq!(lead["tool"], "localSearch", "{out}");
     assert_eq!(
         lead["query"]["queries"][0]["matchString"], "missing_name",
@@ -2121,7 +2266,7 @@ fn empty_symbols_hint_names_file_count_and_text_lead() {
             .is_some_and(|text| text.contains("0 declarations in 2 files")),
         "{outline}"
     );
-    assert!(outline["next"].get("textSearch").is_none(), "{outline}");
+    assert!(outline["next"].get("findText").is_none(), "{outline}");
 }
 
 /// AS4: an empty match counts the files it parsed and leads to the syntax
@@ -2137,9 +2282,9 @@ fn empty_match_hint_leads_to_syntax_tree() {
     .expect("match");
     assert_eq!(out["status"], "empty", "{out}");
     assert!(
-        out["diagnostics"][0]["message"]
+        out["hints"][0]
             .as_str()
-            .is_some_and(|text| text.contains("in 1 parsed file")),
+            .is_some_and(|text| text.starts_with("0 matches in 1 rust file.")),
         "{out}"
     );
     let lead = &out["next"]["viewTree"];
@@ -2318,4 +2463,244 @@ fn expanded_scans_reach_every_file_exactly_once() {
         expected.sort();
         assert_eq!(walked, expected, "{query}: no duplicate, no gap");
     }
+}
+
+/// The happy-path rows carry exactly what the next hop takes: a file
+/// outline names its file once and each declaration as
+/// `name (line-endLine, kind…)`; a directory outline groups under each
+/// file's `path` without restating the queried directory; a match row is
+/// `{line, endLine?, value}` (no `endLine` on a single-line match).
+#[test]
+fn happy_path_rows_carry_the_next_hop_anchors() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join("src")).expect("src");
+    let file = root.0.join("src/lib.rs");
+    std::fs::write(
+        &file,
+        "pub fn alpha() {\n    beta(1);\n}\n\nfn beta(x: u8) {}\n",
+    )
+    .expect("lib");
+
+    let outline = run(
+        &root.0,
+        json!({"operation":"symbols","path":file,"symbolName":"alpha"}),
+    )
+    .expect("file outline");
+    assert_eq!(outline["path"], "lib.rs", "{outline}");
+    let entry = outline["symbols"][0].as_str().expect("entry string");
+    assert!(entry.starts_with("alpha (1-3, function"), "{outline}");
+
+    let directory = run(
+        &root.0,
+        json!({"operation":"symbols","path":root.0.join("src")}),
+    )
+    .expect("directory outline");
+    assert!(directory.get("path").is_none(), "{directory}");
+    assert_eq!(directory["files"][0]["path"], "src/lib.rs", "{directory}");
+    assert!(directory["files"][0]["symbols"].is_array(), "{directory}");
+
+    let matched = run(
+        &root.0,
+        json!({"operation":"match","path":file,"pattern":"fn $N($$$P) { $$$B }"}),
+    )
+    .expect("match");
+    let rows = matched["files"][0]["matches"].as_array().expect("rows");
+    let multi = rows.iter().find(|row| row["line"] == 1).expect("alpha");
+    assert_eq!(multi["endLine"], 3, "{matched}");
+    assert!(multi["value"].is_string(), "{matched}");
+    let single = rows.iter().find(|row| row["line"] == 5).expect("beta");
+    assert!(single.get("endLine").is_none(), "{matched}");
+    for row in rows {
+        let keys = row.as_object().expect("row").keys().collect::<Vec<_>>();
+        assert!(
+            keys.iter()
+                .all(|key| ["line", "endLine", "value", "column"].contains(&key.as_str())),
+            "{row}"
+        );
+    }
+}
+
+/// A later match page lists only files it still has matches for; the
+/// per-file page facts no longer restate the continuation or the counts.
+#[test]
+fn a_later_match_page_drops_files_whose_matches_ended() {
+    let root = Fixture::new();
+    std::fs::write(root.0.join("a.rs"), "fn a() { hit(1); hit(2); hit(3); }\n").expect("a");
+    std::fs::write(root.0.join("b.rs"), "fn b() { hit(4); }\n").expect("b");
+    let first = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"language":"rust","pattern":"hit($A)","matchPageSize":2}),
+    )
+    .expect("page 1");
+    let files = first["files"].as_array().expect("files");
+    assert_eq!(files.len(), 2, "{first}");
+    let a = files
+        .iter()
+        .find(|file| file["path"].as_str().is_some_and(|p| p.ends_with("a.rs")))
+        .expect("a");
+    assert!(
+        a.get("totalMatchRows").is_none() && a.get("returnedMatchRows").is_none(),
+        "{a}"
+    );
+    assert!(a["pagination"].get("nextMatchPage").is_none(), "{a}");
+    let next = first["next"]["nextMatchPage"].clone();
+    let second = run(&root.0, next["query"].clone()).expect("match page 2");
+    let files = second["files"].as_array().expect("files");
+    assert_eq!(files.len(), 1, "{second}");
+    assert_eq!(
+        files[0]["matches"].as_array().map(Vec::len),
+        Some(1),
+        "{second}"
+    );
+    let seen = |out: &serde_json::Value| {
+        out["files"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|file| {
+                let path = file["path"].as_str().unwrap_or_default().to_owned();
+                file["matches"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(move |row| (path.clone(), row["line"].clone(), row["value"].clone()))
+            })
+            .collect::<Vec<_>>()
+    };
+    let (one, two) = (seen(&first), seen(&second));
+    assert!(two.iter().all(|row| !one.contains(row)), "{first} {second}");
+}
+
+/// Repairable failures carry their one lead and no advice text: a pattern
+/// that does not compile against a file leads to its syntax tree; a
+/// language no file under a directory has leads to the query in the grammar
+/// the directory does hold (a repair never removes a field the run needs).
+#[test]
+fn repairable_failures_carry_one_lead() {
+    let root = Fixture::new();
+    let file = root.0.join("a.rs");
+    std::fs::write(&file, "fn a() {}\n").expect("a");
+    let error = run(
+        &root.0,
+        json!({"operation":"match","path":file,"rule":"pattern: [\nnot: yaml"}),
+    )
+    .expect_err("invalid rule");
+    assert_eq!(error.code, "invalidPattern", "{error:?}");
+    assert!(error.hints.is_empty(), "{error:?}");
+    let next = error.next.as_ref().expect("lead");
+    assert_eq!(
+        next["viewTree"]["query"]["queries"][0]["operation"], "syntaxTree",
+        "{next}"
+    );
+
+    let out = run(
+        &root.0,
+        json!({"operation":"match","path":root.0,"language":"python","pattern":"print($A)"}),
+    )
+    .expect("no python file");
+    let repair = &out["next"]["repair"]["query"]["queries"][0];
+    assert_eq!(repair["language"], "rust", "{out}");
+    assert_eq!(repair["pattern"], "print($A)", "{out}");
+    assert_eq!(
+        out["hints"],
+        json!(["No python file under this path was parsed."]),
+        "{out}"
+    );
+}
+
+/// A directory whose files the walk skipped as ignored or hidden parsed
+/// nothing: the empty match leads to the same query with those walks on (the
+/// astRewrite probe), and does not offer a repair that drops `language`.
+#[test]
+fn an_empty_match_over_ignored_and_hidden_files_leads_to_them() {
+    for (dir, flag) in [("gen", "includeIgnored"), (".cfg", "includeHidden")] {
+        let root = Fixture::new();
+        std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
+        std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+        let pkg = root.0.join("pkg");
+        std::fs::create_dir_all(pkg.join(dir)).expect("dir");
+        std::fs::write(pkg.join(dir).join("a.py"), "print(1)\n").expect("source");
+        let request = json!({
+            "operation":"match","mainGoal":"test","reasoning":"test",
+            "path":pkg,"language":"python","pattern":"print($A)"
+        });
+        let empty = run(&root.0, request.clone()).expect("empty match");
+        assert!(empty["files"].is_null(), "{dir}: {empty}");
+        assert!(empty["next"].get("repair").is_none(), "{dir}: {empty}");
+        let lead = &empty["next"]["includeIgnored"];
+        assert_eq!(lead["tool"], "astSearch", "{dir}: {empty}");
+        let retry = &lead["query"]["queries"][0];
+        assert_eq!(retry[flag], true, "{dir}: {empty}");
+        assert!(
+            empty["hints"]
+                .to_string()
+                .contains(if flag == "includeIgnored" {
+                    "ignored"
+                } else {
+                    "hidden"
+                }),
+            "{dir}: {empty}"
+        );
+        let found = run(&root.0, retry.clone()).expect("lead runs");
+        assert_eq!(found["matchCount"], 1, "{dir}: {found}");
+    }
+}
+
+/// A directory outline discloses the default-excluded directories it
+/// pruned, and an empty one leads to the same query over them.
+#[test]
+fn symbols_disclose_default_excluded_directories() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join("node_modules/pkg")).expect("dirs");
+    std::fs::write(
+        root.0.join("node_modules/pkg/index.ts"),
+        "export function hiddenHelper() {}\n",
+    )
+    .expect("pruned source");
+    std::fs::write(root.0.join("main.ts"), "export const x = 1;\n").expect("source");
+    let out = run(
+        &root.0,
+        json!({"operation":"symbols","mainGoal":"test","reasoning":"test","path":root.0,"symbolName":"hiddenHelper"}),
+    )
+    .expect("symbols");
+    let warnings = out["warnings"].to_string();
+    assert!(warnings.contains("node_modules/"), "{out}");
+    let lead = &out["next"]["includeIgnored"];
+    assert_eq!(lead["tool"], "astSearch", "{out}");
+    let query = &lead["query"]["queries"][0];
+    assert_eq!(query["defaultExcludes"], false, "{out}");
+    assert_eq!(query["symbolName"], "hiddenHelper", "{out}");
+    assert!(query.get("snapshot").is_none(), "{out}");
+    let all = run(&root.0, query.clone()).expect("lead runs");
+    assert!(all.to_string().contains("hiddenHelper"), "{all}");
+}
+
+/// An empty match that did parse files still names the ignored files of its
+/// grammar it left out, and leads to the same query with them on: the hint
+/// about the pattern's shape is not the only explanation.
+#[test]
+fn an_empty_match_beside_parsed_files_names_the_ignored_ones() {
+    let root = Fixture::new();
+    std::fs::create_dir_all(root.0.join(".git")).expect("git dir");
+    std::fs::write(root.0.join(".gitignore"), "gen/\n").expect("gitignore");
+    std::fs::create_dir_all(root.0.join("gen")).expect("dir");
+    std::fs::write(root.0.join("gen/b.ts"), "export const y = double(2);\n")
+        .expect("ignored source");
+    std::fs::write(root.0.join("a.ts"), "export const x = 1;\n").expect("source");
+    let request = json!({
+        "operation":"match","mainGoal":"test","reasoning":"test",
+        "path":root.0,"language":"typescript","pattern":"double($A)"
+    });
+    let empty = run(&root.0, request).expect("empty match");
+    assert_eq!(empty["status"], "empty", "{empty}");
+    assert_eq!(empty["filesScanned"], json!(1), "{empty}");
+    let hints = empty["hints"].to_string();
+    assert!(
+        hints.contains("ignored") && hints.contains("gen/"),
+        "{hints}"
+    );
+    let retry = &empty["next"]["includeIgnored"]["query"]["queries"][0];
+    assert_eq!(retry["includeIgnored"], true, "{empty}");
+    let found = run(&root.0, retry.clone()).expect("lead runs");
+    assert_eq!(found["matchCount"], 1, "{found}");
 }

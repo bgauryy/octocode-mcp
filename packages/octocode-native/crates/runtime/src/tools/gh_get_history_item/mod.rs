@@ -23,6 +23,8 @@ use std::path::Path;
 /// The path the content scanner sees for history-item provider text.
 const SCAN_PATH: &str = "github-history-item";
 
+#[cfg(test)]
+mod anchor_tests;
 mod commit_compare;
 mod filter;
 mod graphql;
@@ -31,11 +33,13 @@ mod issue;
 mod output;
 mod patch;
 mod patch_hop;
+mod pr_finish;
 mod pr_menu;
 mod pr_sections;
 mod promotion;
 mod pull_request;
 mod recovery;
+mod text;
 mod util;
 mod window;
 
@@ -46,17 +50,15 @@ mod window;
 /// response page) and pages its collections by the same default.
 pub(crate) const DEFAULT_PAGE_SIZE: usize =
     crate::tools::id::query_limits::gh_get_history_item::issue::PAGE_SIZE_DEFAULT;
-/// Largest page of a provider collection (GitHub's `per_page` maximum).
-const MAX_COLLECTION_PAGE: usize = 100;
 const DEFAULT_TEXT_WINDOW: usize = 12_000;
 
 pub use crate::contracts::tool_types::GhGetHistoryItemQuery;
 pub(crate) use output::Output;
-pub use recovery::attach_recovery;
+pub use recovery::recovery;
 
 /// The operation discriminant of a [`GhGetHistoryItemQuery`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ItemOperation {
+enum ItemOperation {
     PullRequest,
     Issue,
     Commit,
@@ -68,10 +70,9 @@ pub enum ItemOperation {
 pub struct HistoryItemRequest {
     pub query: GhGetHistoryItemQuery,
     /// The sections the row reads, as the nested selector every handler
-    /// reads (`body`, `files`, `patches{mode,files,ranges}`,
-    /// `comments{discussion,reviewInline,includeBots}`, `reviews`,
-    /// `commits{includeFiles}`); built from `sections`, `patchRanges` and
-    /// `includeBots` ([`selection`]). Runtime-only, never on the wire.
+    /// reads (`body`, `files`, `patches{mode}`,
+    /// `comments{discussion,reviewInline}`, `reviews`,
+    /// `commits{includeFiles}`); built from `sections` ([`selection`]). Runtime-only, never on the wire.
     content: Option<Value>,
     /// Commit/compare rows that read patch text (`sections:["patches"]`).
     include_diff: bool,
@@ -84,7 +85,7 @@ pub struct HistoryItemRequest {
     pub(super) file_scope: Vec<String>,
     /// File text at the pull request's head that widens `matchString` hunks
     /// past GitHub's diff context (read once per file and call).
-    head_sources: Option<std::sync::Arc<patch::HeadSources>>,
+    head_sources: Option<std::sync::Arc<patch::hunks::HeadSources>>,
 }
 
 impl HistoryItemRequest {
@@ -113,10 +114,8 @@ impl HistoryItemRequest {
 /// The sections a row reads, as the nested selector the handlers share
 /// (internal keys `body`, `files`, `patches`, `comments`, `reviews`,
 /// `commits`):
-/// pull-request and issue `sections`/`patchRanges`/`includeBots` become
-/// `content`; commit/compare `sections:["patches"]` reads patch text and
-/// `include` scopes the files. A commit with a `base` is the comparison
-/// base...ref. Returns `(content, include_diff, file_scope)`.
+/// pull-request and issue `sections` become `content`; commit/compare `sections:["patches"]` reads patch text and
+/// `include` scopes the files. Returns `(content, include_diff, file_scope)`.
 fn selection(row: &mut Value) -> (Option<Value>, bool, Vec<String>) {
     let Some(fields) = row.as_object_mut() else {
         return (None, false, Vec::new());
@@ -173,26 +172,7 @@ fn selection(row: &mut Value) -> (Option<Value>, bool, Vec<String>) {
                 }
             }
             if !comments.is_empty() {
-                if fields.get("includeBots").and_then(Value::as_bool) == Some(true) {
-                    comments.insert("includeBots".into(), Value::Bool(true));
-                }
                 content.insert("comments".into(), Value::Object(comments));
-            }
-            // `patchRanges` select patch lines per file; with them, the exact
-            // paths in `include` are selected files too (globs need a scan).
-            if let Some(ranges) = fields
-                .get("patchRanges")
-                .filter(|ranges| ranges.as_array().is_some_and(|ranges| !ranges.is_empty()))
-            {
-                let files = strings(fields.get("include"))
-                    .into_iter()
-                    .filter(|path| !path.contains(['*', '?', '[', '{']))
-                    .collect::<Vec<_>>();
-                let mut patches = serde_json::json!({"mode":"selected","ranges":ranges});
-                if !files.is_empty() {
-                    patches["files"] = serde_json::json!(files);
-                }
-                content.insert("patches".into(), patches);
             }
             // `matchString` on a pull request filters its patches; with no
             // section selected it searches every patch.
@@ -209,20 +189,12 @@ fn selection(row: &mut Value) -> (Option<Value>, bool, Vec<String>) {
             )
         }
         "commit" | "compare" => {
-            let include_diff = sections.iter().any(|section| section == "patches");
-            let scope = strings(fields.get("include"));
-            if operation == "commit"
-                && let Some(base) = fields.remove("base")
-            {
-                fields.insert("operation".into(), Value::from("compare"));
-                if let Some(head) = fields.remove("ref") {
-                    fields.insert("head".into(), head);
-                }
-                fields.insert("base".into(), base);
-                fields.remove("include");
-                fields.entry("page").or_insert_with(|| Value::from(1));
-            }
-            (None, include_diff, scope)
+            // `matchString` with no section named searches the patches, as
+            // on a pull request.
+            let include_diff = sections.iter().any(|section| section == "patches")
+                || (sections.is_empty()
+                    && fields.get("matchString").and_then(Value::as_str).is_some());
+            (None, include_diff, strings(fields.get("include")))
         }
         _ => (None, false, Vec::new()),
     }
@@ -230,8 +202,11 @@ fn selection(row: &mut Value) -> (Option<Value>, bool, Vec<String>) {
 
 impl HistoryItemRequest {
     /// This comparison with `base`/`head` replaced (resolved commits), for
-    /// continuations that must read the same two commits.
-    pub(super) fn with_compare_refs(&self, base: &str, head: &str) -> Self {
+    /// continuations that must read the same two commits. A ref the wire
+    /// contract rejects (an empty one) is a validation error, never a
+    /// silent fall back to the unpinned ref.
+    pub(super) fn with_compare_refs(&self, base: &str, head: &str) -> Result<Self, ProviderError> {
+        use crate::contracts::tool_types::{GhGetHistoryItemQueryBase, GhGetHistoryItemQueryHead};
         let mut pinned = self.clone();
         if let GhGetHistoryItemQuery::Compare {
             base: pinned_base,
@@ -239,10 +214,12 @@ impl HistoryItemRequest {
             ..
         } = &mut pinned.query
         {
-            base.clone_into(pinned_base);
-            head.clone_into(pinned_head);
+            *pinned_base = GhGetHistoryItemQueryBase::try_from(base)
+                .map_err(|error| validation(&format!("compare base: {error}")))?;
+            *pinned_head = GhGetHistoryItemQueryHead::try_from(head)
+                .map_err(|error| validation(&format!("compare head: {error}")))?;
         }
-        pinned
+        Ok(pinned)
     }
 }
 
@@ -256,7 +233,16 @@ impl std::ops::Deref for HistoryItemRequest {
 /// Operation-independent views over the generated wire query, in the
 /// engine's `usize` units.
 impl GhGetHistoryItemQuery {
-    pub(crate) fn operation(&self) -> ItemOperation {
+    /// Any `sections` named: the read returns what they name.
+    pub(crate) fn has_sections(&self) -> bool {
+        match self {
+            Self::PullRequest { sections, .. } => !sections.is_empty(),
+            Self::Issue { sections, .. } => !sections.is_empty(),
+            Self::Commit { sections, .. } => !sections.is_empty(),
+            Self::Compare { sections, .. } => !sections.is_empty(),
+        }
+    }
+    fn operation(&self) -> ItemOperation {
         match self {
             Self::PullRequest { .. } => ItemOperation::PullRequest,
             Self::Issue { .. } => ItemOperation::Issue,
@@ -294,20 +280,37 @@ impl GhGetHistoryItemQuery {
     }
     pub(crate) fn base(&self) -> Option<&str> {
         match self {
-            Self::Compare { base, .. } => Some(base),
+            Self::Compare { base, .. } => Some(base.as_str()),
             _ => None,
         }
     }
     pub(crate) fn head(&self) -> Option<&str> {
         match self {
-            Self::Compare { head, .. } => Some(head),
+            Self::Compare { head, .. } => Some(head.as_str()),
             _ => None,
         }
     }
+    /// Whether the read names `section` (`commits`, `files`, `patches`).
+    pub(crate) fn names_section(&self, section: &str) -> bool {
+        let named = |sections: &[String]| sections.iter().any(|name| name == section);
+        match self {
+            Self::Commit { sections, .. } => {
+                named(&sections.iter().map(ToString::to_string).collect::<Vec<_>>())
+            }
+            Self::Compare { sections, .. } => {
+                named(&sections.iter().map(ToString::to_string).collect::<Vec<_>>())
+            }
+            _ => false,
+        }
+    }
+    /// The page of the section a read lists (`page`): every page
+    /// continuation names the one section it pages.
     pub(crate) fn page(&self) -> Option<usize> {
         match self {
-            Self::Compare { page, .. } => Some(usize_of(page.get())),
-            _ => None,
+            Self::PullRequest { page, .. }
+            | Self::Issue { page, .. }
+            | Self::Commit { page, .. }
+            | Self::Compare { page, .. } => page.as_ref().map(|page| usize_of(page.0.get())),
         }
     }
     pub(crate) fn page_size(&self) -> Option<usize> {
@@ -325,17 +328,10 @@ impl GhGetHistoryItemQuery {
     pub(crate) fn collection_page_size(&self) -> usize {
         self.page_size()
             .unwrap_or(DEFAULT_PAGE_SIZE)
-            .clamp(1, MAX_COLLECTION_PAGE)
+            .clamp(1, octocode_github::MAX_PER_PAGE)
     }
     /// Whether a pull request narrows its changed files (`include`,
     /// `status`, `minChanges`).
-    /// Pull-request `patchRanges` (selected patch lines per file).
-    pub(crate) fn patch_ranges(&self) -> &[crate::contracts::tool_types::HiPatchRange] {
-        match self {
-            Self::PullRequest { patch_ranges, .. } => patch_ranges,
-            _ => &[],
-        }
-    }
     pub(crate) fn has_file_filter(&self) -> bool {
         matches!(
             self,
@@ -343,98 +339,62 @@ impl GhGetHistoryItemQuery {
                 if include.is_some() || status.is_some() || min_changes.is_some()
         )
     }
-    pub(crate) fn file_page(&self) -> Option<usize> {
-        match self {
-            Self::PullRequest { file_page, .. } => file_page.map(|page| usize_of(page.get())),
-            Self::Commit { file_page, .. } | Self::Compare { file_page, .. } => {
-                file_page.as_ref().map(|page| usize_of(page.0.get()))
-            }
-            Self::Issue { .. } => None,
-        }
-    }
-    pub(crate) fn comment_page(&self) -> Option<usize> {
-        match self {
-            Self::PullRequest { comment_page, .. } | Self::Issue { comment_page, .. } => {
-                comment_page.as_ref().map(|page| usize_of(page.0.get()))
-            }
-            _ => None,
-        }
-    }
-    pub(crate) fn commit_page(&self) -> Option<usize> {
-        match self {
-            Self::PullRequest { commit_page, .. } => commit_page.map(|page| usize_of(page.get())),
-            _ => None,
-        }
-    }
-    pub(crate) fn review_page(&self) -> Option<usize> {
-        match self {
-            Self::PullRequest { review_page, .. } => review_page.map(|page| usize_of(page.get())),
-            _ => None,
-        }
-    }
 
-    pub(crate) fn path(&self) -> Option<&str> {
-        match self {
-            Self::Commit { path, .. } | Self::Compare { path, .. } => {
-                path.as_ref().map(|path| path.as_str())
-            }
-            _ => None,
-        }
-    }
     /// The text window offset (`offset`, characters).
     pub(crate) fn char_offset(&self) -> Option<usize> {
         match self {
-            Self::PullRequest { offset, .. } | Self::Issue { offset, .. } => offset.map(usize_of),
-            Self::Commit { offset, .. } | Self::Compare { offset, .. } => {
-                offset.as_ref().map(|offset| usize_of(offset.0))
-            }
+            Self::PullRequest { offset, .. }
+            | Self::Issue { offset, .. }
+            | Self::Commit { offset, .. }
+            | Self::Compare { offset, .. } => offset.as_ref().map(|offset| usize_of(offset.0)),
         }
     }
     /// The text window length (`length`, characters).
     pub(crate) fn char_length(&self) -> Option<usize> {
         match self {
-            Self::PullRequest { length, .. } | Self::Issue { length, .. } => {
-                length.map(|length| usize_of(length.get()))
-            }
-            Self::Commit { length, .. } | Self::Compare { length, .. } => {
+            Self::PullRequest { length, .. }
+            | Self::Issue { length, .. }
+            | Self::Commit { length, .. }
+            | Self::Compare { length, .. } => {
                 length.as_ref().map(|length| usize_of(length.0.get()))
             }
         }
     }
     pub(crate) fn match_string(&self) -> Option<&str> {
         match self {
-            Self::PullRequest { match_string, .. } => match_string.as_deref(),
-            _ => None,
+            Self::PullRequest { match_string, .. }
+            | Self::Commit { match_string, .. }
+            | Self::Compare { match_string, .. } => {
+                match_string.as_ref().map(|text| text.0.as_str())
+            }
+            Self::Issue { .. } => None,
         }
     }
     /// Lines kept around each `matchString` hit in a patch (`contextLines`).
     pub(crate) fn match_context(&self) -> Option<usize> {
         match self {
-            Self::PullRequest { context_lines, .. } => {
-                context_lines.and_then(|lines| usize::try_from(lines).ok())
-            }
-            _ => None,
+            Self::PullRequest { context_lines, .. }
+            | Self::Commit { context_lines, .. }
+            | Self::Compare { context_lines, .. } => context_lines
+                .as_ref()
+                .and_then(|lines| usize::try_from(lines.0).ok()),
+            Self::Issue { .. } => None,
         }
     }
-    /// Whether the query reads a later page of a pull request (a file, commit,
-    /// review or comment page after the first, or a text window that names
-    /// its offset): the caller already holds the item header and menu from
-    /// page one.
+    /// Whether the query reads a later page of a pull request (a section
+    /// page after the first, or a text window that names its offset): the
+    /// caller already holds the item header and menu from page one.
     pub(crate) fn later_page(&self) -> bool {
-        let after_first = |page: Option<usize>| page.is_some_and(|page| page > 1);
         matches!(self, Self::PullRequest { .. })
-            && (after_first(self.file_page())
-                || after_first(self.comment_page())
-                || after_first(self.commit_page())
-                || after_first(self.review_page())
-                || self.char_offset().is_some())
+            && (self.page().is_some_and(|page| page > 1) || self.char_offset().is_some())
     }
-    /// Whether a pull-request read's `extras` names `kind` (other reads
-    /// gate nothing on it).
+    /// Whether the read's `extras` names `kind`.
     pub(crate) fn wants(&self, kind: crate::contracts::tool_types::ExtraKind) -> bool {
         match self {
-            Self::PullRequest { extras, .. } => extras.contains(&kind),
-            _ => false,
+            Self::PullRequest { extras, .. }
+            | Self::Issue { extras, .. }
+            | Self::Commit { extras, .. }
+            | Self::Compare { extras, .. } => extras.contains(&kind),
         }
     }
     /// The pull-request text view (`"standard"` or `"none"`).
@@ -456,30 +416,28 @@ pub async fn execute(
     let mut value = match result {
         Ok(value) => value,
         Err(mut error) => {
-            // A direct read of a SHA GitHub does not have (422 "No commit
-            // found for SHA") is a missing commit, not an invalid query.
-            if error.kind == ProviderErrorKind::Validation
-                && error.status == Some(422)
-                && error.message.starts_with("No commit found")
-            {
-                error.kind = ProviderErrorKind::NotFound;
-                error.reason = Some(ProviderErrorReason::RefNotFound);
-                error.message =
-                    "Commit not found - verify the ref/SHA exists in this repository".into();
-            }
             match error.kind {
-                // The number names an issue, or the missing commit: the
-                // message already says so.
+                // A commit read of a SHA GitHub does not have (the transport
+                // types its "No commit found" as a missing ref).
                 ProviderErrorKind::NotFound
-                    if matches!(
-                        error.reason,
-                        Some(
-                            ProviderErrorReason::PullRequestIsIssue
-                                | ProviderErrorReason::RefNotFound
-                        )
-                    ) => {}
+                    if error.reason == Some(ProviderErrorReason::RefNotFound)
+                        && query.operation() == ItemOperation::Commit =>
+                {
+                    error.message = format!(
+                        "Commit \"{}\" not found in {}/{}",
+                        query.reference().unwrap_or_default(),
+                        query.owner(),
+                        query.repo()
+                    )
+                    .into_boxed_str();
+                }
+                // The number names an issue: the message already says so.
+                ProviderErrorKind::NotFound
+                    if error.reason == Some(ProviderErrorReason::PullRequestIsIssue) => {}
                 // GitHub answers a missing item, ref, or repository with a
-                // bare 404: name what was asked for.
+                // bare 404, and an unresolvable comparison ref with "No commit
+                // found for SHA" even for a tag or branch: name what was asked
+                // for, as refs.
                 ProviderErrorKind::NotFound => {
                     error.message = not_found_message(query, error.reason).into_boxed_str();
                     if matches!(query.operation(), ItemOperation::Compare) && error.reason.is_none()
@@ -531,7 +489,7 @@ fn not_found_message(query: &HistoryItemRequest, reason: Option<ProviderErrorRea
             query.reference().unwrap_or_default()
         ),
         ItemOperation::Compare => format!(
-            "Cannot compare {}...{} in {owner}/{repo}: a ref was not found, {or_repository}",
+            "Cannot compare {}...{} in {owner}/{repo}: a ref (branch, tag, or SHA) was not found, {or_repository}",
             query.base().unwrap_or_default(),
             query.head().unwrap_or_default()
         ),
@@ -612,7 +570,7 @@ fn sanitize_all_strings(
     value: &mut Value,
     security: &impl ContentScan,
 ) -> Result<(), ProviderError> {
-    crate::security::sanitize_json(value, &mut |text| {
+    crate::security::sanitize_json(value, &mut |text, _| {
         sanitize_provider_text(security, text, Path::new(SCAN_PATH))
     })
 }
@@ -635,8 +593,8 @@ mod tests {
         );
     }
 
-    /// `sections`, `patchRanges` and `includeBots` select the internal
-    /// content model each handler reads.
+    /// `sections` select the internal content model each
+    /// handler reads.
     #[test]
     fn sections_select_the_content_model() {
         let row = |fields: Value| {
@@ -649,37 +607,32 @@ mod tests {
         };
         let read = row(json!({
             "sections":["body","files","patches","comments","reviewComments","reviews"],
-            "include":["src/**"],"status":["modified"],"includeBots":true
+            "include":["src/**"],"status":["modified"]
         }));
         assert_eq!(
             read.content_value(),
             Some(
                 json!({"body":true,"files":true,"patches":{"mode":"all"},"reviews":true,
-                "comments":{"discussion":true,"reviewInline":true,"includeBots":true}})
+                "comments":{"discussion":true,"reviewInline":true}})
             )
-        );
-        let ranged = row(json!({
-            "include":["src/a.rs","src/*.rs"],
-            "patchRanges":[{"file":"src/a.rs","additions":[1,2]}]
-        }));
-        assert_eq!(
-            ranged.content_value(),
-            Some(json!({"patches":{"mode":"selected",
-                "ranges":[{"file":"src/a.rs","additions":[1,2]}],"files":["src/a.rs"]}}))
         );
         assert_eq!(
             row(json!({"matchString":"needle"})).content_value(),
             Some(json!({"patches":{"mode":"all"}}))
         );
-        // Commit sections:["patches"] reads diffs; base folds compare in.
+        // Commit sections:["patches"] reads diffs; base...head is compare's.
         let commit = HistoryItemRequest::from_row(json!({
             "operation":"commit","mainGoal":"g","reasoning":"r","owner":"o","repo":"r",
-            "ref":"head-sha","base":"base-sha","sections":["patches"],"include":["src/*.rs"]
+            "ref":"head-sha","sections":["patches"],"include":["src/*.rs"]
         }))
-        .expect("commit with base");
-        assert_eq!(commit.operation(), ItemOperation::Compare);
-        assert_eq!(commit.base(), Some("base-sha"));
-        assert_eq!(commit.head(), Some("head-sha"));
+        .expect("commit");
+        assert_eq!(commit.operation(), ItemOperation::Commit);
+        assert!(
+            HistoryItemRequest::from_row(json!({
+                "operation":"commit","owner":"o","repo":"r","ref":"h","base":"b"
+            }))
+            .is_err()
+        );
         assert!(commit.include_diff());
         assert_eq!(commit.file_scope, ["src/*.rs"]);
         let issue = HistoryItemRequest::from_row(json!({
@@ -719,11 +672,13 @@ mod tests {
         )
         .expect("GitHub history test data should be valid");
         assert!(validate(&committed).is_ok());
-        let blank = HistoryItemRequest::from_row(json!({
-            "operation":"compare","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b","base":"","head":"x"
-        }))
-        .expect("GitHub history test data should be valid");
-        assert!(validate(&blank).is_err());
+        // The wire contract rejects a blank comparison ref.
+        assert!(
+            HistoryItemRequest::from_row(json!({
+                "operation":"compare","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b","base":"","head":"x"
+            }))
+            .is_err()
+        );
     }
 
     #[test]

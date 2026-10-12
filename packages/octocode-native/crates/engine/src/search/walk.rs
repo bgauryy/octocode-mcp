@@ -39,7 +39,7 @@ pub(crate) fn walk_builder(root: &Path, flags: &WalkFlags) -> WalkBuilder {
 /// walk applies, rooted at the search path so relative globs like
 /// `src/**/*.ts` resolve as users expect. Each exclude is negated once (`x`
 /// and `!x` both exclude `x`), so it drops files `include` would match.
-pub(crate) fn build_overrides(
+pub fn build_overrides(
     root: &Path,
     include: &[String],
     exclude: &[String],

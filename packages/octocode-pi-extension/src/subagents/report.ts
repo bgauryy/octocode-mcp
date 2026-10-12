@@ -10,10 +10,15 @@ const REPORT_MAX_LINES = 200;
 const SEPARATOR = '\n\n---\n\n';
 const preview = (text: string) => capOutput(text, REPORT_MAX_BYTES, REPORT_MAX_LINES);
 
-/** A bounded preview and an incremental disk report. Retries replace the current section; incoming messages start a new one. */
+/**
+ * A bounded preview and an incremental disk report. Retries replace the current section; incoming messages start a new
+ * one. The preview is always cut from the whole uncut report, so follow-ups never stack truncation notices.
+ */
 export class ReportTracker {
-  private text = '';
+  /** The whole report so far, uncut, and the part before the current section. */
+  private full = '';
   private before = '';
+  private text = '';
   private lastText = '';
   private signature = '';
   private sections = 0;
@@ -55,7 +60,7 @@ export class ReportTracker {
       return;
     }
     if (append) {
-      this.before = this.text;
+      this.before = this.full;
       this.sectionStart = this.bytes;
       this.sections++;
     }
@@ -77,6 +82,7 @@ export class ReportTracker {
       this.spillFailed = true;
     }
     this.bytes = this.sectionStart + Buffer.byteLength(section);
+    this.full = whole;
     this.text = capped;
     this.signature = signature;
     this.fresh = false;

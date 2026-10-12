@@ -26,16 +26,24 @@ export function webSummary(details: unknown): string | undefined {
   return undefined;
 }
 
+/** How to reach the rest of a page longer than `max` characters when it could not be saved to a file. */
+function unsavedHint(length: number, max: number): string {
+  const unsaved = 'the whole page could not be saved to a file';
+  if (length <= MAX_FETCH_CHARS) return `${unsaved}; call web again with maxChars ${length} for the rest`;
+  const larger = max < MAX_FETCH_CHARS ? `; maxChars ${MAX_FETCH_CHARS} shows up to ${MAX_FETCH_CHARS}` : '';
+  return `${unsaved}${larger}; the last ${length - MAX_FETCH_CHARS} characters are beyond web's ${MAX_FETCH_CHARS}-character limit: download the page with bash (curl -o) to read them`;
+}
+
 export function registerWebTool(pi: ExtensionAPI): void {
   pi.registerTool(timedTool({
     name: 'web',
     label: 'Web',
     description:
-      'Search the public web with query, or read one http(s) URL with url; supply exactly one. Fetches extract static page text and metadata or format JSON; they do not run JavaScript. Cross-host redirects name the next URL instead of following it. Successful fetches are cached for 15 minutes. Large results name a saved file. Use browser, when available, for rendered pages, interaction or login.',
-    promptSnippet: 'Fetch a URL as text or search the web',
+      'Search the public web with query, or read one http(s) URL with url; supply exactly one. Fetches extract static page text and metadata or format JSON; they do not run JavaScript. Cross-host redirects name the next URL instead of following it. Successful fetches are cached for 15 minutes. Large results name a saved file.',
+    promptSnippet: 'Read a public URL or search the web',
     promptGuidelines: [
       'Use web for public sources; prefer active GitHub or package registry research tools for their repositories and packages. Read the source behind a search snippet before relying on its claim.',
-      'Cite source URLs. When static text cannot answer the question, inspect the rendered page with browser when it is available; read saved output by relevant ranges rather than fetching it again.',
+      'Cite source URLs. When static text cannot answer the question, inspect the rendered page with `browser`, or delegate to a browser-capable profile when `browser` is not active; read saved output by relevant ranges rather than fetching it again.',
     ],
     parameters: Type.Object({
       url: Type.Optional(Type.String({ minLength: 1, description: 'Public http(s) page to read; omit query' })),
@@ -72,8 +80,12 @@ export function registerWebTool(pi: ExtensionAPI): void {
         // A longer page is saved whole (read the rest from the file, no refetch); the inline part folds link lists
         // (sidebars, tables of contents) so content comes first.
         const file = saveFullOutput(text, 'web');
-        const hint = file ? `the whole page (${lines} lines, links included) is in ${shortPath(file)}: search it or read it by line range` : `call web again with a larger maxChars (up to ${MAX_FETCH_CHARS})`;
-        return textResult<WebDetails>(capOutputToFile(capChars(collapseLinkRuns(text), max, hint), { label: 'web' }), { ...size, ...(file ? { file } : {}) });
+        if (file) {
+          const hint = `the whole page (${lines} lines, links included) is in ${shortPath(file)}: search it or read it by line range`;
+          return textResult<WebDetails>(capOutputToFile(capChars(collapseLinkRuns(text), max, hint), { label: 'web' }), { ...size, file });
+        }
+        // Nothing holds the rest, so nothing is folded and the note says exactly what stays out of reach.
+        return textResult<WebDetails>(capOutputToFile(capChars(text, max, unsavedHint(text.length, max)), { label: 'web' }), size);
       }
       if (!query) throw new Error('Provide url or query.');
       try {

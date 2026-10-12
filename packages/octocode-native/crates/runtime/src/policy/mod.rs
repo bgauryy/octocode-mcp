@@ -68,7 +68,7 @@ impl PolicyError {
 }
 
 /// `errorCode` every local tool emits for a path the security path policy
-/// withholds (credential stores, `secrets/`, `.env` files): a denial no
+/// withholds (credential stores, credential-named files such as `.env` or `*.pem`): a denial no
 /// flag or config setting lifts, never a missing or misspelled path.
 pub const PATH_POLICY_DENIED: &str = "pathPolicyDenied";
 

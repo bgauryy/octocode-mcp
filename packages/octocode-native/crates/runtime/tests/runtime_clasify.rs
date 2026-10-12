@@ -400,7 +400,7 @@ async fn provider_byte_limit_forwards_reasoning_and_isolates_oversized_questions
         );
     }
     let oversized_resource = &queries[1]["resources"][0];
-    assert_eq!(oversized_resource["coverage"], "error");
+    assert_eq!(oversized_resource["coverage"]["state"], "error");
     let error = &oversized_resource["pages"][0]["answers"]["relevant"]["error"];
     assert_eq!(error["errorCode"], "invalidClassificationRequest");
     assert!(error["error"].as_str().unwrap().contains("4 MiB"));
@@ -824,7 +824,7 @@ async fn oversized_first_page_is_not_classified_or_given_a_looping_continuation(
         .await
         .unwrap();
     let query = &outcome.structured_content["queries"][0];
-    assert_eq!(query["resources"][0]["coverage"], "error");
+    assert_eq!(query["resources"][0]["coverage"]["state"], "error");
     assert_eq!(
         query["resources"][0]["pages"][0]["error"]["errorCode"],
         "classificationContextTooLarge"
@@ -873,7 +873,7 @@ async fn max_chars_budgets_sanitized_resource_payload_not_serialized_envelope() 
     let query = &outcome.structured_content["queries"][0];
     assert!(no_continuation(query), "{query}");
     let cell = &query["resources"][0];
-    assert_eq!(cell["coverage"], "complete", "{cell}");
+    assert_eq!(cell["coverage"]["state"], "complete", "{cell}");
     let pages = cell["pages"].as_array().unwrap();
     // 16 KiB pages already exceed half the 24 KiB coalescing budget, so each
     // stays its own scoped judgment; small line pages merge instead.
@@ -1081,7 +1081,10 @@ async fn payload_over_max_chars_returns_an_executable_clasify_continuation() {
         .expect("next.clasify must execute unchanged");
     let resumed_query = &resumed.structured_content["queries"][0];
     assert!(no_continuation(resumed_query), "{resumed_query}");
-    assert_eq!(resumed_query["resources"][0]["coverage"], "complete");
+    assert_eq!(
+        resumed_query["resources"][0]["coverage"]["state"],
+        "complete"
+    );
     runtime.close().await;
 }
 
@@ -1108,12 +1111,10 @@ async fn invalid_inner_query_is_rejected_with_the_exact_contract_field() {
         .expect_err("invalid delegated path must fail contract validation");
     assert_eq!(error.code, "invalidInput");
     let payload = error.payload.expect("structured validation payload");
-    let details = payload["details"].as_array().expect("validation details");
+    let error = payload["error"].as_str().expect("validation error");
     assert!(
-        details.iter().any(|detail| detail
-            .as_str()
-            .is_some_and(|detail| detail.contains("queries.0.resources.0.query.path"))),
-        "validation detail must name the nested path field: {details:?}"
+        error.contains("queries.0.resources.0.query.path"),
+        "validation error must name the nested path field: {payload}"
     );
     runtime.close().await;
 }
@@ -1155,7 +1156,7 @@ async fn search_resource_fans_out_candidates_from_only_the_requested_page() {
     let cell = &query["resources"][0];
     let pages = cell["pages"].as_array().unwrap();
     assert_eq!(pages.len(), 2, "{cell}");
-    assert_eq!(cell["coverage"], "partial");
+    assert_eq!(cell["coverage"]["state"], "partial");
     let source_paths = pages
         .iter()
         .map(|page| page["source"]["path"].as_str().unwrap().to_owned())
@@ -1270,7 +1271,7 @@ async fn emitted_next_clasify_is_schema_valid_input_and_replays() {
     octocode_native::contracts::validate_output("clasify", &replay.structured_content)
         .expect("replayed page output contract");
     let cell = &replay.structured_content["queries"][0]["resources"][0];
-    assert_ne!(cell["coverage"], "error", "{cell}");
+    assert_ne!(cell["coverage"]["state"], "error", "{cell}");
     let pages = cell["pages"].as_array().unwrap();
     assert!(!pages.is_empty(), "{cell}");
     assert!(
@@ -1496,6 +1497,13 @@ async fn file_chunk_scout_hydrates_the_candidate_cap_and_returns_exact_reads() {
     let pages = query["resources"][0]["pages"].as_array().unwrap();
     assert_eq!(pages.len(), 40, "{query}");
     for page in pages {
+        // Ranks 1–3 carry their exact read; the rest are ranked rows that
+        // name their file and lines.
+        if page["rank"].as_u64().unwrap() > 3 {
+            assert!(page.get("hints").is_none(), "{page}");
+            assert!(page["scope"]["startLine"].is_u64(), "{page}");
+            continue;
+        }
         assert_eq!(page["hints"]["read"]["tool"], "localFetch", "{page}");
         // An exact replay states no confidence.
         assert!(page["hints"]["read"].get("confidence").is_none(), "{page}");
@@ -1580,8 +1588,8 @@ fn page_spans(page: &serde_json::Value) -> Vec<(u64, u64)> {
     spans
 }
 
-/// D1 (CL5: a fileChunks walk over tools/clasify covered 242 of 296 hit
-/// lines): a file whose search page lists 10 rows and 24 more lines but only
+/// A fileChunks walk over tools/clasify covered 242 of 296 hit
+/// lines: a file whose search page lists 10 rows and 24 more lines but only
 /// counts the other 26 (`moreLinesUnlisted`) still has every hit line reach
 /// a window, judged or unjudged with its read.
 #[tokio::test]
@@ -1663,8 +1671,8 @@ async fn file_chunks_reach_hit_lines_the_search_page_only_counted() {
     runtime.close().await;
 }
 
-/// D3 (CL5 fc1.json: 64 identical error objects, 12.2 KB of 38 KB, each with
-/// a one-window read): hit windows a spent budget left unjudged state their
+/// 64 identical error objects (12.2 KB of 38 KB, each with
+/// a one-window read) were repeated: hit windows a spent budget left unjudged state their
 /// error once per resource, and each file's unjudged windows share one read
 /// that names each window once; judged and unjudged together cover every hit.
 #[tokio::test]
@@ -1870,7 +1878,7 @@ async fn empty_file_is_reported_without_a_provider_call() {
         .await
         .unwrap();
     let resource = &outcome.structured_content["queries"][0]["resources"][0];
-    assert_eq!(resource["coverage"], "error", "{resource}");
+    assert_eq!(resource["coverage"]["state"], "error", "{resource}");
     assert!(
         outcome.all_failed,
         "MCP must expose failed evidence as a tool error"
@@ -1911,7 +1919,7 @@ async fn empty_search_page_is_not_sent_to_the_provider() {
         .await
         .unwrap();
     let resource = &outcome.structured_content["queries"][0]["resources"][0];
-    assert_eq!(resource["coverage"], "error", "{resource}");
+    assert_eq!(resource["coverage"]["state"], "error", "{resource}");
     assert!(
         outcome.all_failed,
         "MCP must expose failed evidence as a tool error"
@@ -2111,7 +2119,7 @@ async fn snippet_continuations_visit_every_file_and_match_page_before_completing
             .await
             .unwrap();
         let query = &outcome.structured_content["queries"][0];
-        coverages.push(query["resources"][0]["coverage"].clone());
+        coverages.push(query["resources"][0]["coverage"]["state"].clone());
         match query["next"].get("clasify") {
             Some(next) => input = next.clone(),
             None => break,
@@ -2173,7 +2181,7 @@ async fn clasify_locate_preflight_returns_a_typed_error_without_capture_or_provi
         .unwrap();
     assert_eq!(resources.len(), 2);
     for resource in resources {
-        assert_eq!(resource["coverage"], "error");
+        assert_eq!(resource["coverage"]["state"], "error");
         let page = &resource["pages"][0];
         assert_eq!(
             page["error"]["errorCode"],
@@ -2532,9 +2540,9 @@ async fn partial_provider_answers_are_not_cached_and_a_failed_read_is_isolated()
         .await
         .unwrap();
     let resources = &first.structured_content["queries"][0]["resources"];
-    assert_eq!(resources[0]["coverage"], "error", "{resources}");
+    assert_eq!(resources[0]["coverage"]["state"], "error", "{resources}");
     assert!(resources[0]["pages"][0]["error"]["errorCode"].is_string());
-    assert_eq!(resources[1]["coverage"], "partial", "{resources}");
+    assert_eq!(resources[1]["coverage"]["state"], "partial", "{resources}");
     assert_eq!(
         resources[1]["pages"][0]["answers"]["a"],
         json!({"yesno":0.3})
@@ -2610,7 +2618,7 @@ async fn gh_search_code_resource_is_judged_without_a_context_contract_violation(
     let rendered = outcome.structured_content.to_string();
     assert!(!rendered.contains("ContextContractViolation"), "{rendered}");
     let cell = &outcome.structured_content["queries"][0]["resources"][0];
-    assert_ne!(cell["coverage"], "error", "{cell}");
+    assert_ne!(cell["coverage"]["state"], "error", "{cell}");
     octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
         .expect("clasify output contract");
     runtime.close().await;
@@ -2706,7 +2714,7 @@ async fn a_lone_strong_locate_window_in_best_carries_an_exact_github_read() {
 
 /// A matrix that also asks a described target runs locate; its literal
 /// target (one identifier in a lookup sentence) over a local file keeps its
-/// string hint and gains `hints.textSearch`, a schema-valid literal search
+/// string hint and gains `hints.findText`, a schema-valid literal search
 /// that runs. The described target adds no hint. Two literals share one
 /// search that reaches both.
 #[tokio::test]
@@ -2759,7 +2767,7 @@ async fn identifier_locate_target_emits_an_executable_local_search() {
             .contains("step_17"),
         "{query}"
     );
-    let search = &query["hints"]["textSearch"];
+    let search = &query["hints"]["findText"];
     assert_eq!(search["tool"], "localSearch", "{query}");
     assert_eq!(
         search["query"]["queries"][0]["path"],
@@ -2900,6 +2908,19 @@ async fn a_matrix_compacts_by_default_and_extras_return_the_full_receipt() {
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
     octocode_native::contracts::validate_output("clasify", &compact.structured_content)
         .expect("compact output contract");
+    let snapshot = compact
+        .structured_content
+        .pointer("/queries/0/resources/0/pages/0/hints/read/query/queries/0/snapshot")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    // The read pins the judged file version: an edit fails the read instead
+    // of shifting its lines.
+    assert!(
+        snapshot.len() == 64 && snapshot.chars().all(|c| c.is_ascii_hexdigit()),
+        "{}",
+        compact.structured_content
+    );
     assert_eq!(
         compact.structured_content["queries"][0]["resources"][0],
         // The host never saw the delegated read: a positive verdict
@@ -2908,7 +2929,7 @@ async fn a_matrix_compacts_by_default_and_extras_return_the_full_receipt() {
             "pages":[{"line":1,"endLine":1,"answers":{"present":0.8,"kind":"runtime"},
                 // A cross-tool lead starts its own step: no matrix brief.
                 "hints":{"read":{"tool":"localFetch","query":{"queries":[{
-                    "path":"trace.txt","ranges":["1-1"]}]}}}}]}),
+                    "path":"trace.txt","snapshot":snapshot,"ranges":["1-1"]}]}}}}]}),
         "{}",
         compact.structured_content
     );
@@ -2957,7 +2978,7 @@ async fn search_candidates_above_max_chars_never_reach_the_provider() {
         .unwrap();
     let query = &outcome.structured_content["queries"][0];
     let cell = &query["resources"][0];
-    assert_eq!(cell["coverage"], "error", "{cell}");
+    assert_eq!(cell["coverage"]["state"], "error", "{cell}");
     let pages = cell["pages"].as_array().unwrap();
     assert_eq!(pages.len(), 3, "every candidate stays visible: {cell}");
     for page in pages {
@@ -3339,7 +3360,7 @@ async fn an_oversized_next_page_shrinks_and_the_replay_advances() {
     runtime.close().await;
 }
 
-/// Leftover of QA P5: a `ranges` read larger than `maxChars` is judged in
+/// A `ranges` read larger than `maxChars` is judged in
 /// line windows that each fit, with `next.clasify` reading the rest of the
 /// range, instead of failing `classificationContextTooLarge` with no read.
 /// Every requested line is judged exactly once, and none outside the range.
@@ -3696,7 +3717,7 @@ async fn every_clasify_continuation_kind_replays_verbatim() {
         "clasify:clasify",
         "read:localFetch",
         "row-or-page:localFetch",
-        "textSearch:localSearch",
+        "findText:localSearch",
     ] {
         assert!(kinds.contains(kind), "{kind} not exercised: {kinds:?}");
     }
@@ -3742,7 +3763,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
         .unwrap();
     assert_eq!(resources.len(), 2);
     for resource in resources {
-        assert_eq!(resource["coverage"], "error", "{resource}");
+        assert_eq!(resource["coverage"]["state"], "error", "{resource}");
         assert_eq!(
             resource["error"]["errorCode"], "classificationQuotaExhausted",
             "{resource}"
@@ -3771,12 +3792,12 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
         .await
         .unwrap();
     let row = &out.structured_content["queries"][0];
-    assert_eq!(row["resources"][0]["coverage"], "error", "{row}");
+    assert_eq!(row["resources"][0]["coverage"]["state"], "error", "{row}");
     assert!(row.pointer("/next/clasify").is_none(), "{row}");
     // The 402 is remembered across calls: the walk sent no request and
-    // answers with the same error (N12: its bounded reads still run, so
+    // answers with the same error (its bounded reads still run, so
     // per-page input checks come first) and the read the host runs instead
-    // (CL1): the resource's own query, valid input for its tool.
+    // The resource's own query, valid input for its tool.
     assert_eq!(
         row["resources"][0]["error"]["errorCode"], "classificationQuotaExhausted",
         "{row}"
@@ -3792,7 +3813,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
         ),
         "{row}"
     );
-    // N12: inside the remembered 402, a per-page input error (locate over a
+    // Inside the remembered 402, a per-page input error (locate over a
     // minified view) is still the caller's error, not the quota.
     let minified = json!({
         "id":"min","reasoning":"r","mainGoal":"g",
@@ -3830,22 +3851,22 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
             .as_array()
             .is_some_and(|tips| tips.iter().any(|tip| tip
                 .as_str()
-                .is_some_and(|tip| tip.contains("serverCron") && tip.contains("localSearch")))),
+                .is_some_and(|tip| tip.contains("serverCron") && tip.contains("literal lookup")))),
         "{row}"
     );
-    assert_eq!(row["hints"]["textSearch"]["tool"], "localSearch", "{row}");
+    assert_eq!(row["hints"]["findText"]["tool"], "localSearch", "{row}");
     // MCP sees the same routes.
     let out = runtime
         .execute_mcp("quota-named-mcp".into(), "clasify".into(), call(named))
         .await
         .unwrap();
     let row = &out["structuredContent"]["queries"][0];
-    assert_eq!(row["hints"]["textSearch"]["tool"], "localSearch", "{row}");
+    assert_eq!(row["hints"]["findText"]["tool"], "localSearch", "{row}");
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
     runtime.close().await;
 }
 
-/// A provider refusal over a fanned-out search (E7): the refusal is stated
+/// A provider refusal over a fanned-out search: the refusal is stated
 /// once on the resource, not on every page; pages a spent page budget left
 /// unjudged keep their own error; every captured window keeps its read as
 /// the host's fallback; and the candidates past the captured page are
@@ -3900,7 +3921,7 @@ async fn provider_refusal_is_stated_once_and_keeps_every_captured_read() {
         .unwrap();
     let row = &out.structured_content["queries"][0];
     let resource = &row["resources"][0];
-    assert_eq!(resource["coverage"], "error", "{row}");
+    assert_eq!(resource["coverage"]["state"], "error", "{row}");
     assert_eq!(
         resource["error"]["errorCode"], "classificationQuotaExhausted",
         "{row}"
@@ -3973,7 +3994,7 @@ impl Respond for RepoSearchPages {
     }
 }
 
-/// P3: a list resource whose `maxChars` fits only some candidates of a page
+/// A list resource whose `maxChars` fits only some candidates of a page
 /// defers the rest to `next.clasify`, which resumes at the first deferred
 /// candidate (a page that starts there), so the walk judges every
 /// candidate exactly once instead of skipping to the next page.
@@ -4063,7 +4084,7 @@ async fn a_list_walk_rejudges_budget_deferred_candidates() {
     runtime.close().await;
 }
 
-/// QA P5 was reproduced on a GitHub file: a `ghGetFileContent` `ranges` read
+/// On a GitHub file, a `ghGetFileContent` `ranges` read
 /// larger than `maxChars` is judged in fitting line windows, with
 /// `next.clasify` reading the rest, every requested line exactly once.
 #[tokio::test]
@@ -4234,7 +4255,7 @@ async fn whole_list_questions_over_a_path_list_hint_toward_choice() {
             .into_iter()
             .flatten()
             .filter_map(serde_json::Value::as_str)
-            .find(|hint| hint.contains("choice"))
+            .find(|hint| hint.contains("one page"))
             .map(str::to_owned)
     };
     for kind in ["relevant", "sufficient"] {
@@ -4321,5 +4342,370 @@ async fn every_page_read_of_a_paged_file_pins_the_captured_snapshot() {
     );
     octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
         .expect("output contract");
+    runtime.close().await;
+}
+
+/// SCOUT stub: a page's file names its scores (`SCORES rel suf`); every
+/// provider question of the request answers in question order.
+#[derive(Clone)]
+struct ScoredFiles;
+
+impl Respond for ScoredFiles {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+        let text = body["state"].to_string();
+        let scores = text
+            .split("SCORES ")
+            .nth(1)
+            .map(|rest| {
+                rest.split_whitespace()
+                    .take(2)
+                    .filter_map(|n| {
+                        n.trim_matches(|c: char| !c.is_ascii_digit() && c != '.')
+                            .parse::<f64>()
+                            .ok()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut keys = body["questions"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        keys.sort();
+        let answers = keys
+            .iter()
+            .enumerate()
+            .map(|(index, key)| {
+                let noul = scores.get(index).copied().unwrap_or(0.5);
+                (key.clone(), json!({"type":"noul","noul":noul}))
+            })
+            .collect::<serde_json::Map<_, _>>();
+        ResponseTemplate::new(200).set_body_json(json!({
+            "model":"resolved","answers":answers,
+            "usage":{"input_tokens":5,"output_tokens":2}
+        }))
+    }
+}
+
+/// Five small files, each judged whole: (relevant, sufficient).
+const SCOUT_SAMPLE: [(f64, f64); 5] = [
+    (0.95, 0.8),
+    (0.9, 0.4),
+    (0.6, 0.3),
+    (0.15, 0.1),
+    (0.1, 0.05),
+];
+
+fn scout_sample_input(root: &str) -> serde_json::Value {
+    json!({
+        "id":"scout","mainGoal":"The code that decides a retry.",
+        "resources":[{"id":"s","tool":"localSearch","query":{"path":root,"matchString":"needle"}}],
+        "questions":[
+            {"id":"rel","type":"relevant","ask":"Decides whether to retry"},
+            {"id":"suf","type":"sufficient","ask":"Shows the retry condition"}
+        ]
+    })
+}
+
+fn write_scout_sample(workspace: &Workspace) -> String {
+    for (index, (relevant, sufficient)) in SCOUT_SAMPLE.iter().enumerate() {
+        // Files 1 and 3 exceed one file's hydration share: they are judged in
+        // windows around their two distant hits.
+        let lines = if index % 2 == 1 { 900 } else { 40 + index * 37 };
+        let hit = format!("fn needle_{index}() {{}} // SCORES {relevant} {sufficient}\n");
+        let filler = |from: usize, to: usize| {
+            (from..to)
+                .map(|n| {
+                    format!("    let value_{n} = compute({n}); // padding line for the scout\n")
+                })
+                .collect::<String>()
+        };
+        let body = format!(
+            "// SCOUT file {index}\n{hit}{}{hit}{}",
+            filler(0, lines / 2),
+            filler(lines / 2, lines)
+        );
+        workspace.write(&format!("src/f{index}.rs"), body);
+    }
+    workspace
+        .workspace
+        .join("src")
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Every `(path, lead)` of a value: `hints.*`/`next.*` entries that are calls.
+fn leads(value: &serde_json::Value, at: &str, out: &mut Vec<(String, serde_json::Value)>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                let here = format!("{at}.{key}");
+                if key == "hints" || key == "next" {
+                    for (name, lead) in child.as_object().into_iter().flatten() {
+                        if lead.get("tool").is_some() || name == "clasify" {
+                            out.push((format!("{here}.{name}"), lead.clone()));
+                        }
+                    }
+                }
+                leads(child, &here, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                leads(item, &format!("{at}[{index}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// SCOUT default output (5 files, two judged in windows): ranks 1–3 and any
+/// page whose `sufficient` is at least 0.7 keep a read; a part-file page's
+/// read of exactly its `scope` is implied; answers stay keyed by question.
+/// Measured (serde_json bytes of the structured output): 1197 before
+/// (every window page carried its read) → 791 after.
+#[tokio::test]
+async fn scout_sample_output_bytes() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ScoredFiles)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let root = write_scout_sample(&workspace);
+    let runtime = provider_runtime(&workspace, &server);
+    let outcome = runtime
+        .execute(
+            "scout-sample".into(),
+            "clasify".into(),
+            call(scout_sample_input(&root)),
+        )
+        .await
+        .unwrap();
+    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
+        .expect("output contract");
+    let text = outcome.structured_content.to_string();
+    eprintln!("SCOUT bytes={} {text}", text.len());
+    assert!(text.len() <= 800, "{text}");
+    let pages = outcome.structured_content["queries"][0]["resources"][0]["pages"]
+        .as_array()
+        .unwrap();
+    assert_eq!(pages.len(), 7, "{text}");
+    for page in pages {
+        assert!(page["answers"]["rel"].is_number() && page["answers"]["suf"].is_number());
+        assert!(page["rank"].is_u64(), "{page}");
+        // Ranked rows past the top three name their file and span only.
+        if page["rank"].as_u64().unwrap() > 3 {
+            assert!(page.get("hints").is_none(), "{page}");
+        }
+    }
+    let mut found = Vec::new();
+    leads(&outcome.structured_content, "", &mut found);
+    assert!(
+        found.is_empty(),
+        "every remaining read is implied: {found:?}"
+    );
+    runtime.close().await;
+}
+
+/// LOCATE default output (one whole file): `best` holds the window, the
+/// query's `hints.read` reads exactly that window pinned to the judged file
+/// version, and the resource states the file once. The one whole-file page
+/// only restated `exists` and folds away. Measured: 324 bytes before (page
+/// row, unpinned read) → 265 without the page → 343 with the 64-hex pin.
+#[tokio::test]
+async fn locate_sample_output_bytes() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(LocateTopPassage {
+            top: 0.8,
+            exists: 0.9,
+        })
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let body = (1..=60)
+        .map(|n| format!("fn step_{n}() -> u32 {{\n    {n}\n}}\n"))
+        .collect::<String>();
+    let file = workspace.write("src/steps.rs", &body);
+    let runtime = provider_runtime(&workspace, &server);
+    let input = json!({
+        "id":"loc","mainGoal":"Where the step order is decided.",
+        "resources":[{"id":"f","tool":"localFetch","query":{"path":file}}],
+        "questions":[
+            {"id":"where","type":"locate","ask":"Where the step order is decided"},
+            {"id":"suf","type":"sufficient","ask":"States the step order"}
+        ]
+    });
+    let outcome = runtime
+        .execute(
+            "locate-sample".into(),
+            "clasify".into(),
+            call(input.clone()),
+        )
+        .await
+        .unwrap();
+    octocode_native::contracts::validate_output("clasify", &outcome.structured_content)
+        .expect("output contract");
+    let query = &outcome.structured_content["queries"][0];
+    let text = outcome.structured_content.to_string();
+    eprintln!("LOCATE bytes={} {text}", text.len());
+    // The stop signal is the resource's one answer; the window is in `best`.
+    assert_eq!(
+        query["resources"][0],
+        json!({"id":"f","path":"src/steps.rs","totalLines":180,"answers":{"suf":0.9}}),
+        "{text}"
+    );
+    let row = &query["best"]["where"][0];
+    let read = &query["hints"]["read"];
+    let read_row = &read["query"]["queries"][0];
+    assert_eq!(
+        read_row["ranges"],
+        json!([format!("{}-{}", row["line"], row["endLine"])]),
+        "{text}"
+    );
+    assert_eq!(read_row["path"], "src/steps.rs");
+    assert!(read_row["snapshot"].is_string(), "{text}");
+    let replay = || {
+        runtime.execute(
+            "locate-read".into(),
+            "localFetch".into(),
+            read["query"].clone(),
+        )
+    };
+    let fresh = replay().await.unwrap();
+    assert!(fresh.failure.is_none(), "{}", fresh.structured_content);
+    // An edit after the judgment fails the pinned read instead of shifting it.
+    workspace.write("src/steps.rs", format!("// edited\n{body}"));
+    let stale = replay().await.unwrap();
+    assert!(
+        stale
+            .structured_content
+            .to_string()
+            .contains("staleSnapshot"),
+        "{}",
+        stale.structured_content
+    );
+    runtime.close().await;
+}
+
+/// The search → clasify handoff carries the brief the agent sent on the
+/// matrix only: the search resource reruns without it (a resource read
+/// inherits the matrix brief) and without the search's own `extras`. The
+/// clasify run's own leads carry no brief; its walk keeps the matrix brief.
+#[tokio::test]
+async fn the_search_handoff_carries_only_the_sent_brief() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ScoredFiles)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    for index in 0..9 {
+        workspace.write(
+            &format!("src/r{index}.rs"),
+            format!("// retry delay policy {index}\nfn wait_{index}() {{}}\n"),
+        );
+    }
+    let root = workspace
+        .workspace
+        .join("src")
+        .to_string_lossy()
+        .into_owned();
+    let runtime = provider_runtime(&workspace, &server);
+    let search = json!({
+        "mainGoal":"Where the retry delay grows after each failure.",
+        "reasoning":"Pick the deciding file.",
+        "path":root, "matchString":"retry delay", "extras":["stats"]
+    });
+    let outcome = runtime
+        .execute(
+            "handoff".into(),
+            "localSearch".into(),
+            json!({"queries":[search.clone()]}),
+        )
+        .await
+        .unwrap();
+    let data = &outcome.structured_content["results"][0]["data"];
+    let lead = &data["hints"]["clasify"];
+    let matrix = &lead["query"]["queries"][0];
+    assert_eq!(matrix["mainGoal"], search["mainGoal"], "{data}");
+    assert_eq!(matrix["reasoning"], search["reasoning"], "{data}");
+    let resource = &matrix["resources"][0]["query"];
+    for field in ["mainGoal", "reasoning", "extras"] {
+        assert!(resource.get(field).is_none(), "{field}: {resource}");
+    }
+    let mut found = Vec::new();
+    leads(data, "", &mut found);
+    for (at, other) in found.iter().filter(|(at, _)| !at.ends_with(".clasify")) {
+        let text = other.to_string();
+        assert!(
+            !text.contains("\"mainGoal\"") && !text.contains("\"reasoning\""),
+            "{at}: {text}"
+        );
+    }
+    let screened = runtime
+        .execute("screen".into(), "clasify".into(), lead["query"].clone())
+        .await
+        .unwrap();
+    octocode_native::contracts::validate_output("clasify", &screened.structured_content)
+        .expect("output contract");
+    let mut found = Vec::new();
+    leads(&screened.structured_content, "", &mut found);
+    for (at, lead) in &found {
+        let text = if at.ends_with(".clasify") {
+            // The walk is the same matrix: its brief stays on the matrix,
+            // never inside a resource read.
+            lead["queries"][0]["resources"].to_string()
+        } else {
+            lead.to_string()
+        };
+        assert!(
+            !text.contains("\"mainGoal\"") && !text.contains("\"reasoning\""),
+            "{at}: {text}"
+        );
+    }
+    runtime.close().await;
+}
+
+/// A failed read keeps the read tool's own recovery lead (every error
+/// carries an executable next step): a missing directory under an existing
+/// parent leads to `structureSearch` on that parent.
+#[tokio::test]
+async fn failed_read_keeps_the_read_tools_recovery_lead() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let present = workspace.write("src/present.txt", "hello\n");
+    let missing = present.parent().unwrap().join("no-such-dir");
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+    ]);
+    let input = json!({
+        "id":"failed-read","reasoning":"Screen a failed read.","mainGoal":"Decide the next read.",
+        "resources":[{"id":"e","tool":"localSearch","query":{
+            "path":missing,"matchString":"x","mainGoal":"test","reasoning":"Find it."
+        }}],
+        "questions":[{"id":"q","type":"yesno","ask":"Does this page show a match?"}]
+    });
+    let outcome = runtime
+        .execute("failed-read".into(), "clasify".into(), verbose(input))
+        .await
+        .unwrap();
+    let resource = &outcome.structured_content["queries"][0]["resources"][0];
+    let error = &resource["pages"][0]["error"];
+    assert_eq!(error["errorCode"], "pathNotFound", "{resource}");
+    let lead = &error["hints"]["viewTree"];
+    assert_eq!(lead["tool"], "structureSearch", "{error}");
+    // The lead lists the nearest existing parent (workspace-relative).
+    assert_eq!(lead["query"]["queries"][0]["path"], "src", "{error}");
     runtime.close().await;
 }

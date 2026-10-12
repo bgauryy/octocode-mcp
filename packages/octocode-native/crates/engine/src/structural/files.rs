@@ -33,10 +33,32 @@ pub(crate) fn search_files_detailed(
 /// `allow_path` callback runs before candidate accounting, literal prefilter
 /// reads, metadata reads, and source reads; file paths remain unchanged in
 /// diagnostics and match IDs.
+///
+/// An unset `max_files` caps nothing but the time: the scan evaluates
+/// candidates in chunks and stops at the first chunk boundary past
+/// [`crate::scan_budget::SCAN_TIME_BUDGET`], reporting where it resumes
+/// ([`StructuralSearchFilesDetailedResult::scan_resume`]). An explicit
+/// `max_files` is the caller's window and is never cut by time.
 pub fn search_files_detailed_filtered_with_extension(
     options: StructuralSearchFilesOptions,
     allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
     select_extension: &(dyn Fn(&Path) -> String + Sync),
+) -> Result<StructuralSearchFilesDetailedResult, String> {
+    search_files_with_budget(
+        options,
+        allow_path,
+        select_extension,
+        Some(crate::scan_budget::SCAN_TIME_BUDGET),
+    )
+}
+
+/// [`search_files_detailed_filtered_with_extension`] with its time budget
+/// (`None` evaluates every candidate).
+pub(crate) fn search_files_with_budget(
+    options: StructuralSearchFilesOptions,
+    allow_path: &(dyn Fn(&Path) -> Result<bool, String> + Sync),
+    select_extension: &(dyn Fn(&Path) -> String + Sync),
+    budget: Option<std::time::Duration>,
 ) -> Result<StructuralSearchFilesDetailedResult, String> {
     let StructuralSearchFilesOptions {
         path,
@@ -64,7 +86,8 @@ pub fn search_files_detailed_filtered_with_extension(
         return Err("Structural search root is denied by path policy".to_owned());
     }
     check_root_exists(&root)?;
-    let max_files = max_files.map(|n| n as usize).unwrap_or(2_000);
+    let timed = max_files.is_none();
+    let max_files = max_files.map_or(crate::scan_budget::SCAN_WALK_FILES, |n| n as usize);
     let max_file_bytes = max_file_bytes
         .map(|n| n as u64)
         .unwrap_or(crate::signatures::MAX_PARSE_SIZE as u64);
@@ -105,10 +128,27 @@ pub fn search_files_detailed_filtered_with_extension(
         matchers: compile_matchers(&candidate_files, select_extension, &query),
         max_file_bytes,
     };
-    let outcomes = candidate_files
-        .par_iter()
-        .map(|file_path| scan.file(file_path))
-        .collect::<Result<Vec<_>, String>>()?;
+    let started = std::time::Instant::now();
+    let mut outcomes = Vec::with_capacity(candidate_files.len());
+    let mut scan_resume = None;
+    for chunk in candidate_files.chunks(crate::scan_budget::SCAN_CHUNK_FILES) {
+        let evaluated = outcomes.len();
+        if timed && evaluated > 0 && budget.is_some_and(|budget| started.elapsed() >= budget) {
+            scan_resume = Some(u32::try_from(skip + evaluated).unwrap_or(u32::MAX));
+            break;
+        }
+        outcomes.extend(
+            chunk
+                .par_iter()
+                .map(|file_path| scan.file(file_path))
+                .collect::<Result<Vec<_>, String>>()?,
+        );
+    }
+    let scan_truncated = scan_truncated || scan_resume.is_some();
+    // The walk cap of an unset `max_files` resumes where the walk stopped.
+    if timed && scan_resume.is_none() && scan_truncated {
+        scan_resume = Some(u32::try_from(skip + candidate_files.len()).unwrap_or(u32::MAX));
+    }
 
     let mut counts = ScanCounts::default();
     let mut files = Vec::with_capacity(outcomes.len());
@@ -125,6 +165,7 @@ pub fn search_files_detailed_filtered_with_extension(
         .collect();
     Ok(StructuralSearchFilesDetailedResult {
         scan_truncated,
+        scan_resume,
         files,
         total_matches: counts.total_matches,
         parsed_files: counts.parsed_files,
@@ -157,6 +198,7 @@ fn invalid_query_result(
     .with_recovery("Provide exactly one non-empty structural pattern or YAML rule.");
     StructuralSearchFilesDetailedResult {
         scan_truncated: false,
+        scan_resume: None,
         files: Vec::new(),
         total_matches: 0,
         parsed_files: 0,
@@ -754,6 +796,8 @@ pub struct StructuralRewriteFileResult {
     /// ERROR/MISSING nodes in the scanned source, from the same parse that
     /// produced `matches` (the pre-rewrite side of the syntax-regression check).
     pub syntax_errors: u32,
+    /// Whole-word mentions of a renamed symbol that no match covers.
+    pub unmatched: Vec<super::rewrite::UnmatchedMention>,
 }
 
 /// Aggregate result of a structural rewrite file-tree scan, including coverage
@@ -761,7 +805,7 @@ pub struct StructuralRewriteFileResult {
 /// rewrite actually covered.
 #[derive(Default)]
 pub struct StructuralRewriteFilesResult {
-    /// Files that produced at least one rewrite match.
+    /// Files that produced a rewrite match or an unmatched mention.
     pub files: Vec<StructuralRewriteFileResult>,
     /// Candidate scan hit `max_files`; files beyond it were not evaluated.
     pub scan_truncated: bool,
@@ -774,6 +818,8 @@ pub struct StructuralRewriteFilesResult {
     /// Candidate files the rewrite engine rejected (parse/apply error, or the
     /// per-file match cap).
     pub skipped_errored: u32,
+    /// Candidate files read and evaluated, with or without a match.
+    pub files_scanned: u32,
 }
 
 /// Walk a file tree and apply an ast-grep inline-rule rewrite to every
@@ -856,6 +902,7 @@ pub fn rewrite_files(
     let skipped_large = AtomicU32::new(0);
     let skipped_binary = AtomicU32::new(0);
     let skipped_errored = AtomicU32::new(0);
+    let files_scanned = AtomicU32::new(0);
 
     let files: Vec<StructuralRewriteFileResult> = candidate_files
         .par_iter()
@@ -879,12 +926,16 @@ pub fn rewrite_files(
                 Some(Err(error)) => Err(error.clone()),
                 None => Err("[structural.rewrite.invalid] no compiled rule".to_owned()),
             };
+            if result.is_ok() {
+                files_scanned.fetch_add(1, Ordering::Relaxed);
+            }
             match result {
-                Ok(scan) if scan.matches.is_empty() => None,
+                Ok(scan) if scan.matches.is_empty() && scan.unmatched.is_empty() => None,
                 Ok(scan) => Some(StructuralRewriteFileResult {
                     path: path.to_string_lossy().into_owned(),
                     matches: scan.matches,
                     syntax_errors: scan.syntax_errors,
+                    unmatched: scan.unmatched,
                 }),
                 Err(_) => {
                     skipped_errored.fetch_add(1, Ordering::Relaxed);
@@ -901,6 +952,7 @@ pub fn rewrite_files(
         skipped_large: skipped_large.into_inner(),
         skipped_binary: skipped_binary.into_inner(),
         skipped_errored: skipped_errored.into_inner(),
+        files_scanned: files_scanned.into_inner(),
     })
 }
 

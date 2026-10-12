@@ -25,4 +25,15 @@ describe('subagent screenshots', () => {
     for (let i = 3; i < 45; i++) saveShot(dir, 'webHeadless-1', i, { data: png, mimeType: 'image/png' });
     expect(fs.readdirSync(dir)).toHaveLength(30);
   });
+
+  it.skipIf(process.platform === 'win32')('keeps the folder and its pictures owner-only, even over an older world-readable file', () => {
+    const dir = path.join(tmp(), 'shots');
+    fs.mkdirSync(dir, { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'a-1.png'), 'old', { mode: 0o644 });
+    const first = saveShot(dir, 'a', 1, { data: 'AAAA', mimeType: 'image/png' });
+    const second = saveShot(dir, 'a', 2, { data: 'AAAA', mimeType: 'image/jpeg' });
+    expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
+    expect(fs.statSync(first.path).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(second.path).mode & 0o777).toBe(0o600);
+  });
 });

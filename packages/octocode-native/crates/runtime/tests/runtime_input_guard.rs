@@ -39,9 +39,9 @@ async fn credential_shaped_search_text_is_rejected_not_rewritten() {
     assert_eq!(error.code, "invalidInput");
     let payload = error.payload.as_deref().unwrap();
     assert_no_rewrite(payload);
-    let details = payload["details"].to_string();
-    assert!(details.contains("queries.0.matchString"), "{details}");
-    assert!(details.contains("credential"), "{details}");
+    let message = payload["error"].as_str().unwrap_or_default();
+    assert!(message.contains("queries.0.matchString"), "{payload}");
+    assert!(message.contains("credential"), "{payload}");
 
     let mcp = runtime
         .execute_mcp(
@@ -79,9 +79,10 @@ async fn a_credential_row_is_isolated_and_never_reaches_continuations() {
     assert_eq!(rows[1]["index"], 1);
     assert_eq!(rows[1]["status"], "error");
     assert_eq!(rows[1]["data"]["errorCode"], "invalidInput");
-    let hints = rows[1]["data"]["hints"].to_string();
-    assert!(hints.contains("queries.1.matchString"), "{hints}");
-    assert!(hints.contains("credential"), "{hints}");
+    let message = rows[1]["data"]["error"].as_str().unwrap_or_default();
+    assert!(message.contains("queries.1.matchString"), "{}", rows[1]);
+    assert!(message.contains("credential"), "{}", rows[1]);
+    assert!(rows[1]["data"].get("hints").is_none(), "{}", rows[1]);
     assert_no_rewrite(&outcome.structured_content);
     assert!(!outcome.all_failed);
     octocode_native::contracts::validate_output("localSearch", &outcome.structured_content)
@@ -102,9 +103,11 @@ async fn a_credential_row_is_isolated_and_never_reaches_continuations() {
     assert_ne!(rows[0]["status"], "error");
     assert_eq!(rows[1]["status"], "error");
     assert!(
-        rows[1]["data"]["hints"]
-            .to_string()
-            .contains("queries.1.matchString")
+        rows[1]["data"]["error"]
+            .as_str()
+            .is_some_and(|error| error.contains("queries.1.matchString")),
+        "{}",
+        rows[1]
     );
     assert_no_rewrite(&fetch.structured_content);
     runtime.close().await;
@@ -128,9 +131,9 @@ async fn an_oversized_row_fails_in_band_while_other_rows_run() {
     let rows = mcp["structuredContent"]["results"].as_array().unwrap();
     assert_eq!(rows[0]["status"], "error");
     assert_eq!(rows[0]["data"]["errorCode"], "invalidInput");
-    let hints = rows[0]["data"]["hints"].to_string();
-    assert!(hints.contains("matchString"), "{hints}");
-    assert!(hints.contains("10000"), "{hints}");
+    let message = rows[0]["data"]["error"].as_str().unwrap_or_default();
+    assert!(message.contains("matchString"), "{}", rows[0]);
+    assert!(message.contains("10000"), "{}", rows[0]);
     assert_ne!(rows[1]["status"], "error");
 
     let error = runtime
@@ -219,11 +222,12 @@ async fn clasify_redacts_evidence_but_rejects_a_credential_in_a_resource_read() 
         .await
         .expect_err("a resource read must not run a rewritten query");
     assert_eq!(error.code, "invalidInput");
-    let details = error.payload.as_deref().unwrap()["details"].to_string();
+    let payload = error.payload.as_deref().unwrap();
+    let message = payload["error"].as_str().unwrap_or_default();
     assert!(
-        details.contains("resources[].query.matchString") && details.contains("credential"),
-        "{details}"
+        message.contains("resources[].query.matchString") && message.contains("credential"),
+        "{payload}"
     );
-    assert!(!details.contains(TOKEN), "{details}");
+    assert!(!payload.to_string().contains(TOKEN), "{payload}");
     runtime.close().await;
 }

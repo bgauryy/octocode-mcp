@@ -9,6 +9,7 @@ import { registerBacklog } from '../src/backlog/index.js';
 import { countsText } from '../src/backlog/format.js';
 import { BacklogError, BacklogStore, parseRef } from '../src/backlog/store.js';
 import { Subcommands } from '../src/shared/commands.js';
+import { PARENT_SESSION_ENV } from '../src/shared/env.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
 
 const KEY = { enter: '\r', escape: '\x1b', up: '\x1b[A', down: '\x1b[B', right: '\x1b[C', left: '\x1b[D' };
@@ -45,10 +46,10 @@ function repoDir(name = 'repo'): string {
   return dir;
 }
 
-function setup(options: { isSubagent?: boolean; agentId?: string; parentPid?: number } = {}) {
+function setup(options: { isSubagent?: boolean; agentId?: string; parentSession?: string } = {}) {
   const fake = fakePi();
   const commands = new Subcommands();
-  registerBacklog(fake.pi, { commands, isSubagent: options.isSubagent ?? false, ...(options.agentId ? { agentId: () => options.agentId } : {}), ...(options.parentPid ? { parentPid: options.parentPid } : {}) });
+  registerBacklog(fake.pi, { commands, isSubagent: options.isSubagent ?? false, ...(options.agentId ? { agentId: () => options.agentId } : {}), ...(options.parentSession ? { env: { ...process.env, [PARENT_SESSION_ENV]: options.parentSession } } : {}) });
   const cwd = repoDir();
   const tool = fake.tools.get('backlog');
   const call = (params: Record<string, unknown>, ctx = fakeCtx({ cwd })) => tool.execute('id', params, undefined, undefined, ctx) as Promise<{ content: Array<{ text: string }> }>;
@@ -166,7 +167,7 @@ describe('backlog tool', () => {
     const t = setup();
     expect(await t.text({ op: 'add', title: 'Add memory tool', body: 'with BM25', priority: 'p1', tags: ['mem'] })).toBe('Added B1 [backlog p1] Add memory tool #mem');
     await t.text({ op: 'add', title: 'Accepted', state: 'todo' });
-    expect(await t.text({ op: 'list' })).toBe('B2 [todo p2] Accepted\n1 item(s) in backlog await triage (list with states: ["backlog"]).');
+    expect(await t.text({ op: 'list' })).toBe('B2 [todo p2] Accepted\n1 proposed item(s) await triage (list with states: ["backlog"]).');
     expect(await t.text({ op: 'update', id: 'B1', state: 'ongoing', note: 'starting' })).toBe('Updated B1 [ongoing p1] Add memory tool #mem (you)');
     const detail = await t.text({ op: 'get', id: 'b1' });
     expect(detail).toContain('B1 [ongoing p1] Add memory tool #mem (you)');
@@ -228,13 +229,13 @@ describe('backlog tool', () => {
     const parent = setup();
     await parent.text({ op: 'add', title: 'delegated', state: 'todo' });
     await parent.text({ op: 'add', title: 'unrelated', state: 'todo' });
-    session('parent-session', 4242);
     storeFor(fs.realpathSync(parent.cwd)).update('B1', { state: 'ongoing' }, { id: 'parent-session' });
-    const sub = setup({ isSubagent: true, agentId: 'general-1', parentPid: 4242 });
+    const sub = setup({ isSubagent: true, agentId: 'general-1', parentSession: 'parent-session' });
     expect(sub.tool.parameters.properties.op.enum).toEqual(['list', 'get', 'add', 'update']);
     expect(sub.tool.parameters.properties.state.enum).toEqual(['ongoing', 'done']);
-    expect(sub.tool.description).toContain('As a subagent');
-    expect(sub.tool.description).toContain('your parent has claimed');
+    expect(sub.tool.description).toContain('its parent has claimed');
+    expect(sub.tool.parameters.properties.op.description).toContain('propose an item');
+    expect(sub.tool.parameters.properties.op.description).not.toContain('remove');
     expect(sub.tool.promptGuidelines.join(' ')).not.toContain('set it ongoing');
     expect(await sub.text({ op: 'list' })).toBe('B1 [ongoing p2] delegated (parent)\nB2 [todo p2] unrelated');
     expect(await sub.text({ op: 'add', title: 'follow-up', state: 'todo' })).toBe('Added B3 [backlog p2] follow-up');

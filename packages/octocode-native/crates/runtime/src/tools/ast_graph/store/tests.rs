@@ -257,7 +257,7 @@ fn list_operations_page_with_a_runnable_next_command() {
     let first = ask(dir.path(), "symbols", Some("src/lib.ts"), |o| {
         o.limit = Some(2)
     });
-    assert_eq!(first.exit, 6);
+    assert_eq!(first.exit, 0, "paging is success");
     assert_eq!(first.value["truncated"], true);
     let next = first.value["next"].as_str().expect("next");
     assert!(
@@ -381,7 +381,7 @@ fn issues_rank_hypotheses_with_evidence_and_controls() {
     assert_eq!(ingest_fixture(dir.path(), None).exit, 0);
     let root = dir.path();
     let out = ask(root, "issues", None, |o| o.limit = Some(200));
-    assert!(matches!(out.exit, 0 | 6), "{}", out.value);
+    assert_eq!(out.exit, 0, "{}", out.value);
 
     assert_eq!(findings(&out, "cycle"), vec!["src/a.ts"], "{}", out.value);
     let cycle = out.value["results"]
@@ -717,7 +717,7 @@ fn impact_since_reads_git_and_widens_on_config_changes() {
     );
 }
 
-/// L1: `--since` runs git on a repository the caller controls; its config
+/// `--since` runs git on a repository the caller controls; its config
 /// must not run programs (an fsmonitor hook executes on every index read).
 #[cfg(unix)]
 #[test]
@@ -1308,7 +1308,7 @@ fn file_ids(out: &GraphOutput) -> std::collections::BTreeSet<String> {
 }
 
 fn topology_files(out: &Value) -> std::collections::BTreeSet<String> {
-    out["results"]
+    out["nodes"]
         .as_array()
         .into_iter()
         .flatten()
@@ -1343,7 +1343,7 @@ fn assert_parity(dir: &Path, from: &str, to: &str) {
         .iter()
         .map(|hop| hop["id"].clone())
         .collect::<Vec<_>>();
-    assert_eq!(json!(hops), topo["results"][0]["files"], "{topo}");
+    assert_eq!(json!(hops), topo["nodes"][0]["files"], "{topo}");
     let graph = ask(dir, "cycles", None, |_| {});
     let topo = topology(dir, json!({"operation":"cycles"}));
     let graph_cycles = graph.value["results"]
@@ -1352,7 +1352,7 @@ fn assert_parity(dir: &Path, from: &str, to: &str) {
         .flatten()
         .map(|row| row["nodes"].clone())
         .collect::<Vec<_>>();
-    let topo_cycles = topo["results"]
+    let topo_cycles = topo["nodes"]
         .as_array()
         .into_iter()
         .flatten()

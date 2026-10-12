@@ -3,9 +3,10 @@
  * clickable link (OSC 8), move the cursor or reorder text with bidi overrides. Strip those before drawing it.
  * Adapted from the native composer's paste sanitiser.
  */
-const OSC_SEQUENCE = /(?:\u001b\]|\u009d)[\s\S]*?(?:\u0007|\u001b\\|\u009c|$)/gu;
+// An unterminated string ends at its line: a stray introducer must not swallow the rest of the text.
+const OSC_SEQUENCE = /(?:\u001b\]|\u009d)[^\n]*?(?:\u0007|\u001b\\|\u009c|(?=\n)|$)/gu;
 /** DCS, SOS, PM and APC strings. */
-const TERMINAL_STRING_SEQUENCE = /(?:\u001b[P_X^]|[\u0090\u0098\u009e\u009f])[\s\S]*?(?:\u001b\\|\u009c|$)/gu;
+const TERMINAL_STRING_SEQUENCE = /(?:\u001b[P_X^]|[\u0090\u0098\u009e\u009f])[^\n]*?(?:\u001b\\|\u009c|(?=\n)|$)/gu;
 const CSI_SEQUENCE = /(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]/gu;
 const ESC_SEQUENCE = /\u001b[ -/]*[0-~]/gu;
 /** C0 and C1 controls except \t and \n (\r is folded into \n first). */

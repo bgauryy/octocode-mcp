@@ -227,10 +227,7 @@ pub(super) fn resolve(
             "classificationContextEmpty",
             format!("Context tool {tool} returned no evidence; classification was not called."),
         );
-        let hints = tool_hints(&read.state, &prepared);
-        if !hints.is_empty() {
-            empty.hints = hints;
-        }
+        (empty.hints, empty.leads) = tool_hints(&read.state, &prepared);
         return Err(ContextFailure {
             error: empty,
             receipt: Some(receipt_with_evaluation(tool, &read.state, true, operation)),
@@ -373,47 +370,52 @@ fn read_error(tool: &str, read: &Read, query: &Value) -> ClassificationError {
         format!("Context tool {tool} failed{reason}; classification was not called."),
     );
     failure.failure = read.failure;
-    let hints = tool_hints(&read.state, query);
-    if !hints.is_empty() {
-        failure.hints = hints;
-    }
+    (failure.hints, failure.leads) = tool_hints(&read.state, query);
     failure
 }
 
 /// The read tool's own recovery for a failed or empty read: its prose hints,
-/// then each lead it offered (`next.<name>`) as the exact call to run. An
-/// error's `hints` carry text only, so a lead is rendered as text, as the agent
-/// would send it ([`agent_lead`]) against the read clasify ran (`query`).
-fn tool_hints(state: &Value, query: &Value) -> Vec<String> {
+/// and each lead it offered (`next.<name>` or `hints.<name>`) as the exact
+/// call to run, as the agent would send it ([`agent_lead`]) against the read
+/// clasify ran (`query`).
+fn tool_hints(state: &Value, query: &Value) -> (Vec<String>, Vec<(String, Value)>) {
     let Some(data) = state.pointer("/results/0/data") else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let prose = match data.get("hints") {
         Some(Value::Array(items)) => Some(items),
         Some(Value::Object(hints)) => hints.get("text").and_then(Value::as_array),
         _ => None,
     };
-    let mut hints = prose
+    let hints = prose
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect::<Vec<_>>();
-    let leads = [data.get("next"), state.pointer("/results/0/next")];
-    for (name, lead) in leads
+    let mut leads: Vec<(String, Value)> = Vec::new();
+    let offered = [
+        data.get("next"),
+        data.get("hints"),
+        state.pointer("/results/0/next"),
+    ];
+    for (name, lead) in offered
         .into_iter()
         .flatten()
         .filter_map(Value::as_object)
         .flatten()
     {
-        if let (Some(tool), Some(lead)) =
-            (lead.get("tool").and_then(Value::as_str), lead.get("query"))
+        if let (Some(tool), Some(row)) = (lead.get("tool"), lead.get("query"))
+            && tool.is_string()
+            && !leads.iter().any(|(listed, _)| listed == name)
         {
-            let lead = agent_lead(lead, query);
-            hints.push(format!("next.{name}: run {tool} {lead}"));
+            leads.push((
+                name.clone(),
+                json!({"tool": tool, "query": agent_lead(row, query)}),
+            ));
         }
     }
-    hints
+    (hints, leads)
 }
 
 /// A lead's query without what the read inherited from clasify: the default
@@ -533,7 +535,7 @@ fn page_scope(state: &Value) -> Option<Value> {
             })?;
             let total_lines = data
                 .get("totalLines")
-                .or_else(|| pagination.get("totalLines"))?
+                .or_else(|| pagination.get("total"))?
                 .as_u64()?;
             Some(json!({"startLine": start, "endLine": end, "totalLines": total_lines}))
         }
@@ -555,7 +557,7 @@ fn page_scope(state: &Value) -> Option<Value> {
                     .and_then(Value::as_u64)
                     .or_else(|| Some(byte_offset + length()?))?;
                 let total_bytes = pagination
-                    .get("totalBytes")
+                    .get("total")
                     .or_else(|| data.get("sourceBytes"))?
                     .as_u64()?;
                 Some(
@@ -741,15 +743,15 @@ fn receipt_with_evaluation(
     }
     if partial {
         let limitation = if terminal {
-            "The context tool reported a terminal limit; this result does not cover all matching evidence."
+            "The read stopped at a terminal limit; evidence past it was not judged."
         } else if receipt.get("next").is_some() {
             if evaluation_completed {
                 PAGE_ONLY_LIMITATION
             } else {
-                "Context retrieval failed after returning a partial page; continue explicitly to recover additional evidence."
+                "The read failed after a partial page; the rest was not judged."
             }
         } else {
-            "The context tool reported incomplete evidence without a safe continuation; inspect the ordinary tool result to change its bounds."
+            "The read returned incomplete evidence and no continuation; the rest was not judged."
         };
         receipt["limitations"] = json!([limitation]);
     }
@@ -757,7 +759,7 @@ fn receipt_with_evaluation(
         append_limitation(
             &mut receipt,
             &format!(
-                "The context tool offered continuations that fail input validation, so they were not kept: {}.",
+                "Continuations that fail input validation were dropped: {}.",
                 dropped.join(", ")
             ),
         );
@@ -766,7 +768,7 @@ fn receipt_with_evaluation(
         append_limitation(
             &mut receipt,
             &format!(
-                "Not followed: {} (a rerun of this read with wider analysis repeats the judged candidates); run the ordinary {tool} read and follow it, or send that rerun as its own resource.",
+                "Not followed: {} (reruns this read with wider analysis).",
                 reruns.join(", ")
             ),
         );
@@ -791,7 +793,7 @@ fn receipt_with_evaluation(
             append_limitation(
                 &mut kept,
                 &format!(
-                    "Continuation metadata exceeded the receipt limit; only next.{key} was kept. Inspect the ordinary tool result for the other continuations."
+                    "Continuation metadata exceeded the receipt limit; only the {key} continuation was kept."
                 ),
             );
             if kept.to_string().len() <= MAX_RECEIPT_BYTES {
@@ -802,12 +804,10 @@ fn receipt_with_evaluation(
             object.remove("next");
         }
         receipt["limitations"] = if evaluation_completed {
-            json!([
-                "Continuation metadata exceeded the receipt limit; inspect the ordinary tool result to continue."
-            ])
+            json!(["Continuation metadata exceeded the receipt limit and was dropped."])
         } else {
             json!([
-                "Continuation metadata exceeded the receipt limit; inspect the ordinary tool result to continue.",
+                "Continuation metadata exceeded the receipt limit and was dropped.",
                 "Context retrieval failed; classification was not run."
             ])
         };
@@ -951,7 +951,7 @@ fn inspect(
                         continue;
                     }
                     if RERUN_PAGE_AXES.contains(&crate::tools::id::kind(name)) {
-                        found.reruns.push(format!("next.{name}"));
+                        found.reruns.push(name.to_owned());
                         *found.partial = true;
                         continue;
                     }
@@ -972,7 +972,7 @@ fn inspect(
                         continue;
                     }
                     if prepare(tool, query).is_err() {
-                        found.dropped.push(format!("next.{name}"));
+                        found.dropped.push(name.to_owned());
                         continue;
                     }
                     let mut continuation = json!({"tool":tool,"query":query});
@@ -1017,16 +1017,9 @@ fn is_history_expansion(name: &str, tool: &str, query: &Value) -> bool {
         && query.as_object().is_some_and(|query| {
             // Menus are fresh first-page reads, even with formatting, sizing,
             // or file selectors. Explicit cursors can continue the same view.
-            ![
-                "offset",
-                "filePage",
-                "commentPage",
-                "reviewPage",
-                "commitPage",
-                "page",
-            ]
-            .iter()
-            .any(|key| query.contains_key(*key))
+            !["offset", "page"]
+                .iter()
+                .any(|key| query.contains_key(*key))
         })
 }
 
@@ -1213,7 +1206,7 @@ mod tests {
 
     #[test]
     fn failed_context_recovery_requires_an_exact_executable_continuation() {
-        let exact = json!({"next":{"continue":{"tool":"localFetch","confidence":"exact","query":{
+        let exact = json!({"next":{"continueWindow":{"tool":"localFetch","confidence":"exact","query":{
             "path":"/tmp/f","mainGoal": "test", "reasoning":"Recover","offset":0,"length":100
         }}}});
         assert_eq!(
@@ -1222,7 +1215,7 @@ mod tests {
                 "path":"/tmp/f","mainGoal": "test", "reasoning":"Recover","offset":0,"length":100
             }}))
         );
-        let candidate = json!({"next":{"continue":{"tool":"localFetch","confidence":"candidate","query":{
+        let candidate = json!({"next":{"continueWindow":{"tool":"localFetch","confidence":"candidate","query":{
             "path":"/tmp/f","mainGoal": "test", "reasoning":"Guess","offset":0,"length":100
         }}}});
         assert!(exact_continuation(&candidate).is_none());
@@ -1232,7 +1225,7 @@ mod tests {
     #[test]
     fn an_invalid_same_resource_continuation_is_named_not_silently_dropped() {
         let state = json!({"results":[{"index":0,"data":{"content":"x","next":{
-            "continue":{"tool":"localFetch","query":{"queries":[{}]}}
+            "continueWindow":{"tool":"localFetch","query":{"queries":[{}]}}
         }}}]});
         let receipt = receipt("localFetch", &state);
         assert_eq!(receipt["coverage"], "partial", "{receipt}");
@@ -1242,7 +1235,7 @@ mod tests {
                 .as_array()
                 .is_some_and(|limitations| limitations.iter().any(|limitation| limitation
                     .as_str()
-                    .is_some_and(|text| text.contains("next.continue")))),
+                    .is_some_and(|text| text.contains("continue")))),
             "{receipt}"
         );
     }
@@ -1271,22 +1264,19 @@ mod tests {
     /// them twice. It is disclosed, never followed; a real page still is.
     #[test]
     fn overlapping_reruns_are_disclosed_not_followed() {
-        let row =
-            json!({"path":"/repo/a.rs","operation":"references","symbolName":"f","lineHint":3});
+        let row = json!({"path":"/repo/a.rs","operation":"references","symbolName":"f","line":3});
         let mut rerun = row.clone();
         rerun["rustContext"] = json!({"features":"all"});
         assert!(prepare("lspSearch", &rerun).is_ok());
         let state = json!({"results":[{"index":0,"data":{"isPartial":true,
-            "payload":{"kind":"references","files":[{"path":"b.rs","matches":[{"line":4}]}]},
+            "kind":"references","files":[{"path":"b.rs","matches":[{"line":4}]}],
             "next":{"expandFeatures":{"tool":"lspSearch","query":{"queries":[rerun]}}}
         }}]});
         let first = receipt("lspSearch", &state);
         assert!(continuation(&first).is_none(), "{first}");
         assert_eq!(first["coverage"], "partial", "{first}");
         assert!(
-            first["limitations"]
-                .to_string()
-                .contains("next.expandFeatures"),
+            first["limitations"].to_string().contains("expandFeatures"),
             "{first}"
         );
         let mut paged = state.clone();
@@ -1320,25 +1310,22 @@ mod tests {
         };
         let error = read_error("localSearch", &failed, &json!({}));
         assert_eq!(error.code, "pathNotFound");
-        assert!(
-            error
-                .hints
-                .iter()
-                .any(|hint| hint.contains("next.viewTree") && hint.contains("structureSearch")),
-            "{:?}",
-            error.hints
+        assert_eq!(
+            error.leads,
+            vec![("viewTree".to_owned(), tree.clone())],
+            "the lead stays an executable call"
         );
+        assert!(error.hints.is_empty(), "{:?}", error.hints);
         let empty = json!({"results":[{"index":0,"status":"empty","data":{
             "pullRequests":[],"hints":["Try fewer keywords."],
             "next":{"broadenSearch":{"tool":"ghSearchHistory","query":{"queries":[{"operation":"pullRequest","owner":"o","repo":"r"}]}}}
         }}]});
-        let hints = tool_hints(&empty, &json!({}));
-        assert_eq!(hints[0], "Try fewer keywords.", "{hints:?}");
-        assert!(
-            hints[1].starts_with("next.broadenSearch: run ghSearchHistory "),
-            "{hints:?}"
-        );
-        assert!(tool_hints(&json!({"results":[{"data":{}}]}), &json!({})).is_empty());
+        let (hints, leads) = tool_hints(&empty, &json!({}));
+        assert_eq!(hints, ["Try fewer keywords."]);
+        assert_eq!(leads[0].0, "broadenSearch");
+        assert_eq!(leads[0].1["tool"], "ghSearchHistory");
+        let (hints, leads) = tool_hints(&json!({"results":[{"data":{}}]}), &json!({}));
+        assert!(hints.is_empty() && leads.is_empty());
     }
 
     /// A lead in an error hint reads as the agent would send it: no
@@ -1357,25 +1344,26 @@ mod tests {
             "broadenSearch":{"tool":"ghSearchHistory","query":{"queries":[broaden]}},
             "nextPage":{"tool":"ghSearchHistory","query":{"queries":[paged]}}
         }}}]});
-        let hints = tool_hints(&state, &run);
+        let (hints, leads) = tool_hints(&state, &run);
+        assert!(hints.is_empty(), "{hints:?}");
         let lead = |name: &str| -> Value {
-            let prefix = format!("next.{name}: run ghSearchHistory ");
-            let hint = hints
+            let (_, lead) = leads
                 .iter()
-                .find_map(|hint| hint.strip_prefix(&prefix))
-                .unwrap_or_else(|| panic!("{name}: {hints:?}"));
-            serde_json::from_str(hint).expect("lead query is JSON")
+                .find(|(listed, _)| listed == name)
+                .unwrap_or_else(|| panic!("{name}: {leads:?}"));
+            assert_eq!(lead["tool"], "ghSearchHistory");
+            lead["query"].clone()
         };
         assert_eq!(
             lead("broadenSearch"),
             json!({"queries":[{"operation":"pullRequest","owner":"o","repo":"r"}]}),
-            "{hints:?}"
+            "{leads:?}"
         );
         assert_eq!(
             lead("nextPage"),
             json!({"queries":[{"operation":"pullRequest","owner":"o","repo":"r",
                 "keywords":["zz"],"page":2,"pageSize":12}]}),
-            "{hints:?}"
+            "{leads:?}"
         );
         for name in ["broadenSearch", "nextPage"] {
             contracts::prepare_many_and_validate("ghSearchHistory", lead(name))
@@ -1386,14 +1374,14 @@ mod tests {
     #[test]
     fn coverage_receipts_never_copy_bodies_and_preserve_only_valid_continuations() {
         let state = json!({"results":[{"index":0,"data":{"content":"SECRET_BODY","isPartial":true,"next":{
-            "continue":{"tool":"localFetch","query":{"queries":[{"path":"/tmp/f","mainGoal": "test", "reasoning":"Read","offset":2}]},"confidence":"exact","content":"SECRET_BODY"},
+            "continueWindow":{"tool":"localFetch","query":{"queries":[{"path":"/tmp/f","mainGoal": "test", "reasoning":"Read","offset":2}]},"confidence":"exact","content":"SECRET_BODY"},
             "invalid":{"tool":"localFetch","query":{"queries":[{}]}},"effect":{"tool":"astRewrite","query":{"queries":[{}]}}
         }}}]});
         let receipt = receipt("localFetch", &state);
         assert_eq!(receipt["coverage"], "partial");
         assert_eq!(receipt["next"].as_object().unwrap().len(), 1);
         assert!(!receipt.to_string().contains("SECRET_BODY"));
-        assert!(prepare("localFetch", &receipt["next"]["continue"]["query"]).is_ok());
+        assert!(prepare("localFetch", &receipt["next"]["continueWindow"]["query"]).is_ok());
         let bounded = receipt_for_terminal();
         assert_eq!(bounded["coverage"], "partial");
         assert!(bounded.get("next").is_none());
@@ -1410,16 +1398,16 @@ mod tests {
     #[test]
     fn an_oversized_receipt_keeps_its_main_continuation() {
         let state = json!({"results":[{"index":0,"data":{"isPartial":true,"next":{
-            "continue":{"tool":"localFetch","query":{"queries":[{"path":"/tmp/f","mainGoal":"test","reasoning":"Read","offset":2}]},"confidence":"exact"},
+            "continueWindow":{"tool":"localFetch","query":{"queries":[{"path":"/tmp/f","mainGoal":"test","reasoning":"Read","offset":2}]},"confidence":"exact"},
             "readBoundedLines":{"tool":"localFetch","query":{"queries":[{"path":format!("/tmp/{}", "a".repeat(MAX_RECEIPT_BYTES)),"mainGoal":"test","reasoning":"Read"}]}}
         }}}]});
         let receipt = receipt("localFetch", &state);
         assert!(receipt.to_string().len() <= MAX_RECEIPT_BYTES);
         let next = receipt["next"].as_object().expect("main continuation kept");
         assert_eq!(next.len(), 1, "{receipt}");
-        assert_eq!(next["continue"]["query"]["offset"], 2);
+        assert_eq!(next["continueWindow"]["query"]["offset"], 2);
         assert!(
-            receipt["limitations"].to_string().contains("next.continue"),
+            receipt["limitations"].to_string().contains("continue"),
             "{receipt}"
         );
     }
@@ -1535,10 +1523,10 @@ mod tests {
             ("continuePatch", "offset"),
             ("continueCommentBody", "offset"),
             ("continueReviewBody", "offset"),
-            ("nextFilePage", "filePage"),
-            ("nextCommentPage", "commentPage"),
-            ("nextReviewPage", "reviewPage"),
-            ("nextCommitPage", "commitPage"),
+            ("nextFilePage", "page"),
+            ("nextCommentPage", "page"),
+            ("nextReviewPage", "page"),
+            ("nextCommitPage", "page"),
         ] {
             let mut action = history_expansions()["readBody"].clone();
             action["query"]["queries"][0][field] = json!(2);
@@ -1608,13 +1596,12 @@ mod tests {
                     "offset": offset,
                     "length": length,
                     "length": length,
-                    "totalLines": total_lines,
-                    "totalBytes": 17454,
+                    "total": total_lines,
                     "hasMore": true,
                     "nextOffset": next_offset
                 },
                 "sourceLineRanges": [{"line":start,"endLine":end}],
-                "next": {"continue": {"tool": "localFetch",
+                "next": {"continueWindow": {"tool": "localFetch",
                     "query": {"path": "/tmp/f", "mainGoal": "test", "reasoning": "R", "offset": next_offset, "length": length}
                 }}
             }}]
@@ -1637,13 +1624,12 @@ mod tests {
                     "offset": offset,
                     "length": length,
                     "length": length,
-                    "totalLines": 1,
-                    "totalBytes": total_bytes,
+                    "total": total_bytes,
                     "hasMore": has_more,
                     "nextOffset": next_offset
                 },
                 "sourceLineRanges": [{"line":1,"endLine":1}],
-                "next": if has_more { json!({"continue": {"tool": "localFetch",
+                "next": if has_more { json!({"continueWindow": {"tool": "localFetch",
                     "query": {"path": "/tmp/f", "mainGoal": "test", "reasoning": "R",
                         "offset": offset + length, "length": length}
                 }}) } else { json!(null) }
@@ -1666,8 +1652,7 @@ mod tests {
                         "offset": 100,
                         "length": 50,
                         "length": 50,
-                        "totalLines": 306,
-                        "totalBytes": 9039,
+                        "total": 306,
                         "hasMore": true,
                         "nextOffset": 150
                     },
@@ -1726,7 +1711,7 @@ mod tests {
                 "unit":"bytes",
                 "offset":0,
                 "length":11428,
-                "totalBytes":16389,
+                "total":16389,
                 "hasMore":true,
                 "nextOffset":11428
             }

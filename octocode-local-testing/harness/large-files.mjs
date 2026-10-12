@@ -50,7 +50,7 @@ for (const [name, file, sample] of [['checkerTs', TARGETS.checkerTs, 0], ['jsonH
   const total = lines(file);
   const first = await call('localFetch', { path: file, unit: 'lines', length: 5000 }, {}, `fetch ${name}`);
   bounded(first, `localFetch ${name} page 1`);
-  const pages = await walk(client, first, 'continue', sample || 400, { label: `fetch ${name}` });
+  const pages = await walk(client, first, 'continueWindow', sample || 400, { label: `fetch ${name}` });
   const ranges = pages.map(p => { const r = sourceView(rowData(p)).ranges; return [r[0]?.start, r.at(-1)?.end]; });
   let gapFree = ranges[0]?.[0] === 1;
   for (let i = 1; i < ranges.length; i++) gapFree &&= ranges[i][0] === ranges[i - 1][1] + 1;
@@ -73,14 +73,14 @@ for (const [label, query] of [
   const e = await call('localFetch', query, {}, `fetch ${label}`);
   bounded(e, `localFetch checker ${label}`);
   const d = rowData(e);
-  const boundedRefusal = d?.errorCode === 'fileTooLarge' && !!findHint(e.sc, 'continue');
-  check(`localFetch ${label}: answers, or refuses with an executable continuation`, !e.isError || boundedRefusal, (d?.errorCode ?? '') + ` continue=${!!findHint(e.sc, 'continue')}`);
+  const boundedRefusal = d?.errorCode === 'fileTooLarge' && !!findHint(e.sc, 'continueWindow');
+  check(`localFetch ${label}: answers, or refuses with an executable continuation`, !e.isError || boundedRefusal, (d?.errorCode ?? '') + ` continue=${!!findHint(e.sc, 'continueWindow')}`);
 }
 
 // bytes walk across the single 972 KB line: pages must be contiguous.
 {
   const first = await call('localFetch', { path: TARGETS.oneLineWasm, unit: 'bytes', length: 16_384 }, {}, 'wasm bytes');
-  const pages = await walk(client, first, 'continue', 100, { label: 'wasm bytes' });
+  const pages = await walk(client, first, 'continueWindow', 100, { label: 'wasm bytes' });
   const size = fs.statSync(TARGETS.oneLineWasm).size;
   const biggest = Math.max(...pages.map(p => Buffer.byteLength(rowData(p)?.content ?? '', 'utf8')));
   const contiguous = pages.every((p, index) => {
@@ -88,7 +88,7 @@ for (const [label, query] of [
     const pagination = rowData(p)?.pagination;
     return !p.isError && !p.rowErrors && request.unit === 'bytes' && request.length === 16_384 && (request.offset ?? 0) === index * 16_384 && (!pagination || (pagination.unit === 'bytes' && pagination.offset === index * 16_384));
   });
-  check(`localFetch one-line 972KB (redacted blob) bytes walk: ${pages.length} contiguous pages, each chunk-sized`, contiguous && pages.length === Math.ceil(size / 16_384) && !findHint(pages.at(-1).sc, 'continue') && biggest > 0 && biggest <= 2 * 16_384, `pages=${pages.length} biggestPage=${biggest}B size=${size}`);
+  check(`localFetch one-line 972KB (redacted blob) bytes walk: ${pages.length} contiguous pages, each chunk-sized`, contiguous && pages.length === Math.ceil(size / 16_384) && !findHint(pages.at(-1).sc, 'continueWindow') && biggest > 0 && biggest <= 2 * 16_384, `pages=${pages.length} biggestPage=${biggest}B size=${size}`);
 }
 
 // ── localSearch: many hits in one huge file, walk match pages ──────────────
@@ -96,14 +96,14 @@ for (const [label, query] of [
   const first = await call('localSearch', { path: TARGETS.checkerTs, matchString: 'function ', matchPageSize: 100, matchContentLength: 80, extras: ['stats', 'echo'] /* exact stats totals */ }, {}, 'grep checker');
   bounded(first, 'localSearch checker page 1');
   const d = rowData(first);
-  const total = d?.stats?.matchCount;
+  const total = d?.matchCount;
   const pages = await walk(client, first, 'nextMatchPage', 60, { label: 'grep checker' });
   const seen = pages.reduce((sum, p) => sum + collect(rowData(p), o => typeof o.line === 'number' && typeof o.value === 'string').length, 0);
-  check(`localSearch checker 'function ': ${pages.length} match pages reach every hit`, seen >= (d?.stats?.matchedLineCount ?? Infinity), `seen=${seen} matchedLineCount=${d?.stats?.matchedLineCount} matchCount=${total}`);
+  check(`localSearch checker 'function ': ${pages.length} match pages reach every hit`, seen >= (d?.matchedLineCount ?? Infinity), `seen=${seen} matchedLineCount=${d?.matchedLineCount} matchCount=${total}`);
 }
 {
   const e = await call('localSearch', { path: bigLog, matchString: 'level=ERROR', resultView: 'countMatches' }, {}, 'grep log count');
-  const count = rowData(e)?.stats?.matchCount ?? collect(rowData(e), o => typeof o.matchCount === 'number')[0]?.matchCount;
+  const count = rowData(e)?.matchCount ?? collect(rowData(e), o => typeof o.matchCount === 'number')[0]?.matchCount;
   check('localSearch 400k-line log: countMatches exact', count === Math.floor(400_000 / 97), `count=${count} expected=${Math.floor(400_000 / 97)} ${e.ms}ms`);
 }
 {
@@ -112,15 +112,15 @@ for (const [label, query] of [
   check('localSearch 1.9MB single line: hit clipped to window', values.length === 1 && values[0].value.length <= 400, `len=${values[0]?.value.length} ${e.bytes}B`);
 }
 {
-  const first = await call('localSearch', { path: REPOS, matchString: 'TODO', resultView: 'files', pageSize: 10, noIgnore: true, include: ['rust/tokio/src/**/*.rs'], exclude: ['.git', 'node_modules', 'target', 'build', 'dist', 'out'], extras: ['stats', 'echo'] /* fileCount, capped:false */ }, {}, 'grep repos files');
+  const first = await call('localSearch', { path: REPOS, matchString: 'TODO', resultView: 'files', pageSize: 10, includeIgnored: true, include: ['rust/tokio/src/**/*.rs'], exclude: ['.git', 'node_modules', 'target', 'build', 'dist', 'out'], extras: ['stats', 'echo'] /* pagination.totalItems */ }, {}, 'grep repos files');
   bounded(first, 'localSearch ignored Rust corpus source files page 1');
   const pages = await walk(client, first, 'nextPage', 200, { label: 'grep repos files' });
   const files = pages.flatMap(p => (rowData(p)?.files ?? []).map(o => rootPath(p, o.path)));
   const unique = new Set(files);
-  const reported = collect(rowData(first), o => typeof o.fileCount === 'number')[0]?.fileCount;
+  const reported = rowData(first)?.pagination?.totalItems;
   const known = R('rust/tokio/src/fs/file/tests.rs');
-  const complete = pages.length >= 2 && files.length > 0 && unique.has(known) && unique.size === files.length && files.length === reported && pages.every(p => !p.isError && !p.rowErrors) && !findHint(pages.at(-1).sc, 'nextPage') && rowData(first)?.stats?.capped === false;
-  check(`localSearch ignored Rust corpus source: ${pages.length} pages, complete and duplicate-free`, complete, `known=${unique.has(known)} files=${files.length} unique=${unique.size} fileCount=${reported} ${first.ms}ms`);
+  const complete = pages.length >= 2 && files.length > 0 && unique.has(known) && unique.size === files.length && files.length === reported && pages.every(p => !p.isError && !p.rowErrors) && !findHint(pages.at(-1).sc, 'nextPage') && !rowData(first)?.terminalLimit;
+  check(`localSearch ignored Rust corpus source: ${pages.length} pages, complete and duplicate-free`, complete, `known=${unique.has(known)} files=${files.length} unique=${unique.size} totalItems=${reported} ${first.ms}ms`);
 }
 
 // ── astSearch on huge files ────────────────────────────────────────────────
@@ -141,9 +141,10 @@ for (const [label, query] of [
   const first = await call('astSearch', { operation: 'match', path: TARGETS.checkerTs, language: 'TypeScript', pattern: 'isTypeAssignableTo($A, $B)', matchPageSize: 50, captureText: true, extras: ['stats', 'echo'] /* stats.matchCount */ }, {}, 'match checker');
   bounded(first, 'astSearch match checker');
   const d = rowData(first);
-  const total = d?.stats?.matchCount;
+  const total = d?.matchCount;
   const pages = await walk(client, first, 'nextMatchPage', 100, { label: 'match checker' });
-  const seen = pages.reduce((sum, p) => sum + collect(rowData(p), o => typeof o.value === 'string' && typeof o.column === 'number' && o.metavarRanges).length, 0);
+  // Match rows are {line, endLine?, value}; captureText adds positioned metavarRanges.
+  const seen = pages.reduce((sum, p) => sum + collect(rowData(p), o => typeof o.value === 'string' && typeof o.line === 'number' && o.metavarRanges).length, 0);
   check(`astSearch match in 3MB file: ${pages.length} pages reach all ${total} matches`, seen === total, `seen=${seen} total=${total} ${first.ms}ms`);
 }
 {
@@ -154,7 +155,7 @@ for (const [label, query] of [
 }
 {
   const e = await call('astSearch', { operation: 'match', path: minified, language: 'JavaScript', pattern: 'function $F($A) { return $$$B }', resultView: 'countMatches', extras: ['stats', 'echo'] /* stats.matchCount */ }, {}, 'match minified');
-  const total = rowData(e)?.stats?.matchCount;
+  const total = rowData(e)?.matchCount;
   check('astSearch match 60k functions on one line', total === 60_000, JSON.stringify({ total, ms: e.ms, data: rowData(e) }));
 }
 
@@ -163,9 +164,9 @@ for (const [label, query] of [
   const first = await call('lspSearch', { path: manyFns, operation: 'documentSymbols', pageSize: 100 }, {}, 'lsp docsyms');
   bounded(first, 'lspSearch documentSymbols 20k functions');
   const pages = await walk(client, first, 'nextPage', 5, { label: 'lsp docsyms' });
-  const names = pages.flatMap(p => outlineRows(rowData(p)?.payload?.symbols).map(o => o.name));
+  const names = pages.flatMap(p => outlineRows(rowData(p)?.symbols).map(o => o.name));
   check(`lspSearch documentSymbols 20,001 fns: ${pages.length} pages advance`, pages.length === 5 && pages.every(p => !p.isError && !p.rowErrors) && new Set(names).size === names.length, `unique=${new Set(names).size}/${names.length} first=${first.ms}ms`);
-  const refs = await call('lspSearch', { path: manyFns, symbolName: 'helper', lineHint: 60_001, operation: 'references', pageSize: 100 }, {}, 'lsp refs helper');
+  const refs = await call('lspSearch', { path: manyFns, symbolName: 'helper', line: 60_001, operation: 'references', pageSize: 100 }, {}, 'lsp refs helper');
   bounded(refs, 'lspSearch references 20k');
   const rp = await walk(client, refs, 'nextPage', 3, { label: 'lsp refs helper' });
   const locs = rp.reduce((sum, p) => sum + lspLocations(p).length, 0);
@@ -174,7 +175,7 @@ for (const [label, query] of [
 
 // ── structureSearch over the whole clone set ───────────────────────────────
 {
-  const first = await call('structureSearch', { operation: 'files', path: REPOS, extensions: ['ts', 'go', 'py', 'rs', 'java', 'c', 'cpp', 'hpp', 'cs', 'scala', 'asm'], detail: 'full', sort: 'size', maxEntries: 20, defaultExcludes: false, exclude: ['.git', 'node_modules', 'target'] }, {}, 'biggest files'); // repos/* is gitignored
+  const first = await call('structureSearch', { operation: 'files', path: REPOS, extensions: ['ts', 'go', 'py', 'rs', 'java', 'c', 'cpp', 'hpp', 'cs', 'scala', 'asm'], extras: ['details'], sort: 'size', maxEntries: 20, defaultExcludes: false, exclude: ['.git', 'node_modules', 'target'] }, {}, 'biggest files'); // repos/* is gitignored
   bounded(first, 'structureSearch biggest files');
   const files = structureFiles(rowData(first)?.files, rowData(first)?.path).filter(o => typeof o.path === 'string' && typeof o.size === 'number');
   const sorted = files.every((f, i) => i === 0 || files[i - 1].size >= f.size);

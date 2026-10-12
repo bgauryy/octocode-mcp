@@ -12,7 +12,6 @@ const SELECTORS: &[&str] = &[
     "fullContent",
     "matchString",
     "ranges",
-    "contextBytes",
     "regex",
     "caseMode",
     "packageName",
@@ -462,8 +461,8 @@ fn score(issues: &[ValidationIssue], depth: usize) -> [usize; 4] {
     [
         // A continuation names its tool: a branch for another tool is never
         // the closest match, however few field issues it reports.
-        invalid(&["tool", "operation", "type", "ecosystem", "questionType"]),
-        invalid(&["analysis", "resultView"]),
+        invalid(&["tool", "operation", "type", "ecosystem"]),
+        invalid(&["resultView"]),
         rejected,
         count,
     ]
@@ -808,7 +807,7 @@ mod tests {
         Ok(candidate)
     }
 
-    /// B10: the copy-free validation the response stage runs returns what
+    /// The copy-free validation the response stage runs returns what
     /// `validate_output` returns and leaves the response byte-identical.
     fn assert_in_place_matches(tool: &str, output: &Value) {
         let mut in_place = output.clone();
@@ -856,7 +855,7 @@ mod tests {
         variants
     }
 
-    /// B20: the discriminator-first acceptance path returns exactly what
+    /// The discriminator-first acceptance path returns exactly what
     /// the reference algorithm returns (same normalized value, same issues)
     /// for every generated fixture and its field variants, as input.
     #[test]
@@ -879,7 +878,7 @@ mod tests {
         assert!(compared > 1_000 && rejected > 500, "{compared}/{rejected}");
     }
 
-    /// B20: the same on output envelopes, where a row's continuation is the
+    /// The same on output envelopes, where a row's continuation is the
     /// 16-branch `ExecutableContinuation` union: every fixture query and a
     /// sixth of its variants as a continuation in its tool's output, some
     /// under a wrong tool name; each tool's first query in every output.
@@ -894,7 +893,7 @@ mod tests {
         let envelope = |continuation: Value| {
             json!({"results":[
                 {"index":0,"data":{"path":"a.txt","content":"x\n","totalLines":1,
-                    "next":{"continue":continuation.clone()}}},
+                    "next":{"continueWindow":continuation.clone()}}},
                 {"index":1,"status":"error","data":{"error":"Not found","errorCode":"notFound",
                     "hints":{"retry":continuation}}}
             ]})
@@ -934,7 +933,7 @@ mod tests {
         assert!(compared > 600 && rejected > 200, "{compared}/{rejected}");
     }
 
-    /// B20/B10: recorded responses (`OCTOCODE_RECORDED_OUTPUTS`: a directory
+    /// Recorded responses (`OCTOCODE_RECORDED_OUTPUTS`: a directory
     /// of `<n>-<tool>-<surface>.json` envelopes captured from the live tools)
     /// validate identically on both paths and in place, unchanged and with
     /// each row's fields individually corrupted.
@@ -1025,19 +1024,23 @@ mod tests {
             json!({"queries":[{"ecosystem":"pypi","keywords":["http"]}]}),
         )
         .expect_err("pypi has no keyword discovery");
-        let projected = crate::contracts::format_input_error("artifactSearch", &error, true);
-        let details = projected["details"].to_string();
+        let projected = crate::contracts::format_input_error("artifactSearch", &error);
         assert!(
-            details.contains(
-                "Remove 'keywords' from queries[0]: it applies only with ecosystem one of \
-                 \\\"npm\\\", \\\"crates\\\""
-            ),
+            projected["error"]
+                .as_str()
+                .is_some_and(|error| error.starts_with(
+                    "Remove 'keywords' from queries[0]: it applies only with ecosystem one of \
+                 \"npm\", \"crates\""
+                )),
             "{projected}"
         );
-        assert!(!details.contains("Unknown field"), "{projected}");
+        assert!(
+            !projected.to_string().contains("Unknown field"),
+            "{projected}"
+        );
     }
 
-    /// HI5: an enum error lists the values of the branch the selector
+    /// An enum error lists the values of the branch the selector
     /// chose, not every branch's merged enum (compare has no issue sections).
     #[test]
     fn enum_error_lists_only_the_selected_branch_values() {
@@ -1082,10 +1085,10 @@ mod tests {
             "lspSearch",
             json!({"queries":[{
                 "mainGoal":"g","reasoning":"r","operation":"documentSymbols",
-                "path":"/tmp/a.rs","symbolName":"finish","lineHint":3
+                "path":"/tmp/a.rs","symbolName":"finish","line":3
             }]}),
         )
-        .expect_err("a document query forbids symbolName/lineHint");
+        .expect_err("a document query forbids symbolName/line");
         let message = error
             .issues
             .iter()
@@ -1095,6 +1098,6 @@ mod tests {
         assert!(!message.contains("forbidden schema"), "{message}");
         assert!(message.contains("mutually exclusive"), "{message}");
         assert!(message.contains("`symbolName`"), "{message}");
-        assert!(message.contains("`lineHint`"), "{message}");
+        assert!(message.contains("`line`"), "{message}");
     }
 }

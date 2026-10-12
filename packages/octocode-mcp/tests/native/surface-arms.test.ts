@@ -149,9 +149,8 @@ describe('deferred tools', () => {
     expect(JSON.stringify(unknown.content)).toMatch(
       /astRewrite is not available/
     );
-    expect(unknown.structuredContent).toMatchObject({
-      kind: 'octocode.toolError',
-      tool: DEFERRED_TOOL_DISPATCHER,
+    expect(unknown.structuredContent).toEqual({
+      error: expect.stringMatching(/astRewrite is not available/),
       errorCode: 'invalidInput',
     });
     expect(executions).toEqual([]);

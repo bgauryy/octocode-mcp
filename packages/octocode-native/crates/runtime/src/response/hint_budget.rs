@@ -1,11 +1,17 @@
-//! X11: the runtime never clips guidance ([`super::rows::concise`]), so
-//! every hint and lead `why` source fits [`MAX_GUIDANCE_CHARS`] whole.
+//! The runtime never clips guidance ([`super::rows::concise`]), so
+//! every hint source fits [`MAX_GUIDANCE_CHARS`] whole.
 //!
 //! Two sweeps cover all tools: the response stage's own recoveries (every
 //! tool's fallback and every declared error code), and a scan of production
-//! sources for the literals a hint or `why` is written from (`*HINT*`
-//! constants, `fn *hint*` bodies, and the statement that names a hint or
-//! `.why(`). A `{…}` placeholder counts as empty: its value is evidence.
+//! sources for the literals a hint is written from (`*HINT*` constants,
+//! `fn *hint*` bodies, and the statement that names a hint). A `{…}`
+//! placeholder counts as empty: its value is evidence.
+//!
+//! A continuation is data under its channel key, never named in prose
+//! (`no_production_literal_names_a_continuation`): the description states
+//! what each lead kind is for, and the response carries `{tool, query}`.
+//! The scan covers every runtime source, the tools included.
+use super::channels::{HINTS_KEY, PAGES_KEY};
 use super::rows::MAX_GUIDANCE_CHARS;
 use crate::tools::id::{ToolId, error_codes};
 use serde_json::json;
@@ -127,7 +133,7 @@ fn rust_sources(dir: &Path, out: &mut Vec<PathBuf>) {
         } else if path.extension().is_some_and(|ext| ext == "rs")
             && path.file_name().is_some_and(|name| {
                 let name = name.to_string_lossy();
-                name != "tests.rs" && !name.ends_with("_tests.rs")
+                name != "tests.rs" && !name.ends_with("_tests.rs") && name != "hint_budget.rs"
             })
         {
             out.push(path);
@@ -145,7 +151,7 @@ fn guidance_literals(text: &str) -> Vec<(usize, String)> {
     for (index, line) in production(text).lines().enumerate() {
         let (code, literals) = split_line(line);
         let lower = code.to_ascii_lowercase();
-        let names_hint = lower.contains("hint") || lower.contains(".why(");
+        let names_hint = lower.contains("hint");
         if hint_fn.is_none() && lower.contains("fn ") && lower.contains("hint") {
             hint_fn = Some(depth);
         }
@@ -229,6 +235,57 @@ fn every_hint_source_fits_the_guidance_budget() {
     );
 }
 
+/// Every string literal of one production file, with its line number.
+fn literals(text: &str) -> Vec<(usize, String)> {
+    production(text)
+        .lines()
+        .enumerate()
+        .flat_map(|(index, line)| {
+            split_line(line)
+                .1
+                .into_iter()
+                .map(move |literal| (index + 1, literal))
+        })
+        .collect()
+}
+
+/// Whether `literal` spells a continuation by its channel path
+/// (`hints.<name>`, `next.<name>`), in text or a `format!` template.
+fn names_continuation(literal: &str) -> bool {
+    [HINTS_KEY, PAGES_KEY]
+        .iter()
+        .any(|key| literal.contains(&format!("{key}.")))
+}
+
+/// No production literal names a lead or page in prose. The channel
+/// keys themselves are key names, not prose, and pass; a disclosure renders
+/// a page's key from the constant, not from a spelled-out literal.
+#[test]
+fn no_production_literal_names_a_continuation() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_sources(&root, &mut files);
+    assert!(files.len() > 50, "the scan reads the runtime sources");
+    let mut named = Vec::new();
+    for file in files {
+        let text = std::fs::read_to_string(&file).expect("source");
+        for (line, literal) in literals(&text) {
+            if names_continuation(&literal) {
+                named.push(format!(
+                    "{}:{line}: {literal}",
+                    file.strip_prefix(&root).unwrap_or(&file).display()
+                ));
+            }
+        }
+    }
+    assert!(
+        named.is_empty(),
+        "continuations named in prose (a lead is `{{tool, query}}` under its key; static \
+         guidance lives in the description):\n{}",
+        named.join("\n")
+    );
+}
+
 #[test]
 fn the_scan_reads_hint_statements_and_skips_warnings() {
     let source = r#"
@@ -238,7 +295,6 @@ fn f() {
     let hint = format!(
         "hint text {x}"
     );
-    call().why("why text");
     let message = "plain message";
 }
 fn recovery_hint(code: &str) -> &'static str {
@@ -255,16 +311,15 @@ fn after() { let message = "after"; }
         .collect::<Vec<_>>();
     assert_eq!(
         texts,
-        [
-            "aaaa",
-            "hint text {x}",
-            "why text",
-            "x",
-            "arm text",
-            "other arm"
-        ]
+        ["aaaa", "hint text {x}", "x", "arm text", "other arm"]
     );
     assert_eq!(visible_chars("a {x} \\\"b\\\" {{c}}"), 10);
+    // Spelled channel paths are prose; the keys and placeholders are not.
+    assert!(names_continuation("run hints.read first"));
+    assert!(names_continuation("more (next.{name})"));
+    assert!(!names_continuation("nextPage"));
+    assert!(!names_continuation("responsePagination.next"));
+    assert!(!names_continuation("{} ({})"));
     // Hints keep their text whole.
     let long = "word ".repeat(40);
     assert_eq!(

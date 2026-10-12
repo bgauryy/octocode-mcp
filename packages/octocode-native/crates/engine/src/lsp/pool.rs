@@ -33,6 +33,9 @@ trait PoolClient: Clone + Send + Sync + 'static {
     /// requests of one multi-request walk — not only while a single request is
     /// outstanding.
     fn busy(&self) -> bool;
+    /// Resident memory of the server tree at its last sample; `0` when
+    /// unsampled (no memory cap configured), which counts against nothing.
+    fn resident_bytes(&self) -> u64;
     fn stop(&self) -> ClientFuture<()>;
     /// Same underlying client (a clone of it), not merely an equal config.
     fn same(&self, other: &Self) -> bool;
@@ -52,6 +55,10 @@ impl PoolClient for NativeLspClient {
     fn busy(&self) -> bool {
         // Counts requests, syncs, diagnostic waits, and caller leases.
         self.is_busy()
+    }
+
+    fn resident_bytes(&self) -> u64 {
+        self.last_resident_bytes()
     }
 
     fn stop(&self) -> ClientFuture<()> {
@@ -83,6 +90,10 @@ const LEASE_ATTEMPTS: usize = 3;
 pub struct LspPoolOptions {
     pub idle_timeout_ms: u64,
     pub max_entries: usize,
+    /// Resident memory all pooled servers may hold together, in bytes: the
+    /// pool stops idle least-recently-used servers while the sampled total is
+    /// over it, never the one in use or a busy one. `0` means no budget.
+    pub max_resident_bytes: u64,
 }
 
 /// Agent think time between calls often exceeds a minute, and a cold
@@ -92,6 +103,7 @@ impl Default for LspPoolOptions {
         Self {
             idle_timeout_ms: 300_000,
             max_entries: 4,
+            max_resident_bytes: super::spawn_limits::default_memory_cap_bytes(),
         }
     }
 }
@@ -444,8 +456,7 @@ impl<C: PoolClient> GenericPool<C> {
                             touch_entry(&mut state, &key);
                             // A previously deferred (busy) eviction may be
                             // possible now.
-                            let evicted =
-                                evict_overflow(&mut state, self.options.max_entries, &key);
+                            let evicted = evict_overflow(&mut state, &self.options, &key);
                             self.count.store(state.entries.len(), Ordering::SeqCst);
                             state.inflight.remove(&key);
                             inflight.complete(Ok(Some(client.clone())));
@@ -568,7 +579,7 @@ impl<C: PoolClient> GenericPool<C> {
                         state.backoff.remove(&key);
                         remove_lru(&mut state.lru, &key);
                         state.lru.push_back(key.clone());
-                        evicted = evict_overflow(&mut state, self.options.max_entries, &key);
+                        evicted = evict_overflow(&mut state, &self.options, &key);
                         self.count.store(state.entries.len(), Ordering::SeqCst);
                         state.inflight.remove(&key);
                         inflight.complete(Ok(Some(client.clone())));
@@ -744,14 +755,27 @@ fn touch_entry<C>(state: &mut State<C>, key: &str) -> bool {
     true
 }
 
-/// Evict least-recently-used entries while over `max_entries`, skipping
-/// `keep` and every busy client. When everything evictable is busy the pool
+/// Evict least-recently-used entries while over `max_entries` or, when the
+/// pool has a memory budget, while the servers' sampled resident memory
+/// together exceeds it, skipping `keep` and every busy client. When everything evictable is busy the pool
 /// overflows temporarily; a later install or acquire retries the eviction and
 /// idle expiry shrinks it too. Returned clients must be stopped by the caller
 /// after the state lock is released.
-fn evict_overflow<C: PoolClient>(state: &mut State<C>, max_entries: usize, keep: &str) -> Vec<C> {
+fn evict_overflow<C: PoolClient>(
+    state: &mut State<C>,
+    options: &LspPoolOptions,
+    keep: &str,
+) -> Vec<C> {
     let mut evicted = Vec::new();
-    while state.entries.len() > max_entries {
+    let over_budget = |entries: &HashMap<String, Entry<C>>| {
+        options.max_resident_bytes > 0
+            && entries
+                .values()
+                .map(|entry| entry.client.resident_bytes())
+                .fold(0_u64, u64::saturating_add)
+                > options.max_resident_bytes
+    };
+    while state.entries.len() > options.max_entries || over_budget(&state.entries) {
         let State { entries, lru, .. } = &mut *state;
         let Some(position) = lru.iter().position(|candidate| {
             candidate != keep
@@ -951,7 +975,7 @@ pub fn canonical_json(value: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
     use tokio::sync::oneshot;
 
     #[derive(Clone)]
@@ -964,6 +988,7 @@ mod tests {
         busy: Arc<AtomicBool>,
         resumes: Arc<AtomicUsize>,
         resume_gate: Arc<Mutex<Option<oneshot::Receiver<()>>>>,
+        resident: Arc<AtomicU64>,
     }
 
     impl FakeClient {
@@ -977,7 +1002,13 @@ mod tests {
                 busy: Arc::new(AtomicBool::new(false)),
                 resumes: Arc::new(AtomicUsize::new(0)),
                 resume_gate: Arc::new(Mutex::new(None)),
+                resident: Arc::new(AtomicU64::new(0)),
             }
+        }
+
+        fn resident(self, bytes: u64) -> Self {
+            self.resident.store(bytes, Ordering::SeqCst);
+            self
         }
     }
 
@@ -1006,6 +1037,10 @@ mod tests {
 
         fn busy(&self) -> bool {
             self.busy.load(Ordering::SeqCst)
+        }
+
+        fn resident_bytes(&self) -> u64 {
+            self.resident.load(Ordering::SeqCst)
         }
 
         fn stop(&self) -> ClientFuture<()> {
@@ -1037,7 +1072,78 @@ mod tests {
         GenericPool::new(LspPoolOptions {
             max_entries,
             idle_timeout_ms,
+            max_resident_bytes: 0,
         })
+    }
+
+    fn pool_with_memory_budget(max_resident_bytes: u64) -> GenericPool<FakeClient> {
+        GenericPool::new(LspPoolOptions {
+            max_entries: 8,
+            idle_timeout_ms: 60_000,
+            max_resident_bytes,
+        })
+    }
+
+    #[tokio::test]
+    async fn idle_servers_are_evicted_oldest_first_when_resident_memory_exceeds_the_budget() {
+        let pool = pool_with_memory_budget(1_000);
+        let mut clients = Vec::new();
+        for id in 1..=3 {
+            let client = pool
+                .acquire(id.to_string(), || async move {
+                    Ok(Some(FakeClient::new(id).resident(600)))
+                })
+                .await
+                .expect("start")
+                .expect("client");
+            clients.push(client);
+        }
+        let stops = clients
+            .iter()
+            .map(|client| client.stops.load(Ordering::SeqCst))
+            .collect::<Vec<_>>();
+        assert_eq!(stops, [1, 1, 0], "oldest idle servers go first");
+        assert_eq!(pool.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_busy_server_is_never_evicted_for_memory() {
+        let pool = pool_with_memory_budget(1_000);
+        let busy = pool
+            .acquire("1".into(), || async {
+                Ok(Some(FakeClient::new(1).resident(900)))
+            })
+            .await
+            .expect("start")
+            .expect("client");
+        busy.busy.store(true, Ordering::SeqCst);
+        let _ = pool
+            .acquire("2".into(), || async {
+                Ok(Some(FakeClient::new(2).resident(900)))
+            })
+            .await
+            .expect("start")
+            .expect("client");
+        assert_eq!(busy.stops.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            pool.len(),
+            2,
+            "the pool overflows rather than stop a busy server"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unbounded_memory_budget_evicts_nothing() {
+        let pool = pool_with_memory_budget(0);
+        for id in 1..=3 {
+            let _ = pool
+                .acquire(id.to_string(), || async move {
+                    Ok(Some(FakeClient::new(id).resident(u64::MAX / 8)))
+                })
+                .await
+                .expect("start");
+        }
+        assert_eq!(pool.len(), 3);
     }
 
     #[test]
@@ -1219,7 +1325,7 @@ mod tests {
         assert_eq!(client.stops.load(Ordering::SeqCst), 0);
     }
 
-    /// Review H3: the entry is removed (idle expiry) while Validate awaits
+    /// The entry is removed (idle expiry) while Validate awaits
     /// `alive()`/`resume()` and the client still reports alive. Validate must
     /// restart instead of waiting on its own never-completed inflight.
     #[tokio::test]
@@ -1272,7 +1378,7 @@ mod tests {
         assert!(pool.state.lock().await.inflight.is_empty());
     }
 
-    /// Review H3, overflow flavor: another key's install evicts the entry
+    /// Another key's install evicts the entry
     /// being validated (it is not leased, so not busy).
     #[tokio::test]
     async fn overflow_eviction_during_validate_restarts_instead_of_hanging() {

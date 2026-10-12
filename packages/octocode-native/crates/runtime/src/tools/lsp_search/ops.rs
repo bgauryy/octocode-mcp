@@ -4,7 +4,8 @@
 
 use super::LspSearchQuery;
 use super::cancellable;
-use super::failure::{LspFailure, empty, empty_hint};
+use super::failure::{LspFailure, empty, mark_diagnostics_unpublished, mark_partial, push_warning};
+use super::heritage;
 use super::importers::{self, Importers, WindowRequest};
 use super::locations::{
     RECOVERED_ALIAS, items_payload, locations, public_hover, public_range, public_workspace_symbol,
@@ -28,6 +29,30 @@ const RECOVERED_IMPORTER: &str = "recoveredImporter";
 
 pub(super) const PUSH_DIAGNOSTICS_WAIT_MS: u32 = 1_500;
 
+/// `lsp.source` of rows read from source by the heritage scan, not from the
+/// language server.
+const SCAN_SOURCE: &str = "native-graph-facts";
+
+/// Partial reason of a heritage-scan answer standing in for a server that
+/// did not answer.
+const SERVER_UNANSWERED: &str = "serverUnanswered";
+
+/// How `textDocument/implementation` was answered.
+enum Implemented {
+    Server(Vec<octocode_engine::lsp::types::JsCodeSnippet>),
+    /// The heritage scan, with the note that labels it.
+    Scan {
+        found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
+        note: String,
+    },
+}
+
+/// Flag a heritage-scan row incomplete: its note states what it is, and the
+/// retry asks the server again.
+fn mark_scan_answer(row: &mut Value, query: &LspSearchQuery, note: String) {
+    mark_partial(row, query, SERVER_UNANSWERED, &[note]);
+}
+
 /// Everything one operation needs, borrowed from `execute`.
 pub(super) struct Operation<'a, 'p> {
     pub(super) client: &'a NativeLspClient,
@@ -46,6 +71,8 @@ pub(super) struct Operation<'a, 'p> {
     pub(super) character: u32,
     /// Language of the anchor file, for server-specific recovery.
     pub(super) language_id: Option<&'a str>,
+    /// Characters a page of rows may spend (see `page_windows::page_budget`).
+    pub(super) budget: usize,
 }
 
 impl Operation<'_, '_> {
@@ -62,18 +89,7 @@ impl Operation<'_, '_> {
                     .locations("typeDefinition", "typeDefinitionProvider", found)
                     .await)
             }
-            "implementation" => {
-                let found = self
-                    .location_request(LocationRequest::Implementation)
-                    .await?;
-                self.scope.answer(
-                    std::iter::once(self.path)
-                        .chain(found.iter().map(|snippet| snippet.uri.as_str())),
-                );
-                Ok(self
-                    .locations("implementation", "implementationProvider", found)
-                    .await)
-            }
+            "implementation" => self.implementation().await,
             "hover" => self.hover().await,
             "documentSymbols" => {
                 let mut symbols = std::sync::Arc::unwrap_or_clone(
@@ -90,7 +106,12 @@ impl Operation<'_, '_> {
                 {
                     super::render::name_type_aliases(&mut symbols, &source.content);
                 }
-                Ok(items_payload(query, "documentSymbols", symbols))
+                Ok(items_payload(
+                    query,
+                    "documentSymbols",
+                    symbols,
+                    self.budget,
+                ))
             }
             "workspaceSymbol" => self.workspace_symbol().await,
             "diagnostic" => self.diagnostic().await,
@@ -218,11 +239,7 @@ impl Operation<'_, '_> {
                         .map(|anchor| anchor.path.clone()),
                 )
                 .chain(importers.iter().flat_map(|found| found.rejected.clone()))
-                .chain(
-                    importers
-                        .iter()
-                        .flat_map(|found| found.covered().iter().cloned()),
-                ),
+                .chain(importers.iter().flat_map(Importers::covered)),
         );
         // A later importer page leaves out the anchor's answer (listed on
         // importer page 1); it still deduplicates this window's rows.
@@ -236,7 +253,6 @@ impl Operation<'_, '_> {
             .chain(recovered.into_iter().map(labelled(RECOVERED_ALIAS)))
             .chain(from_importers.into_iter().map(labelled(RECOVERED_IMPORTER)))
             .collect::<Vec<_>>();
-        let empty_window = later_window && found.is_empty();
         let mut row = salted_locations(
             self.query,
             self.sources,
@@ -244,18 +260,13 @@ impl Operation<'_, '_> {
             "referencesProvider",
             found,
             importers.as_ref().and_then(Importers::digest),
+            self.budget,
         )
         .await;
-        if empty_window {
-            row["payload"]["reason"] = json!(format!(
-                "No candidate in importer page {} verified as a reference to this symbol.",
-                query.importer_page()
-            ));
-        }
         if let Some(importers) = &importers {
             importers.annotate(&mut row, query, self.scope);
         }
-        if !later_window && alias_scan_capped && row.pointer("/payload/coverage").is_some() {
+        if !later_window && alias_scan_capped && row.pointer("/coverage").is_some() {
             if let Some(name) = query.symbol_name() {
                 self.scope
                     .text_files(name, self.sources.policy(), self.cancel)
@@ -283,15 +294,200 @@ impl Operation<'_, '_> {
             ),
             hover => json!({
                 "lsp": { "serverAvailable": true, "provider": "hoverProvider" },
-                "payload": { "kind": "hover", "hover": public_hover(hover) }
+                "kind": "hover",
+                "hover": public_hover(hover)
             }),
         })
     }
 
     /// A call or type hierarchy walk; TS/JS incoming walks also verify the
     /// importers the server's level-1 answer does not cover.
+    /// `supertypes`/`subtypes` on a server with no type hierarchy: the
+    /// implementation locations (subtypes) or the definitions of the
+    /// declaration's heritage clause (supertypes), labelled by `lsp.source`.
+    async fn type_hierarchy_without_server_support(self) -> Result<Value, LspFailure> {
+        let query = self.query;
+        let kind = query.operation();
+        let (found, source, note) = if kind == "subtypes" {
+            // An implementation answer includes the queried declaration:
+            // that is the type itself, not one of its subtypes.
+            let anchor = super::scope::canonical(self.path);
+            let own = |snippet: &octocode_engine::lsp::types::JsCodeSnippet| {
+                snippet.range.start.line == self.line
+                    && super::scope::canonical(&uri_to_path(&snippet.uri)) == anchor
+            };
+            match self.implemented(true).await? {
+                Implemented::Server(found) => (
+                    found.into_iter().filter(|snippet| !own(snippet)).collect(),
+                    "implementation",
+                    heritage::describe_implementation(),
+                ),
+                Implemented::Scan { found, note } => (
+                    found.into_iter().filter(|snippet| !own(snippet)).collect(),
+                    SCAN_SOURCE,
+                    note,
+                ),
+            }
+        } else {
+            let content = self
+                .sources
+                .get(self.path)
+                .await
+                .map(|source| source.content.clone())
+                .unwrap_or_default();
+            let bases = heritage::base_types(&content, self.path, self.line);
+            let mut found = Vec::new();
+            for base in &bases {
+                found.extend(
+                    get_locations(
+                        self.client,
+                        self.snippet_policy,
+                        self.cancel,
+                        LocationRequest::Definition,
+                        self.path,
+                        base.line,
+                        base.character,
+                    )
+                    .await?,
+                );
+            }
+            (found, "heritage", heritage::describe(&bases))
+        };
+        let provider = heritage::fallback_provider(&kind).unwrap_or_default();
+        self.scope.answer(
+            std::iter::once(self.path).chain(found.iter().map(|snippet| snippet.uri.as_str())),
+        );
+        let mut row = self.locations(&kind, provider, found).await;
+        row["lsp"]["source"] = json!(source);
+        if source == SCAN_SOURCE {
+            mark_scan_answer(&mut row, query, note);
+        } else {
+            push_warning(&mut row, note);
+        }
+        Ok(row)
+    }
+
+    /// `implementation`: the server's answer, or, for a type declaration the
+    /// server cannot answer in time, the labelled heritage scan standing in
+    /// for it. Another anchor (a member, a function) has no heritage clause
+    /// a scan could read, so its failure stays the failure.
+    async fn implementation(self) -> Result<Value, LspFailure> {
+        let query = self.query;
+        let content = self
+            .sources
+            .get(self.path)
+            .await
+            .map(|source| source.content.clone())
+            .unwrap_or_default();
+        let scannable = query.symbol_name().is_some_and(|name| {
+            heritage::anchors_type_declaration(&content, self.path, self.line, name)
+        });
+        let (found, note) = match self.implemented(scannable).await? {
+            Implemented::Server(found) => (found, None),
+            Implemented::Scan { found, note } => (found, Some(note)),
+        };
+        self.scope.answer(
+            std::iter::once(self.path).chain(found.iter().map(|snippet| snippet.uri.as_str())),
+        );
+        let mut row = self
+            .locations("implementation", "implementationProvider", found)
+            .await;
+        if let Some(note) = note {
+            row["lsp"]["source"] = json!(SCAN_SOURCE);
+            mark_scan_answer(&mut row, query, note);
+        }
+        Ok(row)
+    }
+
+    /// The server's `textDocument/implementation` answer. The heritage scan
+    /// (when `scannable`) runs while the request is pending: a failure that
+    /// has the scan as fallback takes it without a second wait, and a server
+    /// still silent a grace after the scan finishes yields to it.
+    async fn implemented(&self, scannable: bool) -> Result<Implemented, LspFailure> {
+        let scan = async {
+            if scannable {
+                self.heritage_scan().await
+            } else {
+                Ok(None)
+            }
+        };
+        let raced = heritage::hedged(
+            self.location_request(LocationRequest::Implementation),
+            scan,
+            heritage::implementation_failure_has_fallback,
+            |scan| matches!(scan, Ok(Some(_))).then_some(heritage::SERVER_GRACE_AFTER_SCAN),
+            |wait| {
+                LspFailure::overdue(format!(
+                    "no answer within {} s of the syntax scan finishing",
+                    wait.as_secs()
+                ))
+            },
+        )
+        .await;
+        match raced {
+            Ok(found) => Ok(Implemented::Server(found)),
+            Err((failure, Some(scan))) => match scan? {
+                Some(scan) => Ok(Implemented::Scan {
+                    note: heritage::describe_scan(
+                        &failure,
+                        &scan.base,
+                        scan.files,
+                        scan.unread,
+                        &self.query.operation(),
+                    ),
+                    found: scan.found,
+                }),
+                None => Err(failure),
+            },
+            Err((failure, None)) => Err(failure),
+        }
+    }
+
+    /// Subtypes read from the heritage clauses of every workspace file that
+    /// spells the queried name: the syntax answer standing by for a failed
+    /// implementation request. `None` when no name is queried or the text
+    /// scan of the workspace could not run.
+    async fn heritage_scan(&self) -> Result<Option<heritage::HeritageScan>, LspFailure> {
+        let Some(base) = self
+            .query
+            .symbol_name()
+            .filter(|name| !name.trim().is_empty())
+        else {
+            return Ok(None);
+        };
+        let Some(files) = self
+            .scope
+            .text_files(base, self.sources.policy(), self.cancel)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let name = base.to_owned();
+        let scanned = files.clone();
+        let Some((found, unread)) = super::blocking_cancellable(self.cancel, move |stopped| {
+            heritage::scan_subtypes(&scanned, &name, stopped)
+        })
+        .await?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(heritage::HeritageScan {
+            base: base.to_owned(),
+            files: files.len(),
+            found,
+            unread,
+        }))
+    }
+
     async fn hierarchy(self) -> Result<Value, LspFailure> {
         let query = self.query;
+        if matches!(query.operation().as_str(), "supertypes" | "subtypes")
+            && !self
+                .client
+                .has_capability("typeHierarchyProvider".to_owned())
+        {
+            return self.type_hierarchy_without_server_support().await;
+        }
         let recovery = match self.importer_symbol()? {
             Some(symbol) => Some(ImporterRecovery {
                 symbol,
@@ -308,6 +504,7 @@ impl Operation<'_, '_> {
             (self.path, self.line, self.character),
             recovery,
             self.cancel,
+            self.budget,
         )
         .await?;
         if let Some(importers) = &importers {
@@ -328,7 +525,7 @@ impl Operation<'_, '_> {
             .map(str::to_owned);
         if symbol.is_none() && self.query.importer_page() > 1 {
             return Err(LspFailure::invalid_query(
-                "importerPage pages TypeScript/JavaScript importer recovery for references and callers; copy it only from next.nextImporterPage.",
+                "importerPage pages TypeScript/JavaScript importer recovery for references and callers; copy it from that recovery's continuation.",
             ));
         }
         Ok(symbol)
@@ -382,7 +579,7 @@ impl Operation<'_, '_> {
         provider: &str,
         found: Vec<octocode_engine::lsp::types::JsCodeSnippet>,
     ) -> Value {
-        locations(self.query, self.sources, kind, provider, found).await
+        locations(self.query, self.sources, kind, provider, found, self.budget).await
     }
 
     async fn workspace_symbol(self) -> Result<Value, LspFailure> {
@@ -399,22 +596,9 @@ impl Operation<'_, '_> {
             .iter()
             .map(public_workspace_symbol)
             .collect::<Vec<_>>();
-        // Servers return fuzzy matches in their own order (rust-analyzer:
-        // alphabetical), which can bury the exact name past the first page.
-        // Within a tier, declarations come before variable bindings (tsserver
-        // lists every `import { Scene }` as a `variable` named Scene ahead of
-        // `class Scene`). Stable sort keeps server order otherwise.
-        symbols.sort_by_key(|symbol| {
-            (
-                match_tier(
-                    symbol.get("name").and_then(Value::as_str).unwrap_or(""),
-                    &name,
-                ),
-                binding_rank(symbol.get("kind").and_then(Value::as_str).unwrap_or("")),
-            )
-        });
-        let mut row = items_payload(query, "symbols", json!(symbols));
-        if self.root_only && row.pointer("/payload/kind").and_then(Value::as_str) == Some("empty") {
+        rank_workspace_symbols(&mut symbols, &name);
+        let mut row = items_payload(query, "symbols", json!(symbols), self.budget);
+        if self.root_only && row.pointer("/kind").and_then(Value::as_str) == Some("empty") {
             // A source directory (`src`) has no markers: name the languages
             // of the project root it was searched from.
             let mut languages = workspace_root_languages(self.path);
@@ -446,9 +630,6 @@ impl Operation<'_, '_> {
                             "path": file
                         }),
                     )
-                    .why(format!(
-                        "Search the {language} project that shares this workspace root."
-                    ))
                     .confidence("medium")
                     .build();
             }
@@ -458,7 +639,7 @@ impl Operation<'_, '_> {
                 )
             } else {
                 format!(
-                    "workspaceRoot-only search used the {searched} server; this root also holds {} unsearched projects: follow hints.search*.",
+                    "workspaceRoot-only search used the {searched} server; this root also holds {} unsearched projects.",
                     others.join(", ")
                 )
             };
@@ -487,13 +668,9 @@ impl Operation<'_, '_> {
         };
         let published = report.is_some();
         let (items, truncated) = diagnostic_items(report);
-        let mut row = items_payload(query, "diagnostics", items);
-        if !published && row.pointer("/payload/kind").and_then(Value::as_str) == Some("empty") {
-            row["payload"]["category"] = json!("diagnosticsNotPublished");
-            row["payload"]["reason"] = json!(format!(
-                "The language server published no diagnostics for this document within {PUSH_DIAGNOSTICS_WAIT_MS} ms."
-            ));
-            row["hints"] = json!([empty_hint("diagnosticsNotPublished")]);
+        let mut row = items_payload(query, "diagnostics", items, self.budget);
+        if !published {
+            mark_diagnostics_unpublished(&mut row, query, PUSH_DIAGNOSTICS_WAIT_MS);
         }
         if truncated {
             row["isPartial"] = json!(true);
@@ -502,7 +679,7 @@ impl Operation<'_, '_> {
         }
         // Success rows drop `hints` (response hint policy), so this note is a
         // warning: it explains results, it is not a recovery step.
-        if disabled_macro_diagnostics(&row["payload"]["matches"]) {
+        if disabled_macro_diagnostics(&row["matches"]) {
             let note = json!(RUST_MACRO_NOTE);
             match row["warnings"].as_array_mut() {
                 Some(warnings) => warnings.push(note),
@@ -623,6 +800,27 @@ fn capitalized(word: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Servers return fuzzy matches in their own order (rust-analyzer:
+/// alphabetical), which can bury the exact name past the first page. Public
+/// rows are ranked by `symbolName` tier; within a tier, declarations come
+/// before variable bindings (tsserver lists every `import { Scene }` as a
+/// `variable` named Scene ahead of `class Scene`). Stable sort keeps server
+/// order otherwise.
+fn rank_workspace_symbols(symbols: &mut [Value], name: &str) {
+    symbols.sort_by_key(|symbol| {
+        (
+            match_tier(
+                symbol
+                    .get("symbolName")
+                    .and_then(Value::as_str)
+                    .unwrap_or(""),
+                name,
+            ),
+            binding_rank(symbol.get("kind").and_then(Value::as_str).unwrap_or("")),
+        )
+    });
+}
+
 /// Bindings (variables, fields, properties) rank after declarations of the
 /// same name: an import alias or a property is rarely the definition sought.
 fn binding_rank(kind: &str) -> u8 {
@@ -631,7 +829,22 @@ fn binding_rank(kind: &str) -> u8 {
 
 #[cfg(test)]
 mod tests {
-    use super::{binding_rank, match_tier};
+    use super::{binding_rank, match_tier, rank_workspace_symbols};
+
+    /// The published rows (`symbolName`, not the server's `name`) rank
+    /// the exact name ahead of rust-analyzer's alphabetical fuzzy matches.
+    #[test]
+    fn public_workspace_symbols_rank_the_exact_name_first() {
+        let raw = |name: &str| {
+            serde_json::json!({"name": name, "kind": 12,
+                "location": {"uri": "file:///repo/a.rs", "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 1}}}})
+        };
+        let mut rows = ["a_keeps_alive", "b_alive_pool", "is_alive_now", "is_alive"]
+            .map(|name| super::super::locations::public_workspace_symbol(&raw(name)));
+        rank_workspace_symbols(&mut rows, "is_alive");
+        assert_eq!(rows[0]["symbolName"], "is_alive", "{rows:?}");
+        assert_eq!(rows[1]["symbolName"], "is_alive_now", "{rows:?}");
+    }
 
     #[test]
     fn workspace_symbols_rank_declarations_before_same_name_bindings() {

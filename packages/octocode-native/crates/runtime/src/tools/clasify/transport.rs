@@ -4,7 +4,7 @@
 //! `type`/`instructions`/`criteria`, and its answers map back to public
 //! verdicts. The vendor (`providers::classification`) frames the request body.
 use crate::providers::classification::gate::{GateDenied, GateLease, GatePermit};
-use crate::providers::{BudgetStop, RequestBudget, RuntimeClients, retry_after};
+use crate::providers::{BudgetStop, RequestBudget, RuntimeClients};
 use bytes::BytesMut;
 use futures_util::StreamExt;
 use secrecy::{ExposeSecret, SecretString};
@@ -66,6 +66,9 @@ pub struct ClassificationError {
     pub code: String,
     pub message: String,
     pub hints: Vec<String>,
+    /// The failed read's own leads by name (`viewTree`, `broadenSearch`):
+    /// executable `{tool, query}` calls, rendered beside `hints.text`.
+    pub leads: Vec<(String, serde_json::Value)>,
     /// Failure kind of the delegated read behind a context error, so a call
     /// whose every read failed alike reports it like the read tool would.
     pub failure: Option<crate::tools::result::FailureKind>,
@@ -79,6 +82,16 @@ impl ClassificationError {
             code: code.to_owned(),
             message: message.into(),
             hints: vec![hint.to_owned()],
+            ..Self::default()
+        }
+    }
+
+    /// A page a budget left unjudged: its read (beside the page) is the
+    /// next step, so the error carries no tip.
+    pub(crate) fn unjudged(message: impl Into<String>) -> Self {
+        Self {
+            code: "classificationBudgetSpent".to_owned(),
+            message: message.into(),
             ..Self::default()
         }
     }
@@ -556,7 +569,8 @@ async fn failed_status(
         drop(permit);
         return Attempt::Done(Err(content_blocked()));
     }
-    let requested = retry_after(response.headers(), MAX_RETRY_AFTER, SystemTime::now());
+    let requested =
+        octocode_github::retry_after_delay(response.headers(), MAX_RETRY_AFTER, SystemTime::now());
     let body = error_body(response, budget).await;
     if is_throttle(code) || is_overloaded(body.as_ref()) {
         permit.throttled(requested);
@@ -701,11 +715,7 @@ pub fn budget(
     deadline: Instant,
     cancellation: tokio_util::sync::CancellationToken,
 ) -> RequestBudget {
-    RequestBudget {
-        deadline,
-        cancellation,
-        max_body_bytes: MAX_BODY_BYTES,
-    }
+    RequestBudget::new(deadline, cancellation, MAX_BODY_BYTES)
 }
 
 #[cfg(test)]
@@ -1051,7 +1061,7 @@ mod tests {
                 reqwest::header::HeaderValue::from_static("1e20"),
             );
             assert_eq!(
-                retry_after(&headers, MAX_RETRY_AFTER, SystemTime::now()),
+                octocode_github::retry_after_delay(&headers, MAX_RETRY_AFTER, SystemTime::now()),
                 Some(MAX_RETRY_AFTER)
             );
         }
@@ -1062,7 +1072,7 @@ mod tests {
             reqwest::header::HeaderValue::from_static("Fri, 31 Dec 9999 23:59:59 GMT"),
         );
         assert_eq!(
-            retry_after(&date, MAX_RETRY_AFTER, SystemTime::UNIX_EPOCH),
+            octocode_github::retry_after_delay(&date, MAX_RETRY_AFTER, SystemTime::UNIX_EPOCH),
             Some(MAX_RETRY_AFTER)
         );
     }

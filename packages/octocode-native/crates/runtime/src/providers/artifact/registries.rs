@@ -1,7 +1,7 @@
 use super::http::RegistryClient;
 use super::util::{
-    commit_sha, coordinate_path, date_prefix, endpoint, license, object_for, parse_url, required,
-    rows, safe_url, string, total,
+    commit_sha, coordinate_path, date_prefix, endpoint, github_slug, license, object_for,
+    parse_url, repository_url, required, rows, safe_url, string, total,
 };
 use super::versions::{VersionSpec, cargo_resolve, pypi_resolve};
 use super::{
@@ -17,9 +17,8 @@ pub(crate) async fn pypi(
     let Some(package_name) = query.bare_package_name() else {
         return Err(ArtifactError::new(
             "capabilityUnavailable",
-            "PyPI does not provide keyword search. Use type:\"pypi\" with an exact packageName.",
-        )
-        .with_hint("Use type:pypi with packageName for exact Python package lookup."));
+            "PyPI has no keyword search; look up an exact packageName.",
+        ));
     };
     let Some(response) = pypi_release_json(package_name, query.version(), client).await? else {
         return Ok(ArtifactProviderPage::empty(Some(0)));
@@ -46,16 +45,35 @@ pub(crate) async fn pypi(
     let links = info.get("project_urls").and_then(Value::as_object);
     artifact.homepage = safe_url(info.get("home_page"))
         .or_else(|| links.and_then(|value| safe_url(value.get("Homepage"))));
-    artifact.repository = links.and_then(|links| {
-        links.iter().find_map(|(label, value)| {
-            matches!(
-                label.to_ascii_lowercase().as_str(),
-                "source" | "source code" | "repository" | "code"
-            )
-            .then(|| safe_url(Some(value)))
-            .flatten()
+    // A labeled source link first; else the first project link or the
+    // homepage that names a GitHub repository (attrs labels it "GitHub",
+    // rich and six give only a GitHub homepage).
+    artifact.repository = links
+        .and_then(|links| {
+            links.iter().find_map(|(label, value)| {
+                matches!(
+                    label.to_ascii_lowercase().as_str(),
+                    "source"
+                        | "source code"
+                        | "sourcecode"
+                        | "repository"
+                        | "repo"
+                        | "code"
+                        | "github"
+                        | "gitlab"
+                )
+                .then(|| repository_url(Some(value)))
+                .flatten()
+            })
         })
-    });
+        .or_else(|| {
+            links
+                .into_iter()
+                .flat_map(|links| links.values())
+                .chain(info.get("home_page"))
+                .find_map(|value| github_slug(value.as_str()?))
+                .map(|(owner, repo)| format!("https://github.com/{owner}/{repo}"))
+        });
     artifact.published_at = body
         .get("urls")
         .and_then(Value::as_array)
@@ -63,7 +81,7 @@ pub(crate) async fn pypi(
         .and_then(|file| date_prefix(file.get("upload_time_iso_8601")));
     artifact.yanked = (info.get("yanked") == Some(&Value::Bool(true))).then_some(true);
     artifact.requires_python = string(info.get("requires_python"));
-    artifact.dependency_list = info
+    artifact.dependencies = info
         .get("requires_dist")
         .and_then(Value::as_array)
         .into_iter()
@@ -71,24 +89,14 @@ pub(crate) async fn pypi(
         .filter_map(Value::as_str)
         .filter(|requirement| !requirement.contains("extra =="))
         .map(str::to_owned)
-        .collect();
-    artifact.dependencies = Some(artifact.dependency_list.len());
+        .collect::<Vec<_>>()
+        .into();
     // PyPI names no commit; an upstream tag for this release pins the lead.
     if let (Some(repository), Some(version)) = (&artifact.repository, &artifact.version) {
         artifact.source_ref =
-            super::release_ref::github_release_tag(repository, version, client).await;
+            super::release_ref::github_release_tag(repository, &artifact.name, version, client)
+                .await;
         artifact.source_tag = artifact.source_ref.is_some();
-    }
-    // The manifest lead reads where this release declares its dependencies.
-    if artifact.source_ref.is_some()
-        && !artifact.dependency_list.is_empty()
-        && let (Some(version), Some(files)) = (
-            artifact.version.clone(),
-            body.get("urls").and_then(Value::as_array),
-        )
-    {
-        artifact.manifest =
-            super::release_ref::pypi_sdist_manifest(&artifact.name, &version, files, client).await;
     }
     Ok(ArtifactProviderPage::single(artifact))
 }
@@ -212,7 +220,7 @@ fn crate_item(row: &serde_json::Map<String, Value>) -> Result<ArtifactItem, Arti
     artifact.description = string(row.get("description"));
     artifact.license = license(row.get("license"));
     artifact.homepage = safe_url(row.get("homepage"));
-    artifact.repository = safe_url(row.get("repository"));
+    artifact.repository = repository_url(row.get("repository"));
     Ok(artifact)
 }
 
@@ -283,7 +291,7 @@ async fn crate_source_ref(artifact: &mut ArtifactItem, client: &RegistryClient<'
         return;
     }
     artifact.source_ref =
-        super::release_ref::github_release_tag(&repository, &version, client).await;
+        super::release_ref::github_release_tag(&repository, &artifact.name, &version, client).await;
     artifact.source_tag = artifact.source_ref.is_some();
 }
 
@@ -336,8 +344,7 @@ async fn crate_release_facts(artifact: &mut ArtifactItem, client: &RegistryClien
         crate_dependencies(&name, &version, client),
         crate_source_ref(artifact, client)
     );
-    artifact.dependencies = dependencies.as_ref().map(Vec::len);
-    artifact.dependency_list = dependencies.unwrap_or_default();
+    artifact.dependencies = dependencies;
 }
 
 pub(crate) async fn crates(
@@ -412,7 +419,7 @@ pub(crate) async fn crates(
         return Ok(ArtifactProviderPage::single(artifact));
     }
     let page = state.page.unwrap_or(1);
-    let size = query.page_size().unwrap_or(10);
+    let size = query.page_size();
     let url = keyword_url("https://crates.io/api/v1/crates", query, page, size)?;
     let (data, artifacts) =
         keyword_rows(client, ArtifactType::Crates, url, "crates", crate_item).await?;
@@ -493,7 +500,7 @@ async fn go_exact(
     artifact.description = string(row.get("synopsis"));
     // The version's commit time is its release date on pkg.go.dev.
     artifact.published_at = date_prefix(row.get("commitTime"));
-    artifact.repository = safe_url(row.get("repoUrl"));
+    artifact.repository = repository_url(row.get("repoUrl"));
     artifact.module_path = if is_package {
         string(row.get("modulePath"))
     } else {
@@ -501,6 +508,10 @@ async fn go_exact(
     };
     artifact.package_path = is_package.then_some(returned);
     artifact.source_ref = go_source_ref(&artifact);
+    if artifact.repository_directory.is_none() {
+        artifact.repository_directory =
+            go_module_directory(&artifact).filter(|directory| !directory.is_empty());
+    }
     // A vanity module path (`go.opentelemetry.io/otel`) does not name its
     // repository directory or tag; the module proxy records the commit
     // the version was built from, and the directory inside the repo.
@@ -529,7 +540,20 @@ async fn go_exact(
             }
         }
     }
+    drop_restated_go_paths(&mut artifact);
     Ok(ArtifactProviderPage::single(artifact))
+}
+
+/// A Go module or package path equal to the row's name restates it; a
+/// package inside a module keeps its module path. Dropped once the row is
+/// built (the source-ref lookups read the module path).
+fn drop_restated_go_paths(artifact: &mut ArtifactItem) {
+    if artifact.package_path.as_deref() == Some(artifact.name.as_str()) {
+        artifact.package_path = None;
+    }
+    if artifact.module_path.as_deref() == Some(artifact.name.as_str()) {
+        artifact.module_path = None;
+    }
 }
 
 pub(crate) async fn go(
@@ -549,7 +573,7 @@ pub(crate) async fn go(
             "https://pkg.go.dev/v1/search",
             &[
                 ("q", Some(terms(query))),
-                ("limit", Some(query.page_size().unwrap_or(10).to_string())),
+                ("limit", Some(query.page_size().to_string())),
                 ("token", token.clone()),
             ],
         )?;
@@ -583,9 +607,15 @@ pub(crate) async fn go(
             format!("https://pkg.go.dev/{}", coordinate_path(&name)),
         );
         artifact.module_path = string(row.get("modulePath"));
+        // Search names no repository; a module on GitHub is its own.
+        artifact.repository = artifact
+            .module_path
+            .as_deref()
+            .and_then(super::util::github_repository);
         artifact.package_path = Some(name);
         artifact.version = string(row.get("version"));
         artifact.description = string(row.get("synopsis"));
+        drop_restated_go_paths(&mut artifact);
         Ok(artifact)
     })
     .collect::<Result<Vec<_>, ArtifactError>>()?;
@@ -628,8 +658,7 @@ fn go_version(requested: Option<&str>) -> Result<Option<String>, ArtifactError> 
         Some(VersionSpec::Tag(spec) | VersionSpec::Range(spec)) => Err(ArtifactError::new(
             "capabilityUnavailable",
             format!("Go lookups take an exact version or latest, not \"{spec}\"."),
-        )
-        .with_hint("Pass an exact module version, e.g. v1.2.3.")),
+        )),
     }
 }
 
@@ -648,6 +677,19 @@ fn go_source_ref(artifact: &ArtifactItem) -> Option<String> {
     {
         return Some(commit);
     }
+    let directory = go_module_directory(artifact)?;
+    Some(if directory.is_empty() {
+        version.to_owned()
+    } else {
+        format!("{directory}/{version}")
+    })
+}
+
+/// The module's directory inside its repository, from its path under the
+/// repository root: `service/s3` for `github.com/aws/aws-sdk-go-v2/service/s3`
+/// (empty at the root; a major-version suffix is never part of it). `None`
+/// for a vanity path that does not start with the repository.
+fn go_module_directory(artifact: &ArtifactItem) -> Option<String> {
     let module = artifact.module_path.as_deref()?;
     let repository = artifact.repository.as_deref()?;
     let root = repository
@@ -666,7 +708,6 @@ fn go_source_ref(artifact: &ArtifactItem) -> Option<String> {
     }) {
         segments.pop();
     }
-    segments.push(version);
     Some(segments.join("/"))
 }
 
@@ -683,8 +724,8 @@ fn composer(row: &serde_json::Map<String, Value>) -> Result<ArtifactItem, Artifa
     artifact.repository = row
         .get("source")
         .and_then(Value::as_object)
-        .and_then(|value| safe_url(value.get("url")))
-        .or_else(|| safe_url(row.get("repository")));
+        .and_then(|value| repository_url(value.get("url")))
+        .or_else(|| repository_url(row.get("repository")));
     artifact.source_ref = row
         .get("source")
         .and_then(Value::as_object)
@@ -728,7 +769,7 @@ pub(crate) async fn packagist(
         };
     }
     let page = state.page.unwrap_or(1);
-    let size = query.page_size().unwrap_or(10);
+    let size = query.page_size();
     let url = keyword_url("https://packagist.org/search.json", query, page, size)?;
     let (data, artifacts) =
         keyword_rows(client, ArtifactType::Packagist, url, "results", composer).await?;
@@ -776,10 +817,10 @@ fn gem(row: &serde_json::Map<String, Value>) -> Result<ArtifactItem, ArtifactErr
     artifact.description = string(row.get("info"));
     artifact.license = license(row.get("licenses"));
     artifact.homepage = safe_url(row.get("homepage_uri"));
-    artifact.repository = safe_url(row.get("source_code_uri")).or_else(|| {
+    artifact.repository = repository_url(row.get("source_code_uri")).or_else(|| {
         row.get("metadata")
             .and_then(Value::as_object)
-            .and_then(|value| safe_url(value.get("source_code_uri")))
+            .and_then(|value| repository_url(value.get("source_code_uri")))
     });
     Ok(artifact)
 }
@@ -805,7 +846,7 @@ pub(crate) async fn rubygems(
     // rubygems.org ignores per-page sizing (a fixed number of rows per API
     // page), so the item offset picks the API page and the rows within it,
     // and a page that crosses an API page boundary reads the next one.
-    let size = query.page_size().unwrap_or(10);
+    let size = query.page_size();
     let offset = state.offset.unwrap_or(0) as usize;
     let mut api_page = 1;
     let mut skip = offset;
@@ -1072,8 +1113,12 @@ mod tests {
         assert_eq!(item.version.as_deref(), Some("2.31.0"));
         assert_eq!(item.published_at.as_deref(), Some("2023-05-22"));
         assert_eq!(item.requires_python.as_deref(), Some(">=3.7"));
-        assert_eq!(item.dependencies, Some(2), "extras are not dependencies");
-        assert_eq!(item.dependency_list.len(), 2, "{:?}", item.dependency_list);
+        assert_eq!(
+            item.dependencies.as_ref().map(Vec::len),
+            Some(2),
+            "extras are not dependencies: {:?}",
+            item.dependencies
+        );
         assert_eq!(item.yanked, None);
         // The upstream release tag pins the source lead.
         assert_eq!(item.source_ref.as_deref(), Some("v2.31.0"));
@@ -1100,7 +1145,10 @@ mod tests {
         .await
         .expect_err("missing version");
         assert_eq!(missing.code, "versionNotFound");
-        assert!(missing.hints[0].contains("2.31.0"), "{missing:?}");
+        assert!(
+            missing.nearest.iter().any(|version| version == "2.31.0"),
+            "{missing:?}"
+        );
         let registry: Vec<String> = http
             .seen()
             .into_iter()
@@ -1157,6 +1205,38 @@ mod tests {
     /// A crate version's source ref is the commit cargo packaged it from,
     /// with its directory in the repository; without VCS info it is the
     /// upstream release tag, when one exists.
+    /// A monorepo package whose release tag carries a prefix other than its
+    /// full name (pydantic-core: `core-v2.50.1` in pydantic/pydantic) still
+    /// pins the release lead to that tag.
+    #[tokio::test]
+    async fn a_monorepo_pypi_release_is_pinned_to_its_prefixed_tag() {
+        let mut release = pypi_release("2.50.1");
+        release["info"]["name"] = json!("pydantic_core");
+        release["info"]["project_urls"] = json!({
+            "Source": "https://github.com/pydantic/pydantic/tree/main/pydantic-core"
+        });
+        let http = RouteHttp::new(vec![("/pypi/pydantic-core/2.50.1/json", release)]);
+        let tags = FakeTags::new(vec!["pydantic/pydantic@core-v2.50.1"]);
+        let b = test_budget();
+        let client = RegistryClient {
+            http: &http,
+            budget: &b,
+            cache: None,
+            tags: Some(&tags),
+        };
+        let page = pypi(
+            &versioned(ArtifactType::Pypi, "pydantic-core", "2.50.1"),
+            &client,
+        )
+        .await
+        .expect("exact");
+        assert_eq!(
+            page.artifacts[0].source_ref.as_deref(),
+            Some("core-v2.50.1")
+        );
+        assert!(page.artifacts[0].source_tag);
+    }
+
     #[tokio::test]
     async fn crates_exact_versions_carry_the_packaging_commit_or_release_tag() {
         let info =
@@ -1240,20 +1320,15 @@ mod tests {
         .expect("pinned")
         .artifacts
         .remove(0);
-        assert_eq!(pinned.dependencies, Some(2));
+        assert_eq!(pinned.dependencies.as_ref().map(Vec::len), Some(2));
         let latest = crate_lookup(&whole, &b, &exact_query(ArtifactType::Crates, "serde"))
             .await
             .expect("latest")
             .artifacts
             .remove(0);
-        assert_eq!(latest.dependencies, Some(2));
+        // The names ride the row; the list is the one dependency field.
         assert_eq!(
             serde_json::to_value(&latest).expect("row")["dependencies"],
-            2
-        );
-        // E19: the names ride the row, not only their count.
-        assert_eq!(
-            serde_json::to_value(&latest).expect("row")["dependencyList"],
             json!(["a ^1.0", "e"])
         );
     }
@@ -1299,7 +1374,10 @@ mod tests {
             .await
             .expect_err("missing");
         assert_eq!(missing.code, "versionNotFound");
-        assert!(missing.hints[0].contains("1.0.100"), "{missing:?}");
+        assert!(
+            missing.nearest.iter().any(|version| version == "1.0.100"),
+            "{missing:?}"
+        );
     }
 
     async fn crate_lookup(
@@ -1421,6 +1499,27 @@ mod tests {
         assert_eq!(item("github.com/o/rx", "v1.0.0"), None);
     }
 
+    /// A module inside a repository keeps its directory, so the release
+    /// lead lists the module and not the repository root.
+    #[test]
+    fn go_module_directory_is_the_path_under_the_repository_root() {
+        let directory = |module: &str| {
+            let mut item = ArtifactItem::new(ArtifactType::Go, module.into(), String::new());
+            item.module_path = Some(module.into());
+            item.repository = Some("https://github.com/aws/aws-sdk-go-v2".into());
+            go_module_directory(&item)
+        };
+        assert_eq!(
+            directory("github.com/aws/aws-sdk-go-v2/service/s3").as_deref(),
+            Some("service/s3")
+        );
+        assert_eq!(
+            directory("github.com/aws/aws-sdk-go-v2/v2").as_deref(),
+            Some("")
+        );
+        assert_eq!(directory("go.example.com/x"), None);
+    }
+
     #[test]
     fn composer_source_reference_is_the_release_commit() {
         let row = json!({"name": "o/r", "version": "v1.0.0",
@@ -1507,7 +1606,7 @@ mod tests {
         let item = &page.artifacts[0];
         assert_eq!(item.name, "github.com/gin-gonic/gin");
         assert_eq!(item.version.as_deref(), Some("v1.9.1"));
-        // AR4: the release date comes from the same response (0 calls).
+        // The release date comes from the same response (0 calls).
         assert_eq!(item.published_at.as_deref(), Some("2023-06-12"));
         assert!(
             item.registry_url.contains("pkg.go.dev"),
@@ -1564,7 +1663,10 @@ mod tests {
             .await
             .expect_err("unpublished");
         assert_eq!(missing.code, "versionNotFound");
-        assert!(missing.hints[0].contains("0.70.0"), "{missing:?}");
+        assert!(
+            missing.nearest.iter().any(|version| version == "0.70.0"),
+            "{missing:?}"
+        );
         let range = go(&lookup(Some("^0.71")), &state, &client)
             .await
             .expect_err("range");

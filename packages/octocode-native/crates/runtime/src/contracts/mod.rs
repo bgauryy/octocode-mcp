@@ -5,6 +5,8 @@ mod prepare;
 mod schema_facts;
 pub(crate) mod shared_fields;
 pub mod tool_types;
+#[cfg(test)]
+mod undeclared;
 mod validate;
 pub(crate) use validate::{levenshtein, qualifier_terms};
 
@@ -468,22 +470,6 @@ mod contract_owner_tests {
     }
 
     #[test]
-    fn lsp_line_is_rejected_without_core_alias() {
-        assert!(
-            prepare_and_validate(
-                "lspSearch",
-                json!({
-                    "path":"/tmp/lib.rs",
-                    "symbolName":"is_available",
-                    "line":257,
-                    "operation":"definition"
-                }),
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
     fn each_tool_span_parses_to_its_contract_entry() {
         // `tool_contract` parses one tool from its span when the full contract
         // is not yet parsed; every span must yield exactly `tools[i]`.
@@ -650,8 +636,8 @@ mod contract_owner_tests {
         let (tool, data) = (
             "ghSearchHistory",
             json!({"commits":[
-                {"sha":"abc123","message":"first"},
-                {"sha":"abc123","message":"second"}
+                {"commitSha":"abc123","date":"2026-01-01T00:00:00Z","message":"first"},
+                {"commitSha":"def456","date":"2026-01-01T00:00:00Z","message":"second"}
             ]}),
         );
         let output = crate::response::rows::envelope(vec![json!({"index":0,"data":data})]);
@@ -670,21 +656,21 @@ mod contract_owner_tests {
     #[test]
     fn output_contract_rejects_missing_or_invalid_shared_file_evidence() {
         let output = json!({"results":[{"index":0,"data":{"commits":[{"message":"first"}]}}]});
-        validate_output("ghSearchHistory", &output).expect_err("a commit row needs its sha");
+        validate_output("ghSearchHistory", &output).expect_err("a commit row needs its commitSha");
         let mut invalid = output.clone();
-        invalid["shared"] = json!({"sha":42});
-        validate_output("ghSearchHistory", &invalid).expect_err("shared sha must be text");
-        invalid["shared"] = json!({"sha":"abc123"});
-        invalid["results"][0]["data"]["commits"][0]["sha"] = json!(42);
+        invalid["shared"] = json!({"commitSha":42});
+        validate_output("ghSearchHistory", &invalid).expect_err("shared commitSha must be text");
+        invalid["shared"] = json!({"commitSha":"abc123"});
+        invalid["results"][0]["data"]["commits"][0]["commitSha"] = json!(42);
         validate_output("ghSearchHistory", &invalid)
             .expect_err("shared defaults must not conceal malformed explicit evidence");
     }
 
     #[test]
     fn output_contract_isolates_invalid_rows_with_shared_evidence() {
-        let output = json!({"shared":{"sha":"abc123"},"results":[
-            {"index":0,"data":{"commits":[{"message":"first"}]}},
-            {"index":1,"data":{"commits":[{"message":"second","sha":42}]}}
+        let output = json!({"shared":{"date":"2026-01-01T00:00:00Z"},"results":[
+            {"index":0,"data":{"commits":[{"commitSha":"abc123","message":"first"}]}},
+            {"index":1,"data":{"commits":[{"message":"second","commitSha":42}]}}
         ]});
         let error = validate_output("ghSearchHistory", &output).expect_err("second row is invalid");
         let isolated = isolate_row_violations("ghSearchHistory", &output, &error)
@@ -738,7 +724,6 @@ mod contract_owner_tests {
         // strips nulls so the query matches the keyword+cursor branch.
         let data = |query: serde_json::Value| {
             json!({"results":[{"index":0,"data":{
-                "ecosystem":"npm",
                 "artifacts":[],
                 "pagination":{"pageSize":5,"hasMore":true,"totalItems":100},
                 "next":{"nextPage":{"tool":"artifactSearch","query":{"queries":[query]},"confidence":"exact"}}
@@ -815,15 +800,15 @@ mod contract_owner_tests {
                 .or_insert_with(|| json!("Verify the candidate before deletion."));
             json!({"results":[{"index":0,"data":{
                 "operation":"deadCode",
-                "results":[{"file":"src/util.ts","name":"greet","kind":"function",
+                "nodes":[{"file":"src/util.ts","name":"greet","kind":"function",
                     "line":1,"reason":"unreferenced-export","viaHeuristic":"reexport-chain"}],
-                "completeness":{"results":"complete","graph":"complete","diagnostics":"complete"},
-                "next":{"references":{"tool":"lspSearch","query":{"queries":[query]},
+                "coverage":{"state":"complete"},
+                "next":{"findReferences":{"tool":"lspSearch","query":{"queries":[query]},
                     "confidence":"high","why":"Verify candidate before deletion."}}
             }}]})
         };
         let minimal = json!({"operation":"references","path":"/r/a.ts","symbolName":"greet",
-            "lineHint":1,"includeDeclaration":false,"groupByFile":true});
+            "line":1,"includeDeclaration":false,"groupByFile":true});
         validate_output("astTopology", &data(minimal.clone()))
             .expect("defaulted lspSearch fields may be omitted");
         let mut missing_anchor = minimal;
@@ -886,7 +871,7 @@ mod contract_owner_tests {
                 .entry("reasoning")
                 .or_insert_with(|| json!("Read the next history page."));
             json!({"results":[{"index":0,"data":{
-                "type":"pullRequests","owner":"o","repo":"r","pullRequests":[],
+                "pullRequests":[],
                 "next":{"nextPage":{"tool":"ghSearchHistory","query":{"queries":[query]},"confidence":"exact"}}
             }}]})
         };
@@ -922,7 +907,7 @@ mod contract_owner_tests {
         };
         let buggy = validate_output(
             "ghGetHistoryItem",
-            &data(json!({"operation":"compare","owner":"o","repo":"r","base":"a","head":"b","page":null,"filePage":1,"pageSize":30})),
+            &data(json!({"operation":"compare","owner":"o","repo":"r","base":"a","head":"b","page":null,"pageSize":30})),
         )
         .expect_err("null page must be rejected");
         assert!(
@@ -935,7 +920,7 @@ mod contract_owner_tests {
         if let Err(fixed) = validate_output(
             "ghGetHistoryItem",
             &data(
-                json!({"operation":"compare","owner":"o","repo":"r","base":"a","head":"b","page":1,"filePage":1,"pageSize":30}),
+                json!({"operation":"compare","owner":"o","repo":"r","base":"a","head":"b","page":1,"pageSize":30}),
             ),
         ) {
             assert!(

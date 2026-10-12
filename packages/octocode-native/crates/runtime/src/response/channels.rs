@@ -5,7 +5,11 @@
 //! - `next` keeps pages: continuations that reach unshown data of the same
 //!   result. A caller follows every one.
 //! - `hints` is one object of optional agent guidance: prose tips under
-//!   `text` and lead calls under their own names.
+//!   `text` and lead calls under their own names. The exception is a
+//!   partial object with no page (`isPartial` and nothing in `next` that
+//!   reaches more of its result): its leads are the only route to the
+//!   evidence it withholds, so they stay in the default output with all
+//!   their rows ([`shape`]).
 //!
 //! [`shape`] applies the channel policy to one object; the continuation
 //! stage ([`super::continuations::finalize`]) calls it for every object of
@@ -15,6 +19,61 @@ use serde_json::{Map, Value, json};
 
 pub use crate::tools::id::continuation_channels::{HINT_TEXT_KEY, HINTS_KEY, PAGES_KEY};
 use crate::tools::id::{Channel, ToolId, channel, continuation_channels, kind};
+
+/// Keys that name a row, and notes that lead it: they stay ahead of the
+/// continuation keys.
+const ROW_ANCHORS: [&str; 2] = ["id", "warnings"];
+
+/// One rule for every tool: an object's page state and `next` come
+/// before its evidence rows, in both the structured and the text channel,
+/// so a client that cuts long output keeps the continuation. Order inside
+/// the object: anchors (`id`, `warnings`), pages (`pagination`, then the
+/// `<part>Pagination` fields), `next`, then everything else as the tool
+/// wrote it. The row's `data`, or a resource-major query itself, is the
+/// object; `responsePagination` belongs to the envelope and is not touched.
+/// A resource-major query (clasify) also leads `hints` before `next`: its
+/// `hints.read` is the move to make before walking on.
+pub(super) fn lead_continuations(structured: &mut Value, tool: ToolId) {
+    let rows_key = if tool.output().resource_major() {
+        "queries"
+    } else {
+        "results"
+    };
+    for row in structured
+        .get_mut(rows_key)
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        let object = if tool.output().resource_major() {
+            row.as_object_mut()
+        } else {
+            row.get_mut("data").and_then(Value::as_object_mut)
+        };
+        if let Some(object) = object {
+            lead_object(object, tool.output().resource_major());
+        }
+    }
+}
+
+fn lead_object(object: &mut Map<String, Value>, hints_before_next: bool) {
+    let mut ordered = Map::new();
+    let mut take = |object: &mut Map<String, Value>, wanted: &dyn Fn(&str) -> bool| {
+        let keys: Vec<String> = object.keys().filter(|key| wanted(key)).cloned().collect();
+        for key in keys {
+            if let Some(value) = object.shift_remove(&key) {
+                ordered.insert(key, value);
+            }
+        }
+    };
+    take(object, &|key| ROW_ANCHORS.contains(&key));
+    take(object, &|key| key == "pagination");
+    take(object, &|key| key.ends_with("Pagination"));
+    take(object, &|key| hints_before_next && key == HINTS_KEY);
+    take(object, &|key| key == PAGES_KEY);
+    ordered.append(object);
+    *object = ordered;
+}
 
 /// A row's bare prose `hints: [..]` becomes `hints.text` (nested objects,
 /// such as a clasify page error, keep their own prose arrays).
@@ -30,15 +89,18 @@ pub(super) fn move_text(object: &mut Map<String, Value>) {
 
 /// The channel policy for one object's `next` and `hints`:
 /// - a recovery lead (contract `recoveryLeads`) stays only on a `recovery`
-///   (empty or failed) row, and `why` only there, kept short;
+///   (empty or failed) row; no lead carries prose;
 /// - repeated pages of one kind merge into as few calls as the target's row
 ///   limit allows ([`merge_repeats`]);
 /// - leads move from `next` to `hints`, which keeps at most
-///   [`MAX_HINT_LEADS`] of them, each reading only its top hit;
+///   the contract's `maxHintLeads` of them, each reading only its top hit;
 /// - `confidence` goes from every call once it has ranked the leads;
 /// - with `opt_in_leads` (a successful row whose `extras` lacks `hints`),
 ///   only the contract's `defaultLeads` stay: the row already holds the
-///   path, ref and lines a next call is built from.
+///   path, ref and lines a next call is built from;
+/// - an object that [`withholds_evidence`] has no page to reach what it
+///   leaves out, so its leads are that route: they all stay, ignoring
+///   `opt_in_leads` and the `maxHintLeads` cap, and each keeps every row.
 ///
 /// Idempotent.
 pub(super) fn shape(
@@ -47,6 +109,7 @@ pub(super) fn shape(
     recovery: bool,
     opt_in_leads: bool,
 ) {
+    let withheld = withholds_evidence(object, tool);
     for key in [PAGES_KEY, HINTS_KEY] {
         let Some(Value::Object(calls)) = object.get_mut(key) else {
             continue;
@@ -54,18 +117,6 @@ pub(super) fn shape(
         calls.retain(|name, _| {
             recovery || !continuation_channels::RECOVERY_LEADS.contains(&name.as_str())
         });
-        for call in calls.values_mut().filter_map(Value::as_object_mut) {
-            match call.get("why").and_then(Value::as_str) {
-                Some(why) if recovery => {
-                    let short = super::rows::concise(why);
-                    call.insert("why".into(), Value::String(short));
-                }
-                Some(_) => {
-                    call.shift_remove("why");
-                }
-                None => {}
-            }
-        }
         if calls.is_empty() {
             object.remove(key);
         }
@@ -73,8 +124,11 @@ pub(super) fn shape(
     if let Some(Value::Object(next)) = object.get_mut(PAGES_KEY) {
         merge_repeats(next, tool);
     }
-    split(object, tool);
-    if opt_in_leads && let Some(Value::Object(hints)) = object.get_mut(HINTS_KEY) {
+    split(object, tool, withheld);
+    if opt_in_leads
+        && !withheld
+        && let Some(Value::Object(hints)) = object.get_mut(HINTS_KEY)
+    {
         hints.retain(|name, _| {
             name == HINT_TEXT_KEY || continuation_channels::DEFAULT_LEADS.contains(&kind(name))
         });
@@ -85,7 +139,13 @@ pub(super) fn shape(
     if single_hit(object)
         && let Some(Value::Object(hints)) = object.get_mut(HINTS_KEY)
     {
-        cap_leads(hints, 1);
+        // One hit, one lead; exact leads are deterministic routes to other
+        // evidence, not alternatives, so they stay up to the menu.
+        let exact = hints
+            .values()
+            .filter(|call| call["confidence"] == "exact")
+            .count();
+        cap_leads(hints, exact.clamp(1, continuation_channels::MAX_HINT_LEADS));
     }
     for key in [PAGES_KEY, HINTS_KEY] {
         if let Some(Value::Object(calls)) = object.get_mut(key) {
@@ -94,7 +154,10 @@ pub(super) fn shape(
                     continue;
                 };
                 call.shift_remove("confidence");
-                if key == HINTS_KEY && !ALTERNATIVE_ROW_LEADS.contains(&name.as_str()) {
+                if key == HINTS_KEY
+                    && !withheld
+                    && !continuation_channels::ALTERNATIVE_ROW_LEADS.contains(&name.as_str())
+                {
                     top_hit(call);
                 }
             }
@@ -102,14 +165,21 @@ pub(super) fn shape(
     }
 }
 
-/// Leads whose rows are alternatives to try (drop-one-keyword variants), not
-/// other rows already shown: they keep every row.
-const ALTERNATIVE_ROW_LEADS: [&str; 1] = ["broadenSearch"];
+/// A partial object (`isPartial: true`) whose `next` holds no page of this
+/// tool: its leads are the only route to what it withholds, so they are
+/// evidence, not optional guidance. One rule for every tool and lead name.
+fn withholds_evidence(object: &Map<String, Value>, tool: ToolId) -> bool {
+    object.get("isPartial") == Some(&Value::Bool(true))
+        && !matches!(object.get(PAGES_KEY), Some(Value::Object(next))
+            if next.keys().any(|name| channel(tool, name) == Channel::Page))
+}
 
 /// A lead is an optional route, so it carries the minimal runnable row:
 /// the top hit's row. The other rows are already shown, and withheld
 /// evidence rides `next`. A row's own ranges stay whole: they may be one
-/// unit (the rest of a declaration around a shown window).
+/// unit (the rest of a declaration around a shown window). The contract's
+/// `alternativeRowLeads` (rows that are alternatives to try, not rows
+/// already shown) keep every row.
 fn top_hit(call: &mut Map<String, Value>) {
     if let Some(rows) = call
         .get_mut("query")
@@ -217,8 +287,9 @@ fn max_rows(tool: ToolId) -> usize {
         .unwrap_or(1)
 }
 
-/// Moves every lead out of `next` into `hints`, capped.
-fn split(object: &mut Map<String, Value>, tool: ToolId) {
+/// Moves every lead out of `next` into `hints`, capped unless `withheld`
+/// (see [`withholds_evidence`]).
+fn split(object: &mut Map<String, Value>, tool: ToolId, withheld: bool) {
     let leads: Vec<String> = match object.get(PAGES_KEY) {
         Some(Value::Object(next)) => next
             .keys()
@@ -241,10 +312,14 @@ fn split(object: &mut Map<String, Value>, tool: ToolId) {
     match object.get_mut(HINTS_KEY) {
         Some(Value::Object(hints)) => {
             hints.extend(moved);
-            cap_leads(hints, MAX_HINT_LEADS);
+            if !withheld {
+                cap_leads(hints, continuation_channels::MAX_HINT_LEADS);
+            }
         }
         _ if !moved.is_empty() => {
-            cap_leads(&mut moved, MAX_HINT_LEADS);
+            if !withheld {
+                cap_leads(&mut moved, continuation_channels::MAX_HINT_LEADS);
+            }
             // Leads read before the pages that follow them (clasify's exact
             // read ahead of its walk), so `hints` takes `next`'s place.
             let at = object
@@ -256,11 +331,6 @@ fn split(object: &mut Map<String, Value>, tool: ToolId) {
         _ => {}
     }
 }
-
-/// Lead calls one `hints` object may offer; prose tips are not leads and
-/// pages (`next`) are never capped. A complete single-hit answer
-/// ([`single_hit`]) offers one.
-pub const MAX_HINT_LEADS: usize = 2;
 
 /// Keys beside the evidence lists: guidance and coverage notes.
 const NOT_EVIDENCE: [&str; 4] = ["warnings", "partialReasons", "diagnostics", HINTS_KEY];
@@ -329,7 +399,8 @@ fn cap_leads(hints: &mut Map<String, Value>, limit: usize) {
 
 #[cfg(test)]
 mod tests {
-    use super::shape;
+    use super::{lead_continuations, shape};
+    use crate::response::render::{TextFormat, render_tool};
     use crate::tools::id::ToolId;
     use crate::tools::id::{Channel, channel, continuation_channels, is_remaining};
     use serde_json::{Value, json};
@@ -375,7 +446,7 @@ mod tests {
     fn only_pages_that_leave_more_to_read_are_remaining() {
         for name in [
             "nextPage",
-            "continue",
+            "continueWindow",
             "continuePatch",
             "expandScan",
             "retry",
@@ -413,7 +484,7 @@ mod tests {
         let page = json!({"tool":"localSearch","query":{"path":"/r","matchString":"x","page":2}});
         let lead = json!({"tool":"localFetch","query":{"path":"/r/a"}});
         let mut structured = json!({"results":[{"index":0,"data":{
-            "hints":["Add noIgnore:true."],
+            "hints":["Add includeIgnored:true."],
             "next":{"nextPage":page,"read":lead},
             "pullRequests":[{"number":1,"next":{"readBody":lead}}]
         }}],"responsePagination":{"next":{"tool":"localSearch","query":{}}}});
@@ -422,7 +493,7 @@ mod tests {
         assert_eq!(data["next"], json!({"nextPage":page}));
         assert_eq!(
             data["hints"],
-            json!({"text":["Add noIgnore:true."],"read":lead})
+            json!({"text":["Add includeIgnored:true."],"read":lead})
         );
         assert_eq!(data["pullRequests"][0]["hints"], json!({"readBody":lead}));
         assert!(data["pullRequests"][0].get("next").is_none());
@@ -469,8 +540,9 @@ mod tests {
         assert_eq!(structured, once, "idempotent");
     }
 
-    /// B9: a complete answer of one hit offers one lead; several hits, a
-    /// partial answer, or one with pages left keep the two-lead menu.
+    /// A complete answer of one hit offers one lead (plus its exact
+    /// leads); several hits, a partial answer, or one with pages left keep
+    /// the two-lead menu.
     #[test]
     fn a_complete_single_hit_answer_offers_one_lead() {
         let call = |tool: &str| json!({"tool":tool,"query":{"path":"a"}});
@@ -492,13 +564,25 @@ mod tests {
         assert_eq!(leads(partial, ToolId::GhGetHistoryItem).len(), 2);
         // One file with two matches is two hits.
         let file = json!({"files":[{"path":"a.rs","matches":[{"line":1},{"line":2}]}],
-            "next":{"read":call("localFetch"),"callers":call("lspSearch")}});
+            "next":{"read":call("localFetch"),"findCallers":call("lspSearch")}});
         assert_eq!(leads(file, ToolId::LocalSearch).len(), 2);
         let hit = json!({"files":[{"path":"a.rs","matches":[{"line":1,"enclosing":{"line":1}}]}],
-            "next":{"read":call("localFetch"),"callers":call("lspSearch")}});
+            "next":{"read":call("localFetch"),"findCallers":call("lspSearch")}});
         assert_eq!(leads(hit, ToolId::LocalSearch), ["read"]);
+        // Exact leads are deterministic routes, not alternatives: they all
+        // stay, up to the two-lead menu.
+        let exact = |tool: &str| json!({"tool":tool,"confidence":"exact","query":{"path":"a"}});
+        let named = json!({"pullRequests":[{"number":1}],
+            "next":{"readFiles":exact("ghGetHistoryItem"),"readDiscussion":exact("ghGetHistoryItem")}});
+        assert_eq!(
+            leads(named, ToolId::GhGetHistoryItem),
+            ["readFiles", "readDiscussion"]
+        );
+        let alternative = json!({"pullRequests":[{"number":1}],
+            "next":{"readFiles":exact("ghGetHistoryItem"),"readDiscussion":call("ghGetHistoryItem")}});
+        assert_eq!(leads(alternative, ToolId::GhGetHistoryItem), ["readFiles"]);
         let paged = json!({"files":[{"path":"a.rs","matches":[{"line":1}]}],
-            "next":{"nextPage":call("localSearch"),"read":call("localFetch"),"callers":call("lspSearch")}});
+            "next":{"nextPage":call("localSearch"),"read":call("localFetch"),"findCallers":call("lspSearch")}});
         assert_eq!(leads(paged, ToolId::LocalSearch).len(), 2);
     }
 
@@ -564,7 +648,7 @@ mod tests {
             "nextPage":call("localSearch"),
             "read":call("localFetch"),
             "binarySkipped":call("structureSearch"),
-            "references":call("lspSearch")
+            "findReferences":call("lspSearch")
         }}}]});
         split_hints(&mut structured, ToolId::LocalSearch);
         let data = &structured["results"][0]["data"];
@@ -657,7 +741,7 @@ mod tests {
                 "nextPage": call("localSearch", "exact"),
                 "widen": call("localSearch", "low"),
                 "read": call("localFetch", "high"),
-                "references": call("lspSearch", "medium")
+                "findReferences": call("lspSearch", "medium")
             },
             "files": [{"path":"a","hints":{"read":call("localFetch", "exact")}}],
             "confidence": "exact"
@@ -672,7 +756,7 @@ mod tests {
         let leads = data["hints"].as_object().expect("hints");
         assert_eq!(
             leads.keys().cloned().collect::<Vec<_>>(),
-            vec!["read", "references"],
+            vec!["read", "findReferences"],
             "a low lead yields its place: {data}"
         );
         assert!(
@@ -699,11 +783,15 @@ mod tests {
             "readDeclaration3",
             "wholeLines",
             "readBoundedLines",
-            "readFullPatches2",
         ] {
             assert_eq!(channel(ToolId::GhSearchCode, name), Channel::Page, "{name}");
         }
         assert_eq!(channel(ToolId::GhSearchCode, "read2"), Channel::Lead);
+        // A matchString patch view shows what was asked: the whole patch is a lead.
+        assert_eq!(
+            channel(ToolId::GhGetHistoryItem, "readFullPatches2"),
+            Channel::Lead
+        );
         let read = |path: &str| json!({"tool":"ghGetFileContent","query":{"queries":[{"owner":"o","repo":"r","path":path}]}});
         let mut next = serde_json::Map::new();
         next.insert("nextPage".into(), json!({"tool":"ghSearchCode","query":{"queries":[{"owner":"o","keywords":["k"],"page":2}]}}));
@@ -722,7 +810,7 @@ mod tests {
             json!({"tool":"ghStructure","query":{"queries":[{"owner":"o","repo":"r"}]}}),
         );
         next.insert(
-            "searchCode".into(),
+            "findCode".into(),
             json!({"tool":"ghSearchCode","query":{"queries":[{"owner":"o"}]}}),
         );
         let mut structured = json!({"results":[{"index":0,"data":{"next":next}}]});
@@ -754,6 +842,52 @@ mod tests {
         assert_eq!(structured, once, "idempotent");
     }
 
+    /// A partial object with no page keeps every lead (past the cap) and
+    /// every row of each; with a page it keeps today's cap and top hit.
+    #[test]
+    fn a_partial_object_without_a_page_keeps_all_leads_and_rows() {
+        let rows = json!([{"path":"a"},{"path":"b"},{"path":"c"}]);
+        let lead = |tool: &str| json!({"tool":tool,"query":{"queries":rows}});
+        let next = |page: bool| {
+            let mut next = json!({
+                "findText":lead("localSearch"),
+                "readDefinition":lead("localFetch"),
+                "findCallers":lead("lspSearch")
+            });
+            if page {
+                next["nextImporterPage"] = lead("lspSearch");
+            }
+            next
+        };
+        let mut open =
+            json!({"results":[{"index":0,"data":{"isPartial":true,"next":next(false)}}]});
+        split_hints(&mut open, ToolId::LspSearch);
+        let hints = open["results"][0]["data"]["hints"]
+            .as_object()
+            .expect("hints");
+        assert_eq!(hints.len(), 3, "{open}");
+        assert!(
+            hints.values().all(|call| call["query"]["queries"] == rows),
+            "{open}"
+        );
+        let once = open.clone();
+        split_hints(&mut open, ToolId::LspSearch);
+        assert_eq!(open, once, "idempotent");
+        let mut paged =
+            json!({"results":[{"index":0,"data":{"isPartial":true,"next":next(true)}}]});
+        split_hints(&mut paged, ToolId::LspSearch);
+        let hints = paged["results"][0]["data"]["hints"]
+            .as_object()
+            .expect("hints");
+        assert_eq!(hints.len(), 2, "{paged}");
+        assert!(
+            hints
+                .values()
+                .all(|call| call["query"]["queries"].as_array().map(Vec::len) == Some(1)),
+            "{paged}"
+        );
+    }
+
     #[test]
     fn clasify_keeps_its_walk_in_next_and_moves_reads_to_hints() {
         let read = json!({"tool":"localFetch","query":{"path":"/r/a","ranges":["1-2"]}});
@@ -771,5 +905,104 @@ mod tests {
             query["resources"][0]["pages"][0]["hints"],
             json!({"read":read})
         );
+    }
+
+    /// One row whose evidence precedes its page state and `next`, as the
+    /// GitHub tools wrote it before the rule.
+    fn evidence_first_response(tool: ToolId) -> Value {
+        let call = json!({"tool": tool.as_str(), "query": {"queries": [{"page": 2}]}});
+        let data = json!({
+            "evidenceRows": [{"path": "a"}],
+            "contentPagination": {"currentPage": 1, "hasMore": true},
+            "hints": {"text": ["tip"]},
+            "pagination": {"currentPage": 1, "hasMore": true},
+            "next": {"nextPage": call},
+            "warnings": ["w"],
+        });
+        if tool.output().resource_major() {
+            let mut query = data;
+            query["id"] = json!("q");
+            json!({"queries": [query]})
+        } else {
+            json!({"results": [{"index": 0, "status": "ok", "data": data}]})
+        }
+    }
+
+    fn row_object(response: &Value, tool: ToolId) -> &Value {
+        if tool.output().resource_major() {
+            &response["queries"][0]
+        } else {
+            &response["results"][0]["data"]
+        }
+    }
+
+    #[test]
+    fn every_tool_leads_pagination_and_next_before_its_evidence() {
+        for tool in ToolId::ALL {
+            let mut response = evidence_first_response(tool);
+            lead_continuations(&mut response, tool);
+            let keys: Vec<&str> = row_object(&response, tool)
+                .as_object()
+                .expect("row object")
+                .keys()
+                .map(String::as_str)
+                .collect();
+            let at = |name: &str| keys.iter().position(|key| *key == name).expect(name);
+            let evidence = at("evidenceRows");
+            for lead in ["pagination", "contentPagination", "next"] {
+                assert!(
+                    at(lead) < evidence,
+                    "{tool:?}: {lead} after the rows: {keys:?}"
+                );
+            }
+            assert!(
+                at("pagination") < at("contentPagination"),
+                "{tool:?}: {keys:?}"
+            );
+            assert!(at("contentPagination") < at("next"), "{tool:?}: {keys:?}");
+            let anchors = if tool.output().resource_major() { 2 } else { 1 };
+            assert!(at("warnings") < anchors, "{tool:?}: {keys:?}");
+        }
+    }
+
+    #[test]
+    fn the_rule_is_idempotent_and_keeps_every_key() {
+        for tool in ToolId::ALL {
+            let mut once = evidence_first_response(tool);
+            lead_continuations(&mut once, tool);
+            let mut twice = once.clone();
+            lead_continuations(&mut twice, tool);
+            assert_eq!(once.to_string(), twice.to_string(), "{tool:?}");
+            let before = evidence_first_response(tool);
+            assert_eq!(
+                row_object(&once, tool)
+                    .as_object()
+                    .map(|object| object.len()),
+                row_object(&before, tool)
+                    .as_object()
+                    .map(|object| object.len()),
+                "{tool:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn both_text_encodings_show_pagination_and_next_before_the_rows() {
+        for tool in ToolId::ALL {
+            let mut response = evidence_first_response(tool);
+            lead_continuations(&mut response, tool);
+            for format in [TextFormat::Json, TextFormat::Yaml] {
+                let text = render_tool(tool, &response, &json!({}), format);
+                let (page, next, rows) = (
+                    text.find("pagination"),
+                    text.find("next"),
+                    text.find("evidenceRows"),
+                );
+                assert!(
+                    page < rows && next < rows,
+                    "{tool:?} {format:?}: continuation after the rows:\n{text}"
+                );
+            }
+        }
     }
 }

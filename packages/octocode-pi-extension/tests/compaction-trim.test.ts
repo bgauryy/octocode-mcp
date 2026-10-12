@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { KEEP_RECENT_RESULTS, TRIM_PRESSURE_PERCENT, planContextTrims, promptCacheTtlMs, registerCompaction, trimsDue, type TrimMemo } from '../src/compaction/register.js';
@@ -95,9 +98,16 @@ describe('trim plan memo', () => {
 
     // The lifetime is the model's tier for the retention in use.
     const model = { promptCache: { short: 300, long: 3600 } };
-    expect(promptCacheTtlMs(model, {})).toBe(300_000);
-    expect(promptCacheTtlMs(model, { PI_CACHE_RETENTION: 'long' })).toBe(3_600_000);
-    expect(promptCacheTtlMs({}, {})).toBeUndefined();
+    expect(promptCacheTtlMs(model, undefined, {})).toBe(300_000);
+    expect(promptCacheTtlMs(model, undefined, { PI_CACHE_RETENTION: 'long' })).toBe(3_600_000);
+    expect(promptCacheTtlMs({}, undefined, {})).toBeUndefined();
+    // A declared model keeps its tiers whatever its usage shows (none declared for this tier: no cache).
+    expect(promptCacheTtlMs({ promptCache: { long: 3600 } }, { usage: { cacheRead: 10 } }, {})).toBeUndefined();
+    // A model that declares no cache but reports cache use gets the conservative inferred lifetime...
+    expect(promptCacheTtlMs({}, { role: 'assistant', usage: { cacheRead: 1200, cacheWrite: 0 } }, {})).toBe(300_000);
+    expect(promptCacheTtlMs(undefined, { usage: { cacheRead: 0, cacheWrite: 50 } }, { PI_CACHE_RETENTION: 'long' })).toBe(3_600_000);
+    // ...and without cache evidence it has none.
+    expect(promptCacheTtlMs({}, { usage: { cacheRead: 0, cacheWrite: 0 } }, {})).toBeUndefined();
 
     const big = Array.from({ length: KEEP_RECENT_RESULTS + 10 }, (_, index) => [call(index, 70_000), result(index)]).flat();
     const session = () => {
@@ -117,6 +127,20 @@ describe('trim plan memo', () => {
     const stopped = session();
     await stopped.fire('cache_warming_decision', { type: 'cache_warming_decision', action: 'stop' });
     expect(((await stopped.fire('turn_end', { ...turnEnd(big), ...turn(Date.now() - ttl - 1) })) as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
+  });
+
+  it('waits for the inferred cache lifetime when a model declares no cache but its turn reports cache use', async () => {
+    const big = Array.from({ length: KEEP_RECENT_RESULTS + 10 }, (_, index) => [call(index, 70_000), result(index)]).flat();
+    const undeclared = () => {
+      const s = register({});
+      s.usage.percent = 10;
+      return s;
+    };
+    const turn = (usage: { cacheRead: number; cacheWrite: number }) => ({ message: { role: 'assistant', timestamp: Date.now(), usage } });
+    // Cache evidence: the warm prefix is kept until the lifetime passes.
+    expect(await undeclared().fire('turn_end', { ...turnEnd(big), ...turn({ cacheRead: 5_000, cacheWrite: 200 }) })).toBeUndefined();
+    // No evidence: nothing to keep warm, trims are due.
+    expect(((await undeclared().fire('turn_end', { ...turnEnd(big), ...turn({ cacheRead: 0, cacheWrite: 0 }) })) as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
   });
 
   it('plans the same edits with a memo, keeps pending shrinks until a batch is worth it, and never re-proposes one', () => {
@@ -161,6 +185,26 @@ describe('trimmed results', () => {
     expect(second).toMatch(/saved at ~\/\.octocode\/bash\/bash-2-1\.log/);
   });
 
+  it('saves a result that names no saved copy before trimming it, and leaves it whole when it cannot be saved', () => {
+    const whole = `HEAD ${'q'.repeat(90_000)} TAIL`;
+    const edits = planContextTrims([big(0, whole), ...filler(10)]);
+    const text = textOf(edits.find((edit) => edit.targetId === 'r0')!);
+    expect(text).not.toMatch(/session history/);
+    const saved = /full text is saved at (.+?); read that file/.exec(text)?.[1];
+    expect(saved).toBeDefined();
+    const file = saved!.startsWith('~') ? path.join(os.homedir(), saved!.slice(2)) : path.resolve(saved!);
+    expect(fs.readFileSync(file, 'utf8')).toBe(whole);
+    // Octocode home is a regular file: nothing can be saved, so the result keeps its evidence in context.
+    const blocked = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'octocode-trim-')), 'home');
+    fs.writeFileSync(blocked, '');
+    vi.stubEnv('OCTOCODE_HOME', blocked);
+    try {
+      expect(planContextTrims([big(0, whole), ...filler(10)]).find((edit) => edit.targetId === 'r0')).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('makes the file tool ask for a re-read once the latest read of a file is trimmed', async () => {
     const { fire, forget } = register();
     const entries = [
@@ -177,6 +221,7 @@ describe('trimmed results', () => {
     ];
     const result = (await fire('turn_end', turnEnd(entries))) as { entries: Array<{ targetId: string }> } | undefined;
     expect(result?.entries.map((edit) => edit.targetId)).toEqual(expect.arrayContaining(['r0', 'r1', 'r2']));
-    expect(forget.mock.calls.map(([file]) => file).sort()).toEqual(['/repo/src/a.ts', '/repo/src/b.ts']);
+    // Only Pi's read feeds the file guard: trimming an MCP result forgets nothing.
+    expect(forget.mock.calls.map(([file]) => file).sort()).toEqual(['/repo/src/a.ts']);
   });
 });

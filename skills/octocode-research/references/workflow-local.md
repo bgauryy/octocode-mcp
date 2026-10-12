@@ -13,13 +13,13 @@ A known file, path, or anchor skips discovery: search or read it directly.
 | symbol identity/uses | `lspSearch` |
 | file relationships without graph or topology | LSP references + text |
 
-Use files/count views when bodies are unnecessary. `localSearch` shows every hit when the total is small, else pages per file; read all hits in one `localFetch` with `matchString`. Run an invalid-regex `hints.repair` only after checking it still searches what you meant. `structureSearch files` walks in path order and stops at `maxEntries` (`next.expandScan`); its rows group by `dir` (path = `root`/`dir`/name, ` (n)` = bytes); `noIgnore`/`hidden` list ignored and dot entries before an absence claim. Quote and edit only `minify:"none"` text. Never pass view offsets as LSP positions.
+Use files/count views when bodies are unnecessary. `localSearch` shows every hit when the total is small, else pages per file; read all hits in one `localFetch` with `matchString`. Run an invalid-regex `hints.repair` only after checking it still searches what you meant. `structureSearch files` walks in path order and stops at `maxEntries` (`next.expandScan`); its rows group by `dir` (path = `root`/`dir`/name, ` (n)` = bytes); `noIgnore` (and `hidden` on `tree`) list ignored and dot entries before an absence claim. Quote and edit only `minify:"none"` text. Never pass view offsets as LSP positions.
 
 ## AST and LSP
 
 - AST: `language` is inferred per extension for directories. Inspect hints and diagnostics before relaxing a zero-match pattern; incomplete or partial execution cannot prove absence. `terminalLimit` means narrow the query.
-- A `symbols` row's `name` + `line` are `lspSearch` `symbolName` + `lineHint` as-is.
-- Anchored LSP needs `path` plus `symbolName` and a real `lineHint`; `workspaceSymbol` needs `symbolName` + `path`/`workspaceRoot`. An unresolved anchor returns `hints.read`.
+- A `symbols` row's `symbolName` + `line` are the `lspSearch` anchor as-is.
+- Anchored LSP needs `path` plus `symbolName` and a real `line`; `workspaceSymbol` needs `symbolName` + `path`/`workspaceRoot`. An unresolved anchor returns `hints.read`.
 - `definition` identity · `references` uses (per-file `files[].matches` rows `{line, column, value}`; `groupByFile:true` → counts) · `callers` (`files[].matches` rows `{symbolName, kind, line, endLine, sites}`: `symbolName` + `line` anchor the next hop)/`callees` flow · `hover`/`implementation` types.
 - Servers cover ts/js, py, rust, c/c++. Check `lsp.serverAvailable`, capabilities (`extras:["receipts"]`), `coverage`, and truncation; native fallback is syntactic. First calls pay a cold start; `lsp.prewarm` (`OCTOCODE_LSP_PREWARM=all`) also starts the server from earlier local reads in a long-lived MCP session. Usage checks set `includeDeclaration:false`; zero references still needs entrypoint, export, and runtime checks.
 

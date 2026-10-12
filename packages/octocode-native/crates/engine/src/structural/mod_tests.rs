@@ -1509,3 +1509,77 @@ fn search_and_rewrite_agree_on_pattern_matches() {
         assert_eq!(searched, rewritten, "{ext} {pattern}");
     }
 }
+
+fn scan_options(root: &std::path::Path, skip: u32) -> StructuralSearchFilesOptions {
+    StructuralSearchFilesOptions {
+        path: root.to_string_lossy().into_owned(),
+        pattern: Some("hit($A)".to_owned()),
+        rule: None,
+        include: None,
+        exclude: None,
+        exclude_dir: None,
+        hidden: None,
+        no_ignore: None,
+        max_depth: None,
+        max_files: None,
+        skip_files: Some(skip),
+        max_file_bytes: None,
+    }
+}
+
+fn write_hit_files(root: &std::path::Path, count: usize) {
+    for index in 0..count {
+        fs::write(root.join(format!("f{index:05}.ts")), "hit(1);\n").unwrap();
+    }
+}
+
+/// An unset `max_files` has no file cap: a tree past the old 2,000-file
+/// default is scanned whole in one call.
+#[test]
+fn an_unset_file_cap_scans_the_whole_scope() {
+    let root = temp_root("scan_whole");
+    write_hit_files(&root, 2_100);
+    let result = search_files_detailed(scan_options(&root, 0)).expect("scan");
+    assert!(!result.scan_truncated);
+    assert_eq!(result.scan_resume, None);
+    assert_eq!(result.files.len(), 2_100);
+    fs::remove_dir_all(root).expect("cleanup");
+}
+
+/// A scan that runs out of its time budget stops at a chunk boundary and
+/// names where to resume; walking the resumes reaches every file exactly once.
+#[test]
+fn a_scan_past_its_time_budget_resumes_exactly_once() {
+    let root = temp_root("scan_budget");
+    write_hit_files(&root, 1_300);
+    let mut seen = std::collections::BTreeSet::new();
+    let mut skip = 0;
+    let mut calls = 0;
+    loop {
+        calls += 1;
+        let result = files::search_files_with_budget(
+            scan_options(&root, skip),
+            &|_| Ok(true),
+            &|_| "ts".to_owned(),
+            Some(std::time::Duration::ZERO),
+        )
+        .expect("scan");
+        for file in &result.files {
+            assert!(seen.insert(file.path.clone()), "{} seen twice", file.path);
+        }
+        match result.scan_resume {
+            Some(resume) => {
+                assert!(result.scan_truncated);
+                assert!(resume > skip, "no progress: {resume} <= {skip}");
+                skip = resume;
+            }
+            None => {
+                assert!(!result.scan_truncated);
+                break;
+            }
+        }
+    }
+    assert_eq!(seen.len(), 1_300);
+    assert!(calls > 1, "a zero budget must cut the scan");
+    fs::remove_dir_all(root).expect("cleanup");
+}

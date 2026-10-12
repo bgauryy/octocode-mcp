@@ -22,7 +22,7 @@ Load for a remote repository, package, upstream change, docs or web evidence, or
 - `ghSearchHistory` discovers `pullRequest`/`issue`/`commit`; commit keywords search default-branch messages, so omit `keywords` to walk by path, ref, or date. Extra filters go in `qualifiers`; PR negation supports only `-is:draft`. With `extras:["hints"]`, `hints.readPullRequest` prefers merged candidates and a search for a bare issue number offers `hints.readIssueLinks`.
 - Exact reads: `pullRequest`/`issue` by `number`; `commit` by `ref`; `compare` by `base` + `head` (or `commit` with `base`).
 - Issue → fix: read the issue; `closedBy` lists the PRs (with merge state); with `extras:["hints"]`, `hints.readPullRequest` reads the fix.
-- PR: `matchString` + `include` for hit lines; else `sections:["files"]` → `hints.readSelectedPatches`. `unsearchedFiles` (too large to patch) close via `next.searchUnpatchedFile`. Every PR row carries `mergedAt`; open PRs read at `sourceSha`, merged behavior at `mergeCommitSha`.
+- PR: `matchString` + `include` for hit lines; else `sections:["files"]` → `hints.readSelectedPatches`. `unsearchedFiles` (too large to patch) close via `next.searchUnpatchedFile`. Every PR row carries `mergedAt`; open PRs read at `headSha`, merged behavior at `mergeCommitSha`.
 - Patch windows share one budget across rows. Finish `responsePagination` pages before a row's `next.continuePatch` (every unfinished patch file; narrow its `include`) or `next.nextFilePage` (the next changed-file page), and keep `length` as given. Commit and compare diffs: `sections:["patches"]` (+`include`).
 - Issues report observations and PRs state intent; code + tests at the version establish behavior.
 

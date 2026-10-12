@@ -49,12 +49,12 @@ describe('atomic writes', () => {
     expect(fs.readFileSync(real, 'utf8')).toBe('two');
   });
 
-  it('hashes files and reports missing ones', () => {
+  it('hashes files and reports missing ones', async () => {
     const dir = tmp();
     fs.writeFileSync(path.join(dir, 'a'), 'x');
-    expect(sha256File(path.join(dir, 'a'))).toBe(sha256('x'));
-    expect(sha256File(path.join(dir, 'missing'))).toBeUndefined();
-    expect(sha256File(dir)).toBeUndefined();
+    expect(await sha256File(path.join(dir, 'a'))).toBe(sha256('x'));
+    expect(await sha256File(path.join(dir, 'missing'))).toBeUndefined();
+    expect(await sha256File(dir)).toBeUndefined();
   });
 });
 
@@ -78,7 +78,8 @@ describe('file tool content precondition', () => {
     const file = path.join(cwd, 'run.sh');
     fs.writeFileSync(file, 'echo one\n');
     fs.chmodSync(file, 0o755);
-    const { run } = fileTool();
+    const { guard, run } = fileTool();
+    guard.record(file);
     const result = await run(cwd, [{ reasoning: 'r', type: 'edit', path: 'run.sh', edits: [{ oldText: 'one', newText: 'two' }] }]);
     expect(result.content[0]!.text).toContain('1. OK edit run.sh');
     expect(fs.readFileSync(file, 'utf8')).toBe('echo two\n');

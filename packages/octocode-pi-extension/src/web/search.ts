@@ -153,5 +153,5 @@ export async function search(query: string, max: number, env: NodeJS.ProcessEnv,
     }
   }
   if (empty.length > 0) return { provider: empty.join(', '), hits: [], failures };
-  throw new Error(`every provider failed (${failures.join('; ')}). Set TAVILY_API_KEY, SERPER_API_KEY, EXA_API_KEY or BRAVE_API_KEY for reliable search.`);
+  throw new Error(`every provider failed (${failures.join('; ')}). Do not repeat the same search: fetch a URL you already know with \`web\`, or ask the user to set TAVILY_API_KEY, SERPER_API_KEY, EXA_API_KEY or BRAVE_API_KEY for reliable search.`);
 }

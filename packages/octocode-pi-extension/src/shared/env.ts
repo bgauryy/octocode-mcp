@@ -3,14 +3,17 @@
 /** Set in a `visibleBrowser` profile's child (webLive): `browser` opens a visible Chrome on a persistent profile. */
 export const BROWSER_VISIBLE_ENV = 'OCTOCODE_BROWSER_VISIBLE';
 
+/** Set in a subagent: the session id of the Pi session that started it, whose backlog claims the subagent may update. */
+export const PARENT_SESSION_ENV = 'OCTOCODE_PARENT_SESSION';
+
 /** `1` runs Claude Code / Codex command hooks (off by default; subagents run them only when their profile opts in). */
 export const HOOKS_ENV = 'OCTOCODE_HOOKS';
 
 /** `0` keeps the Octocode MCP server unregistered (set for a profile with `mcp: false`, e.g. the browser subagents). */
 export const MCP_ENV = 'OCTOCODE_MCP';
 
-/** `1` declares every Octocode MCP tool directly; by default its GitHub and package registry tools wait for `tool_search`. */
-export const MCP_DIRECT_ENV = 'OCTOCODE_MCP_DIRECT';
+/** Longest the first prompt waits for the Octocode server's connect, so its instructions are in that request (default 10; 0 = no wait). */
+export const MCP_WAIT_ENV = 'OCTOCODE_MCP_WAIT_SECONDS';
 
 /** `0` turns automatic memory injection off for this process (`/octocode memory auto off` turns it off everywhere). */
 export const MEMORY_AUTO_ENV = 'OCTOCODE_MEMORY_AUTO';

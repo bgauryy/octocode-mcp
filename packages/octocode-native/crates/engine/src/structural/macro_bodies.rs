@@ -94,7 +94,34 @@ pub(super) fn parse_body(
 }
 
 /// Whether a node of a re-parsed body is a real match candidate: not the
-/// synthetic wrapper spanning the whole token tree, and not recovered syntax.
-pub(super) fn is_body_candidate(node: Node<'_>, body: &tree_sitter::Range) -> bool {
-    node.byte_range() != (body.start_byte..body.end_byte) && !node.has_error()
+/// synthetic wrapper spanning the whole token tree, not recovered syntax,
+/// and not text inside one of the body's string literals (`strings`, from
+/// [`string_literals`]: a DSL body such as `json!({"k": "fn a() {}"})`
+/// can re-parse a string's text as code).
+pub(crate) fn is_body_candidate(
+    node: Node<'_>,
+    body: &tree_sitter::Range,
+    strings: &[std::ops::Range<usize>],
+) -> bool {
+    node.byte_range() != (body.start_byte..body.end_byte)
+        && !node.has_error()
+        && !strings
+            .iter()
+            .any(|string| string.contains(&node.start_byte()))
+}
+
+/// Byte ranges of the string and char literals under `root` (a token tree
+/// as parsed before its re-parse).
+pub(crate) fn string_literals(root: Node<'_>) -> Vec<std::ops::Range<usize>> {
+    let mut found = Vec::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if crate::search::classify::is_string_kind(node.kind()) {
+            found.push(node.byte_range());
+            continue;
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    found
 }

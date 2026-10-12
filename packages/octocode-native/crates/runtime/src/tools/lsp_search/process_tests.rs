@@ -147,6 +147,7 @@ fn acquire_stop_loop_leaves_no_child_processes() {
         let pool = LspClientPool::new(LspPoolOptions {
             idle_timeout_ms: 60_000,
             max_entries: 4,
+            max_resident_bytes: 0,
         });
         let config = config(&root, &script, Some(&pids));
         for _ in 0..5 {
@@ -268,7 +269,7 @@ fn nested_definition_failure_keeps_location_with_partial_provenance() {
         let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
         let query = serde_json::from_value(json!({
             "operation":"definition", "mainGoal":"test", "reasoning":"test",
-            "path":uri, "symbolName":"x", "lineHint":1
+            "path":uri, "symbolName":"x", "line":1
         }))
         .expect("query");
         tokio::runtime::Runtime::new().expect("rt").block_on(async {
@@ -288,6 +289,7 @@ fn nested_definition_failure_keeps_location_with_partial_provenance() {
                 line: 0,
                 character: 6,
                 language_id: Some("typescript"),
+                budget: 16_000,
             }
             .run()
             .await
@@ -319,6 +321,304 @@ fn nested_definition_failure_keeps_location_with_partial_provenance() {
         });
         std::fs::remove_dir_all(root).expect("fixture removed");
     }
+}
+
+/// A server with no `typeHierarchyProvider` still answers supertypes and
+/// subtypes: subtypes are its implementation answer (never the queried
+/// declaration itself), supertypes are the definitions of the heritage
+/// clause, and each row names its source.
+#[test]
+fn type_hierarchy_falls_back_when_the_server_has_no_type_hierarchy() {
+    use super::ops::Operation;
+    use super::source::{SourceCache, snippet_policy};
+    use crate::tools::cancel::NeverCancel;
+    use serde_json::json;
+    assert!(
+        node_available(),
+        "Node is required for the real LSP fixture"
+    );
+    let (root, script) = fixture("type-hierarchy-fallback");
+    std::fs::write(root.join("b.ts"), "export interface Base {}\n").expect("base");
+    std::fs::write(root.join("a.ts"), "export class Child extends Base {}\n").expect("child");
+    let server = FAKE_SERVER
+        .replace(
+            "hoverProvider: true",
+            "implementationProvider: true, definitionProvider: true",
+        )
+        .replace(
+            "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
+            r#"  } else if (msg.method === 'textDocument/implementation') {
+    const dir = msg.params.textDocument.uri.slice(0, msg.params.textDocument.uri.lastIndexOf('/') + 1);
+    const at = (name, line) => ({ uri: dir + name, range: { start: { line, character: 13 }, end: { line, character: 18 } } });
+    send({ jsonrpc: '2.0', id: msg.id, result: [at('a.ts', 0), at('b.ts', 0)] });
+  } else if (msg.method === 'textDocument/definition') {
+    const dir = msg.params.textDocument.uri.slice(0, msg.params.textDocument.uri.lastIndexOf('/') + 1);
+    send({ jsonrpc: '2.0', id: msg.id, result: [{ uri: dir + 'b.ts', range: { start: { line: 0, character: 17 }, end: { line: 0, character: 21 } } }] });"#,
+        );
+    std::fs::write(&script, server).expect("fixture server");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let path = root.join("a.ts").to_string_lossy().into_owned();
+    let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
+    tokio::runtime::Runtime::new().expect("rt").block_on(async {
+        let client = NativeLspClient::new(config(&root, &script, None));
+        client.start().await.expect("server starts");
+        for (operation, source) in [("subtypes", "implementation"), ("supertypes", "heritage")] {
+            let query = serde_json::from_value(json!({
+                "operation":operation, "mainGoal":"test", "reasoning":"test",
+                "path":uri, "symbolName":"Child", "line":1
+            }))
+            .expect("query");
+            let mut sources = SourceCache::new(&paths);
+            let policy = snippet_policy(&paths);
+            let row = Operation {
+                client: &client,
+                query: &query,
+                sources: &mut sources,
+                snippet_policy: &policy,
+                cancel: &NeverCancel,
+                path: &path,
+                scope: &super::scope::Scope::new(root.to_string_lossy().into_owned(), Vec::new()),
+                root_only: false,
+                line: 0,
+                character: 13,
+                language_id: Some("typescript"),
+                budget: 16_000,
+            }
+            .run()
+            .await
+            .unwrap_or_else(|error| panic!("{operation} fails without a hierarchy: {error:?}"));
+            assert_eq!(row["lsp"]["source"], source, "{row}");
+            let paths = row["matches"]
+                .as_array()
+                .expect("matches")
+                .iter()
+                .map(|found| found["path"].as_str().unwrap_or_default().to_owned())
+                .collect::<Vec<_>>();
+            assert!(
+                paths.iter().all(|found| found.ends_with("b.ts")),
+                "{operation} lists only other declarations: {row}"
+            );
+            assert_eq!(paths.len(), 1, "{row}");
+        }
+        client.stop().await.expect("fixture server closed");
+    });
+    std::fs::remove_dir_all(root).expect("fixture removed");
+}
+
+/// When the implementation request cannot be answered (here a server error;
+/// a timeout takes the same path), `subtypes` is the heritage-clause scan
+/// of every workspace file spelling the base: labelled rows, never a bare
+/// failure.
+#[test]
+fn subtypes_fall_back_to_a_labelled_heritage_scan_when_implementation_fails() {
+    use super::ops::Operation;
+    use super::source::{SourceCache, snippet_policy};
+    use crate::tools::cancel::NeverCancel;
+    use serde_json::json;
+    assert!(
+        node_available(),
+        "Node is required for the real LSP fixture"
+    );
+    let (root, script) = fixture("subtypes-scan");
+    std::fs::write(root.join("b.ts"), "export interface Base {}\n").expect("base");
+    std::fs::write(root.join("a.ts"), "export class Child extends Base {}\n").expect("child");
+    std::fs::write(
+        root.join("c.ts"),
+        "export interface Wide extends Other, Base {}\n",
+    )
+    .expect("wide");
+    std::fs::write(root.join("d.ts"), "export class Skip extends Other {}\n").expect("other");
+    std::fs::write(root.join("e.ts"), "// Base\nconst x: Base = {};\n").expect("mention");
+    let server = FAKE_SERVER
+        .replace("hoverProvider: true", "implementationProvider: true")
+        .replace(
+            "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
+            r#"  } else if (msg.method === 'textDocument/implementation') {
+    send({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: 'Debug Failure' } });"#,
+        );
+    std::fs::write(&script, server).expect("fixture server");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let path = root.join("b.ts").to_string_lossy().into_owned();
+    let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
+    tokio::runtime::Runtime::new().expect("rt").block_on(async {
+        let client = NativeLspClient::new(config(&root, &script, None));
+        client.start().await.expect("server starts");
+        let query = serde_json::from_value(json!({
+            "operation":"subtypes", "mainGoal":"test", "reasoning":"test",
+            "path":uri, "symbolName":"Base", "line":1
+        }))
+        .expect("query");
+        let mut sources = SourceCache::new(&paths);
+        let policy = snippet_policy(&paths);
+        let row = Operation {
+            client: &client,
+            query: &query,
+            sources: &mut sources,
+            snippet_policy: &policy,
+            cancel: &NeverCancel,
+            path: &path,
+            scope: &super::scope::Scope::new(
+                root.to_string_lossy().into_owned(),
+                vec!["*.ts".into()],
+            ),
+            root_only: false,
+            line: 0,
+            character: 17,
+            language_id: Some("typescript"),
+            budget: 16_000,
+        }
+        .run()
+        .await
+        .unwrap_or_else(|error| panic!("a failed implementation request falls back: {error:?}"));
+        assert_eq!(row["lsp"]["source"], "native-graph-facts", "{row}");
+        let found = row["matches"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .map(|found| {
+                Path::new(found["path"].as_str().unwrap_or_default())
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(found, ["a.ts", "c.ts"], "{row}");
+        assert!(
+            row["warnings"].to_string().contains("unverified"),
+            "the rows are labelled unverified: {row}"
+        );
+        assert_contract_valid(&row);
+        // The scan is a labelled stand-in: the same query, retried, asks the
+        // server again.
+        assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
+        assert_eq!(row["isPartial"], true, "{row}");
+        client.stop().await.expect("fixture server closed");
+    });
+    std::fs::remove_dir_all(root).expect("fixture removed");
+}
+
+/// Runs `operation` on `file`'s symbol (zero-based `line`/`character`)
+/// against a server whose `textDocument/implementation` fails, over a
+/// workspace where `Child` extends `Base` and `Impl` implements it.
+fn implementation_failing_row(
+    tag: &str,
+    operation: &str,
+    (file, symbol, line, character): (&str, &str, u32, u32),
+) -> Result<serde_json::Value, super::LspFailure> {
+    use super::ops::Operation;
+    use super::source::{SourceCache, snippet_policy};
+    use crate::tools::cancel::NeverCancel;
+    use serde_json::json;
+    assert!(
+        node_available(),
+        "Node is required for the real LSP fixture"
+    );
+    let (root, script) = fixture(tag);
+    std::fs::write(
+        root.join("b.ts"),
+        "export interface Base {\n  run(): void;\n}\nexport class Plain {\n  go(): void {}\n}\n",
+    )
+    .expect("base");
+    std::fs::write(root.join("a.ts"), "export class Child extends Base {}\n").expect("child");
+    std::fs::write(
+        root.join("c.ts"),
+        "export class Impl implements Other, Base { run(): void {} }\n",
+    )
+    .expect("impl");
+    std::fs::write(root.join("e.ts"), "// Base\nconst x: Base = {};\n").expect("mention");
+    let server = FAKE_SERVER
+        .replace("hoverProvider: true", "implementationProvider: true")
+        .replace(
+            "  } else if (msg.method === 'textDocument/hover') {\n    process.exit(3);",
+            r#"  } else if (msg.method === 'textDocument/implementation') {
+    send({ jsonrpc: '2.0', id: msg.id, error: { code: -32603, message: 'Debug Failure' } });"#,
+        );
+    std::fs::write(&script, server).expect("fixture server");
+    let paths = crate::tools::test_support::workspace_policy(&root);
+    let path = root.join(file).to_string_lossy().into_owned();
+    let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
+    let outcome = tokio::runtime::Runtime::new().expect("rt").block_on(async {
+        let client = NativeLspClient::new(config(&root, &script, None));
+        client.start().await.expect("server starts");
+        let query = serde_json::from_value(json!({
+            "operation": operation, "mainGoal": "test", "reasoning": "test",
+            "path": uri, "symbolName": symbol, "line": line + 1
+        }))
+        .expect("query");
+        let mut sources = SourceCache::new(&paths);
+        let policy = snippet_policy(&paths);
+        let outcome = Operation {
+            client: &client,
+            query: &query,
+            sources: &mut sources,
+            snippet_policy: &policy,
+            cancel: &NeverCancel,
+            path: &path,
+            scope: &super::scope::Scope::new(
+                root.to_string_lossy().into_owned(),
+                vec!["*.ts".into()],
+            ),
+            root_only: false,
+            line,
+            character,
+            language_id: Some("typescript"),
+            budget: 16_000,
+        }
+        .run()
+        .await;
+        client.stop().await.expect("fixture server closed");
+        outcome
+    });
+    std::fs::remove_dir_all(root).expect("fixture removed");
+    outcome
+}
+
+/// `implementation` on a type is answered by the same labelled heritage
+/// scan as `subtypes` when the server cannot answer in time (a failed
+/// request stands in for the timeout): rows by name, labelled unverified,
+/// with a retry that asks the server again.
+#[test]
+fn implementation_on_a_type_falls_back_to_the_labelled_heritage_scan() {
+    let row = implementation_failing_row("impl-scan", "implementation", ("b.ts", "Base", 0, 17))
+        .unwrap_or_else(|error| panic!("a type anchor falls back: {error:?}"));
+    assert_eq!(row["lsp"]["source"], "native-graph-facts", "{row}");
+    assert_eq!(row["kind"], "implementation", "{row}");
+    let files = row["matches"]
+        .as_array()
+        .expect("matches")
+        .iter()
+        .map(|found| {
+            Path::new(found["path"].as_str().unwrap_or_default())
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(files, ["a.ts", "c.ts"], "{row}");
+    let warnings = row["warnings"].to_string();
+    assert!(warnings.contains("unverified"), "{row}");
+    assert!(
+        warnings.contains("implementations") && !warnings.contains("subtypes are"),
+        "the note speaks of the operation asked: {row}"
+    );
+    assert_eq!(row["isPartial"], true, "{row}");
+    assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
+    assert_eq!(
+        row["next"]["retry"]["query"]["queries"][0]["operation"], "implementation",
+        "{row}"
+    );
+    assert_contract_valid(&row);
+}
+
+/// A member has no heritage clause to scan: `implementation` on it keeps
+/// the server failure (a scan would claim "no implementations").
+#[test]
+fn implementation_on_a_member_keeps_the_server_failure() {
+    let failure =
+        implementation_failing_row("impl-member", "implementation", ("b.ts", "run", 1, 2))
+            .expect_err("no scan can answer a member");
+    assert_eq!(failure.code, "requestFailed");
+    assert!(!failure.hint.contains("workspaceRoot"), "{}", failure.hint);
 }
 
 /// A TS-like server that logs every request it answers: references from
@@ -413,7 +713,7 @@ fn warm_references_repeat_sends_no_requests_and_reads_each_file_once() {
     let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
     let query = serde_json::from_value(json!({
         "operation":"references", "mainGoal":"test", "reasoning":"test",
-        "path":uri, "symbolName":"foo", "lineHint":1
+        "path":uri, "symbolName":"foo", "line":1
     }))
     .expect("query");
     let requests = || {
@@ -464,6 +764,7 @@ fn warm_references_repeat_sends_no_requests_and_reads_each_file_once() {
                         line: 0,
                         character: 16,
                         language_id: Some("typescript"),
+                        budget: 16_000,
                     }
                     .run()
                     .await
@@ -513,8 +814,14 @@ function result(msg) {
   switch (msg.method) {
     case 'initialize':
       return { capabilities: { textDocumentSync: 1, definitionProvider: true, referencesProvider: true, callHierarchyProvider: true, documentSymbolProvider: true } };
-    case 'textDocument/definition':
+    case 'textDocument/definition': {
+      // `n*.ts` files mention the name but bind another declaration.
+      const uri = p.textDocument.uri;
+      const other = 'file://' + root + '/other.ts';
+      if (/\/n\d+\.ts$/.test(uri)) return [{ uri: other, range: at(0, 16, 5) }];
+      if (uri === other) return [{ uri, range: at(0, 16, 5) }];
       return [decl];
+    }
     case 'textDocument/references': {
       const uri = p.textDocument.uri;
       if (uri === declUri) return [decl];
@@ -554,6 +861,17 @@ const IMPORTERS: usize = 60;
 /// A workspace with `a.ts` declaring `target`, [`IMPORTERS`] files that
 /// import and call it, the fake server, and an explicit server config.
 fn importer_fixture(tag: &str) -> (PathBuf, super::LspExecutionConfig) {
+    importer_fixture_of(tag, &[("f", IMPORTERS)])
+}
+
+/// Like [`importer_fixture`], with `layout` listing `(prefix, count)` runs of
+/// files that spell `target`; candidates sort by name, so runs fill importer
+/// windows in order. An `n` file spells the name but binds another
+/// declaration (no reference); any other prefix imports and calls it.
+fn importer_fixture_of(
+    tag: &str,
+    layout: &[(&str, usize)],
+) -> (PathBuf, super::LspExecutionConfig) {
     use std::os::unix::fs::PermissionsExt;
     let root = std::env::temp_dir().join(format!(
         "octocode-lsp-importers-{tag}-{}",
@@ -573,8 +891,11 @@ fn importer_fixture(tag: &str) -> (PathBuf, super::LspExecutionConfig) {
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
     std::fs::write(root.join("tsconfig.json"), "{}\n").expect("tsconfig");
     std::fs::write(root.join("a.ts"), "export function target() {}\n").expect("anchor");
-    for index in 0..IMPORTERS {
-        write_importer(&root, &format!("f{index:03}.ts"));
+    std::fs::write(root.join("other.ts"), "export function other() {}\n").expect("other");
+    for (prefix, count) in layout {
+        for index in 0..*count {
+            write_importer(&root, &format!("{prefix}{index:03}.ts"));
+        }
     }
     let config = root.join("lsp-servers.json");
     std::fs::write(
@@ -656,6 +977,7 @@ async fn walk_pages(
             pool,
             &paths,
             execution,
+            None,
         )
         .await
         .expect("page");
@@ -685,7 +1007,7 @@ async fn walk_pages(
 fn reference_rows(row: &serde_json::Value) -> Vec<(String, u64, u64)> {
     let mut rows = Vec::new();
     for file in row
-        .pointer("/payload/files")
+        .pointer("/files")
         .and_then(serde_json::Value::as_array)
         .into_iter()
         .flatten()
@@ -706,6 +1028,143 @@ fn reference_rows(row: &serde_json::Value) -> Vec<(String, u64, u64)> {
     rows
 }
 
+/// Walks `operation` over a workspace whose first window imports `target`,
+/// then `silent` files that spell it without binding it, then one importer.
+async fn walk_across_silent_windows(
+    tag: &str,
+    operation: &str,
+    silent: usize,
+) -> (PathBuf, Vec<Walked>) {
+    let (root, execution) = importer_fixture_of(tag, &[("f", 24), ("n", silent), ("z", 1)]);
+    let pool = LspClientPool::new(LspPoolOptions::default());
+    let start = serde_json::json!({
+        "operation": operation, "path": root.join("a.ts").to_string_lossy(),
+        "symbolName": "target", "line": 1, "pageSize": 100,
+        "workspaceRoot": root.to_string_lossy()
+    });
+    let (pages, _) = walk_pages(&pool, &root, &execution, start).await;
+    (root, pages)
+}
+
+/// An importer window with no verified site is a step of a continuing scan,
+/// not an empty answer: the request goes on to the next window, so a later
+/// page always lists sites or ends the scan, and the sites past the silent
+/// windows are one `next.nextImporterPage` away.
+#[test]
+fn importer_windows_without_sites_are_skipped_not_returned_empty() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    for operation in ["references", "callers"] {
+        let (root, pages) =
+            tokio::runtime::Runtime::new()
+                .expect("rt")
+                .block_on(walk_across_silent_windows(
+                    &format!("skip-{operation}"),
+                    operation,
+                    48,
+                ));
+        // Windows: f000-f023 | n000-n023 | n024-n047 | z000.
+        assert_eq!(
+            pages.len(),
+            2,
+            "{operation}: the silent windows cost no page"
+        );
+        let landed = &pages[1].row;
+        assert!(landed.get("status").is_none(), "{operation}: {landed}");
+        assert!(
+            landed.to_string().contains("z000.ts"),
+            "{operation}: the importer behind the silent windows is listed: {landed}"
+        );
+        assert!(landed.get("isPartial").is_none(), "{operation}: {landed}");
+        remove_importer_fixture(&root);
+    }
+}
+
+/// The first page is no exception: when its windows, up to the request cap,
+/// held no site and the scan goes on, it is a page of a continuing scan
+/// (exit 0 with the importer lead), never an `empty` result.
+#[test]
+fn a_first_page_of_silent_windows_with_more_to_scan_is_not_empty() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let silent = 24 * (super::importers::MAX_WINDOWS_PER_REQUEST + 2);
+    for operation in ["references", "callers"] {
+        let (root, execution) =
+            importer_fixture_of(&format!("first-{operation}"), &[("n", silent), ("z", 1)]);
+        let pool = LspClientPool::new(LspPoolOptions::default());
+        let start = serde_json::json!({
+            "operation": operation, "path": root.join("a.ts").to_string_lossy(),
+            "symbolName": "target", "line": 1, "pageSize": 100,
+            "workspaceRoot": root.to_string_lossy()
+        });
+        let (pages, _) = tokio::runtime::Runtime::new()
+            .expect("rt")
+            .block_on(walk_pages(&pool, &root, &execution, start));
+        let first = &pages[0].row;
+        assert_ne!(
+            first.get("status").and_then(serde_json::Value::as_str),
+            Some("empty"),
+            "{operation}: {first}"
+        );
+        assert!(
+            first["next"]["nextImporterPage"].is_object(),
+            "{operation}: {first}"
+        );
+        assert!(
+            pages
+                .last()
+                .is_some_and(|page| page.row.to_string().contains("z000.ts")),
+            "{operation}: the walk reaches the importer past the silent windows"
+        );
+        remove_importer_fixture(&root);
+    }
+}
+
+/// A request skips at most [`super::importers::MAX_WINDOWS_PER_REQUEST`] windows. A
+/// page that ends there with no site says so plainly: it is a successful
+/// page of a scan that continues (never an `empty` result), its note names
+/// the candidates verified, and `next.nextImporterPage` reaches the rest.
+#[test]
+fn a_capped_run_of_silent_windows_is_a_page_of_a_continuing_scan() {
+    if !node_available() {
+        eprintln!("skipping: node not available");
+        return;
+    }
+    let silent = 24 * (super::importers::MAX_WINDOWS_PER_REQUEST + 2);
+    for operation in ["references", "callers"] {
+        let (root, pages) =
+            tokio::runtime::Runtime::new()
+                .expect("rt")
+                .block_on(walk_across_silent_windows(
+                    &format!("cap-{operation}"),
+                    operation,
+                    silent,
+                ));
+        assert_eq!(pages.len(), 3, "{operation}: first, capped, landing");
+        let capped = &pages[1].row;
+        assert!(
+            capped.get("status").is_none(),
+            "{operation}: a page of a continuing scan is not an empty result: {capped}"
+        );
+        assert!(capped["next"]["nextImporterPage"].is_object(), "{capped}");
+        assert_eq!(capped["isPartial"], true, "{capped}");
+        let said = capped.to_string();
+        assert!(
+            said.contains("held no reference to this symbol") && said.contains("scan continues"),
+            "{operation}: {capped}"
+        );
+        // One counter: sites are paged by `pagination`, the scan is told in
+        // candidates, never as a second "page" count.
+        assert!(!said.contains("importer page"), "{operation}: {capped}");
+        assert!(pages[2].row.to_string().contains("z000.ts"), "{operation}");
+        remove_importer_fixture(&root);
+    }
+}
+
 /// References past the importer cap: walking `nextPage` then
 /// `nextImporterPage` reaches every importer file in exactly one window,
 /// lists every row once (a recovered row in another window's file waits for
@@ -723,7 +1182,7 @@ fn importer_pages_reach_every_reference_exactly_once() {
         let pool = LspClientPool::new(LspPoolOptions::default());
         let start = serde_json::json!({
             "operation": "references", "path": root.join("a.ts").to_string_lossy(),
-            "symbolName": "target", "lineHint": 1, "pageSize": 10,
+            "symbolName": "target", "line": 1, "pageSize": 10,
             "workspaceRoot": root.to_string_lossy()
         });
         let (pages, continuations) = walk_pages(&pool, &root, &execution, start.clone()).await;
@@ -810,6 +1269,7 @@ fn importer_pages_reach_every_reference_exactly_once() {
                 &pool,
                 &paths,
                 &execution,
+                None,
             )
             .await
             .expect("stale page");
@@ -846,7 +1306,7 @@ fn importer_pages_reach_every_caller_exactly_once() {
         let pool = LspClientPool::new(LspPoolOptions::default());
         let start = serde_json::json!({
             "operation": "callers", "path": root.join("a.ts").to_string_lossy(),
-            "symbolName": "target", "lineHint": 1, "pageSize": 10,
+            "symbolName": "target", "line": 1, "pageSize": 10,
             "workspaceRoot": root.to_string_lossy()
         });
         let (pages, _) = walk_pages(&pool, &root, &execution, start).await;
@@ -854,7 +1314,7 @@ fn importer_pages_reach_every_caller_exactly_once() {
         for page in &pages {
             for file in page
                 .row
-                .pointer("/payload/files")
+                .pointer("/files")
                 .and_then(serde_json::Value::as_array)
                 .into_iter()
                 .flatten()
@@ -879,4 +1339,72 @@ fn importer_pages_reach_every_caller_exactly_once() {
         );
     });
     remove_importer_fixture(&root);
+}
+
+/// tsserver answers when octocode's tsgo cannot start, and the answer
+/// says so; a target without a fallback still fails as `serverUnavailable`.
+#[test]
+fn a_tsgo_that_fails_to_start_falls_back_to_tsserver_and_says_so() {
+    use super::{Exit, Target, acquire_leased_client};
+    use crate::tools::cancel::NeverCancel;
+    use serde_json::json;
+    assert!(
+        node_available(),
+        "Node is required for the real LSP fixture"
+    );
+    let (root, script) = fixture("tsgo-fallback");
+    let missing = root.join("no-such-tsgo");
+    let path = root.join("a.ts").to_string_lossy().into_owned();
+    let uri = octocode_engine::lsp::uri::path_to_uri(&path).expect("uri");
+    let query: super::LspSearchQuery = serde_json::from_value(json!({
+        "operation":"hover", "mainGoal":"test", "reasoning":"test",
+        "path":uri, "symbolName":"a", "line":1
+    }))
+    .expect("query");
+    let target = |fallback| Target {
+        path: path.clone(),
+        uri: uri.clone(),
+        root_only: false,
+        config: config(&root, &missing, None),
+        fallback,
+    };
+    tokio::runtime::Runtime::new().expect("rt").block_on(async {
+        let pool = LspClientPool::new(LspPoolOptions {
+            idle_timeout_ms: 60_000,
+            max_entries: 4,
+            max_resident_bytes: 0,
+        });
+        let fallback = config(&root, &script, None);
+        let leased =
+            acquire_leased_client(&query, &target(Some(fallback.clone())), &pool, &NeverCancel)
+                .await
+                .map_err(|_| "the fallback must answer")
+                .expect("leased");
+        assert_eq!(leased.config.command, fallback.command);
+        let reason = leased
+            .fell_back_from
+            .as_deref()
+            .expect("fallback disclosed");
+        assert!(reason.contains("no-such-tsgo"), "{reason}");
+        assert!(leased.client.is_alive().await);
+
+        // The failed key sits in its start backoff: the next request falls
+        // back at once instead of retrying the broken server.
+        let again = acquire_leased_client(&query, &target(Some(fallback)), &pool, &NeverCancel)
+            .await
+            .map_err(|_| "the fallback must answer")
+            .expect("leased again");
+        assert!(again.fell_back_from.is_some());
+
+        match acquire_leased_client(&query, &target(None), &pool, &NeverCancel).await {
+            Err(Exit::Row(row)) => {
+                assert_eq!(row["errorCode"], "serverUnavailable", "{row}");
+            }
+            _ => panic!("no fallback means a serverUnavailable row"),
+        }
+        drop(leased);
+        drop(again);
+        pool.clear_all().await;
+    });
+    std::fs::remove_dir_all(root).expect("fixture removed");
 }

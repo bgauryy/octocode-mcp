@@ -8,6 +8,17 @@
 
 use serde_json::Value;
 
+/// Whether the row query sets `key` to something: not absent, null, blank or
+/// an empty list. Fallback hints name the filters a query actually set.
+pub(crate) fn has_value(query: &Value, key: &str) -> bool {
+    match query.get(key) {
+        None | Some(Value::Null) => false,
+        Some(Value::String(text)) => !text.trim().is_empty(),
+        Some(Value::Array(items)) => !items.is_empty(),
+        Some(_) => true,
+    }
+}
+
 /// How the envelope names the files a tool's rows point at.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PathAnchor {
@@ -42,7 +53,8 @@ pub enum TextShape {
 
 /// What the shared response stages ask a tool about its own output.
 pub trait ToolOutput: Sync {
-    /// Recovery tip for an empty row, or an error row with no tip of its own.
+    /// Recovery tip for an error row with no tip of its own (an empty row
+    /// carries only its own facts).
     fn fallback_hint(&self, query: &Value) -> &'static str;
 
     /// Recovery for an `errorCode` only this tool emits. Codes every tool
@@ -102,6 +114,10 @@ pub const SANDBOX_HINT: &str = "Outside allowed roots: add the dir to ALLOWED_PA
 /// Recovery for a path that does not resolve: check it from its parent.
 pub const VERIFY_PATH_HINT: &str =
     "Verify the path exists (structureSearch on its parent directory), then retry the exact path.";
+
+/// An `error_hint` for a code whose typed error and leads are the whole
+/// answer: no fallback text is added.
+pub const NO_HINT: &str = "";
 
 /// Recovery for a path a local read could not open (`fileAccessFailed`).
 pub const LIST_FILES_HINT: &str =

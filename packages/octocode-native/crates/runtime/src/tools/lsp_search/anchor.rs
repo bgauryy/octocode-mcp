@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 
-/// Symbol anchors resolved per `(path, name, lineHint, orderHint, source
+/// Symbol anchors resolved per `(path, name, line, orderHint, source
 /// text)`: resolution is a pure function of them (a parse past its budget
 /// is an error, never stored), and a warm repeat skips the parse.
 static RESOLVED: LazyLock<Mutex<HashMap<String, JsResolvedSymbol>>> = LazyLock::new(Mutex::default);
@@ -56,9 +56,9 @@ pub(super) fn resolve_anchor(
         let source = source.ok_or_else(|| {
             "symbolName anchors require a readable source file in path".to_owned()
         })?;
-        let resolved = resolve_symbol(path, source, name, query.line_hint(), query.order_hint())?;
+        let resolved = resolve_symbol(path, source, name, query.anchor_line(), query.order_hint())?;
         // The receipt adds what the request did not say: the column, and the
-        // line only when the symbol sat off its `lineHint`. The name is the
+        // line only when the symbol sat off its `line`. The name is the
         // request's own `symbolName`.
         let mut symbol = json!({
             "path": super::render::uri_to_path(canonical_uri),
@@ -67,7 +67,7 @@ pub(super) fn resolve_anchor(
         if let Some(order_hint) = query.order_hint() {
             symbol["orderHint"] = json!(order_hint);
         }
-        if resolved.line_offset != 0 || query.line_hint() != Some(resolved.found_at_line) {
+        if resolved.line_offset != 0 || query.anchor_line() != Some(resolved.found_at_line) {
             symbol["foundAtLine"] = json!(resolved.found_at_line);
         }
         if resolved.line_offset != 0 {
@@ -79,7 +79,7 @@ pub(super) fn resolve_anchor(
             resolved_symbol: Some(symbol),
         });
     }
-    Err("lspSearch requires symbolName and lineHint".to_owned())
+    Err("lspSearch requires symbolName and line".to_owned())
 }
 
 /// Resolve `name` near `line_hint`. A member-qualified name (`this.ns`,

@@ -146,8 +146,8 @@ export async function captureResult(
             artifacts.map(row => capturePath(dirname(row.path), workspace))
           ),
         ],
-        hidden: true,
-        noIgnore: true,
+        includeHidden: true,
+        includeIgnored: true,
         defaultExcludes: false,
       },
     });
@@ -205,8 +205,8 @@ export async function captureResult(
     // Search scope is metadata, not a placeholder executable continuation.
     result.search = {
       paths: roots,
-      hidden: true,
-      noIgnore: true,
+      includeHidden: true,
+      includeIgnored: true,
       defaultExcludes: false,
     };
     result.hints = {

@@ -71,6 +71,14 @@ const FLAVOR_DIRS: &[&str] = &[
 ];
 const JS_EXTENSIONS: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
 const DECLARATION_EXTENSIONS: &[&str] = &[".d.ts", ".d.mts", ".d.cts"];
+/// Built extension → the extensions TypeScript tries for it, in order: the
+/// source of the same module, then its declaration file.
+const JS_SOURCE_SWAPS: &[(&str, &[&str])] = &[
+    (".js", &[".ts", ".tsx", ".d.ts"]),
+    (".jsx", &[".tsx", ".d.ts"]),
+    (".mjs", &[".mts", ".d.mts"]),
+    (".cjs", &[".cts", ".d.cts"]),
+];
 
 /// Pattern keys (`./sub/*`, `#internal/*`, `@app/*`) with ordered targets.
 type PatternTargets = Vec<(String, Vec<String>)>;
@@ -154,6 +162,10 @@ struct Manifest {
 /// Configuration-derived resolution state for one graph build.
 #[derive(Debug, Default)]
 pub(crate) struct ResolveContext {
+    /// Named components of the canonical scan root, so a relative specifier
+    /// that leaves the root and enters it again by name still normalises to a
+    /// root-relative path.
+    root_names: Vec<String>,
     /// Directory (scan-root-relative, `.` for the root) holding a
     /// tsconfig/jsconfig → its effective aliases. The nearest one governs.
     ts_configs: BTreeMap<String, Arc<TsPaths>>,
@@ -185,7 +197,16 @@ impl ResolveContext {
         paths: &PathPolicy,
         security: &ContentSecurity,
     ) -> Self {
-        let mut context = Self::default();
+        let mut context = Self {
+            root_names: root
+                .components()
+                .filter_map(|component| match component {
+                    Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+                    _ => None,
+                })
+                .collect(),
+            ..Self::default()
+        };
         let mut js_dirs = BTreeSet::from([".".to_owned()]);
         let mut py_dirs = BTreeSet::new();
         let mut all_dirs = BTreeSet::from([".".to_owned()]);
@@ -245,6 +266,27 @@ impl ResolveContext {
             }
         }
         context
+    }
+
+    /// `spec` joined onto the root-relative `dir`, normalised. A specifier
+    /// that climbs above the scan root is followed on the absolute path: it
+    /// counts when it re-enters the root, and not when it lands elsewhere.
+    pub(crate) fn join_relative(&self, dir: &str, spec: &str) -> Option<String> {
+        join_within_root(dir, spec).or_else(|| {
+            let mut parts = self.root_names.clone();
+            for component in Path::new(&format!("{dir}/{spec}")).components() {
+                match component {
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        parts.pop()?;
+                    }
+                    Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
+                    Component::RootDir | Component::Prefix(_) => return None,
+                }
+            }
+            let inside = parts.strip_prefix(self.root_names.as_slice())?;
+            Some(inside.join("/"))
+        })
     }
 
     /// The one known file whose path ends with `spec` (`a/b.h` matches
@@ -828,26 +870,26 @@ pub(crate) fn probe_js(stem: &str, known: &BTreeSet<String>) -> Option<String> {
         if known.contains(stem) {
             return Some(stem.to_owned());
         }
-        for (from, to) in [
-            (".js", ".ts"),
-            (".jsx", ".tsx"),
-            (".mjs", ".mts"),
-            (".cjs", ".cts"),
-        ] {
-            if let Some(base) = stem.strip_suffix(from) {
-                let candidate = format!("{base}{to}");
-                return known.contains(&candidate).then_some(candidate);
-            }
-        }
-        return None;
+        // TypeScript resolves `./x.js` to the source or declaration that
+        // `x.js` is built from, in this order.
+        return JS_SOURCE_SWAPS.iter().find_map(|(from, to)| {
+            let base = stem.strip_suffix(from)?;
+            to.iter()
+                .map(|ext| format!("{base}{ext}"))
+                .find(|candidate| known.contains(candidate))
+        });
     }
+    // `./x` is `x.ts` … or `x.d.ts`, then the directory's `index`.
+    let probed = |name: String| {
+        JS_EXTENSIONS
+            .iter()
+            .chain(&DECLARATION_EXTENSIONS[..1])
+            .map(|ext| format!("{name}{ext}"))
+            .collect::<Vec<_>>()
+    };
     std::iter::once(stem.to_owned())
-        .chain(JS_EXTENSIONS.iter().map(|ext| format!("{stem}{ext}")))
-        .chain(
-            JS_EXTENSIONS
-                .iter()
-                .map(|ext| join(stem, &format!("index{ext}"))),
-        )
+        .chain(probed(stem.to_owned()))
+        .chain(probed(join(stem, "index")))
         .find(|candidate| known.contains(candidate))
 }
 

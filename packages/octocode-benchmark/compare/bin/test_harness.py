@@ -62,6 +62,34 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(out.returncode, 3)
 
 
+class LocalGuardTest(unittest.TestCase):
+    """guard-local/git and guard-local/find: the local-shell arm's read-only wrappers."""
+
+    def run_guard(self, tool, *args):
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = Path(tmp) / tool
+            fake.write_text("#!/usr/bin/env bash\necho REAL \"$@\"\n")
+            fake.chmod(0o755)
+            env = {**os.environ, f"REAL_{tool.upper()}": str(fake)}
+            return subprocess.run([str(BIN / "guard-local" / tool), *args], capture_output=True, text=True, env=env)
+
+    def test_reads_pass_through(self):
+        for tool, args in (("git", ["-C", "/x", "log", "--oneline", "-3"]), ("git", ["grep", "-c", "x"]),
+                           ("git", ["ls-files", "*.rs"]), ("git", ["--no-pager", "show", "HEAD:a"]),
+                           ("find", ["/x", "-maxdepth", "1", "-name", "*.go"])):
+            out = self.run_guard(tool, *args)
+            self.assertEqual(out.returncode, 0, args)
+            self.assertTrue(out.stdout.startswith("REAL"), args)
+
+    def test_writes_are_refused(self):
+        for tool, args in (("git", ["push"]), ("git", ["-C", "/x", "checkout", "main"]), ("git", ["-c", "core.pager=x", "log"]),
+                           ("git", ["log", "--output=/tmp/x"]), ("git", ["grep", "-O", "x"]), ("git", ["stash"]),
+                           ("find", ["/x", "-delete"]), ("find", ["/x", "-exec", "rm", "{}", ";"])):
+            out = self.run_guard(tool, *args)
+            self.assertEqual(out.returncode, 2, args)
+            self.assertIn("not allowed", out.stderr)
+
+
 class TranscriptTest(unittest.TestCase):
     def convert(self, text):
         tmp = Path(tempfile.mkdtemp())

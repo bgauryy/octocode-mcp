@@ -265,7 +265,7 @@ mod tests {
         let file = dir.join("a.ts");
         std::fs::write(&file, "export const a = 1;\n").expect("file");
         let uri = format!("file://{}", file.display());
-        let data = json!({"results":[{"file":"a.ts"}],"next":{"references":{"tool":"lspSearch","query":{"queries":[{"path":uri,"symbolName":"a","lineHint":1}]}}}});
+        let data = json!({"results":[{"file":"a.ts"}],"next":{"references":{"tool":"lspSearch","query":{"queries":[{"path":uri,"symbolName":"a","line":1}]}}}});
         assert_eq!(lead_file(&data), Some(file.clone()));
         let other =
             json!({"next":{"read":{"tool":"localFetch","query":{"queries":[{"path":file}]}}}});

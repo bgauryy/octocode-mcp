@@ -103,8 +103,8 @@ impl AstTopologyQuery {
     }
     pub(crate) fn depth(&self) -> Option<u32> {
         match self {
-            Self::Dependencies { depth, .. } | Self::Dependents { depth, .. } => {
-                Some(u32_of(*depth))
+            Self::Dependencies { graph_depth, .. } | Self::Dependents { graph_depth, .. } => {
+                Some(u32_of(*graph_depth))
             }
             _ => None,
         }
@@ -304,9 +304,29 @@ pub(crate) struct BuiltGraph {
     /// nonCode]`; `nonCode` counts relative JSON/style/asset specifiers, which
     /// are not graph edges and are not linking gaps.
     pub imports: [u32; 5],
+    /// Statements already tallied in `imports` for the file named by
+    /// `counted_file`, so a statement that binds several names counts once.
+    pub(super) counted_file: String,
+    pub(super) counted: BTreeSet<(usize, u32, String)>,
     pub diagnostics: Vec<Diagnostic>,
     pub namespace_targets: BTreeSet<String>,
     pub star_reexporters: BTreeMap<String, Vec<String>>,
+}
+
+impl BuiltGraph {
+    /// Tallies one import statement under `outcome` (an index of `imports`).
+    /// The unit is the statement, like the diagnostics: a statement binding
+    /// three names adds one, and one with several outcomes adds one per
+    /// outcome. Files are visited one at a time.
+    pub(super) fn count_import(&mut self, outcome: usize, file: &str, line: u32, spec: &str) {
+        if self.counted_file != file {
+            self.counted_file = file.to_owned();
+            self.counted.clear();
+        }
+        if self.counted.insert((outcome, line, spec.to_owned())) {
+            self.imports[outcome] += 1;
+        }
+    }
 }
 
 pub type AstGraphResult = Result<serde_json::Value, crate::tools::result::ToolError>;

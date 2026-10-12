@@ -1,3 +1,5 @@
+import { num, type Row } from '../agentdb/rows.js';
+
 /** The team's records as the rest of the extension sees them, and how they are read from database rows. */
 
 export interface Member {
@@ -68,8 +70,6 @@ export interface Lease {
 
 export type LeaseRequest = Pick<Lease, 'path' | 'kind' | 'reason'>;
 
-export type Row = Record<string, unknown>;
-export const num = (value: unknown) => (typeof value === 'number' ? value : 0);
 export const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
 
 export function toMember(row: Row): Member {

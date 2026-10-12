@@ -1,13 +1,22 @@
 //! Optional on-disk mirror of a key's blocking facts, so short-lived CLI
 //! processes honor each other's limits.
-use super::{KeyFacts, KeyState, now_ms};
+use super::{KeyFacts, KeyState, now_ms, pause};
+use crate::ProviderError;
 use std::{
+    fs::TryLockError,
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
-    time::SystemTime,
+    time::{Duration, Instant, SystemTime},
 };
+use tokio_util::sync::CancellationToken;
 
 static TMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// How often a held state lock is retried.
+const LOCK_POLL: Duration = Duration::from_millis(5);
+/// The longest a write that cannot be cancelled waits for a peer's lock
+/// before it goes ahead unlocked, as on a filesystem without lock support.
+const WRITE_LOCK_WAIT: Duration = Duration::from_secs(1);
 
 pub(super) struct Persist {
     pub(super) path: PathBuf,
@@ -74,6 +83,7 @@ impl KeyFacts {
                 .collect(),
             circuit_failures: 0,
             circuit_open_until_ms: 0,
+            circuit_cause: None,
         }
     }
 }
@@ -118,6 +128,48 @@ impl KeyState {
         self.facts().merge(disk, now_ms());
     }
 
+    /// Run `reserve` on this key's facts with the on-disk facts of every
+    /// other process merged in, and write the result, all under the file
+    /// lock: a slot one process takes is visible to the next before it
+    /// reserves. Without a mirror it runs on the in-memory facts alone. A lock
+    /// a peer process holds is waited for without blocking the runtime, until
+    /// the request's `deadline` or `cancellation`.
+    pub(super) async fn reserve_shared<R>(
+        &self,
+        deadline: Instant,
+        cancellation: &CancellationToken,
+        reserve: impl FnOnce(&mut KeyFacts) -> R,
+    ) -> Result<R, ProviderError> {
+        let path = self
+            .persist
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(|persist| persist.path.clone());
+        let Some((path, parent)) = path.and_then(|path| {
+            let parent = path.parent()?.to_path_buf();
+            std::fs::create_dir_all(&parent).ok()?;
+            Some((path, parent))
+        }) else {
+            return Ok(reserve(&mut self.facts()));
+        };
+        let _lock = lock_file(&path, deadline, cancellation).await?;
+        let on_disk = std::fs::read(&path).ok();
+        let (result, view) = {
+            let mut facts = self.facts();
+            if let Some(disk) = on_disk
+                .as_deref()
+                .and_then(|bytes| serde_json::from_slice::<KeyFacts>(bytes).ok())
+            {
+                facts.merge(disk, now_ms());
+            }
+            let result = reserve(&mut facts);
+            (result, facts.blocking_view(now_ms()))
+        };
+        self.write_view(&path, &parent, on_disk.as_deref(), &view);
+        Ok(result)
+    }
+
     /// Load-merge-write via a unique temp file + atomic rename.
     pub(super) fn persist(&self) {
         self.persist_with(|_| {});
@@ -147,9 +199,10 @@ impl KeyState {
         }
         // Serialize read-merge-write across processes: without it, two CLI
         // processes read the same file and the later rename drops the other's
-        // start stamps and window slots (review L9). Released on drop. A
-        // filesystem without lock support degrades to the unlocked write.
-        let _lock = lock_file(&path);
+        // start stamps and window slots. Released on drop. A
+        // filesystem without lock support, or a peer that holds the lock
+        // past `WRITE_LOCK_WAIT`, degrades to the unlocked write.
+        let _lock = lock_file_blocking(&path, Instant::now() + WRITE_LOCK_WAIT);
         let now = now_ms();
         let mut view = self.facts().blocking_view(now);
         let on_disk = std::fs::read(&path).ok();
@@ -160,10 +213,16 @@ impl KeyState {
             view.merge(disk, now);
         }
         adjust(&mut view);
-        let Ok(bytes) = serde_json::to_vec(&view) else {
+        self.write_view(&path, parent, on_disk.as_deref(), &view);
+    }
+
+    /// Write `view` unless the file already holds it, through a unique temp
+    /// file and an atomic rename; the caller holds the file lock.
+    fn write_view(&self, path: &Path, parent: &Path, on_disk: Option<&[u8]>, view: &KeyFacts) {
+        let Ok(bytes) = serde_json::to_vec(view) else {
             return;
         };
-        if on_disk.as_deref() == Some(bytes.as_slice()) {
+        if on_disk == Some(bytes.as_slice()) {
             return;
         }
         let tmp = parent.join(format!(
@@ -172,10 +231,10 @@ impl KeyState {
             std::process::id(),
             TMP_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
-        if std::fs::write(&tmp, bytes).is_ok() && std::fs::rename(&tmp, &path).is_err() {
+        if std::fs::write(&tmp, bytes).is_ok() && std::fs::rename(&tmp, path).is_err() {
             let _ = std::fs::remove_file(&tmp);
         }
-        if let Ok(modified) = std::fs::metadata(&path).and_then(|meta| meta.modified())
+        if let Ok(modified) = std::fs::metadata(path).and_then(|meta| meta.modified())
             && let Some(persist) = self
                 .persist
                 .lock()
@@ -187,19 +246,61 @@ impl KeyState {
     }
 }
 
-/// Exclusive advisory lock on the `<state>.lock` sidecar; `None` when the
-/// file cannot be opened or the filesystem does not support locking.
-fn lock_file(path: &Path) -> Option<std::fs::File> {
+/// The `<state>.lock` sidecar, opened for locking; `None` when it cannot be.
+fn open_lock_file(path: &Path) -> Option<std::fs::File> {
     let mut name = path.as_os_str().to_os_string();
     name.push(".lock");
-    let file = std::fs::OpenOptions::new()
+    std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(PathBuf::from(name))
-        .ok()?;
-    file.lock().ok()?;
-    Some(file)
+        .ok()
+}
+
+/// One non-blocking attempt at the exclusive advisory lock: `Some(true)` when
+/// taken, `Some(false)` when a peer holds it, `None` when the filesystem does
+/// not support locking.
+fn try_lock_once(file: &std::fs::File) -> Option<bool> {
+    match file.try_lock() {
+        Ok(()) => Some(true),
+        Err(TryLockError::WouldBlock) => Some(false),
+        Err(TryLockError::Error(_)) => None,
+    }
+}
+
+/// Exclusive advisory lock on the `<state>.lock` sidecar, polled so that the
+/// wait yields to the runtime and ends at the `deadline` or on cancellation.
+/// `Ok(None)` when the file cannot be opened or the filesystem does not
+/// support locking.
+async fn lock_file(
+    path: &Path,
+    deadline: Instant,
+    cancellation: &CancellationToken,
+) -> Result<Option<std::fs::File>, ProviderError> {
+    let Some(file) = open_lock_file(path) else {
+        return Ok(None);
+    };
+    loop {
+        match try_lock_once(&file) {
+            Some(true) => return Ok(Some(file)),
+            None => return Ok(None),
+            Some(false) => pause(LOCK_POLL, deadline, cancellation).await?,
+        }
+    }
+}
+
+/// [`lock_file`] for synchronous writers: `None` when the lock is not taken by
+/// `deadline`, so a stalled peer cannot hold the caller indefinitely.
+fn lock_file_blocking(path: &Path, deadline: Instant) -> Option<std::fs::File> {
+    let file = open_lock_file(path)?;
+    loop {
+        match try_lock_once(&file)? {
+            true => return Some(file),
+            false if Instant::now() >= deadline => return None,
+            false => std::thread::sleep(LOCK_POLL),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -248,7 +349,7 @@ mod tests {
         assert_eq!(leftovers, 0);
     }
 
-    /// Review L9: concurrent writers that do not share memory (separate
+    /// Concurrent writers that do not share memory (separate
     /// processes; here separate registries) never drop each other's facts.
     #[test]
     fn concurrent_writers_keep_every_fact() {

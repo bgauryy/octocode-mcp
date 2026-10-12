@@ -17,17 +17,23 @@ describe('subagents', () => {
     expect(teamTask('Fix A', 'main-1', [['researcher-2', 'Trace B']])).toBe('Fix A\n\n## Teammates\nYou collaborate with the other subagents that main-1 started for the same goal. Running now:\n- `researcher-2`: Trace B');
     expect(teamTask('Fix A', 'main-1', [])).toMatch(/none yet; `coordinate list` shows teammates that start later/);
     expect(subagentProcessEnv(undefined, {}, { id: 'a-1', collaborate: true })['OCTOCODE_AGENT_COLLABORATE']).toBe('1');
+    // The parent names its session for backlog ownership; an inherited value from a grandparent never leaks through.
+    expect(subagentProcessEnv(undefined, { OCTOCODE_PARENT_SESSION: 'old' }, { id: 'a-1', parentSession: 's-1' })['OCTOCODE_PARENT_SESSION']).toBe('s-1');
+    expect(subagentProcessEnv(undefined, { OCTOCODE_PARENT_SESSION: 'old' }, { id: 'a-1' })).not.toHaveProperty('OCTOCODE_PARENT_SESSION');
+    expect(subagentProcessEnv(undefined, { OCTOCODE_PARENT_PID: '1' }, { id: 'a-1' })['OCTOCODE_PARENT_PID']).toBe(String(process.pid));
     // The user's command hooks stay in the main session unless the profile opts in.
     expect(subagentProcessEnv(undefined, { OCTOCODE_HOOKS: '1', PATH: '/bin' })).not.toHaveProperty('OCTOCODE_HOOKS');
     expect(subagentProcessEnv(undefined, { OCTOCODE_HOOKS: '1', PATH: '/bin' })['PATH']).toBe('/bin');
     expect(subagentProcessEnv({ name: 'h', description: '', prompt: '', hooks: true }, { OCTOCODE_HOOKS: '1' })['OCTOCODE_HOOKS']).toBe('1');
     expect(subagentProcessEnv({ name: 'h', description: '', prompt: '', hooks: true }, {})).not.toHaveProperty('OCTOCODE_HOOKS');
     expect(parseProfile('x', '---\nhooks: true\n---\nbody').hooks).toBe(true);
+    // Switches take YAML booleans only; a quoted string is refused rather than read as a guess.
+    expect(parseProfile('x', '---\nmcp: false\nvisibleBrowser: false\n---\nbody')).toMatchObject({ mcp: false });
+    for (const value of ['"true"', '"false"', '1', 'yes']) expect(() => parseProfile('x', `---\nmcp: ${value}\n---\nbody`), value).toThrow(/mcp must be true or false/);
     expect(subagentProcessEnv(undefined, {}, { id: 'a-1' })['OCTOCODE_AGENT_COLLABORATE']).toBeUndefined();
-    const child = (collaborate: boolean) => octocodePrompt({ octocode: false, profiles: [], canDelegate: false, identity: { id: 'a-1', parentId: 'main-1', collaborate } });
+    const child = (collaborate: boolean) => octocodePrompt({ octocode: false, profiles: [], canDelegate: false, collaborate });
     expect(child(true)).toMatch(/You are on a team/);
     expect(child(false)).not.toMatch(/You are on a team/);
-    expect(octocodePrompt({ octocode: false, profiles: [], canDelegate: true })).toMatch(/collaborate: true/);
   });
 
   it('parses profile frontmatter and builds child pi arguments', () => {
@@ -73,9 +79,22 @@ describe('subagents', () => {
     expect(loadProfiles(cwd, tmp(), true).has('local')).toBe(true);
   });
 
+  it('skips a malformed or unreadable profile and still loads the rest, bundled ones included', () => {
+    const cwd = tmp();
+    const dir = path.join(cwd, '.pi', 'agents');
+    fs.mkdirSync(path.join(dir, 'folder.md'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'broken.md'), '---\nname: [a\n---\nbody');
+    fs.writeFileSync(path.join(dir, 'good.md'), '---\ndescription: Fine\n---\nDo it.');
+    const skipped: string[] = [];
+    const profiles = loadProfiles(cwd, tmp(), true, {}, (file) => skipped.push(path.basename(file)));
+    expect(profiles.has('good')).toBe(true);
+    expect(profiles.has('reviewer')).toBe(true);
+    expect(skipped.sort()).toEqual(['broken.md', 'folder.md']);
+  });
+
   it('offers a headless web profile that never opens a visible browser', () => {
     const headless = loadProfiles(tmp(), tmp()).get('webHeadless');
-    expect(headless?.excludeTools?.split(',')).toEqual(['file']);
+    expect(headless?.excludeTools?.split(',')).toEqual(['file', 'bash']);
     // Browser subagents start no MCP servers at all, whatever servers are configured.
     expect(headless?.mcp).toBe(false);
     expect(headless).not.toHaveProperty('visibleBrowser');
@@ -116,7 +135,7 @@ describe('subagents', () => {
   });
 
   it('caps the task, offers isolate, and registers /agents with kill and merge', async () => {
-    const tools: Array<{ name: string; parameters: { properties: Record<string, { maxLength?: number }> } }> = [];
+    const tools: Array<{ name: string; parameters: { properties: Record<string, { maxLength?: number; description?: string }> } }> = [];
     const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
     const pi = { registerTool: (tool: never) => tools.push(tool), registerCommand: (name: string, command: never) => commands.set(name, command), registerMessageRenderer: () => undefined, on: () => undefined, sendMessage: () => undefined } as never;
     const control = registerAgentTool(pi, () => new Map(), { id: undefined, view: { members: [], traffic: [] }, members: () => [] } as never);
@@ -127,6 +146,9 @@ describe('subagents', () => {
     const agent = tools.find((tool) => tool.name === 'agent')!;
     expect(agent.parameters.properties['task']?.maxLength).toBe(MAX_TASK_CHARS);
     expect(agent.parameters.properties).toHaveProperty('isolate');
+    // The parameter owns the collaborate guidance; the prompt does not repeat it.
+    expect(agent.parameters.properties['collaborate']?.description).toMatch(/subagents on one goal teammates that coordinate directly/);
+    expect(agent.parameters.properties['model']?.description).toMatch(/provider\/id or a bare id.*:thinking.*Refused when unavailable/);
     expect([...commands.keys()]).toEqual(['agents']);
     const notes: string[] = [];
     await commands.get('agents')!.handler('kill nobody-1', { ui: { notify: (text: string) => notes.push(text) } });

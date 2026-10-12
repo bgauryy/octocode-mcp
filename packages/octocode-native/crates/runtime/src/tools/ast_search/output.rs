@@ -10,7 +10,7 @@ impl ToolOutput for Output {
     fn fallback_hint(&self, query: &Value) -> &'static str {
         // A pattern must parse as one complete node of the target grammar.
         if query["operation"] == "match" && query["pattern"].is_string() {
-            "Patterns match whole nodes exactly (modifiers, return types, bodies); check operation:syntaxTree, or use a rule."
+            crate::tools::ast_rule::PATTERN_SHAPE_HINT
         } else {
             "Broaden the syntax/name query, path, or filters."
         }
@@ -18,7 +18,9 @@ impl ToolOutput for Output {
     fn error_hint(&self, code: &str) -> Option<&'static str> {
         Some(match code {
             crate::tools::ast_rule::INVALID_PATTERN => crate::tools::ast_rule::INVALID_PATTERN_HINT,
-            "fileTooLarge" => "Target a smaller file or narrower directory scope.",
+            // The typed error and terminalLimit (plus a findText lead
+            // when a literal was searched) are the whole answer.
+            "fileTooLarge" => crate::tools::output::NO_HINT,
             "languageRequired" | "languageUnsupported" | "languageMismatch" => {
                 "Set language to the grammar of the source files (e.g. \"typescript\", \"rust\")."
             }

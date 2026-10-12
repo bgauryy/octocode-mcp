@@ -1,10 +1,11 @@
 import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
-import { openAgentDb, type AgentDb } from '../agentdb/db.js';
-import { agentDbPath, findRepoRoot } from '../shared/home.js';
+import { openAgentDb, sharedAgentDb, type AgentDb } from '../agentdb/db.js';
+import { agentDbPath, canonicalPath, repoKey } from '../shared/home.js';
 import { processAlive } from '../shared/process.js';
 import { EditLog } from './edits.js';
-import { num, toLease, toMember, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type Row, type Traffic } from './model.js';
+import { num, type Row } from '../agentdb/rows.js';
+import { toLease, toMember, type DeadLetter, type Lease, type LeaseRequest, type Member, type Message, type Traffic } from './model.js';
 
 /**
  * The team tables of the agent database: who works in this repository, what they say to each other, and which files
@@ -19,6 +20,8 @@ import { num, toLease, toMember, type DeadLetter, type Lease, type LeaseRequest,
 
 export const AGENT_ID_ENV = 'OCTOCODE_AGENT_ID';
 export const PARENT_ID_ENV = 'OCTOCODE_PARENT_ID';
+/** Set in a subagent: its parent Pi's pid. The child leaves and shuts down when that process is gone (a crashed parent). */
+export const PARENT_PID_ENV = 'OCTOCODE_PARENT_PID';
 export const AGENT_TASK_ENV = 'OCTOCODE_AGENT_TASK';
 /** Set in a subagent started with `collaborate`: it works with its sibling subagents, not only for its parent. */
 export const AGENT_COLLABORATE_ENV = 'OCTOCODE_AGENT_COLLABORATE';
@@ -36,11 +39,19 @@ export const INBOX_BATCH_SIZE = 32;
 const PRUNE_INTERVAL_MS = 60_000;
 const MAX_LEASES_PER_CALL = 32;
 
-/** One team per repository: the git root when there is one, else the working directory. */
-function repoRoot(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+/** Whether an agent row is dead: it stopped heartbeating, or its process is gone. The one test behind `list` and lease ownership. */
+function agentGone(seenAt: number, pid: number, now: number): boolean {
+  return now - seenAt > STALE_MS || !processAlive(pid);
+}
+
+/**
+ * The team workspace for `cwd`: one team per repository (`repoKey(cwd).root`, symlinks resolved), unless
+ * `TEAM_WORKSPACE_ENV` names it (a subagent in an isolated worktree joins its parent's team).
+ */
+export function teamWorkspace(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
   const override = env[TEAM_WORKSPACE_ENV];
-  if (override && path.isAbsolute(override)) return path.resolve(override);
-  return findRepoRoot(cwd);
+  if (override && path.isAbsolute(override)) return canonicalPath(override);
+  return repoKey(cwd).root;
 }
 
 /**
@@ -48,7 +59,7 @@ function repoRoot(cwd: string, env: NodeJS.ProcessEnv = process.env): string {
  * collide on every platform (a deliberately conservative choice, as in the skill's lock contract).
  */
 export function pathKey(workspace: string, file: string): string {
-  const relative = path.relative(workspace, path.resolve(workspace, file));
+  const relative = path.relative(workspace, canonicalPath(path.resolve(workspace, file)));
   const parts = relative.split(path.sep).filter((part) => part && part !== '.');
   return `/${parts.map((part) => part.normalize('NFD').toLowerCase()).join('/')}`.replace(/\/$/, '');
 }
@@ -67,6 +78,8 @@ export class TeamStore {
   private constructor(
     private readonly agent: AgentDb,
     readonly workspace: string,
+    /** Whether `close` closes the connection: true for `open`, false for the process connection `shared` borrows. */
+    private readonly ownsConnection: boolean,
   ) {
     this.db = agent.db;
     this.edits = new EditLog(agent.db, workspace);
@@ -76,7 +89,7 @@ export class TeamStore {
   static open(cwd: string, file = agentDbPath(), env: NodeJS.ProcessEnv = process.env): TeamStore {
     const agent = openAgentDb(file, env);
     try {
-      const store = new TeamStore(agent, repoRoot(cwd, env));
+      const store = new TeamStore(agent, teamWorkspace(cwd, env), true);
       store.prune();
       return store;
     } catch (error) {
@@ -85,8 +98,16 @@ export class TeamStore {
     }
   }
 
+  /** The team over the process's one agent database connection (`sharedAgentDb`), which sessions, memory and backlog use too. */
+  static shared(cwd: string, env: NodeJS.ProcessEnv = process.env): TeamStore {
+    const store = new TeamStore(sharedAgentDb(env), teamWorkspace(cwd, env), false);
+    store.prune();
+    return store;
+  }
+
+  /** Closes a connection `open` made; a `shared` store leaves the process connection open. */
   close(): void {
-    this.agent.close();
+    if (this.ownsConnection) this.agent.close();
   }
 
   private transaction<T>(work: () => T): T {
@@ -107,12 +128,15 @@ export class TeamStore {
     if (now - this.prunedAt < PRUNE_INTERVAL_MS) return;
     this.db.prepare('DELETE FROM messages WHERE created_at < ?').run(now - MESSAGE_RETENTION_MS);
     this.db.prepare('DELETE FROM leases WHERE expires_at < ?').run(now);
+    this.edits.prune(now);
     this.prunedAt = now;
   }
 
   // ── agents ────────────────────────────────────────────────────────────────
 
+  /** Heartbeat: writes the member row and runs the periodic prune (at most once a minute). */
   save(member: Member): void {
+    this.prune(member.updatedAt);
     this.db
       .prepare(
         `INSERT INTO agents (id, workspace, role, parent_id, pid, status, task, activity, model, joined_at, seen_at, tool_calls, input, output, cost)
@@ -145,7 +169,7 @@ export class TeamStore {
     const live: Member[] = [];
     for (const row of rows) {
       const member = toMember(row);
-      if (now - member.updatedAt > STALE_MS || !processAlive(member.pid)) this.remove(member.id);
+      if (agentGone(member.updatedAt, member.pid, now)) this.remove(member.id);
       else live.push(member);
     }
     const held = this.leases(now);
@@ -219,6 +243,11 @@ export class TeamStore {
       const mark = this.db.prepare('UPDATE deliveries SET notified_at = ? WHERE message = ? AND recipient = ? AND dead_at IS NOT NULL');
       for (const letter of letters) for (const recipient of letter.recipients) mark.run(now, letter.id, recipient);
     });
+  }
+
+  /** How many messages wait undelivered for `id` (the inbox index alone): the inbox reads them only when this is non-zero. */
+  waiting(id: string): number {
+    return num((this.db.prepare('SELECT COUNT(*) AS n FROM deliveries WHERE recipient = ? AND delivered_at IS NULL AND dead_at IS NULL').get(id) as Row)['n']);
   }
 
   /** One bounded batch waiting for `id`, oldest first. `ack` marks only messages actually handed over. */
@@ -307,7 +336,7 @@ export class TeamStore {
   /** Whether a lease owner is gone: it has no row (it left), its process died, or it stopped heartbeating. */
   private ownerGone(owner: string, now: number): boolean {
     const row = this.db.prepare('SELECT pid, seen_at FROM agents WHERE id = ?').get(owner) as Row | undefined;
-    return row === undefined || now - num(row['seen_at']) > STALE_MS || !processAlive(num(row['pid']));
+    return row === undefined || agentGone(num(row['seen_at']), num(row['pid']), now);
   }
 
   /** Reserve every request or none: a conflict with another live lease rejects the whole set. */
@@ -324,7 +353,7 @@ export class TeamStore {
       const insert = this.db.prepare('INSERT INTO leases (workspace, path, path_key, kind, owner, reason, acquired_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       const touch = this.db.prepare('UPDATE leases SET reason = ?, expires_at = ? WHERE id = ?');
       for (const request of requests) {
-        const relative = path.relative(this.workspace, path.resolve(this.workspace, request.path)) || '.';
+        const relative = path.relative(this.workspace, canonicalPath(path.resolve(this.workspace, request.path))) || '.';
         const key = pathKey(this.workspace, request.path);
         const existing = find.get(this.workspace, owner, key, request.kind, now) as Row | undefined;
         if (existing) touch.run(request.reason, now + LEASE_MS, num(existing['id']));

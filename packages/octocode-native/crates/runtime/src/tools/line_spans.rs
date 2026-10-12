@@ -45,10 +45,16 @@ pub(crate) fn runs<T: LineNumber>(lines: impl IntoIterator<Item = T>) -> Vec<(T,
     out
 }
 
-/// One `start-end` range text as numbers.
-pub(crate) fn parse_span<T: std::str::FromStr>(range: &str) -> Option<(T, T)> {
+/// One `start-end` range text as numbers, low end first: a reversed
+/// range (`"80-40"`) names the same span.
+pub(crate) fn parse_span<T: std::str::FromStr + Ord>(range: &str) -> Option<(T, T)> {
     let (start, end) = range.split_once('-')?;
-    Some((start.parse().ok()?, end.parse().ok()?))
+    let (start, end): (T, T) = (start.parse().ok()?, end.parse().ok()?);
+    Some(if end < start {
+        (end, start)
+    } else {
+        (start, end)
+    })
 }
 
 /// The first `max_lines` of sorted, distinct `lines`, and how many more
@@ -89,6 +95,7 @@ mod tests {
         );
         assert_eq!(runs([3_usize, 4, 5, 9, 9]), vec![(3, 5), (9, 9), (9, 9)]);
         assert_eq!(parse_span::<u64>("95-105"), Some((95, 105)));
+        assert_eq!(parse_span::<u64>("105-95"), Some((95, 105)));
         assert_eq!(parse_span::<u64>("95"), None);
     }
 }

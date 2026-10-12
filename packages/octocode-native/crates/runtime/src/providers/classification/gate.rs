@@ -369,11 +369,7 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     fn budget(timeout: Duration) -> RequestBudget {
-        RequestBudget {
-            deadline: Instant::now() + timeout,
-            cancellation: CancellationToken::new(),
-            max_body_bytes: 1024,
-        }
+        RequestBudget::new(Instant::now() + timeout, CancellationToken::new(), 1024)
     }
 
     fn lease_on(limit: usize) -> GateLease {

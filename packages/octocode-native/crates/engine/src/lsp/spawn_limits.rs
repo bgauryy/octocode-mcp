@@ -23,6 +23,8 @@
 #[cfg(windows)]
 use crate::error::Error;
 use crate::error::Result;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::process::{Child, Command};
 
@@ -30,16 +32,84 @@ use tokio::process::{Child, Command};
 #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))] // Wired on macOS and Linux only.
 pub(crate) const MEMORY_WATCHDOG_INTERVAL: Duration = Duration::from_secs(2);
 
-/// Generous default (4 GiB): large enough for heavyweight servers such as
-/// rust-analyzer on sizable workspaces, small enough to protect the host.
-pub(crate) const DEFAULT_LSP_MEMORY_CAP_MB: u32 = 4_096;
+/// Floor of the default cap (4 GiB): large enough for heavyweight servers
+/// such as rust-analyzer on sizable workspaces.
+pub(crate) const MIN_DEFAULT_LSP_MEMORY_CAP_MB: u32 = 4_096;
+/// Ceiling of the default cap (8 GiB): what a huge monorepo's TypeScript
+/// program needs on a large host, still bounded for the machine.
+pub(crate) const MAX_DEFAULT_LSP_MEMORY_CAP_MB: u32 = 8_192;
 
-/// Resolve the configured cap to bytes. `None` → default, `Some(0)` → no cap.
-pub(crate) fn memory_cap_bytes(max_memory_mb: Option<u32>) -> Option<u64> {
-    match max_memory_mb.unwrap_or(DEFAULT_LSP_MEMORY_CAP_MB) {
+/// The default cap: a quarter of host memory, within
+/// [`MIN_DEFAULT_LSP_MEMORY_CAP_MB`]..=[`MAX_DEFAULT_LSP_MEMORY_CAP_MB`]. A
+/// host whose memory cannot be read keeps the floor.
+pub(crate) fn default_memory_cap_mb(host_memory_mb: Option<u64>) -> u32 {
+    host_memory_mb.map_or(MIN_DEFAULT_LSP_MEMORY_CAP_MB, |host| {
+        u32::try_from(host / 4)
+            .unwrap_or(u32::MAX)
+            .clamp(MIN_DEFAULT_LSP_MEMORY_CAP_MB, MAX_DEFAULT_LSP_MEMORY_CAP_MB)
+    })
+}
+
+/// Physical memory of this host in MiB, `None` where it cannot be read.
+fn host_memory_mb() -> Option<u64> {
+    static HOST: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
+    *HOST.get_or_init(read_host_memory_mb)
+}
+
+#[cfg(target_os = "macos")]
+fn read_host_memory_mb() -> Option<u64> {
+    let mut bytes: u64 = 0;
+    let mut size = std::mem::size_of::<u64>();
+    // SAFETY: `hw.memsize` is a NUL-terminated name and `bytes`/`size` are a
+    // valid out-buffer of `size` bytes.
+    let status = unsafe {
+        libc::sysctlbyname(
+            c"hw.memsize".as_ptr(),
+            std::ptr::from_mut(&mut bytes).cast(),
+            &raw mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (status == 0 && bytes > 0).then_some(bytes / (1024 * 1024))
+}
+
+#[cfg(target_os = "linux")]
+fn read_host_memory_mb() -> Option<u64> {
+    let meminfo = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let kib = meminfo
+        .lines()
+        .find_map(|line| line.strip_prefix("MemTotal:"))?
+        .split_whitespace()
+        .next()?
+        .parse::<u64>()
+        .ok()?;
+    Some(kib / 1024)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn read_host_memory_mb() -> Option<u64> {
+    None
+}
+
+/// The cap in MiB `max_memory_mb` resolves to: unset takes the host-derived
+/// default, `Some(0)` disables the cap (`None`).
+pub(crate) fn effective_memory_cap_mb(max_memory_mb: Option<u32>) -> Option<u32> {
+    match max_memory_mb.unwrap_or_else(|| default_memory_cap_mb(host_memory_mb())) {
         0 => None,
-        mb => Some(u64::from(mb) * 1024 * 1024),
+        mb => Some(mb),
     }
+}
+
+/// Resolve the configured cap to bytes (see [`effective_memory_cap_mb`]).
+pub(crate) fn memory_cap_bytes(max_memory_mb: Option<u32>) -> Option<u64> {
+    effective_memory_cap_mb(max_memory_mb).map(|mb| u64::from(mb) * 1024 * 1024)
+}
+
+/// The default cap in bytes: what all pooled servers may hold together
+/// before the pool stops idle ones (see `LspPoolOptions::max_resident_bytes`).
+pub(crate) fn default_memory_cap_bytes() -> u64 {
+    memory_cap_bytes(None).unwrap_or(0)
 }
 
 /// Unix targets without the RSS watchdog: cap the child's address space
@@ -72,14 +142,15 @@ pub(crate) fn apply_pre_spawn_cap(_command: &mut Command, _cap_bytes: u64) {}
 #[cfg_attr(not(any(target_os = "macos", target_os = "linux")), allow(dead_code))] // Wired on macOS and Linux only.
 pub(crate) fn memory_cap_exceeded_message(rss_bytes: u64, cap_bytes: u64) -> String {
     format!(
-        "language server exceeded memory cap ({} MiB resident > {} MiB maxMemoryMb); it was killed. Raise maxMemoryMb (0 disables the cap) for very large workspaces.",
+        "language server exceeded memory cap ({} MiB resident > {} MiB); it was killed.",
         rss_bytes / (1024 * 1024),
         cap_bytes / (1024 * 1024)
     )
 }
 
 /// RSS watchdog for a spawned server tree (the leader `pid` plus every
-/// descendant). Samples every `interval` while `alive()` holds; when the
+/// descendant). Samples every `interval` while `alive()` holds, publishing the
+/// latest sample in `resident` for the pool's aggregate budget; when the
 /// tree's resident memory exceeds `cap_bytes`, calls `on_exceed(rss)` (which
 /// fails the connection with a clear error) and then SIGKILLs the whole tree.
 /// Returns when the leader is gone, `alive()` turns false, or after a kill.
@@ -90,6 +161,7 @@ pub(crate) async fn watch_memory<A, E>(
     pid: u32,
     cap_bytes: u64,
     interval: Duration,
+    resident: Arc<AtomicU64>,
     alive: A,
     on_exceed: E,
 ) where
@@ -108,6 +180,7 @@ pub(crate) async fn watch_memory<A, E>(
         let Ok(Some(rss)) = sample else {
             return;
         };
+        resident.store(rss, Ordering::Relaxed);
         if rss > cap_bytes {
             on_exceed(rss);
             let _ = tokio::task::spawn_blocking(move || process_tree::kill_tree(pid)).await;
@@ -226,9 +299,11 @@ mod tests {
 
     #[test]
     fn configured_memory_cap_resolves_default_disable_and_explicit_values() {
-        assert_eq!(
-            memory_cap_bytes(None),
-            Some(u64::from(DEFAULT_LSP_MEMORY_CAP_MB) * 1024 * 1024)
+        let default = memory_cap_bytes(None).expect("a default cap") / (1024 * 1024);
+        assert!(
+            (u64::from(MIN_DEFAULT_LSP_MEMORY_CAP_MB)..=u64::from(MAX_DEFAULT_LSP_MEMORY_CAP_MB))
+                .contains(&default),
+            "{default}"
         );
         assert_eq!(memory_cap_bytes(Some(0)), None);
         assert_eq!(memory_cap_bytes(Some(512)), Some(512 * 1024 * 1024));
@@ -268,6 +343,7 @@ mod tests {
                 pid,
                 cap,
                 Duration::from_millis(100),
+                Arc::default(),
                 || true,
                 move |rss| {
                     *seen.lock().expect("lock") = Some(rss);
@@ -290,18 +366,24 @@ mod tests {
         let pid = small.id().expect("pid");
         let samples = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let counted = std::sync::Arc::clone(&samples);
+        let resident = Arc::new(AtomicU64::new(0));
         tokio::time::timeout(
             Duration::from_secs(30),
             watch_memory(
                 pid,
                 1024 * 1024 * 1024,
                 Duration::from_millis(50),
+                Arc::clone(&resident),
                 move || counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst) < 5,
                 |_| panic!("under the cap"),
             ),
         )
         .await
         .expect("alive() ends the watchdog");
+        assert!(
+            resident.load(Ordering::Relaxed) > 0,
+            "each sample is published for the pool's aggregate budget"
+        );
         assert!(
             small.try_wait().expect("try_wait").is_none(),
             "left running"

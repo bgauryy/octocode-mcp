@@ -139,10 +139,19 @@ pub(crate) fn kind(name: &str) -> &str {
 }
 
 /// A page that leaves more of this result to read (a restart page starts
-/// over instead): a row offering one is partial, and the CLI exits 6.
+/// over, an enrichment page only deepens rows already complete): a row
+/// offering one is partial (a success: the CLI exits 0 and the page is the
+/// continuation).
 #[must_use]
 pub fn is_remaining(tool: ToolId, name: &str) -> bool {
-    channel(tool, name) == Channel::Page && !is_restart(name)
+    channel(tool, name) == Channel::Page && !is_restart(name) && !is_enrichment(name)
+}
+
+/// A page that enriches rows already shown (a clipped value, context, dates,
+/// features) without leaving evidence out.
+#[must_use]
+pub fn is_enrichment(name: &str) -> bool {
+    continuation_channels::ENRICHMENT_NAMES.contains(&name)
 }
 
 /// A page that starts the result over on the current source.

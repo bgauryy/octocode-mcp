@@ -1,6 +1,6 @@
 //! Declaration rows for astSearch `symbols` and lspSearch `documentSymbols`.
 //!
-//! Structured content carries the outline in source order (P1). A
+//! Structured content carries the outline in source order. A
 //! declaration without members is one entry string, the structureSearch
 //! entry grammar:
 //!
@@ -9,7 +9,7 @@
 //! ```
 //!
 //! The last ` (` opens the fields, so a name may hold ` (` or `, `. The
-//! first number is the lspSearch `lineHint`; `line`-`endLine` is a localFetch
+//! first number is the lspSearch `line`; `line`-`endLine` is a localFetch
 //! range. `<key>=<value>` carries every other fact (`exportedAs`,
 //! `startLine`, `column`, `parent`, `parentLine`): a value stays bare when it
 //! is a plain word run, else it is JSON (with ` (` escaped so the last ` (`
@@ -474,12 +474,7 @@ pub(crate) fn take_outlines(response: &mut Value) -> Vec<String> {
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_owned();
-        // lspSearch documentSymbols carry their rows under `payload`.
-        let data = if row["data"].pointer("/payload/symbols").is_some() {
-            &mut row["data"]["payload"]
-        } else {
-            &mut row["data"]
-        };
+        let data = &mut row["data"];
         if is_declarations(data.get("symbols"))
             && let Some(mut rows) = data
                 .as_object_mut()
@@ -492,10 +487,12 @@ pub(crate) fn take_outlines(response: &mut Value) -> Vec<String> {
                     }
                 }
             }
+            let legend = sections.is_empty();
             sections.push(section(
                 &label,
                 &path,
                 rows.as_array().map_or(&[], Vec::as_slice),
+                legend,
             ));
         }
         let grouped = data
@@ -519,15 +516,22 @@ pub(crate) fn take_outlines(response: &mut Value) -> Vec<String> {
         for file in files.as_array().map_or(&[][..], Vec::as_slice) {
             let file_path = file["path"].as_str().unwrap_or_default();
             let declarations = file["symbols"].as_array().map_or(&[][..], Vec::as_slice);
-            sections.push(section(&label, file_path, declarations));
+            let legend = sections.is_empty();
+            sections.push(section(&label, file_path, declarations, legend));
         }
     }
     sections
 }
 
-fn section(label: &str, path: &str, rows: &[Value]) -> String {
-    let separator = if path.is_empty() { "" } else { " " };
-    let mut text = format!("=== symbols {label}{path}{separator}({LEGEND}) ===\n");
+/// One file's outline section; the first section of a response states the
+/// row legend, later ones only their path.
+fn section(label: &str, path: &str, rows: &[Value], legend: bool) -> String {
+    let mut text = if legend {
+        let separator = if path.is_empty() { "" } else { " " };
+        format!("=== symbols {label}{path}{separator}({LEGEND}) ===\n")
+    } else {
+        format!("=== symbols {label}{path} ===\n")
+    };
     for row in outline_rows(&flatten_members(rows)) {
         text.push_str(row.as_str().unwrap_or_default());
         text.push('\n');
@@ -821,7 +825,7 @@ mod tests {
                 json!("600 method orphan (in Gone@7)")
             ]
         );
-        // Structured rows are P1 outline rows (a container object, entry
+        // Structured rows are outline rows (a container object, entry
         // strings); the text channel prints them as these outline lines
         // under the header.
         let public = declaration_rows(&objects);
@@ -1004,7 +1008,7 @@ mod tests {
             .collect()
     }
 
-    /// P1 round trip: every entry string parses back to its declaration's
+    /// Round trip: every entry string parses back to its declaration's
     /// facts (name, kind, line, endLine, doc, exported, every `key=value`),
     /// in source order, for names holding ` (` or `, ` and values that need
     /// JSON (spaces, commas, parens, number-like or bracketed names).
@@ -1094,7 +1098,7 @@ mod tests {
         assert!(is_declarations(Some(&json!(["a (3-5, function)"]))));
     }
 
-    /// P1 costs at most 70% of the X1 objects' bytes on a large Rust outline
+    /// Entry strings cost at most 70% of the object rows' bytes on a large Rust outline
     /// and keeps every declaration.
     #[test]
     fn entries_cut_the_bytes_of_object_rows() {
@@ -1110,13 +1114,16 @@ mod tests {
             }
         }
         let rows = declaration_rows(&flat);
-        // The X1 shape: every declaration an object.
+        // The object shape: every declaration an object.
         let objects: Vec<Value> = flatten_members(&rows);
         let x1 = serde_json::to_string(&nest_members(objects))
             .expect("json")
             .len();
         let p1 = serde_json::to_string(&rows).expect("json").len();
-        assert!(p1 * 100 <= x1 * 70, "P1 {p1} B vs X1 {x1} B");
+        assert!(
+            p1 * 100 <= x1 * 70,
+            "entry strings {p1} B vs objects {x1} B"
+        );
         assert_eq!(facts(&flatten_members(&rows)), facts(&flat));
     }
 }

@@ -15,8 +15,17 @@ use super::*;
 
 /// A tool row as the public response carries it: leads and prose tips in
 /// `hints`, pages in `next`.
+/// A raw lspSearch row as the response layer publishes it: `status` and
+/// other row-level fields lifted out of `data` (see `response::rows`).
 fn public_row(data: &serde_json::Value) -> serde_json::Value {
-    let mut out = serde_json::json!({"results":[{"index":0,"data":data}]});
+    let row = crate::response::rows::result_row(
+        crate::tools::id::ToolId::LspSearch,
+        0,
+        &serde_json::json!({}),
+        data.clone(),
+        data.get("status").and_then(serde_json::Value::as_str),
+    );
+    let mut out = serde_json::json!({ "results": [row] });
     crate::response::continuations::finalize(
         &mut out,
         crate::tools::id::ToolId::LspSearch,
@@ -55,10 +64,26 @@ fn definition_alias_retry_is_limited_to_an_unresolved_first_same_file_hop() {
     ));
 }
 
+/// A count-cut page of `items`: the cut an explicit `pageSize` asks for.
+fn counted_page(items: &[Value], page: u32, size: u32) -> (Vec<Value>, Value) {
+    paginate(
+        items,
+        page,
+        &PageCut {
+            page_size: Some(size),
+            budget: TEST_BUDGET,
+            sizes: &plain_sizes(items),
+        },
+    )
+}
+
+/// A page budget large enough that only an explicit count cuts a test page.
+const TEST_BUDGET: usize = 16_000;
+
 #[test]
 fn pagination_omits_nullable_next_page_at_the_terminal_page() {
     let items = vec![serde_json::json!({"name": "one"})];
-    let (_, terminal) = paginate(&items, 1, 20);
+    let (_, terminal) = counted_page(&items, 1, 20);
     assert_eq!(terminal["hasMore"], false);
     assert!(terminal.get("nextPage").is_none());
 
@@ -66,7 +91,7 @@ fn pagination_omits_nullable_next_page_at_the_terminal_page() {
         serde_json::json!({"name": "one"}),
         serde_json::json!({"name": "two"}),
     ];
-    let (_, partial) = paginate(&items, 1, 1);
+    let (_, partial) = counted_page(&items, 1, 1);
     assert_eq!(partial["nextPage"], 2);
 }
 
@@ -87,7 +112,11 @@ fn semantic_pagination_continuations_cover_the_full_result_fixture() {
     let mut actual = Vec::new();
 
     loop {
-        let (page, pagination) = paginate(&expected, query.page().unwrap_or(1), query.page_size());
+        let (page, pagination) = counted_page(
+            &expected,
+            query.page().unwrap_or(1),
+            query.page_size().expect("explicit pageSize"),
+        );
         actual.extend(page);
         let response = with_next(
             &query,
@@ -156,7 +185,7 @@ fn document_wide_operations_do_not_require_a_position_anchor() {
 }
 
 #[test]
-fn later_pages_require_the_semantic_snapshot_and_carry_it_forward() {
+fn later_pages_check_a_pinned_snapshot_and_carry_it_forward() {
     let query: LspSearchQuery = serde_json::from_value(serde_json::json!({
         "operation": "documentSymbols", "mainGoal": "test", "reasoning": "test",
         "path": "/repo/src/lib.rs",
@@ -169,7 +198,10 @@ fn later_pages_require_the_semantic_snapshot_and_carry_it_forward() {
         serde_json::json!({"name":"b"}),
     ];
     let snapshot = semantic_snapshot(&query, "symbols", &items);
-    assert!(snapshot_mismatch(&query, &snapshot));
+    // A page without a snapshot pins nothing: it pages the current answer.
+    assert!(!snapshot_mismatch(&query, &snapshot));
+    let pinned = requery(&query, serde_json::json!({"snapshot": "lsp-v3:stale"}));
+    assert!(snapshot_mismatch(&pinned, &snapshot));
     let changed = snapshot_changed(&query);
     assert_eq!(changed["errorCode"], "staleSnapshot");
     assert_eq!(changed["next"]["restart"]["query"]["queries"][0]["page"], 1);
@@ -202,7 +234,7 @@ fn semantic_snapshot_ignores_paging_and_workflow_metadata() {
         "extras": ["receipts"],
         "path": "/repo/src/lib.rs",
         "symbolName": "run",
-        "lineHint": 4,
+        "line": 4,
         "pageSize": 1
     }))
     .expect("first page query");
@@ -211,7 +243,7 @@ fn semantic_snapshot_ignores_paging_and_workflow_metadata() {
         "mainGoal": "test", "reasoning": "Continuation metadata may be normalized.",
         "path": "/repo/src/lib.rs",
         "symbolName": "run",
-        "lineHint": 4,
+        "line": 4,
         "page": 2,
         "pageSize": 1,
         "snapshot": "prior"
@@ -303,7 +335,7 @@ fn document_symbols_are_compact_outline_rows() {
     let raw = serde_json::json!([
         greeter,
         // Doc comment / attribute lines are part of `range`; the row's line
-        // is the name line (`selectionRange`), a usable lineHint.
+        // is the name line (`selectionRange`), a usable line.
         symbol("documented", 12, (10, 14), (12, 7)),
         implementation,
         outer,
@@ -312,11 +344,11 @@ fn document_symbols_are_compact_outline_rows() {
         symbol("b", 14, (32, 32), (32, 13)),
     ]);
 
-    let envelope = items_payload(&query, "documentSymbols", raw);
+    let envelope = items_payload(&query, "documentSymbols", raw, TEST_BUDGET);
     assert_eq!(envelope["lsp"]["source"], "lsp");
     assert!(envelope.get("summary").is_none(), "{envelope}");
-    // Outline rows (P1), checked through their text outline.
-    let mut payload = envelope["payload"].clone();
+    // Outline rows, checked through their text outline.
+    let mut payload = serde_json::json!({"kind": envelope["kind"], "symbols": envelope["symbols"]});
     payload["symbols"] = serde_json::json!(crate::tools::symbol_outline::outline_rows(
         &crate::tools::symbol_outline::flatten_members(
             payload["symbols"].as_array().expect("rows")
@@ -439,19 +471,6 @@ fn widened_content_reports_its_first_line_and_single_file_pages_hoist_the_path()
     // The gutter states where widened content begins.
     assert_eq!(widened["content"], "5\ta\n6\tb\n7\tc\n", "{widened}");
     assert!(widened.get("contentStartLine").is_none(), "{widened}");
-
-    let same = [widened.clone(), widened.clone()];
-    assert_eq!(
-        shared_location_path(&same).as_deref(),
-        Some("/repo/src/lib.rs")
-    );
-    let mut other = widened.clone();
-    other["path"] = serde_json::json!("/repo/src/main.rs");
-    assert!(shared_location_path(&[widened.clone(), other]).is_none());
-    assert!(
-        shared_location_path(&[widened]).is_none(),
-        "a single location keeps its own uri"
-    );
 }
 
 #[test]
@@ -508,7 +527,7 @@ fn empty_and_unavailable_rows_expose_status_and_recovery_next() {
         "operation": "definition", "mainGoal": "test", "reasoning": "test",
         "path": "/repo/src/lib.rs",
         "symbolName": "execute",
-        "lineHint": 10
+        "line": 10
     }));
     let empty = with_next(&query, empty(&query, "noLocations", "none", true));
     assert_eq!(empty["status"], "empty");
@@ -529,12 +548,19 @@ fn empty_and_unavailable_rows_expose_status_and_recovery_next() {
     assert_eq!(down["status"], "error");
     assert_eq!(down["errorCode"], "serverUnavailable");
     assert_eq!(down["next"]["read"]["tool"], "localFetch");
+    // The fallback is an executable lexical lead, not a static tip.
+    let text = &down["next"]["findText"];
+    assert_eq!(text["tool"], "localSearch", "{down}");
+    let search = &text["query"]["queries"][0];
+    assert_eq!(search["path"], "/repo/src", "{down}");
+    assert_eq!(search["matchString"], "execute", "{down}");
+    assert_eq!(search["wholeWord"], true, "{down}");
     assert!(
-        down["hints"][0]
-            .as_str()
-            .is_some_and(|hint| hint.contains("astSearch symbols/match")),
+        down["hints"].as_array().is_some_and(Vec::is_empty),
         "{down}"
     );
+    crate::contracts::validate_output("lspSearch", &public_row(&down))
+        .expect("unavailable row satisfies the output contract");
 
     let timeout = failure(
         &query,
@@ -593,11 +619,12 @@ fn workspace_root_empty_results_do_not_emit_a_pathless_read_recovery() {
         "workspaceRoot": "/repo",
         "symbolName": "nothing"
     }));
-    let mut row = with_next(&q, items_payload(&q, "symbols", serde_json::json!([])));
+    let row = with_next(
+        &q,
+        items_payload(&q, "symbols", serde_json::json!([]), TEST_BUDGET),
+    );
     assert_eq!(row["status"], "empty");
     assert!(row.get("next").is_none(), "{row}");
-    // execute() stamps the canonical root URI on every row.
-    row["uri"] = serde_json::json!("file:///repo");
     crate::contracts::validate_output("lspSearch", &public_row(&row))
         .expect("empty workspace-root row satisfies the output contract");
 }
@@ -664,8 +691,8 @@ fn diagnostic_reports_are_listed_as_individual_diagnostics() {
     });
     let (items, truncated) = diagnostic_items(Some(report));
     assert!(!truncated);
-    let envelope = items_payload(&q, "diagnostics", items);
-    let listed = envelope["payload"]["matches"].as_array().expect("matches");
+    let envelope = items_payload(&q, "diagnostics", items, TEST_BUDGET);
+    let listed = envelope["matches"].as_array().expect("matches");
     assert_eq!(listed.len(), 2, "{envelope}");
     assert_eq!(listed[0]["message"], "first");
     assert_eq!(envelope["pagination"]["totalItems"], 2);
@@ -677,9 +704,9 @@ fn diagnostic_reports_are_listed_as_individual_diagnostics() {
         Some(serde_json::json!({"kind": "unchanged", "resultId": "1"})),
     ] {
         let (items, _) = diagnostic_items(report);
-        let envelope = with_next(&q, items_payload(&q, "diagnostics", items));
+        let envelope = with_next(&q, items_payload(&q, "diagnostics", items, TEST_BUDGET));
         assert_eq!(envelope["status"], "empty", "{envelope}");
-        assert_eq!(envelope["payload"]["category"], "noDiagnostics");
+        assert_eq!(envelope["category"], "noDiagnostics");
     }
     let (_, truncated) = diagnostic_items(Some(serde_json::json!({
         "kind": "full", "items": [{"message": "x"}], "truncated": true
@@ -718,7 +745,7 @@ fn pages_past_the_end_are_empty_and_flagged_out_of_range() {
         serde_json::json!({"name": "one"}),
         serde_json::json!({"name": "two"}),
     ];
-    let (page, pagination) = paginate(&items, 5, 1);
+    let (page, pagination) = counted_page(&items, 5, 1);
     assert!(page.is_empty(), "must not clamp to the last page");
     assert_eq!(pagination["currentPage"], 5);
     assert_eq!(pagination["totalPages"], 2);
@@ -726,7 +753,7 @@ fn pages_past_the_end_are_empty_and_flagged_out_of_range() {
     assert_eq!(pagination["outOfRange"], true);
     assert!(pagination.get("nextPage").is_none());
 
-    let (page, pagination) = paginate(&items, 2, 1);
+    let (page, pagination) = counted_page(&items, 2, 1);
     assert_eq!(page.len(), 1);
     assert!(pagination.get("outOfRange").is_none());
 }
@@ -760,10 +787,10 @@ fn group_by_file_summarizes_per_file_with_workspace_relative_paths() {
     // Through the envelope, base + path names the real file.
     let envelope = crate::response::rows::envelope(vec![serde_json::json!({
         "index": 0,
-        "data": {"path": absolute("src/deep/anchor.ts"), "payload": {"files": summaries}}
+        "data": {"path": absolute("src/deep/anchor.ts"), "files": summaries}
     })]);
     let base = envelope["root"].as_str().expect("root");
-    for file in envelope["results"][0]["data"]["payload"]["files"]
+    for file in envelope["results"][0]["data"]["files"]
         .as_array()
         .expect("files")
     {
@@ -787,7 +814,7 @@ async fn grouped_references_replace_locations_with_file_summaries() {
     let q = query(serde_json::json!({
         "operation": "references", "mainGoal": "test", "reasoning": "test",
         "path": uri,
-        "symbolName": "foo", "lineHint": 1,
+        "symbolName": "foo", "line": 1,
         "groupByFile": true
     }));
     let snippets = (0..2)
@@ -804,32 +831,151 @@ async fn grouped_references_replace_locations_with_file_summaries() {
         "references",
         "referencesProvider",
         snippets,
+        TEST_BUDGET,
     )
     .await;
-    assert!(result["payload"].get("matches").is_none(), "{result}");
+    assert!(result.get("matches").is_none(), "{result}");
     assert_eq!(
-        result["payload"]["files"],
+        result["files"],
         serde_json::json!([{"path": root.join("a.ts").to_string_lossy(), "matchCount": 2, "lines": [1, 2]}])
     );
-    assert_eq!(result["payload"]["matchCount"], 2);
+    assert_eq!(result["matchCount"], 2);
     crate::contracts::validate_output("lspSearch", &public_row(&result))
         .expect("grouped references satisfy the output contract");
     let _ = std::fs::remove_dir_all(root);
+}
+
+/// Every reference page of one walk: `(rows, chars)` per page.
+async fn walk_reference_pages(
+    root: &std::path::Path,
+    uri: &str,
+    count: usize,
+    page_size: Option<u32>,
+    budget: usize,
+) -> Vec<(Vec<(u64, u64)>, usize)> {
+    let paths = crate::tools::test_support::workspace_policy(root);
+    let mut q = query(serde_json::json!({
+        "operation": "references", "mainGoal": "test", "reasoning": "test",
+        "path": uri, "symbolName": "foo", "line": 1
+    }));
+    if let Some(size) = page_size {
+        q = requery(&q, serde_json::json!({"pageSize": size}));
+    }
+    let found = (0..count)
+        .map(|line| {
+            serde_json::json!({
+                "uri": uri,
+                "range": {"start": {"line": line, "character": 0}, "end": {"line": line, "character": 3}}
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut pages = Vec::new();
+    for page in 1.. {
+        let paged = requery(&q, serde_json::json!({"page": page}));
+        let row = locations(
+            &paged,
+            &mut SourceCache::new(&paths),
+            "references",
+            "referencesProvider",
+            found.clone(),
+            budget,
+        )
+        .await;
+        assert_eq!(row["matchCount"], count, "a stable total on page {page}");
+        let rows = row["files"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|file| file["matches"].as_array().into_iter().flatten())
+            .map(|hit| {
+                (
+                    hit["line"].as_u64().expect("line"),
+                    hit["column"].as_u64().expect("column"),
+                )
+            })
+            .collect::<Vec<(u64, u64)>>();
+        let more = row["pagination"]["hasMore"] == true;
+        pages.push((rows, crate::tools::stream_page::json_chars(&row)));
+        if !more {
+            break;
+        }
+        assert!(page < 1_000, "the walk must end");
+    }
+    pages
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn reference_pages_fill_the_budget_and_reach_every_location_once() {
+    let root = std::env::temp_dir().join(format!("octocode-lsp-budget-{}", std::process::id()));
+    std::fs::create_dir_all(&root).expect("root");
+    let root = root.canonicalize().expect("canonical root");
+    let source = "foo\n".repeat(641);
+    std::fs::write(root.join("a.ts"), source).expect("a.ts");
+    let uri =
+        octocode_engine::lsp::uri::path_to_uri(&root.join("a.ts").to_string_lossy()).expect("uri");
+
+    let pages = walk_reference_pages(&root, &uri, 641, None, TEST_BUDGET).await;
+    let mut seen = std::collections::BTreeSet::new();
+    for (index, (rows, chars)) in pages.iter().enumerate() {
+        assert!(*chars <= TEST_BUDGET, "page {index} is {chars} chars");
+        for row in rows {
+            assert!(seen.insert(*row), "{row:?} repeated");
+        }
+    }
+    assert_eq!(seen.len(), 641, "every reference is reached");
+    // 40 rows a page was 17 calls; a filled budget is a handful.
+    assert!(pages.len() <= 3, "{} calls", pages.len());
+
+    // An explicit count overrides the budget exactly.
+    let counted = walk_reference_pages(&root, &uri, 641, Some(100), TEST_BUDGET).await;
+    let sizes = counted
+        .iter()
+        .map(|(rows, _)| rows.len())
+        .collect::<Vec<_>>();
+    assert_eq!(sizes, [100, 100, 100, 100, 100, 100, 41]);
+    let _ = std::fs::remove_dir_all(root);
+}
+
+/// A server that pushed nothing inside the wait has not said "no
+/// diagnostics": the empty row is partial, with a retry, never a clean result.
+#[test]
+fn unpublished_diagnostics_are_partial_not_clean() {
+    let q = query(serde_json::json!({
+        "operation": "diagnostic", "mainGoal": "test", "reasoning": "test",
+        "path": "file:///repo/a.ts"
+    }));
+    let mut row = items_payload(&q, "diagnostics", serde_json::json!([]), TEST_BUDGET);
+    mark_diagnostics_unpublished(&mut row, &q, 5_000);
+    assert_eq!(row["isPartial"], true, "{row}");
+    assert_eq!(
+        row["partialReasons"],
+        serde_json::json!(["diagnosticsNotPublished"]),
+        "{row}"
+    );
+    assert_eq!(row["next"]["retry"]["tool"], "lspSearch", "{row}");
+    assert!(
+        row["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("5000 ms")),
+        "{row}"
+    );
+    crate::contracts::validate_output("lspSearch", &public_row(&row))
+        .expect("an unpublished-diagnostics row satisfies the output contract");
 }
 
 #[test]
 fn a_capped_alias_scan_is_disclosed_with_a_text_search() {
     let q = query(serde_json::json!({
         "operation": "references", "mainGoal": "test", "reasoning": "test",
-        "path": "/repo/a.ts", "symbolName": "foo", "lineHint": 1
+        "path": "/repo/a.ts", "symbolName": "foo", "line": 1
     }));
     let mut row = serde_json::json!({
         "type": "references",
-        "payload": {"kind": "references", "coverage": {"scope": "languageServer", "exhaustive": false}}
+        "kind": "references", "coverage": {}
     });
     let scope = super::scope::Scope::new("/repo".into(), vec!["*.ts".into()]);
     super::recovery::disclose_alias_cap(&mut row, &q, &scope);
-    assert_eq!(row["payload"]["coverage"]["aliasScan"], "capped", "{row}");
+    assert_eq!(row["coverage"]["aliasScan"], "capped", "{row}");
     assert_eq!(row["isPartial"], true);
     assert_eq!(
         row["partialReasons"],
@@ -838,9 +984,16 @@ fn a_capped_alias_scan_is_disclosed_with_a_text_search() {
     // The alias cap is fixed per request: a terminal limit, with the
     // lexical lead as the only way past it.
     assert_eq!(row["terminalLimit"], true, "{row}");
-    assert_eq!(row["next"]["textSearch"]["tool"], "localSearch", "{row}");
+    // The warning says why no page reaches the rest and where the lead is.
+    let warning = row["warnings"][0].as_str().unwrap_or_default();
+    assert!(
+        warning.contains("no page or retry re-checks them")
+            && warning.contains("the text-search lead"),
+        "{row}"
+    );
+    assert_eq!(row["next"]["findText"]["tool"], "localSearch", "{row}");
     assert_eq!(
-        row["next"]["textSearch"]["query"]["queries"][0]["path"],
+        row["next"]["findText"]["query"]["queries"][0]["path"],
         "/repo"
     );
 }
@@ -854,7 +1007,7 @@ async fn recovered_alias_references_are_labeled_in_output() {
     let q = query(serde_json::json!({
         "operation": "references", "mainGoal": "test", "reasoning": "test",
         "path": uri,
-        "symbolName": "foo", "lineHint": 1
+        "symbolName": "foo", "line": 1
     }));
     let at = |line: u32| {
         serde_json::json!({
@@ -870,9 +1023,10 @@ async fn recovered_alias_references_are_labeled_in_output() {
         "references",
         "referencesProvider",
         vec![at(0), recovered],
+        TEST_BUDGET,
     )
     .await;
-    let files = result["payload"]["files"].as_array().expect("files");
+    let files = result["files"].as_array().expect("files");
     assert_eq!(files.len(), 1, "{result}");
     assert_eq!(
         files[0]["matches"].as_array().map(Vec::len),
@@ -885,7 +1039,7 @@ async fn recovered_alias_references_are_labeled_in_output() {
         "{result}"
     );
     assert!(files[0]["matches"][0].get("source").is_none(), "{result}");
-    assert_eq!(result["payload"]["recoveredAliasReferences"], 1);
+    assert_eq!(result["recoveredAliasReferences"], 1);
     crate::contracts::validate_output("lspSearch", &public_row(&result))
         .expect("labeled references satisfy the output contract");
     let _ = std::fs::remove_dir_all(root);
@@ -915,7 +1069,7 @@ async fn references_default_to_compact_rows_grouped_by_file() {
     let compact = |extra: serde_json::Value| {
         let mut input = serde_json::json!({
             "operation": "references", "mainGoal": "test", "reasoning": "test",
-            "path": uri_a, "symbolName": "foo", "lineHint": 5
+            "path": uri_a, "symbolName": "foo", "line": 5
         });
         for (key, value) in extra.as_object().expect("object") {
             input[key] = value.clone();
@@ -928,9 +1082,10 @@ async fn references_default_to_compact_rows_grouped_by_file() {
         "references",
         "referencesProvider",
         snippets.clone(),
+        TEST_BUDGET,
     )
     .await;
-    let payload = &result["payload"];
+    let payload = &result;
     assert!(payload.get("matches").is_none(), "{result}");
     let files = payload["files"].as_array().expect("files");
     assert_eq!(files.len(), 2, "{result}");
@@ -954,7 +1109,7 @@ async fn references_default_to_compact_rows_grouped_by_file() {
     assert_eq!(result["pagination"]["totalItems"], 22, "{result}");
     // The reference count is stated even when one page holds every row.
     assert_eq!(payload["matchCount"], 22, "{result}");
-    assert_eq!(payload["totalFiles"], 2);
+    assert_eq!(payload["matchedFiles"], 2);
     crate::contracts::validate_output("lspSearch", &public_row(&result))
         .expect("compact references satisfy the output contract");
 
@@ -969,9 +1124,10 @@ async fn references_default_to_compact_rows_grouped_by_file() {
             "references",
             "referencesProvider",
             snippets.clone(),
+            TEST_BUDGET,
         )
         .await;
-        assert!(result["payload"]["matches"].is_array(), "{extra}: {result}");
+        assert!(result["matches"].is_array(), "{extra}: {result}");
     }
     // A short reference list is compact too.
     let result = locations(
@@ -980,11 +1136,12 @@ async fn references_default_to_compact_rows_grouped_by_file() {
         "references",
         "referencesProvider",
         snippets[..2].to_vec(),
+        TEST_BUDGET,
     )
     .await;
-    assert!(result["payload"].get("matches").is_none(), "{result}");
+    assert!(result.get("matches").is_none(), "{result}");
     assert_eq!(
-        result["payload"]["files"],
+        result["files"],
         serde_json::json!([{"path": a.to_string_lossy(), "matches": [
             {"line": 5, "column": 14, "endLine": 29, "value": "export const foo = ("},
             {"line": 11, "column": 3, "value": "foo(bar);"}
@@ -998,13 +1155,11 @@ async fn references_default_to_compact_rows_grouped_by_file() {
 fn paged_rows_state_page_facts_once_in_next() {
     let q = query(serde_json::json!({
         "operation": "references", "mainGoal": "test", "reasoning": "test",
-        "path": "file:///repo/a.ts", "symbolName": "foo", "lineHint": 1
+        "path": "file:///repo/a.ts", "symbolName": "foo", "line": 1
     }));
-    let page = |payload: serde_json::Value| {
-        serde_json::json!({
-            "payload": payload,
-            "pagination": {"currentPage": 1, "hasMore": true, "nextPage": 2, "pageSize": 3, "snapshot": "lsp-v1:abc"}
-        })
+    let page = |mut row: serde_json::Value| {
+        row["pagination"] = serde_json::json!({"currentPage": 1, "hasMore": true, "nextPage": 2, "pageSize": 3, "snapshot": "lsp-v1:abc"});
+        row
     };
     let compact = with_next(
         &q,
@@ -1022,7 +1177,7 @@ fn paged_rows_state_page_facts_once_in_next() {
         page(serde_json::json!({"kind": "references", "matches": [{"path": "/repo/a.ts"}]})),
     );
     // The continuation carries the page and the snapshot; the row's
-    // pagination keeps the same page facts on every page (B12), its size
+    // pagination keeps the same page facts on every page, its size
     // included.
     for row in [&compact, &rows] {
         assert_eq!(row["next"]["nextPage"]["query"]["queries"][0]["page"], 2);
@@ -1037,7 +1192,7 @@ fn paged_rows_state_page_facts_once_in_next() {
 #[test]
 fn local_search_identity_continuations_validate_as_anchored_queries() {
     // The shape localSearch emits as next.references / next.callers for a
-    // declaration hit: uri + symbolName + lineHint, nothing else.
+    // declaration hit: uri + symbolName + line, nothing else.
     for operation in ["references", "callers"] {
         let continuation = serde_json::json!({
             "mainGoal": "Who uses run_and_clear_commit_hooks?",
@@ -1045,7 +1200,7 @@ fn local_search_identity_continuations_validate_as_anchored_queries() {
             "operation": operation,
             "path": "/repo/django/db/backends/base/base.py",
             "symbolName": "run_and_clear_commit_hooks",
-            "lineHint": 749
+            "line": 749
         });
         let validated = crate::contracts::validate_query("lspSearch", continuation)
             .unwrap_or_else(|error| panic!("{operation}: {error:?}"));
@@ -1131,7 +1286,7 @@ async fn unreadable_in_policy_files_stay_authorized_and_keep_their_locations() {
     let q = query(serde_json::json!({
         "operation": "references", "mainGoal": "test", "reasoning": "test",
         "path": large.to_string_lossy(),
-        "symbolName": "foo", "lineHint": 1,
+        "symbolName": "foo", "line": 1,
         "contextLines": 2
     }));
     let unavailable = "[content unavailable — could not read: file too large]";
@@ -1151,10 +1306,11 @@ async fn unreadable_in_policy_files_stay_authorized_and_keep_their_locations() {
         "references",
         "referencesProvider",
         snippets,
+        TEST_BUDGET,
     )
     .await;
     assert_eq!(result["pagination"]["totalItems"], 2, "{result}");
-    let rows = result["payload"]["matches"].as_array().expect("rows");
+    let rows = result["matches"].as_array().expect("rows");
     assert!(
         rows.iter().all(|row| row["content"] == unavailable),
         "the unavailable reason is kept as content: {result}"
@@ -1255,7 +1411,7 @@ fn symbol_anchors_resolve_on_the_synchronized_text_not_the_disk() {
         "operation": "definition", "mainGoal": "test", "reasoning": "test",
         "path": "/nonexistent/lib.rs",
         "symbolName": "greet",
-        "lineHint": 2
+        "line": 2
     }));
     let source = "// é😀\nfn é😀() {} fn greet() {}\n";
     let anchor = resolve_anchor(
@@ -1268,7 +1424,7 @@ fn symbol_anchors_resolve_on_the_synchronized_text_not_the_disk() {
     // `fn é😀() {} fn ` is 15 UTF-16 units (é = 1, 😀 = 2).
     assert_eq!((anchor.line, anchor.character), (1, 15));
     let resolved = anchor.resolved_symbol.expect("receipt");
-    // Found on its lineHint: the receipt adds the column, not echoes.
+    // Found on its line: the receipt adds the column, not echoes.
     assert!(resolved.get("foundAtLine").is_none(), "{resolved}");
     assert!(resolved.get("name").is_none(), "{resolved}");
     assert_eq!(resolved["foundAtCharacter"], 16);
@@ -1277,7 +1433,7 @@ fn symbol_anchors_resolve_on_the_synchronized_text_not_the_disk() {
         "operation": "definition", "mainGoal": "test", "reasoning": "test",
         "path": "/nonexistent/lib.rs",
         "symbolName": "greet",
-        "lineHint": 1
+        "line": 1
     }));
     let moved = resolve_anchor(
         &off,
@@ -1298,7 +1454,7 @@ fn member_qualified_symbol_names_anchor_on_the_last_member() {
     let anchor_for = |path: &str, source: &str, name: &str, line: u32| {
         let q = query(serde_json::json!({
             "operation": "definition", "mainGoal": "test", "reasoning": "test",
-            "path": path, "symbolName": name, "lineHint": line
+            "path": path, "symbolName": name, "line": line
         }));
         let anchor = resolve_anchor(&q, path, "file:///repo/x", Some(source)).expect(name);
         (anchor.line, anchor.character)
@@ -1336,7 +1492,7 @@ fn rust_context_overlays_the_engine_headless_defaults() {
     let q = query(serde_json::json!({
         "operation": "definition", "mainGoal": "test", "reasoning": "test",
         "path": "/repo/src/lib.rs",
-        "symbolName": "foo", "lineHint": 1,
+        "symbolName": "foo", "line": 1,
         "rustContext": {"features": ["x"]}
     }));
     apply_rust_context(&mut config, &q).expect("rust context");
@@ -1367,15 +1523,15 @@ fn failed_hierarchy_expansion_is_an_error_or_a_marked_partial_row() {
     let q = query(serde_json::json!({
         "operation": "callers", "mainGoal": "test", "reasoning": "test",
         "path": "file:///repo/a.ts",
-        "symbolName": "foo", "lineHint": 1,
-        "depth": 3
+        "symbolName": "foo", "line": 1,
+        "graphDepth": 3
     }));
     let (items, failures) = expansion_outcome(
-        vec![serde_json::json!({"from": {"name": "caller"}})],
+        vec![serde_json::json!({"from": {"symbolName": "caller"}})],
         vec![engine_error("LSP error: deeper level")],
     )
     .expect("partial expansion keeps what was found");
-    let mut row = items_payload(&q, "callers", serde_json::json!(items));
+    let mut row = items_payload(&q, "callers", serde_json::json!(items), TEST_BUDGET);
     mark_partial_expansion(&mut row, &q, &failures);
     assert_eq!(row["isPartial"], true);
     assert_eq!(
@@ -1399,7 +1555,7 @@ fn failed_hierarchy_expansion_is_an_error_or_a_marked_partial_row() {
         .map(|n| engine_error(&format!("LSP error: node {n}")))
         .collect::<Vec<_>>();
     failures.extend((0..4).map(|_| engine_error("LSP error: timeout")));
-    let mut row = items_payload(&q, "callers", serde_json::json!(items));
+    let mut row = items_payload(&q, "callers", serde_json::json!(items), TEST_BUDGET);
     mark_partial_expansion(&mut row, &q, &failures);
     let warnings = row["warnings"].as_array().cloned().unwrap_or_default();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
@@ -1550,9 +1706,12 @@ fn edge_summary(walk: &HierarchyWalk) -> Vec<(String, u64, Option<String>)> {
         .map(|edge| public_edge(Expansion::IncomingCalls, edge, None))
         .map(|edge| {
             (
-                edge["from"]["name"].as_str().unwrap_or_default().to_owned(),
+                edge["from"]["symbolName"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
                 edge["level"].as_u64().unwrap_or(0),
-                edge["via"]["name"].as_str().map(str::to_owned),
+                edge["via"]["symbolName"].as_str().map(str::to_owned),
             )
         })
         .collect()
@@ -1707,31 +1866,31 @@ async fn the_anchor_keeps_every_direct_result_and_capped_parents_resume() {
         "operation": "callers", "mainGoal": "test", "reasoning": "test",
         "path": file.to_string_lossy(),
         "symbolName": "root",
-        "lineHint": 1,
-        "depth": 2
+        "line": 1,
+        "graphDepth": 2
     }));
     let items = deep
         .edges
         .iter()
         .map(|edge| public_edge(Expansion::IncomingCalls, edge, None))
         .collect::<Vec<_>>();
-    let mut row = items_payload(&q, "callers", serde_json::json!(items));
+    let mut row = items_payload(&q, "callers", serde_json::json!(items), TEST_BUDGET);
     mark_truncation(&mut row, &q, &[(Expansion::IncomingCalls, &deep)]);
-    assert_eq!(row["payload"]["truncated"], true);
+    assert_eq!(row["clipped"], true);
     assert_eq!(row["isPartial"], true);
     assert!(row.get("terminalLimit").is_none(), "{row}");
     assert_eq!(
         row["partialReasons"],
         serde_json::json!(["hierarchyFanOutLimit"])
     );
-    assert_eq!(row["payload"]["unexpandedParents"][0]["name"], "hub");
+    assert_eq!(row["unexpandedParents"][0]["symbolName"], "hub");
     let resume = &row["next"]["continueWalk"]["query"]["queries"][0];
-    assert_eq!(resume["depth"], 1, "{resume}");
-    // D2: re-anchored by name and 1-based line, never a 0-based position.
+    assert_eq!(resume["graphDepth"], 1, "{resume}");
+    // Re-anchored by name and 1-based line, never a 0-based position.
     assert!(resume.get("position").is_none(), "{resume}");
     assert_eq!(resume["symbolName"], "hub", "{resume}");
     assert_eq!(
-        resume["lineHint"].as_u64(),
+        resume["line"].as_u64(),
         node_at("hub", Some(&uri))["selectionRange"]["start"]["line"]
             .as_u64()
             .map(|line| line + 1),
@@ -1805,35 +1964,35 @@ async fn hierarchy_node_cap_truncates_with_an_executable_continuation() {
         "operation": "callers", "mainGoal": "test", "reasoning": "test",
         "path": file.to_string_lossy(),
         "symbolName": "root",
-        "lineHint": 1,
-        "depth": 2
+        "line": 1,
+        "graphDepth": 2
     }));
     let items = walk
         .edges
         .iter()
         .map(|edge| public_edge(Expansion::IncomingCalls, edge, None))
         .collect::<Vec<_>>();
-    let mut row = items_payload(&q, "callers", serde_json::json!(items));
+    let mut row = items_payload(&q, "callers", serde_json::json!(items), TEST_BUDGET);
     mark_truncation(&mut row, &q, &[(Expansion::IncomingCalls, &walk)]);
-    assert_eq!(row["payload"]["truncated"], true);
+    assert_eq!(row["clipped"], true);
     assert_eq!(
         row["partialReasons"],
         serde_json::json!(["hierarchyNodeLimit"])
     );
     assert!(row.get("terminalLimit").is_none(), "{}", row["next"]);
     let resume_query = &row["next"]["continueWalk"]["query"]["queries"][0];
-    assert_eq!(resume_query["depth"], 1);
+    assert_eq!(resume_query["graphDepth"], 1);
     assert_eq!(resume_query["path"], file.to_string_lossy().as_ref());
-    // D2: walk continuations re-anchor by symbol and 1-based line.
+    // Walk continuations re-anchor by symbol and 1-based line.
     assert!(resume_query.get("position").is_none(), "{resume_query}");
     assert_eq!(resume_query["symbolName"], resume.node["name"]);
     assert_eq!(
-        resume_query["lineHint"].as_u64(),
+        resume_query["line"].as_u64(),
         resume.node["selectionRange"]["start"]["line"]
             .as_u64()
             .map(|line| line + 1)
     );
-    let parents = row["payload"]["unexpandedParents"]
+    let parents = row["unexpandedParents"]
         .as_array()
         .expect("unexpanded parents");
     assert_eq!(parents.len(), walk.resumes.len());
@@ -1935,7 +2094,7 @@ fn workspace_symbols_are_flat_named_and_one_based() {
     assert_eq!(
         public_workspace_symbol(&symbol),
         serde_json::json!({
-            "name": "run",
+            "symbolName": "run",
             "kind": "function",
             "path": "/repo/a.ts",
             "displayRange": {"startLine": 10, "startCharacter": 3, "endLine": 13}
@@ -1948,15 +2107,18 @@ fn empty_diagnostics_carry_no_read_recovery_and_symbol_reads_are_matched() {
     let q = query(
         serde_json::json!({"operation": "diagnostic", "mainGoal": "test", "reasoning": "test", "path": "/repo/a.ts"}),
     );
-    let row = with_next(&q, items_payload(&q, "diagnostics", serde_json::json!([])));
-    assert_eq!(row["payload"]["category"], "noDiagnostics");
+    let row = with_next(
+        &q,
+        items_payload(&q, "diagnostics", serde_json::json!([]), TEST_BUDGET),
+    );
+    assert_eq!(row["category"], "noDiagnostics");
     assert!(row.get("next").is_none(), "{row}");
 
     let q = query(serde_json::json!({
         "operation": "definition", "mainGoal": "test", "reasoning": "test",
         "path": "/repo/a.ts",
         "symbolName": "run",
-        "lineHint": 3
+        "line": 3
     }));
     let row = failure(&q, "file:///repo/a.ts", "anchorUnresolved", "x", true);
     let read = &row["next"]["read"]["query"]["queries"][0];
@@ -2008,6 +2170,51 @@ fn engine_errors_map_to_typed_failures_not_one_unavailable_code() {
     let other = LspFailure::from(engine_error("boom"));
     assert_eq!((other.code, other.retryable), ("requestFailed", true));
     assert!(timeout.message.contains("timed out"));
+}
+
+/// A failure's tip names only fields the caller's query can carry: the
+/// schema's `workspaceRoot` is for `workspaceSymbol` without a path, so a
+/// tip for any other operation must not send the caller to narrow it.
+#[test]
+fn failure_tips_never_name_workspace_root_outside_workspace_symbol() {
+    use octocode_engine::error::Error;
+    let anchored = query(serde_json::json!({
+        "operation": "implementation", "path": "/repo/src/lib.ts",
+        "symbolName": "IDisposable", "line": 3
+    }));
+    let engine = [
+        Error::timeout("request timed out"),
+        Error::connection_closed("LSP connection closed"),
+        Error::resource_exhausted("server stopped for its memory"),
+    ];
+    let mut tips = engine
+        .iter()
+        .map(|error| LspFailure::from_engine(error).hint.to_owned())
+        .collect::<Vec<_>>();
+    tips.push(LspFailure::overdue("no answer".into()).hint.to_owned());
+    for code in [
+        "timeout",
+        "serverUnavailable",
+        "capabilityUnavailable",
+        "fileTooLarge",
+        "diagnosticsNotPublished",
+        "anchorUnresolved",
+    ] {
+        tips.extend(failure_hint(&anchored, code).map(str::to_owned));
+    }
+    for tip in tips {
+        assert!(!tip.contains("workspaceRoot"), "{tip}");
+    }
+}
+
+/// A timeout's tip leads somewhere runnable: the retry it names, and the
+/// tools that locate and read the candidates without the server.
+#[test]
+fn a_timeout_tip_names_a_retry_and_the_tools_that_work_without_the_server() {
+    let tip = LspFailure::from_engine(&octocode_engine::error::Error::timeout("slow")).hint;
+    for tool in ["Retry", "astSearch", "localSearch", "localFetch"] {
+        assert!(tip.contains(tool), "{tip}");
+    }
 }
 
 /// A definition reached through a symlink and through its target is
@@ -2065,14 +2272,14 @@ fn anchor_file_uri_is_stated_once_per_row() {
 #[test]
 fn page_two_query_hashes_like_page_one() {
     let first: LspSearchQuery = serde_json::from_value(serde_json::json!({
-        "path":"/tmp/a.rs","symbolName":"is_alive","lineHint":1,"operation":"references",
+        "path":"/tmp/a.rs","symbolName":"is_alive","line":1,"operation":"references",
         "pageSize":1,"mainGoal": "test", "reasoning":"r"
     }))
     .expect("page 1");
     // A continuation lists the same fields in another order.
     let second: LspSearchQuery = serde_json::from_value(serde_json::json!({
         "pageSize":1,"page":2,"snapshot":"lsp-v1:abc","operation":"references",
-        "lineHint":1,"mainGoal": "test", "reasoning":"r","symbolName":"is_alive","path":"/tmp/a.rs"
+        "line":1,"mainGoal": "test", "reasoning":"r","symbolName":"is_alive","path":"/tmp/a.rs"
     }))
     .expect("page 2");
     let items = [serde_json::json!({"uri":"file:///tmp/a.rs"})];
@@ -2091,7 +2298,7 @@ fn unresolved_symbol_anchor_reads_the_hinted_lines_and_suggests_near_names() {
         "operation": "references", "mainGoal": "test", "reasoning": "test",
         "path": "/repo/lib.rs",
         "symbolName": "is_invalid_input_codeX",
-        "lineHint": 12
+        "line": 12
     }));
     let source = (1..=20)
         .map(|line| match line {
@@ -2103,43 +2310,59 @@ fn unresolved_symbol_anchor_reads_the_hinted_lines_and_suggests_near_names() {
         .join("\n");
     let mut row = failure(&q, "file:///repo/lib.rs", "anchorUnresolved", "x", true);
     anchor_recovery(&mut row, &q, Some(&source));
-    let read = &row["next"]["read"];
-    assert_eq!(read["query"]["queries"][0]["path"], "/repo/lib.rs", "{row}");
+    // A resolved candidate is the recovery: no read beside it, and no
+    // static prose.
+    assert!(row["next"].get("read").is_none(), "{row}");
+    // The lead names the one near name; no sentence repeats it.
+    assert!(row["hints"].as_array().is_some_and(Vec::is_empty), "{row}");
+    // Without a candidate, the lines around the hint are read.
+    let mut blank = failure(&q, "file:///repo/lib.rs", "anchorUnresolved", "x", true);
+    let unrelated = (1..=20)
+        .map(|line| format!("// line {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    anchor_recovery(&mut blank, &q, Some(&unrelated));
+    // A `line` past the end reads the file's last lines.
+    let past = requery(&q, serde_json::json!({"line": 99_999_999}));
+    let mut beyond = failure(&past, "file:///repo/lib.rs", "anchorUnresolved", "x", true);
+    anchor_recovery(&mut beyond, &past, Some(&unrelated));
+    assert_eq!(
+        beyond["next"]["read"]["query"]["queries"][0]["ranges"],
+        serde_json::json!(["15-20"]),
+        "{beyond}"
+    );
+    let read = &blank["next"]["read"];
+    assert_eq!(
+        read["query"]["queries"][0]["path"], "/repo/lib.rs",
+        "{blank}"
+    );
     assert_eq!(
         read["query"]["queries"][0]["ranges"],
         serde_json::json!(["7-17"]),
-        "{row}"
+        "{blank}"
     );
     assert!(
         read["query"]["queries"][0].get("startLine").is_none(),
-        "{row}"
+        "{blank}"
     );
     assert!(
         read["query"]["queries"][0].get("matchString").is_none(),
-        "{row}"
+        "{blank}"
     );
+    assert!(blank["next"].get("findSimilar").is_none(), "{blank}");
     assert!(
-        !read["why"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("unavailable"),
-        "{row}"
+        blank
+            .get("hints")
+            .is_none_or(|hints| hints == &serde_json::json!([])),
+        "{blank}"
     );
-    let retry = &row["next"]["didYouMean"];
+    let retry = &row["next"]["findSimilar"];
     assert_eq!(retry["tool"], "lspSearch", "{row}");
     assert_eq!(
         retry["query"]["queries"][0]["symbolName"], "is_invalid_input_code",
         "{row}"
     );
-    assert_eq!(retry["query"]["queries"][0]["lineHint"], 12, "{row}");
-    assert!(
-        row["hints"]
-            .as_array()
-            .is_some_and(|hints| hints.iter().any(|h| h
-                .as_str()
-                .is_some_and(|h| h.contains("is_invalid_input_code")))),
-        "{row}"
-    );
+    assert_eq!(retry["query"]["queries"][0]["line"], 12, "{row}");
 }
 
 #[test]
@@ -2199,16 +2422,12 @@ async fn builtin_lib_callees_are_listed_not_counted() {
     let q = query(serde_json::json!({
         "operation": "callees", "mainGoal": "test", "reasoning": "test",
         "path": "file:///repo/a.ts",
-        "symbolName": "foo", "lineHint": 1
+        "symbolName": "foo", "line": 1
     }));
-    let mut row =
-        serde_json::json!({"status": "hasResults", "payload": {"kind": "callees", "items": []}});
+    let mut row = serde_json::json!({"status": "hasResults", "kind": "callees", "items": []});
     mark_truncation(&mut row, &q, &[(Expansion::OutgoingCalls, &walk)]);
     assert!(row.get("warnings").is_none(), "{row}");
-    assert_eq!(
-        row["payload"]["builtinLib"],
-        serde_json::json!(["toUpperCase", "map"])
-    );
+    assert_eq!(row["builtinLib"], serde_json::json!(["toUpperCase", "map"]));
     // A container (`detail`) qualifies the name.
     let mut node = node_at("toUpperCase", Some("file:///x/typescript/lib/lib.es5.d.ts"));
     node["detail"] = serde_json::json!("String");
@@ -2267,7 +2486,7 @@ fn long_declaration_content_is_capped_with_a_marker_naming_the_omitted_lines() {
     assert_eq!(lines[MAX_DECLARATION_CONTENT_LINES - 1], "line 59");
     assert_eq!(
         lines[MAX_DECLARATION_CONTENT_LINES],
-        "… 140 more lines omitted (source lines 486-625); next.readDeclaration reads them."
+        "… 140 more lines omitted (source lines 486-625)."
     );
     // The omitted lines are one executable read, each line once.
     assert_eq!(rest["tool"], "localFetch");
@@ -2300,10 +2519,8 @@ fn hover_range_is_published_as_a_one_based_display_range() {
     crate::contracts::validate_output(
         "lspSearch",
         &public_row(&serde_json::json!({
-            "type": "hover",
-            "uri": "file:///repo/a.ts",
             "lsp": {"serverAvailable": true, "provider": "hoverProvider"},
-            "payload": {"kind": "hover", "hover": hover}
+            "kind": "hover", "hover": hover
         })),
     )
     .expect("published hover satisfies the internal output contract");
@@ -2318,7 +2535,7 @@ fn call_edges_compact_to_per_file_call_rows() {
                   end: u64,
                   sites: &[(u64, u64)]| {
         serde_json::json!({
-            "from": {"name": name, "kind": kind, "uri": format!("file://{path}"),
+            "from": {"symbolName": name, "kind": kind, "uri": format!("file://{path}"),
                 "displayRange": {"startLine": start, "startCharacter": 7, "endLine": end}},
             "fromRanges": sites.iter().map(|(line, column)| serde_json::json!({"startLine": line, "startCharacter": column, "endLine": line})).collect::<Vec<_>>(),
             "level": 1
@@ -2349,16 +2566,16 @@ fn call_edges_compact_to_per_file_call_rows() {
     render["from"]["detail"] = serde_json::json!("pub fn render(\n    ctx: &Ctx,\n) -> Svg");
     let mut other = caller("/repo/svg.ts", "other", "function", 900, 950, &[(910, 3)]);
     other["from"]["detail"] = serde_json::json!("pub(crate) async fn other()");
-    let mut row = serde_json::json!({"payload": {"kind": "callers", "matches": [
+    let mut row = serde_json::json!({"kind": "callers", "matches": [
         render,
         method,
         recovered,
         other,
-    ]}});
+    ]});
     compact_calls(&mut row, &[], &repo_policy());
-    assert!(row["payload"].get("matches").is_none(), "{row}");
+    assert!(row.get("matches").is_none(), "{row}");
     assert_eq!(
-        row["payload"]["files"],
+        row["files"],
         serde_json::json!([
             {"path": "/repo/svg.ts", "matches": [
                 {"symbolName": "render", "kind": "function", "line": 97, "endLine": 848,
@@ -2379,10 +2596,20 @@ fn call_edges_compact_to_per_file_call_rows() {
     );
     crate::contracts::validate_output("lspSearch", &public_row(&row))
         .expect("compact callers satisfy the output contract");
+    // A module caller is top-level code named by its file; that name
+    // anchors no lspSearch call, so its row has no symbolName.
+    let mut module = serde_json::json!({"kind": "callers", "matches": [
+        caller("/repo/public.test.ts", "public.test.ts", "module", 1, 40, &[(12, 3)]),
+    ]});
+    compact_calls(&mut module, &[], &repo_policy());
+    let module_row = &module["files"][0]["matches"][0];
+    assert_eq!(module_row["kind"], "module", "{module}");
+    assert!(module_row.get("symbolName").is_none(), "{module}");
+    assert_eq!(module_row["sites"][0]["line"], 12, "{module}");
     // Deeper and outgoing edges use the same rows: `to` names a callee (its
     // call sites are in the caller), and `via <name>@<line>` names the parent
     // node an edge below level 1 connects to.
-    let via = |name: &str, path: &str, line: u64| serde_json::json!({"name": name, "uri": format!("file://{path}"), "line": line, "character": 7});
+    let via = |name: &str, path: &str, line: u64| serde_json::json!({"symbolName": name, "uri": format!("file://{path}"), "line": line, "character": 7});
     let mut level2 = caller("/repo/b.ts", "b", "function", 5, 9, &[(6, 3)]);
     level2["level"] = serde_json::json!(2);
     level2["via"] = via("a", "/repo/a.ts", 1);
@@ -2402,10 +2629,10 @@ fn call_edges_compact_to_per_file_call_rows() {
         ambiguous,
         callee
     ]);
-    let mut deep = serde_json::json!({"payload": {"kind": "callers", "matches": items.clone()}});
+    let mut deep = serde_json::json!({"kind": "callers", "matches": items.clone()});
     compact_calls(&mut deep, items.as_array().expect("items"), &repo_policy());
     assert_eq!(
-        deep["payload"]["files"],
+        deep["files"],
         serde_json::json!([
             {"path": "/repo/a.ts", "matches": [{"symbolName": "a", "kind": "function", "line": 1,
                 "endLine": 3, "sites": [{"line": 2, "column": 1}]}]},
@@ -2426,9 +2653,9 @@ fn call_edges_compact_to_per_file_call_rows() {
     crate::contracts::validate_output("lspSearch", &public_row(&deep))
         .expect("compact hierarchy rows satisfy the output contract");
     // Type-hierarchy items are nodes, not calls: they stay items.
-    let mut types = serde_json::json!({"payload": {"kind": "supertypes", "matches": [
+    let mut types = serde_json::json!({"kind": "supertypes", "matches": [
         {"name": "Base", "kind": "class", "uri": "file:///repo/a.ts", "level": 1}
-    ]}});
+    ]});
     let before = types.clone();
     compact_calls(&mut types, &[], &repo_policy());
     assert_eq!(types, before);
@@ -2439,10 +2666,10 @@ fn call_edges_compact_to_per_file_call_rows() {
 #[test]
 fn hover_rejects_walk_controls_with_the_operations_that_take_them() {
     for (field, value, applies) in [
-        ("depth", serde_json::json!(2), "callers"),
+        ("graphDepth", serde_json::json!(2), "callers"),
         ("groupByFile", serde_json::json!(true), "references"),
     ] {
-        let mut row = serde_json::json!({"operation":"hover","path":"/tmp/a.rs","symbolName":"main","lineHint":1});
+        let mut row = serde_json::json!({"operation":"hover","path":"/tmp/a.rs","symbolName":"main","line":1});
         row[field] = value;
         let error = crate::contracts::validate("lspSearch", serde_json::json!({"queries":[row]}))
             .expect_err("hover with a walk control");
@@ -2523,7 +2750,7 @@ fn relative_and_absolute_anchors_share_one_query_identity() {
 fn resolved_symbol_receipt_shows_only_a_moved_anchor() {
     let uri = "file:///repo/a.ts";
     let named = query(serde_json::json!({
-        "operation": "references", "path": uri, "symbolName": "foo", "lineHint": 3
+        "operation": "references", "path": uri, "symbolName": "foo", "line": 3
     }));
     let column = serde_json::json!({"uri": uri, "foundAtCharacter": 5, "orderHint": 1});
     let moved = serde_json::json!({"uri": uri, "foundAtCharacter": 5, "foundAtLine": 4, "lineDeviation": 1});
@@ -2566,12 +2793,12 @@ fn outgoing_call_sites_are_filed_under_the_caller() {
         items.iter().all(|item| item.get("via").is_none()),
         "level-1 edges name no parent: {items:?}"
     );
-    let mut row = serde_json::json!({"payload": {"kind": "callers", "matches": items}});
+    let mut row = serde_json::json!({"kind": "callers", "matches": items});
     compact_calls(&mut row, &[], &repo_policy());
     let helper_line = name_line("helper") + 1;
     let boot_line = name_line("boot") + 1;
     assert_eq!(
-        row["payload"]["files"],
+        row["files"],
         serde_json::json!([
             {"path": "/repo/index.ts", "matches": [{"symbolName": "boot", "kind": "function",
                 "line": boot_line, "endLine": boot_line + 3, "sites": [{"line": 4, "column": 5}]}]},
@@ -2585,28 +2812,21 @@ fn outgoing_call_sites_are_filed_under_the_caller() {
         .expect("caller-filed callee rows satisfy the output contract");
 }
 
-/// A declaration lead runs `callers` for a callable and `references`
-/// otherwise, and is withheld when no language server would start for the
-/// file.
+/// A lead probes the configured server file only when the path policy
+/// authorizes reading it.
 #[test]
-fn verify_query_picks_the_operation_and_needs_a_server() {
-    let dir = tempfile::tempdir().expect("fixture");
-    let file = dir.path().join("a.ts");
-    std::fs::write(&file, "export function a() {}\n").expect("file");
-    let path = file.to_string_lossy().into_owned();
-    let callers = verify_query(&path, "a", 1, Verify::for_kind("function")).expect("ts server");
+fn lead_discovery_drops_an_unauthorized_server_file() {
+    let paths = PathPolicy::new(crate::policy::path::PathPolicyConfig::default()).expect("policy");
+    let execution = LspExecutionConfig {
+        env: std::collections::BTreeMap::from([("OCTOCODE_LEAD_PROBE".to_owned(), "x".to_owned())]),
+        config_path: Some("/nonexistent/octocode-lsp.json".to_owned()),
+        ..Default::default()
+    };
+    let discovery = execution.lead_discovery(&paths);
+    assert_eq!(discovery.config_path, None);
     assert_eq!(
-        callers,
-        serde_json::json!({"path": path, "operation": "callers", "symbolName": "a", "lineHint": 1})
-    );
-    let references = verify_query(&path, "A", 3, Verify::for_kind("class")).expect("ts server");
-    assert_eq!(references["operation"], "references");
-    let unknown = dir.path().join("a.unknownext");
-    std::fs::write(&unknown, "a\n").expect("file");
-    assert_eq!(
-        verify_query(&unknown.to_string_lossy(), "a", 1, Verify::Callers),
-        None,
-        "no server for the extension: no lead"
+        discovery.env.get("OCTOCODE_LEAD_PROBE").map(String::as_str),
+        Some("x")
     );
 }
 
@@ -2615,14 +2835,14 @@ fn verify_query_picks_the_operation_and_needs_a_server() {
 /// windows, at most the batch limit of rows.
 #[test]
 fn site_rows_offer_one_read_of_the_sites_in_context() {
-    let mut row = serde_json::json!({"payload": {"kind": "callers", "files": [
+    let mut row = serde_json::json!({"kind": "callers", "files": [
         {"path": "/repo/a.ts", "matches": [{"symbolName": "render", "kind": "function", "line": 97,
             "endLine": 848, "sites": [{"line": 359, "column": 38}, {"line": 362, "column": 5}]}]},
         {"path": "/repo/b.ts", "matches": [
             {"symbolName": "load", "kind": "function", "line": 1, "endLine": 9, "sites": [{"line": 4, "column": 2}]},
             {"symbolName": "go", "kind": "function", "line": 30, "endLine": 50, "sites": [{"line": 40, "column": 1}]}
         ]}
-    ]}});
+    ]});
     attach_read_lead(&mut row);
     let read = &row["next"]["read"];
     assert_eq!(read["tool"], "localFetch", "{row}");
@@ -2637,7 +2857,7 @@ fn site_rows_offer_one_read_of_the_sites_in_context() {
     let files = (0..7)
         .map(|n| serde_json::json!({"path": format!("/repo/{n}.ts"), "matches": [{"line": n + 10, "column": 1, "value": "x"}]}))
         .collect::<Vec<_>>();
-    let mut wide = serde_json::json!({"payload": {"kind": "references", "files": files}});
+    let mut wide = serde_json::json!({"kind": "references", "files": files});
     attach_read_lead(&mut wide);
     assert_eq!(
         wide["next"]["read"]["query"]["queries"]
@@ -2645,7 +2865,7 @@ fn site_rows_offer_one_read_of_the_sites_in_context() {
             .map(Vec::len),
         Some(5)
     );
-    let mut empty = serde_json::json!({"status": "empty", "payload": {"kind": "empty"}});
+    let mut empty = serde_json::json!({"status": "empty", "kind": "empty"});
     attach_read_lead(&mut empty);
     assert!(empty.get("next").is_none());
 }
@@ -2655,19 +2875,19 @@ fn site_rows_offer_one_read_of_the_sites_in_context() {
 fn signatures_are_kept_only_for_callers_that_share_a_name() {
     let caller = |path: &str, detail: &str, start: u64, site: u64| {
         serde_json::json!({
-            "from": {"name": "render", "kind": "function", "detail": detail, "uri": format!("file://{path}"),
+            "from": {"symbolName": "render", "kind": "function", "detail": detail, "uri": format!("file://{path}"),
                 "displayRange": {"startLine": start, "startCharacter": 7, "endLine": start + 5}},
             "fromRanges": [{"startLine": site, "startCharacter": 3, "endLine": site}],
             "level": 1
         })
     };
-    let mut row = serde_json::json!({"payload": {"kind": "callers", "matches": [
+    let mut row = serde_json::json!({"kind": "callers", "matches": [
         caller("/repo/a.rs", "fn render(ctx: &Ctx) -> Svg", 10, 12),
         caller("/repo/b.rs", "fn render(page: &Page)", 20, 22)
-    ]}});
+    ]});
     compact_calls(&mut row, &[], &repo_policy());
     assert_eq!(
-        row["payload"]["files"],
+        row["files"],
         serde_json::json!([
             {"path": "/repo/a.rs", "matches": [{"symbolName": "render", "kind": "function", "line": 10,
                 "endLine": 15, "sites": [{"line": 12, "column": 3}], "detail": "fn render(ctx: &Ctx) -> Svg"}]},
@@ -2792,11 +3012,9 @@ fn declared_in_paths_are_workspace_relative() {
         public_edge(Expansion::OutgoingCalls, &edge(callee, 10), None),
         public_edge(Expansion::OutgoingCalls, &edge(outside, 11), None),
     ];
-    let mut row = serde_json::json!({"payload": {"kind": "callees", "matches": items}});
+    let mut row = serde_json::json!({"kind": "callees", "matches": items});
     compact_calls(&mut row, &[], &repo_policy());
-    let calls = row["payload"]["files"][0]["matches"]
-        .as_array()
-        .expect("calls");
+    let calls = row["files"][0]["matches"].as_array().expect("calls");
     let map_line = name_line("map") + 1;
     let ext_line = name_line("ext") + 1;
     assert_eq!(
@@ -2827,9 +3045,9 @@ fn file_level_partial_clears_when_text_files_match() {
         .expect("scan");
     let q = query(serde_json::json!({
         "operation": "references", "path": root.join("a.ts").to_string_lossy(),
-        "symbolName": "foo", "lineHint": 1
+        "symbolName": "foo", "line": 1
     }));
-    let row = || serde_json::json!({"payload": {"kind": "references"}});
+    let row = || serde_json::json!({"kind": "references"});
     // One file only the text scan sees: flagged, and the lead lists it.
     scope.answer([root.join("a.ts").to_string_lossy()]);
     let mut partial = row();
@@ -2844,11 +3062,8 @@ fn file_level_partial_clears_when_text_files_match() {
     // The importer cap is a window, not a terminal limit:
     // `next.nextImporterPage` verifies the unchecked candidates.
     assert!(partial.get("terminalLimit").is_none(), "{partial}");
-    assert_eq!(
-        partial["payload"]["coverage"]["textOnlyFiles"], 1,
-        "{partial}"
-    );
-    let lead = &partial["next"]["textSearch"]["query"]["queries"];
+    assert_eq!(partial["coverage"]["textOnlyFiles"], 1, "{partial}");
+    let lead = &partial["next"]["findText"]["query"]["queries"];
     assert_eq!(lead.as_array().map(Vec::len), Some(1), "{partial}");
     assert_eq!(
         lead[0]["path"],
@@ -2867,14 +3082,8 @@ fn file_level_partial_clears_when_text_files_match() {
     );
     assert!(agreed.get("isPartial").is_none(), "{agreed}");
     assert!(agreed.get("next").is_none(), "{agreed}");
-    assert_eq!(
-        agreed["payload"]["coverage"]["textOnlyFiles"], 0,
-        "{agreed}"
-    );
-    assert!(
-        agreed["payload"]["coverage"].get("reason").is_none(),
-        "{agreed}"
-    );
+    assert_eq!(agreed["coverage"]["textOnlyFiles"], 0, "{agreed}");
+    assert!(agreed["coverage"].get("reason").is_none(), "{agreed}");
 }
 
 #[test]
@@ -2891,21 +3100,21 @@ fn site_level_partial_survives_matching_counts() {
     scope.answer([root.join("a.py").to_string_lossy()]);
     let q = query(serde_json::json!({
         "operation": "references", "path": root.join("a.py").to_string_lossy(),
-        "symbolName": "get", "lineHint": 1
+        "symbolName": "get", "line": 1
     }));
-    let mut row = serde_json::json!({"payload": {"kind": "references"}});
+    let mut row = serde_json::json!({"kind": "references"});
     flag_partial(&mut row, &q, "dynamicDispatch", Some("dynamic"), &scope);
     assert_eq!(row["isPartial"], true, "{row}");
-    assert_eq!(row["payload"]["coverage"]["textOnlyFiles"], 0, "{row}");
+    assert_eq!(row["coverage"]["textOnlyFiles"], 0, "{row}");
     assert_eq!(
         row["partialReasons"],
         serde_json::json!(["dynamicDispatch"]),
         "{row}"
     );
-    assert!(row["payload"]["coverage"].get("reason").is_none(), "{row}");
+    assert!(row["coverage"].get("reason").is_none(), "{row}");
     // No file to list: the lead searches the whole scope.
     assert_eq!(
-        row["next"]["textSearch"]["query"]["queries"][0]["path"],
+        row["next"]["findText"]["query"]["queries"][0]["path"],
         root.to_string_lossy().as_ref()
     );
 }
@@ -2913,7 +3122,7 @@ fn site_level_partial_survives_matching_counts() {
 #[test]
 fn first_pages_of_incoming_walks_reuse_responses_keyed_by_scope_fingerprint() {
     let callers = query(serde_json::json!({
-        "operation": "callers", "path": "/repo/a.ts", "symbolName": "f", "lineHint": 1
+        "operation": "callers", "path": "/repo/a.ts", "symbolName": "f", "line": 1
     }));
     let reused = response_scope(&callers, "content".into(), Some("fp"));
     assert!(reused.reuse);
@@ -2929,7 +3138,7 @@ fn first_pages_of_incoming_walks_reuse_responses_keyed_by_scope_fingerprint() {
     assert_eq!(unbounded.generation, "content");
     // Hover always asks; its continuation keying is unchanged.
     let hover = query(serde_json::json!({
-        "operation": "hover", "path": "/repo/a.ts", "symbolName": "f", "lineHint": 1
+        "operation": "hover", "path": "/repo/a.ts", "symbolName": "f", "line": 1
     }));
     assert!(!response_scope(&hover, "content".into(), Some("fp")).reuse);
     // A continuation page still reuses.
@@ -2979,7 +3188,7 @@ fn workspace_symbol_accepts_directory_path() {
     assert_eq!(q.workspace_root(), Some(src.to_string_lossy().as_ref()));
     // Other operations still need a file.
     let mut refs = query(serde_json::json!({
-        "operation": "references", "symbolName": "f", "lineHint": 1,
+        "operation": "references", "symbolName": "f", "line": 1,
         "path": root.join("src").to_string_lossy()
     }));
     assert!(refs.resolve_paths(&paths).is_err());
@@ -3042,7 +3251,7 @@ async fn incoming_walk_answers_level_one_before_importer_roots_join() {
 fn unresolved_anchor_leads_to_real_symbol_lines() {
     let q = query(serde_json::json!({
         "operation": "callers", "path": "/repo/a.ts",
-        "symbolName": "render", "lineHint": 300
+        "symbolName": "render", "line": 300
     }));
     let source = (1..=400)
         .map(|line| match line {
@@ -3057,25 +3266,54 @@ fn unresolved_anchor_leads_to_real_symbol_lines() {
     anchor_recovery(&mut row, &q, Some(&source));
     let lead = |key: &str| row["next"][key]["query"]["queries"][0].clone();
     // The declaration line first, then the nearest uses.
-    assert_eq!(lead("didYouMean")["symbolName"], "render", "{row}");
-    assert_eq!(lead("didYouMean")["lineHint"], 312, "{row}");
-    assert_eq!(lead("didYouMean2")["lineHint"], 350, "{row}");
-    assert_eq!(lead("didYouMean3")["lineHint"], 40, "{row}");
-    assert!(row["next"].get("didYouMean4").is_none(), "{row}");
-    assert_eq!(row["next"]["didYouMean"]["confidence"], "high", "{row}");
+    assert_eq!(lead("findSimilar")["symbolName"], "render", "{row}");
+    assert_eq!(lead("findSimilar")["line"], 312, "{row}");
+    assert_eq!(lead("findSimilar2")["line"], 350, "{row}");
+    // Two leads (the hint cap); the third line, uncovered, is stated once.
+    assert!(row["next"].get("findSimilar3").is_none(), "{row}");
+    assert_eq!(row["next"]["findSimilar"]["confidence"], "high", "{row}");
+    let hints = row["hints"].to_string();
+    assert!(hints.contains("`render` appears on line 40."), "{row}");
+    assert!(!hints.contains("312") && !hints.contains("350"), "{row}");
+}
+
+/// Leads that cover every candidate line leave no sentence beside them.
+#[test]
+fn covered_anchor_candidates_add_no_text() {
+    let q = query(serde_json::json!({
+        "operation": "callers", "path": "/repo/a.ts",
+        "symbolName": "render", "line": 300
+    }));
+    let source = (1..=400)
+        .map(|line| match line {
+            312 => "export function render(scene: Scene) {".to_owned(),
+            _ => format!("// line {line}"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut row = failure(&q, "file:///repo/a.ts", "anchorUnresolved", "x", true);
+    let before = row["hints"].clone();
+    anchor_recovery(&mut row, &q, Some(&source));
+    assert_eq!(
+        row["next"]["findSimilar"]["query"]["queries"][0]["line"],
+        312
+    );
+    assert_eq!(row["hints"], before, "{row}");
 }
 
 #[test]
 fn builtin_lib_and_text_only_counts_satisfy_the_output_contract() {
-    let row = serde_json::json!({
+    let mut row = serde_json::json!({
         "lsp": {"serverAvailable": true},
-        "payload": {
+
             "kind": "callees",
             "files": [{"path": "/repo/a.ts", "matches": [{"symbolName": "f", "kind": "function", "line": 10, "endLine": 12, "sites": [{"line": 2, "column": 3}]}]}],
             "builtinLib": ["String.toUpperCase", "map"],
-            "coverage": {"scope": "languageServer", "exhaustive": false, "textOnlyFiles": 3, "reason": "importerScanCapped"}
-        }
+            "coverage": {"textOnlyFiles": 3, "reason": "importerScanCapped"}
+
     });
+    stamp_coverage(&mut row);
+    assert_eq!(row["coverage"]["state"], "partial", "{row}");
     crate::contracts::validate_output("lspSearch", &public_row(&row))
         .expect("builtinLib and textOnlyFiles are contract-valid");
 }
@@ -3124,4 +3362,69 @@ fn module_callers_name_the_innermost_enclosing_callback() {
     let mut function = edge;
     function.node["kind"] = serde_json::json!(12);
     assert_eq!(split_module_callers(&function, &symbols).len(), 1);
+}
+
+/// A language server killed for its memory is a final answer, not a retry:
+/// the text names no setting a caller cannot pass, and the row leaves a
+/// bounded fallback, an unverified whole-word text search of the symbol.
+#[test]
+fn a_memory_exhausted_server_is_final_and_leaves_an_unverified_text_lead() {
+    let error = octocode_engine::error::Error::resource_exhausted(
+        "language server exceeded memory cap (4200 MiB resident > 4096 MiB); it was killed.",
+    );
+    let failure = LspFailure::from_engine(&error);
+    assert_eq!(failure.code, "serverCrashed");
+    assert!(!failure.retryable, "{failure:?}");
+    for text in [failure.message.as_str(), failure.hint] {
+        assert!(!text.contains("maxMemoryMb"), "{text}");
+    }
+    assert!(failure.hint.contains("unverified"), "{}", failure.hint);
+
+    let query = query(serde_json::json!({
+        "operation": "callers", "path": "/repo/src/lib.rs", "symbolName": "greet", "line": 3
+    }));
+    let row = failure.row(&query, "file:///repo/src/lib.rs");
+    assert_eq!(row["errorCode"], "serverCrashed", "{row}");
+    assert_eq!(row["hints"], serde_json::json!([failure.hint]), "{row}");
+    assert!(row["next"].get("retry").is_none(), "{row}");
+    let text = &row["next"]["findText"];
+    assert_eq!(text["tool"], "localSearch", "{row}");
+    assert_eq!(text["confidence"], "low", "{row}");
+    let search = &text["query"]["queries"][0];
+    assert_eq!(search["matchString"], "greet", "{row}");
+    assert_eq!(search["wholeWord"], true, "{row}");
+    // callers also leads to references of the same anchor, which a server
+    // that cannot walk the call hierarchy can often still answer.
+    let references = &row["next"]["findReferences"];
+    assert_eq!(references["tool"], "lspSearch", "{row}");
+    let rerun = &references["query"]["queries"][0];
+    assert_eq!(rerun["operation"], "references", "{row}");
+    assert_eq!(rerun["symbolName"], "greet", "{row}");
+    assert_eq!(rerun["line"], 3, "{row}");
+    // Every lead the row hands out is valid input of its tool.
+    public_row(&row);
+}
+
+/// `callers` on a class lists the symbols that use it; the row says so.
+#[test]
+fn callers_of_a_class_are_labelled_as_uses() {
+    let class = serde_json::json!({"name": "Widget", "kind": 5});
+    let function = serde_json::json!({"name": "run", "kind": 12});
+    let note = class_uses_warning("callers", std::slice::from_ref(&class)).expect("class note");
+    assert!(
+        note.contains("uses") && note.contains("not calls"),
+        "{note}"
+    );
+    assert_eq!(
+        class_uses_warning("callers", std::slice::from_ref(&function)),
+        None
+    );
+    assert_eq!(
+        class_uses_warning("callees", std::slice::from_ref(&class)),
+        None
+    );
+    assert_eq!(
+        class_uses_warning("subtypes", std::slice::from_ref(&class)),
+        None
+    );
 }

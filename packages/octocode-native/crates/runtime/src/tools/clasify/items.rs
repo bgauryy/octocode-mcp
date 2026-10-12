@@ -343,14 +343,14 @@ mod tests {
 
         single_outline(json!([{"name":"a","line":1}]));
 
-        let refs = json!({"tool":"lspSearch","query":{"operation":"references","path":"/repo/a.rs","symbolName":"a","lineHint":1}});
-        let state = wrap(json!({"payload":{"matches":[
+        let refs = json!({"tool":"lspSearch","query":{"operation":"references","path":"/repo/a.rs","symbolName":"a","line":1}});
+        let state = wrap(json!({"matches":[
             {"displayRange":{"startLine":5},"path":"a.rs"},{"displayRange":{"startLine":9},"path":"b.rs"}
-        ]}}));
+        ]}));
         let items = split(&refs, &state).expect("refs split");
         assert_eq!(items.len(), 2);
         assert_eq!(items[1].path.as_deref(), Some("/repo/b.rs"));
-        let hover = wrap(json!({"payload":{"kind":"hover"}}));
+        let hover = wrap(json!({"kind":"hover"}));
         assert!(split(&refs, &hover).is_none());
     }
 
@@ -381,10 +381,10 @@ mod tests {
             items[0].read.as_ref().unwrap()["query"]["ranges"],
             json!(["1-68", "263-383"])
         );
-        let refs = json!({"tool":"lspSearch","query":{"operation":"references","path":"/repo/a.rs","symbolName":"a","lineHint":1}});
-        let state = wrap(json!({"payload":{"kind":"references","files":[
+        let refs = json!({"tool":"lspSearch","query":{"operation":"references","path":"/repo/a.rs","symbolName":"a","line":1}});
+        let state = wrap(json!({"kind":"references","files":[
             {"path":"b.rs","matches":[{"line":900,"value":"x"},{"line":10,"value":"y"},{"line":905,"value":"z"}]}
-        ]}}));
+        ]}));
         let items = split(&refs, &state).expect("refs split");
         assert_eq!(
             items[0].read.as_ref().unwrap()["query"]["ranges"],
@@ -397,7 +397,7 @@ mod tests {
         // Declaration rows (directory and single file), match rows, compact
         // references and direct callers all name their line.
         let symbols = json!({"tool":"astSearch","query":{"operation":"symbols","path":"/repo"}});
-        // Outline rows (P1): entry strings, and containers as objects.
+        // Outline rows: entry strings, and containers as objects.
         let grouped = wrap(json!({"files":[
             {"path":"x.rs","symbols":[
                 {"symbolName":"A","kind":"struct","line":10,"endLine":12,"exported":true,
@@ -425,25 +425,25 @@ mod tests {
         // Centered between lines 400 and 402.
         assert_eq!(first_line(&items[0]), 341);
 
-        let refs = json!({"tool":"lspSearch","query":{"operation":"references","path":"/repo/a.rs","symbolName":"a","lineHint":1}});
-        let state = wrap(json!({"payload":{"kind":"references","files":[
+        let refs = json!({"tool":"lspSearch","query":{"operation":"references","path":"/repo/a.rs","symbolName":"a","line":1}});
+        let state = wrap(json!({"kind":"references","files":[
             {"path":"a.rs","matches":[{"line":281,"column":20,"value":"fn try_read_output("}]},
             {"path":"b.rs","matches":[{"line":368,"column":14,"value":"harness.try_read_output(out, waker);"}]}
-        ]}}));
+        ]}));
         let items = split(&refs, &state).expect("compact refs split");
         assert_eq!(items.len(), 2);
         assert_eq!(items[1].path.as_deref(), Some("/repo/b.rs"));
         assert_eq!(first_line(&items[1]), 308);
         assert_eq!(
-            items[1].state["results"][0]["data"]["payload"]["files"]
+            items[1].state["results"][0]["data"]["files"]
                 .as_array()
                 .map(Vec::len),
             Some(1)
         );
-        let callers = json!({"tool":"lspSearch","query":{"operation":"callers","path":"/repo/a.rs","symbolName":"a","lineHint":1}});
-        let state = wrap(json!({"payload":{"kind":"callers","files":[
+        let callers = json!({"tool":"lspSearch","query":{"operation":"callers","path":"/repo/a.rs","symbolName":"a","line":1}});
+        let state = wrap(json!({"kind":"callers","files":[
             {"path":"c.ts","matches":[{"symbolName":"render","kind":"function","line":97,"endLine":848,"sites":[{"line":359,"column":38}]}]}
-        ]}}));
+        ]}));
         let items = split(&callers, &state).expect("callers split");
         assert_eq!(items[0].path.as_deref(), Some("/repo/c.ts"));
         assert_eq!(first_line(&items[0]), 299);
@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(items[0].read.as_ref().unwrap()["tool"], "ghStructure");
 
         let prs = json!({"tool":"ghSearchHistory","query":{"operation":"pullRequest","owner":"o","repo":"r"}});
-        let state = json!({"results":[{"data":{"pullRequests":[{"number":7,"title":"t"},{"number":8,"repository":"x/y"}]}}]});
+        let state = json!({"results":[{"data":{"pullRequests":[{"number":7,"title":"t"},{"number":8,"owner":"x","repo":"y"}]}}]});
         let items = split(&prs, &state).unwrap();
         assert_eq!(items[0].item.as_deref(), Some("o/r#7"));
         assert_eq!(
@@ -469,7 +469,7 @@ mod tests {
 
         let commits =
             json!({"tool":"ghSearchHistory","query":{"operation":"commit","owner":"o","repo":"r"}});
-        let state = json!({"results":[{"data":{"commits":[{"sha":"abcdef0123456789"},{"message":"no sha"}]}}]});
+        let state = json!({"results":[{"data":{"commits":[{"commitSha":"abcdef0123456789"},{"message":"no sha"}]}}]});
         let items = split(&commits, &state).unwrap();
         assert_eq!(items[0].item.as_deref(), Some("o/r@abcdef012345"));
         assert_eq!(
@@ -522,7 +522,7 @@ mod tests {
         let tree = json!({"tool":"structureSearch","query":{"operation":"tree"}});
         assert!(split(&tree, &wrap(json!({"entries":["a.rs"]}))).is_none());
         let gh_tree = json!({"tool":"ghStructure","query":{"owner":"o","repo":"r"}});
-        assert!(split(&gh_tree, &wrap(json!({"entries":[]}))).is_none());
+        assert!(split(&gh_tree, &wrap(json!({"files":[]}))).is_none());
     }
     #[test]
     fn compact_remote_lists_keep_every_candidate_and_its_read() {

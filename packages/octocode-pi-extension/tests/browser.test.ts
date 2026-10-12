@@ -8,6 +8,7 @@ import { theme } from './fake-pi.js';
 
 const launch = vi.hoisted(() => vi.fn());
 vi.mock('chrome-launcher', () => ({ launch }));
+vi.mock('node:dns/promises', () => ({ lookup: async () => [{ address: '93.184.216.34', family: 4 }] })); // public: no network
 
 const { BrowserTool, registerBrowserTool } = await import('../src/browser/tool.js');
 const { formatChanges, formatSnapshot } = await import('../src/browser/snapshot.js');
@@ -139,7 +140,7 @@ describe('browser tool over a shared Chrome', () => {
     await expect(run({ action: 'evaluate' })).rejects.toThrow(/needs expression/);
 
     const shot = await run({ action: 'screenshot' });
-    expect(shot.content).toEqual([{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/png' }]);
+    expect(shot.content).toMatchObject([{ type: 'image', data: 'iVBORw0KGgo=', mimeType: 'image/jpeg' }, { type: 'text' }]);
 
     expect(await text({ action: 'console' })).toBe('(no console messages)');
     const page = cdp.pages.get('tab-1')!;
@@ -592,6 +593,8 @@ describe('browser input, forms, waits and tabs', () => {
     expect(await text({ action: 'tabs' })).toContain('* [1]');
     await expect(run({ action: 'tab', index: 9 })).rejects.toThrow(/No tab 9\./);
     await text({ action: 'tab', url: 'https://example.com/other' });
-    expect(cdp.requests.some((request) => request.startsWith('PUT /json/new?https://example.com/other'))).toBe(true);
+    // The tab opens blank and is navigated once driven (its page guarded), so the guard sees its first load.
+    const opened = cdp.commands.find((command) => command.method === 'Page.navigate' && command.params['url'] === 'https://example.com/other');
+    expect(cdp.commands.filter((command) => command.target === opened?.target).map((command) => command.method)).toEqual(expect.arrayContaining(['Fetch.enable', 'Page.navigate']));
   }, 20_000);
 });

@@ -21,6 +21,13 @@ import { BashJobs, JOB_TYPE, MAX_TIMER_SECONDS, jobReport, shellEnv, shellSettin
  */
 
 const BASH_TIMEOUT_ENV = 'OCTOCODE_BASH_TIMEOUT';
+/** `structuredContent` of a background start; a foreground command returns Pi's own bash output. */
+const BACKGROUND_OUTPUT = Type.Object({
+  job: Type.String({ description: 'Job id, for `/octocode jobs kill <id>`' }),
+  pid: Type.Number({ description: 'Process group leader' }),
+  log: Type.String({ description: 'Log file with the combined output' }),
+});
+
 /** Longest wait for a foreground command, in seconds. */
 export const DEFAULT_BASH_TIMEOUT = 15 * 60;
 
@@ -101,7 +108,7 @@ export function registerBashTool(
       job.stopped ??= 'session end';
       report(job, { code: null, signal: null, seconds: Math.round((now - job.startedAt) / 1000) }, false);
     }
-    jobs.stopAll('session end');
+    await jobs.stopAll('session end');
     current = undefined;
   });
   pi.registerMessageRenderer(JOB_TYPE, (message, { expanded, outputPad }, theme) => renderJobMessage(contentText(message.content), expanded, theme, outputPad ?? 1));
@@ -121,7 +128,6 @@ export function registerBashTool(
     },
   });
 
-  const limitText = formatDuration(limit * 1000);
   pi.registerTool(timedTool({
     name: 'bash',
     label: 'bash',
@@ -129,15 +135,15 @@ export function registerBashTool(
       'Run shell commands in the working directory: builds, tests, git, formatters and installed CLIs. Foreground calls wait for completion and return combined output; large output keeps a tail and names the full log. ' +
       'Background calls return a job id, pid and log path; completion arrives automatically as a message. A timeout does not undo side effects: inspect the result before rerunning a command.',
     // Pi's own snippet ("ls, grep, find") would contradict the Octocode research routing.
-    promptSnippet: 'Run builds, tests, git and other shell commands (background jobs for long ones)',
+    promptSnippet: 'Run shell commands: builds, tests, git',
     ...(builtin.constrainedSampling !== undefined ? { constrainedSampling: builtin.constrainedSampling } : {}),
-    promptGuidelines: [
-      ...(builtin.promptGuidelines ?? []),
-      `Foreground bash stops after at most ${limitText}. Use \`background: true\` for work that needs longer; read its log when it affects your next step, and stop unneeded processes with \`kill -- -<pid>\`.`,
-    ],
+    // Codemode scripts receive `structuredContent` only from tools that declare its schema.
+    ...(builtin.outputSchema !== undefined ? { outputSchema: Type.Union([builtin.outputSchema, BACKGROUND_OUTPUT]) } : {}),
+    // Pi's own guidelines (the PI_* environment hint) add nothing for the model, so none are set: the deadline lives in `timeout`, the stop command in a background start's result.
+    promptGuidelines: [],
     parameters: Type.Object({
       command: Type.String({ description: 'Shell command to execute' }),
-      timeout: Type.Optional(Type.Number({ description: `Timeout in seconds; foreground at most ${limit} (the default). A background job has none unless given` })),
+      timeout: Type.Optional(Type.Number({ description: `Timeout in seconds; foreground at most ${limit}s (the default). A background job has none unless given` })),
       background: Type.Optional(Type.Boolean({ description: 'Start the command and return at once; its exit arrives later as a message. For servers, watchers and long builds' })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -153,7 +159,7 @@ export function registerBashTool(
           `Check: tail -n 40 ${shortPath(job.log, ctx.cwd)}`,
           `Stop: kill -- -${job.pid}`,
         ].join('\n');
-        return { content: [{ type: 'text' as const, text }], details: { job: job.id, pid: job.pid, log: job.log } as BashDetails };
+        return { content: [{ type: 'text' as const, text }], structuredContent: { job: job.id, pid: job.pid, log: job.log }, details: { job: job.id, pid: job.pid, log: job.log } as BashDetails };
       }
       const timeout = effectiveTimeout(params.timeout, limit);
       // Pi reports the spill file in its updates' details; a timeout or abort throws, and only the updates name it then.

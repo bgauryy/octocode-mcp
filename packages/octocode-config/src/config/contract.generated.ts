@@ -48,6 +48,10 @@ export interface NetworkConfigOptions {
   /** Maximum retries after a failed request. */
   maxRetries?: number;
 
+  /** Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter. */
+  /** Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply. */
+  maxRateLimitWait?: number;
+
   /** Allow private, loopback, or link-local artifact registries. */
   /** Security-sensitive SSRF escape hatch; opt in only for trusted enterprise registries. */
   allowPrivateRegistry?: boolean;
@@ -62,6 +66,9 @@ export interface LspConfigOptions {
 
   /** Directory for managed language-server installs; default <octocode home>/lsp. */
   cacheDir?: string;
+
+  /** Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable). */
+  maxMemoryMb?: string;
 
   /** Trust a project .octocode/lsp-servers.json. Security-sensitive: a trusted project config can launch server binaries. */
   trustProjectConfig?: boolean;
@@ -171,6 +178,7 @@ export interface RequiredMcpConfig {
 export interface RequiredNetworkConfig {
   timeout: number;
   maxRetries: number;
+  maxRateLimitWait: number;
   allowPrivateRegistry: boolean;
 }
 
@@ -178,6 +186,7 @@ export interface RequiredLspConfig {
   configPath: string | undefined;
   autoInstall: "prompt" | "off" | "auto";
   cacheDir: string | undefined;
+  maxMemoryMb: string | undefined;
   trustProjectConfig: boolean;
   prewarm: "targeted" | "all" | "off";
 }
@@ -464,6 +473,26 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "maximum": 10
   },
   {
+    "path": "network.maxRateLimitWait",
+    "section": "network",
+    "key": "maxRateLimitWait",
+    "type": "number",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Longest GitHub rate-limit wait in milliseconds (primary or secondary limit, code-search window) before a call fails with retryAfter.",
+    "notes": "Waiting does not count against network.timeout; the tool call's own deadline still bounds it. The default stays under the 60 s tool-call timeout some MCP hosts apply.",
+    "env": [
+      {
+        "name": "OCTOCODE_MAX_RATE_LIMIT_WAIT",
+        "priority": 0
+      }
+    ],
+    "defaultValue": 45000,
+    "minimum": 0,
+    "maximum": 300000
+  },
+  {
     "path": "network.allowPrivateRegistry",
     "section": "network",
     "key": "allowPrivateRegistry",
@@ -538,6 +567,25 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "env": [
       {
         "name": "OCTOCODE_LSP_CACHE_DIR",
+        "priority": 0,
+        "dotenv": "home",
+        "normalize": "trim"
+      }
+    ],
+    "defaultValue": null
+  },
+  {
+    "path": "lsp.maxMemoryMb",
+    "section": "lsp",
+    "key": "maxMemoryMb",
+    "type": "string",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Resident-memory cap per language server process tree, in MiB (a non-negative integer). Unset: 25% of host RAM, between 4096 and 8192. 0 disables the cap. A server over the cap is stopped and lspSearch reports serverCrashed (not retryable).",
+    "env": [
+      {
+        "name": "OCTOCODE_LSP_MAX_MEMORY_MB",
         "priority": 0,
         "dotenv": "home",
         "normalize": "trim"
@@ -837,13 +885,13 @@ export type RuntimeSurface = (typeof RUNTIME_SURFACES)[number];
 export const DEFAULT_RUNTIME_SURFACE: RuntimeSurface = RUNTIME_SURFACES[0];
 export const ENV_TOKEN_VARS = ["GH_TOKEN","GITHUB_TOKEN"] as const;
 export type EnvTokenVar = (typeof ENV_TOKEN_VARS)[number];
-export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_HOME","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
-export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_HOME","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
 /** Home-trusted switches a workspace may set only to this narrowing value. */
 export const WORKSPACE_NARROW_ONLY_ENV: Readonly<Record<string, string>> = {"OCTOCODE_STORAGE_MODE":"memory"};
-export const CONFIG_SOURCE_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","GITHUB_API_URL","OCTOCODE_GITHUB_GRAPHQL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","TOOLS_TO_RUN","DISABLE_TOOLS","OCTOCODE_DEFER_TOOLS","REQUEST_TIMEOUT","MAX_RETRIES","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_LSP_PREWARM","OCTOCODE_OUTPUT_FORMAT","OCTOCODE_REDACT_EMAILS","OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH","OCTOCODE_STORAGE_MODE","OCTOCODE_ENABLE_STATS","OCTOCODE_CACHE_TTL_MS","OCTOCODE_MAX_CACHE_SIZE","OCTOCODE_MAX_CLONES","OCTOCODE_CLASSIFICATION_TYPE","OCTOCODE_CLASSIFICATION_API","OCTOCODE_CLASSIFICATION_API_HOST","OCTOCODE_CLASSIFICATION_CONCURRENCY"] as const;
+export const CONFIG_SOURCE_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","GITHUB_API_URL","OCTOCODE_GITHUB_GRAPHQL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","TOOLS_TO_RUN","DISABLE_TOOLS","OCTOCODE_DEFER_TOOLS","REQUEST_TIMEOUT","MAX_RETRIES","OCTOCODE_MAX_RATE_LIMIT_WAIT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_LSP_PREWARM","OCTOCODE_OUTPUT_FORMAT","OCTOCODE_REDACT_EMAILS","OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH","OCTOCODE_STORAGE_MODE","OCTOCODE_ENABLE_STATS","OCTOCODE_CACHE_TTL_MS","OCTOCODE_MAX_CACHE_SIZE","OCTOCODE_MAX_CLONES","OCTOCODE_CLASSIFICATION_TYPE","OCTOCODE_CLASSIFICATION_API","OCTOCODE_CLASSIFICATION_API_HOST","OCTOCODE_CLASSIFICATION_CONCURRENCY"] as const;
 export type ConfigSourceEnvKey = (typeof CONFIG_SOURCE_ENV_KEYS)[number];
-export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "version": 1, "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "timeout": 30000, "maxRetries": 3, "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false, "pagination": { "defaultCharLength": 50000 } }, "storage": { "mode": "persistent", "stats": false, "cloneCache": { "ttl": 86400000, "maxSize": 2147483648, "maxClones": 50 } }, "classification": { "type": "jev", "maxConcurrency": 10 } };
+export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "version": 1, "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "timeout": 30000, "maxRetries": 3, "maxRateLimitWait": 45000, "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "maxMemoryMb": undefined, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false, "pagination": { "defaultCharLength": 50000 } }, "storage": { "mode": "persistent", "stats": false, "cloneCache": { "ttl": 86400000, "maxSize": 2147483648, "maxClones": 50 } }, "classification": { "type": "jev", "maxConcurrency": 10 } };
 export const DEFAULT_GITHUB_API_URL = "https://api.github.com" as const;
 export const DEFAULT_GITHUB_GRAPHQL_ENABLED = true as const;
 export const DEFAULT_LOCAL_ENABLED = true as const;
@@ -859,10 +907,14 @@ export const MAX_TIMEOUT = 300000;
 export const DEFAULT_NETWORK_MAX_RETRIES = 3 as const;
 export const MIN_RETRIES = 0;
 export const MAX_RETRIES = 10;
+export const DEFAULT_NETWORK_MAX_RATE_LIMIT_WAIT = 45000 as const;
+export const MIN_NETWORK_MAX_RATE_LIMIT_WAIT = 0;
+export const MAX_NETWORK_MAX_RATE_LIMIT_WAIT = 300000;
 export const DEFAULT_NETWORK_ALLOW_PRIVATE_REGISTRY = false as const;
 export const DEFAULT_LSP_CONFIG_PATH = null;
 export const DEFAULT_LSP_AUTO_INSTALL = "prompt" as const;
 export const DEFAULT_LSP_CACHE_DIR = null;
+export const DEFAULT_LSP_MAX_MEMORY_MB = null;
 export const DEFAULT_LSP_TRUST_PROJECT_CONFIG = false as const;
 export const DEFAULT_LSP_PREWARM = "targeted" as const;
 export const DEFAULT_OUTPUT_FORMAT = "yaml" as const;

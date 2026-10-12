@@ -5,10 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { atomicWriteFile, atomicWriteFileSync } from '../src/shared/atomic.js';
 import { Subcommands, wordCompletions } from '../src/shared/commands.js';
 import { envFlag, envInt } from '../src/shared/env.js';
-import { dirsToRepoRoot, findRepoRoot, sweepStaleOutputs, workspaceScratchDir } from '../src/shared/home.js';
+import { dirsToRepoRoot, repoKey, sweepStaleOutputs, workspaceScratchDir } from '../src/shared/home.js';
 import { findManifest, packageRoot } from '../src/shared/package.js';
 import { killTree, processAlive } from '../src/shared/process.js';
-import { capChars, capOutput, contentText, settleWithin } from '../src/shared/util.js';
+import { capChars, capOutput, clipText, contentText, cutText, settleWithin } from '../src/shared/util.js';
 import { fakeCtx, fakePi } from './fake-pi.js';
 import { tmp } from './helpers.js';
 
@@ -34,8 +34,8 @@ describe('capOutput', () => {
     const out = capOutput('é'.repeat(1_000), 101);
     expect(out.startsWith('é'.repeat(50))).toBe(true);
     expect(out).not.toContain('\uFFFD');
-    expect(out).toContain('[Output truncated: the first line alone is');
-    expect(capOutput('a\nb\nc', 1_000, 2)).toContain('[Output truncated: 2 of 3 lines');
+    expect(out).toContain('[Output trimmed: the first line alone is');
+    expect(capOutput('a\nb\nc', 1_000, 2)).toContain('[Output trimmed: 2 of 3 lines');
   });
 });
 
@@ -63,10 +63,18 @@ describe('paths', () => {
     const deep = path.join(root, 'a', 'b');
     fs.mkdirSync(deep, { recursive: true });
     expect(dirsToRepoRoot(deep)).toEqual([deep, path.join(root, 'a'), root]);
-    expect(findRepoRoot(deep)).toBe(root);
+    expect(repoKey(deep).root).toBe(fs.realpathSync(root));
     const loose = tmp('octocode-paths-');
     expect(dirsToRepoRoot(loose)).toEqual([loose]);
-    expect(findRepoRoot(loose)).toBe(loose);
+    expect(repoKey(loose).root).toBe(fs.realpathSync(loose));
+  });
+
+  it('resolves one checkout reached through a symlink to one repository', () => {
+    const root = tmp('octocode-paths-');
+    fs.mkdirSync(path.join(root, '.git'));
+    const link = path.join(tmp('octocode-paths-'), 'link');
+    fs.symlinkSync(root, link);
+    expect(repoKey(link)).toEqual(repoKey(root));
   });
 });
 
@@ -103,6 +111,21 @@ describe('util', () => {
     expect(capChars('abcdef', 3, 'read the file')).toBe('abc\n[… 3 more characters cut; read the file]');
   });
 
+  it('cuts text by bytes or characters, head or tail, never splitting a character', () => {
+    const emoji = 'a😀b'; // 😀: 4 UTF-8 bytes, a surrogate pair
+    expect(cutText(emoji, 3)).toBe('a');
+    expect(cutText(emoji, 5)).toBe('a😀');
+    expect(cutText(emoji, 3, { tail: true })).toBe('b');
+    expect(cutText('héllo', 2)).toBe('h');
+    expect(cutText(emoji, 2, { chars: true })).toBe('a');
+    expect(cutText(emoji, 2, { chars: true, tail: true })).toBe('b');
+    expect(cutText(emoji, 3, { chars: true, tail: true })).toBe('😀b');
+    expect(cutText('abc', 10)).toBe('abc');
+    expect(clipText('ab😀cd', 4)).toBe('ab…');
+    const cut = 4;
+    expect(capChars('ab😀cd', 3)).toBe(`ab\n[… ${cut} more characters cut]`);
+  });
+
   it('joins message content text', () => {
     const content = [{ type: 'text', text: 'a' }, { type: 'image', data: 'x' }, { type: 'text', text: 'b' }, 'junk'];
     expect(contentText(content)).toBe('a\nb');
@@ -123,6 +146,22 @@ describe('atomic writes', () => {
     atomicWriteFileSync(sync, 'x', { mode: 0o600 });
     expect(fs.statSync(sync).mode & 0o777).toBe(0o600);
     expect(fs.readdirSync(dir).sort()).toEqual(['secret.json', 'sync.json']);
+  });
+
+  it('keeps an existing file\'s mode and writes through a symlink, synchronously and asynchronously', async () => {
+    const dir = tmp('octocode-atomic-');
+    for (const [name, write] of [['sync', async (file: string) => atomicWriteFileSync(file, 'new')], ['async', (file: string) => atomicWriteFile(file, 'new')]] as const) {
+      const real = path.join(dir, `${name}.sh`);
+      const link = path.join(dir, `${name}-link.sh`);
+      fs.writeFileSync(real, 'old');
+      fs.chmodSync(real, 0o750);
+      fs.symlinkSync(real, link);
+      await write(link);
+      expect(fs.readFileSync(real, 'utf8'), name).toBe('new');
+      expect(fs.statSync(real).mode & 0o777, name).toBe(0o750);
+      expect(fs.lstatSync(link).isSymbolicLink(), name).toBe(true);
+    }
+    expect(fs.readdirSync(dir).sort()).toEqual(['async-link.sh', 'async.sh', 'sync-link.sh', 'sync.sh']);
   });
 
   it('removes the temp file when the write fails', () => {
@@ -149,6 +188,23 @@ describe('process', () => {
     await exited;
     expect(processAlive(child.pid)).toBe(false);
     killTree(undefined);
+  });
+
+  it.skipIf(process.platform === 'win32')('stops a tree once and sends no SIGKILL after it closed', async () => {
+    const child = spawn('sh', ['-c', 'sleep 30'], { detached: true, stdio: 'ignore' });
+    const closed = new Promise((resolve) => child.on('close', resolve));
+    const kill = vi.spyOn(process, 'kill');
+    try {
+      killTree(child.pid, 150);
+      killTree(child.pid, 150);
+      await closed;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      const signals = kill.mock.calls.filter(([pid]) => pid === -child.pid!).map(([, signal]) => signal);
+      expect(signals.filter((signal) => signal === 'SIGTERM')).toHaveLength(1);
+      expect(signals).not.toContain('SIGKILL');
+    } finally {
+      kill.mockRestore();
+    }
   });
 });
 

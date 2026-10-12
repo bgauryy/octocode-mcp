@@ -14,27 +14,6 @@ pub(super) fn validate_code_scope(query: &GhSearchCodeQuery) -> Result<(), Provi
     )
 }
 
-pub(super) fn code_has_narrowing_selector(query: &GhSearchCodeQuery) -> bool {
-    let GhSearchCodeQuery {
-        keywords,
-        path,
-        extensions,
-        filename,
-        language,
-        ..
-    } = query;
-    keywords.iter().any(|value| !value.trim().is_empty())
-        || extensions.iter().any(|value| !value.trim().is_empty())
-        || [
-            path.as_deref().map(String::as_str),
-            filename.as_deref(),
-            language.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .any(|value| !value.trim().is_empty())
-}
-
 /// The search query; `extension` narrows a multi-extension query to one of
 /// them (GitHub ANDs repeated `extension:` qualifiers).
 pub(super) fn code(query: &GhSearchCodeQuery, extension: Option<&str>) -> String {
@@ -42,11 +21,10 @@ pub(super) fn code(query: &GhSearchCodeQuery, extension: Option<&str>) -> String
         keywords,
         owner,
         repo,
-        language,
         path,
         extensions,
         filename,
-        match_,
+        match_in,
         ..
     } = query;
     let mut parts: Vec<String> = keywords
@@ -76,13 +54,12 @@ pub(super) fn code(query: &GhSearchCodeQuery, extension: Option<&str>) -> String
             parts.push(format!("path:{path}"));
         }
     }
-    push(&mut parts, "language", language.as_deref());
     if let Some(repo) = repo {
         push(&mut parts, "repo", Some(&format!("{owner}/{repo}")));
     } else {
         push(&mut parts, "user", Some(owner));
     }
-    push(&mut parts, "in", Some(&match_.to_string()));
+    push(&mut parts, "in", Some(&match_in.to_string()));
     parts.join(" ").trim().into()
 }
 
@@ -107,11 +84,11 @@ mod tests {
     fn qualifier_values_with_whitespace_are_quoted() {
         let q = code(
             &parse(
-                serde_json::json!({"mainGoal": "test", "reasoning":"test","owner":"o","keywords":["x"],"language":"Common Lisp","filename":"my file.txt"}),
+                serde_json::json!({"mainGoal": "test", "reasoning":"test","owner":"o","keywords":["x"],"path":"my dir/src","filename":"my file.txt"}),
             ),
             None,
         );
-        assert!(q.contains("language:\"Common Lisp\""), "{q}");
+        assert!(q.contains("path:\"my dir/src\""), "{q}");
         assert!(q.contains("filename:\"my file.txt\""), "{q}");
     }
 
@@ -163,28 +140,29 @@ mod tests {
         );
     }
 
+    /// The contract rejects a search with nothing to bound it (owner or
+    /// owner/repo alone, blank keywords); native trusts admission.
     #[test]
-    fn rejects_empty_and_unreachable_searches() {
+    fn the_contract_rejects_empty_and_unreachable_searches() {
+        let admitted = |row: &str| {
+            let row: serde_json::Value = serde_json::from_str(row).expect("row");
+            crate::contracts::validate("ghSearchCode", serde_json::json!({"queries":[row]})).is_ok()
+        };
         for raw in [
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o"}"#,
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","keywords":[]}"#,
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","keywords":["   "]}"#,
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","repo":"r"}"#,
+            r#"{"owner":"o"}"#,
+            r#"{"owner":"o","keywords":[]}"#,
+            r#"{"owner":"o","keywords":["   "]}"#,
+            r#"{"owner":"o","repo":"r"}"#,
         ] {
-            let query: GhSearchCodeQuery =
-                serde_json::from_str(raw).expect("code search fixture should deserialize");
-            assert!(!code_has_narrowing_selector(&query), "{raw}");
+            assert!(!admitted(raw), "{raw}");
         }
         for raw in [
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","keywords":["needle"]}"#,
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","path":"src"}"#,
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","extensions":["rs"]}"#,
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","filename":"Cargo.toml"}"#,
-            r#"{"mainGoal":"test","reasoning":"test","owner":"o","language":"rust"}"#,
+            r#"{"owner":"o","keywords":["needle"]}"#,
+            r#"{"owner":"o","path":"src"}"#,
+            r#"{"owner":"o","extensions":["rs"]}"#,
+            r#"{"owner":"o","filename":"Cargo.toml"}"#,
         ] {
-            let query: GhSearchCodeQuery =
-                serde_json::from_str(raw).expect("bounded code search fixture should deserialize");
-            assert!(code_has_narrowing_selector(&query), "{raw}");
+            assert!(admitted(raw), "{raw}");
         }
     }
 }

@@ -4,6 +4,7 @@ use super::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
     ArtifactType,
 };
+#[cfg(test)]
 use url::Url;
 
 /// Compile-once XML/coordinate patterns. `maven-metadata.xml` and POM parsing
@@ -58,7 +59,7 @@ pub(crate) async fn maven(
         return exact(package_name, query.version(), client).await;
     }
     let offset = state.offset.unwrap_or(0);
-    let size = query.page_size().unwrap_or(10);
+    let size = query.page_size();
     let url = endpoint(
         "https://central.sonatype.com/solrsearch/select",
         &[
@@ -78,7 +79,7 @@ pub(crate) async fn maven(
             .ok_or_else(|| super::util::invalid(ArtifactType::Maven))?,
         ArtifactType::Maven,
     )?;
-    let artifacts = rows(
+    let mut artifacts = rows(
         data.get("docs")
             .ok_or_else(|| super::util::invalid(ArtifactType::Maven))?,
         ArtifactType::Maven,
@@ -101,6 +102,7 @@ pub(crate) async fn maven(
         Ok(artifact)
     })
     .collect::<Result<Vec<_>, ArtifactError>>()?;
+    discovery_repositories(&mut artifacts, client).await;
     let count = total(data.get("numFound"));
     let more = count
         .map(|count| offset.saturating_add(artifacts.len() as u64) < count)
@@ -146,11 +148,7 @@ async fn exact(
     }
     let group = parts[0];
     let name = parts[1];
-    let group_path = group
-        .split('.')
-        .map(super::util::encode_component)
-        .collect::<Vec<_>>()
-        .join("/");
+    let group_path = group_path(group);
     let url = parse_url(&format!(
         "https://repo.maven.apache.org/maven2/{group_path}/{}/maven-metadata.xml",
         super::util::encode_component(name)
@@ -208,6 +206,7 @@ async fn exact(
         if let Some(repository) = artifact.repository.as_deref() {
             artifact.source_ref = super::release_ref::github_release_tag(
                 repository,
+                name,
                 release_version(&version),
                 client,
             )
@@ -216,6 +215,35 @@ async fn exact(
         }
     }
     Ok(ArtifactProviderPage::single(artifact))
+}
+
+/// A groupId as its repository directory (`com.google.guava` →
+/// `com/google/guava`).
+fn group_path(group: &str) -> String {
+    group
+        .split('.')
+        .map(super::util::encode_component)
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// Central search names no source repository, so each discovery row reads
+/// its listed version's POM (concurrently, like an exact lookup does): a
+/// row on GitHub then carries the `owner`/`repo` every GitHub tool takes.
+/// A POM that is missing or names no SCM leaves the row without one.
+async fn discovery_repositories(artifacts: &mut [ArtifactItem], client: &RegistryClient<'_>) {
+    let found = futures_util::future::join_all(artifacts.iter().map(|artifact| async move {
+        let (group, name) = artifact.name.split_once(':')?;
+        let version = artifact.version.as_deref()?;
+        repository_from_pom(&group_path(group), name, version, client)
+            .await
+            .ok()
+            .flatten()
+    }))
+    .await;
+    for (artifact, repository) in artifacts.iter_mut().zip(found) {
+        artifact.repository = repository;
+    }
 }
 
 /// The release a Maven version names without its variant classifier:
@@ -263,11 +291,7 @@ async fn repository_from_pom(
         .and_then(|block| first_url(block.as_str()));
     Ok(scm_url
         .or_else(|| first_url(&clean))
-        .and_then(|value| super::npm::normalize_repository(&value))
-        // Drop scm:/git-protocol leftovers the normalizer cannot canonicalize.
-        .filter(|value| {
-            Url::parse(value).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
-        }))
+        .and_then(|value| super::util::canonical_repository(&value)))
 }
 
 #[cfg(test)]
@@ -358,7 +382,7 @@ mod tests {
         }
     }
 
-    /// QA2: Maven Central's Solr search answers HTTP 400 to whitespace-
+    /// Maven Central's Solr search answers HTTP 400 to whitespace-
     /// separated terms ("markdown parser"), which surfaced as an
     /// `invalidInput` row for a schema-valid query. Terms are ANDed (the
     /// documented keyword semantics); query-syntax characters split words.
@@ -483,7 +507,7 @@ mod tests {
         }
     }
 
-    /// AR4: an exact Maven version reads that version's POM and pins the
+    /// An exact Maven version reads that version's POM and pins the
     /// upstream tag without the `-jre` classifier; an unlisted version is
     /// `versionNotFound` with the nearest published versions.
     #[tokio::test]

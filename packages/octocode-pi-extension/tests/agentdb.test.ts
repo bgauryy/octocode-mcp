@@ -2,10 +2,10 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AgentDbError, closeSharedAgentDb, openAgentDb, repoKey, sharedAgentDb } from '../src/agentdb/db.js';
+import { AgentDbError, closeSharedAgentDb, openAgentDb, sharedAgentDb } from '../src/agentdb/db.js';
+import { agentDbPath, repoKey, sessionDir, sessionOutputDir, setCurrentSession } from '../src/shared/home.js';
 import { redactSecrets, secretProblem } from '../src/shared/sanitize.js';
 import { AGENT_APPLICATION_ID, AGENT_SCHEMA_VERSION, ensureSchema } from '../src/agentdb/schema.js';
-import { agentDbPath, sessionDir, sessionOutputDir, setCurrentSession } from '../src/shared/home.js';
 import { loadSqlite } from '../src/shared/util.js';
 import { tmp } from './helpers.js';
 
@@ -170,6 +170,38 @@ describe('openAgentDb', () => {
       expect(agent.db.prepare('SELECT key FROM meta').all()).toEqual([{ key: 'c' }]);
     } finally {
       agent.close();
+    }
+  });
+});
+
+describe('transactions and schema upgrades', () => {
+  it('rethrows the original error when SQLite already rolled the transaction back', () => {
+    const agent = openAgentDb(path.join(tmp(), 'rb.db'));
+    try {
+      // `ROLLBACK` in the callback stands for SQLite's own automatic rollback: ours then fails with "no transaction".
+      expect(() => agent.transaction(() => {
+        agent.db.exec('ROLLBACK');
+        throw new Error('the real failure');
+      })).toThrow('the real failure');
+      // The connection stays usable.
+      agent.transaction(() => agent.db.prepare('INSERT INTO meta (key, value) VALUES (?, ?)').run('k', 'v'));
+      expect(agent.db.prepare('SELECT key FROM meta').all()).toEqual([{ key: 'k' }]);
+    } finally {
+      agent.close();
+    }
+  });
+
+  it('adds the session start-time column to a version 1 database and keeps its rows', () => {
+    const file = path.join(tmp(), 'v1.db');
+    const first = openAgentDb(file);
+    first.db.exec("INSERT INTO sessions (id, pid) VALUES ('old', 42); ALTER TABLE sessions DROP COLUMN pid_started; PRAGMA user_version=1;");
+    first.close();
+    const again = openAgentDb(file);
+    try {
+      expect(again.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: AGENT_SCHEMA_VERSION });
+      expect(again.db.prepare("SELECT id, pid, pid_started FROM sessions WHERE id = 'old'").get()).toEqual({ id: 'old', pid: 42, pid_started: null });
+    } finally {
+      again.close();
     }
   });
 });

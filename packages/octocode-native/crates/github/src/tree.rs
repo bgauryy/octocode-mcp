@@ -11,6 +11,24 @@ pub struct ContentsEntry {
     pub size: Option<u64>,
     #[serde(default)]
     pub sha: Option<String>,
+    /// The entry's git object URL: a submodule, which a listing types `file`
+    /// with size 0, points at the other repository's tree.
+    #[serde(default)]
+    pub git_url: Option<String>,
+}
+
+impl ContentsEntry {
+    /// A submodule: the listing types it `file`, but its object is a tree of
+    /// another repository.
+    #[must_use]
+    pub fn is_submodule(&self) -> bool {
+        self.kind == "submodule"
+            || (self.kind == "file"
+                && self
+                    .git_url
+                    .as_deref()
+                    .is_some_and(|url| url.contains("/git/trees/")))
+    }
 }
 
 #[derive(Clone, Debug)]

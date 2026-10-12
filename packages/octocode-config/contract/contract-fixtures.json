@@ -1,19 +1,19 @@
 [
   {
-    "id": "clasify.curated-1",
+    "id": "clasify.example-clasify",
     "tool": "clasify",
     "input": {
       "queries": [
         {
           "id": "docs-location",
           "mainGoal": "Files that state the retry condition and when retry must stop.",
-          "reasoning": "Find the deciding source span before the host reads this documentation file.",
+          "reasoning": "Find the deciding source span before reading this documentation file.",
           "resources": [
             {
               "id": "guide",
               "tool": "localFetch",
               "query": {
-                "path": "/ABS/repo/docs/guide.md"
+                "path": "docs/guide.md"
               },
               "prefilter": [
                 "retry"
@@ -38,14 +38,14 @@
       "queries": [
         {
           "id": "docs-location",
-          "reasoning": "Find the deciding source span before the host reads this documentation file.",
+          "reasoning": "Find the deciding source span before reading this documentation file.",
           "mainGoal": "Files that state the retry condition and when retry must stop.",
           "resources": [
             {
               "id": "guide",
               "tool": "localFetch",
               "query": {
-                "path": "/ABS/repo/docs/guide.md"
+                "path": "docs/guide.md"
               },
               "maxChars": 1000000,
               "prefilter": [
@@ -68,497 +68,7 @@
     }
   },
   {
-    "id": "clasify.curated-2",
-    "tool": "clasify",
-    "input": {
-      "queries": [
-        {
-          "id": "interceptor-candidate",
-          "mainGoal": "Files that decide request interceptor order.",
-          "reasoning": "The path is a candidate but no snippet establishes whether it contributes ordering evidence; the verdict changes what to read.",
-          "resources": [
-            {
-              "id": "axios-core",
-              "tool": "ghGetFileContent",
-              "query": {
-                "owner": "axios",
-                "repo": "axios",
-                "path": "lib/core/Axios.js",
-                "fullContent": true
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "relevant",
-              "ask": "What is the request interceptor execution order?"
-            },
-            {
-              "type": "sufficient",
-              "ask": "What is the request interceptor execution order?"
-            }
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "id": "interceptor-candidate",
-          "reasoning": "The path is a candidate but no snippet establishes whether it contributes ordering evidence; the verdict changes what to read.",
-          "mainGoal": "Files that decide request interceptor order.",
-          "resources": [
-            {
-              "id": "axios-core",
-              "tool": "ghGetFileContent",
-              "query": {
-                "owner": "axios",
-                "repo": "axios",
-                "path": "lib/core/Axios.js",
-                "fullContent": true
-              },
-              "maxChars": 1000000
-            }
-          ],
-          "questions": [
-            {
-              "type": "relevant",
-              "ask": "What is the request interceptor execution order?"
-            },
-            {
-              "type": "sufficient",
-              "ask": "What is the request interceptor execution order?"
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "clasify.curated-3",
-    "tool": "clasify",
-    "input": {
-      "queries": [
-        {
-          "id": "local-candidates",
-          "mainGoal": "Files that implement handler registration.",
-          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
-          "resources": [
-            {
-              "id": "search-results",
-              "tool": "localSearch",
-              "query": {
-                "path": "/ABS/repo/src",
-                "matchString": "registerHandler",
-                "pageSize": 5
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "Where is handler registration implemented?"
-            },
-            {
-              "type": "yesno",
-              "ask": "Is this chunk test code or a test fixture rather than the production implementation?"
-            }
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "id": "local-candidates",
-          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
-          "mainGoal": "Files that implement handler registration.",
-          "resources": [
-            {
-              "id": "search-results",
-              "tool": "localSearch",
-              "query": {
-                "path": "/ABS/repo/src",
-                "matchString": "registerHandler",
-                "pageSize": 5
-              },
-              "maxChars": 1000000
-            }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "Where is handler registration implemented?"
-            },
-            {
-              "type": "yesno",
-              "ask": "Is this chunk test code or a test fixture rather than the production implementation?"
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "clasify.curated-4",
-    "tool": "clasify",
-    "input": {
-      "queries": [
-        {
-          "id": "draft-evidence-review",
-          "mainGoal": "Evidence that decides whether the guarantee holds.",
-          "reasoning": "Interpret whether the held evidence supports the guarantee claim; the answer determines whether to keep or narrow the wording.",
-          "resources": [
-            {
-              "id": "draft",
-              "value": {
-                "draft": {
-                  "claim": "An abort signal guarantees that a queued task will never start."
-                },
-                "evidence": [
-                  "API section: an abort signal can remove a task while it is waiting.",
-                  "API section: a task that has already started continues after abort."
-                ],
-                "constraint": "The claim uses guarantees and includes the boundary between waiting and starting."
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "choice",
-              "ask": "Classify how the supplied evidence bears on this exact claim.",
-              "labels": {
-                "supported": "Evidence covers the complete claim.",
-                "contradicted": "Evidence conflicts with the claim.",
-                "conflicting": "Evidence supports and conflicts with the claim.",
-                "insufficient": "A deciding branch or check is missing."
-              }
-            }
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "id": "draft-evidence-review",
-          "reasoning": "Interpret whether the held evidence supports the guarantee claim; the answer determines whether to keep or narrow the wording.",
-          "mainGoal": "Evidence that decides whether the guarantee holds.",
-          "resources": [
-            {
-              "id": "draft",
-              "value": {
-                "draft": {
-                  "claim": "An abort signal guarantees that a queued task will never start."
-                },
-                "evidence": [
-                  "API section: an abort signal can remove a task while it is waiting.",
-                  "API section: a task that has already started continues after abort."
-                ],
-                "constraint": "The claim uses guarantees and includes the boundary between waiting and starting."
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "choice",
-              "ask": "Classify how the supplied evidence bears on this exact claim.",
-              "labels": {
-                "supported": "Evidence covers the complete claim.",
-                "contradicted": "Evidence conflicts with the claim.",
-                "conflicting": "Evidence supports and conflicts with the claim.",
-                "insufficient": "A deciding branch or check is missing."
-              }
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "clasify.curated-5",
-    "tool": "clasify",
-    "input": {
-      "queries": [
-        {
-          "id": "docs-location",
-          "mainGoal": "Files that state the retry condition and when retry must stop.",
-          "reasoning": "Find the deciding source span before the host reads this documentation file.",
-          "resources": [
-            {
-              "id": "guide",
-              "tool": "localFetch",
-              "query": {
-                "path": "/ABS/repo/docs/guide.md"
-              },
-              "prefilter": [
-                "retry"
-              ]
-            }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "What condition requires a retry?"
-            },
-            {
-              "type": "locate",
-              "ask": "When must retry stop?"
-            }
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "id": "docs-location",
-          "reasoning": "Find the deciding source span before the host reads this documentation file.",
-          "mainGoal": "Files that state the retry condition and when retry must stop.",
-          "resources": [
-            {
-              "id": "guide",
-              "tool": "localFetch",
-              "query": {
-                "path": "/ABS/repo/docs/guide.md"
-              },
-              "maxChars": 1000000,
-              "prefilter": [
-                "retry"
-              ]
-            }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "What condition requires a retry?"
-            },
-            {
-              "type": "locate",
-              "ask": "When must retry stop?"
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "clasify.curated-6",
-    "tool": "clasify",
-    "input": {
-      "queries": [
-        {
-          "id": "interceptor-candidate",
-          "mainGoal": "Files that decide request interceptor order.",
-          "reasoning": "The path is a candidate but no snippet establishes whether it contributes ordering evidence; the verdict changes what to read.",
-          "resources": [
-            {
-              "id": "axios-core",
-              "tool": "ghGetFileContent",
-              "query": {
-                "owner": "axios",
-                "repo": "axios",
-                "path": "lib/core/Axios.js",
-                "fullContent": true
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "relevant",
-              "ask": "What is the request interceptor execution order?"
-            },
-            {
-              "type": "sufficient",
-              "ask": "What is the request interceptor execution order?"
-            }
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "id": "interceptor-candidate",
-          "reasoning": "The path is a candidate but no snippet establishes whether it contributes ordering evidence; the verdict changes what to read.",
-          "mainGoal": "Files that decide request interceptor order.",
-          "resources": [
-            {
-              "id": "axios-core",
-              "tool": "ghGetFileContent",
-              "query": {
-                "owner": "axios",
-                "repo": "axios",
-                "path": "lib/core/Axios.js",
-                "fullContent": true
-              },
-              "maxChars": 1000000
-            }
-          ],
-          "questions": [
-            {
-              "type": "relevant",
-              "ask": "What is the request interceptor execution order?"
-            },
-            {
-              "type": "sufficient",
-              "ask": "What is the request interceptor execution order?"
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "clasify.curated-7",
-    "tool": "clasify",
-    "input": {
-      "queries": [
-        {
-          "id": "local-candidates",
-          "mainGoal": "Files that implement handler registration.",
-          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
-          "resources": [
-            {
-              "id": "search-results",
-              "tool": "localSearch",
-              "query": {
-                "path": "/ABS/repo/src",
-                "matchString": "registerHandler",
-                "pageSize": 5
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "Where is handler registration implemented?"
-            },
-            {
-              "type": "yesno",
-              "ask": "Is this chunk test code or a test fixture rather than the production implementation?"
-            }
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "id": "local-candidates",
-          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
-          "mainGoal": "Files that implement handler registration.",
-          "resources": [
-            {
-              "id": "search-results",
-              "tool": "localSearch",
-              "query": {
-                "path": "/ABS/repo/src",
-                "matchString": "registerHandler",
-                "pageSize": 5
-              },
-              "maxChars": 1000000
-            }
-          ],
-          "questions": [
-            {
-              "type": "locate",
-              "ask": "Where is handler registration implemented?"
-            },
-            {
-              "type": "yesno",
-              "ask": "Is this chunk test code or a test fixture rather than the production implementation?"
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "clasify.curated-8",
-    "tool": "clasify",
-    "input": {
-      "queries": [
-        {
-          "id": "draft-evidence-review",
-          "mainGoal": "Evidence that decides whether the guarantee holds.",
-          "reasoning": "Interpret whether the held evidence supports the guarantee claim; the answer determines whether to keep or narrow the wording.",
-          "resources": [
-            {
-              "id": "draft",
-              "value": {
-                "draft": {
-                  "claim": "An abort signal guarantees that a queued task will never start."
-                },
-                "evidence": [
-                  "API section: an abort signal can remove a task while it is waiting.",
-                  "API section: a task that has already started continues after abort."
-                ],
-                "constraint": "The claim uses guarantees and includes the boundary between waiting and starting."
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "choice",
-              "ask": "Classify how the supplied evidence bears on this exact claim.",
-              "labels": {
-                "supported": "Evidence covers the complete claim.",
-                "contradicted": "Evidence conflicts with the claim.",
-                "conflicting": "Evidence supports and conflicts with the claim.",
-                "insufficient": "A deciding branch or check is missing."
-              }
-            }
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "id": "draft-evidence-review",
-          "reasoning": "Interpret whether the held evidence supports the guarantee claim; the answer determines whether to keep or narrow the wording.",
-          "mainGoal": "Evidence that decides whether the guarantee holds.",
-          "resources": [
-            {
-              "id": "draft",
-              "value": {
-                "draft": {
-                  "claim": "An abort signal guarantees that a queued task will never start."
-                },
-                "evidence": [
-                  "API section: an abort signal can remove a task while it is waiting.",
-                  "API section: a task that has already started continues after abort."
-                ],
-                "constraint": "The claim uses guarantees and includes the boundary between waiting and starting."
-              }
-            }
-          ],
-          "questions": [
-            {
-              "type": "choice",
-              "ask": "Classify how the supplied evidence bears on this exact claim.",
-              "labels": {
-                "supported": "Evidence covers the complete claim.",
-                "contradicted": "Evidence conflicts with the claim.",
-                "conflicting": "Evidence supports and conflicts with the claim.",
-                "insufficient": "A deciding branch or check is missing."
-              }
-            }
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghSearchRepo.curated-1",
+    "id": "ghSearchRepo.example-ghSearchRepo",
     "tool": "ghSearchRepo",
     "input": {
       "queries": [
@@ -580,71 +90,23 @@
           ],
           "language": "TypeScript",
           "sort": "best-match",
-          "page": 1,
-          "pageSize": 5
+          "pageSize": 5,
+          "page": 1
         }
       ]
     }
   },
   {
-    "id": "ghSearchRepo.curated-2",
-    "tool": "ghSearchRepo",
-    "input": {
-      "queries": [
-        {
-          "owner": "octocat",
-          "pageSize": 5
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "octocat",
-          "sort": "best-match",
-          "page": 1,
-          "pageSize": 5
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghSearchRepo.curated-3",
-    "tool": "ghSearchRepo",
-    "input": {
-      "queries": [
-        {
-          "owner": "octocat",
-          "archived": true,
-          "pageSize": 5
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "octocat",
-          "sort": "best-match",
-          "page": 1,
-          "archived": true,
-          "pageSize": 5
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghSearchCode.curated-1",
+    "id": "ghSearchCode.example-ghSearchCode",
     "tool": "ghSearchCode",
     "input": {
       "queries": [
         {
+          "owner": "bgauryy",
+          "repo": "octocode",
           "keywords": [
             "localSearch"
           ],
-          "owner": "bgauryy",
-          "repo": "octocode",
           "pageSize": 5
         }
       ]
@@ -658,43 +120,15 @@
           ],
           "owner": "bgauryy",
           "repo": "octocode",
-          "match": "file",
-          "page": 1,
-          "pageSize": 5
+          "matchIn": "file",
+          "pageSize": 5,
+          "page": 1
         }
       ]
     }
   },
   {
-    "id": "ghSearchCode.curated-2",
-    "tool": "ghSearchCode",
-    "input": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "filename": "package.json",
-          "match": "path",
-          "pageSize": 5
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "filename": "package.json",
-          "match": "path",
-          "page": 1,
-          "pageSize": 5
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghStructure.curated-1",
+    "id": "ghStructure.example-tree/refs/languages",
     "tool": "ghStructure",
     "input": {
       "queries": [
@@ -720,7 +154,7 @@
     }
   },
   {
-    "id": "ghGetFileContent.curated-1",
+    "id": "ghGetFileContent.example-ghGetFileContent",
     "tool": "ghGetFileContent",
     "input": {
       "queries": [
@@ -728,8 +162,7 @@
           "owner": "facebook",
           "repo": "react",
           "path": "packages/react/src/ReactHooks.js",
-          "matchString": "export function useState",
-          "contextLines": 5
+          "matchString": "export function useState"
         }
       ]
     },
@@ -741,90 +174,13 @@
           "repo": "react",
           "path": "packages/react/src/ReactHooks.js",
           "matchString": "export function useState",
-          "contextLines": 5,
           "minify": "standard"
         }
       ]
     }
   },
   {
-    "id": "ghGetFileContent.curated-2",
-    "tool": "ghGetFileContent",
-    "input": {
-      "queries": [
-        {
-          "owner": "facebook",
-          "repo": "react",
-          "path": "packages/react/src/ReactHooks.js",
-          "minify": "symbols"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "facebook",
-          "repo": "react",
-          "path": "packages/react/src/ReactHooks.js",
-          "minify": "symbols"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetFileContent.curated-3",
-    "tool": "ghGetFileContent",
-    "input": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "path": "README.md",
-          "minify": "symbols"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "path": "README.md",
-          "minify": "symbols"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetFileContent.curated-4",
-    "tool": "ghGetFileContent",
-    "input": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "path": "README.md",
-          "fullContent": true
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "path": "README.md",
-          "fullContent": true,
-          "minify": "standard"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghSearchHistory.curated-1",
+    "id": "ghSearchHistory.example-pullRequest",
     "tool": "ghSearchHistory",
     "input": {
       "queries": [
@@ -833,9 +189,12 @@
           "owner": "bgauryy",
           "repo": "octocode",
           "keywords": [
-            "localSearch"
+            "skill"
           ],
-          "concise": true,
+          "fields": [
+            "number",
+            "title"
+          ],
           "pageSize": 5
         }
       ]
@@ -845,20 +204,23 @@
       "queries": [
         {
           "keywords": [
-            "localSearch"
+            "skill"
           ],
           "owner": "bgauryy",
           "repo": "octocode",
-          "concise": true,
-          "pageSize": 5,
+          "fields": [
+            "number",
+            "title"
+          ],
+          "operation": "pullRequest",
           "page": 1,
-          "operation": "pullRequest"
+          "pageSize": 5
         }
       ]
     }
   },
   {
-    "id": "ghSearchHistory.curated-2",
+    "id": "ghSearchHistory.example-issue",
     "tool": "ghSearchHistory",
     "input": {
       "queries": [
@@ -884,15 +246,15 @@
             "schema"
           ],
           "state": "open",
-          "pageSize": 5,
+          "operation": "issue",
           "page": 1,
-          "operation": "issue"
+          "pageSize": 5
         }
       ]
     }
   },
   {
-    "id": "ghSearchHistory.curated-3",
+    "id": "ghSearchHistory.example-commit",
     "tool": "ghSearchHistory",
     "input": {
       "queries": [
@@ -914,124 +276,15 @@
           "repo": "octocode",
           "path": "packages/octocode-native/crates",
           "since": "6m",
-          "pageSize": 10,
-          "page": 1,
-          "operation": "commit"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghSearchHistory.curated-4",
-    "tool": "ghSearchHistory",
-    "input": {
-      "queries": [
-        {
           "operation": "commit",
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "keywords": [
-            "schema"
-          ],
-          "pageSize": 5
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "keywords": [
-            "schema"
-          ],
-          "pageSize": 5,
           "page": 1,
-          "operation": "commit"
+          "pageSize": 10
         }
       ]
     }
   },
   {
-    "id": "ghSearchHistory.curated-5",
-    "tool": "ghSearchHistory",
-    "input": {
-      "queries": [
-        {
-          "operation": "pullRequest",
-          "keywords": [
-            "schema"
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "keywords": [
-            "schema"
-          ],
-          "pageSize": 10,
-          "page": 1,
-          "operation": "pullRequest"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghSearchHistory.curated-6",
-    "tool": "ghSearchHistory",
-    "input": {
-      "queries": [
-        {
-          "operation": "issue",
-          "owner": "o",
-          "repo": "r"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "o",
-          "repo": "r",
-          "pageSize": 10,
-          "page": 1,
-          "operation": "issue"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghSearchHistory.curated-7",
-    "tool": "ghSearchHistory",
-    "input": {
-      "queries": [
-        {
-          "operation": "commit",
-          "owner": "o",
-          "repo": "r"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "o",
-          "repo": "r",
-          "pageSize": 10,
-          "page": 1,
-          "operation": "commit"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-1",
+    "id": "ghGetHistoryItem.example-pullRequest",
     "tool": "ghGetHistoryItem",
     "input": {
       "queries": [
@@ -1049,128 +302,15 @@
         {
           "owner": "microsoft",
           "repo": "TypeScript",
-          "minify": "standard",
           "operation": "pullRequest",
-          "number": 51387
+          "number": 51387,
+          "minify": "standard"
         }
       ]
     }
   },
   {
-    "id": "ghGetHistoryItem.curated-2",
-    "tool": "ghGetHistoryItem",
-    "input": {
-      "queries": [
-        {
-          "operation": "pullRequest",
-          "owner": "microsoft",
-          "repo": "TypeScript",
-          "number": 51387,
-          "sections": [
-            "patches"
-          ],
-          "matchString": "esbuild",
-          "contextLines": 0
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "microsoft",
-          "repo": "TypeScript",
-          "matchString": "esbuild",
-          "minify": "standard",
-          "operation": "pullRequest",
-          "number": 51387,
-          "sections": [
-            "patches"
-          ],
-          "contextLines": 0
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-3",
-    "tool": "ghGetHistoryItem",
-    "input": {
-      "queries": [
-        {
-          "operation": "pullRequest",
-          "owner": "rust-lang",
-          "repo": "rust",
-          "number": 157558,
-          "sections": [
-            "files"
-          ],
-          "status": [
-            "renamed"
-          ]
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "rust-lang",
-          "repo": "rust",
-          "minify": "standard",
-          "operation": "pullRequest",
-          "number": 157558,
-          "sections": [
-            "files"
-          ],
-          "status": [
-            "renamed"
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-4",
-    "tool": "ghGetHistoryItem",
-    "input": {
-      "queries": [
-        {
-          "operation": "pullRequest",
-          "owner": "microsoft",
-          "repo": "TypeScript",
-          "number": 51387,
-          "sections": [
-            "patches"
-          ],
-          "include": [
-            "src/compiler/transformers/utilities.ts"
-          ],
-          "minify": "none"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "microsoft",
-          "repo": "TypeScript",
-          "minify": "none",
-          "operation": "pullRequest",
-          "number": 51387,
-          "sections": [
-            "patches"
-          ],
-          "include": [
-            "src/compiler/transformers/utilities.ts"
-          ]
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-5",
+    "id": "ghGetHistoryItem.example-issue",
     "tool": "ghGetHistoryItem",
     "input": {
       "queries": [
@@ -1204,7 +344,7 @@
     }
   },
   {
-    "id": "ghGetHistoryItem.curated-6",
+    "id": "ghGetHistoryItem.example-commit",
     "tool": "ghGetHistoryItem",
     "input": {
       "queries": [
@@ -1223,7 +363,6 @@
           "owner": "bgauryy",
           "repo": "octocode",
           "pageSize": 30,
-          "filePage": 1,
           "operation": "commit",
           "ref": "main"
         }
@@ -1231,7 +370,7 @@
     }
   },
   {
-    "id": "ghGetHistoryItem.curated-7",
+    "id": "ghGetHistoryItem.example-compare",
     "tool": "ghGetHistoryItem",
     "input": {
       "queries": [
@@ -1250,127 +389,16 @@
         {
           "owner": "bgauryy",
           "repo": "octocode",
-          "base": "main",
-          "head": "update-tools",
           "pageSize": 30,
-          "page": 1,
-          "filePage": 1,
-          "operation": "compare"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-8",
-    "tool": "ghGetHistoryItem",
-    "input": {
-      "queries": [
-        {
-          "operation": "pullRequest",
-          "owner": "o",
-          "repo": "r",
-          "number": 1
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "o",
-          "repo": "r",
-          "minify": "standard",
-          "operation": "pullRequest",
-          "number": 1
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-9",
-    "tool": "ghGetHistoryItem",
-    "input": {
-      "queries": [
-        {
-          "operation": "issue",
-          "owner": "o",
-          "repo": "r",
-          "number": 1
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "o",
-          "repo": "r",
-          "pageSize": 30,
-          "operation": "issue",
-          "number": 1
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-10",
-    "tool": "ghGetHistoryItem",
-    "input": {
-      "queries": [
-        {
-          "operation": "commit",
-          "owner": "o",
-          "repo": "r",
-          "ref": "main"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "o",
-          "repo": "r",
-          "pageSize": 30,
-          "filePage": 1,
-          "operation": "commit",
-          "ref": "main"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghGetHistoryItem.curated-11",
-    "tool": "ghGetHistoryItem",
-    "input": {
-      "queries": [
-        {
           "operation": "compare",
-          "owner": "o",
-          "repo": "r",
           "base": "main",
-          "head": "next"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "o",
-          "repo": "r",
-          "base": "main",
-          "head": "next",
-          "pageSize": 30,
-          "page": 1,
-          "filePage": 1,
-          "operation": "compare"
+          "head": "update-tools"
         }
       ]
     }
   },
   {
-    "id": "artifactSearch.curated-1",
+    "id": "artifactSearch.example-npm:exact",
     "tool": "artifactSearch",
     "input": {
       "queries": [
@@ -1391,7 +419,7 @@
     }
   },
   {
-    "id": "artifactSearch.curated-2",
+    "id": "artifactSearch.example-npm:discovery",
     "tool": "artifactSearch",
     "input": {
       "queries": [
@@ -1419,7 +447,7 @@
     }
   },
   {
-    "id": "artifactSearch.curated-3",
+    "id": "artifactSearch.example-registry:exact",
     "tool": "artifactSearch",
     "input": {
       "queries": [
@@ -1440,217 +468,14 @@
     }
   },
   {
-    "id": "artifactSearch.curated-4",
+    "id": "artifactSearch.example-registry:discovery",
     "tool": "artifactSearch",
     "input": {
       "queries": [
         {
-          "ecosystem": "maven",
-          "packageName": "com.google.guava:guava"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "ecosystem": "maven",
-          "packageName": "com.google.guava:guava"
-        }
-      ]
-    }
-  },
-  {
-    "id": "artifactSearch.curated-5",
-    "tool": "artifactSearch",
-    "input": {
-      "queries": [
-        {
-          "ecosystem": "go",
-          "packageName": "github.com/gin-gonic/gin"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "ecosystem": "go",
-          "packageName": "github.com/gin-gonic/gin"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghCloneRepo.curated-1",
-    "tool": "ghCloneRepo",
-    "input": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode"
-        }
-      ]
-    }
-  },
-  {
-    "id": "ghCloneRepo.curated-2",
-    "tool": "ghCloneRepo",
-    "input": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "path": "packages/octocode-native"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "owner": "bgauryy",
-          "repo": "octocode",
-          "path": "packages/octocode-native"
-        }
-      ]
-    }
-  },
-  {
-    "id": "localSearch.curated-1",
-    "tool": "localSearch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src",
-          "matchString": "buildDirectToolCommandPatterns",
-          "regex": "literal",
-          "pageSize": 20
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "matchString": "buildDirectToolCommandPatterns",
-          "path": "/ABS/repo/src",
-          "caseMode": "smart",
-          "multiline": "off",
-          "sort": "relevance",
-          "matchPage": 1,
-          "page": 1,
-          "regex": "literal",
-          "pageSize": 20,
-          "unique": "off",
-          "resultView": "paginated"
-        }
-      ]
-    }
-  },
-  {
-    "id": "localSearch.curated-2",
-    "tool": "localSearch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src",
-          "matchString": "handler.call($value)",
-          "regex": "literal",
-          "pageSize": 5
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "matchString": "handler.call($value)",
-          "path": "/ABS/repo/src",
-          "caseMode": "smart",
-          "multiline": "off",
-          "sort": "relevance",
-          "matchPage": 1,
-          "page": 1,
-          "regex": "literal",
-          "pageSize": 5,
-          "unique": "off",
-          "resultView": "paginated"
-        }
-      ]
-    }
-  },
-  {
-    "id": "localSearch.curated-3",
-    "tool": "localSearch",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "matchString": "toolSchemas"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "matchString": "toolSchemas",
-          "path": ".",
-          "caseMode": "smart",
-          "multiline": "off",
-          "sort": "relevance",
-          "matchPage": 1,
-          "page": 1,
-          "unique": "off",
-          "resultView": "paginated"
-        }
-      ]
-    }
-  },
-  {
-    "id": "structureSearch.curated-1",
-    "tool": "structureSearch",
-    "input": {
-      "queries": [
-        {
-          "operation": "tree",
-          "path": "/ABS/repo",
-          "maxDepth": 2
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "operation": "tree",
-          "path": "/ABS/repo",
-          "maxDepth": 2,
-          "page": 1
-        }
-      ]
-    }
-  },
-  {
-    "id": "structureSearch.curated-2",
-    "tool": "structureSearch",
-    "input": {
-      "queries": [
-        {
-          "operation": "files",
-          "path": "/ABS/repo",
-          "include": [
-            "package.json"
+          "ecosystem": "crates",
+          "keywords": [
+            "serde"
           ]
         }
       ]
@@ -1659,29 +484,23 @@
     "normalized": {
       "queries": [
         {
-          "operation": "files",
-          "path": "/ABS/repo",
-          "include": [
-            "package.json"
+          "ecosystem": "crates",
+          "keywords": [
+            "serde"
           ],
-          "detail": "basic",
-          "sort": "path",
-          "page": 1
+          "pageSize": 10
         }
       ]
     }
   },
   {
-    "id": "structureSearch.curated-3",
-    "tool": "structureSearch",
+    "id": "ghCloneRepo.example-ghCloneRepo",
+    "tool": "ghCloneRepo",
     "input": {
       "queries": [
         {
-          "operation": "tree",
-          "path": "/ABS/repo",
-          "maxDepth": 2,
-          "noIgnore": true,
-          "hidden": true
+          "owner": "bgauryy",
+          "repo": "octocode"
         }
       ]
     },
@@ -1689,18 +508,42 @@
     "normalized": {
       "queries": [
         {
-          "operation": "tree",
-          "path": "/ABS/repo",
-          "maxDepth": 2,
-          "hidden": true,
-          "noIgnore": true,
-          "page": 1
+          "owner": "bgauryy",
+          "repo": "octocode"
         }
       ]
     }
   },
   {
-    "id": "structureSearch.curated-4",
+    "id": "localSearch.example-localSearch",
+    "tool": "localSearch",
+    "input": {
+      "queries": [
+        {
+          "path": "src",
+          "matchString": "registerHandler"
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "matchString": "registerHandler",
+          "path": "src",
+          "caseMode": "smart",
+          "multiline": "off",
+          "sort": "relevance",
+          "matchPage": 1,
+          "page": 1,
+          "unique": "off",
+          "resultView": "paginated"
+        }
+      ]
+    }
+  },
+  {
+    "id": "structureSearch.example-tree",
     "tool": "structureSearch",
     "input": {
       "queries": [
@@ -1724,7 +567,7 @@
     }
   },
   {
-    "id": "structureSearch.curated-5",
+    "id": "structureSearch.example-files",
     "tool": "structureSearch",
     "input": {
       "queries": [
@@ -1732,7 +575,7 @@
           "operation": "files",
           "path": ".",
           "include": [
-            "*.ts"
+            "package.json"
           ]
         }
       ]
@@ -1744,9 +587,8 @@
           "operation": "files",
           "path": ".",
           "include": [
-            "*.ts"
+            "package.json"
           ],
-          "detail": "basic",
           "sort": "path",
           "page": 1
         }
@@ -1754,39 +596,13 @@
     }
   },
   {
-    "id": "astSearch.curated-1",
-    "tool": "astSearch",
-    "input": {
-      "queries": [
-        {
-          "operation": "symbols",
-          "path": "/ABS/repo/src",
-          "symbolName": "buildDirectToolCommandPatterns"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "operation": "symbols",
-          "path": "/ABS/repo/src",
-          "symbolName": "buildDirectToolCommandPatterns",
-          "maxFiles": 2000,
-          "page": 1,
-          "pageSize": 500
-        }
-      ]
-    }
-  },
-  {
-    "id": "astSearch.curated-2",
+    "id": "astSearch.example-match:pattern",
     "tool": "astSearch",
     "input": {
       "queries": [
         {
           "operation": "match",
-          "path": "/ABS/repo/src",
+          "path": "src",
           "language": "typescript",
           "pattern": "eval($X)"
         }
@@ -1796,54 +612,27 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo/src",
+          "path": "src",
           "matchContentLength": 500,
           "language": "typescript",
           "matchPage": 1,
           "page": 1,
           "operation": "match",
           "sort": "path",
-          "matchPageSize": 100,
-          "maxFiles": 2000,
           "resultView": "content",
-          "pageSize": 20,
           "pattern": "eval($X)"
         }
       ]
     }
   },
   {
-    "id": "astSearch.curated-3",
-    "tool": "astSearch",
-    "input": {
-      "queries": [
-        {
-          "operation": "symbols",
-          "path": "/ABS/repo/src/index.ts"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "operation": "symbols",
-          "path": "/ABS/repo/src/index.ts",
-          "maxFiles": 2000,
-          "page": 1,
-          "pageSize": 500
-        }
-      ]
-    }
-  },
-  {
-    "id": "astSearch.curated-4",
+    "id": "astSearch.example-match:rule",
     "tool": "astSearch",
     "input": {
       "queries": [
         {
           "operation": "match",
-          "path": "/ABS/repo/src",
+          "path": "src",
           "language": "typescript",
           "rule": "pattern: console.log($VALUE)"
         }
@@ -1853,64 +642,27 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo/src",
+          "path": "src",
           "matchContentLength": 500,
           "language": "typescript",
           "matchPage": 1,
           "page": 1,
           "operation": "match",
           "sort": "path",
-          "matchPageSize": 100,
-          "maxFiles": 2000,
           "resultView": "content",
-          "pageSize": 20,
           "rule": "pattern: console.log($VALUE)"
         }
       ]
     }
   },
   {
-    "id": "astSearch.curated-5",
-    "tool": "astSearch",
-    "input": {
-      "queries": [
-        {
-          "operation": "match",
-          "path": ".",
-          "pattern": "console.log($A)",
-          "language": "typescript"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "matchContentLength": 500,
-          "language": "typescript",
-          "matchPage": 1,
-          "page": 1,
-          "operation": "match",
-          "sort": "path",
-          "matchPageSize": 100,
-          "maxFiles": 2000,
-          "resultView": "content",
-          "pageSize": 20,
-          "pattern": "console.log($A)"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astSearch.curated-6",
+    "id": "astSearch.example-syntaxTree",
     "tool": "astSearch",
     "input": {
       "queries": [
         {
           "operation": "syntaxTree",
-          "path": "/repo/src/index.ts",
-          "pageSize": 100
+          "path": "src/index.ts"
         }
       ]
     },
@@ -1919,22 +671,22 @@
       "queries": [
         {
           "operation": "syntaxTree",
-          "path": "/repo/src/index.ts",
+          "path": "src/index.ts",
           "namedOnly": true,
-          "page": 1,
-          "pageSize": 100
+          "page": 1
         }
       ]
     }
   },
   {
-    "id": "astSearch.curated-7",
+    "id": "astSearch.example-symbols",
     "tool": "astSearch",
     "input": {
       "queries": [
         {
-          "path": ".",
-          "operation": "symbols"
+          "operation": "symbols",
+          "path": "src",
+          "symbolName": "main"
         }
       ]
     },
@@ -1943,22 +695,21 @@
       "queries": [
         {
           "operation": "symbols",
-          "path": ".",
-          "maxFiles": 2000,
-          "page": 1,
-          "pageSize": 500
+          "path": "src",
+          "symbolName": "main",
+          "page": 1
         }
       ]
     }
   },
   {
-    "id": "astTopology.curated-1",
+    "id": "astTopology.example-deadCode",
     "tool": "astTopology",
     "input": {
       "queries": [
         {
           "operation": "deadCode",
-          "path": "/ABS/repo",
+          "path": ".",
           "pageSize": 20
         }
       ]
@@ -1967,7 +718,7 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo",
+          "path": ".",
           "page": 1,
           "pageSize": 20,
           "diagnosticPageSize": 25,
@@ -1978,13 +729,13 @@
     }
   },
   {
-    "id": "astTopology.curated-2",
+    "id": "astTopology.example-cycles",
     "tool": "astTopology",
     "input": {
       "queries": [
         {
           "operation": "cycles",
-          "path": "/ABS/repo",
+          "path": ".",
           "pageSize": 20
         }
       ]
@@ -1993,7 +744,7 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo",
+          "path": ".",
           "page": 1,
           "pageSize": 20,
           "diagnosticPageSize": 25,
@@ -2003,15 +754,15 @@
     }
   },
   {
-    "id": "astTopology.curated-3",
+    "id": "astTopology.example-dependencies",
     "tool": "astTopology",
     "input": {
       "queries": [
         {
           "operation": "dependencies",
-          "path": "/ABS/repo",
+          "path": ".",
           "source": "src/index.ts",
-          "depth": 2
+          "graphDepth": 2
         }
       ]
     },
@@ -2019,27 +770,27 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo",
+          "path": ".",
           "page": 1,
           "pageSize": 50,
           "diagnosticPageSize": 25,
           "source": "src/index.ts",
-          "depth": 2,
+          "graphDepth": 2,
           "operation": "dependencies"
         }
       ]
     }
   },
   {
-    "id": "astTopology.curated-4",
+    "id": "astTopology.example-dependents",
     "tool": "astTopology",
     "input": {
       "queries": [
         {
           "operation": "dependents",
-          "path": "/ABS/repo",
+          "path": ".",
           "source": "src/index.ts",
-          "depth": 2
+          "graphDepth": 2
         }
       ]
     },
@@ -2047,25 +798,25 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo",
+          "path": ".",
           "page": 1,
           "pageSize": 50,
           "diagnosticPageSize": 25,
           "source": "src/index.ts",
-          "depth": 2,
+          "graphDepth": 2,
           "operation": "dependents"
         }
       ]
     }
   },
   {
-    "id": "astTopology.curated-5",
+    "id": "astTopology.example-path",
     "tool": "astTopology",
     "input": {
       "queries": [
         {
           "operation": "path",
-          "path": "/ABS/repo",
+          "path": ".",
           "source": "src/index.ts",
           "target": "src/responses.ts"
         }
@@ -2075,7 +826,7 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo",
+          "path": ".",
           "page": 1,
           "pageSize": 50,
           "diagnosticPageSize": 25,
@@ -2087,13 +838,13 @@
     }
   },
   {
-    "id": "astTopology.curated-6",
+    "id": "astTopology.example-reachability",
     "tool": "astTopology",
     "input": {
       "queries": [
         {
           "operation": "reachability",
-          "path": "/ABS/repo",
+          "path": ".",
           "pageSize": 20
         }
       ]
@@ -2102,7 +853,7 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo",
+          "path": ".",
           "page": 1,
           "pageSize": 20,
           "diagnosticPageSize": 25,
@@ -2113,194 +864,12 @@
     }
   },
   {
-    "id": "astTopology.curated-7",
-    "tool": "astTopology",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "operation": "dependencies",
-          "source": "src/index.ts"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
-          "source": "src/index.ts",
-          "depth": 1,
-          "operation": "dependencies"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astTopology.curated-8",
-    "tool": "astTopology",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "operation": "dependents",
-          "source": "src/index.ts"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
-          "source": "src/index.ts",
-          "depth": 1,
-          "operation": "dependents"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astTopology.curated-9",
-    "tool": "astTopology",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "operation": "path",
-          "source": "src/index.ts",
-          "target": "src/utils.ts"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
-          "source": "src/index.ts",
-          "target": "src/utils.ts",
-          "operation": "path"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astTopology.curated-10",
-    "tool": "astTopology",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "operation": "cycles"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
-          "operation": "cycles"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astTopology.curated-11",
-    "tool": "astTopology",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "operation": "reachability"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
-          "includeTests": true,
-          "operation": "reachability"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astTopology.curated-12",
-    "tool": "astTopology",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "operation": "deadCode"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
-          "includeTests": true,
-          "operation": "deadCode"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astTopology.curated-13",
-    "tool": "astTopology",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "operation": "drift",
-          "baseline": "../baseline"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "page": 1,
-          "pageSize": 50,
-          "diagnosticPageSize": 25,
-          "baseline": "../baseline",
-          "operation": "drift"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astRewrite.curated-1",
+    "id": "astRewrite.example-pattern",
     "tool": "astRewrite",
     "input": {
       "queries": [
         {
-          "path": "/ABS/repo/src",
+          "path": "src",
           "language": "typescript",
           "pattern": "console.log($A)",
           "rewrite": "logger.info($A)"
@@ -2311,7 +880,7 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo/src",
+          "path": "src",
           "language": "typescript",
           "apply": false,
           "maxFiles": 2000,
@@ -2325,20 +894,15 @@
     }
   },
   {
-    "id": "astRewrite.curated-2",
+    "id": "astRewrite.example-rule",
     "tool": "astRewrite",
     "input": {
       "queries": [
         {
-          "path": "/ABS/repo/src",
+          "path": "src",
           "language": "typescript",
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)",
-          "apply": true,
-          "snapshot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "expectedHashes": {
-            "/ABS/repo/src/example.ts": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          }
+          "rule": "pattern: console.log($A)",
+          "fix": "logger.info($A)"
         }
       ]
     },
@@ -2346,103 +910,29 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo/src",
-          "language": "typescript",
-          "apply": true,
-          "expectedHashes": {
-            "/ABS/repo/src/example.ts": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          },
-          "maxFiles": 2000,
-          "maxMatches": 10000,
-          "page": 1,
-          "pageSize": 100,
-          "snapshot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)"
-        }
-      ]
-    }
-  },
-  {
-    "id": "astRewrite.curated-3",
-    "tool": "astRewrite",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "language": "typescript",
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
+          "path": "src",
           "language": "typescript",
           "apply": false,
           "maxFiles": 2000,
           "maxMatches": 10000,
           "page": 1,
           "pageSize": 100,
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)"
+          "rule": "pattern: console.log($A)",
+          "fix": "logger.info($A)"
         }
       ]
     }
   },
   {
-    "id": "astRewrite.curated-4",
-    "tool": "astRewrite",
-    "input": {
-      "queries": [
-        {
-          "path": ".",
-          "language": "typescript",
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)",
-          "apply": true,
-          "snapshot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "expectedHashes": {
-            "/repo/src/a.ts": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          }
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": ".",
-          "language": "typescript",
-          "apply": true,
-          "expectedHashes": {
-            "/repo/src/a.ts": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          },
-          "maxFiles": 2000,
-          "maxMatches": 10000,
-          "page": 1,
-          "pageSize": 100,
-          "snapshot": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "pattern": "console.log($A)",
-          "rewrite": "logger.info($A)"
-        }
-      ]
-    }
-  },
-  {
-    "id": "localFetch.curated-1",
+    "id": "localFetch.example-localFetch",
     "tool": "localFetch",
     "input": {
       "queries": [
         {
-          "path": "/ABS/repo/packages/octocode-native/Cargo.toml",
+          "path": "src/index.ts",
           "ranges": [
             "1-30"
-          ],
-          "minify": "none"
+          ]
         }
       ]
     },
@@ -2450,192 +940,24 @@
     "normalized": {
       "queries": [
         {
-          "path": "/ABS/repo/packages/octocode-native/Cargo.toml",
+          "path": "src/index.ts",
           "ranges": [
             "1-30"
-          ],
-          "minify": "none"
+          ]
         }
       ]
     }
   },
   {
-    "id": "localFetch.curated-2",
-    "tool": "localFetch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src/index.ts",
-          "matchString": "export",
-          "contextLines": 5,
-          "minify": "none"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src/index.ts",
-          "matchString": "export",
-          "contextLines": 5,
-          "minify": "none"
-        }
-      ]
-    }
-  },
-  {
-    "id": "localFetch.curated-3",
-    "tool": "localFetch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/README.md",
-          "minify": "symbols"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "/ABS/repo/README.md",
-          "minify": "symbols"
-        }
-      ]
-    }
-  },
-  {
-    "id": "localFetch.curated-4",
-    "tool": "localFetch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/README.md",
-          "fullContent": true
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "/ABS/repo/README.md",
-          "fullContent": true
-        }
-      ]
-    }
-  },
-  {
-    "id": "lspSearch.curated-1",
-    "tool": "lspSearch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/packages/octocode-native/crates/runtime/src/runtime/engine.rs",
-          "operation": "definition",
-          "symbolName": "ToolRuntime",
-          "lineHint": 58
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "/ABS/repo/packages/octocode-native/crates/runtime/src/runtime/engine.rs",
-          "operation": "definition",
-          "symbolName": "ToolRuntime",
-          "lineHint": 58,
-          "orderHint": 0,
-          "page": 1
-        }
-      ]
-    }
-  },
-  {
-    "id": "lspSearch.curated-2",
-    "tool": "lspSearch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src/index.ts",
-          "operation": "references",
-          "symbolName": "run",
-          "lineHint": 10,
-          "includeDeclaration": false
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src/index.ts",
-          "operation": "references",
-          "symbolName": "run",
-          "lineHint": 10,
-          "orderHint": 0,
-          "includeDeclaration": false,
-          "page": 1
-        }
-      ]
-    }
-  },
-  {
-    "id": "lspSearch.curated-3",
-    "tool": "lspSearch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/packages/octocode-native/crates/runtime/src/runtime/engine.rs",
-          "operation": "documentSymbols"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "/ABS/repo/packages/octocode-native/crates/runtime/src/runtime/engine.rs",
-          "operation": "documentSymbols",
-          "page": 1
-        }
-      ]
-    }
-  },
-  {
-    "id": "lspSearch.curated-4",
-    "tool": "lspSearch",
-    "input": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src/index.ts",
-          "operation": "diagnostic"
-        }
-      ]
-    },
-    "accepted": true,
-    "normalized": {
-      "queries": [
-        {
-          "path": "/ABS/repo/src/index.ts",
-          "operation": "diagnostic",
-          "page": 1
-        }
-      ]
-    }
-  },
-  {
-    "id": "lspSearch.curated-5",
+    "id": "lspSearch.example-anchored",
     "tool": "lspSearch",
     "input": {
       "queries": [
         {
           "path": "src/index.ts",
           "operation": "definition",
-          "symbolName": "main",
-          "lineHint": 1
+          "symbolName": "run",
+          "line": 10
         }
       ]
     },
@@ -2645,8 +967,8 @@
         {
           "path": "src/index.ts",
           "operation": "definition",
-          "symbolName": "main",
-          "lineHint": 1,
+          "symbolName": "run",
+          "line": 10,
           "orderHint": 0,
           "page": 1
         }
@@ -2654,7 +976,7 @@
     }
   },
   {
-    "id": "lspSearch.curated-6",
+    "id": "lspSearch.example-document",
     "tool": "lspSearch",
     "input": {
       "queries": [
@@ -2676,14 +998,14 @@
     }
   },
   {
-    "id": "lspSearch.curated-7",
+    "id": "lspSearch.example-workspace:path",
     "tool": "lspSearch",
     "input": {
       "queries": [
         {
-          "path": "src/index.ts",
           "operation": "workspaceSymbol",
-          "symbolName": "Schema"
+          "path": "src/index.ts",
+          "symbolName": "run"
         }
       ]
     },
@@ -2693,21 +1015,21 @@
         {
           "path": "src/index.ts",
           "operation": "workspaceSymbol",
-          "symbolName": "Schema",
+          "symbolName": "run",
           "page": 1
         }
       ]
     }
   },
   {
-    "id": "lspSearch.curated-8",
+    "id": "lspSearch.example-workspace:root",
     "tool": "lspSearch",
     "input": {
       "queries": [
         {
+          "operation": "workspaceSymbol",
           "workspaceRoot": ".",
-          "operation": "workspaceSymbol",
-          "symbolName": "Schema"
+          "symbolName": "run"
         }
       ]
     },
@@ -2716,9 +1038,214 @@
       "queries": [
         {
           "operation": "workspaceSymbol",
-          "symbolName": "Schema",
+          "symbolName": "run",
           "page": 1,
           "workspaceRoot": "."
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.scout-remote-file",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "id": "interceptor-candidate",
+          "mainGoal": "Files that decide request interceptor order.",
+          "reasoning": "No snippet establishes whether the path orders interceptors; the verdict changes what to read.",
+          "resources": [
+            {
+              "id": "axios-core",
+              "tool": "ghGetFileContent",
+              "query": {
+                "owner": "axios",
+                "repo": "axios",
+                "path": "lib/core/Axios.js",
+                "fullContent": true
+              }
+            }
+          ],
+          "questions": [
+            {
+              "type": "relevant",
+              "ask": "What is the request interceptor execution order?"
+            },
+            {
+              "type": "sufficient",
+              "ask": "What is the request interceptor execution order?"
+            }
+          ]
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "id": "interceptor-candidate",
+          "reasoning": "No snippet establishes whether the path orders interceptors; the verdict changes what to read.",
+          "mainGoal": "Files that decide request interceptor order.",
+          "resources": [
+            {
+              "id": "axios-core",
+              "tool": "ghGetFileContent",
+              "query": {
+                "owner": "axios",
+                "repo": "axios",
+                "path": "lib/core/Axios.js",
+                "fullContent": true
+              },
+              "maxChars": 1000000
+            }
+          ],
+          "questions": [
+            {
+              "type": "relevant",
+              "ask": "What is the request interceptor execution order?"
+            },
+            {
+              "type": "sufficient",
+              "ask": "What is the request interceptor execution order?"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.scout-search-chunks",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "id": "local-candidates",
+          "mainGoal": "Files that implement handler registration.",
+          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
+          "resources": [
+            {
+              "id": "search-results",
+              "tool": "localSearch",
+              "query": {
+                "path": "src",
+                "matchString": "registerHandler",
+                "pageSize": 5
+              }
+            }
+          ],
+          "questions": [
+            {
+              "type": "locate",
+              "ask": "Where is handler registration implemented?"
+            },
+            {
+              "type": "yesno",
+              "ask": "Is this chunk test code or a fixture rather than the production implementation?"
+            }
+          ]
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "id": "local-candidates",
+          "reasoning": "Judge bounded source chunks before choosing an exact verification read.",
+          "mainGoal": "Files that implement handler registration.",
+          "resources": [
+            {
+              "id": "search-results",
+              "tool": "localSearch",
+              "query": {
+                "path": "src",
+                "matchString": "registerHandler",
+                "pageSize": 5
+              },
+              "maxChars": 1000000
+            }
+          ],
+          "questions": [
+            {
+              "type": "locate",
+              "ask": "Where is handler registration implemented?"
+            },
+            {
+              "type": "yesno",
+              "ask": "Is this chunk test code or a fixture rather than the production implementation?"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "clasify.judge-held-evidence",
+    "tool": "clasify",
+    "input": {
+      "queries": [
+        {
+          "id": "draft-evidence-review",
+          "mainGoal": "Evidence that decides whether the guarantee holds.",
+          "reasoning": "Whether the held evidence supports the claim decides keeping or narrowing its wording.",
+          "resources": [
+            {
+              "id": "draft",
+              "value": {
+                "claim": "An abort signal guarantees that a queued task will never start.",
+                "evidence": [
+                  "An abort signal can remove a task while it is waiting.",
+                  "A task that has already started continues after abort."
+                ]
+              }
+            }
+          ],
+          "questions": [
+            {
+              "type": "choice",
+              "ask": "Classify how the supplied evidence bears on this exact claim.",
+              "labels": {
+                "supported": "Evidence covers the complete claim.",
+                "contradicted": "Evidence conflicts with the claim.",
+                "conflicting": "Evidence supports and conflicts with the claim.",
+                "insufficient": "A deciding branch or check is missing."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "id": "draft-evidence-review",
+          "reasoning": "Whether the held evidence supports the claim decides keeping or narrowing its wording.",
+          "mainGoal": "Evidence that decides whether the guarantee holds.",
+          "resources": [
+            {
+              "id": "draft",
+              "value": {
+                "claim": "An abort signal guarantees that a queued task will never start.",
+                "evidence": [
+                  "An abort signal can remove a task while it is waiting.",
+                  "A task that has already started continues after abort."
+                ]
+              }
+            }
+          ],
+          "questions": [
+            {
+              "type": "choice",
+              "ask": "Classify how the supplied evidence bears on this exact claim.",
+              "labels": {
+                "supported": "Evidence covers the complete claim.",
+                "contradicted": "Evidence conflicts with the claim.",
+                "conflicting": "Evidence supports and conflicts with the claim.",
+                "insufficient": "A deciding branch or check is missing."
+              }
+            }
+          ]
         }
       ]
     }
@@ -2822,8 +1349,7 @@
         {
           "path": "/fixture/a.ts",
           "matchString": "needle",
-          "contextBytes": 10,
-          "unit": "bytes"
+          "contextLines": 10
         }
       ]
     },
@@ -2833,14 +1359,13 @@
         {
           "path": "/fixture/a.ts",
           "matchString": "needle",
-          "contextBytes": 10,
-          "unit": "bytes"
+          "contextLines": 10
         }
       ]
     }
   },
   {
-    "id": "local-fetch.range-order",
+    "id": "local-fetch.reversed-range",
     "tool": "localFetch",
     "input": {
       "queries": [
@@ -2852,7 +1377,17 @@
         }
       ]
     },
-    "accepted": false
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "path": "/fixture/a.ts",
+          "ranges": [
+            "3-2"
+          ]
+        }
+      ]
+    }
   },
   {
     "id": "local-fetch.full-controls",
@@ -2879,22 +1414,15 @@
         }
       ]
     },
-    "accepted": false
-  },
-  {
-    "id": "local-fetch.context-unit",
-    "tool": "localFetch",
-    "input": {
+    "accepted": true,
+    "normalized": {
       "queries": [
         {
           "path": "/fixture/a.ts",
-          "matchString": "x",
-          "contextBytes": 1,
-          "contextLines": 1
+          "regex": "rust"
         }
       ]
-    },
-    "accepted": false
+    }
   },
   {
     "id": "local-fetch.symbol-selector",
@@ -2940,7 +1468,7 @@
     }
   },
   {
-    "id": "local-fetch.ranges-exclusive",
+    "id": "local-fetch.ranges-match",
     "tool": "localFetch",
     "input": {
       "queries": [
@@ -2953,22 +1481,18 @@
         }
       ]
     },
-    "accepted": false
-  },
-  {
-    "id": "local-fetch.ranges-order",
-    "tool": "localFetch",
-    "input": {
+    "accepted": true,
+    "normalized": {
       "queries": [
         {
           "path": "/fixture/a.ts",
+          "matchString": "a",
           "ranges": [
-            "5-3"
+            "3-5"
           ]
         }
       ]
-    },
-    "accepted": false
+    }
   },
   {
     "id": "local-fetch.ranges-shape",
@@ -3426,7 +1950,7 @@
     "accepted": false
   },
   {
-    "id": "github-content.range-order",
+    "id": "github-content.full-and-ranges",
     "tool": "ghGetFileContent",
     "input": {
       "queries": [
@@ -3436,7 +1960,8 @@
           "path": "a",
           "ranges": [
             "9-1"
-          ]
+          ],
+          "fullContent": true
         }
       ]
     },
@@ -3490,7 +2015,23 @@
         }
       ]
     },
-    "accepted": false
+    "accepted": true,
+    "normalized": {
+      "queries": [
+        {
+          "keywords": [
+            "cache"
+          ],
+          "owner": "o",
+          "repo": "r",
+          "state": "open",
+          "qualifiers": "is:draft label:\"good first issue\" -reviewed-by:x",
+          "operation": "pullRequest",
+          "page": 1,
+          "pageSize": 10
+        }
+      ]
+    }
   },
   {
     "id": "history-search.qualifier-head-key",
@@ -3518,9 +2059,9 @@
           "owner": "o",
           "repo": "r",
           "qualifiers": "head:feature base:main",
-          "pageSize": 10,
+          "operation": "pullRequest",
           "page": 1,
-          "operation": "pullRequest"
+          "pageSize": 10
         }
       ]
     }
@@ -3657,16 +2198,7 @@
           ],
           "include": [
             "src/**"
-          ],
-          "patchRanges": [
-            {
-              "file": "src/a.ts",
-              "additions": [
-                3
-              ]
-            }
-          ],
-          "includeBots": true
+          ]
         }
       ]
     },
@@ -3676,7 +2208,6 @@
         {
           "owner": "o",
           "repo": "r",
-          "minify": "standard",
           "operation": "pullRequest",
           "number": 1,
           "sections": [
@@ -3686,15 +2217,7 @@
           "include": [
             "src/**"
           ],
-          "patchRanges": [
-            {
-              "file": "src/a.ts",
-              "additions": [
-                3
-              ]
-            }
-          ],
-          "includeBots": true
+          "minify": "standard"
         }
       ]
     }
@@ -3795,8 +2318,8 @@
           "path": "/r/a.ts",
           "operation": "hover",
           "symbolName": "x",
-          "lineHint": 1,
-          "depth": 2
+          "line": 1,
+          "graphDepth": 2
         }
       ]
     },
@@ -3811,7 +2334,7 @@
           "path": "/r/a.ts",
           "operation": "definition",
           "symbolName": "x",
-          "lineHint": 1,
+          "line": 1,
           "includeDeclaration": true
         }
       ]
@@ -3827,7 +2350,7 @@
           "path": "/r/a.ts",
           "operation": "definition",
           "symbolName": "x",
-          "lineHint": 1,
+          "line": 1,
           "importerPage": 2
         }
       ]
@@ -3843,7 +2366,7 @@
           "path": "/r/a.ts",
           "operation": "callers",
           "symbolName": "x",
-          "lineHint": 1,
+          "line": 1,
           "contextLines": 0
         }
       ]

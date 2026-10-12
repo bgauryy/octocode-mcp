@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { globalPaths } from '../shared/home.js';
+import { PRIVATE_FILE_MODE, globalPaths, privateDir } from '../shared/home.js';
 import { isRecord } from '../shared/util.js';
 
 /**
@@ -31,12 +31,13 @@ export function shotsDir(env: NodeJS.ProcessEnv = process.env): string {
   return path.join(globalPaths(env).team, 'shots');
 }
 
-/** Write one screenshot and keep only the newest few files. */
+/** Write one screenshot (owner-only) and keep only the newest few files; the session sweep also removes old ones (`OCTOCODE_CLEANUP_DAYS`). */
 export function saveShot(dir: string, agentId: string, index: number, image: { data: string; mimeType: string }): Shot {
-  fs.mkdirSync(dir, { recursive: true });
+  privateDir(dir);
   const extension = image.mimeType.includes('jpeg') ? 'jpg' : 'png';
   const file = path.join(dir, `${agentId}-${index}.${extension}`);
-  fs.writeFileSync(file, Buffer.from(image.data, 'base64'));
+  fs.writeFileSync(file, Buffer.from(image.data, 'base64'), { mode: PRIVATE_FILE_MODE });
+  fs.chmodSync(file, PRIVATE_FILE_MODE); // a file from before this was owner-only keeps its old mode on overwrite
   const files = fs
     .readdirSync(dir)
     // Another Pi process may prune the shared folder meanwhile: a vanished file simply sorts last.

@@ -336,8 +336,8 @@ describe('memory tool', () => {
       expect(tool.promptGuidelines.length).toBeLessThanOrEqual(max);
       for (const line of tool.promptGuidelines as string[]) expect(line.length, line).toBeLessThanOrEqual(230);
       expect([tool.description, ...tool.promptGuidelines].join(' ')).not.toMatch(/ {2}/);
-      // Staleness is said once, in the injected header, not in every turn's guidelines.
-      expect(tool.promptGuidelines.join(' ')).not.toMatch(/may be stale/);
+      // A memory read by search (not only the injected header) may be stale: the guideline says to verify it.
+      expect(tool.promptGuidelines.join(' ')).toMatch(/may be stale; verify it against the code/);
       expect(MEMORY_HEADER).toMatch(/may be stale/);
       for (const [name, schema] of Object.entries(tool.parameters.properties as Record<string, { description?: string }>)) expect(schema.description, name).toBeTruthy();
     }

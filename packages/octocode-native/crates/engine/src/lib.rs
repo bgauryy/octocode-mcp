@@ -16,9 +16,12 @@ pub mod graph;
 pub mod lsp;
 pub mod minify;
 pub mod portable;
+pub mod scan_budget;
 pub mod search;
 pub mod security;
 pub mod signatures;
 pub mod structural;
+#[cfg(test)]
+mod test_cpu;
 pub mod text;
 pub mod types;

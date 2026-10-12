@@ -121,14 +121,16 @@ export function bannerHeader(tui: Pick<TUI, 'requestRender'>, theme: Theme, shin
 export function registerUi(pi: ExtensionAPI, isSubagent: boolean): void {
   if (isSubagent) return;
   registerFooter(pi);
-  let shown = false;
   let generated = { output: 0, ms: 0 };
   let messageStartedAt: number | undefined;
-  pi.on('session_start', async (_event, ctx) => {
+  pi.on('session_start', async (event, ctx) => {
     if (!ctx.hasUI) return;
     ctx.ui.setStatus(SPEED_STATUS, undefined);
-    if (ctx.mode === 'tui') decorate(ctx, shown ? undefined : Date.now());
-    shown = true;
+    // Shine once, on a fresh start with nothing below the banner. Module state cannot remember it: Pi re-imports
+    // extensions for every runtime (/new, /resume, /fork, /reload). And a resumed transcript pushes the banner above
+    // the viewport, where every changed frame makes pi-tui clear and redraw the whole scrollback.
+    const fresh = event.reason === 'startup' && !ctx.sessionManager.getBranch().some((entry) => entry.type === 'message');
+    if (ctx.mode === 'tui') decorate(ctx, fresh ? Date.now() : undefined);
   });
   pi.on('agent_start', async (_event, ctx) => {
     // The spinner and thinking label are painted once; repaint them per run so a theme switch reaches them.

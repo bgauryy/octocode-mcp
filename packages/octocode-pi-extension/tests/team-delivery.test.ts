@@ -115,6 +115,7 @@ describe('dead letters', () => {
     expect('id' in sent).toBe(true);
     const id = (sent as { id: number }).id;
     b.team.leave();
+    // Dead letters are checked with the 5-second heartbeat.
     await vi.waitFor(() => expect(a.sent.some((entry) => String(entry.message.content).startsWith(`Message #${id} to ${b.team.id ?? ''}`))).toBe(true), { timeout: 8_000 });
     const notice = a.sent.find((entry) => String(entry.message.content).includes(`Message #${id}`))!;
     expect(notice.message).toMatchObject({ customType: MESSAGE_TYPE, content: expect.stringContaining('was not read') });
@@ -123,7 +124,7 @@ describe('dead letters', () => {
     // Once only.
     const store = open(cwd, db);
     expect(store.deadLetters(a.team.id!)).toEqual([]);
-  });
+  }, 10_000);
 
   it('marks dead letters notified in the store', () => {
     const store = open(repo(), path.join(tmp(), 'team.sqlite'));
@@ -141,6 +142,26 @@ describe('dead letters', () => {
 });
 
 describe('headless subagent exit', () => {
+  it('stops a subagent whose parent process is gone through Pi\'s own SIGTERM shutdown', () => {
+    vi.useFakeTimers();
+    const kill = vi.spyOn(process, 'kill').mockImplementation((pid) => {
+      if (pid === process.pid) return true;
+      throw Object.assign(new Error('no such process'), { code: 'ESRCH' });
+    });
+    try {
+      const db = path.join(tmp(), 'team.sqlite');
+      const live = agent(db, repo(), { OCTOCODE_AGENT_ID: 'live-000001', OCTOCODE_PARENT_PID: String(process.pid) }, false);
+      vi.advanceTimersByTime(1_500);
+      expect(kill).not.toHaveBeenCalledWith(process.pid, 'SIGTERM');
+      live.team.stop();
+      agent(db, repo(), { OCTOCODE_AGENT_ID: 'orphan-000001', OCTOCODE_PARENT_PID: String(2 ** 22 + 12345) }, false);
+      vi.advanceTimersByTime(1_500);
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
   it('leaves the team when its run settles, so later messages are refused instead of acked unread', async () => {
     const cwd = repo();
     const db = path.join(tmp(), 'team.sqlite');

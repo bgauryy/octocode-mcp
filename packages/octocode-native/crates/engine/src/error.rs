@@ -24,6 +24,19 @@ pub enum ErrorKind {
     /// The JSON-RPC connection is closed or failed (EOF, protocol fault,
     /// broken write, or retired after a timeout).
     ConnectionClosed,
+    /// A child process was stopped for using more memory than its cap
+    /// allows (a language server over its resident-memory cap); running it
+    /// again over the same scope would do the same.
+    ResourceExhausted,
+    /// A caller-supplied filter value is malformed (a glob, a file type,
+    /// a size bound).
+    InvalidInput,
+    /// A caller-supplied regex does not compile.
+    InvalidPattern,
+    /// The path the operation starts from does not exist.
+    NotFound,
+    /// The path the operation starts from cannot be read.
+    PermissionDenied,
 }
 
 /// A JSON-RPC `ResponseError` (`{code, message, data?}`) returned by a peer.
@@ -162,6 +175,24 @@ impl Error {
         }
     }
 
+    /// An error of the given kind.
+    pub fn with_kind(kind: ErrorKind, reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            kind,
+        }
+    }
+
+    /// A failed filesystem access, classified by its [`std::io::ErrorKind`].
+    pub fn io(error: &std::io::Error, reason: impl Into<String>) -> Self {
+        let kind = match error.kind() {
+            std::io::ErrorKind::NotFound => ErrorKind::NotFound,
+            std::io::ErrorKind::PermissionDenied => ErrorKind::PermissionDenied,
+            _ => ErrorKind::Other,
+        };
+        Self::with_kind(kind, reason)
+    }
+
     pub fn timeout(reason: impl Into<String>) -> Self {
         Self {
             reason: reason.into(),
@@ -173,6 +204,13 @@ impl Error {
         Self {
             reason: reason.into(),
             kind: ErrorKind::ConnectionClosed,
+        }
+    }
+
+    pub fn resource_exhausted(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            kind: ErrorKind::ResourceExhausted,
         }
     }
 

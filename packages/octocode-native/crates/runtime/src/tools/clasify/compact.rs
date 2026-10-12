@@ -11,7 +11,7 @@ use serde_json::{Map, Value, json};
 
 /// Choice/score answers whose top probability is at least this keep only the
 /// label or level; below it the full distribution stays.
-const CERTAIN: f64 = 0.9;
+pub(super) const CERTAIN: f64 = 0.9;
 
 /// What the compact form needs from the matrix that produced the output.
 pub(super) struct Matrix<'a> {
@@ -26,10 +26,12 @@ pub(super) struct Matrix<'a> {
 /// Compact one verbose query result in place.
 pub(super) fn compact_query_result(output: &mut Value, matrix: &Matrix<'_>) {
     let listed = best_windows(output);
+    let ranked = best_exists(output);
     let mut paths = Map::new();
     if let Some(resources) = output.get_mut("resources").and_then(Value::as_array_mut) {
         for resource in resources.iter_mut() {
             compact_resource(resource, &listed);
+            fold_whole_file_page(resource, &ranked);
             if let (Some(id), Some(path)) = (
                 resource.get("id").and_then(Value::as_str),
                 resource.get("path"),
@@ -78,6 +80,76 @@ fn best_windows(output: &Value) -> Vec<(Value, Value, Value)> {
             )
         })
         .collect()
+}
+
+/// `(questionId, resourceId, exists)` of every verbose `best` row.
+fn best_exists(output: &Value) -> Vec<(String, Value, Value)> {
+    output
+        .get("best")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .flat_map(|(id, rows)| {
+            rows.as_array()
+                .into_iter()
+                .flatten()
+                .map(move |row| (id.clone(), row["resourceId"].clone(), row["exists"].clone()))
+        })
+        .collect()
+}
+
+/// A resource whose one page judged its whole file (`line` 1 to its
+/// `totalLines`) restates only what `best` lists: each locate answer is the
+/// `exists` of a `best` row of this resource. Those answers go; any other
+/// answer (a `sufficient` stop signal) moves to the resource, and the page,
+/// left with only the file's span, goes too.
+fn fold_whole_file_page(resource: &mut Value, ranked: &[(String, Value, Value)]) {
+    let id = resource.get("id").cloned().unwrap_or(Value::Null);
+    let Some(fields) = resource.as_object_mut() else {
+        return;
+    };
+    let total = fields.get("totalLines").cloned();
+    let Some([page]) = fields
+        .get("pages")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+    else {
+        return;
+    };
+    let whole = total.is_some()
+        && page.get("line") == Some(&json!(1))
+        && page.get("endLine") == total.as_ref()
+        && page.as_object().is_some_and(|page| {
+            page.keys()
+                .all(|key| matches!(key.as_str(), "line" | "endLine" | "answers"))
+        });
+    let Some(answers) = page
+        .get("answers")
+        .and_then(Value::as_object)
+        .filter(|_| whole && !fields.contains_key("answers"))
+    else {
+        return;
+    };
+    let in_best = |question: &String, answer: &Value| {
+        ranked.iter().any(|(listed, resource, exists)| {
+            listed == question && *resource == id && exists == answer
+        })
+    };
+    if !answers
+        .iter()
+        .any(|(question, answer)| in_best(question, answer))
+    {
+        return;
+    }
+    let rest = answers
+        .iter()
+        .filter(|(question, answer)| !in_best(question, answer))
+        .map(|(question, answer)| (question.clone(), answer.clone()))
+        .collect::<Map<_, _>>();
+    fields.remove("pages");
+    if !rest.is_empty() {
+        fields.insert("answers".into(), Value::Object(rest));
+    }
 }
 
 fn escape(token: &str) -> String {
@@ -169,7 +241,12 @@ fn compact_resource(resource: &mut Value, listed: &[(Value, Value, Value)]) {
     let Some(fields) = resource.as_object_mut() else {
         return;
     };
-    if fields.get("coverage").and_then(Value::as_str) == Some("complete") {
+    if fields
+        .get("coverage")
+        .and_then(|c| c.get("state"))
+        .and_then(Value::as_str)
+        == Some("complete")
+    {
         fields.remove("coverage");
     }
     let Some(pages) = fields.get_mut("pages").and_then(Value::as_array_mut) else {
@@ -200,6 +277,11 @@ fn compact_resource(resource: &mut Value, listed: &[(Value, Value, Value)]) {
             .and_then(|scope| scope.get("totalLines"))
             .cloned()
     });
+    // Cell errors collapse first: a page whose every cell failed is unjudged,
+    // and compact_page keeps an unjudged page's read.
+    for page in pages.iter_mut() {
+        collapse_cell_errors(page);
+    }
     for page in pages.iter_mut() {
         let window_listed = |read: &Value| {
             crate::tools::clasify::output::read_range(&read["query"]).is_some_and(|(start, end)| {
@@ -212,9 +294,6 @@ fn compact_resource(resource: &mut Value, listed: &[(Value, Value, Value)]) {
             shared_total.is_some(),
             &window_listed,
         );
-    }
-    for page in pages.iter_mut() {
-        collapse_cell_errors(page);
     }
     // One error repeated across pages (e.g. the provider refused every
     // request) is stated once, on the resource: when every page failed with
@@ -236,8 +315,10 @@ fn compact_resource(resource: &mut Value, listed: &[(Value, Value, Value)]) {
             }
         }
         pages.retain(|page| {
-            page.as_object()
-                .is_some_and(|page| page.keys().any(|key| key != "line" && key != "endLine"))
+            page.as_object().is_some_and(|page| {
+                page.keys()
+                    .any(|key| !matches!(key.as_str(), "line" | "endLine" | "totalLines"))
+            })
         });
         fields.insert("error".into(), error);
     }
@@ -384,7 +465,7 @@ fn compact_page(
     };
     if hoisted_source.is_some_and(|source| fields.get("source") == Some(source)) {
         // The resource states it.
-        fields.remove("source");
+        fields.shift_remove("source");
     } else if let Some(path) = fields
         .get("source")
         .and_then(Value::as_object)
@@ -393,43 +474,44 @@ fn compact_page(
         .cloned()
     {
         // A source that names only its file is that file's path.
-        fields.remove("source");
+        fields.shift_remove("source");
         fields.insert("path".into(), path);
     }
-    if total_hoisted
-        && let Some(scope) = fields.get("scope").and_then(Value::as_object)
-        && let (Some(start), Some(end)) = (scope.get("startLine"), scope.get("endLine"))
+    // One line range is the span names localFetch `ranges` take: `line`,
+    // `endLine`. `totalLines` stays on the page only when the resource does
+    // not state it and the page is not the whole file; `scope` remains for
+    // byte and disjoint spans.
+    if let Some(scope) = fields.get("scope").and_then(Value::as_object)
+        && let (Some(start), Some(end), Some(total)) = (
+            scope.get("startLine"),
+            scope.get("endLine"),
+            scope.get("totalLines"),
+        )
         && scope.len() == 3
     {
-        // The span names localFetch `ranges` take (X1): `line`, `endLine`.
-        let (start, end) = (start.clone(), end.clone());
-        fields.remove("scope");
+        let (start, end, total) = (start.clone(), end.clone(), total.clone());
+        let whole_file = start == json!(1) && end == total;
+        fields.shift_remove("scope");
+        if !total_hoisted && !whole_file {
+            fields.shift_insert(0, "totalLines".into(), total);
+        }
         fields.shift_insert(0, "endLine".into(), end);
         fields.shift_insert(0, "line".into(), start);
     }
-    // A page that judged its whole file states the span as `line`/`endLine`;
-    // `scope` (with `totalLines`) stays only on a page that judged part of it.
-    if let Some(scope) = fields.get("scope").and_then(Value::as_object)
-        && scope.len() == 3
-        && scope.get("startLine") == Some(&json!(1))
-        && scope.get("endLine").is_some()
-        && scope.get("endLine") == scope.get("totalLines")
-    {
-        let end = scope["endLine"].clone();
-        fields.remove("scope");
-        fields.shift_insert(0, "endLine".into(), end);
-        fields.shift_insert(0, "line".into(), json!(1));
-    }
-    // A list page that names its own file implies a read that is only
+    // A judged list page that names its own file implies a read that is only
     // localFetch of that path and span: `{path, ranges:["line-endLine"]}`.
-    // A one-file resource keeps its page reads (the GATE flow runs them).
+    // An unjudged page (an error, no answers) keeps its read as the host's
+    // fallback; a one-file resource keeps its page reads (the GATE flow runs
+    // them).
+    let judged = fields.contains_key("answers") && !fields.contains_key("error");
     let path = fields.get("path").cloned();
     for key in ["next", "hints"] {
-        if path
-            .as_ref()
-            .is_some_and(|path| implied_local_read(fields, key, path))
+        if judged
+            && path
+                .as_ref()
+                .is_some_and(|path| implied_local_read(fields, key, path))
         {
-            fields.remove(key);
+            fields.shift_remove(key);
         }
     }
     let Some(answers) = fields.get_mut("answers").and_then(Value::as_object_mut) else {
@@ -450,8 +532,20 @@ fn compact_page(
             .and_then(|next| next.get("read"))
             .is_none_or(window_listed)
     {
-        fields.remove("next");
+        fields.shift_remove("next");
     }
+}
+
+/// Whether any of the page's answers is a verdict, not a failed cell.
+fn judged(fields: &Map<String, Value>) -> bool {
+    fields
+        .get("answers")
+        .and_then(Value::as_object)
+        .is_some_and(|answers| {
+            answers.values().any(|answer| {
+                answer.get("error").is_none() || answer.as_object().is_some_and(|a| a.len() > 1)
+            })
+        })
 }
 
 /// Whether the page's only hint is `localFetch {path, ranges:["line-endLine"]}`
@@ -459,10 +553,18 @@ fn compact_page(
 /// `key` is where the page holds its read: `next` while compacting, `hints`
 /// once published.
 fn implied_local_read(fields: &Map<String, Value>, key: &str, path: &Value) -> bool {
-    let (Some(line), Some(end)) = (
-        fields.get("line").and_then(Value::as_u64),
-        fields.get("endLine").and_then(Value::as_u64),
-    ) else {
+    // The page's span: `line`/`endLine`, or the `scope` line span of a
+    // judged part-file page (an unjudged window keeps its explicit read, the
+    // host's fallback).
+    let line = |fields: &Map<String, Value>, key: &str| fields.get(key).and_then(Value::as_u64);
+    let scope = fields
+        .get("scope")
+        .and_then(Value::as_object)
+        .filter(|_| judged(fields));
+    let Some((line, end)) = line(fields, "line")
+        .zip(line(fields, "endLine"))
+        .or_else(|| scope.and_then(|scope| line(scope, "startLine").zip(line(scope, "endLine"))))
+    else {
         return false;
     };
     let Some(hints) = fields.get(key).and_then(Value::as_object) else {
@@ -576,8 +678,9 @@ fn unify_matrix(next: &mut Value, matrix: &Matrix<'_>, paths: &Map<String, Value
 mod tests {
     use super::*;
 
-    /// A whole-file page states `line`/`endLine`, and a read that is only its
-    /// own path and span is implied; any other read stays.
+    /// Every line-range page states `line`/`endLine` (a part-file page adds
+    /// `totalLines` unless the resource states it); a read that is only its
+    /// own path and span is implied, and any other read stays.
     #[test]
     fn whole_file_pages_drop_their_implied_read() {
         let page = |read: Value| {
@@ -599,10 +702,16 @@ mod tests {
         let mut partial = json!({"answers":{"rel":0.9},"scope":{"startLine":5,"endLine":40,"totalLines":90},
             "source":{"path":"src/a.rs"},"hints":{"read":{"tool":"localFetch","query":{"queries":[{"ranges":["5-40"],"path":"src/a.rs"}]}}}});
         compact_page(&mut partial, None, false, &|_| false);
-        assert!(
-            partial.get("scope").is_some() && partial.get("hints").is_some(),
-            "{partial}"
+        // A part-file page states the same `line`/`endLine` span plus the
+        // file's `totalLines` (not hoisted here) and implies the read too.
+        assert_eq!(
+            partial,
+            json!({"line":5,"endLine":40,"totalLines":90,"answers":{"rel":0.9},"path":"src/a.rs"})
         );
+        let mut other = json!({"answers":{"rel":0.9},"scope":{"startLine":5,"endLine":40,"totalLines":90},
+            "source":{"path":"src/a.rs"},"hints":{"read":{"tool":"localFetch","query":{"queries":[{"ranges":["5-60"],"path":"src/a.rs"}]}}}});
+        compact_page(&mut other, None, false, &|_| false);
+        assert!(other.get("hints").is_some(), "{other}");
     }
 
     fn read(start: u64, end: u64) -> Value {
@@ -627,7 +736,7 @@ mod tests {
                 {"resourceId":"f","exists":0.89,"startLine":879,"endLine":886,"probability":0.53,
                  "path":"src/server.c","next":{"read":read(879,886)}}
             ]},
-            "resources":[{"id":"f","coverage":"partial","pages":[
+            "resources":[{"id":"f","coverage":{"state":"partial"},"pages":[
                 page(845, 1206, 0.89, (879, 886, 0.53)),
                 page(1481, 1851, 0.96, (1551, 1558, 0.68))
             ]}],
@@ -661,7 +770,7 @@ mod tests {
                     {"line":1854,"endLine":1861,"exists":0.94,"probability":0.76},
                     {"line":879,"endLine":886,"exists":0.89,"probability":0.53}
                 ]},
-                "resources":[{"id":"f","coverage":"partial","path":"src/server.c","totalLines":8615,"pages":[
+                "resources":[{"id":"f","coverage":{"state":"partial"},"path":"src/server.c","totalLines":8615,"pages":[
                     {"line":845,"endLine":1206,"answers":{"t":0.89}},
                     {"line":1481,"endLine":1851,"answers":{"t":0.96}}
                 ]}],
@@ -678,10 +787,67 @@ mod tests {
         );
         // The resource, the resume read, and the top-window read name the file.
         assert_eq!(output.to_string().matches("src/server.c").count(), 3);
-        assert!(output.to_string().len() * 2 < before);
+        // About half: `coverage` is a `{state}` object since the vocabulary
+        // merge, 10 bytes more than the string it replaced, on both sides.
+        let after = output.to_string().len();
+        assert!(after * 100 < before * 51, "{after} vs {before}");
     }
 
-    /// P5: pages of one GitHub file share one `source {ref, path}`: the
+    /// A one-page locate of a whole file states each fact once: the window in
+    /// `best`, its read in `next.read`, and a `sufficient` stop signal as the
+    /// resource's one answer. The page, which only repeated `exists` and the
+    /// file's span, goes. Measured (serde_json bytes): 512 → 289 verbose → compact.
+    #[test]
+    fn a_whole_file_locate_page_folds_into_best_and_one_stop_signal() {
+        let verbose = |answers: Value| {
+            json!({
+                "id":"m",
+                "best":{"where":[{"resourceId":"f","exists":0.97,"startLine":173,"endLine":178,
+                    "probability":0.78,"path":"src/indent.rs","next":{"read":read(173,178)}}]},
+                "resources":[{"id":"f","coverage":{"state":"complete"},"pages":[{
+                    "source":{"path":"src/indent.rs"},
+                    "scope":{"startLine":1,"endLine":423,"totalLines":423},
+                    "answers":answers
+                }]}]
+            })
+        };
+        let matrix = Matrix {
+            single_resource: Some("f"),
+            locate_ids: &["where"],
+            default_max_chars: 80_000,
+        };
+        let located =
+            json!({"where":{"exists":0.97,"matches":[{"lines":[173,178],"probability":0.78}]}});
+        let mut output = verbose(located.clone());
+        compact_query_result(&mut output, &matrix);
+        assert_eq!(
+            output["resources"],
+            json!([{"id":"f","path":"src/indent.rs","totalLines":423}]),
+            "{output}"
+        );
+        assert_eq!(output["next"]["read"], read(173, 178));
+        let mut stop = located;
+        stop["suf"] = json!({"yesno":0.83});
+        let mut output = verbose(stop);
+        let before = output.to_string().len();
+        compact_query_result(&mut output, &matrix);
+        let after = output.to_string().len();
+        assert_eq!(
+            output["resources"],
+            json!([{"id":"f","path":"src/indent.rs","totalLines":423,"answers":{"suf":0.83}}]),
+            "{output}"
+        );
+        assert_eq!((before, after), (512, 289), "{output}");
+        // A page whose window `best` does not list keeps its answer.
+        let mut unlisted = verbose(json!({"where":{"exists":0.4,"matches":[]}}));
+        compact_query_result(&mut unlisted, &matrix);
+        assert_eq!(
+            unlisted["resources"][0]["pages"][0]["answers"]["where"],
+            0.4
+        );
+    }
+
+    /// Pages of one GitHub file share one `source {ref, path}`: the
     /// resource states it once (`path`, `ref`) and the pages drop it. A page
     /// whose source differs keeps its own.
     #[test]
@@ -696,7 +862,7 @@ mod tests {
             locate_ids: &[],
             default_max_chars: 80_000,
         };
-        let mut output = json!({"id":"m","resources":[{"id":"f","coverage":"complete","pages":[
+        let mut output = json!({"id":"m","resources":[{"id":"f","coverage":{"state":"complete"},"pages":[
             page(1, source.clone()), page(11, source.clone()), page(21, source.clone())
         ]}]});
         compact_query_result(&mut output, &matrix);
@@ -776,12 +942,12 @@ mod tests {
     #[test]
     fn judge_answers_keep_distributions_only_when_uncertain() {
         let mut output = json!({"id":"m","resources":[
-            {"id":"a","coverage":"complete","pages":[{"answers":{"q":{"choice":"runtime","confidence":1.0,
+            {"id":"a","coverage":{"state":"complete"},"pages":[{"answers":{"q":{"choice":"runtime","confidence":1.0,
                 "probabilities":{"test":0.0,"runtime":1.0}}}}]},
-            {"id":"b","coverage":"complete","pages":[{"answers":{"q":{"choice":"docs","confidence":0.3,
+            {"id":"b","coverage":{"state":"complete"},"pages":[{"answers":{"q":{"choice":"docs","confidence":0.3,
                 "probabilities":{"docs":0.6,"test":0.4}}}}]},
-            {"id":"c","coverage":"complete","pages":[{"answers":{"q":{"yesno":0.12}}}]},
-            {"id":"d","coverage":"error","pages":[{"error":{"errorCode":"x","error":"y"}}]}
+            {"id":"c","coverage":{"state":"complete"},"pages":[{"answers":{"q":{"yesno":0.12}}}]},
+            {"id":"d","coverage":{"state":"error"},"pages":[{"error":{"errorCode":"x","error":"y"}}]}
         ]});
         compact_query_result(
             &mut output,
@@ -797,23 +963,23 @@ mod tests {
                 {"id":"a","answers":{"q":"runtime"}},
                 {"id":"b","answers":{"q":{"choice":"docs","confidence":0.3,"probabilities":{"docs":0.6,"test":0.4}}}},
                 {"id":"c","answers":{"q":0.12}},
-                {"id":"d","coverage":"error","error":{"errorCode":"x","error":"y"}}
+                {"id":"d","coverage":{"state":"error"},"error":{"errorCode":"x","error":"y"}}
             ])
         );
     }
 
-    /// D3 (CL5 fc1.json: 64 copies, 12.2 KB of 38 KB): pages a spent budget
+    /// Pages a spent budget
     /// left unjudged beside judged pages state their shared error once, on
     /// the resource, and keep their reads; another error stays on its page.
     #[test]
     fn a_repeated_unjudged_error_is_stated_once_beside_judged_pages() {
-        let spent = json!({"errorCode":"classificationBudgetSpent","error":"not judged","hints":{"text":["Run hints.read."]}});
+        let spent = json!({"errorCode":"classificationBudgetSpent","error":"not judged"});
         let other = json!({"errorCode":"classificationContextEmpty","error":"empty"});
         let unjudged = |path: &str, ranges: Value| {
             json!({"source":{"path":path},"error":spent,
                 "next":{"read":{"tool":"localFetch","query":{"path":path,"ranges":ranges}}}})
         };
-        let mut output = json!({"id":"m","resources":[{"id":"s","coverage":"partial","pages":[
+        let mut output = json!({"id":"m","resources":[{"id":"s","coverage":{"state":"partial"},"pages":[
             {"source":{"path":"a.rs"},"answers":{"r":{"yesno":0.94}}},
             unjudged("a.rs", json!(["16-22","108-114"])),
             {"source":{"path":"b.rs"},"answers":{"r":{"yesno":0.1}}},
@@ -831,7 +997,7 @@ mod tests {
         );
         let resource = &output["resources"][0];
         assert_eq!(resource["error"], spent, "{resource}");
-        assert_eq!(resource["coverage"], "partial");
+        assert_eq!(resource["coverage"]["state"], "partial");
         assert_eq!(
             output
                 .to_string()
@@ -848,7 +1014,7 @@ mod tests {
         assert_eq!(pages[4]["error"], other);
         assert_eq!(pages[0]["answers"]["r"], 0.94);
         // A repeated error on a page with no read stays on its pages.
-        let mut readless = json!({"id":"m","resources":[{"id":"s","coverage":"partial","pages":[
+        let mut readless = json!({"id":"m","resources":[{"id":"s","coverage":{"state":"partial"},"pages":[
             {"source":{"path":"a.rs"},"answers":{"r":{"yesno":0.94}}},
             {"source":{"path":"b.rs"},"error":spent},
             unjudged("c.rs", json!(["1-9"]))
@@ -872,13 +1038,13 @@ mod tests {
         let error = json!({"errorCode":"x","error":"y","hints":{"text":["z"]}});
         let failed = json!({"error":error});
         let mut output = json!({"id":"m","resources":[
-            {"id":"a","coverage":"error","pages":[{"answers":{"q":failed,"r":failed}}]},
-            {"id":"b","coverage":"error","pages":[
+            {"id":"a","coverage":{"state":"error"},"pages":[{"answers":{"q":failed,"r":failed}}]},
+            {"id":"b","coverage":{"state":"error"},"pages":[
                 {"line":1,"endLine":9,"answers":{"q":failed,"r":failed}},
                 {"line":10,"endLine":19,"answers":{"q":failed,"r":failed}}
             ]},
-            {"id":"c","coverage":"partial","pages":[{"answers":{"q":{"yesno":0.5},"r":failed}}]},
-            {"id":"d","coverage":"error","pages":[{"answers":{"q":failed,"r":{"error":{"errorCode":"x","error":"other"}}}}]}
+            {"id":"c","coverage":{"state":"partial"},"pages":[{"answers":{"q":{"yesno":0.5},"r":failed}}]},
+            {"id":"d","coverage":{"state":"error"},"pages":[{"answers":{"q":failed,"r":{"error":{"errorCode":"x","error":"other"}}}}]}
         ]});
         compact_query_result(
             &mut output,
@@ -891,10 +1057,10 @@ mod tests {
         assert_eq!(
             output["resources"],
             json!([
-                {"id":"a","coverage":"error","error":error},
-                {"id":"b","coverage":"error","error":error},
-                {"id":"c","coverage":"partial","answers":{"q":0.5,"r":failed}},
-                {"id":"d","coverage":"error","answers":{"q":failed,"r":{"error":{"errorCode":"x","error":"other"}}}}
+                {"id":"a","coverage":{"state":"error"},"error":error},
+                {"id":"b","coverage":{"state":"error"},"error":error},
+                {"id":"c","coverage":{"state":"partial"},"answers":{"q":0.5,"r":failed}},
+                {"id":"d","coverage":{"state":"error"},"answers":{"q":failed,"r":{"error":{"errorCode":"x","error":"other"}}}}
             ])
         );
     }

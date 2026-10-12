@@ -2,15 +2,16 @@ import fs from 'node:fs';
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { errorMessage } from '../shared/util.js';
 import { sanitizeTerminalText, storedText } from '../shared/sanitize.js';
-import { dbFailure, leaseAge, MESSAGE_MAX_CHARS, messageText, newId, outside, resolveLockPath, resolveTarget, USER_SENDER, wakes } from './routing.js';
-import { AGENT_ID_ENV, AGENT_TASK_ENV, PARENT_ID_ENV, pathKey, TeamStore } from './store.js';
+import { dbFailure, deadLetterText, leaseAge, MESSAGE_MAX_CHARS, messageText, newId, outside, resolveLockPath, resolveTarget, USER_SENDER, wakes } from './routing.js';
+import { AGENT_ID_ENV, AGENT_TASK_ENV, PARENT_ID_ENV, PARENT_PID_ENV, pathKey, TeamStore } from './store.js';
+import { processAlive, terminateSelf } from '../shared/process.js';
 import type { DeadLetter, Lease, LeaseRequest, Member, Message } from './model.js';
 import { HeldLeases, leaseIdleMs } from './held.js';
 import { Inbox } from './inbox.js';
 import type { EditLog } from './edits.js';
 import { AgentDbError } from '../agentdb/db.js';
 import { agentDbPath } from '../shared/home.js';
-import { dbStamp, TeamTicker, type TeamView } from './ticker.js';
+import { TeamTicker, type TeamView } from './ticker.js';
 
 export type { TeamView } from './ticker.js';
 
@@ -41,7 +42,8 @@ export class Team {
     read: () => (this.db ? this.db.quick(() => this.snapshot()) : this.snapshot()),
     maxAgeMs: HEARTBEAT_MS,
   });
-  private dirty = false;
+  /** A status or task change waits for the next tick; activity, tool counts and usage ride the heartbeat. */
+  private statusChanged = false;
   private savedAt = 0;
   /** Why the database cannot be used at all (foreign or newer schema); shown in /agents and the footer. */
   private schemaProblem: string | undefined;
@@ -50,7 +52,7 @@ export class Team {
   private activeAt = 0;
   private readonly held = new HeldLeases();
   /** Ordered, paced delivery with acknowledgement retries. */
-  private readonly inbox = new Inbox(HEARTBEAT_MS);
+  private readonly inbox = new Inbox();
   /** Subagents this session started that have finished: id → where their report went, for a later message to them. */
   private readonly finished = new Map<string, string>();
 
@@ -60,10 +62,7 @@ export class Team {
     this.finished.set(id, receipt);
     if (this.finished.size > 128) this.finished.delete(this.finished.keys().next().value!);
   }
-  constructor(
-    private readonly pi: ExtensionAPI,
-    private readonly env: NodeJS.ProcessEnv = process.env,
-  ) {}
+  constructor(private readonly pi: ExtensionAPI, private readonly env: NodeJS.ProcessEnv = process.env) {}
 
   get id(): string | undefined {
     return this.me?.id;
@@ -75,7 +74,7 @@ export class Team {
 
   /** Bind to the session and, in a subagent, join straight away (the parent chose the id). */
   start(ctx: ExtensionContext): void {
-    this.stop();
+    try { this.stop(); } catch { /* the old row stays (locked or closed database) and ages out; stop() cleared the state */ }
     this.ctx = ctx;
     this.schemaProblem = undefined;
     if (this.env[AGENT_ID_ENV]) this.join();
@@ -86,7 +85,7 @@ export class Team {
     if (!this.ctx) throw new Error('The team is not available before the session starts.');
     if (this.schemaProblem) throw new Error(this.schemaProblem);
     try {
-      return (this.db ??= TeamStore.open(this.ctx.cwd, agentDbPath(this.env), this.env));
+      return (this.db ??= TeamStore.shared(this.ctx.cwd, this.env));
     } catch (error) {
       const problem = `Team database unavailable: ${errorMessage(error)}`;
       if (error instanceof AgentDbError) this.schemaProblem = problem;
@@ -101,9 +100,8 @@ export class Team {
 
   /** Join (or refresh) as this process. Idempotent; `task` replaces the one-line description. */
   join(task?: string): Member {
-    const ctx = this.ctx;
-    const db = this.store();
-    if (!ctx) throw new Error('The team is not available before the session starts.');
+    const db = this.store(); // throws before the session starts
+    const ctx = this.ctx!;
     if (!this.me) {
       const id = this.env[AGENT_ID_ENV] ?? newId('main');
       const parentId = this.parentId;
@@ -128,23 +126,24 @@ export class Team {
     return this.me;
   }
 
-  /** Leave the team and release everything held. The database stays open for the next join. */
+  /** Leave the team and release everything held; the database stays open for the next join. State clears first: a refused removal still throws, but leaves nothing stale (the row ages out). */
   leave(): void {
-    if (this.me && this.db) this.db.remove(this.me.id);
+    const me = this.me;
     this.me = undefined;
     this.ticker.sync();
     this.held.clear();
     this.inbox.reset();
+    if (me && this.db) this.db.remove(me.id);
   }
 
-  /** Leave and close the database (session end). */
+  /** Leave and let go of the database (session end; the process connection stays open for the next session). */
   stop(): void {
-    this.leave();
-    this.db?.close();
-    this.db = undefined;
-    this.ticker.reset();
-    this.finished.clear();
-    this.ctx = undefined;
+    try { this.leave(); } finally {
+      this.db = undefined;
+      this.ticker.reset();
+      this.finished.clear();
+      this.ctx = undefined;
+    }
   }
 
   /** Call `listener` on every tick with a fresh `view` (shared ticker and cache; watchers never read the database). */
@@ -276,7 +275,7 @@ export class Team {
 
   // Activity the parent and the user see: state, current tool, tokens.
   onAgentStart(): void {
-    this.update((me) => void (me.status = 'working'));
+    this.update((me) => void (me.status = 'working'), true);
   }
 
   /**
@@ -291,7 +290,7 @@ export class Team {
       return;
     }
     // The activity line was cleared by src/ui/activity.ts, which owns it.
-    this.update((me) => void (me.status = 'idle'));
+    this.update((me) => void (me.status = 'idle'), true);
   }
 
   /** A top-level tool call started (parallel calls each count; calls a tool makes itself do not). */
@@ -314,10 +313,11 @@ export class Team {
     });
   }
 
-  private update(change: (me: Member) => void): void {
+  /** Changes this agent's row in memory; `status` changes are written on the next tick, the rest with the heartbeat. */
+  private update(change: (me: Member) => void, status = false): void {
     if (!this.me) return;
     change(this.me);
-    this.dirty = true;
+    if (status) this.statusChanged = true;
   }
 
   private flush(db: TeamStore | undefined = this.db): void {
@@ -330,7 +330,7 @@ export class Team {
     const idle = now - this.activeAt >= leaseIdleMs(this.env);
     if (!idle) db.renew(this.me.id, now);
     this.savedAt = now;
-    this.dirty = false;
+    this.statusChanged = false;
     if (!this.held.holding) return;
     // A heartbeat stall can let a lease lapse (and a peer take the path): say so once, and refuse edits until re-locked.
     const lost = this.held.lost(db.owned(this.me.id, now));
@@ -351,6 +351,10 @@ export class Team {
   /** Two-phase delivery: read what is waiting, hand each message to Pi, then record only the ones Pi accepted. */
   private deliverPending(): void {
     if (!this.me || !this.db) return;
+    // A crashed parent's child spends tokens for nobody: Pi's SIGTERM path disposes the session (leaving the team) and exits.
+    // The parent's pid comes from the environment, not the team table: the parent may never have joined it.
+    const parentPid = Number(this.env[PARENT_PID_ENV] ?? 0);
+    if (parentPid && !processAlive(parentPid)) return terminateSelf();
     const db = this.db;
     try {
       db.quick(() => this.deliverNow(db));
@@ -363,9 +367,10 @@ export class Team {
 
   private deliverNow(db: TeamStore): void {
     if (!this.me) return;
-    this.inbox.deliver(db, this.me.id, dbStamp(agentDbPath(this.env)), (message) => this.deliver(message));
+    this.inbox.deliver(db, this.me.id, (message) => this.deliver(message));
+    if (!this.statusChanged && Date.now() - this.savedAt < HEARTBEAT_MS) return;
+    this.flush(db);
     this.reportDeadLetters(db, this.me.id);
-    if (this.dirty || Date.now() - this.savedAt >= HEARTBEAT_MS) this.flush(db);
   }
 
   /** Tells this agent, once and without waking it, about messages it sent that their recipients left without reading. */
@@ -374,9 +379,7 @@ export class Team {
     if (letters.length === 0) return;
     const told: DeadLetter[] = [];
     for (const letter of letters) {
-      const who = letter.recipients.join(', ');
-      const text = sanitizeTerminalText(`Message #${letter.id} to ${who} was not read: ${letter.recipients.length === 1 ? `${who} left` : 'they left'} the team first. Its text began: "${letter.text.split('\n')[0]!.slice(0, 120)}"`);
-      if (!this.notice(text)) break; // Told on a later tick.
+      if (!this.notice(deadLetterText(letter))) break; // Told on a later tick.
       told.push(letter);
     }
     db.markNotified(told);

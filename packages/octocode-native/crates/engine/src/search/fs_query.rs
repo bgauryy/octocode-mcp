@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use regex::Regex;
 
+use crate::error::{Error, ErrorKind};
 use crate::text::file_extension::extension_of;
 use crate::types::{FileSystemEntry, FileSystemQueryOptions, FileSystemQueryResult};
 
@@ -60,7 +61,7 @@ struct QueryState {
 pub(crate) fn query_file_system_filtered_inner(
     options: FileSystemQueryOptions,
     allow_path: &dyn Fn(&Path) -> Result<bool, String>,
-) -> Result<FileSystemQueryResult, String> {
+) -> Result<FileSystemQueryResult, Error> {
     query_file_system_typed_inner(options, &|path, _| allow_path(path))
 }
 
@@ -71,16 +72,19 @@ pub(crate) fn query_file_system_filtered_inner(
 pub(crate) fn query_file_system_typed_inner(
     options: FileSystemQueryOptions,
     allow_path: &crate::portable::FileSystemEntryFilter<'_>,
-) -> Result<FileSystemQueryResult, String> {
+) -> Result<FileSystemQueryResult, Error> {
     let query = CompiledQuery::new(options)?;
     let mut state = QueryState::default();
-    if !allow_path(&query.root, None)? {
-        return Err("Filesystem query root is denied by path policy".to_owned());
+    if !allow_path(&query.root, None).map_err(Error::new)? {
+        return Err(Error::new("Filesystem query root is denied by path policy"));
     }
     let root_metadata = fs::symlink_metadata(&query.root).map_err(|err| {
-        format!(
-            "Cannot access filesystem query root '{}': {err}",
-            query.root.display()
+        Error::io(
+            &err,
+            format!(
+                "Cannot access filesystem query root '{}': {err}",
+                query.root.display()
+            ),
         )
     })?;
 
@@ -103,10 +107,10 @@ pub(crate) fn query_file_system_typed_inner(
     if root_metadata.is_dir() && (query.recursive || !query.include_root) {
         walk_children(&query.root, 1, &query, &mut state, allow_path)?;
     } else if !root_metadata.is_dir() && !query.include_root {
-        return Err(format!(
+        return Err(Error::new(format!(
             "Filesystem query root is not a directory: {}",
             query.root.display()
-        ));
+        )));
     }
 
     let was_capped = state.total_discovered as usize > query.limit;
@@ -122,7 +126,7 @@ pub(crate) fn query_file_system_typed_inner(
 }
 
 impl CompiledQuery {
-    fn new(options: FileSystemQueryOptions) -> Result<Self, String> {
+    fn new(options: FileSystemQueryOptions) -> Result<Self, Error> {
         let root = PathBuf::from(options.path);
         let mut warnings = Vec::new();
         let (path_names, base_names): (Vec<String>, Vec<String>) = options
@@ -147,14 +151,19 @@ impl CompiledQuery {
         let exclude_paths = compile_globs(exclude_paths, "exclude", &mut warnings);
         let extensions = normalize_extensions(options.extensions.unwrap_or_default());
         let path_glob = match options.path_pattern {
-            Some(pattern) => Some(compile_glob(&pattern, "pathPattern").map_err(|err| err.reason)?),
+            Some(pattern) => Some(
+                compile_glob(&pattern, "pathPattern")
+                    .map_err(|err| Error::with_kind(ErrorKind::InvalidInput, err.reason))?,
+            ),
             None => None,
         };
         let regex = match options.regex {
-            Some(pattern) => Some(
-                Regex::new(&pattern)
-                    .map_err(|err| format!("Invalid regex for local filesystem query: {err}"))?,
-            ),
+            Some(pattern) => Some(Regex::new(&pattern).map_err(|err| {
+                Error::with_kind(
+                    ErrorKind::InvalidPattern,
+                    format!("Invalid regex for local filesystem query: {err}"),
+                )
+            })?),
             None => None,
         };
 
@@ -163,7 +172,10 @@ impl CompiledQuery {
             .max_depth
             .is_some_and(|max_depth| min_depth > max_depth)
         {
-            return Err("minDepth must be less than or equal to maxDepth".to_owned());
+            return Err(Error::with_kind(
+                ErrorKind::InvalidInput,
+                "minDepth must be less than or equal to maxDepth",
+            ));
         }
 
         Ok(Self {
@@ -236,7 +248,7 @@ fn walk_children(
     query: &CompiledQuery,
     state: &mut QueryState,
     allow_path: &crate::portable::FileSystemEntryFilter<'_>,
-) -> Result<(), String> {
+) -> Result<(), Error> {
     if depth > MAX_RECURSION_DEPTH {
         state.skipped += 1;
         return Ok(());
@@ -288,7 +300,7 @@ fn walk_children(
         let file_type = dir_entry.file_type().ok();
         // Authorize before metadata, matching (which can inspect empty
         // directories), discovery counters, or recursive traversal.
-        if !allow_path(&path, file_type)? {
+        if !allow_path(&path, file_type).map_err(Error::new)? {
             continue;
         }
         let file_name = dir_entry.file_name();
@@ -668,11 +680,15 @@ fn parse_duration(raw: &str) -> Option<u64> {
     }
 }
 
-fn parse_size_option(value: Option<&str>, label: &str) -> Result<Option<u64>, String> {
+fn parse_size_option(value: Option<&str>, label: &str) -> Result<Option<u64>, Error> {
     value
         .map(|raw| {
-            parse_size(raw)
-                .ok_or_else(|| format!("Invalid {label} value for local filesystem query: {raw}"))
+            parse_size(raw).ok_or_else(|| {
+                Error::with_kind(
+                    ErrorKind::InvalidInput,
+                    format!("Invalid {label} value for local filesystem query: {raw}"),
+                )
+            })
         })
         .transpose()
 }
@@ -871,7 +887,7 @@ mod tests {
     fn query_file_system_inner(
         options: FileSystemQueryOptions,
     ) -> Result<FileSystemQueryResult, String> {
-        query_file_system_filtered_inner(options, &|_| Ok(true))
+        query_file_system_filtered_inner(options, &|_| Ok(true)).map_err(|err| err.reason)
     }
 
     fn temp_root(name: &str) -> PathBuf {
@@ -969,6 +985,39 @@ mod tests {
         assert_eq!(parse_duration(&format!("{huge}h")), None);
         assert_eq!(parse_duration(&format!("{huge}d")), None);
         assert_eq!(parse_duration(&format!("{huge}w")), None);
+    }
+
+    #[test]
+    fn query_errors_carry_their_kind() {
+        let kind = |options: FileSystemQueryOptions| {
+            query_file_system_filtered_inner(options, &|_| Ok(true))
+                .expect_err("rejected")
+                .kind()
+                .clone()
+        };
+        assert_eq!(
+            kind(FileSystemQueryOptions {
+                path: ".".to_owned(),
+                regex: Some("(".to_owned()),
+                ..Default::default()
+            }),
+            ErrorKind::InvalidPattern
+        );
+        assert_eq!(
+            kind(FileSystemQueryOptions {
+                path: ".".to_owned(),
+                size_greater: Some("lots".to_owned()),
+                ..Default::default()
+            }),
+            ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            kind(FileSystemQueryOptions {
+                path: "/definitely/missing/octocode-root".to_owned(),
+                ..Default::default()
+            }),
+            ErrorKind::NotFound
+        );
     }
 
     #[test]

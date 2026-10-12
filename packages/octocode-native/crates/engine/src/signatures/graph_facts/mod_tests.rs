@@ -338,9 +338,8 @@ fn use_heavy_rust_file_keeps_its_imports_inside_the_deadline() {
     for index in 0..6_000 {
         source.push_str(&format!("use crate::item{index}::Name;\n"));
     }
-    let started = std::time::Instant::now();
-    let value = facts(&source, "src/lib.rs");
-    let elapsed = started.elapsed();
+    let (value, elapsed) =
+        crate::test_cpu::cpu_time_of(|| facts_with_load_proof_deadline(&source, "src/lib.rs"));
     let diagnostics = value["diagnostics"].as_array().unwrap();
     assert!(
         !diagnostics
@@ -459,6 +458,16 @@ fn facts(src: &str, path: &str) -> Value {
     serde_json::from_str(&raw).expect("valid graph json")
 }
 
+/// Facts under a wall-clock deadline that a loaded machine cannot reach, for
+/// the complexity tests: they bound the work by thread CPU time instead
+/// (`crate::test_cpu`), so scheduler delay neither cuts the walk short nor
+/// fails the bound.
+fn facts_with_load_proof_deadline(src: &str, path: &str) -> Value {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    let raw = extract_graph_facts_before(src, path, deadline).expect("graph facts expected");
+    serde_json::from_str(&raw).expect("valid graph json")
+}
+
 #[test]
 fn expired_graph_budget_reports_incomplete_rust_root() {
     let raw = extract_graph_facts_before(
@@ -535,9 +544,9 @@ fn deeply_nested_receiver_lookups_stay_inside_the_deadline() {
     // A receiver lookup climbed `Node::parent()` (a root-down search per
     // hop) from every member call to its function: O(depth²) per call.
     let source = deeply_nested_rust_receivers(1_500);
-    let started = std::time::Instant::now();
-    let graph = facts(&source, "deep_receivers.rs");
-    let elapsed = started.elapsed();
+    let (graph, elapsed) = crate::test_cpu::cpu_time_of(|| {
+        facts_with_load_proof_deadline(&source, "deep_receivers.rs")
+    });
     let diagnostics = graph["diagnostics"].as_array().unwrap();
     assert!(
         !diagnostics
@@ -1147,4 +1156,33 @@ fn rust_macro_body_members_nest_under_their_container_in_source_order() {
     assert_eq!(by_name("d")["kind"], "method");
     assert!(by_name("top")["parent"].is_null());
     assert_eq!(by_name("top")["kind"], "function");
+}
+
+#[test]
+fn graph_fact_notes_classify_by_kind() {
+    let graph = facts(
+        "#![cfg_attr(test, allow(x))]\n#[cfg(test)]\nmod t;\nfn f( {\n",
+        "lib.rs",
+    );
+    let kinds = graph["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|note| GraphFactNoteKind::of(note.as_str().unwrap()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds.first(),
+        Some(&Some(GraphFactNoteKind::SyntaxOnly)),
+        "{graph}"
+    );
+    assert!(
+        kinds.contains(&Some(GraphFactNoteKind::RecoveredParse)),
+        "{graph}"
+    );
+    assert!(GraphFactNoteKind::RustModuleAttributes.is_linking_only());
+    assert!(!GraphFactNoteKind::RecoveredParse.is_linking_only());
+    assert_eq!(
+        GraphFactNoteKind::of("graph.parse.deadlineExceeded: graph parsing was interrupted"),
+        None
+    );
 }

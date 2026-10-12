@@ -64,9 +64,7 @@ pub(super) fn capture_prefiltered(
     {
         crate::tools::clasify::context::append_limitation(
             page_context_mut(last),
-            &format!(
-                "Prefilter windows stopped before line {from}; later hits are unjudged. next.clasify resumes there."
-            ),
+            &format!("Prefilter windows stopped before line {from}; later hits are unjudged."),
         );
     }
     Ok((

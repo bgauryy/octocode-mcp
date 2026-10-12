@@ -2,8 +2,7 @@
 //! ghSearchRepo, ghStructure) against one mock server, plus the shared
 //! paging helpers.
 use super::*;
-use crate::tools::gh_search_code::GhSearchCodeQuery;
-use crate::tools::gh_search_repo::GhSearchRepoQuery;
+use crate::contracts::tool_types::{GhSearchCodeQuery, GhSearchRepoQuery};
 
 #[test]
 fn owner_listing_page_ceiling_keeps_rows_and_discloses_remaining_results() {
@@ -225,7 +224,7 @@ mod provider_backed {
         let out = run(
                 &server,
                 json!({"operation":"code","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b","keywords":["needle"],
-                       "extensions":["rs"],"path":"src","language":"rust","pageSize":10}),
+                       "extensions":["rs"],"path":"src","pageSize":10}),
             )
             .await
             .expect("search");
@@ -235,8 +234,11 @@ mod provider_backed {
         assert!(data["next"].get("retryRenamed").is_none(), "{data}");
         assert!(data["next"].get("retry").is_none(), "{data}");
         assert!(data.get("isPartial").is_none(), "{data}");
-        let warnings = data["warnings"].to_string();
-        assert!(warnings.contains("renamed to c/d"), "{data}");
+        assert_eq!(
+            data["warnings"][0],
+            crate::tools::gh_shared::renamed_warning("a", "b", &("c".into(), "d".into())),
+            "one shared rename wording: {data}"
+        );
         let searched = server
             .received_requests()
             .await
@@ -252,12 +254,12 @@ mod provider_backed {
             .filter(|q| q.contains("repo:c/d"))
             .collect::<Vec<_>>();
         assert_eq!(searched.len(), 1, "{searched:?}");
-        for filter in ["extension:rs", "path:src", "language:rust", "needle"] {
+        for filter in ["extension:rs", "path:src", "needle"] {
             assert!(searched[0].contains(filter), "{filter}: {searched:?}");
         }
     }
 
-    /// D9: an inaccessible repository gets no `retry` for its incomplete
+    /// An inaccessible repository gets no `retry` for its incomplete
     /// result (a retry cannot help) and says why the search is empty.
     #[tokio::test]
     async fn inaccessible_repository_drops_the_incomplete_retry() {
@@ -283,7 +285,7 @@ mod provider_backed {
             error.reason,
             Some(crate::providers::github::ProviderErrorReason::RepositoryNotFound)
         );
-        let failure = super::search_failure(error, "");
+        let failure = super::search_failure(error, None);
         assert!(failure.message.contains("private"), "{}", failure.message);
     }
 
@@ -343,8 +345,9 @@ mod provider_backed {
             .await
             .expect("search");
         let data = &out.data;
-        assert_eq!(data["owner"], "a", "{data}");
-        assert_eq!(data["repo"], "b", "{data}");
+        // A repo-scoped page echoes no owner/repo: they are the query's.
+        assert!(data.get("owner").is_none(), "{data}");
+        assert!(data.get("repo").is_none(), "{data}");
         assert_eq!(data["commitSha"], TREE_SHA, "{data}");
         let files = data["files"].as_array().expect("files");
         let routing = files
@@ -369,7 +372,7 @@ mod provider_backed {
         }
         let read = &data["next"]["read"]["query"]["queries"][0];
         assert_eq!(read["owner"], "a", "{data}");
-        // E10: the top hit declares `wrap_app`, so the read is that whole
+        // The top hit declares `wrap_app`, so the read is that whole
         // declaration, never a fixed line window that may cut it.
         assert_eq!(read["path"], "src/handler.py", "{data}");
         assert_eq!(read["matchString"], "def wrap_app(app):", "{data}");
@@ -426,6 +429,13 @@ mod provider_backed {
             assert_eq!(query["ref"], TREE_SHA, "{data}");
             assert_eq!(query["matchString"], "wrap_app", "{data}");
             assert_eq!(query["contextLines"], 0, "{data}");
+            // A file whose first five hits are shown resumes after them
+            // (lines 6-25 hold the other twenty); a file whose shown line
+            // was cut re-reads its hits whole.
+            match query["path"].as_str().expect("path") {
+                "src/routing.py" => assert_eq!(query["ranges"], json!(["6-25"]), "{data}"),
+                _ => assert!(query.get("ranges").is_none(), "{data}"),
+            }
             crate::contracts::validate_query("ghGetFileContent", {
                 let mut query = query.clone();
                 query["mainGoal"] = json!("g");
@@ -433,6 +443,27 @@ mod provider_backed {
             })
             .expect("readHits is a valid ghGetFileContent query");
         }
+    }
+
+    /// The listing matches keywords case-insensitively, so the hit read
+    /// does too: an uppercase keyword under smart case would skip counted
+    /// lowercase hits.
+    #[tokio::test]
+    async fn hit_reads_match_case_like_the_listing() {
+        let server = MockServer::start().await;
+        mount_code_search(&server).await;
+        mount_ref(&server, "HEAD").await;
+        mount_content(&server, "src/handler.py", "def wrap_app(app):\n").await;
+        mount_content(&server, "src/routing.py", &"wrap_app()\n".repeat(25)).await;
+        let out = run(
+                &server,
+                json!({"operation":"code","mainGoal":"test","reasoning":"test","owner":"a","repo":"b","keywords":["Wrap_App"]}),
+            )
+            .await
+            .expect("search");
+        let query = &out.data["next"]["readHits"]["query"]["queries"][0];
+        assert_eq!(query["path"], "src/routing.py", "{}", out.data);
+        assert_eq!(query["caseMode"], "insensitive", "{}", out.data);
     }
 
     /// A fully shown hit list needs no extra read.
@@ -524,7 +555,7 @@ mod provider_backed {
         let data = &out.data;
         // The caller's own ref is not echoed back.
         assert!(data.get("ref").is_none(), "{data}");
-        assert_eq!(data["indexRef"], "defaultBranch", "{data}");
+        assert!(data.get("indexRef").is_none(), "{data}");
         let files = data["files"].as_array().expect("files");
         let handler = files
             .iter()
@@ -576,10 +607,9 @@ mod provider_backed {
             warning.contains("default-branch index at fedcba9") && warning.contains("not dev"),
             "{data}"
         );
-        assert!(
-            warning.ends_with("list them with ghStructure at dev."),
-            "{data}"
-        );
+        // Facts only: the static "files only at the ref are missing"
+        // advice is the description's; `viewRepo` lists them.
+        assert!(!warning.contains("ghStructure"), "{data}");
         let lead = &data["next"]["viewRepo"];
         assert_eq!(lead["tool"], "ghStructure", "{data}");
         for (key, value) in [
@@ -784,7 +814,7 @@ mod provider_backed {
         let out = run(
             &server,
             json!({"operation":"code","mainGoal":"test","reasoning":"test","owner":"a",
-                    "keywords":["wrap_app"],"match":"path"}),
+                    "keywords":["wrap_app"],"matchIn":"path"}),
         )
         .await
         .expect("search");
@@ -834,22 +864,25 @@ mod provider_backed {
                 "extensions",
             ),
             (
-                json!({"operation":"code","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b","keywords":["needle"],"match":"path"}),
+                json!({"operation":"code","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b","keywords":["needle"],"matchIn":"path"}),
                 "path",
             ),
         ] {
             let out = run(&server, query).await.expect("search");
             assert_eq!(out.status, Some("empty"));
-            let hint = out.data["hints"][0].as_str().unwrap_or_default();
-            assert!(hint.contains(cause), "{cause}: {}", out.data);
-            assert!(hint.len() <= 120, "{hint}");
-            if cause != "default branch" {
-                assert!(!hint.contains("default branch"), "{}", out.data);
+            // Only a requested ref is a per-call fact; every other cause is
+            // the row's leads and the description.
+            if cause == "default branch" {
+                let hint = out.data["hints"][0].as_str().unwrap_or_default();
+                assert!(hint.contains("`dev` was not searched"), "{}", out.data);
+                assert!(hint.len() <= 120, "{hint}");
+            } else {
+                assert!(out.data.get("hints").is_none(), "{cause}: {}", out.data);
             }
         }
     }
 
-    /// D5: empty-search hints name the actual cause, and a repository
+    /// Empty-search hints name the actual cause, and a repository
     /// known to exist gets no root viewTree.
     #[tokio::test]
     async fn empty_code_search_hints_are_cause_specific() {
@@ -864,7 +897,6 @@ mod provider_backed {
             )
             .await;
         }
-        let hint = |out: &ToolData| out.data["hints"][0].as_str().unwrap_or_default().to_owned();
         let renamed = run(
                 &server,
                 json!({"operation":"code","mainGoal": "test", "reasoning":"test","owner":"a","repo":"old","keywords":["needle"]}),
@@ -880,7 +912,7 @@ mod provider_backed {
             "{}",
             renamed.data
         );
-        assert!(hint(&renamed).contains("in c/d"), "{}", renamed.data);
+        assert!(renamed.data.get("hints").is_none(), "{}", renamed.data);
         assert!(
             renamed.data["next"].get("retryRenamed").is_none(),
             "{}",
@@ -893,9 +925,9 @@ mod provider_backed {
             )
             .await
             .expect("search");
-        // An existing repository with no hit leads to its root structure.
-        assert_eq!(
-            existing.data["next"]["viewTree"]["query"]["queries"][0]["path"], "",
+        // A root listing cannot show a keyword is absent: no lead.
+        assert!(
+            existing.data["next"].get("viewTree").is_none(),
             "{}",
             existing.data
         );
@@ -914,17 +946,14 @@ mod provider_backed {
         let path_mode = run(
             &server,
             json!({"operation":"code","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b",
-                       "keywords":["fn spawn_blocking"],"match":"path"}),
+                       "keywords":["fn spawn_blocking"],"matchIn":"path"}),
         )
         .await
         .expect("search");
-        assert!(
-            hint(&path_mode).contains("match:\"path\""),
-            "{}",
-            path_mode.data
-        );
-        let content = &path_mode.data["next"]["searchCode"]["query"]["queries"][0];
-        assert_eq!(content["match"], "file", "{}", path_mode.data);
+        // The lead is the recovery; no sentence restates it.
+        assert!(path_mode.data.get("hints").is_none(), "{}", path_mode.data);
+        let content = &path_mode.data["next"]["findCode"]["query"]["queries"][0];
+        assert_eq!(content["matchIn"], "file", "{}", path_mode.data);
         assert_eq!(content["keywords"], json!(["fn spawn_blocking"]));
     }
 
@@ -964,7 +993,7 @@ mod provider_backed {
         );
     }
 
-    /// D9: path matches carry no empty snippet list.
+    /// Path matches carry no empty snippet list.
     #[tokio::test]
     async fn path_match_rows_omit_empty_matches() {
         let server = MockServer::start().await;
@@ -983,7 +1012,7 @@ mod provider_backed {
         let out = run(
             &server,
             json!({"operation":"code","mainGoal": "test", "reasoning":"test","owner":"a","repo":"b",
-                       "keywords":["pool"],"match":"path"}),
+                       "keywords":["pool"],"matchIn":"path"}),
         )
         .await
         .expect("search");
@@ -993,7 +1022,7 @@ mod provider_backed {
     }
 
     #[tokio::test]
-    async fn concise_repositories_are_flat_rows() {
+    async fn picked_rows_keep_the_repository_id() {
         let server = MockServer::start().await;
         mount_json(
             &server,
@@ -1006,11 +1035,22 @@ mod provider_backed {
         .await;
         let out = run(
                 &server,
-                json!({"operation":"repositories","mainGoal": "test", "reasoning":"test","keywords":["x"],"concise":true}),
+                json!({"operation":"repositories","mainGoal": "test", "reasoning":"test","keywords":["x"],"fields":["stars"]}),
             )
             .await
             .expect("search");
-        assert_eq!(out.data["repositories"], json!(["o/r"]));
+        assert_eq!(
+            out.data["repositories"][0]
+                .as_object()
+                .map(|row| row.keys().cloned().collect::<Vec<_>>()),
+            Some(vec![
+                "owner".to_owned(),
+                "repo".to_owned(),
+                "stars".to_owned()
+            ]),
+            "{}",
+            out.data
+        );
         assert_eq!(
             out.data["next"]["viewRepo"],
             json!({"tool":"ghStructure","query":{"queries":[{"owner":"o","repo":"r"}]}}),
@@ -1056,7 +1096,7 @@ mod provider_backed {
             "{}",
             out.data
         );
-        let replay: crate::tools::gh_structure::GhStructureQuery =
+        let replay: crate::contracts::tool_types::GhStructureQuery =
             serde_json::from_value(lead["query"]["queries"][0].clone())
                 .expect("valid ghStructure query");
         assert_eq!(replay.repo.as_str(), "top");
@@ -1083,7 +1123,7 @@ mod provider_backed {
         .await;
         let out = run(
                 &server,
-                json!({"operation":"repositories","mainGoal": "test", "reasoning":"test","owner":"o","sort":"updated"}),
+                json!({"operation":"repositories","mainGoal": "test", "reasoning":"test","owner":"o","sort":"updated:desc"}),
             )
             .await
             .expect("owner listing");
@@ -1094,10 +1134,13 @@ mod provider_backed {
             .map(|row| row["repo"].as_str().unwrap_or_default().to_owned())
             .collect::<Vec<_>>();
         assert_eq!(names, vec!["live".to_owned()], "{}", out.data);
-        assert_eq!(out.data["order"], "pushed");
+        assert!(
+            out.data.get("order").is_none(),
+            "the description states the order"
+        );
     }
 
-    /// D8: the listing API's own order is creation (oldest first); the
+    /// The listing API's own order is creation (oldest first); the
     /// default best-match listing asks for the most recently pushed.
     #[tokio::test]
     async fn owner_listing_default_sort_is_recent_activity_not_creation() {
@@ -1110,7 +1153,7 @@ mod provider_backed {
         .await
         .expect("owner listing");
         assert_eq!(out.data["repositories"][0]["repo"], "live", "{}", out.data);
-        assert_eq!(out.data["order"], "pushed", "{}", out.data);
+        assert!(out.data.get("order").is_none(), "{}", out.data);
     }
 
     #[tokio::test]
@@ -1322,23 +1365,20 @@ mod provider_backed {
             .await
             .expect("glob");
         assert_eq!(
-            out.data["entries"],
+            out.data["files"],
             json!([{"dir":"starlette","files":["_exception_handler.py (3)"]}]),
             "{}",
             out.data
         );
-        assert_eq!(out.data["summary"]["totalFiles"], 1);
+        assert_eq!(out.data["summary"]["files"], 1);
         let bare = run(&server, find("Exception_Handler"))
             .await
             .expect("bare word");
-        assert_eq!(bare.data["summary"]["totalFiles"], 2, "{}", bare.data);
+        assert_eq!(bare.data["summary"]["files"], 2, "{}", bare.data);
         let none = run(&server, find("**/nope.py")).await.expect("no match");
         assert_eq!(none.status, Some("empty"));
-        assert!(
-            none.data["hints"][0]
-                .as_str()
-                .is_some_and(|hint| hint.contains("include"))
-        );
+        // The empty status is the fact; the description carries the advice.
+        assert!(none.data.get("hints").is_none(), "{}", none.data);
         let invalid = run(&server, find("src/[")).await.expect_err("bad glob");
         assert_eq!(invalid.kind, ProviderErrorKind::Validation);
     }
@@ -1376,7 +1416,7 @@ mod provider_backed {
         .await
         .expect("tree");
         assert_eq!(
-            out.data["entries"][0]["files"],
+            out.data["files"][0]["files"],
             json!(["pinned.rs (1)"]),
             "{}",
             out.data
@@ -1437,9 +1477,9 @@ mod provider_backed {
         .await
         .expect("recursive tree");
         let data = &out.data;
-        assert_eq!(data["entries"], expected, "{data}");
+        assert_eq!(data["files"], expected, "{data}");
         assert!(data.get("pagination").is_none(), "no phantom page: {data}");
-        assert_eq!(data["omitted"]["entries"], json!({"vendor":1}), "{data}");
+        assert_eq!(data["omitted"], json!({"vendor":1}), "{data}");
         let local = std::path::Path::new(
             data["location"]["localPath"]
                 .as_str()
@@ -1474,13 +1514,8 @@ mod provider_backed {
         )
         .await
         .expect("contents walk");
-        assert_eq!(out.data["entries"], expected, "{}", out.data);
-        assert_eq!(
-            out.data["omitted"]["entries"],
-            json!({"vendor":1}),
-            "{}",
-            out.data
-        );
+        assert_eq!(out.data["files"], expected, "{}", out.data);
+        assert_eq!(out.data["omitted"], json!({"vendor":1}), "{}", out.data);
     }
 
     #[tokio::test]
@@ -1551,7 +1586,7 @@ mod provider_backed {
         assert_eq!(error.kind, ProviderErrorKind::NotFound);
     }
 
-    /// D3: an explicit ref that does not exist is an error naming it,
+    /// An explicit ref that does not exist is an error naming it,
     /// never a silent listing of the default branch.
     #[tokio::test]
     async fn tree_missing_branch_is_an_error_not_a_default_branch_listing() {
@@ -1593,7 +1628,7 @@ mod provider_backed {
         assert!(error.message.contains("\"gone\""), "{}", error.message);
     }
 
-    /// D5: a listing names the commit it read, and its next page reads
+    /// A listing names the commit it read, and its next page reads
     /// that same commit even if the branch moves.
     #[tokio::test]
     async fn tree_pins_its_pages_to_the_resolved_commit() {
@@ -1629,7 +1664,7 @@ mod provider_backed {
         );
     }
 
-    /// D10: a deep listing pages directory by directory, so its first
+    /// A deep listing pages directory by directory, so its first
     /// page carries files, not only folders.
     #[tokio::test]
     async fn deep_tree_pages_carry_files_with_their_folders() {
@@ -1662,7 +1697,7 @@ mod provider_backed {
             )
             .await
             .expect("tree");
-        let files = out.data["summary"]["totalFiles"].as_u64().unwrap_or(0);
+        let files = out.data["summary"]["files"].as_u64().unwrap_or(0);
         assert!(files >= 5, "page 1 lists files: {}", out.data);
     }
 
@@ -1785,7 +1820,7 @@ mod provider_backed {
             .await
             .expect("tree");
         assert_eq!(
-            out.data["omitted"]["entries"],
+            out.data["omitted"],
             json!({".DS_Store":1,"node_modules":1}),
             "{}",
             out.data
@@ -1974,8 +2009,9 @@ mod provider_backed {
 
     /// Several `extensions` are one call for the agent: one indexed search
     /// per extension (GitHub ANDs repeated qualifiers), merged into one page.
+    /// The searches share `pageSize`, so the page does not grow with them.
     #[tokio::test]
-    async fn several_extensions_fan_out_into_one_page() {
+    async fn several_extensions_share_one_page() {
         let server = MockServer::start().await;
         for (extension, file) in [("ts", "a.ts"), ("js", "b.js")] {
             Mock::given(method("GET"))
@@ -1984,6 +2020,7 @@ mod provider_backed {
                     "q",
                     format!("extension:{extension}"),
                 ))
+                .and(wiremock::matchers::query_param("per_page", "5"))
                 .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                     "total_count":1,"incomplete_results":false,"items":[code_item(file)]
                 })))
@@ -1993,7 +2030,7 @@ mod provider_backed {
         }
         let out = run(
             &server,
-            json!({"operation":"code","owner":"a","keywords":["needle"],"extensions":["ts","js"]}),
+            json!({"operation":"code","owner":"a","keywords":["needle"],"extensions":["ts","js"],"pageSize":10}),
         )
         .await
         .expect("search");
@@ -2051,7 +2088,7 @@ mod provider_backed {
     /// An empty search of an existing repository leads to its structure:
     /// the index may lag, so verify the path before concluding absence.
     #[tokio::test]
-    async fn an_empty_repository_search_leads_to_its_structure() {
+    async fn an_empty_scoped_search_leads_to_its_structure() {
         let server = MockServer::start().await;
         empty_code_search(&server, false).await;
         mount_json(
@@ -2063,7 +2100,7 @@ mod provider_backed {
         .await;
         let out = run(
             &server,
-            json!({"operation":"code","owner":"a","repo":"b","keywords":["absent"]}),
+            json!({"operation":"code","owner":"a","repo":"b","keywords":["absent"],"path":"src"}),
         )
         .await
         .expect("search");
@@ -2071,6 +2108,7 @@ mod provider_backed {
         let lead = &out.data["next"]["viewTree"];
         assert_eq!(lead["tool"], "ghStructure", "{}", out.data);
         assert_eq!(lead["query"]["queries"][0]["repo"], "b", "{}", out.data);
+        assert_eq!(lead["query"]["queries"][0]["path"], "src", "{}", out.data);
     }
 
     /// The top repository leads to its tree (not a code search of the
@@ -2121,7 +2159,7 @@ mod provider_backed {
         .await
         .expect("search");
         assert_eq!(empty.status, Some("empty"));
-        let broader = &empty.data["next"]["findRepository"];
+        let broader = &empty.data["next"]["broadenSearch"];
         assert_eq!(broader["tool"], "ghSearchRepo", "{}", empty.data);
         assert_eq!(
             broader["query"]["queries"][0],
@@ -2130,4 +2168,16 @@ mod provider_backed {
             empty.data
         );
     }
+}
+
+/// A recovery listing never repeats the caller's traversal: `.` and `..`
+/// resolve lexically and clamp at the repository root.
+#[test]
+fn recovery_paths_resolve_traversal_inside_the_repository() {
+    assert_eq!(super::repo_path("../../../../user"), "user");
+    assert_eq!(super::repo_path("src/./a/../b.rs"), "src/b.rs");
+    assert_eq!(super::repo_path("../.."), ".");
+    assert_eq!(super::repo_path("/docs/"), "docs");
+    assert_eq!(super::parent_dir("../../../../user"), ".");
+    assert_eq!(super::parent_dir("a/../b/c.md"), "b");
 }

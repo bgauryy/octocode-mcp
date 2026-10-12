@@ -83,13 +83,14 @@ impl Verify {
     }
 }
 
-/// The lead name of a [`verify_query`] row: its operation (`callers` or
-/// `references`), as every lspSearch lead is named (X10).
+/// The lead name of a [`verify_query`] row: `findCallers` or
+/// `findReferences`.
 pub(crate) fn lead_name(row: &Value) -> String {
-    row.get("operation")
-        .and_then(Value::as_str)
-        .unwrap_or("references")
-        .to_owned()
+    match row.get("operation").and_then(Value::as_str) {
+        Some("callers") => "findCallers",
+        _ => "findReferences",
+    }
+    .to_owned()
 }
 
 /// The `lspSearch` query row for the declaration `symbol` at one-based
@@ -102,7 +103,7 @@ pub fn verify_query(path: &str, symbol: &str, line: u64, verify: Verify) -> Opti
             "path": path,
             "operation": verify.operation(),
             "symbolName": symbol,
-            "lineHint": line,
+            "line": line,
         })
     })
 }
@@ -153,12 +154,12 @@ thread_local! {
 }
 
 /// Run `run` (one local tool row, on the calling thread) with the runtime's
-/// resolved LSP settings as the discovery every lead in it probes; the
-/// configured server file is used only when the path policy authorizes it,
-/// as `lspSearch` itself does.
+/// resolved LSP settings, `options`, as the discovery every lead in it probes,
+/// and `cache` as the probe cache it shares. The caller authorizes
+/// `options.config_path` against the path policy, as `lspSearch` itself does.
 pub fn with_lead_discovery<R>(
-    execution: &super::LspExecutionConfig,
-    paths: &crate::policy::path::PathPolicy,
+    options: LspDiscoveryOptions,
+    cache: Arc<LeadProbeCache>,
     run: impl FnOnce() -> R,
 ) -> R {
     struct Restore(Option<LspDiscoveryOptions>, Option<Arc<LeadProbeCache>>);
@@ -169,15 +170,9 @@ pub fn with_lead_discovery<R>(
             LEAD_CACHE.with(|cell| *cell.borrow_mut() = self.1.take());
         }
     }
-    let config_path = execution
-        .config_path
-        .as_deref()
-        .and_then(|path| paths.validate_read(path).ok())
-        .map(|validated| validated.canonical);
-    let options = execution.discovery(config_path);
     let _restore = Restore(
         LEAD_DISCOVERY.with(|cell| cell.borrow_mut().replace(options)),
-        LEAD_CACHE.with(|cell| cell.borrow_mut().replace(execution.lead_cache.clone())),
+        LEAD_CACHE.with(|cell| cell.borrow_mut().replace(cache)),
     );
     run()
 }
@@ -209,7 +204,6 @@ fn discovery() -> LspDiscoveryOptions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::path::{PathPolicy, PathPolicyConfig};
 
     #[test]
     fn negative_probe_expires_and_cache_stays_bounded() {
@@ -229,23 +223,44 @@ mod tests {
 
     #[test]
     fn leads_probe_the_runtime_resolved_discovery_inside_a_row_only() {
-        let paths = PathPolicy::new(PathPolicyConfig::default()).expect("path policy");
-        let execution = super::super::LspExecutionConfig {
+        let options = LspDiscoveryOptions {
             env: BTreeMap::from([("OCTOCODE_LEAD_PROBE".to_owned(), "resolved".to_owned())]),
-            config_path: Some("/nonexistent/octocode-lsp.json".to_owned()),
-            ..Default::default()
+            ..LspDiscoveryOptions::default()
         };
-        let inside = with_lead_discovery(&execution, &paths, discovery);
+        let inside = with_lead_discovery(options, Arc::default(), discovery);
         assert_eq!(
             inside.env.get("OCTOCODE_LEAD_PROBE").map(String::as_str),
             Some("resolved")
         );
-        // An unauthorized (here missing) server file is never used.
-        assert_eq!(inside.config_path, None);
         let after = discovery();
         assert_ne!(
             after.env.get("OCTOCODE_LEAD_PROBE").map(String::as_str),
             Some("resolved")
+        );
+    }
+
+    /// A declaration lead runs `callers` for a callable and `references`
+    /// otherwise, and is withheld when no language server would start for the
+    /// file.
+    #[test]
+    fn verify_query_picks_the_operation_and_needs_a_server() {
+        let dir = tempfile::tempdir().expect("fixture");
+        let file = dir.path().join("a.ts");
+        std::fs::write(&file, "export function a() {}\n").expect("file");
+        let path = file.to_string_lossy().into_owned();
+        let callers = verify_query(&path, "a", 1, Verify::for_kind("function")).expect("ts server");
+        assert_eq!(
+            callers,
+            serde_json::json!({"path": path, "operation": "callers", "symbolName": "a", "line": 1})
+        );
+        let references = verify_query(&path, "A", 3, Verify::for_kind("class")).expect("ts server");
+        assert_eq!(references["operation"], "references");
+        let unknown = dir.path().join("a.unknownext");
+        std::fs::write(&unknown, "a\n").expect("file");
+        assert_eq!(
+            verify_query(&unknown.to_string_lossy(), "a", 1, Verify::Callers),
+            None,
+            "no server for the extension: no lead"
         );
     }
 }

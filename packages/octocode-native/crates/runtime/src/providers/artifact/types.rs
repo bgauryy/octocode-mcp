@@ -1,5 +1,6 @@
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 use url::Url;
 
@@ -128,30 +129,28 @@ impl ArtifactSearchQuery {
             _ => {}
         }
     }
-    pub(crate) fn page_size(&self) -> Option<usize> {
+    /// Rows per page: a discovery query's `pageSize` (absent, the contract
+    /// default); an exact lookup, one page, at the contract default.
+    pub(crate) fn page_size(&self) -> usize {
         match self {
-            Self::NpmDiscovery(query) => Some(query.page_size.get() as usize),
-            Self::RegistryDiscovery(query) => Some(query.page_size.get() as usize),
-            _ => None,
+            Self::NpmDiscovery(query) => query.page_size.get() as usize,
+            Self::RegistryDiscovery(query) => query.page_size.get() as usize,
+            _ => crate::tools::id::query_limits::artifact_search::PAGE_SIZE_DEFAULT,
+        }
+    }
+    /// A discovery query's keywords as written; an exact lookup has none.
+    pub(crate) fn keyword_list(&self) -> Vec<String> {
+        match self {
+            Self::NpmDiscovery(query) => query.keywords.iter().map(ToString::to_string).collect(),
+            Self::RegistryDiscovery(query) => {
+                query.keywords.iter().map(ToString::to_string).collect()
+            }
+            _ => Vec::new(),
         }
     }
     /// Keywords as one space-joined registry search text.
     pub(crate) fn terms(&self) -> String {
-        match self {
-            Self::NpmDiscovery(query) => query
-                .keywords
-                .iter()
-                .map(|word| word.as_str())
-                .collect::<Vec<_>>()
-                .join(" "),
-            Self::RegistryDiscovery(query) => query
-                .keywords
-                .iter()
-                .map(|word| word.as_str())
-                .collect::<Vec<_>>()
-                .join(" "),
-            _ => String::new(),
-        }
+        self.keyword_list().join(" ")
     }
 }
 
@@ -175,6 +174,17 @@ pub(crate) fn artifact_query(
         }
     }
     serde_json::from_value(value).expect("valid artifactSearch query")
+}
+
+#[test]
+fn page_size_defaults_from_the_contract() {
+    use crate::tools::id::query_limits::artifact_search::PAGE_SIZE_DEFAULT;
+    let discovery = artifact_query(serde_json::json!({"keywords": ["http"]}), None);
+    let exact = artifact_query(serde_json::json!({"packageName": "ajv"}), None);
+    let sized = artifact_query(serde_json::json!({"pageSize": 3}), Some(&discovery));
+    assert_eq!(discovery.page_size(), PAGE_SIZE_DEFAULT);
+    assert_eq!(exact.page_size(), PAGE_SIZE_DEFAULT);
+    assert_eq!(sized.page_size(), 3);
 }
 
 /// A request budget no artifact test exhausts.
@@ -239,18 +249,20 @@ pub struct ArtifactItem {
     /// Set (true) only when the registry yanked this version.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub yanked: Option<bool>,
-    /// Runtime dependency count of this version.
+    /// This version's runtime dependencies as the registry declares them
+    /// (`name@range`, a PEP 508 requirement, `name req`): empty when it
+    /// declares none, absent when the registry read did not say.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub dependencies: Option<usize>,
-    /// Those runtime dependencies as the registry declares them
-    /// (`name@range`, a PEP 508 requirement, `name req`).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub dependency_list: Vec<String>,
+    pub dependencies: Option<Vec<String>>,
+    /// npm peer dependencies (`name@range`) as declared, like
+    /// `dependencies`: empty when it declares none, absent for a registry
+    /// with no such field.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub peer_dependencies: Option<usize>,
-    /// npm `engines.node` range.
+    pub peer_dependencies: Option<Vec<String>>,
+    /// npm `engines`: every runtime or tool the package declares, with its
+    /// range (`node`, `npm`, `pnpm`, …).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub engines: Option<String>,
+    pub engines: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub requires_python: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -278,28 +290,9 @@ pub struct ArtifactItem {
     /// or rewritten commit): no lead pins it; the response warns with it.
     #[serde(skip)]
     pub missing_ref: Option<String>,
-    /// The file this release declares its dependencies in, when the
-    /// release was checked (a setuptools sdist: `setup.py`); it points the
-    /// `readManifest` lead and is not a public row field.
-    #[serde(skip)]
-    pub manifest: Option<&'static str>,
-    /// Directory of the published entry point inside the package directory,
-    /// when it is shipped source (npm `main` without a build step); it
-    /// points the source lead and is not a public row field.
-    #[serde(skip)]
-    pub entry_directory: Option<String>,
 }
 
 impl ArtifactItem {
-    /// Drops a dependency count that restates a complete `dependencyList`
-    /// (its length); the count stays when the list is absent.
-    pub(crate) fn dedupe_dependency_count(&mut self) {
-        if !self.dependency_list.is_empty() && self.dependencies == Some(self.dependency_list.len())
-        {
-            self.dependencies = None;
-        }
-    }
-
     pub(crate) fn new(artifact_type: ArtifactType, name: String, registry_url: String) -> Self {
         Self {
             artifact_type,
@@ -317,7 +310,6 @@ impl ArtifactItem {
             deprecated: None,
             yanked: None,
             dependencies: None,
-            dependency_list: Vec::new(),
             peer_dependencies: None,
             engines: None,
             requires_python: None,
@@ -328,8 +320,6 @@ impl ArtifactItem {
             source_attested: false,
             source_tag: false,
             missing_ref: None,
-            manifest: None,
-            entry_directory: None,
         }
     }
 }
@@ -386,6 +376,13 @@ pub struct ArtifactError {
     pub status: Option<u16>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hints: Vec<String>,
+    /// The repair lead (`next`) of the failure, when one call fixes it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next: Option<Box<serde_json::Value>>,
+    /// Published versions nearest a requested one that does not exist: the
+    /// tool's repair lead reads them.
+    #[serde(skip)]
+    pub nearest: Vec<String>,
 }
 
 impl ArtifactError {
@@ -395,16 +392,13 @@ impl ArtifactError {
             message: message.into(),
             status: None,
             hints: vec![],
+            next: None,
+            nearest: vec![],
         }
     }
 
     pub(crate) fn with_status(mut self, status: u16) -> Self {
         self.status = Some(status);
-        self
-    }
-
-    pub(crate) fn with_hint(mut self, hint: impl Into<String>) -> Self {
-        self.hints.push(hint.into());
         self
     }
 }

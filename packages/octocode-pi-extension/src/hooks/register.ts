@@ -5,7 +5,7 @@ import { resultBlock } from '../shared/render.js';
 import type { Subcommands } from '../shared/commands.js';
 import { HOOKS_ENV, envFlag } from '../shared/env.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
-import { configFileLines, findRepoRoot, tildePath } from '../shared/home.js';
+import { configFileLines, repoKey, tildePath } from '../shared/home.js';
 import { projectTrust } from '../shared/trust.js';
 import { clipText, contentText, errorMessage } from '../shared/util.js';
 import { commandsFor, emptyHooks, HOOK_EVENTS, hookCalls, hookFiles, loadHooks, type HookCommand, type HookConfig, type HookEvent } from './config.js';
@@ -139,7 +139,7 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
   const dispatch = async (ctx: ExtensionContext, event: HookEvent, names: string[], input: () => Record<string, unknown>, signal: AbortSignal | undefined = ctx.signal): Promise<HookVerdict> => {
     const hooks = commandsFor(config, event, names);
     if (hooks.length === 0) return {};
-    root ??= findRepoRoot(ctx.cwd);
+    root ??= repoKey(ctx.cwd).root;
     const payload = { session_id: ctx.sessionManager.getSessionId(), transcript_path: ctx.sessionManager.getSessionFile() ?? '', cwd: ctx.cwd, hook_event_name: event, ...input() };
     const env = { CLAUDE_PROJECT_DIR: root };
     const verdicts = await Promise.all(hooks.map(async (hook) => interpret(event, await timeHook(ctx, event, hook, () => runHook(hook, payload, ctx.cwd, env, signal)))));
@@ -218,7 +218,8 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
 
   view.notification = (notice, ctx) => {
     const input = { message: notice.message, ...(notice.title ? { title: notice.title } : {}), notification_type: notice.type };
-    void dispatch(ctx, 'Notification', [notice.type], () => input, undefined).catch(() => undefined);
+    // Background: its own signal, so aborting the run (ctx.signal) does not cancel it; the hook timeout still applies.
+    void dispatch(ctx, 'Notification', [notice.type], () => input, new AbortController().signal).catch(() => undefined);
   };
 
   // Stop: when the agent would settle after a completed run, a blocking hook sends it on with the reason (Claude
@@ -232,7 +233,8 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
     const verdict = await dispatch(ctx, 'Stop', [], () => ({ stop_hook_active: stopContinues > 0, last_assistant_message: last ? contentText(last.content) : '' }));
     if (!verdict.block || stopContinues >= STOP_CONTINUE_CAP) return undefined;
     stopContinues += 1;
-    return { entries: [{ type: 'custom_message' as const, customType: STOP_TYPE, content: `${STOP_PREFIX}${verdict.block}`, display: true }], continue: true };
+    // Pi replaces the boundary's entries with a handler's: keep what earlier handlers proposed.
+    return { entries: [...event.entries, { type: 'custom_message' as const, customType: STOP_TYPE, content: `${STOP_PREFIX}${verdict.block}`, display: true }], continue: true };
   });
 
   pi.on('tool_result', async (event, ctx) => {

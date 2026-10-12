@@ -7,7 +7,7 @@ pub(crate) struct Output;
 
 impl ToolOutput for Output {
     fn fallback_hint(&self, _query: &Value) -> &'static str {
-        "Refresh path/symbolName/lineHint, or broaden workspaceRoot."
+        "Refresh path/symbolName/line from a current astSearch or localSearch hit."
     }
     fn evidence_kind(&self, _query: &Value, data: &Value) -> &'static str {
         match data.pointer("/lsp/source").and_then(Value::as_str) {
@@ -37,7 +37,7 @@ impl ToolOutput for Output {
 fn clasify_locations(state: &Value, query_path: Option<&str>) -> Option<Vec<items::Item>> {
     let data = items::page_data(state)?;
     let base = items::page_root(state);
-    if let Some(files) = data.pointer("/payload/files").and_then(Value::as_array) {
+    if let Some(files) = data.pointer("/files").and_then(Value::as_array) {
         let found = files
             .iter()
             .filter_map(|file| {
@@ -53,11 +53,7 @@ fn clasify_locations(state: &Value, query_path: Option<&str>) -> Option<Vec<item
                     .flat_map(super::locations::site_lines)
                     .collect();
                 Some(items::Item {
-                    state: items::narrowed(
-                        state,
-                        "/results/0/data/payload/files",
-                        vec![file.clone()],
-                    ),
+                    state: items::narrowed(state, "/results/0/data/files", vec![file.clone()]),
                     read: Some(items::local_read(&path, lines)),
                     path: Some(path),
                     item: None,
@@ -66,7 +62,7 @@ fn clasify_locations(state: &Value, query_path: Option<&str>) -> Option<Vec<item
             .collect();
         return Some(found);
     }
-    let rows = data.pointer("/payload/matches")?.as_array()?;
+    let rows = data.pointer("/matches")?.as_array()?;
     let found = items::grouped(rows, query_path)
         .into_iter()
         .map(|(path, group)| {
@@ -79,7 +75,7 @@ fn clasify_locations(state: &Value, query_path: Option<&str>) -> Option<Vec<item
                 })
                 .collect();
             items::Item {
-                state: items::narrowed(state, "/results/0/data/payload/matches", group),
+                state: items::narrowed(state, "/results/0/data/matches", group),
                 read: Some(items::local_read(&path, lines)),
                 path: Some(path),
                 item: None,

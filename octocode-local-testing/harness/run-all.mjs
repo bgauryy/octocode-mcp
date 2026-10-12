@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { RESULTS, TESTING } from './mcp-client.mjs';
 
-const SUITES = ['chain-check', 'workflows', 'grammar', 'navigate', 'remote', 'github', 'artifacts', 'perf', 'deps-flows', 'repo-sweep', 'large-files', 'clasify', 'rewrite', 'usage-regressions', 'competitors'];
+const SUITES = ['chain-check', 'workflows', 'grammar', 'navigate', 'remote', 'github', 'artifacts', 'perf', 'deps-flows', 'repo-sweep', 'large-files', 'clasify', 'rewrite', 'usage-regressions', 'lead-replay', 'competitors'];
 const OPT_IN = ['soak'];
 const selected = process.argv[2]?.split(',') ?? SUITES;
 if (selected.some(s => !SUITES.includes(s) && !OPT_IN.includes(s))) throw new Error('unknown suite');

@@ -60,7 +60,8 @@ for (const [lang, l] of Object.entries(L)) {
   if (l.call) {
     // Captures are opt-in (captureText); default rows carry line/column/value only.
     const m = await call('astSearch', { operation: 'match', path: dir, language: lang, pattern: `${l.call}($A)`, captureText: true });
-    const matches = collect(rowData(m), o => typeof o.value === 'string' && typeof o.line === 'number' && typeof o.column === 'number' && o.metavarRanges);
+    // A match row is {line, endLine?, value}; positions live on its captures.
+    const matches = collect(rowData(m), o => typeof o.value === 'string' && typeof o.line === 'number' && o.metavarRanges);
     const lean = await call('astSearch', { operation: 'match', path: dir, language: lang, pattern: `${l.call}($A)` });
     const leanRows = astMatchRows(lean);
     // A lean row hides a capture when its value does not show the capture
@@ -71,12 +72,13 @@ for (const [lang, l] of Object.entries(L)) {
     const srcLines = l.src.split('\n');
     const emojiLine = srcLines.findIndex(s => s.includes('😀')) + 1;
     const onEmoji = matches.find(x => x.line === emojiLine);
-    // 1-based UTF-16 column (D2): JS string indices count UTF-16 units.
-    const expected = emojiLine ? srcLines[emojiLine - 1].indexOf(`${l.call}(`) + 1 : -1;
+    // 1-based UTF-16 column on the $A capture: JS string indices count UTF-16 units.
+    const capture = onEmoji?.metavarRanges?.A?.[0];
+    const expected = emojiLine && capture ? srcLines[emojiLine - 1].indexOf(capture.text) + 1 : -1;
     res.match = `${matches.length} hits`;
-    res.utf16 = onEmoji ? (onEmoji.column === expected ? `ok(${expected})` : `BAD ${onEmoji.column}≠${expected}`) : 'no-hit';
+    res.utf16 = capture ? (capture.column === expected ? `ok(${expected})` : `BAD ${capture.column}≠${expected}`) : 'no-hit';
     check(`${lang}: call pattern ${l.call}($A) matches`, matches.length > 0, m.text.slice(0, 100));
-    check(`${lang}: UTF-16 column after emoji`, onEmoji && onEmoji.column === expected, res.utf16);
+    check(`${lang}: UTF-16 column after emoji`, !!capture && capture.column === expected, res.utf16);
   }
   const k = await call('astSearch', { operation: 'match', path: dir, language: lang, rule: `rule:\n  kind: ${l.kind}\n`, resultView: 'countMatches' });
   // Minimal countMatches: per-file matchCount (restored from `shared`).

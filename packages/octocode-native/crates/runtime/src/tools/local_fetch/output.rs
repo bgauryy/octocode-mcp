@@ -11,7 +11,8 @@ impl ToolOutput for Output {
     fn error_hint(&self, code: &str) -> Option<&'static str> {
         match code {
             "fileAccessFailed" => Some(crate::tools::output::LIST_FILES_HINT),
-            "notAFile" => Some("Read a file inside it; hints.viewTree lists its entries."),
+            // The message names the item; `repair` is the corrected read.
+            "invalidPattern" => Some(crate::tools::output::NO_HINT),
             _ => None,
         }
     }

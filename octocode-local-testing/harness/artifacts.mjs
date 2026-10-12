@@ -1,6 +1,7 @@
 // artifactSearch fidelity: every registry answer is compared with that
-// registry's own public API (ground truth), and the one source lead
-// (hints.viewReleaseSource, else hints.viewRepo) must name and open the same repository.
+// registry's own public API (ground truth); the row's `owner`/`repo` (parsed from its repository URL)
+// and the one source lead (hints.viewReleaseSource, else hints.viewRepo; an extras:["hints"] field)
+// must name and open the same repository.
 import { checks, rowData, startServer, writeResults } from './mcp-client.mjs';
 
 const { check, summary } = checks('artifacts');
@@ -45,7 +46,7 @@ for (const c of CASES) {
     check(`${c.ecosystem}: registry ground truth reachable`, false, String(error.message));
     continue;
   }
-  const out = await call('artifactSearch', { ecosystem: c.ecosystem, packageName: c.name });
+  const out = await call('artifactSearch', { ecosystem: c.ecosystem, packageName: c.name, extras: ['hints'] });
   const data = rowData(out);
   const artifact = data?.artifacts?.[0];
   const toolRepo = githubSlug(artifact?.repository ?? artifact?.homepage ?? artifact?.sourceUrl);
@@ -57,25 +58,27 @@ for (const c of CASES) {
   check(`${c.ecosystem} ${c.name}: latest version equals the registry`, norm(artifact?.version) === norm(truth.version), `tool=${artifact?.version} registry=${truth.version}`);
   if (truth.repo) {
     check(`${c.ecosystem} ${c.name}: repository equals the registry's`, toolRepo === truth.repo, `tool=${toolRepo} registry=${truth.repo}`);
+    const rowSlug = artifact?.owner && artifact?.repo ? `${artifact.owner}/${artifact.repo}`.toLowerCase() : null;
+    check(`${c.ecosystem} ${c.name}: row owner/repo name that repository`, rowSlug === truth.repo, `row=${rowSlug}`);
     check(`${c.ecosystem} ${c.name}: the source lead names that repository`, viewSlug === truth.repo, `${leads[0]}=${viewSlug}`);
   }
   if (view) {
     check(`${c.ecosystem}: one source lead`, leads.length === 1, leads.join(','));
-    // AR2: the row alone carries `sourceRef` + `verification` ∈ {provenance, tag, registryRef}; leads do
+    // The row alone carries `sourceRef` + `verification` ∈ {provenance, tag, registryRef}; leads do
     // not repeat the label. A release ref is `provenance`/`tag` when checked, else the registry's unchecked
     // claim `registryRef`; no ref → a `viewRepo` lead and no `sourceRef`.
     const refLabels = ['provenance', 'tag', 'registryRef'];
-    const sourceLeads = ['viewReleaseSource', 'viewRepo', 'readManifest'].map(name => data?.hints?.[name]).filter(Boolean);
+    const sourceLeads = ['viewReleaseSource', 'viewRepo'].map(name => data?.hints?.[name]).filter(Boolean);
     const labelOk = viewHint.source === undefined && sourceLeads.every(lead => lead.verification === undefined)
       && (view.ref ? refLabels.includes(artifact?.verification) && artifact?.sourceRef === view.ref : leads[0] === 'viewRepo' && artifact?.sourceRef === undefined);
-    check(`${c.ecosystem}: the row alone labels its source (AR2)`, labelOk, JSON.stringify({ leads: sourceLeads.map(l => l.verification), lead: viewHint, sourceRef: artifact?.sourceRef, verification: artifact?.verification }));
+    check(`${c.ecosystem}: the row alone labels its source`, labelOk, JSON.stringify({ leads: sourceLeads.map(l => l.verification), lead: viewHint, sourceRef: artifact?.sourceRef, verification: artifact?.verification }));
     // Replay the continuation verbatim (tool + query); an unpushed release ref recovers without ref.
     let tree = await follow(viewHint);
     if (tree.rowErrors && view.ref) {
       const { ref, ...recovery } = view;
       tree = await follow({ tool: viewHint.tool, query: { queries: [recovery] } });
     }
-    check(`${c.ecosystem} ${c.name}: hints.${leads[0]} opens the repository`, !tree.isError && (rowData(tree)?.entries ?? []).length > 0, tree.text.slice(0, 120));
+    check(`${c.ecosystem} ${c.name}: hints.${leads[0]} opens the repository`, !tree.isError && (rowData(tree)?.files ?? []).length > 0, tree.text.slice(0, 120));
   }
 }
 console.table(table);

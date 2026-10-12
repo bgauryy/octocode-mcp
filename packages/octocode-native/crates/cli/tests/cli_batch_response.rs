@@ -37,7 +37,7 @@ async fn cli_exit_is_two_when_any_batch_row_is_rejected() {
 }
 
 #[test]
-fn cli_exit_is_six_while_response_pages_remain() {
+fn cli_exit_is_zero_while_response_pages_remain() {
     let workspace = Workspace::new();
     let mut file = None;
     for index in 0..10 {
@@ -58,5 +58,5 @@ fn cli_exit_is_six_while_response_pages_remain() {
         .unwrap();
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["responsePagination"]["hasMore"], true, "{value}");
-    assert_eq!(output.status.code(), Some(6));
+    assert_eq!(output.status.code(), Some(0));
 }

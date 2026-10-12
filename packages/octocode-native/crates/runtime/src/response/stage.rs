@@ -52,8 +52,8 @@ pub(crate) fn finish(
         allow_auto_paging,
         source_digest,
     } = input;
-    // A row with pages left says so first, with each remaining count.
-    super::pages::disclose_remaining_pages(&mut structured, tool);
+    // The notes stay with the pager for the pages a split row moves.
+    let remaining = super::pages::take_remaining_notes(&mut structured);
     // Hosts show agents this JSON: source reads carry their line numbers in
     // `content` itself, and both text encodings render from it. Numbering
     // precedes validation so an unpaged response is exactly what was checked.
@@ -65,6 +65,7 @@ pub(crate) fn finish(
         Ok(_) => {}
         Err(error) => return Ok(Err(error)),
     }
+    super::channels::lead_continuations(&mut structured, tool);
     let all_failed = response_all_failed(&structured);
     // An explicitly paged text response hashes and windows the rendered
     // text, so transient telemetry must leave before rendering (row pages
@@ -100,6 +101,7 @@ pub(crate) fn finish(
                 rendered_text,
                 is_error: all_failed,
                 options,
+                remaining,
             },
             &context.cancellation,
         )
@@ -123,7 +125,6 @@ pub(crate) fn finish(
         source_digest,
         failure,
         all_failed,
-        tool,
     }))
 }
 
@@ -170,7 +171,7 @@ pub(crate) fn response_all_failed(structured: &Value) -> bool {
                                 !resources.is_empty()
                                     && resources
                                         .iter()
-                                        .all(|resource| resource["coverage"] == "error")
+                                        .all(|resource| resource["coverage"]["state"] == "error")
                             })
                 })
         })
@@ -235,7 +236,7 @@ mod tests {
 
     fn fetch_row(index: usize) -> Value {
         json!({"index":index,"data":{"path":"a.txt","content":"one\n","totalLines":1,
-            "next":{"continue":{"tool":"localFetch","confidence":"exact",
+            "next":{"continueWindow":{"tool":"localFetch","confidence":"exact",
                 "query":{"queries":[{"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","offset":1}]}}}}})
     }
 
@@ -279,7 +280,7 @@ mod tests {
     #[test]
     fn a_continuing_row_keeps_its_search_lead() {
         let mut row = fetch_row(0);
-        row["data"]["next"]["textSearch"] = json!({"tool":"localSearch",
+        row["data"]["next"]["findText"] = json!({"tool":"localSearch",
             "query":{"queries":[{"path":"/tmp/a.txt","matchString":"hit"}]}});
         let hinted = json!({"path":"/tmp/a.txt","extras":["hints"]});
         for mcp in [false, true] {
@@ -290,16 +291,76 @@ mod tests {
                 Some(&hinted),
             );
             let data = &outcome.structured_content["results"][0]["data"];
-            let leads = [&data["next"]["textSearch"], &data["hints"]["textSearch"]];
+            let leads = [&data["next"]["findText"], &data["hints"]["findText"]];
             assert!(
                 leads.iter().any(|lead| lead["tool"] == "localSearch"),
                 "mcp={mcp}: {data}"
             );
-            assert_eq!(data["next"]["continue"]["tool"], "localFetch", "{data}");
+            assert_eq!(
+                data["next"]["continueWindow"]["tool"], "localFetch",
+                "{data}"
+            );
             let outcome = stage("localFetch", json!({"results":[row.clone()]}), mcp);
             let data = &outcome.structured_content["results"][0]["data"];
             assert!(data.get("hints").is_none(), "mcp={mcp}: {data}");
-            assert_eq!(data["next"]["continue"]["tool"], "localFetch", "{data}");
+            assert_eq!(
+                data["next"]["continueWindow"]["tool"], "localFetch",
+                "{data}"
+            );
+        }
+    }
+
+    fn lsp_partial_row(paged: bool) -> Value {
+        let rows: Vec<Value> = (1..=5)
+            .map(|n| json!({"path":format!("/tmp/f{n}.ts"),"matchString":"\\bname\\b"}))
+            .collect();
+        let mut data = json!({"path":"a.ts","kind":"callers","files":[],
+            "isPartial":true,"partialReasons":["importerScanFailed"],
+            "next":{"findText":{"tool":"localSearch","query":{"queries":rows}}}});
+        if paged {
+            data["next"]["nextImporterPage"] = json!({"tool":"lspSearch","query":{"queries":[
+                {"operation":"callers","path":"/tmp/a.ts","symbolName":"name","line":1,"page":2}]}});
+        }
+        json!({"results":[{"index":0,"data":data}]})
+    }
+
+    /// A partial row with no page has no other route to what it withholds:
+    /// its lead stays in the default output with every row.
+    #[test]
+    fn a_partial_row_without_a_page_keeps_its_lead_whole() {
+        for mcp in [false, true] {
+            let outcome = stage("lspSearch", lsp_partial_row(false), mcp);
+            let data = &outcome.structured_content["results"][0]["data"];
+            let rows = data["hints"]["findText"]["query"]["queries"]
+                .as_array()
+                .unwrap_or_else(|| panic!("mcp={mcp}: lead stays: {data}"));
+            let paths: Vec<_> = rows.iter().filter_map(|row| row["path"].as_str()).collect();
+            assert_eq!(
+                paths,
+                [
+                    "/tmp/f1.ts",
+                    "/tmp/f2.ts",
+                    "/tmp/f3.ts",
+                    "/tmp/f4.ts",
+                    "/tmp/f5.ts"
+                ],
+                "mcp={mcp}: {data}"
+            );
+        }
+    }
+
+    /// A partial row whose `next` pages on reaches the rest by that page,
+    /// so its optional lead is opt-in like any successful row's.
+    #[test]
+    fn a_partial_row_with_a_page_drops_its_optional_lead_by_default() {
+        for mcp in [false, true] {
+            let outcome = stage("lspSearch", lsp_partial_row(true), mcp);
+            let data = &outcome.structured_content["results"][0]["data"];
+            assert_eq!(
+                data["next"]["nextImporterPage"]["tool"], "lspSearch",
+                "mcp={mcp}: {data}"
+            );
+            assert!(data.get("hints").is_none(), "mcp={mcp}: {data}");
         }
     }
 
@@ -322,7 +383,7 @@ mod tests {
         ] {
             let resources = coverage
                 .into_iter()
-                .map(|coverage| json!({"coverage":coverage}))
+                .map(|coverage| json!({"coverage":{"state":coverage}}))
                 .collect::<Vec<_>>();
             assert_eq!(
                 response_all_failed(&json!({"queries":[{"resources":resources}]})),
@@ -341,11 +402,11 @@ mod tests {
             cli.structured_content["results"],
             mcp.structured_content["results"]
         );
-        let next = &cli.structured_content["results"][0]["data"]["next"]["continue"]["query"]["queries"]
-            [0];
+        let next = &cli.structured_content["results"][0]["data"]["next"]["continueWindow"]["query"]
+            ["queries"][0];
         assert_eq!(
             next,
-            &json!({"path":"/tmp/a.txt","mainGoal": "test", "reasoning":"r","offset":1}),
+            &json!({"path":"/tmp/a.txt","offset":1}),
             "no default is injected into a continuation"
         );
         assert!(cli.content.is_empty() && !mcp.content.is_empty());
@@ -419,7 +480,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// B1: an explicitly paged text response hashes the rendered text; a
+    /// An explicitly paged text response hashes the rendered text; a
     /// GitHub error row's request id must not change that snapshot.
     #[test]
     fn text_pages_ignore_provider_request_ids() {
@@ -458,7 +519,7 @@ mod tests {
 
     #[test]
     fn clasify_receipts_compact_nested_queries_to_replay_equivalent_fields() {
-        let receipt = json!({"queries":[{"id":"q","resources":[{"id":"r","coverage":"complete",
+        let receipt = json!({"queries":[{"id":"q","resources":[{"id":"r","coverage":{"state":"complete"},
             "pages":[{"answers":{"a":{"yesno":0.5}}}]}],
             "next":{"clasify":{"queries":[{"id":"q","mainGoal": "test", "reasoning":"r",
                 "resources":[{"id":"r","tool":"localSearch",
@@ -504,7 +565,7 @@ mod tests {
 
     #[test]
     fn mcp_clasify_receipts_render_in_the_configured_text_format() {
-        let receipt = json!({"queries":[{"id":"q","resources":[{"id":"r","coverage":"complete",
+        let receipt = json!({"queries":[{"id":"q","resources":[{"id":"r","coverage":{"state":"complete"},
             "pages":[{"answers":{"a":{"yesno":0.5}}}]}]}]});
         let render = |format| {
             finish(

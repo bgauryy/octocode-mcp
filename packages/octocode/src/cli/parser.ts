@@ -80,3 +80,12 @@ export function hasHelpFlag(args: ParsedArgs): boolean {
 export function hasVersionFlag(args: ParsedArgs): boolean {
   return Boolean(args.options['version']);
 }
+
+/** Boolean flags arrive as `true` (bare) or a string (`--json=true`). */
+export function isTrueFlag(value: unknown): boolean {
+  if (value === true) return true;
+  return (
+    typeof value === 'string' &&
+    ['true', '1', 'yes'].includes(value.toLowerCase())
+  );
+}

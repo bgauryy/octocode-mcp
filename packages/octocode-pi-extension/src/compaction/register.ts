@@ -1,8 +1,12 @@
 import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ContextEditEntryDraft, ExtensionAPI, SessionBeforeCompactEvent, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
-import { MCP_READ_TOOL, readPaths } from '../files/reads.js';
+import { readPaths } from '../files/reads.js';
 import type { FileGuard } from '../files/tool.js';
-import { elisionMarkers, isRecord } from '../shared/util.js';
+import { shortPath } from '../shared/format.js';
+import { saveFullOutput } from '../shared/spill.js';
+import { cutText, elisionMarkers, isRecord } from '../shared/util.js';
+import { IMAGE_NOTE, REQUEST_PRESSURE_CHARS, contextChars, hasImage, imageChars, isRequestTooLarge, keptImageResults, parts, texts, withoutImages, type ContextEntry } from './images.js';
+import { TooLargeRecovery } from './recovery.js';
 
 /** At most this many recent tool results stay verbatim... */
 export const KEEP_RECENT_RESULTS = 12;
@@ -28,8 +32,8 @@ const POINTER_PATH = /(?:Full output|Full report|Log): ([^\s\];]+)/;
 const POINTER_MAX_CHARS = 400;
 const MAX_POINTERS = 3;
 /** Results of these tools show file content; trimming one takes that content out of view (see FileGuard.forget). */
-const READ_TOOLS = new Set(['read', MCP_READ_TOOL]);
-/** Size an image counts as when budgeting (it is replaced by a short note when trimmed). */
+const READ_TOOLS = new Set(['read']);
+/** Least size an image counts as when budgeting (a tiny image still costs tokens); larger ones count their base64 length. */
 const IMAGE_CHARS = 4_000;
 /** Tools whose successful call arguments are on disk afterwards, so they can be shortened even in the recent window. */
 const ARGS_ON_DISK_TOOLS = new Set(['file']);
@@ -47,16 +51,29 @@ const ARG_KEEP_CHARS = 160;
 const ARGS_MIN_SAVED_CHARS = 1_000;
 
 /**
- * The prompt-cache lifetime of a request to `model`, in ms: its `promptCache` tier for the retention Pi uses
- * (`PI_CACHE_RETENTION=long`, else short). Undefined when the model has no cache of that tier.
+ * The cache lifetime assumed, per retention, for a model that declares no `promptCache` (custom-provider models) but
+ * whose responses show caching: the shortest common provider lifetimes (5 minutes short, 1 hour long), in seconds.
  */
-export function promptCacheTtlMs(model: Pick<Model<Api>, 'promptCache'> | undefined, env: NodeJS.ProcessEnv = process.env): number | undefined {
-  const seconds = model?.promptCache?.[env['PI_CACHE_RETENTION'] === 'long' ? 'long' : 'short'];
-  return seconds === undefined ? undefined : seconds * 1000;
+const INFERRED_CACHE_TTL_SECONDS = { short: 300, long: 3600 } as const;
+
+/**
+ * The prompt-cache lifetime of a request to `model`, in ms, for the retention Pi uses (`PI_CACHE_RETENTION=long`, else
+ * short): the model's `promptCache` tier. A model that declares none caches when `latest` (the turn's assistant
+ * message) reports cache reads or writes in its usage; it gets `INFERRED_CACHE_TTL_SECONDS`. Undefined otherwise.
+ */
+export function promptCacheTtlMs(model: Pick<Model<Api>, 'promptCache'> | undefined, latest?: unknown, env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const tier = env['PI_CACHE_RETENTION'] === 'long' ? 'long' : 'short';
+  if (model?.promptCache) {
+    const seconds = model.promptCache[tier];
+    return seconds === undefined ? undefined : seconds * 1000;
+  }
+  const usage = isRecord(latest) && isRecord(latest['usage']) ? latest['usage'] : undefined;
+  const cached = usage !== undefined && (Number(usage['cacheRead']) > 0 || Number(usage['cacheWrite']) > 0);
+  return cached ? INFERRED_CACHE_TTL_SECONDS[tier] * 1000 : undefined;
 }
 
 /** When the cached prompt was last written or refreshed, and how long such an entry lives. */
-export interface CacheState {
+interface CacheState {
   written: number | undefined;
   ttlMs: number | undefined;
 }
@@ -73,8 +90,9 @@ export const TRIM_PRESSURE_PERCENT = 50;
  * Trims run only at a turn boundary, so the cold start of a run after the user idled is not one: its first request
  * rewrites the cache before any boundary, and trimming right after would rewrite it again.
  */
-export function trimsDue(cache: CacheState, usagePercent: number | null | undefined, now = Date.now()): boolean {
+export function trimsDue(cache: CacheState, usagePercent: number | null | undefined, now = Date.now(), sizeChars = 0): boolean {
   if (usagePercent != null && usagePercent >= TRIM_PRESSURE_PERCENT) return true;
+  if (sizeChars >= REQUEST_PRESSURE_CHARS) return true;
   if (cache.ttlMs === undefined) return true;
   return cache.written !== undefined && now - cache.written >= cache.ttlMs;
 }
@@ -86,11 +104,6 @@ function requestTime(message: unknown): number | undefined {
 
 /** User decisions cannot be regenerated; subagent reports already summarize their work. Pi owns their later compaction. */
 const KEEP_VERBATIM_TOOLS = new Set(['agent', 'askUser']);
-
-interface ContextEntry {
-  id: string;
-  message: unknown;
-}
 
 /**
  * Argument-shrink verdicts remembered across turns, by tool-call id: `false` when the call never needs shrinking
@@ -108,7 +121,7 @@ export type TrimMemo = Map<string, false | { arguments: unknown; saved: number }
  * cached prompt prefix. Calls whose result failed keep their arguments, so the
  * model can still see what it sent.
  */
-export function planContextTrims(entries: ContextEntry[], memo: TrimMemo = new Map()): ContextEditEntryDraft[] {
+export function planContextTrims(entries: ContextEntry[], memo: TrimMemo = new Map(), unseen: ReadonlySet<string> = new Set()): ContextEditEntryDraft[] {
   const results = entries.filter((entry) => isRecord(entry.message) && entry.message['role'] === 'toolResult');
   let kept = 0;
   let used = 0;
@@ -118,9 +131,14 @@ export function planContextTrims(entries: ContextEntry[], memo: TrimMemo = new M
     kept++;
     used += size;
   }
-  const candidates = results
-    .slice(0, results.length - kept)
-    .filter((entry) => !KEEP_VERBATIM_TOOLS.has(String((entry.message as Record<string, unknown>)['toolName'])) && needsTrim(entry.message));
+  // Images the model has not seen yet (this turn's) stay: a trimmed image cannot be recovered from a saved copy the way
+  // text can, so a batch of screenshots would vanish unseen. Unseen text is still bounded by the recent window.
+  const trimmable = (entry: ContextEntry) =>
+    !(unseen.has(entry.id) && hasImage(entry.message)) && !KEEP_VERBATIM_TOOLS.has(String((entry.message as Record<string, unknown>)['toolName']));
+  const candidates = results.slice(0, results.length - kept).filter((entry) => trimmable(entry) && needsTrim(entry.message));
+  // Inside the recent window, results with images beyond the kept ones lose only their images.
+  const keptImages = keptImageResults(results, unseen);
+  const oldImages = results.slice(results.length - kept).filter((entry) => trimmable(entry) && hasImage(entry.message) && !keptImages.has(entry));
   // Calls whose result failed or is not in yet keep their arguments; so do recent calls, except successful file
   // changes, whose written text is on disk and readable (their result already reports the outcome).
   const settled = new Set<string>();
@@ -139,17 +157,19 @@ export function planContextTrims(entries: ContextEntry[], memo: TrimMemo = new M
   });
   for (const id of memo.keys()) if (!present.has(id)) memo.delete(id);
   const saved =
-    candidates.reduce((sum, entry) => sum + resultChars(entry.message) - TRIM_KEEP_CHARS, 0) + calls.reduce((sum, call) => sum + call.saved, 0);
-  const count = candidates.length + calls.length;
+    candidates.reduce((sum, entry) => sum + resultChars(entry.message) - TRIM_KEEP_CHARS, 0) +
+    oldImages.reduce((sum, entry) => sum + imageChars(entry.message, IMAGE_CHARS), 0) +
+    calls.reduce((sum, call) => sum + call.saved, 0);
+  const count = candidates.length + oldImages.length + calls.length;
   if (saved < TRIM_MIN_SAVED_CHARS && (count < TRIM_STEP || saved < TRIM_STEP_MIN_SAVED_CHARS)) return [];
   for (const call of calls) for (const id of call.ids) memo.set(id, false);
   return [
     ...calls.map(({ entry, content }) => ({ type: 'context_edit' as const, targetId: entry.id, replacement: { content } as never })),
-    ...candidates.map((entry) => ({
-      type: 'context_edit' as const,
-      targetId: entry.id,
-      replacement: { content: trimmedContent(entry.message) },
-    })),
+    ...candidates.flatMap((entry) => {
+      const content = trimmedContent(entry.message);
+      return content ? [{ type: 'context_edit' as const, targetId: entry.id, replacement: { content } }] : [];
+    }),
+    ...oldImages.map((entry) => ({ type: 'context_edit' as const, targetId: entry.id, replacement: { content: withoutImages(entry.message) } })),
   ];
 }
 
@@ -184,7 +204,9 @@ function shrinkVerdict(args: Record<string, unknown>): false | { arguments: unkn
 /** Cut long strings anywhere in a call's arguments; structure, keys and short values stay. */
 export function shrinkArgument(value: unknown): unknown {
   if (typeof value === 'string') {
-    return value.length > ARG_KEEP_CHARS * 2 ? `${value.slice(0, ARG_KEEP_CHARS)}… [${value.length - ARG_KEEP_CHARS} more characters of this earlier, successful call omitted]` : value;
+    if (value.length <= ARG_KEEP_CHARS * 2) return value;
+    const kept = cutText(value, ARG_KEEP_CHARS, { chars: true });
+    return `${kept}… [${value.length - kept.length} more characters of this earlier, successful call omitted]`;
   }
   if (Array.isArray(value)) return value.map(shrinkArgument);
   if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, shrinkArgument(item)]));
@@ -213,22 +235,9 @@ export async function elisionGate(event: Pick<ToolCallEvent, 'toolName' | 'input
   };
 }
 
-function parts(message: unknown): unknown[] {
-  return isRecord(message) && Array.isArray(message['content']) ? message['content'] : [];
-}
-
-function texts(message: unknown): string[] {
-  return parts(message).flatMap((part) => (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string' ? [part['text']] : []));
-}
-
-function hasImage(message: unknown): boolean {
-  return parts(message).some((part) => isRecord(part) && part['type'] === 'image');
-}
-
 /** A result's size is all its text parts together (many medium parts are as large as one big one), plus its images. */
 function resultChars(message: unknown): number {
-  const images = parts(message).filter((part) => isRecord(part) && part['type'] === 'image').length;
-  return texts(message).reduce((sum, text) => sum + text.length, 0) + images * IMAGE_CHARS;
+  return texts(message).reduce((sum, text) => sum + text.length, 0) + imageChars(message, IMAGE_CHARS);
 }
 
 function needsTrim(message: unknown): boolean {
@@ -238,33 +247,43 @@ function needsTrim(message: unknown): boolean {
 /**
  * A trimmed result: its first `TRIM_HEAD_CHARS` and last `TRIM_TAIL_CHARS` characters, plus any line in between that
  * points at the full text on disk (spill notes sit at the end of a result, but a middle one must survive too), and a
- * note that names the saved path when there is one, so the model reads it instead of rerunning the call.
+ * note naming the file that holds the full text, so the model reads it instead of rerunning the call. A result that
+ * names no saved copy is saved to the session output folder first; when that fails it is not trimmed (undefined), since
+ * the model cannot reach session history and the evidence would be gone.
  */
-export function trimmedContent(message: unknown): Array<{ type: 'text'; text: string }> {
+function trimmedContent(message: unknown): Array<{ type: 'text'; text: string }> | undefined {
   const text = texts(message).join('\n');
-  const note = hasImage(message) ? [{ type: 'text' as const, text: '[image from an earlier tool call omitted]' }] : [];
+  const note = hasImage(message) ? [{ type: 'text' as const, text: IMAGE_NOTE }] : [];
   if (text.length <= TRIM_ABOVE_CHARS) return [...(text ? [{ type: 'text' as const, text }] : []), ...note];
-  const head = text.slice(0, TRIM_HEAD_CHARS);
-  const tail = text.slice(-TRIM_TAIL_CHARS);
-  const middle = text.slice(TRIM_HEAD_CHARS, -TRIM_TAIL_CHARS);
+  const head = cutText(text, TRIM_HEAD_CHARS, { chars: true });
+  const tail = cutText(text, TRIM_TAIL_CHARS, { chars: true, tail: true });
+  const middle = text.slice(head.length, text.length - tail.length);
   const pointers = text
     .split('\n')
     .filter((line) => POINTER_LINE.test(line))
     .slice(-MAX_POINTERS)
-    .map((line) => (line.length > POINTER_MAX_CHARS ? `${line.slice(0, POINTER_MAX_CHARS)}…` : line));
+    .map((line) => (line.length > POINTER_MAX_CHARS ? `${cutText(line, POINTER_MAX_CHARS, { chars: true })}…` : line));
   const inMiddle = pointers.filter((line) => !head.includes(line) && !tail.includes(line) && middle.includes(line.replace(/…$/, '')));
-  const saved = pointers.map((line) => POINTER_PATH.exec(line)?.[1]).filter((found): found is string => Boolean(found)).at(-1);
+  const saved =
+    pointers.map((line) => POINTER_PATH.exec(line)?.[1]).filter((found): found is string => Boolean(found)).at(-1) ??
+    savedCopy(text, isRecord(message) ? String(message['toolName']) : 'tool');
+  if (!saved) return undefined;
   const omitted = text.length - head.length - tail.length;
-  const where = saved ? `The full text is saved at ${saved}; read that file rather than rerunning the call.` : 'The original remains in session history; repeat only safe reads if needed.';
-  const gap = `\n[… ${omitted} more characters from this earlier tool result were trimmed. ${where}]\n`;
+  const gap = `\n[… ${omitted} more characters from this earlier tool result were trimmed. The full text is saved at ${saved}; read that file rather than rerunning the call.]\n`;
   return [{ type: 'text' as const, text: `${head}${gap}${inMiddle.length > 0 ? `${inMiddle.join('\n')}\n…\n` : ''}${tail}` }, ...note];
+}
+
+/** `text` saved whole to the session output folder, as a short path; undefined when it could not be written. */
+function savedCopy(text: string, toolName: string): string | undefined {
+  const file = saveFullOutput(text, `trimmed-${toolName}`);
+  return file && shortPath(file);
 }
 
 /**
  * Files whose latest successful read is among the `trimmed` results: their content leaves the model's view, so the
  * file guard must ask for a fresh read before they are changed. A later read of the same file keeps it in view.
  */
-export function trimmedReadPaths(entries: ContextEntry[], trimmed: ReadonlySet<string>, cwd: string): string[] {
+function trimmedReadPaths(entries: ContextEntry[], trimmed: ReadonlySet<string>, cwd: string): string[] {
   const calls = new Map<string, Record<string, unknown>>();
   for (const entry of entries) {
     if (!isRecord(entry.message) || entry.message['role'] !== 'assistant') continue;
@@ -295,24 +314,34 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
     if (event.action === 'warm') refreshed = Date.now();
     return undefined;
   });
+  const tooLarge = new TooLargeRecovery();
   pi.on('turn_end', async (event, ctx) => {
     const session = ctx.sessionManager.getSessionId();
     if (session !== memoSession) {
       forget();
       memoSession = session;
+      tooLarge.reset();
     }
-    const at = requestTime(event.message);
-    // A refresh Pi sent during this turn's tool calls is newer than the request that started it.
-    if (at !== undefined && (refreshed === undefined || at > refreshed)) refreshed = at;
-    if (!trimsDue({ written: refreshed, ttlMs: promptCacheTtlMs(ctx.model) }, ctx.getContextUsage()?.percent)) return undefined;
     const entries = event.context.contextEntries.flatMap((entry) =>
       entry.sourceEntry.type === 'message' && entry.messages.length === 1 ? [{ id: entry.sourceEntry.id, message: entry.messages[0] }] : [],
     );
-    const trims = planContextTrims(entries, memo);
+    const recovery = tooLarge.onTurnEnd(event.message, event.messageEntryId, entries, ctx);
+    if (recovery) {
+      for (const file of trimmedReadPaths(entries, new Set(recovery.map((edit) => edit.targetId)), ctx.cwd)) guard.forget(file);
+      return { entries: [...event.entries, ...recovery] };
+    }
+    if (isRequestTooLarge(event.message)) return undefined;
+    const at = requestTime(event.message);
+    // A refresh Pi sent during this turn's tool calls is newer than the request that started it.
+    if (at !== undefined && (refreshed === undefined || at > refreshed)) refreshed = at;
+    const due = trimsDue({ written: refreshed, ttlMs: promptCacheTtlMs(ctx.model, event.message) }, ctx.getContextUsage()?.percent, Date.now(), contextChars(entries));
+    if (!due) return undefined;
+    const trims = planContextTrims(entries, memo, new Set(event.toolResultEntryIds));
     if (trims.length === 0) return undefined;
     for (const file of trimmedReadPaths(entries, new Set(trims.map((trim) => trim.targetId)), ctx.cwd)) guard.forget(file);
     return { entries: [...event.entries, ...trims] };
   });
+  pi.on('agent_before_settle', async (event) => (tooLarge.shouldRetry(event.outcome) ? { continue: true } : undefined));
 
   // Pi writes the summary (the user's model, prompt, auth and retry policy); Octocode only adds the paths its `file`
   // tool changed to the file lists Pi appends and carries forward, which know only Pi's read/write/edit.
@@ -322,13 +351,17 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
   });
 
   // File contents read before compaction, or on another branch, are no longer in context: require fresh reads.
-  pi.on('session_start', async () => forget());
+  pi.on('session_start', async () => {
+    forget();
+    tooLarge.reset();
+  });
   pi.on('session_compact', async () => {
     forget();
     guard.reset();
   });
   pi.on('session_tree', async () => {
     forget();
+    tooLarge.reset();
     guard.reset();
   });
 }

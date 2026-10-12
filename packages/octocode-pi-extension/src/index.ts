@@ -9,11 +9,12 @@ import { registerCheckpoints } from './files/checkpoint-command.js';
 import { REVIEW_ENV, registerReviewCommand, type ReviewMode } from './files/review.js';
 import { registerHooks, registerHooksCommand } from './hooks/register.js';
 import { FileGuard, registerFileTool } from './files/tool.js';
-import { OCTOCODE_TOOL_PREFIX, registerOctocodeMcp } from './mcp/octocode.js';
+import { registerMcpCommand } from './mcp/command.js';
+import { registerOctocodeMcp } from './mcp/octocode.js';
 import { envFlag, SUBAGENT_ENV } from './shared/env.js';
 import { Subcommands } from './shared/commands.js';
 import { projectTrust, registerTrustCommand } from './shared/trust.js';
-import { settleWithin } from './shared/util.js';
+import { errorMessage, firstLine, settleWithin } from './shared/util.js';
 import { plural, stopRowTimers } from './shared/render.js';
 import { forgetCheck, recordCheck, withDialog } from './shared/locks.js';
 import { registerSkills } from './skills.js';
@@ -36,8 +37,8 @@ import { registerWebTool } from './web/web.js';
 
 /**
  * Octocode for Pi. Everything here builds on Pi's own tools, skills, sessions, MCP
- * and compaction; Octocode adds guarded file edits, the Octocode MCP server (through
- * Pi's built-in MCP), subagents, web and browser tools, askUser and a focused prompt.
+ * and compaction; Octocode adds guarded file edits, the Octocode MCP server (its own
+ * MCP client), subagents, web and browser tools, askUser and a focused prompt.
  *
  * Cross-cutting runtime policy is composed here, once, in an order that reads top to bottom: the `tool_call` gate
  * pipeline (also applied to the user's `!cmd` runs), the hold that keeps a headless run open for its background work,
@@ -46,7 +47,7 @@ import { registerWebTool } from './web/web.js';
  *
  * Every user command is a subcommand of `/octocode` (`agents`, `hooks`, `api`, `review`, `rewind`, `jobs`, …) and is
  * listed by `/octocode help`. The frequent ones also get a top-level shortcut, all aliased here from `SHORTCUTS` (only
- * those registered in this mode); `/mcp` is Pi's built-in MCP.
+ * those registered in this mode); `/mcp` is Pi's built-in MCP for the user's own servers, `/octocode mcp` the Octocode one.
  */
 /** Subcommands that also get a top-level `/<name>` shortcut, when this mode registers them. */
 const SHORTCUTS = ['agents', 'backlog', 'hooks', 'memory', 'sessions'];
@@ -62,7 +63,8 @@ export default function octocode(pi: ExtensionAPI): void {
   const guard = new FileGuard();
   const team = new Team(pi);
   let profiles = new Map<string, AgentProfile>();
-  const octocodeMcp = registerOctocodeMcp(pi);
+  const octocodeMcp = registerOctocodeMcp(pi, packageVersion());
+  registerMcpCommand(commands, octocodeMcp);
 
   pi.on('session_start', async (_event, ctx) => {
     // Before anything writes output: spilled results, bash logs and checkpoints go to this session's folder.
@@ -106,7 +108,7 @@ export default function octocode(pi: ExtensionAPI): void {
   registerUi(pi, isSubagent);
   // What the agent does now: Pi's working line (main session) and the team panel's activity column (every agent).
   const activity = registerActivity(pi, { workingLine: !isSubagent, onChange: (line) => team.setActivity(line) });
-  const turn = registerTurnSetup(pi, { isSubagent, profiles: () => profiles });
+  const turn = registerTurnSetup(pi, { isSubagent, profiles: () => profiles, octocode: octocodeMcp });
   const hooks = registerHooks(pi);
   // After the hooks (handlers run in registration order): a PreCompact hook runs before Octocode adds its `file` tool's
   // paths to the file lists Pi carries into its summary. Pi writes the summary itself.
@@ -120,10 +122,15 @@ export default function octocode(pi: ExtensionAPI): void {
     : registerApi(pi, commands, { list: () => team.members(), tell: (to, text) => team.send(to, text, { from: EXTERNAL_SENDER }), maxChars: MESSAGE_MAX_CHARS }, packageVersion);
 
   pi.on('session_start', async (_event, ctx) => {
-    profiles = loadProfiles(ctx.cwd, undefined, await projectTrust(ctx));
+    // Per-session state first: a later step that throws (API port in use) must not carry the old session's over.
     turn.reset();
-    await api?.start(ctx);
     guard.reset();
+    const skipped: string[] = [];
+    profiles = loadProfiles(ctx.cwd, undefined, await projectTrust(ctx), process.env, (file, error) => skipped.push(`${file}: ${errorMessage(error)}`));
+    // After the profiles: the main session leaves `browser` to the profiles that carry it.
+    turn.settleTools();
+    if (skipped.length > 0 && ctx.hasUI) ctx.ui.notify(`Skipped subagent profiles that could not be read:\n${skipped.join('\n')}`, 'warning');
+    await api?.start(ctx);
   });
 
   // The tool-call pipeline, cheapest and most certain first; the first block wins. User hooks run last: they spawn
@@ -186,10 +193,9 @@ export default function octocode(pi: ExtensionAPI): void {
 
   // Registered last: the command's description names every subcommand added above.
   commands.register(pi, () => {
-    const mcpTools = pi.getAllTools().filter((tool) => tool.name.startsWith(OCTOCODE_TOOL_PREFIX)).length;
     return [
       `Octocode ${packageVersion() ?? ''}`.trim(),
-      `Octocode MCP: ${octocodeMcp ? `${mcpTools} tools (see /mcp)` : 'off'}`,
+      firstLine(octocodeMcp.describe()),
       `Subagents: ${[...profiles.keys()].join(', ') || 'none'} (at most ${maxSubagents()} at once)`,
       `Skills: ${skillCount()}`,
       `Hooks: ${hooks.summary()}`,

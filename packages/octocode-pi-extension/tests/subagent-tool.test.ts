@@ -4,7 +4,9 @@ import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { exitReason, runSubagent, subagentProcessEnv, watchdogLimits } from '../src/subagents/process.js';
 import { ReadReports, ReportQueue } from '../src/subagents/handoff.js';
+import { processStartTime } from '../src/shared/process.js';
 import { MAX_SUBAGENTS_ENV, registerAgentTool } from '../src/subagents/tool.js';
+import type { AgentProfile } from '../src/subagents/profiles.js';
 import { Subcommands } from '../src/shared/commands.js';
 import { createWorktree } from '../src/subagents/worktree.js';
 import { Team } from '../src/team/session.js';
@@ -46,7 +48,7 @@ afterAll(() => {
   process.env = savedEnv;
 });
 
-const profiles = new Map([
+const profiles = new Map<string, AgentProfile>([
   ['researcher', { name: 'researcher', description: 'reads', prompt: 'Research only.', tools: 'read,bash', excludeTools: 'file', model: 'faux/model' }],
   ['webLive', { name: 'webLive', description: 'browser', prompt: 'Drive the browser.', visibleBrowser: true }],
 ]);
@@ -60,6 +62,9 @@ function setup(cwd = tmp('octocode-agent-cwd-'), hasUI = true) {
   commands.add('agents', control.command);
   commands.alias(f.pi, 'agents');
   const ctx = fakeCtx({ cwd, hasUI });
+  // The parent's models: `faux/model` is the session's, `faux/other` and `alt/shared` are also available.
+  const models = [{ provider: 'faux', id: 'model' }, { provider: 'faux', id: 'other' }, { provider: 'alt', id: 'shared' }];
+  Object.assign(ctx, { model: models[0], modelRegistry: { getAvailable: () => models, find: (provider: string, id: string) => models.find((m) => m.provider === provider && m.id === id) } });
   team.start(ctx);
   const agent = f.tools.get('agent');
   const run = (params: Record<string, unknown>, signal?: AbortSignal, onUpdate?: (update: unknown) => void) => agent.execute('call-1', params, signal, onUpdate, ctx);
@@ -81,6 +86,12 @@ describe('subagent scratch sweep', () => {
       return dir;
     };
     const otherSession = folder('worker-live', process.ppid);
+    // A recorded start time guards against pid reuse: the pid runs, but it is not the process that made the folder.
+    const started = processStartTime(process.pid);
+    const reused = folder('worker-reused', process.pid);
+    fs.writeFileSync(path.join(reused, '.owner'), `${process.pid} Thu Jan  1 00:00:00 1970`);
+    const sameProcess = folder('worker-same', process.pid);
+    fs.writeFileSync(path.join(sameProcess, '.owner'), started ? `${process.pid} ${started}` : String(process.pid));
     const dead = folder('worker-dead', 9_999_999);
     const unowned = folder('worker-unowned');
     const fresh = path.join(root, 'worker-fresh');
@@ -88,6 +99,8 @@ describe('subagent scratch sweep', () => {
     await s.fire('session_start', { type: 'session_start' }, s.ctx);
     await new Promise((resolve) => setImmediate(resolve));
     expect(fs.existsSync(otherSession)).toBe(true);
+    expect(fs.existsSync(sameProcess)).toBe(true);
+    expect(fs.existsSync(reused)).toBe(started === undefined);
     expect(fs.existsSync(fresh)).toBe(true);
     expect(fs.existsSync(dead)).toBe(false);
     expect(fs.existsSync(unowned)).toBe(false);
@@ -112,13 +125,15 @@ describe('agent tool with a scripted pi child', () => {
     expect(facts.parent).toBe(s.team.id);
     expect(facts.cwd).toBe(fs.realpathSync(s.cwd));
     // Each subagent gets a handoff folder in the workspace, which ignores itself in git.
-    expect(facts.scratch).toBe(path.join(s.cwd, '.octocode', 'tmp', 'agents', facts.id));
+    expect(facts.scratch).toBe(path.join(fs.realpathSync(s.cwd), '.octocode', 'tmp', 'agents', facts.id));
     // It saved nothing there, so the folder is removed when the run ends.
     expect(fs.existsSync(facts.scratch)).toBe(false);
     expect(fs.readFileSync(path.join(s.cwd, '.octocode', 'tmp', '.gitignore'), 'utf8')).toBe('*\n');
     expect(facts.args).toEqual(expect.arrayContaining(['--mode', 'json', '--no-session', '--model', 'faux/model', '--tools', 'read,bash', '--exclude-tools', 'file,edit,write']));
     expect(text).toContain('(Last screenshot: ');
-    expect(result.details).toMatchObject({ profile: 'researcher', toolCalls: 1, input: 100, output: 20 });
+    expect(result.details).toMatchObject({ profile: 'researcher', toolCalls: 1, input: 100, output: 20, model: 'faux/model' });
+    // The child's own facts ride in its task (after the task text), not in its system prompt.
+    expect(facts.task).toBe(`report back\nsecond line\n\n## You\nYour id is \`${facts.id}\`, working for \`${s.team.id}\`. Your scratch folder, for handoff files and a long report, is \`${facts.scratch}\`.`);
     expect(result.usage.cost.total).toBeCloseTo(0.01);
     expect(fs.existsSync(result.details.shot)).toBe(true);
     expect(updates.some((update) => update.details.activity.includes('→ bash ls -la'))).toBe(true);
@@ -128,11 +143,11 @@ describe('agent tool with a scripted pi child', () => {
     expect(updates.some((update) => update.content.some((part) => part.type === 'image'))).toBe(true);
 
     const done = rendered(s.agent.renderResult(result, { isPartial: false, expanded: false }, theme, { isError: false }));
-    expect(done).toMatch(/^ {2}⎿ {2}Done \(1 tool call · 120 tokens · \d+(ms|\.\d+s|s)\)\n/);
+    expect(done).toMatch(/^ {2}⎿ {2}Done \(1 tool call · 120 tokens · \d+(ms|\.\d+s|s) · faux\/model\)\n/);
     const partial = rendered(s.agent.renderResult({ content: [{ type: 'text', text: 'working' }], details: { ...result.details, seconds: undefined } }, { isPartial: true, expanded: false }, theme, { isError: false }));
     expect(partial).toContain('→ bash ls -la');
     expect(partial).toContain('📷');
-    expect(partial).toMatch(/^ {2}⎿ {2}researcher-[0-9a-f]{6} · 1 tool call · ↑100 ↓20\n/);
+    expect(partial).toMatch(/^ {2}⎿ {2}researcher-[0-9a-f]{6} · 1 tool call · ↑100 ↓20 · faux\/model\n/);
     const failed = rendered(s.agent.renderResult({ content: [{ type: 'text', text: 'Subagent x failed\ndetail' }] }, { isPartial: false, expanded: false }, theme, { isError: true }));
     // The text already says it failed: no `Error:` in front of it.
     expect(failed).toBe('  ⎿  Subagent x failed\n     detail');
@@ -141,12 +156,34 @@ describe('agent tool with a scripted pi child', () => {
     expect(rendered(s.agent.renderCall({}, theme, {}))).toBe('○ Agent(general)');
   });
 
+  it('routes the model: profile preference, parent provider first, fallback to the parent\'s model, strict explicit', async () => {
+    const run = async (params: Record<string, unknown>) => reportOf(((await s.run(params)).content[0].text as string));
+    const modelArg = (facts: { args: string[] }) => facts.args[facts.args.indexOf('--model') + 1];
+    profiles.set('scout', { name: 'scout', description: '', prompt: '', model: 'shared:high' });
+    profiles.set('absent', { name: 'absent', description: '', prompt: '', model: 'claude-haiku-5-5' });
+    try {
+      // A bare id is resolved against the available models and keeps its :thinking suffix.
+      expect(modelArg(await run({ task: 'report', profile: 'scout' }))).toBe('alt/shared:high');
+      // An unavailable preference runs on the parent's current model, pinned with --model; the render and details say so.
+      const fallback = await s.run({ task: 'report', profile: 'absent' });
+      expect(modelArg(reportOf(fallback.content[0].text))).toBe('faux/model');
+      expect(fallback.details).toMatchObject({ model: 'faux/model', fallback: 'claude-haiku-5-5' });
+      expect(rendered(s.agent.renderResult(fallback, { isPartial: false, expanded: false }, theme, { isError: false }))).toContain('faux/model (claude-haiku-5-5 unavailable)');
+      // The explicit parameter beats the profile and is strict.
+      expect(modelArg(await run({ task: 'report', profile: 'scout', model: 'other' }))).toBe('faux/other');
+      await expect(s.run({ task: 'report', profile: 'scout', model: 'faux/mdoel' })).rejects.toThrow(/Model "faux\/mdoel" is not available\. .*faux\/model, faux\/other/);
+    } finally {
+      profiles.delete('scout');
+      profiles.delete('absent');
+    }
+  });
+
   it('reports a failed child, a provider error with its partial answer, and an empty answer', async () => {
     await expect(s.run({ task: 'fail now' })).rejects.toThrow(/Subagent exited with code 3: boom/);
     await expect(s.run({ task: 'narrate then crash' })).rejects.toThrow(/Subagent exited with code 3: segfault\nLast progress: Let me look at src\/a\.ts/);
     const failed = await s.run({ task: 'error please' });
     expect(failed).toMatchObject({ isError: true, details: { status: 'failed' }, usage: { input: 100, output: 20 } });
-    expect(failed.content[0].text).toMatch(/failed: provider down\n\nPartial answer:\npartial findings/);
+    expect(failed.content[0].text).toMatch(/failed: provider down\nRetry with a narrower task or do the work yourself\. The partial answer is unverified\.\n\nPartial answer:\npartial findings/);
     const silent = await s.run({ task: 'silent run' });
     expect(silent.content[0].text).toBe('(subagent returned no text)');
   });
@@ -167,14 +204,14 @@ describe('agent tool with a scripted pi child', () => {
   it('strips terminal escapes and bidi controls from the child\'s report, error and stderr', async () => {
     await expect(s.run({ task: 'hostile fail' })).rejects.toThrow(/^Subagent exited with code 3: boom red$/m);
     const error = (await s.run({ task: 'hostile report' })).content[0].text as string;
-    expect(error).toContain('failed: bad provider\n\nPartial answer:\nclick done');
+    expect(error).toContain('failed: bad provider\nRetry with a narrower task or do the work yourself. The partial answer is unverified.\n\nPartial answer:\nclick done');
     expect(error).not.toMatch(/[\u001b\u0007\u202e]/u);
   });
 
   it('hands a task starting with - or @ to the child as its message', async () => {
     for (const task of ['- report the dash', '@src/a.ts report']) {
       const facts = reportOf((await s.run({ task })).content[0].text as string);
-      expect(facts.task.trim()).toBe(task);
+      expect(facts.task.trim().startsWith(task)).toBe(true);
       expect(facts.args.at(-1)).toBe('--');
     }
   });
@@ -182,9 +219,9 @@ describe('agent tool with a scripted pi child', () => {
   it('keeps a long report short in context and saves it whole as a doc', async () => {
     const result = await s.run({ task: 'long report' });
     const text = result.content[0].text as string;
-    const file = path.join(s.cwd, '.octocode', 'tmp', 'agents', result.details.id, 'report.md');
+    const file = path.join(fs.realpathSync(s.cwd), '.octocode', 'tmp', 'agents', result.details.id, 'report.md');
     expect(text).toMatch(/^summary first\n/);
-    expect(text).toContain('[Output truncated:');
+    expect(text).toContain('[Output trimmed:');
     expect(text).toContain(`Full report: ${file} (read only the parts you need).`);
     expect(Buffer.byteLength(text)).toBeLessThan(9 * 1024);
     expect(fs.readFileSync(file, 'utf8')).toMatch(/the end$/);
@@ -225,7 +262,7 @@ describe('agent tool with a scripted pi child', () => {
 
     await s.run({ task: 'error in background', background: true });
     await vi.waitFor(() => expect(s.sent.length).toBe(2), { timeout: 10_000 });
-    expect(s.sent[1]!.message.content).toMatch(/failed: provider down/);
+    expect(s.sent[1]!.message.content).toMatch(/failed: provider down[\s\S]*Retry with a narrower task or do the work yourself/);
     expect(s.sent[1]!.message.details).toMatchObject({ status: 'failed', summary: 'Failed: provider down' });
     expect(rendered(renderer(s.sent[1]!.message, { expanded: false }, theme))).toMatch(/^ ✗ Agent\(general-[0-9a-f]{6}\)[^\n]*\n {3}⎿ {2}Failed: provider down/);
 
@@ -433,6 +470,13 @@ describe('runSubagent', () => {
     expect(outcome.error).toBeUndefined();
   });
 
+  it.skipIf(process.platform === 'win32')('settles shortly after the child exits even when an escaped grandchild holds its pipes open', async () => {
+    const started = Date.now();
+    const outcome = await runSubagent(['orphan holder'], tmp(), undefined, { id: 'a-orphan' }, undefined, () => undefined);
+    expect(outcome.text).toBe('ORPHAN REPORT');
+    expect(Date.now() - started).toBeLessThan(5_000);
+  }, 15_000);
+
   it('keeps running when the progress callback throws', async () => {
     const outcome = await runSubagent(['report'], tmp(), undefined, { id: 'a-0002' }, undefined, () => {
       throw new Error('render gone');
@@ -506,6 +550,8 @@ describe('background report delivery', () => {
     expect(read.consume('general-abcdef')).toBe(true);
     // Rewritten after the read: the parent has not seen the final version.
     read.track('general-abcdef', scratch);
+    read.observe('read', { path: file }, cwd);
+    // An MCP tool's input is the server's contract: it never counts as reading the report.
     read.observe('mcp__octocode__localFetch', { queries: [{ path: file }] }, cwd);
     const future = new Date(Date.now() + 10_000);
     fs.utimesSync(file, future, future);

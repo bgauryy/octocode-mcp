@@ -16,6 +16,7 @@ pub use types::{
     ArtifactError, ArtifactItem, ArtifactProviderPage, ArtifactProviderState, ArtifactSearchQuery,
     ArtifactType, ResolvedNpmRegistry,
 };
+pub(crate) use util::{github_repo_dir, github_repository, github_slug};
 
 use crate::providers::RequestBudget;
 use http::RegistryClient;
@@ -54,8 +55,7 @@ pub async fn execute_artifact(
                 version_support_summary(),
                 query.artifact_type().as_str()
             ),
-        )
-        .with_hint("Omit version, or read the release in its source repository."));
+        ));
     }
     match query.artifact_type() {
         ArtifactType::Npm => {
@@ -92,7 +92,7 @@ pub async fn execute_artifact(
 /// the result list without gaps.
 fn page_state(query: &ArtifactSearchQuery) -> ArtifactProviderState {
     let page = query.page();
-    let size = query.page_size().unwrap_or(10) as u64;
+    let size = query.page_size() as u64;
     match query.artifact_type() {
         ArtifactType::Crates | ArtifactType::Packagist | ArtifactType::Go => {
             ArtifactProviderState {
@@ -131,7 +131,7 @@ fn validate_cursor_state(state: &ArtifactProviderState) -> Result<(), ArtifactEr
 }
 
 /// The contract's `version` capability table (`x-versionSupport` on the
-/// artifactSearch `version` field, AR4): ecosystem → `range`, `exact`, or
+/// artifactSearch `version` field): ecosystem → `range`, `exact`, or
 /// `none`, in the contract's order.
 fn version_table() -> &'static [(String, String)] {
     static TABLE: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
@@ -225,7 +225,7 @@ mod cursor_state_tests {
         }
     }
 
-    /// AR4: the gate reads the contract's capability table, so a new
+    /// The gate reads the contract's capability table, so a new
     /// ecosystem level changes one core table, not a native `matches!`.
     #[test]
     fn version_gate_reads_the_contract_capability_table() {

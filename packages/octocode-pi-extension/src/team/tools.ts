@@ -66,14 +66,17 @@ function registerCoordinateTool(pi: ExtensionAPI, team: Team, stopAgent: StopAge
     name: 'coordinate',
     label: 'Coordinate',
     description:
-      'Inspect repository teammates and manage cooperative file reservations. `list`: live agents, activity and held paths. `join`: register or update your task note (subagents already join automatically); `leave`: unregister and release reservations. ' +
-      '`lock`: reserve paths, all or none; `unlock`: release specified paths or all your reservations. Conflicting edits are refused. Reservations cover guarded file tools, not arbitrary shell commands; they last while you work, end when a subagent finishes, lapse after 30 min idle in a session, and within 90 s of a crash. ' +
-      (canStop ? '`stop`: end a background subagent you started (`id`), killing its process tree; its report says it was stopped. ' : '') +
-      '`changes`: files agents changed recently (file/edit/write), newest first with who and how long ago; narrow with `paths`, `withinMinutes` (default 60) and `limit` (default 20).',
-    promptSnippet: 'Inspect teammates, reserve shared files or review recent changes',
-    promptGuidelines: ['Check membership when it changes your next action. Reserve overlapping shared paths before editing and release them when done; on conflict, message the owner or do independent work.'],
+      'See which agents work in this repository and reserve the files you will change, so concurrent edits do not collide. Reservations are cooperative: they cover guarded file tools, not shell commands, last while you work, and make a conflicting edit fail.',
+    promptSnippet: 'List agents, reserve files, see recent changes',
+    promptGuidelines: ['Run `list` before work that may overlap another agent, `lock` the paths you will edit and `unlock` them when done. On a conflict, message the owner or do independent work.'],
     parameters: Type.Object({
-      action: StringEnum(actions),
+      action: StringEnum(actions, {
+        description:
+          'list: live agents, their activity and held paths; join: register or update your task note (subagents join automatically); leave: unregister and release your reservations; ' +
+          'lock: reserve paths, all or none; unlock: release the given paths, or all without paths; ' +
+          (canStop ? 'stop: end a background subagent you started (id), killing its process tree; its report says it was stopped; ' : '') +
+          'changes: files agents changed recently, newest first, with who and when',
+      }),
       ...(canStop ? { id: Type.Optional(Type.String({ description: 'stop: id of the background subagent to end' })) } : {}),
       note: Type.Optional(Type.String({ description: 'join: what you are working on' })),
       paths: Type.Optional(Type.Array(Type.String(), { maxItems: 32, description: 'lock/unlock: files, or "dir/" for a tree; unlock without paths releases all. changes: only files under these paths' })),
@@ -137,15 +140,15 @@ function registerSendMessageTool(pi: ExtensionAPI, team: Team): void {
     name: 'sendMessage',
     label: 'Send message',
     description:
-      'Send task steering, a question or useful evidence to a live agent in this repository; "all" reaches every other agent in your session tree (the top session and its subagents). Messages are queued: busy recipients read them at their next step; if a recipient leaves first, you are told it went unread. Questions, and the answer to a question the recipient asked, wake idle recipients; FYIs and other replies wait for their next turn. ' +
-      'Direct messages request a reply by default; broadcasts and replies do not. Use replyRequired false for an FYI and replyTo for an existing message. Oversized messages are rejected; send a summary and full-content path. Finished subagents need a new agent task to continue.',
-    promptSnippet: 'Steer a worker, ask a peer or share decision-changing evidence',
-    promptGuidelines: ['Send self-contained messages when they change another agent\'s next action. Reply in the existing thread with replyTo; routine acknowledgements and completion pings duplicate automatic reports.'],
+      'Send steering, a question or evidence to a live agent in this repository, or to every agent in your session tree. Delivery is queued: a busy recipient reads it at its next step, and you are told if it left unread. ' +
+      'A finished subagent cannot receive messages; give it a new `agent` task. A message over the size limit is refused: send a summary and a file path.',
+    promptSnippet: 'Message a subagent or teammate',
+    promptGuidelines: ['Message only when it changes the recipient\'s next step: a blocker, a decision or evidence. Make it self-contained, reply in the existing thread with replyTo, and skip acknowledgements and completion pings (final reports arrive automatically).'],
     parameters: Type.Object({
       to: Type.String({ description: 'Agent id, role, "parent" or "all" (your session tree)' }),
       message: Type.String({ maxLength: MESSAGE_MAX_CHARS, description: 'Self-contained text; for long results send a file path' }),
-      replyRequired: Type.Optional(Type.Boolean({ description: 'Request an answer; false for FYI. Default true for direct messages, false for broadcasts and replies' })),
-      replyTo: Type.Optional(Type.Integer({ minimum: 1, description: 'Number of an existing message being answered; use its sender as to' })),
+      replyRequired: Type.Optional(Type.Boolean({ description: 'true: a question that wakes an idle recipient and asks for an answer; false: an FYI read at its next turn. Default true for direct messages, false for broadcasts and replies' })),
+      replyTo: Type.Optional(Type.Integer({ minimum: 1, description: 'Number of the message you answer (send to its sender); answering a question wakes the asker' })),
     }),
     async execute(_id, params, signal) {
       signal?.throwIfAborted();

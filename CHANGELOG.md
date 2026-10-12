@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Changed — CLI paging is success; exit 6 removed
+- **A result with a next page exits 0**, as the MCP server reports it:
+  `pagination.hasMore`, `next.*`, a partial source read and a pending
+  `next.clasify` no longer change the exit code. `graph query` cuts also exit 0.
+- **Exit 6 is gone.** Nothing else used it. A retryable failure (`next.retry`)
+  beside answering rows now exits with its failed row's class (`7` rate limited,
+  else `5`). Every other code is unchanged: empty `1`, invalid input `2`
+  (including a malformed `snapshot`), not found `3`, auth `4`, execution `5`,
+  rate limited `7`, interrupted `130`.
+
+### Fixed — astSearch and lspSearch paging and language servers
+- **Pages fill a byte budget.** `astSearch` and `lspSearch` fill one ~16 KiB
+  page by bytes; a count (`pageSize`, `matchPageSize`) is an explicit override
+  only. A 3000-match file walks in 14 calls (was 30 at 100 rows), 1538
+  references in 18 calls (was ~3 KB pages), every item once with one total.
+- **`astSearch` scans the whole scope in one call** within a time budget and
+  resumes exactly once past it (`scanOffset`); a huge-ts symbol search is one
+  complete call instead of an exit-6 `maxFiles` continuation.
+- **A server that hits its memory cap is a final `serverCrashed`** with an
+  unverified text lead, not a retryable crash. The default cap is 25% of host
+  RAM clamped to 4-8 GiB; per-server `maxMemoryMb`/`env` live in
+  `lsp-servers.json`; TypeScript gets `maxTsServerMemory`; a workspace `tsgo`
+  serves `.ts/.tsx/.mts/.cts` (with `GOMEMLIMIT` = cap - 512 MiB); the pool
+  evicts idle servers once their summed resident memory passes the cap.
+- **`supertypes`/`subtypes` work without a type hierarchy.** Subtypes are the
+  server's implementation answer (not the declaration itself); supertypes are
+  the heritage clause's definitions; the row says which.
+- **No false importer partial for a vendored copy.** A candidate that declares
+  its own same-named symbol is rejected, not left "unverified".
+- **A push-timeout `diagnostic` is partial** (`diagnosticsNotPublished`), not
+  "no diagnostics".
+- A single `astSearch` symbols page states `pagination.hasMore`.
+
 ### Fixed — clasify
 - **Oversized `ranges` reads stay reachable.** A line window too large for
   `maxChars` now fails with `classificationContextTooLarge` plus a `hints.read`

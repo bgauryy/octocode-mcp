@@ -24,17 +24,26 @@ class Queue {
 
   constructor(private readonly onChange?: () => void) {}
 
-  /** Runs `run` after the earlier holders; `skip` resolves early to run without waiting (an aborted call). */
-  async run<R>(run: () => Promise<R>, skip?: Promise<void>): Promise<R> {
+  /** Runs `run` after the earlier holders; an abort of `signal` while it waits runs it at once (an aborted call). */
+  async run<R>(run: () => Promise<R>, signal?: AbortSignal): Promise<R> {
     if (held.getStore()?.has(this)) return run();
     let release!: () => void;
     const previous = this.tail;
     this.tail = new Promise<void>((resolve) => (release = resolve));
     this.waiting += 1;
     this.onChange?.();
+    // The abort listener lives only while the call waits: a long-lived signal must not collect one per acquired slot.
+    let stopWaiting: (() => void) | undefined;
+    const aborted = signal && new Promise<void>((resolve) => {
+      if (signal.aborted) return resolve();
+      const onAbort = () => resolve();
+      signal.addEventListener('abort', onAbort, { once: true });
+      stopWaiting = () => signal.removeEventListener('abort', onAbort);
+    });
     try {
-      await (skip ? Promise.race([previous, skip]) : previous);
+      await (aborted ? Promise.race([previous, aborted]) : previous);
     } finally {
+      stopWaiting?.();
       this.waiting -= 1;
       this.onChange?.();
     }
@@ -65,12 +74,6 @@ const dialogs = new Queue(() => {
   for (const listener of dialogListeners) listener();
 });
 
-function abortedPromise(signal: AbortSignal | undefined): Promise<void> | undefined {
-  if (!signal) return undefined;
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
-}
-
 /**
  * Run one user interaction (every select, confirm and input of one `askUser` call, one file review, one confirm) while
  * no other interaction shows. Pi's TUI shows one dialog at a time: a second dialog replaces the first without
@@ -79,7 +82,7 @@ function abortedPromise(signal: AbortSignal | undefined): Promise<void> | undefi
  * once, so its own aborted dialog returns without showing.
  */
 export function withDialog<R>(run: () => Promise<R>, signal?: AbortSignal): Promise<R> {
-  return dialogs.run(run, abortedPromise(signal));
+  return dialogs.run(run, signal);
 }
 
 /** How many interactions wait for another one's dialog to close. */
@@ -114,7 +117,7 @@ export function forgetCheck(toolCallId: string): void {
 }
 
 /** Shorter waits are not recorded: every call spends a few milliseconds there. */
-export const WAIT_RECORD_MS = 100;
+const WAIT_RECORD_MS = 100;
 
 /**
  * The time a call spent before its run started at `startedAt`: `checkMs` in its own checks, `queuedMs` after them (Pi

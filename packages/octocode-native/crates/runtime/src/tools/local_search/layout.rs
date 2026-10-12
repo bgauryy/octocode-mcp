@@ -6,7 +6,7 @@ use super::types::*;
 use super::{cursor::*, leads::*, rows::*};
 use crate::policy::path::PathPolicy;
 use crate::tools::id::ToolId;
-use crate::tools::local_fetch::MAX_READ_RANGES;
+use crate::tools::id::query_limits::local_fetch::RANGES_MAX_ITEMS;
 use crate::tools::result::Continuation;
 use serde_json::{Value, json};
 
@@ -27,6 +27,9 @@ pub(super) struct Layout {
     pub(super) shown: PageRows,
     pub(super) total_pages: u32,
     pub(super) files_per_page: Option<u32>,
+    /// What the pages walk, in the pages' own unit: hit rows on streamed
+    /// pages (a file rides several), files on grid pages.
+    pub(super) total_items: u32,
     pub(super) matches_per: u32,
     pub(super) out_of_range: bool,
     /// Context lines around each row (0 for matchOnly).
@@ -36,8 +39,6 @@ pub(super) struct Layout {
     pub(super) budget_cap: Option<usize>,
     /// The tighter of the matchOnly display bound and `budget_cap`.
     pub(super) display_cap: Option<usize>,
-    /// The budget is tighter than the caller's own per-match limit.
-    pub(super) budget_binds: bool,
     /// Context windows of nearby rows merge into one block.
     pub(super) merge_context: Option<u32>,
     /// What each shown file's rendered path adds to its stored one: the
@@ -46,9 +47,11 @@ pub(super) struct Layout {
 }
 
 impl Layout {
-    /// Cut the page. A result within the page budget shows every hit on one
-    /// page: paging metadata and continuations would cost more than the rows
-    /// they hide. A caller cap always wins; larger results keep the
+    /// Cut the page. A result within the page budget and the default page
+    /// size of files shows every hit on one page: paging metadata and
+    /// continuations would cost more than the rows they hide. A page never
+    /// holds more files than its page size, so its enclosing names cover it.
+    /// A caller cap always wins; larger results keep the
     /// 10-rows-per-file default on their first page.
     pub(super) fn cut(
         query: &LocalSearchQuery,
@@ -60,9 +63,7 @@ impl Layout {
         let view = query.result_view;
         let list = list_view(view);
         let match_only = view == LocalSearchQueryResultView::MatchOnly;
-        let context_lines = query
-            .context_lines()
-            .unwrap_or_else(|| default_context_lines(view));
+        let context_lines = query.context_lines().unwrap_or(DEFAULT_CONTEXT_LINES);
         let costs = PageCosts::new(query, paths, output_root, context_lines);
         let hits_total: usize = if list {
             0
@@ -71,8 +72,14 @@ impl Layout {
         };
         let show_all = !list
             && query.match_page_size().is_none()
+            && parsed.files.len() <= default_page_size(view) as usize
             && fits_within(&parsed.files, page_budget, |file| {
-                costs.file(file) + file.matches.iter().map(|m| costs.row(m)).sum::<usize>()
+                costs.file(file)
+                    + file
+                        .matches
+                        .iter()
+                        .map(|m| costs.row(m) + costs.enclosing(file))
+                        .sum::<usize>()
             });
         let matches_per = query
             .match_page_size()
@@ -96,7 +103,7 @@ impl Layout {
             }
         }
         let streamed = streamed_layout(query);
-        let (shown, total_pages, files_per_page) = if streamed {
+        let (shown, total_pages, files_per_page, total_items) = if streamed {
             Self::stream(
                 query,
                 &parsed.files,
@@ -106,7 +113,7 @@ impl Layout {
                 &costs,
             )
         } else {
-            Self::grid(query, parsed.files.len(), matches_per, show_all)
+            Self::grid(query, parsed.files.len(), matches_per)
         };
         let total_files = parsed.files.len() as u32;
         let shown_total: usize = shown
@@ -117,7 +124,7 @@ impl Layout {
             })
             .sum();
         // Distribute the response value-char budget across the matches shown
-        // on this page: a giant match is clipped (flagged `truncated`) rather
+        // on this page: a giant match is clipped (reported by `originalChars`) rather
         // than dropped, so the page/match cursors and the line anchor +
         // localFetch cover full retrieval unchanged.
         let budget_cap = (shown_total > 0)
@@ -128,9 +135,6 @@ impl Layout {
             (Some(a), None) => Some(a),
             (None, b) => b,
         };
-        let budget_binds = budget_cap.is_some_and(|cap| {
-            cap < effective_match_content_length(query) as usize && display_cap == Some(cap)
-        });
         // Content views emit a ±contextLines window per match row; windows of
         // nearby rows overlap, so merge them into one block per run of lines.
         // matchOnly carries exact spans and multiline rows span several
@@ -146,12 +150,12 @@ impl Layout {
             shown,
             total_pages,
             files_per_page,
+            total_items,
             matches_per,
             context_lines: if match_only { 0 } else { context_lines },
             streamed,
             budget_cap,
             display_cap,
-            budget_binds,
             merge_context,
             prefix_chars: costs.prefix_chars,
         }
@@ -166,7 +170,7 @@ impl Layout {
         show_all: bool,
         page_budget: usize,
         costs: &PageCosts,
-    ) -> (PageRows, u32, Option<u32>) {
+    ) -> (PageRows, u32, Option<u32>, u32) {
         let mut pages = stream_pages(
             files,
             matches_per as usize,
@@ -174,7 +178,7 @@ impl Layout {
             page_budget,
             StreamCosts {
                 file: &|file| costs.file(file),
-                row: &|row| costs.row(row),
+                row: &|file, row| costs.row(row) + costs.enclosing(file),
             },
         );
         let total_pages = u32::try_from(pages.len()).unwrap_or(u32::MAX).max(1);
@@ -184,7 +188,13 @@ impl Layout {
         } else {
             Vec::new()
         };
-        (shown, total_pages, None)
+        let rows: usize = files.iter().map(|file| file.matches.len()).sum();
+        (
+            shown,
+            total_pages,
+            None,
+            u32::try_from(rows).unwrap_or(u32::MAX),
+        )
     }
 
     /// A caller layout keeps the file-page × match-page grid.
@@ -192,18 +202,10 @@ impl Layout {
         query: &LocalSearchQuery,
         file_count: usize,
         matches_per: u32,
-        show_all: bool,
-    ) -> (PageRows, u32, Option<u32>) {
-        let view = query.result_view;
+    ) -> (PageRows, u32, Option<u32>, u32) {
         let page_size = query
             .page_size()
-            .unwrap_or_else(|| {
-                if show_all {
-                    default_page_size(view).max(u32::try_from(file_count).unwrap_or(u32::MAX))
-                } else {
-                    default_page_size(view)
-                }
-            })
+            .unwrap_or_else(|| default_page_size(query.result_view))
             .max(1);
         let page = query.page().max(1);
         let start = (page - 1).saturating_mul(page_size) as usize;
@@ -217,6 +219,7 @@ impl Layout {
             shown,
             total_files.div_ceil(page_size).max(1),
             Some(page_size),
+            total_files,
         )
     }
 }
@@ -232,6 +235,9 @@ pub(super) struct PageCosts {
     pub(super) match_only: bool,
     pub(super) expand_context: u32,
     pub(super) read_chars: usize,
+    /// Rows are shown, so each hit row of an outlined language carries its
+    /// `enclosing` name: the page reserves it before the cut.
+    pub(super) names: bool,
 }
 
 impl PageCosts {
@@ -252,6 +258,7 @@ impl PageCosts {
             match_only_limit: match_only.then_some(effective_match_content_length(query) as usize),
             match_only,
             expand_context: if match_only { 0 } else { context_lines },
+            names: !list_view(query.result_view),
             read_chars: expansion_read_chars(
                 query,
                 query.multiline != LocalSearchQueryMultiline::Off,
@@ -276,15 +283,24 @@ impl PageCosts {
         }
     }
 
+    /// What a hit row of `file` reserves for its `enclosing` name.
+    pub(super) fn enclosing(&self, file: &octocode_engine::types::TextSearchFile) -> usize {
+        if self.names && outlined_language(std::path::Path::new(&file.path)) {
+            ENCLOSING_RESERVE_CHARS
+        } else {
+            0
+        }
+    }
+
     pub(super) fn row(&self, matched: &octocode_engine::types::TextSearchMatch) -> usize {
         let row = row_chars(matched, self.match_only_limit, self.match_only);
         if self.clipped(matched) {
             // Its line range, and a share of the extra read every
-            // `MAX_READ_RANGES` ranges open.
+            // `RANGES_MAX_ITEMS` ranges open.
             let digits = |n: u32| n.checked_ilog10().map_or(1, |log| log as usize + 1);
             row + 2 * digits(matched.line.saturating_add(self.expand_context))
                 + 4
-                + self.read_chars.div_ceil(MAX_READ_RANGES)
+                + self.read_chars.div_ceil(RANGES_MAX_ITEMS)
         } else {
             row
         }
@@ -394,8 +410,11 @@ pub(super) fn fits_within(
 pub(super) struct StreamCosts<'a> {
     /// A file entry around its rows.
     pub(super) file: &'a dyn Fn(&octocode_engine::types::TextSearchFile) -> usize,
-    /// One match row.
-    pub(super) row: &'a dyn Fn(&octocode_engine::types::TextSearchMatch) -> usize,
+    /// One match row of a file, with what it reserves for its name.
+    pub(super) row: &'a dyn Fn(
+        &octocode_engine::types::TextSearchFile,
+        &octocode_engine::types::TextSearchMatch,
+    ) -> usize,
 }
 
 /// Rows one page shows: (file index, rank-order row range), in page order.
@@ -419,9 +438,9 @@ pub(super) fn streamed_layout(q: &LocalSearchQuery) -> bool {
 /// `per_file` ranked rows in file order, then every file's remaining rows.
 /// Each page holds as much of the stream as fits `budget` serialized chars
 /// (at least one row), counting a file's `pagination` whenever its later
-/// rows may fall on a later page; the first holds only first-pass rows of
-/// at most [`DEFAULT_SNIPPET_PAGE_SIZE`] files, so a large result opens with
-/// a lean overview. `whole` puts the entire result on one page. A file's
+/// rows may fall on a later page; the first holds only first-pass rows, so
+/// a large result opens with a lean overview, and no page holds more than
+/// [`ENCLOSING_MAX_FILES`] files, so every hit row it shows is named. `whole` puts the entire result on one page. A file's
 /// rows on one page are always one contiguous rank range, and its later
 /// rows follow on later pages.
 pub(super) fn stream_pages(
@@ -467,7 +486,7 @@ pub(super) fn stream_pages(
         for row in entries {
             let more_after = row.is_some_and(|row| row + 1 < file.matches.len());
             let cost = |page_has_file: bool, page_counts_pagination: bool| {
-                row.map_or(0, |row| (costs.row)(&file.matches[row]))
+                row.map_or(0, |row| (costs.row)(file, &file.matches[row]))
                     + if page_has_file { 0 } else { (costs.file)(file) }
                     + if more_after && !page_counts_pagination {
                         pagination_chars(file)
@@ -477,9 +496,11 @@ pub(super) fn stream_pages(
             };
             let has_file = slot.contains_key(&index);
             let over_budget = used + cost(has_file, paged.contains(&index)) > budget;
-            let first_page_full =
-                pages.is_empty() && (!overview || (!has_file && page.len() >= first_page_files));
-            if !page.is_empty() && (over_budget || first_page_full) {
+            // Every page names the enclosing declaration of each hit row in
+            // at most `ENCLOSING_MAX_FILES` files, so no page holds more.
+            let page_full = (pages.is_empty() && !overview)
+                || (!has_file && page.len() >= first_page_files.min(ENCLOSING_MAX_FILES));
+            if !page.is_empty() && (over_budget || page_full) {
                 pages.push(std::mem::take(&mut page));
                 slot.clear();
                 paged.clear();
@@ -510,7 +531,8 @@ pub(super) fn stream_pages(
 }
 
 /// The contract maximum of `matchContentLength`.
-pub(super) const MAX_MATCH_CONTENT_LENGTH: usize = 100_000;
+const MAX_MATCH_CONTENT_LENGTH: usize =
+    crate::tools::id::query_limits::local_search::MATCH_CONTENT_LENGTH_MAXIMUM;
 
 /// Serialized chars of one `expandValuesNN` read without its path (and its
 /// ranges, which each row pays for).
@@ -519,24 +541,17 @@ pub(super) fn expansion_read_chars(query: &LocalSearchQuery, multiline: bool) ->
         json!({"expandValues99": {
             "tool": ToolId::LocalSearch.as_str(),
             "query": {"queries": [normalized_query(query, true)]},
-            "why": MULTILINE_READ_WHY,
             "confidence": "exact",
         }})
     } else {
         json!({"expandValues99": {
             "tool": ToolId::LocalFetch.as_str(),
             "query": {"queries": [{"path": "", "ranges": []}]},
-            "why": LINES_READ_WHY,
             "confidence": "exact",
         }})
     };
     crate::tools::stream_page::json_chars(&read)
 }
-
-pub(super) const LINES_READ_WHY: &str = "Read the clipped values' source lines whole.";
-
-pub(super) const MULTILINE_READ_WHY: &str =
-    "Search this file alone with room for its clipped values.";
 
 /// A caller-sized page: the same `page`/`matchPage` show the same rows at
 /// any `matchContentLength`, so one widened query reaches every clipped
@@ -551,7 +566,7 @@ pub(super) struct GridPage {
 /// budget gets one widened copy of the query. Otherwise each file gets its
 /// own read: a line row's value is its hit line with up to `context` lines
 /// on each side, so a localFetch of those source lines (`ranges`, merged, at
-/// most [`MAX_READ_RANGES`] per read) holds it whole, and localFetch pages a
+/// most [`RANGES_MAX_ITEMS`] per read) holds it whole, and localFetch pages a
 /// long read itself. A clipped multiline row hides how many lines its match
 /// spans, so its file is searched again alone with `matchContentLength`
 /// raised to its longest clipped value (past the contract maximum, a
@@ -568,7 +583,7 @@ pub(super) fn expand_values(
     let longest = files
         .iter()
         .flat_map(|file| file.matches.iter().flatten())
-        .filter(|matched| matched.truncated)
+        .filter(|matched| matched.clipped)
         .filter_map(|matched| matched.original_chars)
         .max();
     let Some(longest) = longest else {
@@ -587,7 +602,6 @@ pub(super) fn expand_values(
         }
         return vec![
             Continuation::new(ToolId::LocalSearch, widened)
-                .why("The same page with room for every clipped value.")
                 .confidence("exact")
                 .build(),
         ];
@@ -598,7 +612,7 @@ pub(super) fn expand_values(
             .matches
             .iter()
             .flatten()
-            .filter(|matched| matched.truncated)
+            .filter(|matched| matched.clipped)
             .collect::<Vec<_>>();
         if clipped.is_empty() {
             continue;
@@ -627,7 +641,6 @@ pub(super) fn expand_values(
                         ToolId::LocalFetch,
                         json!({"path": path, "ranges": [format!("{}-{}", first.saturating_sub(context).max(1), READ_TO_END_LINE)]}),
                     )
-                    .why("Read from the clipped multiline value on; the read pages.")
                     .confidence("exact")
                     .build(),
                 );
@@ -643,21 +656,28 @@ pub(super) fn expand_values(
             }
             reads.push(
                 Continuation::new(ToolId::LocalSearch, search)
-                    .why(MULTILINE_READ_WHY)
                     .confidence("exact")
                     .build(),
             );
             continue;
         }
-        let merged = hit_windows(clipped.iter().map(|matched| matched.line), context);
-        for chunk in merged.chunks(MAX_READ_RANGES) {
+        // A value clipped out of a line longer than a read page is read by
+        // bytes from its hit; a line-range read would show the line's start.
+        let (long, plain): (Vec<_>, Vec<_>) = clipped
+            .into_iter()
+            .partition(|matched| is_long_line_hit(matched));
+        reads.extend(
+            long.into_iter()
+                .map(|matched| long_line_read(&path, matched)),
+        );
+        let merged = hit_windows(plain.iter().map(|matched| matched.line), context);
+        for chunk in merged.chunks(RANGES_MAX_ITEMS) {
             let ranges = chunk
                 .iter()
                 .map(|(start, end)| format!("{start}-{end}"))
                 .collect::<Vec<_>>();
             reads.push(
                 Continuation::new(ToolId::LocalFetch, json!({"path": path, "ranges": ranges}))
-                    .why(LINES_READ_WHY)
                     .confidence("exact")
                     .build(),
             );

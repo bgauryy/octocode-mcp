@@ -32,9 +32,9 @@ pub(super) fn validate_topology_queries(input: &Value) -> Result<(), ContractVal
                 .is_some_and(|values| values.iter().any(|v| absolute(Some(v))));
         if !rooted {
             return Err(issue(
-                "ast-search.topology",
+                "ast-topology.root",
                 vec!["queries".into(), index.to_string(), "path".into()],
-                "path is required unless an absolute path can infer the repository root",
+                "path is required unless source, target, or an entrypoint is an absolute path from which the repository root can be inferred.",
             ));
         }
     }
