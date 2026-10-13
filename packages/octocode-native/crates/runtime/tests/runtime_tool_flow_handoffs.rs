@@ -4,7 +4,7 @@ use crate::support;
 
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use support::Workspace;
+use support::{LocateTopPassage, Workspace};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
@@ -35,6 +35,55 @@ impl Respond for CandidateJudgment {
     }
 }
 
+/// Choose only among the passage labels in each request. A bounded line
+/// window may present fewer labels than the broader source payload.
+#[derive(Clone)]
+struct FirstOfferedPassage;
+
+impl Respond for FirstOfferedPassage {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let body: Value = serde_json::from_slice(&request.body).expect("provider request");
+        let answers = body["questions"]
+            .as_object()
+            .expect("grouped questions")
+            .iter()
+            .map(|(id, question)| {
+                let answer = if question["type"] == "choice" {
+                    let labels = question["criteria"]
+                        .as_object()
+                        .expect("choice labels")
+                        .keys()
+                        .collect::<Vec<_>>();
+                    let rest = if labels.len() > 1 {
+                        0.01 / (labels.len() - 1) as f64
+                    } else {
+                        0.0
+                    };
+                    let probabilities = labels
+                        .iter()
+                        .enumerate()
+                        .map(|(index, label)| {
+                            (
+                                (*label).clone(),
+                                json!(if index == 0 { 0.99 } else { rest }),
+                            )
+                        })
+                        .collect::<serde_json::Map<_, _>>();
+                    json!({"type":"choice","choice":labels[0],"confidence":0.99,
+                        "probabilities":probabilities})
+                } else {
+                    json!({"type":"noul","noul":0.99})
+                };
+                (id.clone(), answer)
+            })
+            .collect::<serde_json::Map<_, _>>();
+        ResponseTemplate::new(200).set_body_json(json!({
+            "model":"fixture","answers":answers,
+            "usage":{"input_tokens":5,"output_tokens":2}
+        }))
+    }
+}
+
 async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected: u64) {
     let server = MockServer::builder().start().await;
     Mock::given(method("POST"))
@@ -54,6 +103,7 @@ async fn assert_candidate_walk(total: usize, page: u64, page_size: u64, expected
     }
     let root = workspace.write("src/root.txt", "no match\n");
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("REQUEST_TIMEOUT", "30000".into()),
@@ -176,6 +226,7 @@ async fn metadata_handoff_keeps_unseen_file_bodies_out_of_provider_evidence() {
     workspace.write("src/a.txt", body);
     let file = workspace.write("src/b.txt", body);
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);
@@ -230,6 +281,7 @@ async fn unfinished_local_read_offers_optional_locate_and_preserves_source_cover
     let workspace = Workspace::new();
     let file = workspace.write("src/server.c", "one\nhousekeeping timer\nthree\n");
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);
@@ -288,5 +340,252 @@ async fn unfinished_local_read_offers_optional_locate_and_preserves_source_cover
     ] {
         assert!(targeted["hints"].get("clasify").is_none(), "{targeted}");
     }
+    runtime.close().await;
+}
+
+/// A source above the in-memory ranking limit has no judged source scope.
+/// Its advertised goals may become an optional Locate over the same pinned
+/// bytes. The initial read must not call JEV, and the copied matrix and its
+/// deciding-source read must both execute without changing the source scope.
+#[tokio::test]
+async fn skipped_stream_goals_offer_executable_snapshot_bound_locate() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(LocateTopPassage {
+            top: 0.99,
+            exists: 0.99,
+        })
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let filler = "ordinary queue accounting without the deciding guard\n";
+    let mut body = filler.repeat(100);
+    body.push_str("the queued cancellation guard releases capacity\n");
+    body.push_str(&filler.repeat(220_000));
+    assert!(body.len() > 10 * 1024 * 1024);
+    let file = workspace.write("src/large-queue.txt", &body);
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
+        ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+        ("OCTOCODE_RANKING_ENABLED", "true".into()),
+        ("REQUEST_TIMEOUT", "30000".into()),
+    ]);
+    let read = runtime
+        .execute(
+            "stream-goals".into(),
+            "localFetch".into(),
+            json!({"queries":[{"path":file,
+                "goals":["Where a queued cancellation releases capacity"],
+                "extras":["hints"]}]}),
+        )
+        .await
+        .expect("streamed source read");
+    let data = &read.structured_content["results"][0]["data"];
+    assert_eq!(data["ranking"]["status"], "skipped", "{data}");
+    assert_eq!(data["ranking"]["reason"], "streamingSource", "{data}");
+    assert_eq!(data["isPartial"], true, "{data}");
+    assert!(server.received_requests().await.unwrap().is_empty());
+    let digest = data
+        .pointer("/next/continueWindow/query/queries/0/snapshot")
+        .and_then(Value::as_str)
+        .expect("emitted source snapshot");
+    assert!(
+        !data["content"]
+            .as_str()
+            .unwrap()
+            .contains("releases capacity")
+    );
+    let lead = &data["hints"]["clasify"];
+    assert_eq!(lead["tool"], "clasify", "{data}");
+    let matrix = &lead["query"]["queries"][0];
+    assert_eq!(matrix["resources"][0]["query"]["snapshot"], digest);
+    assert_eq!(matrix["resources"][0]["query"]["unit"], "lines");
+    assert_eq!(matrix["resources"][0]["query"]["offset"], 100);
+    assert_eq!(
+        matrix["questions"][0]["ask"],
+        "Where a queued cancellation releases capacity"
+    );
+    assert!(matrix["resources"][0]["query"].get("goals").is_none());
+    let located = runtime
+        .execute(
+            "locate-stream".into(),
+            "clasify".into(),
+            lead["query"].clone(),
+        )
+        .await
+        .expect("copyable Locate executes");
+    octocode_native::contracts::validate_output("clasify", &located.structured_content)
+        .expect("Locate output contract");
+    let response = &located.structured_content["queries"][0];
+    let best = &response["best"]["target"][0];
+    assert_eq!(best["line"], 101, "{response}");
+    let verify = &response["hints"]["read"];
+    assert_eq!(verify["tool"], "localFetch", "{response}");
+    assert_eq!(verify["query"]["queries"][0]["snapshot"], digest);
+    let source = runtime
+        .execute(
+            "verify-stream".into(),
+            "localFetch".into(),
+            verify["query"].clone(),
+        )
+        .await
+        .expect("source read executes");
+    assert!(
+        source.structured_content["results"][0]["data"]["content"]
+            .as_str()
+            .unwrap()
+            .contains("queued cancellation guard releases capacity")
+    );
+    assert!(!server.received_requests().await.unwrap().is_empty());
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn streamed_brief_without_goals_offers_executable_snapshot_bound_locate() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(LocateTopPassage {
+            top: 0.99,
+            exists: 0.99,
+        })
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let filler = "ordinary queue accounting without the deciding guard\n";
+    let mut body = filler.repeat(100);
+    body.push_str("the queued cancellation guard releases capacity\n");
+    body.push_str(&filler.repeat(220_000));
+    assert!(body.len() > 10 * 1024 * 1024);
+    let file = workspace.write("src/large-queue.txt", &body);
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
+        ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+        ("OCTOCODE_RANKING_ENABLED", "true".into()),
+        ("REQUEST_TIMEOUT", "30000".into()),
+    ]);
+    let first = runtime
+        .execute(
+            "stream-brief".into(),
+            "localFetch".into(),
+            json!({"queries":[{"path":file,
+                "mainGoal":"Where a queued cancellation releases capacity",
+                "extras":["hints"]}]}),
+        )
+        .await
+        .expect("streamed brief read");
+    let data = &first.structured_content["results"][0]["data"];
+    assert_eq!(data["isPartial"], true, "{data}");
+    assert!(
+        data.get("ranking").is_none(),
+        "brief did not request ranking"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+    let source_window = &data["next"]["continueWindow"]["query"]["queries"][0];
+    let lead = &data["hints"]["clasify"];
+    assert_eq!(lead["tool"], "clasify", "{data}");
+    let matrix = &lead["query"]["queries"][0];
+    let resource = &matrix["resources"][0]["query"];
+    assert_eq!(resource["path"], source_window["path"]);
+    assert_eq!(resource["snapshot"], source_window["snapshot"]);
+    assert_eq!(resource["unit"], "lines");
+    assert_eq!(resource["offset"], 100);
+    let located = runtime
+        .execute(
+            "locate-brief".into(),
+            "clasify".into(),
+            lead["query"].clone(),
+        )
+        .await
+        .expect("brief Locate executes");
+    let response = &located.structured_content["queries"][0];
+    assert_eq!(response["best"]["target"][0]["line"], 101, "{response}");
+    let verify = &response["hints"]["read"];
+    assert_eq!(
+        verify["query"]["queries"][0]["snapshot"],
+        source_window["snapshot"]
+    );
+    let checked = runtime
+        .execute(
+            "verify-brief".into(),
+            verify["tool"].as_str().unwrap().into(),
+            verify["query"].clone(),
+        )
+        .await
+        .expect("brief source verification executes");
+    assert!(
+        checked.structured_content["results"][0]["data"]["content"]
+            .as_str()
+            .unwrap()
+            .contains("queued cancellation guard releases capacity")
+    );
+    assert!(!server.received_requests().await.unwrap().is_empty());
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn implicit_line_unit_brief_handoff_executes_its_copied_window() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(FirstOfferedPassage)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let file = workspace.write("src/server.c", "one\nhousekeeping timer\nthree\n");
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
+        ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+    ]);
+    let first = runtime
+        .execute(
+            "brief-line-page".into(),
+            "localFetch".into(),
+            json!({"queries":[{"path":file,"unit":"lines","length":1,
+                "mainGoal":"Where the housekeeping timer is configured",
+                "extras":["hints"]}]}),
+        )
+        .await
+        .expect("bounded line read");
+    let data = &first.structured_content["results"][0]["data"];
+    let source_window = &data["next"]["continueWindow"]["query"]["queries"][0];
+    assert!(source_window.get("unit").is_none(), "{source_window}");
+    assert_eq!(data["pagination"]["unit"], "lines");
+    assert!(server.received_requests().await.unwrap().is_empty());
+    let lead = &data["hints"]["clasify"];
+    assert_eq!(lead["tool"], "clasify", "{data}");
+    let resource = &lead["query"]["queries"][0]["resources"][0]["query"];
+    assert_eq!(resource["snapshot"], source_window["snapshot"]);
+    assert_eq!(resource["offset"], source_window["offset"]);
+    assert!(resource.get("unit").is_none(), "copy actual wire query");
+    let located = runtime
+        .execute(
+            "locate-implicit-lines".into(),
+            "clasify".into(),
+            lead["query"].clone(),
+        )
+        .await
+        .expect("copied implicit-line Locate executes");
+    let response = &located.structured_content["queries"][0];
+    assert_eq!(response["best"]["target"][0]["line"], 2, "{response}");
+    let verify = &response["hints"]["read"];
+    let checked = runtime
+        .execute(
+            "verify-implicit-lines".into(),
+            verify["tool"].as_str().unwrap().into(),
+            verify["query"].clone(),
+        )
+        .await
+        .expect("deciding source read");
+    assert!(
+        checked.structured_content["results"][0]["data"]["content"]
+            .as_str()
+            .unwrap()
+            .contains("housekeeping timer")
+    );
     runtime.close().await;
 }

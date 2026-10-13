@@ -40,7 +40,7 @@ Octocode MCP     Octocode skills     .octocode home + workspace
 | **Octocode MCP** (`octocode-mcp`, bundled) | The research engine: local search and reading, structure and AST search, LSP, GitHub repo/code/PR/history search, packages | Run by the extension's own MCP client; its tools appear as `mcp__octocode__*`, and the prompt routes research to them. Override it with a server named `octocode` in Pi's `mcp.json`, or turn it off with `OCTOCODE_MCP=0`. |
 | **Octocode skills** | Reusable workflows such as `octocode-research`, `octocode-architect`, `octocode-agents-communication`, `octocode-documentation`, and `octocode-chrome-devtools` | Loaded from `~/.octocode/skills` and, in trusted projects, `<repo>/.octocode/skills`, next to Pi's, Claude Code's and Codex's skill folders. Install one with `npx -y octocode skill install <name>`. |
 | **Agent model** | The octocode-agents-communication model: agents, messages, deliveries and file leases | Backs `coordinate`, `sendMessage`, the `/agents` panel and subagent hand-offs. |
-| **Subagent profiles** | Markdown profiles: bundled `implementer`, `researcher`, `reviewer`, `webHeadless`, `webLive` | Each sets a preferred `model` (bare id; see [CONFIGURATION](docs/CONFIGURATION.md#subagent-profiles)). Add your own in `~/.octocode/agents/` or `<repo>/.octocode/agents/` (Pi's `~/.pi/agent/agents/` and `.pi/agents/` work too). |
+| **Subagent profiles** | Markdown profiles: bundled `implementer`, `researcher`, `reviewer`, `webHeadless`, `webLive` | Each sets a `model` purpose (`small`, `medium`) resolved among your models, or a model id (see [CONFIGURATION](docs/CONFIGURATION.md#subagent-profiles)). Add your own in `~/.octocode/agents/` or `<repo>/.octocode/agents/` (Pi's `~/.pi/agent/agents/` and `.pi/agents/` work too). |
 | **Octocode home** (`~/.octocode`, `OCTOCODE_HOME`) | User config: `skills/`, `agents/`, `hooks.json`. Runtime state in `agent/pi/`: the agent database `octocode.db` (sessions, backlog, memory, team), per-session output, bash logs and checkpoints | One SQLite file shared by every Pi session on the machine, so the backlog, memory and team are visible across sessions and subagents. |
 | **Workspace** (`<repo>/.octocode`) | Project config: `skills/`, `agents/`, `hooks.json` (trusted projects only), plus `tmp/` for subagent hand-off docs and `backlog.md` exports | Resolved from the repository root, so a session started in a subfolder sees the same files. |
 
@@ -71,7 +71,7 @@ Octocode uses Pi's extension API and keeps Pi's behavior where Pi already does t
 | System prompt | A short `octocode` section: investigate before changing, verify for real, prefer Octocode MCP for research, when to delegate. Pi's tool list, `AGENTS.md` context and skills are unchanged. | `before_agent_start` prompt sections |
 | `edit` / `write` | One `file` tool batches edits, writes and deletes, each with a reasoning line, on Pi's own edit and write engines. It refuses stale edits and writes atomically. It replaces `edit` and `write` once per session, unless you name them in `--tools` or `defaultTools`. | `createEditToolDefinition`, `createWriteToolDefinition` |
 | `bash` | Pi's own bash with your `shellPath` and `shellCommandPrefix`, plus a 15-minute deadline, background jobs and a guard against catastrophic commands. | `createBashToolDefinition`, `tool_call` |
-| Compaction | Pi writes the summary with your model. Octocode trims old, large tool results and adds the files its `file` tool changed to Pi's file lists. | `session_before_compact` |
+| Compaction | Octocode writes the summary with Pi's `compact()` on your model, adding verbatim user messages, errors and fixes, where work stopped, follow-ups and the transcript path, plus the files its `file` tool changed. No context trimming. | `session_before_compact` |
 | Sessions | `/sessions` lists Pi's sessions with branch, estimated cost and files changed, and resumes them with a short brief. Pi's `/resume` and session names are untouched. | `SessionManager.list`, `switchSession` |
 | Skills | Also loads skills from `~/.claude/skills`, `~/.codex/skills` and `~/.octocode/skills`, plus project skills in trusted projects. Claude.ai `synced/` skills under `~/.claude/skills` are skipped: they need connectors Pi does not have. | `resources_discover` |
 | Project trust | Gates Claude Code and Codex hooks, project agent profiles and project skills behind `/octocode trust`, because Pi's trust covers only Pi's own files. | `isProjectTrusted` |
@@ -86,7 +86,7 @@ Each feature has a full description in [docs/FEATURES.md](docs/FEATURES.md).
 - **Octocode MCP**: every research tool the server registers (local search and reads, AST, LSP, GitHub, packages), named `mcp__octocode__*` and declared as the server describes it; `/octocode mcp` shows the server's state. Its instructions join the prompt whole.
 - **`file` tool**: batched edit, write and delete with a reasoning line per change. A change to a file that moved on disk since the agent read it is refused until it reads the file again. Writes are atomic and keep the file mode.
 - **Checkpoints**: before `file` changes a path, its bytes are saved. `/octocode rewind [turns]` restores files the agent changed, but never overwrites files you changed since.
-- **Permission modes**: `manual` asks before file changes, shell, web, browser, MCP writes and subagents (the `file` review is its dialog, with Apply all, Review one by one, or Reject all); `workspace` runs work inside the repository and asks before leaving it or changing files that run in later sessions (git hooks, `.pi/`, `.claude/`, …); `full` asks only for hook asks and provenance hits. Sessions start in `full` unless you export `OCTOCODE_PERMISSION`; Shift+Tab in the editor cycles full → workspace → manual, the footer shows the mode, and without a UI every ask is denied. Catastrophic shell commands, reservations and the Octocode home stay refused in every mode. Modes are not a sandbox: see [Permissions](docs/FEATURES.md#permissions).
+- **Permission modes**: `manual` asks before file changes, shell, web, browser, MCP writes and subagents (the `file` review is its dialog, with Apply all, Review one by one, or Reject all); `workspace` runs work inside the repository and asks before leaving it or changing files that run in later sessions (git hooks, `.pi/`, `.claude/`, …); `full` asks only for hook asks. A provenance hit asks in manual and workspace, on the effect it reached, and runs in full. Sessions start in `full` unless you export `OCTOCODE_PERMISSION`; Shift+Tab in the editor cycles full → workspace → manual, the footer shows the mode, and without a UI every ask is denied. Catastrophic shell commands, reservations and the Octocode home stay refused in every mode. Modes are not a sandbox: see [Permissions](docs/FEATURES.md#permissions).
 - **Bash**: streaming output, a deadline, and `background: true` jobs whose exit status and log tail arrive later as a message. `/octocode jobs` lists and stops them.
 
 ### Delegation and teamwork
@@ -157,6 +157,7 @@ Everything lives under `/octocode`; tab completes subcommands. `/agents`, `/sess
 |---|---|
 | `/octocode [status]` | Status: version, Octocode MCP tools, profiles, skills, hooks |
 | `/octocode help` | List subcommands, their arguments and available shortcuts |
+| `/octocode models` | The models you can use (price, window, abilities, from Pi and models.dev) and which one each subagent purpose and profile runs on |
 | `/octocode mcp [restart]` | Show the Octocode MCP server's state, version, tool count and process, or restart it |
 | `/octocode rewind [turns]` | Undo the `file` changes of the last turns (default 1) |
 | `/octocode permission [manual\|workspace\|full\|grants [clear]\|log]` | Show or set the permission mode (Shift+Tab in the editor cycles), list or clear session grants, show recent decisions |
@@ -221,7 +222,7 @@ Every variable, file location, trust rule, hook and profile format is in [docs/C
 | [docs/FEATURES.md](docs/FEATURES.md) | Detailed behavior of every feature |
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | Environment variables, file locations, trust, hooks, subagent profiles, MCP, retention |
 | [docs/API.md](docs/API.md) | External JSON-RPC API and the `octocode-pi-api` command |
-| [docs/CONTEXT-AND-COST.md](docs/CONTEXT-AND-COST.md) | Context trimming and compaction, prompt cache retention and warming, pricing and the usage display, subagents, known limits |
+| [docs/CONTEXT-AND-COST.md](docs/CONTEXT-AND-COST.md) | Compaction (no trimming), prompt cache retention and warming, pricing and the usage display, subagents, known limits |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Source layout, for contributors |
 
 ## Development

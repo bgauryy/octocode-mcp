@@ -45,19 +45,41 @@ describe('CLI presentation embedded by the native binary', () => {
   });
 
   it('generates optional ranking fields only in the enabled read-tool presentation', () => {
+    const supported = ['localFetch', 'localSearch', 'ghGetFileContent', 'ghSearchCode'];
+    const branches = (schema: Json): Json[] =>
+      ((schema.oneOf ?? schema.anyOf) as Json[] | undefined) ?? [schema];
+    const hasField = (schema: Json, field: string): boolean =>
+      Object.hasOwn((schema.properties ?? {}) as Json, field);
     for (const name of CLASIFY_SCOUT_TOOL_NAMES) {
       const plain = tool(name);
-      const ranked = plain.ranking as Json;
-      expect(ranked).toBeDefined();
       expect(JSON.stringify({ ...plain, ranking: undefined })).not.toMatch(/"goals"|"ranking"/);
-      for (const view of ['query', 'full']) {
-        const schema = ((ranked.views as Json)[view] as Json).querySchema as Json;
-        expect(JSON.stringify(schema)).toContain('"goals"');
-        expect((schema.required ?? []) as string[]).not.toContain('goals');
+      const ranked = plain.ranking as Json | undefined;
+      if (!supported.includes(name)) {
+        expect(ranked, `${name} has no ranking projection`).toBeUndefined();
+        continue;
       }
-      expect(((ranked.views as Json).query as Json).continuationFields).toHaveProperty('ranking');
+      expect(ranked, `${name} has a ranking projection`).toBeDefined();
+      for (const view of ['query', 'full']) {
+        const schema = ((ranked!.views as Json)[view] as Json).querySchema as Json;
+        for (const branch of branches(schema)) {
+          const operation = ((branch.properties ?? {}) as Json).operation as Json | undefined;
+          expect(hasField(branch, 'goals'), `${name} ${view} ${String(operation?.const ?? 'query')} goals`).toBe(true);
+          expect(hasField(branch, 'ranking'), `${name} ${view} ${String(operation?.const ?? 'query')} ranking`).toBe(view === 'full');
+          expect((branch.required ?? []) as string[]).not.toContain('goals');
+        }
+      }
+      expect(((ranked!.views as Json).query as Json).continuationFields).toHaveProperty('ranking');
     }
-    expect(presentation.tools.filter(entry => entry.ranking).map(entry => entry.name).sort()).toEqual([...CLASIFY_SCOUT_TOOL_NAMES].sort());
+    expect(presentation.tools.filter(entry => entry.ranking).map(entry => entry.name).sort()).toEqual([...supported].sort());
+    const history = tool('ghSearchHistory');
+    const selections = history.selections as Record<string, Json>;
+    for (const operation of ['pullRequest', 'issue', 'commit']) {
+      const selection = selections[`operation=${operation}`];
+      expect(selection, operation).toBeDefined();
+      const schema = selection!.querySchema as Json;
+      expect(hasField(schema, 'goals'), operation).toBe(false);
+      expect(hasField(schema, 'ranking'), operation).toBe(false);
+    }
   });
 
   it('names the fields the query view hides and the call that shows them', () => {
@@ -66,7 +88,7 @@ describe('CLI presentation embedded by the native binary', () => {
     const byOperation = lsp.operationFields as Record<string, string[]>;
     expect(byOperation.definition).toContain('rustContext');
     expect(byOperation.references).toEqual(expect.arrayContaining(['includeDeclaration', 'rustContext']));
-    expect(lsp.select).toBe("octocode schema lspSearch --select operation=<operation> shows that operation's fields");
+    expect(lsp.select).toBe("octocode schema lspSearch --view query --select operation=<operation> shows that operation's fields");
     for (const entry of presentation.tools) {
       const view = query(String(entry.name));
       const shown = new Set([

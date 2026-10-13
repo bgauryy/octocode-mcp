@@ -16,7 +16,7 @@ assert.equal(endpoint.protocol, 'https:', 'real-provider forwarding requires HTT
 const output = path.join(ROOT, '.octocode/tmp/read-tool-ranking-eval', `impact-${new Date().toISOString().replace(/[:.]/g, '-')}`);
 fs.mkdirSync(output, { recursive: true });
 const protocol = {
-  version: 1, label: 'Controlled-fixture development confirmation, one paired trial; no agent-routing benchmark',
+  version: 3, label: 'Controlled-fixture development confirmation, one paired trial; no agent-routing benchmark',
   rfc: '.octocode/octocode-rfc-generator/2026-10-13-read-tool-relevance/RFC.md',
   rfcHash: hash(fs.readFileSync(path.join(ROOT, '.octocode/octocode-rfc-generator/2026-10-13-read-tool-relevance/RFC.md'), 'utf8')),
   casesHash: hash(fs.readFileSync(new URL('./read-tool-ranking/cases.mjs', import.meta.url), 'utf8')),
@@ -27,6 +27,7 @@ const protocol = {
   addonSha256: hash(fs.readFileSync(path.join(ROOT, `packages/octocode-native/octocode-native.${process.platform}-${process.arch}.node`))),
   budget: { providerRequestsPerTool: 8, providerRequestsTotal: 104, reportedInputTokens: 120000, repeats: 1, retries: 0 },
   arms: ['noGoals', 'disabled', 'enabled'], variants: ['descriptiveCandidate', 'ordinaryRouteControl'],
+  applicability: 'Only localFetch, localSearch, ghGetFileContent, and ghSearchCode accept goals; run the other tools only in their ordinary arm. Missing semantic arms are inapplicable, not zero-cost savings.',
   evidence: 'Complete selected responses, all source continuations; no automatic source hydration.',
   metrics: 'Full incurred response tokens; predeclared verification-read response tokens separately (zero if no such read); provider receipts separately. Target-string arrival is a diagnostic, never semantic sufficiency.',
   verification: 'Exact verifier reads are fixed in the case catalog before provider results, repeated in each arm, and counted in full. Their anchors are supplied by the fixture author; they do not measure autonomous routing or avoided reads.',
@@ -87,7 +88,7 @@ try {
     for (const [variant, query] of [['descriptiveCandidate', spec.query], ['ordinaryRouteControl', spec.control]]) {
       const trial = { variant, arms: {} };
       result.trials.push(trial);
-      for (const arm of ['noGoals', 'disabled', 'enabled']) {
+      for (const arm of spec.scope === null ? ['noGoals'] : ['noGoals', 'disabled', 'enabled']) {
         activeVariant = variant;
         activeArm = arm;
         const materialized = materialize(query, ctx);
@@ -109,14 +110,14 @@ try {
         fs.writeFileSync(path.join(output, 'runs.json'), JSON.stringify({ protocolHash: hash(protocol), rows }, null, 2));
       }
       const plain = trial.arms.noGoals, ranked = trial.arms.enabled;
-      if (plain.rows && ranked.rows) {
+      if (plain.rows && ranked?.rows) {
         trial.sameEvidence = stable([...plain.rows].sort()) === stable([...ranked.rows].sort());
         trial.sameOrder = stable(plain.rows) === stable(ranked.rows);
         trial.receipts = ranked.responses.map(response => dataOf(response).ranking);
       }
     }
-    result.decision = spec.scope ? 'awaiting-source-adequacy-adjudication' : 'no-benefit-structural-skip';
-    if (!spec.scope) assert.equal(providers.filter(row => row.tool === spec.tool).length, 0, `${spec.tool} structural skip makes no paid calls`);
+    result.decision = spec.scope ? 'awaiting-source-adequacy-adjudication' : 'ranking-not-supported';
+    if (!spec.scope) assert.equal(providers.filter(row => row.tool === spec.tool).length, 0, `${spec.tool} unsupported read makes no paid calls`);
   }
 } finally {
   // Native timeouts can finish before an upstream attempt; account for every attempt.

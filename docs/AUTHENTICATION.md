@@ -95,7 +95,7 @@ npx octocode auth login --hostname github.mycompany.com
 
 ## Classification key (`clasify`)
 
-`clasify` sends evidence to an external classification provider, so it exists only when a key is set.
+The classification API credential lets optional read-tool goals and beta `clasify` send sanitized evidence to the configured provider. A key alone does not expose either route: goals also need ranking enabled, while public `clasify` also needs beta. The [availability table](OCTOCODE_CLASIFY.md#availability) owns the full gate combinations.
 
 | Variable | Purpose |
 |---|---|
@@ -104,9 +104,9 @@ npx octocode auth login --hostname github.mycompany.com
 | `OCTOCODE_CLASSIFICATION_TYPE` | Vendor; only `jev` |
 
 - Source order: process env → workspace `.env` → home `.env` → `.octocoderc` (`classification.api`). The key never appears in resolved configuration output.
-- **No key:** MCP does not register `clasify`, and no tool returns a `hints.clasify` lead. The shared instructions keep one line that says clasify needs a provider key. CLI help and `npx octocode schema` list only enabled tools; `npx octocode schema clasify` shows `availability.enabled: false` and `envVar`, and a direct call fails with `missingConfiguration` (exit 5).
-- **Kill switch:** a present-but-blank `OCTOCODE_CLASSIFICATION_API=` in the process environment disables classification, even when a `.env` file has a key.
-- Get a key from the [provider docs](https://docs.typesafe.ai/introduction). What is sent: [SECURITY.md](SECURITY.md#classification-egress). Usage and the startup provider check: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md#availability).
+- **No key:** goals are omitted, MCP does not register `clasify`, and no tool returns a `hints.clasify` lead. CLI help and `npx octocode schema` list only enabled tools; `npx octocode schema clasify` reports unavailable. An allowlist cannot bypass the missing credential.
+- **Kill switch:** a present-but-blank `OCTOCODE_CLASSIFICATION_API=` in the process environment disables both routes, even when a `.env` file has a key.
+- Get a key from the [provider docs](https://docs.typesafe.ai/introduction). What is sent: [SECURITY.md](SECURITY.md#classification-egress). Availability and request usage: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md#availability).
 
 ## npm registry credentials
 
@@ -127,5 +127,5 @@ npx octocode auth login --hostname github.mycompany.com
 | `login requires an interactive terminal` | Use a token variable in CI and scripts |
 | Enterprise login or refresh rejected | Set `OCTOCODE_GITHUB_CLIENT_ID` for that host and `GITHUB_API_URL` in the shell or home config |
 | Enterprise requests hit github.com | `GITHUB_API_URL` was set in a workspace file (ignored); set it in the shell or home config |
-| `clasify` missing | Set `OCTOCODE_CLASSIFICATION_API`; check that it is not blank in the process env |
+| `clasify` missing | Set a nonblank `OCTOCODE_CLASSIFICATION_API` and enable beta; see the [availability table](OCTOCODE_CLASIFY.md#availability) |
 | Private npm package not found | Put a registry-scoped `_authToken` in your user npmrc and pass that `registryUrl` in the query |

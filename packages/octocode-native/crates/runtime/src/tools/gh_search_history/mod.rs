@@ -123,20 +123,24 @@ impl GhSearchHistoryQuery {
     }
     pub(crate) fn since(&self) -> Option<&str> {
         match self {
-            Self::PullRequest { since, .. } | Self::Issue { since, .. } => since.as_deref(),
-            Self::Commit { since, .. } => since.as_deref(),
+            Self::PullRequest { since, .. } | Self::Issue { since, .. } => {
+                since.as_ref().map(|value| value.as_str())
+            }
+            Self::Commit { since, .. } => since.as_ref().map(|value| value.as_str()),
         }
     }
     pub(crate) fn until(&self) -> Option<&str> {
         match self {
-            Self::PullRequest { until, .. } | Self::Issue { until, .. } => until.as_deref(),
-            Self::Commit { until, .. } => until.as_deref(),
+            Self::PullRequest { until, .. } | Self::Issue { until, .. } => {
+                until.as_ref().map(|value| value.as_str())
+            }
+            Self::Commit { until, .. } => until.as_ref().map(|value| value.as_str()),
         }
     }
     /// The ref a commit listing walks.
     pub(crate) fn reference(&self) -> Option<&str> {
         match self {
-            Self::Commit { ref_, .. } => ref_.as_deref(),
+            Self::Commit { ref_, .. } => ref_.as_ref().map(|value| value.as_str()),
             _ => None,
         }
     }

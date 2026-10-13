@@ -48,7 +48,7 @@ impl ToolId {
         matches!(self.family(), ToolFamily::GitHub)
     }
 
-    /// A semantic assessment tool (gated on a non-blank `OCTOCODE_CLASSIFICATION_API`).
+    /// The public semantic assessment tool (beta plus a non-blank provider key).
     #[must_use]
     pub(crate) const fn is_clasify(self) -> bool {
         matches!(self, ToolId::Clasify)
@@ -65,33 +65,35 @@ impl ToolId {
         )
     }
 
-    /// Config key whose value gates this tool (`None`: only `tools.enabled` /
-    /// `tools.disabled`). Beta and family come from the contract; the clone and
-    /// clasify gates are runtime prerequisites (persistent storage, a key).
-    #[must_use]
-    pub(crate) const fn availability_config_path(self) -> Option<&'static str> {
-        if self.is_beta() {
-            return Some("local.beta");
-        }
-        match self {
-            ToolId::GhCloneRepo => Some("storage.mode"),
-            ToolId::Clasify => Some("classification.api"),
-            _ if self.is_local() => Some("local.enabled"),
-            _ => None,
-        }
+    /// Config prerequisites for this tool. Family and beta come from the
+    /// contract; clone and clasify add their runtime prerequisites. A tool
+    /// may need more than one setting (clasify needs beta and a credential).
+    pub(crate) fn availability_config_paths(self) -> impl Iterator<Item = &'static str> {
+        [
+            self.is_local().then_some("local.enabled"),
+            self.is_beta().then_some("local.beta"),
+            match self {
+                ToolId::GhCloneRepo => Some("storage.mode"),
+                ToolId::Clasify => Some("classification.api"),
+                _ => None,
+            },
+        ]
+        .into_iter()
+        .flatten()
     }
 
-    /// Env vars bound to the gating config key, in config-contract order.
+    /// Env vars bound to every prerequisite, in config-contract order.
     #[must_use]
     pub fn availability_env_vars(self) -> Vec<&'static str> {
-        let Some(path) = self.availability_config_path() else {
-            return Vec::new();
-        };
-        crate::config::CONFIG_FIELDS
-            .iter()
-            .find(|field| field.path == path)
-            .map(|field| field.env.iter().map(|binding| binding.name).collect())
-            .unwrap_or_default()
+        self.availability_config_paths()
+            .flat_map(|path| {
+                crate::config::CONFIG_FIELDS
+                    .iter()
+                    .find(|field| field.path == path)
+                    .into_iter()
+                    .flat_map(|field| field.env.iter().map(|binding| binding.name))
+            })
+            .collect()
     }
 }
 
@@ -237,7 +239,7 @@ mod tests {
             let vars = id.availability_env_vars();
             assert_eq!(
                 vars.is_empty(),
-                id.availability_config_path().is_none(),
+                id.availability_config_paths().next().is_none(),
                 "{id}: {vars:?}"
             );
             if id.is_beta() {
@@ -246,7 +248,7 @@ mod tests {
         }
         assert_eq!(
             ToolId::Clasify.availability_env_vars(),
-            ["OCTOCODE_CLASSIFICATION_API"]
+            ["OCTOCODE_BETA", "OCTOCODE_CLASSIFICATION_API"]
         );
     }
 }

@@ -4,7 +4,7 @@ import { PERMISSION_ENV } from '../shared/env.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { modeSummary, type AuditEntry, type Permission } from './ask.js';
 import { registerPermissionEditor } from './editor.js';
-import { ACTION_CLASSES, decide, PERMISSION_CYCLE, PERMISSION_ID, PERMISSION_MODES, PERMISSION_SHORTCUT_LABEL, type PermissionMode } from './mode.js';
+import { ACTION_CLASSES, ASK_REASONS, decide, PERMISSION_CYCLE, PERMISSION_ID, PERMISSION_MODES, PERMISSION_SHORTCUT_LABEL, reasonAsks, type PermissionMode } from './mode.js';
 
 /** Audit entries `/octocode permission log` shows, newest last. */
 const LOG_ENTRIES = 50;
@@ -16,6 +16,7 @@ function status(permission: Permission, provenanceSize: number): string {
   return [
     `Permission mode: ${permission.mode} — ${modeSummary(permission.mode)}`,
     ...ACTION_CLASSES.map((action) => `  ${action}: ${decide(permission.mode, action)}`),
+    ...ASK_REASONS.map((reason) => `  ${reason}: ${reasonAsks(permission.mode, reason) ? 'ask' : 'allow'}`),
     `Session grants: ${grants.length > 0 ? '' : 'none'}`,
     ...grants.map((grant) => `  ${grant}`),
     `Provenance index: ${provenanceSize} shingles`,
@@ -36,7 +37,7 @@ function logLines(ctx: ExtensionContext): string {
     .map((entry) =>
       entry.action === 'mode'
         ? `${time(entry.at)} mode ${entry.what}`
-        : `${time(entry.at)} ${entry.mode} ${entry.action} ${entry.allowed ? 'allowed' : 'denied'} (${entry.via}) ${entry.what}${entry.note ? ` — note: ${entry.note}` : ''}`,
+        : `${time(entry.at)} ${entry.mode} ${entry.action} ${entry.allowed ? 'allowed' : 'denied'} (${entry.via}) ${entry.what}${entry.reasons?.length ? ` [${entry.reasons.join(' ')}]` : ''}${entry.note ? ` — note: ${entry.note}` : ''}`,
     )
     .map((line) => sanitizeTerminalText(line))
     .join('\n');

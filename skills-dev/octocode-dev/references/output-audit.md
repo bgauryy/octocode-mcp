@@ -23,7 +23,7 @@ Load when evaluating what a tool returns through CLI and MCP, or whether an agen
 - A hint names the tool and fields to call next, with values from this result (path, line, SHA, symbol). Flag generic advice, hints repeated on every row, and hints to disabled tools.
 - Producer fields feed consumer inputs without reshaping: search → fetch (`path` + line/anchor), ghSearchCode/ghStructure → ghGetFileContent (owner/repo/ref), history → item (number/SHA), astSearch topology → lspSearch confirmation. Check against `<repo>/docs/TOOL_DATA_CONTRACT.md` "Connections between tools".
 - The instructions' locate cascade (anchor → search → fetch → rerank/clasify → lsp) matches what tools return. Flag guidance that asks for a field the tool does not emit.
-- Classification matrices follow the same optional-brief rule. Successful output need not echo the brief. A `hints.clasify` handoff needs `mainGoal`.
+- Classification matrices follow the same optional-brief rule. Successful output need not echo the brief. A target-dependent `hints.clasify` handoff needs an explicit brief or eligible unjudged goals; check the [handoff conditions](../../../docs/OCTOCODE_CLASIFY.md#let-the-tools-hand-off-goal-first) and execute the copied request.
 - `kind`, `confidence`, coverage, and `lowSignal` states are consistent across tools and tell the agent when to verify.
 - Instructions say when to batch independent queries (1–5) and when a dependent query must wait.
 

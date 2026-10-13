@@ -693,17 +693,6 @@ pub(crate) fn execute(
     })
 }
 
-/// Limits and billing belong to the account: one provider gate per endpoint
-/// and key.
-pub(crate) fn account_gate_key(base_url: &str, endpoint_path: &str, key: &SecretString) -> String {
-    let endpoint = clasify::transport::endpoint(base_url, endpoint_path).map_or_else(
-        |_| format!("{base_url}|{endpoint_path}"),
-        |endpoint| gate::endpoint_key(&endpoint),
-    );
-    let account = crate::digest::json_sha256(&secrecy::ExposeSecret::expose_secret(key));
-    format!("{endpoint}#{}", &account[..16])
-}
-
 fn evaluate(
     queries: &[clasify::ClasifyQuery],
     dispatcher: &DomainDispatcher,
@@ -725,7 +714,7 @@ fn evaluate(
     // One lease per tool call: the gate is process-wide, the fairness share
     // and read limiter are per call and shared by every matrix in it.
     let gate = gate::lease(
-        &account_gate_key(config.base_url, config.endpoint_path, config.key),
+        &clasify::transport::account_scope(config.base_url, config.endpoint_path, config.key),
         config.max_concurrency,
     );
     let reads = ReadLimiter::new(MAX_CALL_CAPTURES);

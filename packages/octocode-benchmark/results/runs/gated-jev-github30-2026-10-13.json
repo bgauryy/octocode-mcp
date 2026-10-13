@@ -1,0 +1,4839 @@
+{
+ "campaign": "gated-jev-github30-2026-10-13",
+ "octocode_label": "Gated JEV (current local MCP)",
+ "runner_model": "gpt-5.6-terra",
+ "judge_model": "claude-sonnet-5-5",
+ "question_set": "github-v2",
+ "question_ids": [
+  "Q1",
+  "Q2",
+  "Q3",
+  "Q4",
+  "Q5",
+  "Q6",
+  "Q7",
+  "Q8",
+  "Q9",
+  "Q10",
+  "Q11",
+  "Q12",
+  "Q13",
+  "Q14",
+  "Q15",
+  "Q16",
+  "Q17",
+  "Q18",
+  "Q19",
+  "Q20",
+  "Q21",
+  "Q22",
+  "Q23",
+  "Q24",
+  "Q25",
+  "Q26",
+  "Q27",
+  "Q28",
+  "Q29",
+  "Q30"
+ ],
+ "manifest": {
+  "schemaVersion": 1,
+  "created_at": "2026-10-13T14:01:28.439520+00:00",
+  "subject": "Current local MCP: optional goals and beta clasify with JEV versus disabled",
+  "runner": "codex",
+  "runner_model": "gpt-5.6-terra",
+  "reasoning": "medium",
+  "judge_runner": "pi",
+  "judge_model": "claude-sonnet-5-5",
+  "timeout_seconds": 600,
+  "max_tool_calls": 30,
+  "max_attempts_per_cell": 2,
+  "global_infrastructure_retry_budget": 14,
+  "jobs": 4,
+  "passes": 1,
+  "run_order": "local40 then GitHub30; question order; ON then OFF interleaved at four workers",
+  "contrast": {
+   "both": "beta true; same frozen build/model/brief/corpus",
+   "on": "canonical API credential; ranking true; optional goals/clasify",
+   "off": "explicit empty API credential; ranking false"
+  },
+  "exposure": "Previously exposed development question sets; not held-out",
+  "accounting": "Terra input includes cached subset; JEV all attempts separate, unknown usage not zero; setup/judge/invalid overhead separate",
+  "analysis": "Valid pairs; correctness differences <=1 tied; geometric mean ON/OFF ratios, 95% bootstrap CI, 10000 resamples; local/GitHub/Terraform Q33-Q40 separate",
+  "build": "/Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/gated-jev-2026-10-13/build",
+  "name": "github30",
+  "question_dir": "/Users/bgaryy/code/octocode/packages/octocode-benchmark/compare/github-questions",
+  "question_set": "github-v2",
+  "questions": [
+   "Q1",
+   "Q2",
+   "Q3",
+   "Q4",
+   "Q5",
+   "Q6",
+   "Q7",
+   "Q8",
+   "Q9",
+   "Q10",
+   "Q11",
+   "Q12",
+   "Q13",
+   "Q14",
+   "Q15",
+   "Q16",
+   "Q17",
+   "Q18",
+   "Q19",
+   "Q20",
+   "Q21",
+   "Q22",
+   "Q23",
+   "Q24",
+   "Q25",
+   "Q26",
+   "Q27",
+   "Q28",
+   "Q29",
+   "Q30"
+  ],
+  "arms": [
+   "mcp-clasify",
+   "mcp"
+  ],
+  "campaign": "/Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/gated-jev-github30-2026-10-13",
+  "planned_cells": 60,
+  "answer_dir": null,
+  "profile": "/Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/gated-jev-2026-10-13/profile.json",
+  "profile_sha256": "4a502da0d19a23e12c50d929ee27e1f27bd1340d2daa454a69c93732ac64eb70"
+ },
+ "runs": [
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 3817,
+   "model_in": 2753,
+   "model_out": 1064,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 163,
+    "ghSearchCode": 1724,
+    "ghGetFileContent": 1350
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 62169,
+   "cached_input_tokens": 34048,
+   "uncached_input_tokens": 28121,
+   "output_tokens": 515,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 47.338,
+   "setup_secs": 0.738,
+   "solver_secs": 46.6,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 12269,
+   "model_in": 9164,
+   "model_out": 3105,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 4,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 255,
+    "ghStructure": 354,
+    "ghGetFileContent": 7428,
+    "ghSearchCode": 2676
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 121878,
+   "cached_input_tokens": 110336,
+   "uncached_input_tokens": 11542,
+   "output_tokens": 1566,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 155.699,
+   "setup_secs": 0.705,
+   "solver_secs": 154.994,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "notFound",
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 39808,
+   "model_in": 32613,
+   "model_out": 7195,
+   "calls": 10,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 2,
+    "ghSearchCode": 2,
+    "ghGetFileContent": 5
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 234,
+    "ghStructure": 509,
+    "ghSearchCode": 2331,
+    "ghGetFileContent": 33156
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 191025,
+   "cached_input_tokens": 162816,
+   "uncached_input_tokens": 28209,
+   "output_tokens": 2980,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 173.636,
+   "setup_secs": 0.758,
+   "solver_secs": 172.878,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 15237,
+   "model_in": 11928,
+   "model_out": 3309,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 4
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 233,
+    "ghStructure": 158,
+    "ghSearchCode": 1706,
+    "ghGetFileContent": 11583
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 121446,
+   "cached_input_tokens": 88064,
+   "uncached_input_tokens": 33382,
+   "output_tokens": 1323,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 25.952,
+   "setup_secs": 0.697,
+   "solver_secs": 25.255,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 16590,
+   "model_in": 14505,
+   "model_out": 2085,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchHistory": 1,
+    "ghGetHistoryItem": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchHistory": 3211,
+    "ghGetHistoryItem": 10113,
+    "ghGetFileContent": 2024
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 70474,
+   "cached_input_tokens": 52992,
+   "uncached_input_tokens": 17482,
+   "output_tokens": 1225,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 90.716,
+   "setup_secs": 0.705,
+   "solver_secs": 90.011,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 4326,
+   "model_in": 2744,
+   "model_out": 1582,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 263,
+    "ghStructure": 164,
+    "ghGetFileContent": 2954
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 75421,
+   "cached_input_tokens": 60928,
+   "uncached_input_tokens": 14493,
+   "output_tokens": 732,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 64.31,
+   "setup_secs": 0.742,
+   "solver_secs": 63.568,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 16936,
+   "model_in": 14969,
+   "model_out": 1967,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 11992,
+    "ghGetFileContent": 3769
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 72210,
+   "cached_input_tokens": 63232,
+   "uncached_input_tokens": 8978,
+   "output_tokens": 818,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 30.738,
+   "setup_secs": 0.724,
+   "solver_secs": 30.013,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 3513,
+   "model_in": 1912,
+   "model_out": 1601,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 2,
+    "artifactSearch": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 251,
+    "ghStructure": 160,
+    "ghGetFileContent": 1629,
+    "artifactSearch": 680
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "input_tokens": 75333,
+   "cached_input_tokens": 48896,
+   "uncached_input_tokens": 26437,
+   "output_tokens": 707,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 35.419,
+   "setup_secs": 0.694,
+   "solver_secs": 34.725,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 15393,
+   "model_in": 11407,
+   "model_out": 3986,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 229,
+    "ghStructure": 163,
+    "ghSearchCode": 3076,
+    "ghGetFileContent": 9322
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 80992,
+   "cached_input_tokens": 62208,
+   "uncached_input_tokens": 18784,
+   "output_tokens": 1653,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 58.111,
+   "setup_secs": 0.706,
+   "solver_secs": 57.405,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 5529,
+   "model_in": 3298,
+   "model_out": 2231,
+   "calls": 2,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 158,
+    "ghGetFileContent": 3590
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 50089,
+   "cached_input_tokens": 36864,
+   "uncached_input_tokens": 13225,
+   "output_tokens": 977,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 63.026,
+   "setup_secs": 0.721,
+   "solver_secs": 62.305,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 37512,
+   "model_in": 31067,
+   "model_out": 6445,
+   "calls": 13,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 4,
+    "ghGetFileContent": 7
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 233,
+    "ghStructure": 158,
+    "ghSearchCode": 6896,
+    "ghGetFileContent": 27940
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 253344,
+   "cached_input_tokens": 212480,
+   "uncached_input_tokens": 40864,
+   "output_tokens": 2630,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 204.176,
+   "setup_secs": 0.703,
+   "solver_secs": 203.472,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 11783,
+   "model_in": 8498,
+   "model_out": 3285,
+   "calls": 8,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 3,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 1,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 1937,
+    "ghStructure": 726,
+    "ghSearchCode": 1727,
+    "ghGetFileContent": 5816
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 139707,
+   "cached_input_tokens": 116480,
+   "uncached_input_tokens": 23227,
+   "output_tokens": 1708,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 67.807,
+   "setup_secs": 0.767,
+   "solver_secs": 67.04,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 16968,
+   "model_in": 14048,
+   "model_out": 2920,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 387,
+    "ghGetFileContent": 14795
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 83266,
+   "cached_input_tokens": 73216,
+   "uncached_input_tokens": 10050,
+   "output_tokens": 1579,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 124.238,
+   "setup_secs": 0.727,
+   "solver_secs": 123.511,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 66794,
+   "model_in": 59918,
+   "model_out": 6876,
+   "calls": 12,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 2,
+    "ghGetFileContent": 8,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 257,
+    "ghStructure": 827,
+    "ghGetFileContent": 61404,
+    "ghSearchCode": 982
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 281256,
+   "cached_input_tokens": 240384,
+   "uncached_input_tokens": 40872,
+   "output_tokens": 3182,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 46.848,
+   "setup_secs": 0.722,
+   "solver_secs": 46.126,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "notFound",
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 13238,
+   "model_in": 11592,
+   "model_out": 1646,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghStructure": 354,
+    "ghGetHistoryItem": 11800
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 68525,
+   "cached_input_tokens": 60160,
+   "uncached_input_tokens": 8365,
+   "output_tokens": 1003,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 18.425,
+   "setup_secs": 0.691,
+   "solver_secs": 17.733,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 19312,
+   "model_in": 13083,
+   "model_out": 6229,
+   "calls": 8,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 2,
+    "ghGetFileContent": 4
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 225,
+    "ghStructure": 163,
+    "ghSearchCode": 3105,
+    "ghGetFileContent": 11695
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 134199,
+   "cached_input_tokens": 113408,
+   "uncached_input_tokens": 20791,
+   "output_tokens": 2822,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 136.842,
+   "setup_secs": 0.695,
+   "solver_secs": 136.147,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 5688,
+   "model_in": 3304,
+   "model_out": 2384,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 255,
+    "ghStructure": 158,
+    "ghSearchCode": 961,
+    "ghGetFileContent": 2875
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 75373,
+   "cached_input_tokens": 69120,
+   "uncached_input_tokens": 6253,
+   "output_tokens": 1270,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 116.356,
+   "setup_secs": 0.761,
+   "solver_secs": 115.595,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 17016,
+   "model_in": 15274,
+   "model_out": 1742,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 14461,
+    "ghGetFileContent": 1373
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 69535,
+   "cached_input_tokens": 61184,
+   "uncached_input_tokens": 8351,
+   "output_tokens": 1056,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 83.835,
+   "setup_secs": 0.786,
+   "solver_secs": 83.049,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 23827,
+   "model_in": 20093,
+   "model_out": 3734,
+   "calls": 10,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 4,
+    "ghGetFileContent": 5,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghStructure": 1229,
+    "ghGetFileContent": 14321,
+    "ghSearchCode": 6933
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 174304,
+   "cached_input_tokens": 146688,
+   "uncached_input_tokens": 27616,
+   "output_tokens": 2286,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 116.659,
+   "setup_secs": 0.705,
+   "solver_secs": 115.954,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "invalidInput",
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 9788,
+   "model_in": 5881,
+   "model_out": 3907,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 4
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 363,
+    "ghStructure": 161,
+    "ghGetFileContent": 6305
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 92629,
+   "cached_input_tokens": 78080,
+   "uncached_input_tokens": 14549,
+   "output_tokens": 1641,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 79.642,
+   "setup_secs": 0.7,
+   "solver_secs": 78.942,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 171416,
+   "model_in": 160356,
+   "model_out": 11060,
+   "calls": 16,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 5,
+    "ghGetFileContent": 9
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 255,
+    "ghStructure": 172,
+    "ghSearchCode": 82068,
+    "ghGetFileContent": 84694
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 634127,
+   "cached_input_tokens": 571904,
+   "uncached_input_tokens": 62223,
+   "output_tokens": 4548,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 214.331,
+   "setup_secs": 0.696,
+   "solver_secs": 213.634,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 38523,
+   "model_in": 33738,
+   "model_out": 4785,
+   "calls": 8,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 3,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 322,
+    "ghStructure": 2094,
+    "ghSearchCode": 2283,
+    "ghGetFileContent": 31785
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 148215,
+   "cached_input_tokens": 128512,
+   "uncached_input_tokens": 19703,
+   "output_tokens": 1861,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 148.81,
+   "setup_secs": 0.751,
+   "solver_secs": 148.059,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghSearchCode",
+      "code": "rateLimited",
+      "count": 3
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 14631,
+   "model_in": 11833,
+   "model_out": 2798,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2,
+    "ghGetHistoryItem": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0,
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 258,
+    "ghStructure": 160,
+    "ghSearchCode": 472,
+    "ghGetFileContent": 8566,
+    "ghGetHistoryItem": 3504
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0,
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0,
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 105633,
+   "cached_input_tokens": 88064,
+   "uncached_input_tokens": 17569,
+   "output_tokens": 1086,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 24.177,
+   "setup_secs": 0.718,
+   "solver_secs": 23.459,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "notFound",
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 39590,
+   "model_in": 34479,
+   "model_out": 5111,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 2,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 239,
+    "ghStructure": 164,
+    "ghSearchCode": 12527,
+    "ghGetFileContent": 23615
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 141599,
+   "cached_input_tokens": 116480,
+   "uncached_input_tokens": 25119,
+   "output_tokens": 2042,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 104.212,
+   "setup_secs": 0.85,
+   "solver_secs": 103.362,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 36410,
+   "model_in": 31496,
+   "model_out": 4914,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 5
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 619,
+    "ghStructure": 376,
+    "ghGetFileContent": 32844
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 148548,
+   "cached_input_tokens": 119808,
+   "uncached_input_tokens": 28740,
+   "output_tokens": 2077,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 108.233,
+   "setup_secs": 0.704,
+   "solver_secs": 107.529,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 70669,
+   "model_in": 66272,
+   "model_out": 4397,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 1,
+    "ghGetFileContent": 2,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 42526,
+    "ghGetFileContent": 22312,
+    "ghSearchCode": 3273
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 144486,
+   "cached_input_tokens": 117248,
+   "uncached_input_tokens": 27238,
+   "output_tokens": 1811,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 30.872,
+   "setup_secs": 0.713,
+   "solver_secs": 30.159,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 7343,
+   "model_in": 4951,
+   "model_out": 2392,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 2,
+    "ghGetFileContent": 3,
+    "artifactSearch": 1,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghStructure": 969,
+    "ghGetFileContent": 3287,
+    "artifactSearch": 553,
+    "ghSearchCode": 1582
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 118180,
+   "cached_input_tokens": 98304,
+   "uncached_input_tokens": 19876,
+   "output_tokens": 1333,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 110.799,
+   "setup_secs": 0.711,
+   "solver_secs": 110.088,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 5984,
+   "model_in": 3424,
+   "model_out": 2560,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchCode": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchCode": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchCode": 553,
+    "ghStructure": 362,
+    "ghGetFileContent": 3441
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchCode": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchCode": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 76624,
+   "cached_input_tokens": 61952,
+   "uncached_input_tokens": 14672,
+   "output_tokens": 1087,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 70.246,
+   "setup_secs": 0.713,
+   "solver_secs": 69.533,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 9639,
+   "model_in": 7246,
+   "model_out": 2393,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 230,
+    "ghStructure": 163,
+    "ghSearchCode": 891,
+    "ghGetFileContent": 7165
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 89766,
+   "cached_input_tokens": 71168,
+   "uncached_input_tokens": 18598,
+   "output_tokens": 1066,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 26.505,
+   "setup_secs": 0.702,
+   "solver_secs": 25.802,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 12063,
+   "model_in": 10582,
+   "model_out": 1481,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 257,
+    "ghStructure": 162,
+    "ghSearchCode": 5996,
+    "ghGetFileContent": 4969
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 77778,
+   "cached_input_tokens": 70144,
+   "uncached_input_tokens": 7634,
+   "output_tokens": 710,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 58.055,
+   "setup_secs": 0.721,
+   "solver_secs": 57.334,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q1",
+   "chars": 6627,
+   "model_in": 5039,
+   "model_out": 1588,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 163,
+    "ghSearchCode": 1724,
+    "ghGetFileContent": 4079
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 86538,
+   "cached_input_tokens": 70144,
+   "uncached_input_tokens": 16394,
+   "output_tokens": 688,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 22.061,
+   "setup_secs": 0.364,
+   "solver_secs": 21.697,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 15543,
+   "model_in": 12127,
+   "model_out": 3416,
+   "calls": 9,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 2,
+    "ghGetFileContent": 5,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 1131,
+    "ghStructure": 563,
+    "ghGetFileContent": 9737,
+    "ghSearchCode": 2676
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 135051,
+   "cached_input_tokens": 112384,
+   "uncached_input_tokens": 22667,
+   "output_tokens": 1519,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 122.771,
+   "setup_secs": 0.385,
+   "solver_secs": 122.386,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "notFound",
+      "count": 1
+     },
+     {
+      "tool": "ghStructure",
+      "code": "invalidInput",
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q11",
+   "chars": 45181,
+   "model_in": 39720,
+   "model_out": 5461,
+   "calls": 9,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 2,
+    "ghGetFileContent": 5
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 234,
+    "ghStructure": 160,
+    "ghSearchCode": 2349,
+    "ghGetFileContent": 39808
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 162358,
+   "cached_input_tokens": 134656,
+   "uncached_input_tokens": 27702,
+   "output_tokens": 2081,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 136.925,
+   "setup_secs": 0.337,
+   "solver_secs": 136.588,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q12",
+   "chars": 9378,
+   "model_in": 6343,
+   "model_out": 3035,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 158,
+    "ghSearchCode": 1672,
+    "ghGetFileContent": 6017
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 87954,
+   "cached_input_tokens": 72960,
+   "uncached_input_tokens": 14994,
+   "output_tokens": 1262,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 98.707,
+   "setup_secs": 0.336,
+   "solver_secs": 98.371,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q13",
+   "chars": 14820,
+   "model_in": 12701,
+   "model_out": 2119,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchHistory": 1,
+    "ghGetHistoryItem": 2,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchHistory": 1958,
+    "ghGetHistoryItem": 9971,
+    "ghGetFileContent": 1694
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchHistory": 0,
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 69152,
+   "cached_input_tokens": 60160,
+   "uncached_input_tokens": 8992,
+   "output_tokens": 822,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 96.949,
+   "setup_secs": 0.34,
+   "solver_secs": 96.609,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q14",
+   "chars": 6891,
+   "model_in": 4762,
+   "model_out": 2129,
+   "calls": 6,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 4
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 1
+   },
+   "tool_chars": {
+    "ghSearchRepo": 263,
+    "ghStructure": 164,
+    "ghGetFileContent": 5351
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 87446,
+   "cached_input_tokens": 72960,
+   "uncached_input_tokens": 14486,
+   "output_tokens": 1022,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 90.841,
+   "setup_secs": 0.342,
+   "solver_secs": 90.499,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "notFound",
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q15",
+   "chars": 13296,
+   "model_in": 11485,
+   "model_out": 1811,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 6983,
+    "ghGetFileContent": 5103
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 66344,
+   "cached_input_tokens": 59136,
+   "uncached_input_tokens": 7208,
+   "output_tokens": 995,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 33.63,
+   "setup_secs": 0.335,
+   "solver_secs": 33.296,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q16",
+   "chars": 3623,
+   "model_in": 1912,
+   "model_out": 1711,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 2,
+    "artifactSearch": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 251,
+    "ghStructure": 160,
+    "ghGetFileContent": 1629,
+    "artifactSearch": 680
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0
+   },
+   "input_tokens": 72333,
+   "cached_input_tokens": 59904,
+   "uncached_input_tokens": 12429,
+   "output_tokens": 777,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 44.397,
+   "setup_secs": 0.342,
+   "solver_secs": 44.055,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q17",
+   "chars": 15435,
+   "model_in": 11019,
+   "model_out": 4416,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghSearchCode": 2,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 163,
+    "ghSearchCode": 2514,
+    "ghGetFileContent": 9583
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 75534,
+   "cached_input_tokens": 67072,
+   "uncached_input_tokens": 8462,
+   "output_tokens": 1762,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 78.528,
+   "setup_secs": 0.345,
+   "solver_secs": 78.183,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q18",
+   "chars": 6025,
+   "model_in": 4046,
+   "model_out": 1979,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 158,
+    "ghGetFileContent": 4541
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 49480,
+   "cached_input_tokens": 34048,
+   "uncached_input_tokens": 15432,
+   "output_tokens": 933,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 57.299,
+   "setup_secs": 0.337,
+   "solver_secs": 56.963,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q19",
+   "chars": 42196,
+   "model_in": 36288,
+   "model_out": 5908,
+   "calls": 14,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 4,
+    "ghGetFileContent": 8
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 233,
+    "ghStructure": 158,
+    "ghSearchCode": 6680,
+    "ghGetFileContent": 33225
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 258120,
+   "cached_input_tokens": 210432,
+   "uncached_input_tokens": 47688,
+   "output_tokens": 2428,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 186.34,
+   "setup_secs": 0.338,
+   "solver_secs": 186.002,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q2",
+   "chars": 5519,
+   "model_in": 3117,
+   "model_out": 2402,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 2,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 225,
+    "ghStructure": 566,
+    "ghGetFileContent": 3069,
+    "ghSearchCode": 461
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 73999,
+   "cached_input_tokens": 58112,
+   "uncached_input_tokens": 15887,
+   "output_tokens": 1070,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 75.043,
+   "setup_secs": 0.362,
+   "solver_secs": 74.68,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q20",
+   "chars": 20843,
+   "model_in": 16897,
+   "model_out": 3946,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 2,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 257,
+    "ghStructure": 162,
+    "ghSearchCode": 2832,
+    "ghGetFileContent": 15118
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 120068,
+   "cached_input_tokens": 86016,
+   "uncached_input_tokens": 34052,
+   "output_tokens": 1577,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 112.087,
+   "setup_secs": 0.334,
+   "solver_secs": 111.753,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q21",
+   "chars": 72210,
+   "model_in": 65433,
+   "model_out": 6777,
+   "calls": 13,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 9,
+    "ghSearchCode": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 257,
+    "ghStructure": 171,
+    "ghGetFileContent": 60789,
+    "ghSearchCode": 7729
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 322846,
+   "cached_input_tokens": 291072,
+   "uncached_input_tokens": 31774,
+   "output_tokens": 3087,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 198.245,
+   "setup_secs": 0.334,
+   "solver_secs": 197.911,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q22",
+   "chars": 13240,
+   "model_in": 11592,
+   "model_out": 1648,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetHistoryItem": 2
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghStructure": 354,
+    "ghGetHistoryItem": 11792
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 53881,
+   "cached_input_tokens": 46080,
+   "uncached_input_tokens": 7801,
+   "output_tokens": 753,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 39.954,
+   "setup_secs": 0.334,
+   "solver_secs": 39.62,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q23",
+   "chars": 14226,
+   "model_in": 9390,
+   "model_out": 4836,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 2,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 225,
+    "ghStructure": 163,
+    "ghSearchCode": 5217,
+    "ghGetFileContent": 5208
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 93137,
+   "cached_input_tokens": 76032,
+   "uncached_input_tokens": 17105,
+   "output_tokens": 2459,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 119.365,
+   "setup_secs": 0.335,
+   "solver_secs": 119.03,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q24",
+   "chars": 4971,
+   "model_in": 2910,
+   "model_out": 2061,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 255,
+    "ghStructure": 158,
+    "ghSearchCode": 961,
+    "ghGetFileContent": 2481
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 60136,
+   "cached_input_tokens": 54016,
+   "uncached_input_tokens": 6120,
+   "output_tokens": 1148,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 99.633,
+   "setup_secs": 0.337,
+   "solver_secs": 99.296,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q25",
+   "chars": 15819,
+   "model_in": 13790,
+   "model_out": 2029,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 13441,
+    "ghGetFileContent": 812
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 54708,
+   "cached_input_tokens": 47104,
+   "uncached_input_tokens": 7604,
+   "output_tokens": 1024,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 20.246,
+   "setup_secs": 0.335,
+   "solver_secs": 19.911,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q26",
+   "chars": 8960,
+   "model_in": 6581,
+   "model_out": 2379,
+   "calls": 7,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 3,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 255,
+    "ghStructure": 2201,
+    "ghSearchCode": 930,
+    "ghGetFileContent": 4619
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 100847,
+   "cached_input_tokens": 72960,
+   "uncached_input_tokens": 27887,
+   "output_tokens": 1047,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 95.506,
+   "setup_secs": 0.337,
+   "solver_secs": 95.169,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q27",
+   "chars": 13496,
+   "model_in": 9858,
+   "model_out": 3638,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 363,
+    "ghStructure": 161,
+    "ghSearchCode": 916,
+    "ghGetFileContent": 9524
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 101399,
+   "cached_input_tokens": 83968,
+   "uncached_input_tokens": 17431,
+   "output_tokens": 1710,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 106.773,
+   "setup_secs": 0.338,
+   "solver_secs": 106.435,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q28",
+   "chars": 131887,
+   "model_in": 122818,
+   "model_out": 9069,
+   "calls": 13,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 4,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 7
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 255,
+    "ghStructure": 10307,
+    "ghSearchCode": 1525,
+    "ghGetFileContent": 115129
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 393472,
+   "cached_input_tokens": 346368,
+   "uncached_input_tokens": 47104,
+   "output_tokens": 3854,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 273.974,
+   "setup_secs": 0.343,
+   "solver_secs": 273.631,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "rateLimited",
+      "count": 1
+     },
+     {
+      "tool": "ghSearchCode",
+      "code": "rateLimited",
+      "count": 2
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q29",
+   "chars": 63880,
+   "model_in": 56482,
+   "model_out": 7398,
+   "calls": 10,
+   "failed": 1,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghSearchCode": 3,
+    "ghGetFileContent": 6
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 188,
+    "ghSearchCode": 15492,
+    "ghGetFileContent": 44562
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 222009,
+   "cached_input_tokens": 195584,
+   "uncached_input_tokens": 26425,
+   "output_tokens": 2926,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 235.044,
+   "setup_secs": 0.347,
+   "solver_secs": 234.698,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghSearchCode",
+      "code": "rateLimited",
+      "count": 2
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q3",
+   "chars": 16876,
+   "model_in": 14793,
+   "model_out": 2083,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2,
+    "ghGetHistoryItem": 1
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0,
+    "ghGetHistoryItem": 0
+   },
+   "tool_chars": {
+    "ghStructure": 160,
+    "ghSearchCode": 472,
+    "ghGetFileContent": 11488,
+    "ghGetHistoryItem": 3504
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0,
+    "ghGetHistoryItem": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0,
+    "ghGetHistoryItem": 0
+   },
+   "input_tokens": 79643,
+   "cached_input_tokens": 60160,
+   "uncached_input_tokens": 19483,
+   "output_tokens": 875,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 38.738,
+   "setup_secs": 0.353,
+   "solver_secs": 38.385,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": [
+     {
+      "tool": "ghGetFileContent",
+      "code": "invalidInput",
+      "count": 1
+     }
+    ]
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q30",
+   "chars": 27546,
+   "model_in": 24063,
+   "model_out": 3483,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 239,
+    "ghStructure": 164,
+    "ghSearchCode": 5629,
+    "ghGetFileContent": 19375
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 96468,
+   "cached_input_tokens": 77056,
+   "uncached_input_tokens": 19412,
+   "output_tokens": 1443,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 35.735,
+   "setup_secs": 0.54,
+   "solver_secs": 35.195,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q4",
+   "chars": 26810,
+   "model_in": 22302,
+   "model_out": 4508,
+   "calls": 5,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetFileContent": 4
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 376,
+    "ghGetFileContent": 23793
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 101465,
+   "cached_input_tokens": 81152,
+   "uncached_input_tokens": 20313,
+   "output_tokens": 2081,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 62.908,
+   "setup_secs": 0.334,
+   "solver_secs": 62.574,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q5",
+   "chars": 69644,
+   "model_in": 65050,
+   "model_out": 4594,
+   "calls": 4,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghGetHistoryItem": 2,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghGetHistoryItem": 44062,
+    "ghGetFileContent": 22637
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghGetHistoryItem": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 136963,
+   "cached_input_tokens": 101120,
+   "uncached_input_tokens": 35843,
+   "output_tokens": 1836,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 66.677,
+   "setup_secs": 0.357,
+   "solver_secs": 66.32,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q6",
+   "chars": 6554,
+   "model_in": 4381,
+   "model_out": 2173,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghGetFileContent": 2,
+    "artifactSearch": 1,
+    "ghSearchCode": 1
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0,
+    "ghSearchCode": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 270,
+    "ghStructure": 166,
+    "ghGetFileContent": 3162,
+    "artifactSearch": 552,
+    "ghSearchCode": 1179
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0,
+    "ghSearchCode": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghGetFileContent": 0,
+    "artifactSearch": 0,
+    "ghSearchCode": 0
+   },
+   "input_tokens": 97872,
+   "cached_input_tokens": 80128,
+   "uncached_input_tokens": 17744,
+   "output_tokens": 1117,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 44.691,
+   "setup_secs": 0.341,
+   "solver_secs": 44.349,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q7",
+   "chars": 5655,
+   "model_in": 3653,
+   "model_out": 2002,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghGetFileContent": 2
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 362,
+    "ghGetFileContent": 4017
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 61342,
+   "cached_input_tokens": 55040,
+   "uncached_input_tokens": 6302,
+   "output_tokens": 830,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 36.294,
+   "setup_secs": 0.342,
+   "solver_secs": 35.952,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q8",
+   "chars": 15039,
+   "model_in": 13052,
+   "model_out": 1987,
+   "calls": 6,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghSearchRepo": 1,
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 3
+   },
+   "tool_failed_calls": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghSearchRepo": 230,
+    "ghStructure": 163,
+    "ghSearchCode": 1227,
+    "ghGetFileContent": 12659
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghSearchRepo": 0,
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 93694,
+   "cached_input_tokens": 73216,
+   "uncached_input_tokens": 20478,
+   "output_tokens": 741,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 26.449,
+   "setup_secs": 0.333,
+   "solver_secs": 26.116,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 8795,
+   "model_in": 7213,
+   "model_out": 1582,
+   "calls": 3,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {
+    "ghStructure": 1,
+    "ghSearchCode": 1,
+    "ghGetFileContent": 1
+   },
+   "tool_failed_calls": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "tool_chars": {
+    "ghStructure": 162,
+    "ghSearchCode": 4253,
+    "ghGetFileContent": 3618
+   },
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {
+    "ghStructure": 0,
+    "ghSearchCode": 0,
+    "ghGetFileContent": 0
+   },
+   "input_tokens": 61527,
+   "cached_input_tokens": 44032,
+   "uncached_input_tokens": 17495,
+   "output_tokens": 748,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 73.848,
+   "setup_secs": 0.338,
+   "solver_secs": 73.509,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": true,
+   "problems": [],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": {
+    "ranking_receipts": [],
+    "query_errors": []
+   }
+  }
+ ],
+ "prior_attempts": [
+  {
+   "arm": "mcp-clasify",
+   "pass": 1,
+   "q": "Q9",
+   "chars": 1,
+   "model_in": 0,
+   "model_out": 1,
+   "calls": 0,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {},
+   "tool_failed_calls": {},
+   "tool_chars": {},
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": null,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": null,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 5.242,
+   "setup_secs": 0.724,
+   "solver_secs": 4.518,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": false,
+   "problems": [
+    "Codex error: \"Selected model is at capacity. Please try a different model.\"",
+    "Codex turn.failed: {\"message\": \"Selected model is at capacity. Please try a different model.\"}",
+    "Codex made no MCP calls; tool availability/research is unverified",
+    "Codex completion missing",
+    "Codex usage missing",
+    "runner ended with runner_failed"
+   ],
+   "classification_usage": null,
+   "classification_http": {
+    "attempts": 2,
+    "completed": 2,
+    "failed_or_unknown": 0,
+    "known_input_tokens": 556,
+    "known_output_tokens": 40,
+    "input_tokens_complete": true,
+    "output_tokens_complete": true,
+    "resolved_models": {
+     "jev-1.13.0": 2
+    },
+    "rejected_before_upstream": 0,
+    "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+   },
+   "codex_receipts": null,
+   "attempt": "attempt-001"
+  },
+  {
+   "arm": "mcp",
+   "pass": 1,
+   "q": "Q10",
+   "chars": 1,
+   "model_in": 0,
+   "model_out": 1,
+   "calls": 0,
+   "failed": 0,
+   "clasify_calls": 0,
+   "tool_calls": {},
+   "tool_failed_calls": {},
+   "tool_chars": {},
+   "goal_queries": 0,
+   "initial_goal_queries": 0,
+   "goal_tool_queries": {},
+   "ranking_replay_queries": 0,
+   "ranking_replay_tool_queries": {},
+   "input_tokens": null,
+   "cached_input_tokens": null,
+   "uncached_input_tokens": null,
+   "output_tokens": null,
+   "cost_usd": null,
+   "turns": null,
+   "secs": 3.799,
+   "setup_secs": 0.335,
+   "solver_secs": 3.463,
+   "model_secs": null,
+   "tool_secs": null,
+   "ok": false,
+   "problems": [
+    "Codex error: \"Selected model is at capacity. Please try a different model.\"",
+    "Codex turn.failed: {\"message\": \"Selected model is at capacity. Please try a different model.\"}",
+    "Codex made no MCP calls; tool availability/research is unverified",
+    "Codex completion missing",
+    "Codex usage missing",
+    "runner ended with runner_failed"
+   ],
+   "classification_usage": null,
+   "classification_http": null,
+   "codex_receipts": null,
+   "attempt": "attempt-001"
+  }
+ ],
+ "judgments": [
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q1",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both answers are fully correct and verified; Y used fewer characters (3,817 vs 6,627) and fewer calls (3 vs 5)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q10",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both answers are correct and verified: JavaScript at 1,207,809 bytes, main and exports.require both point to ./dist/node/axios.cjs, and the Rollup input is ./lib/axios.js. X used fewer characters (12,269 vs 15,543) and fewer calls (7 vs 9), and it also noted that the dist file is absent from the source tree."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q11",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both answers are fully correct and verified; X used fewer chars (39.8k vs 45.2k) and traced slightly more of the channel (writeToStdin, buildOrContextImpl)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q12",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are fully correct and verified; Y adds slightly more detail on _addListener and removeListener, but X is much leaner (9,378 vs 15,237 chars) and names all required helpers and delegated methods."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q13",
+   "scores": {
+    "mcp": {
+     "correctness": 4,
+     "depth": 3,
+     "workflow": 3
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Y correctly lists both changed files and +18/-3; X says only src/bitops.c changed at +9/-3, missing the test file."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q14",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both are fully correct and verified: peer dependency only, optional is false, and no vite in dependencies. Y used fewer characters (4,326 vs 6,891) and had no failed call."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q15",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both answers are fully correct and verified; Y reached the same facts with fewer calls and characters (13,296 vs 16,936)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q16",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both correct and verified (espree ^11.2.0 at package.json:151; acorn ^8.16.0 at espree package.json:41); Y used slightly fewer chars (3513 vs 3623)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q17",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "tie",
+   "reason": "Both give the correct installer, layers, React.cache, key fields and all three bypasses (signal, non-GET/HEAD, keepalive); Y adds the simpleCacheKey fast path while X is 42 chars leaner."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q18",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both are fully correct on all ranges and sections. Y used fewer characters (5,529 vs 6,025) and fewer calls (2 vs 3)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q19",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 3
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both are correct, but Y also identifies uv_spawn in SyncProcessRunner (ss.cc:517) and the binding registrations, which X omits, and Y used fewer chars (37.5k vs 42.2k)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q2",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are correct and verified (TypeScript, main, NO at the same SHA); X used about half the characters (5.5k vs 11.8k) and had no failed call."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q20",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 3
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are correct on all material facts; Y misattributes argStringToArray to ToolRunner (it's the module-level tr.argStringToArray), while X has no such error, despite Y using fewer chars (16,968 vs 20,843)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q21",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both are correct (13 overloads, ReactAgent, createAgentState, accurate graph); X presents a more explicit node\u2192edge graph and uses fewer chars (66.8k vs 72.2k)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q22",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 5
+    }
+   },
+   "winner": "tie",
+   "reason": "Both give correct 61/0 counts, a valid lib/ commit and hunk, and near-identical explanations; chars differ by 2 (13,240 vs 13,238)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q23",
+   "scores": {
+    "mcp": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both are accurate on every checked line; Y also traces fd_pos\u2192fdget_pos\u2192fdget and corrects the question's wrong premise that new_sync_write wraps the older callback, at about 5k more characters."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q24",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are fully correct and verified on file, signature, all 3 call sites and break analysis; Y used fewer chars (4,971 vs 5,688)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q25",
+   "scores": {
+    "mcp": {
+     "correctness": 8,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 7,
+     "depth": 3,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "X quotes the concrete reviewer request, cites the exact hunk header @@ -1902,12 +1916,15 @@ and covers the emoji thread, with fewer chars (15.8k vs 17.0k); its only flaw is a small reply-pairing conflation."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q26",
+   "scores": {
+    "mcp": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both list the same six correct middleware and the right paths, but Y notes that create.md lists no middleware and cites docs/reference/index.md; X is much cheaper (8,960 vs 23,827 chars)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q27",
+   "scores": {
+    "mcp": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Equal correctness on all required lists; Y also points to core runtime exports and covers type exports, and used fewer chars (9,788 vs 13,496)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q28",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 7,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "X cites the actual conversation_history list[dict] holder, the SQLite persist/resume path, and the 0.75 threshold trigger plus head/tail protection; Y only infers the structure from signatures and omits the trigger, despite using ~40k fewer chars."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q29",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 3
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both are accurate and their cited lines verify. X quotes the normative discovery sentence and names authorization_servers, and it uses about 38.5k characters against Y's 63.9k."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q3",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both are fully correct and verified; X used fewer characters (14,631 vs 16,876) and gave more precise file-level permalinks."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q30",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Equal correctness with all citations verified; X reached it with fewer characters (27.5k vs 39.6k) and fewer calls."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q4",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are fully correct and verified; X used fewer characters (26.8k vs 36.4k) and fewer calls (5 vs 7)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q5",
+   "scores": {
+    "mcp": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp-clasify": {
+     "correctness": 8,
+     "depth": 4,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are accurate, but X ties a third scenario (slot fallback parked content) to the patch and a regression test and gives a more concrete core/vapor rationale (nextNode dispatch); Y is vaguer on its third scenario; chars are similar (69.6k vs 70.7k)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q6",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both fully correct and verified; Y used fewer characters (6,554 vs 7,343) and one fewer call."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q7",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 5
+    },
+    "mcp": {
+     "correctness": 9,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are fully correct and verified; Y used fewer chars (5,655 vs 5,984) and calls (3 vs 4)."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q8",
+   "scores": {
+    "mcp": {
+     "correctness": 10,
+     "depth": 4,
+     "workflow": 3
+    },
+    "mcp-clasify": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 4
+    }
+   },
+   "winner": "mcp-clasify",
+   "reason": "Both answers are fully correct and verified; Y used fewer chars (9,639 vs 15,039) and gave SHA-pinned permalinks."
+  },
+  {
+   "pair": "mcp~mcp-clasify",
+   "pass": 1,
+   "q": "Q9",
+   "scores": {
+    "mcp-clasify": {
+     "correctness": 9,
+     "depth": 4,
+     "workflow": 4
+    },
+    "mcp": {
+     "correctness": 10,
+     "depth": 5,
+     "workflow": 5
+    }
+   },
+   "winner": "mcp",
+   "reason": "Both are correct; Y also cites the line-6 import of onRequestHookRunner and used fewer chars (8,795 vs 12,063)."
+  }
+ ]
+}

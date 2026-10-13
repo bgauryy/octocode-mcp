@@ -513,7 +513,7 @@
         "enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Rank goal-bearing read-tool evidence with the configured classification provider.",
+          "description": "Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool.",
           "env": {
             "OCTOCODE_RANKING_ENABLED": {
               "priority": 0,
@@ -582,7 +582,7 @@
           "type": "string",
           "default": null,
           "credential": true,
-          "description": "Classification provider API key (bearer credential).",
+          "description": "Classification provider API key, required for goals ranking and the beta clasify tool.",
           "env": {
             "OCTOCODE_CLASSIFICATION_API": {
               "priority": 0,
@@ -591,7 +591,7 @@
             }
           },
           "displayDefault": "unset",
-          "notes": "Never appears in ResolvedConfig; shell environment wins over the trusted home config file."
+          "notes": "Credential values are omitted from resolved configuration and diagnostics."
         },
         "apiHost": {
           "type": "url",

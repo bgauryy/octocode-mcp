@@ -1,6 +1,6 @@
 # Goals, relevance ranking, and clasify
 
-Use `goals` when useful source should arrive first. Use `clasify` when locations or typed judgments should arrive before source bodies. Both use the configured classification provider; choose the output that advances the question and verify the deciding evidence.
+Use `goals` when earlier relevant source could avoid later reads. Use `clasify` to locate a described target in unread source before a broad read, or to answer a needed typed question. Both use the configured classification provider; verify the deciding evidence.
 
 ## Ranked content or a clasify matrix
 
@@ -11,30 +11,28 @@ Use `goals` when useful source should arrive first. Use `clasify` when locations
 | Which unread candidate or source window to inspect | `clasify` with a read resource | Judgments or locations, then source-read leads |
 | A typed label for evidence already held | `clasify` with a `value` resource | The requested label; this does not save already-read context |
 
-Prefer an adequate cheap exact route. Semantic selection helps when the target is described, the captured evidence can support the question, and selecting evidence can avoid later reads. File size, candidate count, a score, or an optional hint alone does not establish a benefit. Exhaustive audits still need their complete scope.
+Prefer an adequate cheap exact route. A known file can still contain an unknown answer location; a known identifier or precise range often needs only a direct read. Semantic selection helps when the captured evidence supports the question and selection can avoid later reads. Reordering a page that you must read in full saves no context. File size, candidate count, a score, or an optional hint alone does not establish a benefit. Exhaustive audits still need their complete scope.
 
 ```mermaid
 flowchart TD
     Q[Research question] --> E{Cheap exact route answers it?}
     E -- yes --> D[Read direct evidence]
-    E -- no --> H{Evidence already held?}
-    H -- yes --> L{Typed label useful?}
-    L -- yes --> J[clasify value]
-    L -- no --> D
-    H -- no --> B{Can selecting evidence avoid reads?}
+    E -- no --> T{Bounded typed answer needed?}
+    T -- yes --> J[clasify captured evidence]
+    T -- no --> B{Can selecting unread evidence avoid reads?}
     B -- no --> D
     B -- yes --> O{Needed output}
     O -- source --> G[Read-tool goals if available]
-    O -- locations or judgments --> C[clasify read resource]
+    O -- locations --> C[clasify read resource]
     C --> R[Read promising source]
-    D & G & R --> V[Verify required conditions and coverage]
+    D & G & R & J --> V[Verify required conditions and coverage]
 ```
 
-Use one semantic stage per relevance decision. Adding `goals` inside a `clasify` resource explicitly requests two stages; use that composition only for distinct questions. Availability permits a call, but the runtime does not predict whether every explicit call will be economical.
+Do not repeat the same relevance decision in goals and clasify or reclassify unchanged evidence. Adding `goals` inside a `clasify` resource explicitly requests two stages; use that composition only for distinct questions. A needed typed judgment can be useful without saving context. Availability permits a call, but the runtime does not predict whether every explicit call will be economical.
 
 ## Quick start
 
-Set up the [classification credential](AUTHENTICATION.md#classification-key-clasify). For goals, also enable [read-tool relevance ranking](CONFIGURATION.md#read-tool-relevance-ranking). Ranking is disabled by default; CLI and MCP expose optional `goals` only when ranking is enabled and `clasify` is available. Restart MCP after changing configuration.
+Set up the [classification credential](AUTHENTICATION.md#classification-key-clasify). For goals, also enable [read-tool relevance ranking](CONFIGURATION.md#read-tool-relevance-ranking). Public `clasify` additionally requires beta. The [availability rules](#availability) keep these gates separate. Restart MCP after changing configuration.
 
 To receive source in relevance order:
 
@@ -56,25 +54,16 @@ Choose either route for that relevance decision. Follow a returned source-read l
 
 `goals` requests relevance scoring and descending ordering before the selected evidence is paged. Remote discovery ranks one provider page at a time. It is the reranking pass; no additional public `clasify` call is needed for the same question.
 
-All 13 clasify-readable tools accept optional goals when available (`astTopology` is CLI-only). Accepting goals does not promise a provider call: operations that preserve structure, explicit order, or incomplete selections return `skipped` without classification.
+Four source-content tools accept optional goals when ranking and the provider are available. Other read tools have no `goals` or ranking-continuation controls; their ordinary search, structure, history, AST, LSP, and package behavior is unchanged. Public `clasify` remains independently configurable for locations and typed judgments. On eligible tools, accepting goals does not promise a provider call: protected operations or incomplete selections return `skipped` without classification.
 
 | Tool | What can be ranked | Scope and limits |
 |---|---|---|
 | `localSearch` | Files containing sanitized matches | Complete selected view; lexical retrieval scope is unchanged |
 | `localFetch` | Complete raw-text windows | Complete selected view, original line locations preserved |
-| `ghSearchRepo` | Repository rows and selected metadata | One provider page; exact lookup and explicit sort skip |
 | `ghSearchCode` | File hits and returned snippets | One provider page; no extra body reads |
 | `ghGetFileContent` | Complete raw-text windows with `minify:"none"` | Selected view bound to resolved revision and path |
-| `ghSearchHistory` | PR, issue, or commit records | One provider page; explicit sorting stays authoritative |
-| `artifactSearch` | Package discovery records | One provider page; exact package/version lookup skips |
-| `structureSearch` | Flat file rows | Complete selection only; trees and incomplete walks skip |
-| `astSearch` | File groups with returned match evidence | Complete selection only; single-file outlines and syntax trees skip |
-| `lspSearch` | File groups of references or implementations | Complete file groups only (`groupByFile:true`); identity and structural operations skip |
-| `ghStructure` | None | Tree ordering conveys structure; zero-call skip |
-| `ghGetHistoryItem` | None | Section cursors and patch/hunk ordering are preserved; zero-call skip |
-| `astTopology` | None | Graph, path, cycle, and diagnostic ordering are preserved; zero-call skip |
 
-Mutation and clone tools do not accept goals. Public `clasify` uses its existing typed questions.
+`ghSearchRepo`, `ghSearchHistory`, `artifactSearch`, `structureSearch`, `astSearch`, `lspSearch`, `ghStructure`, `ghGetHistoryItem`, and `astTopology` do not accept ranking controls. Mutation and clone tools do not accept goals. Public `clasify` uses its existing typed questions; hiding that public tool does not disable goals on the four supported reads.
 
 Multiple goals use the highest score across goals: evidence relevant to **any** goal moves earlier. This does not prove that all requested conditions hold. Equal scores keep the original order.
 
@@ -117,7 +106,7 @@ Ask separate questions when separate conditions need separate answers. Add `suff
 
 ### Agent prompt
 
-> Choose the smallest adequate evidence route. Prefer exact searches and bounded reads when they answer the question. Use optional goals for source in relevance order, or clasify for locations and needed labels, when selection can avoid later reads. Use one semantic stage per relevance decision. Check captured scope and ranking or coverage receipts. Verify deciding source conditions, follow needed continuations unchanged, and keep missing evidence unresolved. Scores guide attention; they do not prove absence, identity, or finding validity.
+> Choose the smallest adequate evidence route. Prefer exact searches and bounded reads when they answer the question. Use goals for source in relevance order, or clasify for locations, when selection can avoid later reads. Also use clasify when a bounded typed answer is itself needed. Use one semantic stage per relevance decision. Check scope and receipts. Verify deciding source, follow needed continuations unchanged, and keep missing evidence unresolved. Scores guide attention; they do not prove absence, identity, or finding validity.
 
 ## Read the scores
 
@@ -157,7 +146,11 @@ The [PR/AST/LSP checks](../packages/octocode-benchmark/results/review-classifica
 
 A supplied target and remaining candidate or source work can produce an optional `hints.clasify` lead. Hints suggest a possible next read; they neither invoke the provider nor certify a saving. Metadata-only search leads set `candidateEvidence:"search"` to avoid reading unseen file bodies. Use a lead only when it meets the routing rule, and then run it unchanged.
 
-Read calls already carrying `goals` or a ranking plan do not receive another automatic classification lead. Explicit composition remains available for a distinct question. `mainGoal` and `reasoning` provide the target for eligible handoffs; they do not activate ranking. Exact-identifier leads use the cheaper text route. Full-content, anchored, or transformed reads retain their requested purpose.
+Search calls carrying goals and reads with an existing ranking plan do not receive another automatic classification lead. Ranked, partially ranked, and failed ranking attempts also do not trigger a second judgment. Explicit composition remains available for a distinct question.
+
+A first raw `localFetch` of a streamed file can offer Locate when ranking reports `streamingSource` without judging any source. The optional request reuses the next bounded source window and its snapshot, starts at unread lines, and asks each explicit goal separately. It preserves the ordinary continuation and invokes no provider until the agent follows the hint. Exact, bounded, transformed, full-content, and already-complete reads do not receive this goal-derived handoff.
+
+For other eligible handoffs, `mainGoal` and `reasoning` provide the target; they do not activate ranking. Exact-identifier leads use the cheaper text route. Unfinished raw local reads reuse the emitted unread window and snapshot; without an executable continuation, they do not offer Locate. GitHub requests retain the resolved revision when available.
 
 ## Shared internals, separate decisions
 
@@ -176,7 +169,7 @@ flowchart LR
 
 Ranking uses the lower-level classifier adapter, not recursive public tool dispatch. Public `clasify` obtains evidence through the normal secured read dispatcher. Both sanitize evidence and use the shared configured concurrency controls, deadlines, cancellation, and provider accounting.
 
-Public matrix judgments have a process-local cache. Fresh ranking calls do not share that judgment cache; ranked continuations reuse their saved order. A clasify resource containing explicit goals performs both requested stages. Deferred candidates remain visible with their source-read leads; `next.clasify` alone need not revisit every explicitly unjudged candidate.
+Public matrix judgments reuse complete successful answers for 30 minutes in a process-local cache (up to 256 entries or 8 MiB of serialized answers). The key includes the endpoint, account, model, exact evidence including explicit nulls, and questions. Concurrent identical requests share provider work; each waiter keeps its own deadline and cancellation. A healthy waiter can start fresh after the leading caller stops. A failed provider answer is shared only with that in-flight group, not cached. Fresh ranking calls do not use this cache; ranked continuations reuse their saved order and bind it to the account and relevant settings. A clasify resource containing explicit goals performs both requested stages. Deferred candidates remain visible with their source-read leads; `next.clasify` alone need not revisit every explicitly unjudged candidate.
 
 ### Which model does what
 
@@ -186,36 +179,19 @@ The main agent chooses scope, uses tools, verifies evidence, and writes the answ
 
 Goals can bring deciding source into earlier pages. Clasify can keep unread bodies out of the main agent's context until selected source reads are needed. The benefit comes from avoiding later reads; consuming every page removes it. Reordering rows within one fully returned page does not reduce that page’s response tokens; metadata ranking can only help by avoiding later verification reads. Compare complete responses and required source reads against the cheapest adequate direct route, and account for provider usage separately.
 
-The [red/white evaluation](../packages/octocode-benchmark/results/selective-semantics-2026-10-13.md) corrected a grader that kept reading after adequate evidence had arrived. These are retrospective sufficient-source prefixes in `o200k_base` tokens, not observed autonomous stopping:
+The [revised-guidance benchmark](../packages/octocode-benchmark/results/selective-guidance-2026-10-13.md) tested 40 local, 30 GitHub, and 12 transfer questions with fresh Terra agents. Revised guidance reduced unnecessary goal calls locally and on the small transfer set, but agents still overused goals on GitHub. **General main-model token or monetary savings were not demonstrated:** revised GitHub input was 15.9% higher than JEV off across 28 valid pairs. Public `clasify` had no autonomous calls, so this experiment cannot compare its usefulness against goals. Quality was mostly tied; a wrong-function citation in a no-goals trace failed the source-verification guardrail without establishing a ranking regression. The report owns full measurements, uncertainty, and failure analysis.
 
-| Task | Sequential read | Goals | Cheapest tested exact route |
+Fresh fixed-route checks explain the useful boundary:
+
+| Task | Sequential adequate source | Goals prefix | Adequate tested exact route |
 |---|---:|---:|---:|
-| Django callback rollback, two repeats | 4,814 | 1,051–1,058 | 266, phrase selected after results |
-| Tokio close with an outstanding permit, one run | 3,433 | 1,254 | 1,016 |
+| Django callback rollback | 4,814 | 1,078–1,079 | 873 |
+| Tokio close with outstanding permit | 3,433 | 1,292 | 1,016 |
+| GitHub file fixture | 2,073 | 1,355 | 67 |
 
-Goals reduced context by about 78% and 63% against sequential reading; exact queries won both comparisons without classifier work. Tokio Locate returned insufficient source despite a high score. All real classifier work in that check totaled 48 requests, 97,050 reported input tokens, and 9,182 output tokens, including unsuccessful work. This establishes neither net token/dollar savings nor automatic route-choice reliability.
+These are complete response tokens through retrospectively identified sufficient source, not autonomous stopping or net model savings. The GitHub full traversal costs 3,516 ranked versus 2,212 ordinary tokens. No complete traversal in the all-tool replay saved response tokens. Tokio Locate still missed a required permit condition despite high scores. PR/AST/LSP replays retained false judgments and verification overhead; they do not establish fewer false positives.
 
-The [earlier local-ranking study](../packages/octocode-benchmark/results/local-ranking-2026-10-13.md) retains its broad-route comparisons and controls where exact or exhaustive work cost more. The [review study](../packages/octocode-benchmark/results/review-classification-2026-10-13.md) retains PR/AST/LSP failures and complete source-read costs. Their measurements apply to those conditions, not universal score or size thresholds.
-
-The [all-tool evaluation](../packages/octocode-benchmark/results/read-tool-ranking-2026-10-13.md) checks each of the 13 tools separately. In one GitHub file fixture, goals moved sufficient source from page 5 to page 2: 2,073 → 1,367 response tokens, a retrospective 34.1% reduction. Reading every page instead cost 60.3% more, and an exact phrase read needed only 67 tokens with no classifier call. No complete traversal in that run saved response tokens; metadata ordering did not eliminate its required source verification.
-
-Enabling the MCP goals surface added 372 tokenizer-counted tokens to the loaded tool catalog. The bounded real-provider run resolved `jev-latest` to `jev-1.13.0` and used 29 requests with 13,679 reported input / 551 output tokens. Structural skips made no provider calls but still added response overhead. These single paired fixtures support keeping ranking opt-in, using exact routes when adequate, and checking whether earlier evidence actually avoids later reads.
-
-### Autonomous Terra comparison
-
-The [40-local / 30-GitHub paired benchmark](../packages/octocode-benchmark/results/terra-goals-2026-10-13.md) offered goals and clasify to fresh `gpt-5.6-terra` sessions using the local Octocode build. Every final pair completed and received independent source-checked grading. This single development pass **did not demonstrate general token savings**:
-
-| Corpus | Terra-only input tokens, on/off | 95% interval | Observable characters, on/off |
-|---|---:|---:|---:|
-| 40 local questions | 1.119 | 1.002–1.256 | 1.044 |
-| 30 GitHub questions | 1.064 | 0.968–1.171 | 1.012 |
-| 8 Terraform questions, within local | 1.080 | 0.813–1.403 | 1.035 |
-
-Ratios below one mean less usage. Correctness was similar; local wall time increased about 19.5%. Goals were used in 59 of 70 on-arm questions, but public clasify was never called. Many goal requests skipped single candidates, exact lookups, or structural views. Some cheaper on-arm answers came from narrower lexical queries or fewer reads; one Terraform case grew 6.3× after a broader file filter even though both goal requests skipped. The report retains every question, provider failures, cached-input accounting and all retry costs. These results support optional selection when it can avoid reads, and do not establish direct clasify adoption, reduced false positives, or net monetary savings.
-
-JEV tokens are separate from the Terra ratios above. At [TypeSafe's published rate](https://typesafe.ai/blog/introducing-system-one-models-and-jev) of $0.042 per million input tokens with free output, the 581,317 known JEV input tokens cost about **$0.0244** across both campaigns; 18 aborted requests have unknown usage. Successful JEV HTTP requests had medians of 366 ms locally and 400 ms on GitHub, including startup probes. The report includes separate token accounts, verified pricing sources, a cache-aware dollar scenario and latency distributions. Cheap classification can pay for itself by avoiding a small amount of expensive model work, but this run does not establish that saving or a workflow speedup.
-
-The same architecture audit removed candidate preparation when ranking is disabled, unavailable, unsupported, a singleton, or replaying a saved order. An 8 MB development probe fell from about 1.22 seconds to 0.34 seconds with identical output; both benchmark arms include that optimization. See the report for memory bounds and measurement limits.
+Count main-agent input/output and JEV usage separately. Cheap provider work pays off only when it avoids enough main-agent work; low JEV cost alone proves neither net savings nor faster completion. The benchmark preserves both usage ledgers and dated price scenarios. [Earlier source selection](../packages/octocode-benchmark/results/selective-semantics-2026-10-13.md), [all-tool ranking](../packages/octocode-benchmark/results/read-tool-ranking-2026-10-13.md), and [PR/AST/LSP checks](../packages/octocode-benchmark/results/review-classification-2026-10-13.md) remain separate experiments.
 
 ## Reference
 
@@ -242,10 +218,20 @@ See [tool fields](OCTOCODE_TOOLS.md#semantic-assessment-reference), [CLI schema 
 
 ### Availability
 
-`clasify` requires a nonblank `OCTOCODE_CLASSIFICATION_API`. Provider setup, the optional host, and the blank-value kill switch are in [authentication](AUTHENTICATION.md#classification-key-clasify). Evidence disclosure is described under [classification egress](SECURITY.md#classification-egress).
+A nonblank resolved classification API credential (`OCTOCODE_CLASSIFICATION_API` or `classification.api`) is required for both routes. Public `clasify` additionally requires `OCTOCODE_BETA=true` or home `local.beta:true`; goals instead require `ranking.enabled:true` and are available only on the four [supported reads](#how-goals-rerank-source). Beta and public-tool visibility do not gate goals. Provider setup and the present-but-blank API kill switch are in [authentication](AUTHENTICATION.md#classification-key-clasify); evidence disclosure is in [classification egress](SECURITY.md#classification-egress).
 
-MCP checks the provider at startup; authentication, quota, or connection failures can hide clasify and goals in that session. The CLI does not probe during schema discovery; provider failure is reported when called. Restart MCP after changing provider configuration. Use `npx octocode config check OCTOCODE_CLASSIFICATION_API` and the live schema to inspect availability.
+| API credential | Beta | Ranking | Public `clasify` | Read-tool `goals` |
+|---|---|---|---|---|
+| Missing or blank | Either | Either | Hidden | Omitted |
+| Nonblank | Off | Off | Hidden | Omitted |
+| Nonblank | Off | On | Hidden | Available on four tools |
+| Nonblank | On | Off | Available | Omitted |
+| Nonblank | On | On | Available | Available on four tools |
+
+`tools.disabled` / `DISABLE_TOOLS=clasify` and `tools.enabled` / `TOOLS_TO_RUN` can further hide public `clasify`; an allowlist cannot bypass beta or the API requirement. Hiding it does not disable goals. Defaults leave beta and ranking off; no new setting is needed. Prefer goals when source ordering can avoid reads, and public `clasify` when a location or typed judgment is needed.
+
+MCP and CLI resolve availability from configuration without contacting the provider. A real semantic request uses bounded retries and returns a typed provider error if the provider is unavailable; a later request in the same MCP session can succeed after recovery. Restart MCP after changing its configured key or settings, and inspect configured availability with `npx octocode config --json` and `npx octocode schema <tool> --view query`.
 
 ### Usage stats
 
-With `OCTOCODE_ENABLE_STATS=true` and persistent storage, `<octocode-home>/stats.json` records `stats.clasify`: attempted `calls`, reported `input_tokens` and `output_tokens`, and `known_usage_calls` / `unknown_usage_calls`. Failed attempts and retries count; missing receipts mean unknown usage, not zero. Cached judgments add no requests. Use an isolated `OCTOCODE_HOME` for experiments and report provider work separately from caller context.
+With `OCTOCODE_ENABLE_STATS=true` and persistent storage, `<octocode-home>/stats.json` records `stats.clasify`: attempted `calls`, reported `input_tokens` and `output_tokens`, and `known_usage_calls` / `unknown_usage_calls`. Classification transport owns bounded POST retries; the HTTP client's implicit retries are disabled. Failed sends and explicit retries count as attempted calls, while missing provider receipts mean unknown usage, not zero. The admission gate controls concurrency and cooldown without retrying. Cached judgments add no requests. Use an isolated `OCTOCODE_HOME` for experiments and report provider work separately from caller context.

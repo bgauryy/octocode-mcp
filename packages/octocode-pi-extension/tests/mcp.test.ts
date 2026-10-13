@@ -3,9 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { registerMcpCommand } from '../src/mcp/command.js';
-import { configuredOctocodeServer, isOctocodeTool, OCTOCODE_MCP_SPEC, OctocodeMcp, octocodeLaunch, registerOctocodeMcp } from '../src/mcp/octocode.js';
+import { configuredOctocodeServer, OCTOCODE_MCP_SPEC, OctocodeMcp, octocodeLaunch, registerOctocodeMcp } from '../src/mcp/octocode.js';
 import { octocodeToolDefinition, sanitizeJson, toToolResult } from '../src/mcp/tools.js';
 import { Subcommands } from '../src/shared/commands.js';
+import { isOctocodeTool } from '../src/shared/octocode-tools.js';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
 import { tmp } from './helpers.js';
 

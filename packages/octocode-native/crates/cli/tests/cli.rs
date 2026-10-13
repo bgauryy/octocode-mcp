@@ -134,6 +134,7 @@ fn clasify_missing_key_is_actionable() {
     }]});
     let output = workspace
         .cli()
+        .env("OCTOCODE_BETA", "true")
         .args(["clasify", &query.to_string()])
         .output()
         .expect("missing-key execution");
@@ -145,6 +146,17 @@ fn clasify_missing_key_is_actionable() {
         output.contains("https://docs.typesafe.ai/introduction"),
         "{output}"
     );
+
+    let beta_off = workspace
+        .cli()
+        .env("OCTOCODE_CLASSIFICATION_API", "fixture-key")
+        .args(["clasify", &query.to_string()])
+        .output()
+        .expect("missing-beta execution");
+    assert_eq!(exit_code(&beta_off), Some(5));
+    let beta_off = stdout(&beta_off);
+    assert!(beta_off.contains("missingConfiguration"), "{beta_off}");
+    assert!(beta_off.contains("OCTOCODE_BETA"), "{beta_off}");
 }
 
 #[test]
@@ -158,6 +170,7 @@ fn clasify_with_every_resource_failed_exits_by_failure_class() {
         }]});
         workspace
             .cli()
+            .env("OCTOCODE_BETA", "true")
             .env("OCTOCODE_CLASSIFICATION_API", "dummy")
             .env("OCTOCODE_CLASSIFICATION_API_HOST", "http://127.0.0.1:9")
             .args(["clasify", &query.to_string()])

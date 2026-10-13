@@ -1,16 +1,16 @@
 # Goals and clasify
 
-Load when the SKILL.md `SEMANTIC?` gate admits a call, or for an explicit typed judgment. Local `goals` returns reordered source; `clasify` returns locations or judgments first. Read the live schema for the selected tool.
+Load when the SKILL.md `SEMANTIC?` gate admits a call, or for an explicit typed judgment. Read-tool `goals` returns reordered source; `clasify` returns locations or judgments first. Read the live schema for the selected tool.
 
-A local request with `goals` reranks matched files or raw text windows before pagination. The best score across goals wins; ties retain original order. Unscored candidates remain reachable, and continuations reuse the ordering without another classification pass. **Scout** screens unread resources; **Judge** labels state already held in `value`.
+A request with `goals` reranks eligible evidence before pagination; remote discovery ranks one provider page at a time. The best score across goals wins; ties retain original order. Unscored candidates remain reachable, and continuations of the same candidate set reuse the ordering without another classification pass. **Scout** screens unread resources; **Judge** labels state already held in `value`.
 
 ## Admission
 
 - Use semantic selection when an exact search or bounded read does not cheaply find the described behavior, and selecting earlier evidence could avoid later reads. File size, candidate count, or one miss alone is no reason.
-- Choose the needed output: local `goals`, when exposed by the schema, returns source in relevance order; `clasify` returns locations or typed judgments first. Use one semantic stage per unresolved decision. Do not add `goals` inside a classification resource for the same relevance question.
+- Choose the needed output: read-tool `goals`, when exposed by the schema, returns source in relevance order; `clasify` returns locations or typed judgments first. Do not add `goals` inside a classification resource for the same relevance question or repeat an unchanged judgment. A later distinct question can justify another stage.
 - Prefer direct evidence when a known identifier, range, or captured snippet answers the question. Exhaustive audits still require coverage; identity and finding verdicts require their source checks. A useful held-state label is a separate deliverable and cannot save context already consumed.
 - Check the captured scope before asking about behavior. AST/LSP rows may omit surrounding guards or callees; expand bounded source or refine the query first. Missing evidence remains unresolved regardless of the label.
-- Compare the classification response plus required source reads and continuations with the cheapest adequate direct route. Keep provider usage separate; unreported usage is unknown. A smaller first response is not proof of savings. Scores never establish absence.
+- Compare the classification response plus required source reads and continuations with the cheapest adequate direct route. Reordering a fully consumed page saves no context. Keep main-model and provider usage separate, price each at its own rates, and distinguish provider request latency from workflow time. Unreported usage is unknown. A smaller first response is not proof of savings. Scores never establish absence.
 
 ## Requests
 
@@ -25,7 +25,7 @@ A local request with `goals` reranks matched files or raw text windows before pa
 
 ## Handoffs
 
-Put the target in `mainGoal` when it helps the workflow. Multiple candidates or unfinished raw source can offer optional `hints.clasify`; a local call already carrying goals/ranking does not suggest another semantic pass. Apply Admission before using any hint, then run it unchanged and verify its source. `mainGoal` does not enable ranking. File counts, line counts, and English question words are not usefulness rules.
+Supplied targets can produce optional `hints.clasify`. Search goals and saved ranking plans suppress duplicate offers; a first unjudged local stream can reuse goals after a `streamingSource` skip. Unfinished local reads use snapshot-pinned unread windows. Apply Admission before using a hint, then run it unchanged and verify its source. `mainGoal` supplies a target but does not enable ranking. Size, counts, and English question words are not usefulness rules.
 
 ## Questions
 

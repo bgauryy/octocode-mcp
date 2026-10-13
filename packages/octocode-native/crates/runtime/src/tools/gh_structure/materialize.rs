@@ -98,7 +98,11 @@ pub(super) fn expand_depth(
 ) -> Result<Value, ProviderError> {
     let mut next = query_row(
         &GhStructureQuery {
-            ref_: Some(commit_sha.to_owned()),
+            ref_: Some(commit_sha.parse().map_err(
+                |error: crate::contracts::tool_types::error::ConversionError| {
+                    ProviderError::new(ProviderErrorKind::Decode, error.to_string())
+                },
+            )?),
             ..query.clone()
         },
         &["page", "materializeOffset"],

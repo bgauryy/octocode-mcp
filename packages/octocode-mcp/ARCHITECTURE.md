@@ -36,14 +36,12 @@ subset. `ghCloneRepo`, `astTopology` and `astRewrite` are CLI-only (core policy
 marks them `unavailableReason: "cliOnly"` on MCP and rejects direct calls, and
 `clasify` requires a nonblank `OCTOCODE_CLASSIFICATION_API`.
 
-`createNativeMcp()` constructs one `NativeRuntime`, awaits
-`probeClassification()`, then calls `catalog()`. When clasify is available,
-the probe sends one minimal judgment (5 s cap, one retry); any failure except a
-rate limit makes native drop clasify from the catalog (`unavailableReason:
-"providerUnreachable"`) and the adapter logs the reason to stderr. The
-adapter omits tools with `available: false`; this keeps both default-off tools
-out of MCP discovery rather than advertising unusable contracts. For every
-available tool, it:
+`createNativeMcp()` constructs one `NativeRuntime` and reads its configured
+`catalog()` without contacting the classification provider. A real semantic
+call reports typed provider errors and can succeed later in the same MCP
+session after provider recovery. The adapter omits tools with
+`available: false`; this keeps default-off tools out of MCP discovery. For
+every available tool, it:
 
 1. looks up the matching core-owned tool definition;
 2. registers its title, description, core-authored annotations (such as

@@ -91,7 +91,7 @@ export class TeamStore {
     this.edits = new EditLog(agent.db, workspace);
   }
 
-  /** Opens its own connection to the agent database (`agentDbPath`), which checks and migrates the schema first. */
+  /** Opens its own connection to the agent database (`agentDbPath`), which checks the file is ours and adds any missing schema first. */
   static open(cwd: string, file = agentDbPath(), env: NodeJS.ProcessEnv = process.env): TeamStore {
     const agent = openAgentDb(file, env);
     try {

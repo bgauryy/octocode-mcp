@@ -8,12 +8,15 @@ use support::Workspace;
 #[test]
 fn catalog_is_machine_only_with_availability_scoping() {
     let workspace = Workspace::new();
-    for enabled in [false, true] {
-        let env = if enabled {
-            vec![("OCTOCODE_CLASSIFICATION_API", "fixture-key".into())]
-        } else {
-            vec![]
-        };
+    for (beta, key) in [(false, false), (false, true), (true, false), (true, true)] {
+        let enabled = beta && key;
+        let mut env = Vec::new();
+        if beta {
+            env.push(("OCTOCODE_BETA", "true".into()));
+        }
+        if key {
+            env.push(("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()));
+        }
         let runtime = workspace.runtime(&env);
         let native_catalog = runtime.catalog().expect("native catalog");
         assert!(
@@ -28,7 +31,10 @@ fn catalog_is_machine_only_with_availability_scoping() {
 
         let mut command = workspace.cli();
         command.arg("catalog");
-        if enabled {
+        if beta {
+            command.env("OCTOCODE_BETA", "true");
+        }
+        if key {
             command.env("OCTOCODE_CLASSIFICATION_API", "fixture-key");
         }
         let output = command.output().expect("catalog command");
@@ -49,27 +55,37 @@ fn catalog_is_machine_only_with_availability_scoping() {
             .find(|tool| tool["name"] == "clasify")
             .expect("clasify entry");
         assert_eq!(clasify["availability"]["enabled"], enabled, "{catalog}");
+        if !enabled {
+            assert_eq!(
+                clasify["availability"]["envVar"], "OCTOCODE_BETA|OCTOCODE_CLASSIFICATION_API",
+                "{catalog}"
+            );
+        }
         let ast_rewrite = catalog["tools"]
             .as_array()
             .expect("tools array")
             .iter()
             .find(|tool| tool["name"] == "astRewrite")
             .expect("astRewrite entry");
-        assert_eq!(ast_rewrite["availability"]["enabled"], false, "{catalog}");
-        assert_eq!(
-            ast_rewrite["availability"]["envVar"], "OCTOCODE_BETA",
-            "{catalog}"
-        );
+        assert_eq!(ast_rewrite["availability"]["enabled"], beta, "{catalog}");
+        if !beta {
+            assert_eq!(
+                ast_rewrite["availability"]["envVar"], "OCTOCODE_ENABLE_LOCAL|OCTOCODE_BETA",
+                "{catalog}"
+            );
+        }
         let ast_topology = catalog["tools"]
             .as_array()
             .expect("tools array")
             .iter()
             .find(|tool| tool["name"] == "astTopology")
             .expect("astTopology entry");
-        assert_eq!(ast_topology["availability"]["enabled"], false, "{catalog}");
-        assert_eq!(
-            ast_topology["availability"]["envVar"], "OCTOCODE_BETA",
-            "{catalog}"
-        );
+        assert_eq!(ast_topology["availability"]["enabled"], beta, "{catalog}");
+        if !beta {
+            assert_eq!(
+                ast_topology["availability"]["envVar"], "OCTOCODE_ENABLE_LOCAL|OCTOCODE_BETA",
+                "{catalog}"
+            );
+        }
     }
 }

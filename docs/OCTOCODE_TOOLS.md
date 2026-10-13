@@ -57,7 +57,7 @@ Availability:
 - `ghCloneRepo` is CLI-only (MCP never registers it) and needs persistent storage.
 - `astRewrite` and `astTopology` are CLI-only and need `OCTOCODE_BETA=true` (or `local.beta: true`), their only gate (for `astRewrite` it covers preview and apply). Without it, `schema` and root help omit them, and `schema <name>` reports `availability.enabled:false` with `envVar:"OCTOCODE_BETA"`. MCP never registers them, and no MCP instruction, description, or lead names them.
 - LSP needs a compatible server for the file language.
-- `clasify` needs a resolved classification key ([OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md)). Without one, MCP omits it and a CLI call returns an actionable missing-key error.
+- Public `clasify` needs beta and a nonblank classification API credential; goals on four read tools need that credential and ranking enabled, independently of beta. See the [availability table](OCTOCODE_CLASIFY.md#availability).
 
 ## Text, AST, graph, and LSP: choose the evidence you need
 
@@ -414,7 +414,7 @@ Rows: `path` is relative to `root` (the queried directory, or a queried file's p
 | `hints.findSimilar` | An empty first page for a compound identifier whose other case styles match (`parseConfig` → `parse_config`, `ParseConfig`, `PARSE_CONFIG`, `parse-config`): the same search for those spellings, with the file count. |
 | `hints.viewFileCount` | A line view with 1,000 or more matches: the same search as `countMatches`, ranked by hits per file. |
 | `hints.repair` | Invalid regex: the same search with the broken pattern escaped; when PCRE2 compiles the pattern (backreferences, lookaround), the same search with `regex:"pcre2"`. |
-| `hints.clasify` | Wide pages with a multi-word phrase, while `clasify` is available ([OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md)). A default lead: it comes without `extras:["hints"]`. |
+| `hints.clasify` | An explicit target and remaining candidate or source work, while `clasify` is available ([handoff conditions](OCTOCODE_CLASIFY.md#let-the-tools-hand-off-goal-first)). A default lead: it comes without `extras:["hints"]`. |
 
 ### `astSearch`
 
@@ -513,9 +513,9 @@ Rows are `{dir, files}` groups with a workspace-relative `dir` (`dir + "/" + nam
 
 ### Goal-based relevance ranking
 
-All 13 clasify-readable tools accept `goals`, a list of 1–5 nonblank strings (up to 1,000 characters each). MCP and CLI schemas expose it as optional only with [ranking enabled](CONFIGURATION.md#read-tool-relevance-ranking) and `clasify` available; otherwise they omit it and its ranking continuation field. Eligible operations judge sanitized evidence against each goal and put the highest-scoring candidates first; structural and incomplete operations report a zero-call skip. See the [per-tool scope table](OCTOCODE_CLASIFY.md#how-goals-rerank-source). Search scores sanitized match evidence without hydrating unseen file bodies and orders files; fetch orders contiguous text windows while preserving source line numbers. The best score across the goals determines order; ties keep the original order. `mainGoal` remains optional workflow metadata.
+Only `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode` accept `goals`, a list of 1–5 nonblank strings (up to 1,000 characters each). Other tools have no optional ranking controls and keep their ordinary research behavior. MCP and CLI schemas expose goals on those four tools only with [ranking enabled](CONFIGURATION.md#read-tool-relevance-ranking) and a configured nonblank classification credential; otherwise they omit it and its ranking continuation field. Eligible operations judge sanitized evidence against each goal and put the highest-scoring candidates first; protected and incomplete operations report a zero-call skip. The [per-tool scope table](OCTOCODE_CLASIFY.md#how-goals-rerank-source) owns the details. Search scores sanitized match evidence without hydrating unseen file bodies and orders files; fetch orders contiguous text windows while preserving source line numbers. The best score across the goals determines order; ties keep the original order. `mainGoal` remains optional workflow metadata.
 
-CLI schema discovery uses configured availability without contacting the provider. MCP also checks provider availability at startup, so a failed startup probe hides the ranking fields in that session.
+Both CLI and MCP schema discovery use configured availability without contacting the provider. A failed semantic request keeps the fields available so a later request can succeed after provider recovery.
 
 For the choice between exact reads, ranked content, and a `clasify` matrix, see [routing, prompts, and measured savings](OCTOCODE_CLASIFY.md#ranked-content-or-a-clasify-matrix). `goals` promotes evidence matching **any** goal; it does not certify that all requested conditions hold. Explicit `goals` inside a `clasify` resource requests two semantic stages, with provider work for each.
 

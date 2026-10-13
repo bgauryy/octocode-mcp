@@ -44,8 +44,16 @@ pub(super) fn repositories(query: &GhSearchRepoQuery) -> String {
         let value = value.map(|value| range_value(value, true));
         push(&mut parts, key, value.as_deref());
     }
-    push(&mut parts, "language", language.as_deref());
-    push(&mut parts, "license", license.as_deref());
+    push(
+        &mut parts,
+        "language",
+        language.as_ref().map(|value| value.as_str()),
+    );
+    push(
+        &mut parts,
+        "license",
+        license.as_ref().map(|value| value.as_str()),
+    );
     for kind in match_in {
         push(&mut parts, "in", Some(&kind.to_string()));
     }

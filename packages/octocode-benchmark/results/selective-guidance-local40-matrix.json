@@ -1,0 +1,1001 @@
+{
+ "anchor": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+ "order": [
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp"
+ ],
+ "timed": [
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp"
+ ],
+ "groups": {
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": {
+   "label": "Octocode selective guidance · selective-guidance-local40-2026-10-13 · local-mcp-clasify-revised",
+   "how": "local MCP · gpt-5.6-terra",
+   "measured": "Oct 2026",
+   "campaigns": [
+    "selective-guidance-local40-2026-10-13"
+   ],
+   "octocode": true,
+   "live": true,
+   "runs_per_question": 1,
+   "chars_median": 13522.0,
+   "chars_mean": 14131.075,
+   "chars_total": 565243,
+   "correct_mean": 9.475,
+   "correct_judged": 80,
+   "anchor_leaner_x": 1.0,
+   "anchor_leaner_ci95": [
+    1.0,
+    1.0
+   ],
+   "anchor_leaner_on": 0,
+   "calls": 116,
+   "failed": 0,
+   "cost_usd": null,
+   "input_tokens": 1973667,
+   "secs_median": 44.626999999999995,
+   "secs_mean": 47.1142,
+   "model_secs_mean": null,
+   "tool_secs_mean": null,
+   "secs_total": 1884.5680000000002,
+   "anchor_faster_x": 1.0,
+   "anchor_faster_ci95": [
+    1.0,
+    1.0
+   ],
+   "anchor_faster_on": 0
+  },
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": {
+   "label": "Octocode selective guidance · selective-guidance-local40-2026-10-13 · local-mcp-clasify-old",
+   "how": "local MCP · gpt-5.6-terra",
+   "measured": "Oct 2026",
+   "campaigns": [
+    "selective-guidance-local40-2026-10-13"
+   ],
+   "octocode": true,
+   "live": true,
+   "runs_per_question": 1,
+   "chars_median": 12840.0,
+   "chars_mean": 15201.125,
+   "chars_total": 608045,
+   "correct_mean": 9.55,
+   "correct_judged": 40,
+   "anchor_leaner_x": 1.0152108476010708,
+   "anchor_leaner_ci95": [
+    0.901589371004679,
+    1.1406851949232744
+   ],
+   "anchor_leaner_on": 22,
+   "calls": 107,
+   "failed": 0,
+   "cost_usd": null,
+   "input_tokens": 1866306,
+   "secs_median": 51.45,
+   "secs_mean": 54.49575,
+   "model_secs_mean": null,
+   "tool_secs_mean": null,
+   "secs_total": 2179.83,
+   "anchor_faster_x": 1.1603723341436785,
+   "anchor_faster_ci95": [
+    0.9506214761554493,
+    1.410608448381745
+   ],
+   "anchor_faster_on": 24
+  },
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": {
+   "label": "Octocode selective guidance · selective-guidance-local40-2026-10-13 · local-mcp",
+   "how": "local MCP · gpt-5.6-terra",
+   "measured": "Oct 2026",
+   "campaigns": [
+    "selective-guidance-local40-2026-10-13"
+   ],
+   "octocode": true,
+   "live": true,
+   "runs_per_question": 1,
+   "chars_median": 13198.0,
+   "chars_mean": 16220.45,
+   "chars_total": 648818,
+   "correct_mean": 9.475,
+   "correct_judged": 40,
+   "anchor_leaner_x": 1.0677206945739781,
+   "anchor_leaner_ci95": [
+    0.9129335288586875,
+    1.2580616302232033
+   ],
+   "anchor_leaner_on": 20,
+   "calls": 121,
+   "failed": 0,
+   "cost_usd": null,
+   "input_tokens": 2007502,
+   "secs_median": 47.120999999999995,
+   "secs_mean": 53.859675,
+   "model_secs_mean": null,
+   "tool_secs_mean": null,
+   "secs_total": 2154.3869999999997,
+   "anchor_faster_x": 1.1223444519469992,
+   "anchor_faster_ci95": [
+    0.924993314501211,
+    1.3556119731982796
+   ],
+   "anchor_faster_on": 28
+  }
+ },
+ "rows": [
+  {
+   "q": "Q1",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 3830,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 3392,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 3378
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 12.518,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 53.587,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 45.229
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q2",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 12731,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 15335,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 12296
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 71.431,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 20.161,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 84.613
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q3",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 4940,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 5046,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 6286
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 37.821,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 75.046,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 69.7
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q4",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 1583,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 1625,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 1092
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 19.484,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 46.089,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 19.508
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 8,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q5",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9767,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 6072,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 6515
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 25.834,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 26.394,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 48.512
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q6",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 17602,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 19339,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 21661
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 45.104,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 45.009,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 45.595
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q7",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 16349,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 17721,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 15941
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 61.828,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 18.966,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 64.848
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 8
+   }
+  },
+  {
+   "q": "Q8",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10306,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 11967,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 16231
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 30.498,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 74.074,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 15.365
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q9",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 3808,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 3937,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 2962
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 17.122,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 18.339,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 19.885
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q10",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 8406,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 12558,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 11310
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 46.096,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 76.204,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 75.469
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q11",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 5023,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 5464,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 22754
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 28.621,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 29.24,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 40.325
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q12",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 22926,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 24095,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 24711
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 57.918,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 106.506,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 25.882
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 8.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q13",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 2678,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 3115,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 2600
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 18.862,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 52.186,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 29.212
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q14",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 5504,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 2562,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 2755
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 14.388,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 38.022,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 11.189
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q15",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 16919,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 14539,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 31588
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 20.43,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 67.618,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 45.73
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q16",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 4180,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 3881,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 4384
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 32.586,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 25.396,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 24.491
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q17",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9558,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 6817,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 8898
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 60.267,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 54.875,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 117.834
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q18",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 17456,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 42862,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 42926
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 54.885,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 67.602,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 59.081
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q19",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 32287,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 26908,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 17286
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 65.986,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 98.398,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 75.747
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q20",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 22933,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 7921,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 13405
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 77.221,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 67.574,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 87.466
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q21",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 17340,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 13286,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 15066
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 139.847,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 125.334,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 18.153
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q22",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 14961,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 13122,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 11178
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 71.439,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 50.714,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 71.343
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q23",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 3589,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 4179,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 3746
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 39.877,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 32.338,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 31.23
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q24",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 1957,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 2046,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 2137
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 20.856,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 31.273,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 35.049
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q25",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 12271,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 5706,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 11470
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 69.862,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 49.24,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 23.813
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 8,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q26",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 2720,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 4702,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 3151
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 43.321,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 41.284,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 70.515
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q27",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 26366,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 25031,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 26237
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 25.582,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 75.946,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 40.196
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q28",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 25412,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 24473,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 24888
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 78.276,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 39.35,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 71.788
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q29",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 8713,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 8803,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 4438
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 15.819,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 15.166,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 52.643
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q30",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 32141,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 32066,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 32834
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 29.678,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 62.199,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 44.499
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q31",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 18247,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 17898,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 24231
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 69.566,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 50.378,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 96.828
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q32",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 5589,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 4572,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 12991
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 61.633,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 61.999,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 140.286
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q33",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 14313,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 34062,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 26266
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 65.609,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 76.386,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 56.782
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q34",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 16694,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 22476,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 25184
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 39.436,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 43.089,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 97.055
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q35",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 23665,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 31230,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 25016
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 84.528,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 94.284,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 90.361
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q36",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 2544,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 2727,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 2378
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 48.978,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 13.753,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 54.639
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q37",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 17760,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 28613,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 51897
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 53.003,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 101.116,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 26.613
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q38",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 35718,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 35176,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9148
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 44.15,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 72.947,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 17.485
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 10
+   }
+  },
+  {
+   "q": "Q39",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 18150,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 31477,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 36587
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 53.64,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 64.434,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 64.567
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  },
+  {
+   "q": "Q40",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 38307,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 31244,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 30996
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 30.568,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 17.314,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 44.861
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 10,
+    "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 9
+   }
+  }
+ ],
+ "matrix": {
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": {
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": {
+    "geo_mean": 1.0,
+    "ci95": [
+     1.0,
+     1.0
+    ],
+    "median": 1.0
+   },
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": {
+    "geo_mean": 1.0152108476010708,
+    "ci95": [
+     0.901589371004679,
+     1.1406851949232744
+    ],
+    "median": 1.02399469566574
+   },
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": {
+    "geo_mean": 1.0677206945739781,
+    "ci95": [
+     0.9129335288586875,
+     1.2580616302232033
+    ],
+    "median": 1.0083342904826482
+   }
+  },
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": {
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": {
+    "geo_mean": 0.9850170556815722,
+    "ci95": [
+     0.8768736665437203,
+     1.1091656656298614
+    ],
+    "median": 0.9765735540717705
+   },
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": {
+    "geo_mean": 1.0,
+    "ci95": [
+     1.0,
+     1.0
+    ],
+    "median": 1.0
+   },
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": {
+    "geo_mean": 1.0517230948595433,
+    "ci95": [
+     0.914484672979929,
+     1.2142891881914297
+    ],
+    "median": 1.0247580359490704
+   }
+  },
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": {
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": {
+    "geo_mean": 0.9365745227959651,
+    "ci95": [
+     0.7949421386687359,
+     1.0955125090249882
+    ],
+    "median": 0.9919052751142867
+   },
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": {
+    "geo_mean": 0.9508206151292601,
+    "ci95": [
+     0.8235355544739908,
+     1.0936173104748652
+    ],
+    "median": 0.9758407211732617
+   },
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": {
+    "geo_mean": 1.0,
+    "ci95": [
+     1.0,
+     1.0
+    ],
+    "median": 1.0
+   }
+  }
+ },
+ "leaner_count": {
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": {
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 0,
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 22,
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 20
+  },
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": {
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 18,
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 0,
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 23
+  },
+  "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": {
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised": 20,
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old": 17,
+   "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp": 0
+  }
+ },
+ "judged_pairs": [
+  {
+   "campaign": "selective-guidance-local40-2026-10-13",
+   "a": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+   "b": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+   "arm_a": "local-mcp-clasify-old",
+   "arm_b": "local-mcp-clasify-revised",
+   "judged": 40,
+   "chars_b_over_a": 0.9850170556815722,
+   "chars_ci95": [
+    0.8752279392959528,
+    1.1070794424219401
+   ],
+   "a_leaner_on": 18,
+   "questions": 40,
+   "secs_b_over_a": 0.8617923493823828,
+   "secs_ci95": [
+    0.710113422031078,
+    1.0443637417256875
+   ],
+   "a_faster_on": 16,
+   "a_more_correct": 0,
+   "same": 40,
+   "b_more_correct": 0,
+   "a_wins": 14,
+   "b_wins": 18
+  },
+  {
+   "campaign": "selective-guidance-local40-2026-10-13",
+   "a": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+   "b": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+   "arm_a": "local-mcp",
+   "arm_b": "local-mcp-clasify-revised",
+   "judged": 40,
+   "chars_b_over_a": 0.9365745227959651,
+   "chars_ci95": [
+    0.7970941070729043,
+    1.096043437198067
+   ],
+   "a_leaner_on": 20,
+   "questions": 40,
+   "secs_b_over_a": 0.890992064214546,
+   "secs_ci95": [
+    0.7369142466148236,
+    1.0875587498617516
+   ],
+   "a_faster_on": 12,
+   "a_more_correct": 1,
+   "same": 39,
+   "b_more_correct": 0,
+   "a_wins": 17,
+   "b_wins": 18
+  }
+ ],
+ "questions": 40,
+ "question_set": "local-goals-v2"
+}

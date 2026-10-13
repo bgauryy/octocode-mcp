@@ -1,6 +1,7 @@
-/** Real CLI/MCP credential gates; fake credentials, isolated homes, no provider calls. */
+/** Real CLI/MCP API and beta gates with isolated homes and a loopback provider. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import http from 'node:http';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -20,7 +21,7 @@ const request = {
     },
   ],
 };
-const cases = [
+const credentialCases = [
   {
     name: 'workspace-blank-falls-back',
     homeEnv: 'OCTOCODE_CLASSIFICATION_API=fixture-home\n',
@@ -118,6 +119,79 @@ const cases = [
     enabled: false,
   },
 ];
+const cases = [
+  // Hold beta on while testing credential precedence so it cannot mask a key failure.
+  ...credentialCases.map(row => ({
+    ...row,
+    env: { OCTOCODE_BETA: 'true', ...row.env },
+  })),
+  ...[undefined, 'false', 'true'].flatMap(beta =>
+    [undefined, '', '   ', 'fixture-key'].flatMap(api =>
+      [false, true].map(ranking => ({
+        name: `beta-${beta ?? 'absent'}-api-${api === undefined ? 'absent' : api.trim() ? 'present' : api ? 'whitespace' : 'empty'}-ranking-${ranking}`,
+        env: {
+          ...(beta === undefined ? {} : { OCTOCODE_BETA: beta }),
+          ...(api === undefined ? {} : { OCTOCODE_CLASSIFICATION_API: api }),
+          OCTOCODE_RANKING_ENABLED: String(ranking),
+        },
+        enabled: beta === 'true' && Boolean(api?.trim()),
+        goals: ranking && Boolean(api?.trim()),
+      }))
+    )
+  ),
+  {
+    name: 'home-config-beta-and-key',
+    config: { local: { beta: true }, classification: { api: 'fixture-key' } },
+    enabled: true,
+  },
+  {
+    name: 'home-env-beta-and-key',
+    homeEnv: 'OCTOCODE_BETA=true\nOCTOCODE_CLASSIFICATION_API=fixture-key\n',
+    enabled: true,
+  },
+  {
+    name: 'process-beta-off-overrides-home',
+    env: { OCTOCODE_BETA: 'false' },
+    config: { local: { beta: true }, classification: { api: 'fixture-key' } },
+    enabled: false,
+  },
+  {
+    name: 'workspace-cannot-enable-beta',
+    projectEnv: 'OCTOCODE_BETA=true\nOCTOCODE_CLASSIFICATION_API=fixture-key\n',
+    enabled: false,
+  },
+  {
+    name: 'allowlist-cannot-enable-beta',
+    env: { OCTOCODE_CLASSIFICATION_API: 'fixture-key' },
+    config: { tools: { enabled: ['clasify', 'ghSearchCode'] } },
+    enabled: false,
+  },
+];
+let providerCalls = 0;
+let providerAvailable = true;
+const provider = http.createServer(async (req, res) => {
+  providerCalls++;
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const body = JSON.parse(Buffer.concat(chunks).toString());
+  assert.ok(body.state, 'provider receives only real semantic requests');
+  if (!providerAvailable) {
+    res.statusCode = 401;
+    res.end();
+    return;
+  }
+  res.setHeader('content-type', 'application/json');
+  res.end(
+    JSON.stringify({
+      model: body.model,
+      answers: Object.fromEntries(
+        Object.keys(body.questions).map(id => [id, { type: 'noul', noul: 1 }])
+      ),
+      usage: { input_tokens: 1, output_tokens: 1 },
+    })
+  );
+});
+await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
 const results = [];
 try {
   for (const row of cases) {
@@ -137,10 +211,12 @@ try {
       PATH: process.env.PATH ?? '',
       HOME: path.join(fixture, row.name),
       OCTOCODE_HOME: home,
+      OCTOCODE_CLASSIFICATION_API_HOST: `http://127.0.0.1:${provider.address().port}`,
       ...row.env,
     };
     const client = new Client({ name: 'clasify-availability', version: '1' });
     try {
+      const beforeCalls = providerCalls;
       await client.connect(
         new StdioClientTransport({
           command: process.execPath,
@@ -151,6 +227,49 @@ try {
         })
       );
       const catalog = await client.listTools();
+      for (const tool of catalog.tools) {
+        const queries = tool.inputSchema.properties?.queries;
+        assert.equal(queries?.minItems, 1, `${tool.name}: nonempty query batch`);
+        assert.match(queries?.description ?? '', /even one query/, tool.name);
+        const supportsGoals = [
+          'localFetch', 'localSearch', 'ghGetFileContent', 'ghSearchCode',
+        ].includes(tool.name);
+        assert.equal(
+          Boolean(queries?.items?.properties?.goals),
+          supportsGoals && (row.goals ?? false),
+          `${row.name}: ${tool.name} goals scope`
+        );
+      }
+      assert.equal(
+        providerCalls - beforeCalls,
+        0,
+        `${row.name}: discovery does not contact the provider`
+      );
+      const codeSearch = catalog.tools.find(t => t.name === 'ghSearchCode');
+      const mcpGoals =
+        codeSearch?.inputSchema.properties?.queries?.items?.properties?.goals;
+      assert.equal(
+        Boolean(mcpGoals),
+        row.goals ?? false,
+        `${row.name}: MCP goals require API and ranking opt-in`
+      );
+      const readSchema = spawnSync(
+        process.execPath,
+        [
+          path.join(root, 'packages/octocode/out/octocode.js'),
+          'schema',
+          'ghSearchCode',
+          '--view',
+          'full',
+        ],
+        { env, cwd: project, encoding: 'utf8', timeout: 15000 }
+      );
+      assert.equal(readSchema.status, 0, row.name);
+      assert.equal(
+        Boolean(JSON.parse(readSchema.stdout).querySchema?.properties?.goals),
+        row.goals ?? false,
+        `${row.name}: CLI goals require API and ranking opt-in`
+      );
       if (row.localEnabled !== undefined)
         assert.equal(
           catalog.tools.some(t => t.name === 'localFetch'),
@@ -178,12 +297,12 @@ try {
         row.name
       );
       if (!row.enabled) {
-        // One prompt for every surface: it says clasify needs a provider key.
+        // Shared guidance refers callers to the exposed controls.
         assert.ok(
           (client.getInstructions() ?? '').includes(
-            '<clasify>Needs a provider key. '
+            '<clasify>Use exposed controls. '
           ),
-          `${row.name}: clasify key requirement in instructions`
+          `${row.name}: exposed-control requirement in instructions`
         );
         assert.ok(
           catalog.tools.every(t => !/\bclasify\b/i.test(t.description ?? '')),
@@ -210,16 +329,78 @@ try {
         );
         assert.match(
           cli.stdout + cli.stderr,
-          /OCTOCODE_CLASSIFICATION_API|classification.*(disabled|unavailable)|not available|disabled/i,
+          /OCTOCODE_CLASSIFICATION_API|OCTOCODE_BETA|classification.*(disabled|unavailable)|not available|disabled/i,
           `${row.name}: actionable CLI error`
         );
       }
-      results.push({ name: row.name, enabled: row.enabled, passed: true });
+      assert.equal(
+        providerCalls - beforeCalls,
+        0,
+        `${row.name}: discovery and rejected calls add no provider work`
+      );
+      results.push({
+        name: row.name,
+        enabled: row.enabled,
+        goals: row.goals ?? false,
+        passed: true,
+      });
     } finally {
       await client.close();
     }
   }
+
+  // A persistent MCP process must keep the public tool callable while the
+  // provider rejects a request, then use it after the same account recovers.
+  const home = path.join(fixture, 'provider-recovery', 'home');
+  const project = path.join(fixture, 'provider-recovery', 'project');
+  await fs.mkdir(home, { recursive: true });
+  await fs.mkdir(project, { recursive: true });
+  const env = {
+    PATH: process.env.PATH ?? '',
+    HOME: path.join(fixture, 'provider-recovery'),
+    OCTOCODE_HOME: home,
+    OCTOCODE_BETA: 'true',
+    OCTOCODE_CLASSIFICATION_API: 'fixture-key',
+    OCTOCODE_CLASSIFICATION_API_HOST: `http://127.0.0.1:${provider.address().port}`,
+  };
+  const client = new Client({ name: 'clasify-recovery', version: '1' });
+  try {
+    const beforeCalls = providerCalls;
+    await client.connect(
+      new StdioClientTransport({
+        command: process.execPath,
+        args: [path.join(root, 'packages/octocode-mcp/dist/index.js')],
+        cwd: project,
+        env,
+        stderr: 'pipe',
+      })
+    );
+    assert.ok((await client.listTools()).tools.some(t => t.name === 'clasify'));
+    assert.equal(
+      providerCalls,
+      beforeCalls,
+      'startup sends no provider request'
+    );
+    providerAvailable = false;
+    const failed = await client.callTool({
+      name: 'clasify',
+      arguments: request,
+    });
+    assert.equal(failed.isError, true);
+    assert.match(JSON.stringify(failed), /classificationProviderError/);
+    providerAvailable = true;
+    const recovered = await client.callTool({
+      name: 'clasify',
+      arguments: request,
+    });
+    assert.equal(recovered.isError, false, JSON.stringify(recovered));
+    assert.equal(providerCalls - beforeCalls, 2, 'one request per real call');
+    results.push({ name: 'provider-recovery', enabled: true, passed: true });
+  } finally {
+    await client.close();
+  }
 } finally {
+  await new Promise(resolve => provider.close(resolve));
   await fs.writeFile(
     path.join(base, 'results.json'),
     JSON.stringify(results, null, 2) + '\n'
@@ -227,5 +408,5 @@ try {
   await fs.rm(fixture, { recursive: true, force: true });
 }
 console.log(
-  `PASS ${results.length}/${cases.length} isolated CLI/MCP credential scenarios`
+  `PASS ${results.length}/${cases.length} isolated CLI/MCP API and beta scenarios`
 );

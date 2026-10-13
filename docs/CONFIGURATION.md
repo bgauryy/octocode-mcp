@@ -91,7 +91,7 @@ A JSONC file for Octocode's own behavior: `~/.octocode/.octocoderc` (or `$OCTOCO
 - The workspace file loads without a trust flag, like the workspace `.env`. A field bound to a home-only key (for example `local.allowedPaths`, `local.beta`, `github.apiUrl`) is ignored there, with a warning.
 - When the working directory is your OS home, `<project>/.octocode` is the Octocode home, and the file is read once.
 - An unknown key warns with its full path, so a typo like `local.enableLocl` is visible.
-- `tools.enabled` / `TOOLS_TO_RUN` is a strict allowlist (e.g. `["ghSearchCode","localSearch"]`); `tools.disabled` / `DISABLE_TOOLS` removes names from the default set. Unknown or removed tool names are ignored without a warning. An allowlist cannot bypass availability: MCP still omits `clasify` without a [classification key](AUTHENTICATION.md#classification-key-clasify).
+- `tools.enabled` / `TOOLS_TO_RUN` is a strict allowlist (e.g. `["ghSearchCode","localSearch"]`); `tools.disabled` / `DISABLE_TOOLS` removes names from the default set. Unknown or removed tool names are ignored without a warning. An allowlist cannot bypass the [classification and beta gates](OCTOCODE_CLASIFY.md#availability).
 
 ### How settings override each other
 
@@ -173,7 +173,7 @@ Defaults, ranges, enums, and env mappings: [generated settings](generated/CONFIG
 
 ## Read-tool relevance ranking
 
-Enable `ranking.enabled` in the home `.octocoderc`, or set `OCTOCODE_RANKING_ENABLED=true` in the shell, MCP environment, or home `.env`. A configured classification credential and an available `clasify` tool are also required. Ranking runs only when a supported read query supplies `goals`; ordinary calls make no classification request. See the [per-tool scope table](OCTOCODE_CLASIFY.md#how-goals-rerank-source) for eligible operations and zero-call skips. MCP and CLI read-tool schemas expose optional `goals` only when both gates are enabled. The CLI also exposes the opaque ranking continuation field; MCP discovery hides it. Copy returned continuations unchanged.
+Enable `ranking.enabled` in the home `.octocoderc`, or set `OCTOCODE_RANKING_ENABLED=true` in the shell, MCP environment, or home `.env`. A nonblank classification API credential is also required. Goals do not require beta or public `clasify` visibility; the public tool requires both the credential and beta. See the [availability table](OCTOCODE_CLASIFY.md#availability). Only `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode` accept optional `goals`; other read tools retain ordinary behavior without ranking controls. Ranking runs only when one of those queries supplies goals; ordinary calls make no classification request. The [per-tool scope table](OCTOCODE_CLASIFY.md#how-goals-rerank-source) owns eligible operations and zero-call skips. MCP and CLI schemas expose optional goals on those four tools only when ranking and provider availability permit it. The CLI also exposes the opaque ranking continuation field; MCP discovery hides it. Copy returned continuations unchanged.
 
 ```json
 {"ranking":{"enabled":true}}

@@ -3,6 +3,8 @@ import { closeTags, elementEnds, firstTagWith, forwardSearch, replaceThrough, re
 
 /** Page metadata (JSON-LD, price and date meta tags) shown ahead of the text, capped. */
 const METADATA_MAX_CHARS = 1_500;
+/** What to do when the static HTML is not the page: the main session has no `browser`, so the advice names both routes. */
+export const RENDER_ADVICE = 'render it with the browser tool, or with a webHeadless subagent when browser is not active';
 /** Less visible text than this in the static HTML means the page is built by JavaScript. */
 const SHELL_TEXT_CHARS = 500;
 
@@ -257,7 +259,7 @@ export function staticHtmlNote(html: string, text: string): string | undefined {
     const sparse = /<script\b/i.test(html) && (text.trim().length < EMPTY_TEXT_CHARS || text.length < html.length * SHELL_TEXT_SHARE);
     if (gate || mount || sparse) {
       const why = gate ? ' and asks for JavaScript or a bot check' : mount ? ' and an empty app mount point' : '';
-      return `Note: the static HTML has little text${why}; the page is probably built by JavaScript. Read it with the browser tool (navigate).`;
+      return `Note: the static HTML has little text${why}; the page is probably built by JavaScript; ${RENDER_ADVICE}.`;
     }
   }
   // `<script\b[\s\S]*?</script>` spans: how many, and how much of the page they are.
@@ -274,7 +276,7 @@ export function staticHtmlNote(html: string, text: string): string | undefined {
     scriptChars += after - open.index;
   }
   if (APP_MARKERS.test(html) || scriptChars > html.length * 0.3 || scripts >= 25) {
-    return 'Note: static HTML of a JavaScript app (no script ran). Values the browser fills in or localizes after load (prices, currency, stock, dates) may be missing or placeholders here: confirm them in the browser.';
+    return 'Note: static HTML of a JavaScript app (no script ran). Values the browser fills in or localizes after load (prices, currency, stock, dates) may be missing or placeholders here: ' + RENDER_ADVICE + '.';
   }
   return undefined;
 }

@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { planContextTrims, type TrimMemo } from '../src/compaction/register.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
 import { messageText } from '../src/team/routing.js';
 import { registerTurnSetup } from '../src/turn.js';
@@ -24,12 +23,6 @@ describe('agent context boundaries', () => {
     expect(text).toContain('from agent peer at');
     expect(text).toContain('\nhello\n');
     expect(text).not.toMatch(/[\u001b\u202e]/);
-  });
-
-  it('forgets argument verdicts absent from the current branch', () => {
-    const memo: TrimMemo = new Map([['gone', { arguments: { data: 'old' }, saved: 2000 }]]);
-    planContextTrims([], memo);
-    expect(memo.size).toBe(0);
   });
 
   it('withholds an oversized body from another writer instead of delivering a partial instruction', () => {

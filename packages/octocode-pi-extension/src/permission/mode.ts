@@ -22,8 +22,6 @@ export const ACTION_CLASSES = [
   'mcp.destructive',
   'memory.shared',
   'agent.spawn',
-  'hook.ask',
-  'provenance',
 ] as const;
 export type ActionClass = (typeof ACTION_CLASSES)[number];
 
@@ -31,8 +29,7 @@ type Rule = 'allow' | 'ask';
 
 /**
  * Per class: what manual, workspace and full do, how the class reads in a message, and `all`, the kind a session grant
- * can cover ("Allow all shell commands for this session"). The tripwires (provenance, hook asks) have none: each is
- * about one call's content, so it asks every time.
+ * can cover ("Allow all shell commands for this session"). Destructive MCP has no kind: each call asks on its own.
  */
 const MATRIX: Record<ActionClass, { rules: [Rule, Rule, Rule]; noun: string; all?: string }> = {
   'read.outside': { rules: ['ask', 'allow', 'allow'], noun: 'reading outside the workspace', all: 'reads outside the workspace' },
@@ -47,9 +44,30 @@ const MATRIX: Record<ActionClass, { rules: [Rule, Rule, Rule]; noun: string; all
   'mcp.destructive': { rules: ['ask', 'ask', 'allow'], noun: 'the destructive MCP tool call' },
   'memory.shared': { rules: ['ask', 'ask', 'allow'], noun: 'changing a global or pinned memory', all: 'global or pinned memory changes' },
   'agent.spawn': { rules: ['ask', 'allow', 'allow'], noun: 'starting a subagent', all: 'subagents' },
-  'hook.ask': { rules: ['ask', 'ask', 'ask'], noun: 'the call a PreToolUse hook asks about' },
-  provenance: { rules: ['ask', 'ask', 'ask'], noun: 'the call carrying untrusted or private text' },
 };
+
+/**
+ * Reasons tighten a call. They are not action classes and never a session grant. A provenance hit asks in manual and
+ * workspace; full runs it. A hook ask asks in every mode. A reason forces one ask on the call's effect. It does not
+ * replace that effect, and a session grant of the effect does not answer it.
+ */
+export const ASK_REASONS = ['hook.ask', 'provenance'] as const;
+export type AskReason = (typeof ASK_REASONS)[number];
+
+const REASON_RULES: Record<AskReason, [Rule, Rule, Rule]> = {
+  'hook.ask': ['ask', 'ask', 'ask'],
+  provenance: ['ask', 'ask', 'allow'],
+};
+
+/** Whether `reason` forces an ask in `mode`. */
+export function reasonAsks(mode: PermissionMode, reason: AskReason): boolean {
+  return REASON_RULES[reason][PERMISSION_MODES.indexOf(mode)] === 'ask';
+}
+
+/** The least permissive mode in which none of `reasons` ask. A hook ask has none; provenance runs in full. */
+export function modeAllowingReasons(reasons: readonly AskReason[]): PermissionMode | undefined {
+  return PERMISSION_MODES.find((mode) => reasons.every((reason) => !reasonAsks(mode, reason)));
+}
 
 /** The kind a session-wide grant of `action` covers ("shell commands"); undefined for the per-call tripwires. */
 export const kindOf = (action: ActionClass): string | undefined => MATRIX[action].all;
@@ -61,7 +79,7 @@ export function decide(mode: PermissionMode, action: ActionClass): Rule {
 /** How `action` reads in a message ("the shell command"). */
 export const actionNoun = (action: ActionClass): string => MATRIX[action].noun;
 
-/** The least permissive mode that runs `action` without asking, if any (hook asks and provenance always ask). */
+/** The least permissive mode that runs `action` without asking. */
 export const modeAllowing = (action: ActionClass): PermissionMode | undefined => PERMISSION_MODES.find((mode) => decide(mode, action) === 'allow');
 
 /** Asks that a session grant may never answer: their content differs every time, or the hint says it destroys data. */
@@ -88,7 +106,7 @@ export function startMode(env: NodeJS.ProcessEnv): { mode: PermissionMode; warni
 
 /**
  * The kinds a parent handed this subagent: its spawn grant (workspace classes its profile reaches) and every kind the
- * user allowed for the parent's session. Never a tripwire or an unknown name, whatever the variable says.
+ * user allowed for the parent's session. An ask reason or an unknown name is dropped, whatever the variable says.
  */
 export function parseGrants(env: NodeJS.ProcessEnv): Set<ActionClass> {
   const names = (env[PERMISSION_GRANTS_ENV] ?? '').split(',').map((name) => name.trim());

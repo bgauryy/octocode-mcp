@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 type PageOutcome = (Vec<Result<Value, ClassificationError>>, Option<Value>);
 
 /// Judgments already made in this process for the exact same provider input;
-/// a failed flight hands its answers to the identical pages queued behind it.
+/// a provider-wide failed flight hands its answers to identical queued pages.
 static JUDGMENTS: clasify::cache::JudgmentCache<Vec<Result<Value, ClassificationError>>> =
     clasify::cache::JudgmentCache::new();
 
@@ -21,8 +21,9 @@ static JUDGMENTS: clasify::cache::JudgmentCache<Vec<Result<Value, Classification
 /// question set was judged before (a resumed `next.clasify`, a repeated
 /// matrix, or an identical page judged concurrently in the same call). A
 /// replay reports no usage because no request was made. Only a fully
-/// successful answer set is stored; a failed one is shared only with the
-/// identical pages already waiting, so a 429 is not re-sent once per page.
+/// successful answer set is stored; a provider-wide failure is shared only
+/// with identical pages already waiting, so a 429 is not re-sent once per
+/// page. Caller-local deadline and cancellation failures are never shared.
 /// The key covers what the provider sees; correlation IDs are never sent, so
 /// they do not split it.
 async fn assess_provider_page(
@@ -32,14 +33,21 @@ async fn assess_provider_page(
     budget: &crate::providers::RequestBudget,
     gate: &GateLease,
 ) -> PageOutcome {
-    let endpoint = format!("{}/{}", config.base_url, config.endpoint_path);
+    let account_scope =
+        clasify::transport::account_scope(config.base_url, config.endpoint_path, config.key);
     let provider_questions = questions
         .iter()
         .map(|question| question["question"].clone())
         .collect::<Vec<_>>();
-    let key = clasify::cache::key(&endpoint, config.model, state, &provider_questions);
+    let key = clasify::cache::key(&account_scope, config.model, state, &provider_questions);
     let flight = JUDGMENTS.flight(&key);
-    let mut turn = flight.turn().await;
+    let mut turn = match clasify::transport::wait(budget, flight.turn()).await {
+        Ok(turn) => turn,
+        Err(error) => return (vec![Err(error); questions.len()], None),
+    };
+    if let Err(error) = clasify::transport::check_budget(budget) {
+        return (vec![Err(error); questions.len()], None);
+    }
     if let Some(failed) = turn.as_ref() {
         return (failed.clone(), None);
     }
@@ -47,7 +55,14 @@ async fn assess_provider_page(
         return (answers.into_iter().map(Ok).collect(), None);
     }
     let (answers, usage) = request_and_store(state, questions, config, budget, gate, key).await;
-    if !answers.iter().all(Result::is_ok) {
+    if answers.iter().any(Result::is_err)
+        && !answers.iter().any(|answer| {
+            answer
+                .as_ref()
+                .err()
+                .is_some_and(|error| matches!(error.code.as_str(), "cancelled" | "timeout"))
+        })
+    {
         *turn = Some(answers.clone());
     }
     (answers, usage)
@@ -280,6 +295,172 @@ pub(super) async fn assess_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn wait_for_request(server: &wiremock::MockServer) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if server
+                    .received_requests()
+                    .await
+                    .is_some_and(|requests| !requests.is_empty())
+                {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("provider request reached fixture");
+    }
+
+    fn fixture_answer(request: &wiremock::Request) -> wiremock::ResponseTemplate {
+        let request: Value = request.body_json().expect("provider request body");
+        let answers = request["questions"]
+            .as_object()
+            .expect("provider questions")
+            .keys()
+            .map(|key| (key.clone(), json!({"type":"noul","noul":0.9})))
+            .collect::<serde_json::Map<_, _>>();
+        wiremock::ResponseTemplate::new(200).set_body_json(
+            json!({"model":"m","answers":answers,"usage":{"input_tokens":5,"output_tokens":2}}),
+        )
+    }
+
+    #[tokio::test]
+    async fn queued_identical_page_respects_its_own_deadline() {
+        use secrecy::SecretString;
+        use std::time::{Duration, Instant};
+        use wiremock::{Mock, MockServer, matchers::method};
+
+        let server = MockServer::builder().start().await;
+        Mock::given(method("POST"))
+            .respond_with(|request: &wiremock::Request| {
+                fixture_answer(request).set_delay(Duration::from_millis(250))
+            })
+            .mount(&server)
+            .await;
+        let key = SecretString::from("fixture-short-follower");
+        let base_url = server.uri();
+        let config = ProviderConfig {
+            key: &key,
+            base_url: &base_url,
+            endpoint_path: "v1/systemone",
+            model: "m",
+            provider: &crate::providers::classification::jev::JEV,
+            retries: 0,
+            max_concurrency: 2,
+        };
+        let gate =
+            crate::providers::classification::gate::lease(&format!("{base_url}/v1/systemone"), 2);
+        let state = json!({"fixture":"queued deadline"});
+        let questions =
+            [json!({"id":"q","question":{"type":"noul","instructions":"Judge fixture."}})];
+        let leader_budget =
+            crate::providers::RequestBudget::with_timeout(Duration::from_secs(2), 1_000_000);
+        let leader = assess_provider_page(&state, &questions, &config, &leader_budget, &gate);
+        let follower = async {
+            wait_for_request(&server).await;
+            let budget =
+                crate::providers::RequestBudget::with_timeout(Duration::from_millis(25), 1_000_000);
+            let started = Instant::now();
+            let result = assess_provider_page(&state, &questions, &config, &budget, &gate).await;
+            (result, started.elapsed())
+        };
+        let (leader, ((follower, usage), elapsed)) = tokio::join!(leader, follower);
+        assert!(leader.0[0].is_ok(), "leader received {:?}", leader.0[0]);
+        assert_eq!(
+            follower[0].as_ref().err().map(|error| error.code.as_str()),
+            Some("timeout")
+        );
+        assert!(
+            usage.is_none(),
+            "a queued caller did not send a provider request"
+        );
+        assert!(
+            elapsed < Duration::from_millis(150),
+            "follower waited {elapsed:?} for leader"
+        );
+    }
+
+    #[tokio::test]
+    async fn stopped_leader_does_not_poison_healthy_identical_page() {
+        use secrecy::SecretString;
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use std::time::Duration;
+        use wiremock::{Mock, MockServer, matchers::method};
+
+        for stop in ["cancelled", "timeout"] {
+            let server = MockServer::builder().start().await;
+            let attempts = Arc::new(AtomicUsize::new(0));
+            let seen = attempts.clone();
+            Mock::given(method("POST"))
+                .respond_with(move |request: &wiremock::Request| {
+                    let response = fixture_answer(request);
+                    if seen.fetch_add(1, Ordering::SeqCst) == 0 {
+                        response.set_delay(Duration::from_millis(250))
+                    } else {
+                        response
+                    }
+                })
+                .mount(&server)
+                .await;
+            let key = SecretString::from(format!("fixture-{stop}-leader"));
+            let base_url = server.uri();
+            let config = ProviderConfig {
+                key: &key,
+                base_url: &base_url,
+                endpoint_path: "v1/systemone",
+                model: "m",
+                provider: &crate::providers::classification::jev::JEV,
+                retries: 0,
+                max_concurrency: 2,
+            };
+            let gate = crate::providers::classification::gate::lease(
+                &format!("{base_url}/v1/systemone"),
+                2,
+            );
+            let state = json!({"fixture":format!("{stop} leader")});
+            let questions =
+                [json!({"id":"q","question":{"type":"noul","instructions":"Judge fixture."}})];
+            let leader_budget = crate::providers::RequestBudget::with_timeout(
+                if stop == "timeout" {
+                    Duration::from_millis(100)
+                } else {
+                    Duration::from_secs(2)
+                },
+                1_000_000,
+            );
+            let follower_budget =
+                crate::providers::RequestBudget::with_timeout(Duration::from_secs(2), 1_000_000);
+            let leader = assess_provider_page(&state, &questions, &config, &leader_budget, &gate);
+            let follower = async {
+                wait_for_request(&server).await;
+                assess_provider_page(&state, &questions, &config, &follower_budget, &gate).await
+            };
+            let cancel = async {
+                if stop == "cancelled" {
+                    wait_for_request(&server).await;
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                    leader_budget.cancellation.cancel();
+                }
+            };
+            let ((leader, follower), ()) =
+                tokio::join!(async { tokio::join!(leader, follower) }, cancel);
+            assert_eq!(
+                leader.0[0].as_ref().err().map(|error| error.code.as_str()),
+                Some(stop)
+            );
+            assert!(
+                follower.0[0].is_ok(),
+                "healthy follower received {:?}",
+                follower.0[0]
+            );
+            assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        }
+    }
 
     #[test]
     fn briefs_reach_the_provider_state_beside_the_evidence() {

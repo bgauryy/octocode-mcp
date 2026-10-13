@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { CONFIG_DIR_NAME, getAgentDir, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { MCP_ENV, MCP_WAIT_ENV, envFlag, envInt } from '../shared/env.js';
 import { octocodeHome } from '../shared/home.js';
+import { OCTOCODE_SERVER, OCTOCODE_TOOL_PREFIX } from '../shared/octocode-tools.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import type { Tool } from '@earendil-works/pi-mcp';
 import { OctocodeServer, type Launch, type ServerStatus } from './client.js';
@@ -17,20 +18,12 @@ import { octocodeToolDefinition } from './tools.js';
  * `mcp.json` (`~/.pi/agent/mcp.json`, `.pi/mcp.json`) takes precedence, which is how users override or disable it: then
  * Pi's MCP owns the server and this extension starts nothing.
  */
-export const OCTOCODE_SERVER = 'octocode';
-
-/** Octocode tools are named `mcp__<server>__<tool>`, as Pi names tools of an MCP server it runs. */
-export const OCTOCODE_TOOL_PREFIX = `mcp__${OCTOCODE_SERVER}__`;
-
 /**
  * The octocode-mcp releases this extension runs: 20.2.0 or a later 20.x, the first with the tool contract it expects.
  * The package.json dependency has the same range, so installing or updating the extension fetches the newest
  * compatible server; in this monorepo `dev setup` resolves it to the workspace build (`packages/octocode-mcp`).
  */
 export const OCTOCODE_MCP_SPEC = 'octocode-mcp@^20.2.0';
-
-/** Whether `name` is an Octocode MCP tool. */
-export const isOctocodeTool = (name: string): boolean => name.startsWith(OCTOCODE_TOOL_PREFIX);
 
 /** The server process: the installed octocode-mcp bin under this Node, else the newest npm release through npx. */
 export function octocodeLaunch(cwd: string, env: NodeJS.ProcessEnv = process.env, entry = octocodeMcpEntry()): Launch {

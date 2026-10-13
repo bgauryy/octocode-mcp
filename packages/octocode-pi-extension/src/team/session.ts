@@ -50,7 +50,7 @@ export class Team {
   /** A status or goal change waits for the next tick; activity, tool counts and usage ride the heartbeat. */
   private statusChanged = false;
   private savedAt = 0;
-  /** Why the database cannot be used at all (foreign or newer schema); shown in /agents and the footer. */
+  /** Why the database cannot be used at all (a foreign file); shown in /agents and the footer. */
   private schemaProblem: string | undefined;
   private failedTicks = 0;
   /** When this agent last worked (or joined): an idle owner's reservations lapse `leaseIdleMs` after it. */

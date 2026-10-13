@@ -166,8 +166,6 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
             // A hop keeps the patch grep that narrowed the row it came from.
             context_lines: None,
             extras: Vec::new(),
-            goals: Vec::new(),
-            ranking: None,
             page: q
                 .page()
                 .or((!nested).then_some(1))

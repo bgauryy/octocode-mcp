@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AgentDbError, closeSharedAgentDb, openAgentDb, sharedAgentDb } from '../src/agentdb/db.js';
 import { agentDbPath, repoKey, sessionDir, sessionOutputDir, setCurrentSession } from '../src/shared/home.js';
 import { redactSecrets, secretProblem } from '../src/shared/sanitize.js';
-import { AGENT_APPLICATION_ID, AGENT_SCHEMA_VERSION, ensureSchema } from '../src/agentdb/schema.js';
+import { AGENT_APPLICATION_ID } from '../src/agentdb/schema.js';
 import { loadSqlite } from '../src/shared/util.js';
 import { tmp } from './helpers.js';
 
@@ -37,14 +37,13 @@ describe('agent state paths', () => {
 });
 
 describe('openAgentDb', () => {
-  it('creates an owner-only WAL database at schema v1 with every table', () => {
+  it('creates an owner-only WAL database with every table', () => {
     const file = path.join(tmp(), 'deep', 'octocode.db');
     const agent = openAgentDb(file);
     try {
       expect(agent.file).toBe(file);
       const tables = (agent.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((row) => row.name);
       expect(tables).toEqual(expect.arrayContaining(['sessions', 'backlog', 'backlog_notes', 'memories', 'meta']));
-      expect(agent.db.prepare('PRAGMA user_version').get()).toEqual({ user_version: AGENT_SCHEMA_VERSION });
       expect(agent.db.prepare('PRAGMA application_id').get()).toEqual({ application_id: AGENT_APPLICATION_ID });
       expect(agent.db.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'wal' });
       if (process.platform !== 'win32') {
@@ -108,12 +107,69 @@ describe('openAgentDb', () => {
     expect(check.prepare('PRAGMA journal_mode').get()).toEqual({ journal_mode: 'delete' });
     check.close();
 
-    const newer = path.join(tmp(), 'newer.db');
-    openAgentDb(newer).close();
-    const bump = new DatabaseSync(newer);
-    bump.exec(`PRAGMA user_version=${AGENT_SCHEMA_VERSION + 1}`);
-    bump.close();
-    expect(() => openAgentDb(newer)).toThrow(/newer Octocode/);
+  });
+
+  it('adds what a database from another build lacks, and never removes or rewrites anything', () => {
+    const { DatabaseSync } = loadSqlite();
+    const file = path.join(tmp(), 'old.db');
+    const old = new DatabaseSync(file);
+    // Another build's shape: backlog without goal/started_at but with a column this build does not know, a table and an
+    // index it does not know (a newer build's, or another tool's), a leftover version number.
+    old.exec(`PRAGMA application_id=${AGENT_APPLICATION_ID}; PRAGMA user_version=5;
+      CREATE TABLE backlog (id INTEGER PRIMARY KEY AUTOINCREMENT, repo_key TEXT NOT NULL, seq INTEGER NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL, priority INTEGER NOT NULL DEFAULT 2, tags TEXT NOT NULL DEFAULT '', assignee TEXT, created_by TEXT NOT NULL, source_session TEXT,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, done_at INTEGER, version INTEGER NOT NULL DEFAULT 1, from_item INTEGER, legacy TEXT, UNIQUE(repo_key, seq));
+      CREATE TABLE backlog_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, item INTEGER NOT NULL REFERENCES backlog(id) ON DELETE CASCADE, at INTEGER NOT NULL, author TEXT NOT NULL, text TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'note');
+      CREATE INDEX backlog_stale ON backlog(title);
+      CREATE TABLE retired (x);
+      INSERT INTO backlog (repo_key, seq, title, state, created_by, created_at, updated_at, legacy) VALUES ('r', 1, 'keep me', 'todo', 'u', 1, 2, 'gone');
+      INSERT INTO backlog_notes (item, at, author, text) VALUES (1, 3, 'u', 'a note');`);
+    old.close();
+    const agent = openAgentDb(file);
+    try {
+      expect(agent.db.prepare('SELECT title, goal, started_at, state FROM backlog').all()).toEqual([{ title: 'keep me', goal: '', started_at: null, state: 'todo' }]);
+      expect(agent.db.prepare('SELECT text, kind FROM backlog_notes').all()).toEqual([{ text: 'a note', kind: 'note' }]);
+      const names = (agent.db.prepare("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").all() as Array<{ name: string }>).map((row) => row.name);
+      expect(names).toEqual(expect.arrayContaining(['agents', 'backlog_board', 'memories', 'edits', 'memories_fts']));
+      // What this build does not know stays, data included: another build sharing the file still needs it.
+      expect(names).toEqual(expect.arrayContaining(['retired', 'backlog_stale']));
+      expect(agent.db.prepare('SELECT legacy FROM backlog').get()).toEqual({ legacy: 'gone' });
+      // Nothing was rebuilt: ids continue from the old counter, and foreign keys are on.
+      agent.db.prepare("INSERT INTO backlog (repo_key, seq, title, state, created_by, created_at, updated_at) VALUES ('r', 2, 'next', 'todo', 'u', 1, 1)").run();
+      expect(agent.db.prepare("SELECT id FROM backlog WHERE seq = 2").get()).toEqual({ id: 2 });
+      expect(agent.db.prepare('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 });
+    } finally {
+      agent.close();
+    }
+    // Brought up to date once: reopening writes nothing.
+    const sql = () => {
+      const db = new DatabaseSync(file);
+      const all = db.prepare('SELECT name, sql FROM sqlite_master ORDER BY name').all();
+      db.close();
+      return all;
+    };
+    const before = sql();
+    openAgentDb(file).close();
+    expect(sql()).toEqual(before);
+  });
+
+  it('opens an up-to-date file without the write lock, so a long writer elsewhere does not block start-up', () => {
+    const { DatabaseSync } = loadSqlite();
+    const file = path.join(tmp(), 'busy.db');
+    openAgentDb(file).close();
+    const writer = new DatabaseSync(file);
+    writer.exec('PRAGMA busy_timeout=0; BEGIN IMMEDIATE');
+    try {
+      const started = Date.now();
+      const agent = openAgentDb(file);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(agent.fts).toBe(true);
+      agent.close();
+    } finally {
+      writer.exec('ROLLBACK');
+      writer.close();
+    }
   });
 
   it('refuses a file that is not SQLite with AgentDbError', () => {
@@ -134,24 +190,6 @@ describe('openAgentDb', () => {
     openAgentDb(undefined, { OCTOCODE_HOME: home }).close();
     expect(fs.statSync(dir).mode & 0o777).toBe(0o700);
     expect(fs.statSync(file).mode & 0o777).toBe(0o600);
-  });
-
-  it('runs migrations in order inside the caller transaction and rolls a failed step back', () => {
-    const { DatabaseSync } = loadSqlite();
-    const db = new DatabaseSync(':memory:');
-    const steps = [(d: typeof db) => d.exec('CREATE TABLE a (x)'), (d: typeof db) => d.exec('CREATE TABLE b (y)')];
-    db.exec('BEGIN');
-    ensureSchema(db, 'mem', steps, 2);
-    db.exec('COMMIT');
-    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
-    const broken = [...steps, () => {
-      throw new Error('step 3 failed');
-    }];
-    db.exec('BEGIN');
-    expect(() => ensureSchema(db, 'mem', broken, 3)).toThrow('step 3 failed');
-    db.exec('ROLLBACK');
-    expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
-    db.close();
   });
 
   it('joins nested transactions and rolls the whole one back on error', () => {

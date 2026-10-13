@@ -9,7 +9,7 @@ import { octocodePrompt } from '../src/prompt.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
 import { registerAgentTool } from '../src/subagents/tool.js';
 import { DatabaseSync } from 'node:sqlite';
-import { AGENT_APPLICATION_ID as TEAM_APPLICATION_ID, AGENT_SCHEMA_VERSION as TEAM_SCHEMA_VERSION, AgentDbError as TeamSchemaError } from '../src/agentdb/db.js';
+import { AGENT_APPLICATION_ID as TEAM_APPLICATION_ID, AgentDbError as TeamSchemaError } from '../src/agentdb/db.js';
 import type { Member } from '../src/team/model.js';
 import { LEASE_MS, pathKey, TEAM_WORKSPACE_ENV, TeamStore } from '../src/team/store.js';
 import { theme, fakePermission } from './fake-pi.js';
@@ -315,26 +315,20 @@ describe('team database schema', () => {
     db.close();
   };
 
-  it('stamps a fresh database with the application id and the current version', () => {
+  it('stamps a fresh database with the application id', () => {
     const file = path.join(tmp(), 'team.sqlite');
     open(repo(), file).close();
     expect(pragma(file, 'application_id')).toBe(TEAM_APPLICATION_ID);
-    expect(pragma(file, 'user_version')).toBe(TEAM_SCHEMA_VERSION);
-    // Reopening an up-to-date database changes nothing.
-    open(repo(), file).close();
-    expect(pragma(file, 'user_version')).toBe(TEAM_SCHEMA_VERSION);
   });
 
-  it('refuses an agent database written by a newer schema and never drops its data', () => {
+  it('opens an agent database whatever version number another build left on it, keeping its data', () => {
     const file = path.join(tmp(), 'team.sqlite');
     const cwd = repo();
     const other = open(cwd, file);
     other.save(member('a-0001'));
     other.close();
-    exec(file, `PRAGMA user_version=${TEAM_SCHEMA_VERSION + 1};`);
-    expect(() => open(cwd, file)).toThrow(TeamSchemaError);
-    expect(() => open(cwd, file)).toThrow(/schema \d+, written by a newer Octocode/);
-    expect(pragma(file, 'user_version')).toBe(TEAM_SCHEMA_VERSION + 1);
+    exec(file, 'PRAGMA user_version=99;');
+    open(cwd, file).close();
     const db = new DatabaseSync(file);
     expect((db.prepare('SELECT id FROM agents').all() as Array<{ id: string }>).map((row) => row.id)).toEqual(['a-0001']);
     db.close();

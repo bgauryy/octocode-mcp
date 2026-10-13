@@ -1,6 +1,6 @@
 # Context, cache and cost
 
-How Octocode keeps long Pi sessions inside the context window while retaining raw evidence, keeps the provider's prompt
+How Octocode keeps long Pi sessions inside the context window without dropping evidence, keeps the provider's prompt
 cache warm instead of rewriting it, and shows what a session costs. Each part names who owns it: Octocode (this
 package) or Pi. Measured numbers come from the user's last 40 Pi sessions on 2026-10-12 (6.3k replies, 938M prompt
 tokens, Opus 5.5 behind an Anthropic-compatible gateway).
@@ -9,8 +9,8 @@ tokens, Opus 5.5 behind an Anthropic-compatible gateway).
 
 | Concern | Owner | Where |
 |---|---|---|
-| Trimming old tool results, call arguments and images | Octocode | `src/compaction/register.ts`, `policy.ts`, `images.ts`, `recovery.ts` |
-| Summary compaction (the model writes a summary near the limit) | Pi | Pi's `compaction` settings; Octocode only adds to it (see [Summary compaction](#summary-compaction-pis)) |
+| Summary compaction (the model writes a summary near the limit) | Pi's machinery, Octocode's summary | Pi's `compaction` settings and `compact()`; `src/compaction/summary.ts` (see [Summary compaction](#summary-compaction)) |
+| Stripping images from a request rejected as too large | Octocode | `src/compaction/images.ts`, `recovery.ts` |
 | Where cache breakpoints go in a request | Pi (pi-ai) | `cache_control` on the system prompt, the last tool and the last user message |
 | Cache retention (5 minutes or 1 hour) | Octocode | `src/shared/env.ts` |
 | Cache lifetimes for models that declare none | Octocode | `src/compaction/cache.ts` |
@@ -21,98 +21,14 @@ tokens, Opus 5.5 behind an Anthropic-compatible gateway).
 
 ## Context window
 
-Two layers keep a session in its window: Octocode's trims (every turn, no model call) and Pi's summary compaction
-(rarely, with a model call). Trims are the cheap layer: research on SWE-agent–style agents found that masking old
-observations matches LLM summarization at about half the cost ([JetBrains, 2025](https://arxiv.org/html/2508.21433)).
+Octocode never trims the model's context: tool results, call arguments and images stay verbatim until Pi's summary
+compaction, and a successful turn adds no `context_edit` entries. Nothing in context is a placeholder for content
+elsewhere, so the model never acts on a partial view. The one exception is the [413 recovery](#too-large-413), which
+strips images only when a provider has already rejected the request.
 
-### Recoverable trims
-
-Every piece of context a trim removes is saved first, and the note in its place names the file, its SHA-256 prefix
-and its byte count, so the model reads back the exact removed bytes instead of rerunning the call.
-
-- Copies go to the session's `output/` folder, named by content (`<label>-<sha256 prefix>.<ext>`): planning the same
-  trim twice, or after a `/reload`, points at the same file.
-- If saving fails, nothing is trimmed (a result keeps its text, a call its arguments, an image stays). The only
-  exception is the `413` recovery below, whose note then says the image could not be saved.
-- Pi keeps the raw entries in the session history; trims are append-only `context_edit` entries.
-- A placeholder copied into a new call never runs: the first tool-call gate refuses any call other than `file` whose
-  arguments contain one, and the `file` tool refuses one the file does not already hold. So a subagent never
-  receives a task's head plus a placeholder.
-- `tests/compaction-recoverable.test.ts` checks that every pointer reads back the exact removed bytes (text, JSON
-  arguments, image bytes).
-- Copies live in the session's `output/` folder and are swept with it after `OCTOCODE_CLEANUP_DAYS` (30 by default;
-  see [CONFIGURATION](CONFIGURATION.md)), so in a session resumed after that a pointer can name a removed file.
-
-### What is trimmed
-
-**Old tool results** over 3,000 characters (all text parts together) keep their first 800 and last 300 characters
-(about 1,200 with the note). The tail stays because spill pointers, exit codes and summaries sit at the end. Up to 3
-lines in between that point at the full text on disk (`Full output: …`, `Full report: …`, `Log: …`, written by
-spilled output, Pi's bash truncation note, background job reports and subagent reports) stay too. The complete result
-is always saved before it is cut; a path mentioned in tool output is not proof that it contains that result.
-
-**Arguments of old successful calls** whose JSON exceeds 2,000 characters: each string over 320 characters (a written
-file's `content`, edit `oldText`/`newText`, a long command) keeps its first 160 characters and a note naming the JSON
-file that holds the call's full arguments. A call is left alone unless this saves at least 1,000 characters. Paths,
-keys and short values stay. Calls whose result failed keep their arguments verbatim.
-
-**Images** are saved and replaced with a note naming the file. They are budgeted by their real base64 size, because a
-screenshot of about 450 KB costs few tokens but many request bytes (a tiny image counts as 4,000 characters only when
-savings are estimated): only the newest tool
-results with images keep them, at most 3, while their images fit 1,000,000 characters together (the newest always),
-even inside the recent window. Older results keep their text.
-
-**Never trimmed:**
-
-- the recent window: at least the 4 newest results, and up to 12 while their text fits Pi's
-  `compaction.keepRecentTokens` (default 20,000 tokens, about 80,000 characters: the same tail Pi keeps unsummarized).
-  The exception is successful `file` changes, whose text is already on disk;
-- results of the turn that just ended, images included, because the model has not seen them yet (if they alone are
-  too large, the [413 recovery](#too-large-413) handles it);
-- `agent` reports and `askUser` answers, which cannot be regenerated; `agent`, `sendMessage` and `askUser`
-  *arguments*, because a delegated task, a message or a question exists only in the context, and a shortened one
-  becomes the template the model copies into its next call;
-- custom messages (background job and subagent reports, team messages, memory injections, hook context, the resume
-  brief, the running-work note). Each is bounded when it is written: job output tails at 4 KB / 40 lines with terminal
-  escapes stripped, subagent previews at 8 KB / 200 lines with the full report on disk, team messages at 8,000
-  characters.
-
-When a trimmed result was the latest Pi `read` of a file (MCP tool results never count as reads), the file guard
-forgets that read: its content left the context, so the `file` tool asks for a fresh read before changing the file;
-a later verbatim read of the same file keeps it in view. Each call's verdict is remembered by tool-call id while the
-call stays in the active branch (cleared on session start, compaction and tree moves), so a turn only judges calls it
-has not judged before.
-
-### When trims run
-
-A trim changes the cached prompt from its first edit on, so whether a batch runs is a cost decision
-(`src/compaction/policy.ts`), made at `turn_end`:
-
-1. **Free:** the next request misses the cache anyway: its lifetime has passed since the prompt was last written or
-   kept warm, or the model has no prompt cache. Every due trim runs then.
-2. **Pressure:** half the context window used, or 1,500,000 request characters (gateways can reject requests of a
-   few MB). Every due trim runs.
-3. **Warm cache:** a batch must pay for itself. It saves S tokens on every later request and makes the next request
-   rewrite the R tokens after its first edit, so it runs only when
-
-   `S × (write + later × (N − 1)) > R × (write − read)`
-
-   - the prices are the model's own `cost` rates (a 1-hour write at 2× input, as pi-ai prices `cacheWrite1h`); a
-     model without prices uses Anthropic's ratios 0.1× / 1.25× / 2×;
-   - `later` blends a read with a fresh write by the share of this session's requests that found the cache cold;
-   - N, the requests expected to reuse the context, is the number that already did, capped by the growth that fits
-     before Pi's own compaction (`contextWindow − compaction.reserveTokens`).
-   - S and R use text-character estimates and Pi's visual-token estimate for images. Base64 payload length affects
-     request-size pressure and the batch floor, but is never priced as text tokens: a large encoded screenshot does
-     not justify rewriting a long cached text prefix by itself.
-
-   Because R depends on where the first edit is, the planner compares every batch made of the newest candidates back
-   to an older one and takes the one worth most: on a warm cache a batch near the end can pay where one reaching back
-   to the oldest result cannot.
-
-Every batch must also clear a floor, so edits are never trivial: at least 10 results saving 20,000 characters, or any
-batch saving 60,000. Request size counts what the provider is actually sent: text, thinking with its
-signature (pi-ai resends both to Anthropic), tool-call names and arguments, and images.
+Output caps (`capChars`: web and browser snapshots) are applied when a tool result is written, not afterwards; their
+`[… N more characters cut…]` note says where the rest is. The `file` tool refuses a write or edit that adds such a
+note to a file that does not already hold it.
 
 ### Too large (413)
 
@@ -126,15 +42,55 @@ user to `/compact` or `/tree` back. A successful turn starts the sequence over.
   it neither continues nor warns.
 - Recovery removes images only: a request too large because of text ends with the `/compact` / `/tree` warning.
 
-### Summary compaction (Pi's)
+### Summary compaction
 
-Pi writes the summary with the user's session model, prompt, auth, routing and retry policy, and reports failures
-itself; `/compact <focus>` passes the focus to Pi; `/tree` branch summaries are Pi's too. Octocode adds:
+Pi decides when to compact (`compaction.reserveTokens`, `keepRecentTokens`), finds the cut point, keeps the recent
+tail verbatim and puts the summary first after the system prompt; `/tree` branch summaries stay Pi's. Octocode writes
+the compaction summary at `session_before_compact` with Pi's exported `compact()`, so Pi's prompt, split-turn
+handling, update of the previous summary and file lists all apply, plus:
 
-- **Changed files.** At `session_before_compact`, the paths the `file` tool changed go into Pi's file tracking
-  (`preparation.fileOps`), so the summary's `<modified-files>` list is complete and carries forward.
-- **Fresh reads.** After a compaction the file guard forgets every read: a file read before it must be read again
-  before the `file` tool changes it.
+- **Handoff sections** (`SUMMARY_FOCUS`, after the user's `/compact <focus>`): errors and their fixes, where work
+  stopped with verbatim quotes of the latest request and step, and follow-ups. The prompt says the summary is the only
+  record of what it covers (as Claude Code's does): the user's words over the assistant's reasoning, pointers (a path,
+  a command) for anything that can be fetched again, and the path of every image read or attached (images never reach
+  the summarizer).
+- **User messages kept by code** (as Codex does). The model does not copy them: code appends `## User Messages
+  (verbatim, oldest first)` after the model's part, newest first within `USER_MESSAGES_CHARS` (60,000), each cut in
+  the middle past `USER_MESSAGE_CHARS` (6,000), with a count of the older ones left out. The section is carried
+  across compactions, and the model updates only its own part, so the words are never paraphrased and do not count
+  against Pi's summary length cap.
+- **Exact details on demand.** The summary ends with the session file's path (the full transcript, never compacted)
+  and, when `backlog` is active, an instruction to record follow-ups there.
+- **Same model and auth.** The call goes through `ctx.modelRegistry.streamSimple` on the session model and thinking
+  level, so providers an extension registered work too. If it fails (or there is no model), Pi writes its default
+  summary; a UI session gets a warning.
+- **Changed files.** The paths the `file` tool changed go into `preparation.fileOps`, so the summary's
+  `<modified-files>` list is complete. Pi carries file lists forward only from its own summaries, so Octocode adds the
+  previous summary's lists when it wrote that one.
+- **Files read back** (as Claude Code does). At `session_compact`, the files read or changed in the summarized part,
+  most recent first, that the kept tail does not show come back as a hidden `octocode-restored-files` message:
+  at most `RESTORE_MAX_FILES` (5) text files, each cut at a line past `RESTORE_FILE_CHARS` (20,000), within
+  `RESTORE_TOTAL_CHARS` (50,000) and at most `RESTORE_SHARE` (10%) of the window left after Pi's reserve (none below
+  `RESTORE_MIN_FILE_CHARS`, 2,000, per file), so a small model is not refilled to its threshold. Pi holds a
+  context-only message until the running turn ends, so they count as read for the `file` tool from the first model
+  call that carries them (the `context` event), and again after a resume or reload. The kept user messages scale the
+  same way (`USER_MESSAGES_SHARE`, 10%).
+- **Tool results as the summarizer sees them.** Pi shows the summarizer only the first 2,000 characters of each tool
+  result. Octocode hands it a copy where a longer result keeps its head (1,000 characters) and its tail within that
+  cut, so the end of a test run, build or stack trace (where errors and verdicts are) reaches the summary; the
+  session's messages are not changed.
+- **Thrash breaker** (as Claude Code does). When the context refilled to the limit within `THRASH_TURNS` (3) model turns
+  of the previous compaction `THRASH_STREAK` (3) times in a row, the next automatic compaction is cancelled and the run
+  stopped with an explanation: another summary would not make room. A manual `/compact` always runs and starts the
+  count over.
+- **Compaction before a smaller model** (as Codex does). Switching to a model whose window cannot hold the context
+  (less its reserve: `compaction.modelOverrides["provider/id"].reserveTokens`, else `compaction.reserveTokens`) compacts
+  first, summarizing on the previous model, which can still read all of it. It runs even with `compaction.enabled`
+  off (the next request would fail), and like `/compact` it stops a running turn first.
+- **Reads in context.** After a compaction, a branch move, a resume or a reload, the file guard keeps the reads the
+  context still shows (the kept tail and the files read back) and drops the rest, so another file read before the
+  cut must be read again before the `file` tool changes it; a file changed on disk since its read always needs a
+  fresh read.
 - **Running work.** At `session_compact`, a hidden, non-waking message (`octocode-running-work`, at most 500
   characters) lists background bash jobs (id, command, log) and background subagents (id, task) started since this
   session started in this process that have not reported yet, and this session's ongoing backlog items. It is read from the session's own entries: a `bash` result
@@ -163,18 +119,18 @@ heals at its next prompt), Octocode sets `PI_CACHE_RETENTION`:
 | Headless (print, JSON) | `short`: 5 minutes | no one idles between its requests |
 | Subagents | `short`, set in the child's environment | a child runs briefly and back to back; the main session's `long` never reaches it |
 
-A value you export always wins, in subagents too. pi-ai, Pi's warmer and the trims all read this one variable, so
-they agree on the lifetime. A 1-hour write costs 2× input instead of 1.25×; the measured saving outweighs it
+A value you export always wins, in subagents too. pi-ai and Pi's warmer both read this one variable, so they agree
+on the lifetime. A 1-hour write costs 2× input instead of 1.25×; the measured saving outweighs it
 (about −$45 of idle rewrites against +$23 on other writes per $200 of spend). Verified on a live gateway: an
 interactive session's write reports `cacheWrite1h`, a headless one's does not.
 
 `long` asks every provider for its longer entry: 1 hour on Anthropic and Bedrock, `prompt_cache_retention: "24h"` on
 OpenAI-style APIs; other providers ignore it. Warming and the registry lifetimes below are for `anthropic-messages`
-models only; other models use the inferred lifetime for trims only.
+models only; other models use the inferred lifetime for warming decisions only.
 
 ### Lifetimes for models that declare none
 
-Pi's warmer and Octocode's trims need to know how long an entry lives. A model in Pi's catalog declares it
+Pi's warmer and Octocode's warming decisions need to know how long an entry lives. A model in Pi's catalog declares it
 (`promptCache`); a custom model in `models.json` usually does not. Once such a model's replies report cache reads or
 writes, it is known to cache until the extension reloads (an aborted reply without usage does not undo that; after a
 `/reload` its next cached reply teaches it again) and gets
@@ -183,7 +139,7 @@ minutes). For an `anthropic-messages` model Octocode also puts those lifetimes i
 `pi.registerProvider`, listing the provider's models as the registry has them and adding `promptCache` only to the
 models seen caching. Auth, headers config and `modelOverrides` stay Pi's (overrides apply last, so your own
 `promptCache` override still wins); a provider whose models carry resolved headers (a built-in one) is left alone, and
-a refused registration is not retried. Other APIs get the inferred lifetime for trims only. Verified on a live
+a refused registration is not retried. Other APIs get the inferred lifetime for warming decisions only. Verified on a live
 gateway: the request after the re-registration authenticates and reads the cache.
 
 ### Warming
@@ -197,9 +153,6 @@ Pi's `cache_warming_decision` event:
   q(t) is the share of past gaps longer than the current idle time t that ended after t + τ/10 and by t + τ (τ the
   lifetime), and a refresh is sent when q(t) × the miss cost beats the refresh cost. With fewer than 5 past gaps,
   Pi's own decision stands.
-- Only a successful refresh counts as a write for trimming. Octocode observes Pi's persisted `cache_warm` usage
-  on the active branch and uses the preceding decision time as a conservative request-start bound. A failed or
-  cancelled warm does not postpone trimming; completion time is never treated as the start of the cache lifetime.
 
 ## Cost and usage
 
@@ -234,8 +187,8 @@ A reply that spent tokens counts as unpriced when its model's registry rates are
 registry does not know, when its own cost is 0). A subagent's `agent` result names no model, so its run's own verdict
 (`details.unpriced`, set when any of the child's replies was unpriced, even if the rest were priced) decides for it. The
 first unpriced reply in a session warns once: `<provider>/<model> has no pricing in models.json; its usage is not in the
-cost`. Team members' totals live in the shared agent database (`cache_read` and `unpriced` columns since schema v3),
-and each session's flag in `sessions.unpriced` (schema v4), so other sessions' rows and `/sessions` show the same
+cost`. Team members' totals live in the shared agent database (`cache_read` and `unpriced` columns),
+and each session's flag in `sessions.unpriced`, so other sessions' rows and `/sessions` show the same
 format; an older extension in another running Pi refuses a newer database and shows `team off` until it is updated.
 
 To price a custom model, add its `cost` (and `tiers`) to `models.json`; Anthropic's list prices are at
@@ -244,7 +197,7 @@ To price a custom model, add its `cost` (and `tiers`) to `models.json`; Anthropi
 ## Subagents
 
 A subagent is a separate `pi --mode json --no-session` process running this extension, so everything above applies
-inside it too (its trims save every removed piece; it gets `short` retention; its warming is stopped).
+inside it too (it gets `short` retention; its warming is stopped).
 
 - **Cache sharing.** No per-child data (id, name, goal, scratch folder, parent) goes into the system prompt: it rides
   in the task message. So children of the same profile and options (`collaborate`, `isolate` change the prompt) send
@@ -278,15 +231,17 @@ alone is worth a brief. A log the retention sweep already removed is shown as `l
 - **Past sessions:** each reply's `usage` in `~/.pi/agent/sessions/*/*.jsonl` has `input`, `cacheRead`,
   `cacheWrite`, `cacheWrite1h` and the `cost` breakdown; sum the `cost.cacheWrite` share to see what writes cost.
 - **Retention granted:** a reply with `cacheWrite1h > 0` used a 1-hour entry.
-- **A trim's pointer:** the note's path, SHA-256 prefix and byte count match the saved file.
+- **A summary:** the session's `compaction` entries hold each summary, its `details` file lists and `fromHook: true`
+  when Octocode wrote it.
 
 ## Known limits
 
-- Some limits are fixed policy floors, not derived: the recent window's 4 to 12 results, the batch floor (10 results
-  and 20,000 characters, or 60,000), the 800/300 head and tail, and the pressure triggers (50% of the window,
-  1,500,000 request characters).
-- After a summary compaction nothing re-reads the files the session was working on (Claude Code re-reads up to 5), and
-  the paths of saved trim copies are not carried into Pi's summary.
+- Without trimming, a session reaches Pi's compaction threshold sooner, so summaries happen more often.
+- Octocode's summary call does not use Pi's summarization retry policy or virtual-model routing (both private to Pi);
+  a failure falls back to Pi's own summary, which does.
+- A split turn's prefix is summarized by Pi's turn-prefix prompt, without the handoff sections.
+- Pi caps the model's summary at 80% of `compaction.reserveTokens` (13,107 tokens by default) and drops one that hits
+  the cap (then Pi's summary is used); the user messages are added by code after it, outside the cap.
 - Idle warming only runs with Pi's `cacheWarming: "idle"`; with the default `"streaming"`, the 1-hour retention is
   what covers pauses.
 - Amounts are list-price estimates.
@@ -300,13 +255,13 @@ alone is worth a brief. A log the retention sweep already removed is shown as `l
 
 | Test | Covers |
 |---|---|
-| `tests/compaction.test.ts`, `compaction-trim.test.ts` | the trim plan, head/tail trimming with spill pointers, the per-session memo, the guard forgetting trimmed reads, file-tool paths added to Pi's file ops |
-| `tests/compaction-policy.test.ts` | the cost decision, the recent window, idle continuation |
+| `tests/compaction.test.ts`, `compaction-summary.test.ts`, `compaction-restore.test.ts` | file-tool paths added to Pi's file ops, the handoff instructions, user messages kept by code within budgets, the transcript note, file lists carried from Octocode's summaries, files read back within budgets and counted as read |
+| `tests/compaction-policy.test.ts` | idle continuation, no warming in headless runs, no context edits after a successful turn |
 | `tests/compaction-cache.test.ts` | lifetimes, the registry supply, the granted tier, warming, retention |
-| `tests/compaction-recoverable.test.ts` | every pointer reads back the exact removed bytes |
-| `tests/compaction-images.test.ts` | the image budget, the size-pressure trigger, the staged `413` recovery |
+| `tests/compaction-images.test.ts` | the staged `413` recovery, saved copies of stripped images |
+| `tests/files.test.ts`, `elision.test.ts` | reads restored from the context; the `capChars` note and the summary's cut notes refused in file writes |
 | `tests/sessions.test.ts`, `bash.test.ts`, `hooks.test.ts`, `memory.test.ts` | the running-work note and resume brief, the session-end job report, the `compact` SessionStart source, injected ids kept across a compaction |
 | `tests/shared.test.ts`, `footer.test.ts`, `team-panel.test.ts`, `subagent-goal.test.ts` | the money and token formats, the unpriced marker and its one-time warning |
-| `tests/agentdb.test.ts`, `subagent-tool.test.ts`, `sessions.test.ts` | the v3 team and v4 session columns, a child's cost roll-up and denied count, `/sessions` counting subagent usage and marking unpriced usage |
+| `tests/agentdb.test.ts`, `subagent-tool.test.ts`, `sessions.test.ts` | missing schema added on open, nothing removed, the team and session usage columns, a child's cost roll-up and denied count, `/sessions` counting subagent usage and marking unpriced usage |
 | `tests/permission-*.test.ts`, `subagent-permission.test.ts` | session grants, the kinds a child is handed |
-| `tests/e2e.test.ts` › `compaction` | a real Pi session with a scripted provider: Pi summarizes on the session model with the user's `/compact` focus, the summary's file lists include `file` changes and carry across compactions, and the guard requires fresh reads afterwards |
+| `tests/e2e.test.ts` › `compaction` | a real Pi session with a scripted provider: Octocode's summary on the session model with the user's `/compact` focus and the handoff sections, file lists that include `file` changes and carry across compactions, the user messages verbatim in the summary, files read back and changeable without a fresh read, the summary first in the next request, the fallback to Pi's summary; › `keeps every tool result verbatim`: no context edits |

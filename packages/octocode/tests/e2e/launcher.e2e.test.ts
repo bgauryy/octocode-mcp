@@ -50,10 +50,18 @@ function runLauncher(args: string[], env: NodeJS.ProcessEnv = {}) {
 }
 
 describe.skipIf(!ready)('launcher → native binary e2e', () => {
-  it.each(['', 'discovery-only-test-key'])(
-    'serves the schema catalog for a bare piped call, with classification key %j',
-    key => {
-      const env = { OCTOCODE_CLASSIFICATION_API: key };
+  it.each([
+    ['beta off, no key', '0', ''],
+    ['beta off, key present', '0', 'discovery-only-test-key'],
+    ['beta on, no key', '1', ''],
+  ])(
+    'serves the schema catalog with %s and omits gated clasify',
+    (_case, beta, key) => {
+      const env = {
+        OCTOCODE_BETA: beta,
+        OCTOCODE_CLASSIFICATION_API: key,
+        OCTOCODE_CLASSIFICATION_API_HOST: 'http://127.0.0.1:9',
+      };
       const main = runLauncher([], env);
       const schema = runLauncher(['schema'], env);
       expect(main.status).toBe(0);
@@ -61,8 +69,13 @@ describe.skipIf(!ready)('launcher → native binary e2e', () => {
       const instructions = JSON.parse(main.stdout).instructions as string;
       expect(instructions.length).toBeGreaterThan(0);
       expect(JSON.parse(schema.stdout).instructions).toBe(instructions);
-      // One prompt with or without a key: it says clasify needs one.
-      expect(instructions).toContain('<clasify>Needs a provider key. ');
+      // Shared guidance refers callers to the exposed controls.
+      expect(instructions).toContain('<clasify>Use exposed controls. ');
+      expect(
+        JSON.parse(schema.stdout).tools.map(
+          (tool: { name: string }) => tool.name
+        )
+      ).not.toContain('clasify');
     }
   );
 

@@ -16,7 +16,7 @@ pub(super) fn repo_path(query: &GhGetFileContentQuery) -> RepoPath<'_> {
         owner: query.owner.as_str(),
         repo: query.repo.as_str(),
         path: query.path.as_str(),
-        reference: query.ref_.as_deref(),
+        reference: query.ref_.as_ref().map(|value| value.as_str()),
     }
 }
 

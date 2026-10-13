@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { initTheme } from '@earendil-works/pi-coding-agent';
 import { pathToFileURL } from 'node:url';
 import { diffStats, querySize } from '../src/files/render.js';
+import { contextReads, seenFiles } from '../src/files/reads.js';
 import { FileGuard, formatOutcomes, registerFileTool, returnedContent } from '../src/files/tool.js';
 import { canonicalPath, readPaths, resolveToolPath } from '../src/shared/home.js';
 import { Checkpoints } from '../src/files/checkpoint.js';
@@ -37,11 +38,47 @@ describe('file tool', () => {
     expect(guard.check(file, 'edit', 'a.txt')).toBeUndefined();
     fs.writeFileSync(file, 'changed by someone else');
     expect(guard.check(file, 'edit', 'a.txt')).toMatch(/changed on disk/);
-    guard.reset();
+    guard.restore([]);
     // After compaction the old read is out of context: the file must be read again, even unchanged.
     expect(guard.check(file, 'edit', 'a.txt')).toMatch(/Read it again/);
     guard.record(file);
     expect(guard.check(file, 'edit', 'a.txt')).toBeUndefined();
+  });
+
+  it('restores reads the context still shows: a resumed session needs no re-read, a file modified after its read does', () => {
+    const dir = tmp();
+    const kept = path.join(dir, 'kept.txt');
+    const changed = path.join(dir, 'changed.txt');
+    const gone = path.join(dir, 'gone.txt');
+    for (const file of [kept, changed, gone]) fs.writeFileSync(file, 'one');
+    const readAt = fs.statSync(kept).mtimeMs + 1000;
+    fs.utimesSync(changed, (readAt + 5000) / 1000, (readAt + 5000) / 1000);
+    const guard = new FileGuard();
+    guard.record(gone);
+    guard.restore([{ file: kept, at: readAt }, { file: changed, at: readAt }]);
+    expect(guard.check(kept, 'edit', 'kept.txt')).toBeUndefined();
+    expect(guard.check(changed, 'edit', 'changed.txt')).toMatch(/changed on disk/);
+    expect(guard.check(gone, 'edit', 'gone.txt')).toMatch(/no longer in your context/);
+    guard.record(changed);
+    expect(guard.check(changed, 'edit', 'changed.txt')).toBeUndefined();
+  });
+
+  it('finds the files the context shows from read results and file changes, and not errors or MCP reads', () => {
+    const call = (id: string, name: string, args: Record<string, unknown>) => ({ id: `a-${id}`, message: { role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: args }] } });
+    const result = (id: string, toolName: string, text: string, extra: Record<string, unknown> = {}) => ({ id: `r-${id}`, message: { role: 'toolResult', toolCallId: id, toolName, content: [{ type: 'text', text }], isError: false, timestamp: 100, ...extra } });
+    const messages = [
+      call('1', 'read', { path: 'a.ts' }), result('1', 'read', 'a'),
+      call('2', 'read', { path: 'b.ts' }), result('2', 'read', 'b', { isError: true }),
+      call('3', 'read', { path: 'c.ts' }), result('3', 'read', 'c'),
+      call('3b', 'read', { path: 'c.ts', offset: 5 }), result('3b', 'read', 'c', { timestamp: 150 }),
+      call('4', 'file', { queries: [] }), result('4', 'file', 'ok', { details: { outcomes: [{ ok: true, path: 'd.ts' }, { ok: false, path: 'e.ts' }] }, timestamp: 200 }),
+      call('5', 'localFetch', { path: 'f.ts' }), result('5', 'localFetch', 'f'),
+    ];
+    const seen = seenFiles(messages, '/w');
+    expect([...seen.keys()].sort()).toEqual(['/w/a.ts', '/w/c.ts', '/w/d.ts']);
+    expect(seen.get('/w/c.ts')).toEqual({ file: '/w/c.ts', id: 'r-3b', at: 150 });
+    const ctx = { cwd: '/w', sessionManager: { buildSessionProjection: () => ({ entries: messages.map((m) => ({ sourceEntry: { id: m.id }, messages: [m.message] })) }) } };
+    expect(contextReads(ctx as never)).toEqual([{ file: '/w/a.ts', at: 100 }, { file: '/w/c.ts', at: 150 }, { file: '/w/d.ts', at: 200 }]);
   });
 
   it('makes a forgotten (rewound) file need a fresh read, and leaves deleted files alone', () => {

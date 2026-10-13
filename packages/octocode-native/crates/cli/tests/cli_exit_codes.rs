@@ -196,6 +196,7 @@ async fn classification_provider(delay: std::time::Duration) -> MockServer {
 fn clasify_command(workspace: &Workspace, server: &MockServer) -> Command {
     let mut command = workspace.cli();
     command
+        .env("OCTOCODE_BETA", "true")
         .env("OCTOCODE_CLASSIFICATION_API", "secret")
         .env("OCTOCODE_CLASSIFICATION_API_HOST", server.uri())
         .env("REQUEST_TIMEOUT", support::MOCK_PROVIDER_TIMEOUT_MS);
@@ -248,7 +249,7 @@ async fn clasify_exits_by_resource_outcome() {
 }
 
 #[tokio::test]
-async fn interrupted_call_exits_130() {
+async fn interrupted_call_exits_130() -> Result<(), String> {
     let server = classification_provider(std::time::Duration::from_secs(30)).await;
     let workspace = Workspace::new();
     let mut command = clasify_command(&workspace, &server);
@@ -260,12 +261,23 @@ async fn interrupted_call_exits_130() {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     let mut child = command.spawn().unwrap();
+    let started = std::time::Instant::now();
     while server
         .received_requests()
         .await
         .unwrap_or_default()
         .is_empty()
     {
+        if let Some(status) = child.try_wait().unwrap() {
+            return Err(format!(
+                "clasify exited before reaching the provider: {status}"
+            ));
+        }
+        if started.elapsed() > std::time::Duration::from_secs(15) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("clasify did not reach the provider within 15 seconds".into());
+        }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     let interrupted = Command::new("kill")
@@ -277,4 +289,5 @@ async fn interrupted_call_exits_130() {
         .await
         .unwrap();
     assert_eq!(status.code(), Some(130));
+    Ok(())
 }

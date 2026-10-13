@@ -89,9 +89,10 @@ pub(super) fn ignore_case_lead(
     }
     let mut row = query.clone();
     row.case_mode = Some(crate::contracts::tool_types::ReadCaseMode::Insensitive);
-    row.ref_ = Some(acquired.resolved_ref.clone());
+    let mut row = query_row(&row, &[]);
+    row["ref"] = json!(acquired.resolved_ref);
     Some(
-        Continuation::new(ToolId::GhGetFileContent, query_row(&row, &[]))
+        Continuation::new(ToolId::GhGetFileContent, row)
             .confidence("high")
             .build(),
     )
@@ -119,9 +120,8 @@ pub(super) fn last_window_repair(
         .map(|range| range.end.saturating_sub(range.start) + 1)
         .max()?;
     let start = total_lines.saturating_sub(width - 1).max(1);
-    let mut row = query.clone();
-    row.ref_ = Some(sha.to_owned());
-    let mut row = query_row(&row, &[]);
+    let mut row = query_row(query, &[]);
+    row["ref"] = json!(sha);
     row["ranges"] = json!([format!("{start}-{total_lines}")]);
     Some(
         Continuation::new(ToolId::GhGetFileContent, row)

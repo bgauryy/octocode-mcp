@@ -1,0 +1,36 @@
+[
+ {
+  "pair": "selective-guidance-github30-2026-10-13:mcp-clasify-old~mcp-clasify-revised",
+  "campaign": "selective-guidance-github30-2026-10-13",
+  "a": "mcp-clasify-old",
+  "b": "mcp-clasify-revised",
+  "judged": 30,
+  "a_more_correct": 2,
+  "same": 24,
+  "b_more_correct": 4,
+  "a_wins": 12,
+  "b_wins": 16,
+  "chars_b_over_a": 1.0,
+  "a_leaner_on": 13,
+  "secs_b_over_a": 1.0,
+  "a_faster_on": 14,
+  "questions": 30
+ },
+ {
+  "pair": "selective-guidance-github30-2026-10-13:mcp~mcp-clasify-revised",
+  "campaign": "selective-guidance-github30-2026-10-13",
+  "a": "mcp",
+  "b": "mcp-clasify-revised",
+  "judged": 28,
+  "a_more_correct": 0,
+  "same": 26,
+  "b_more_correct": 2,
+  "a_wins": 14,
+  "b_wins": 9,
+  "chars_b_over_a": 1.06,
+  "a_leaner_on": 14,
+  "secs_b_over_a": 1.06,
+  "a_faster_on": 14,
+  "questions": 28
+ }
+]

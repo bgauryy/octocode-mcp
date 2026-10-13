@@ -26,7 +26,7 @@ import { contentText, elisionMarkers, errorMessage, isRecord } from '../shared/u
  * replacement, diffs, per-file mutation queue) but write atomically (temp file + rename) and only over the bytes
  * they checked. A file read with Pi's `read`, or changed by this
  * tool, that changed on disk since then must be read again before it is changed. A file whose earlier read left the
- * context (compaction, a branch switch, a rewind that restored it, its read result trimmed) must be read again before
+ * context (compaction, a branch switch, a rewind that restored it) must be read again before
  * it is changed, even if the disk did not move.
  *
  * Paths are checked against the workspace first: Octocode's own state folder (the Octocode home, holding trust
@@ -78,6 +78,8 @@ export class FileGuard {
   readonly #seen = new Map<string, Snapshot>();
   /** Files whose read left the context: changing them needs a fresh read first. */
   readonly #reread = new Set<string>();
+  /** Files whose read is in the context but that were modified after it (known only by time, not by a snapshot). */
+  readonly #changed = new Set<string>();
   /** Set by the team layer: why another agent's reservation forbids changing `file`, if it does. */
   reservedBy: ((file: string) => string | undefined) | undefined;
 
@@ -86,6 +88,7 @@ export class FileGuard {
     const real = canonicalPath(file);
     const stat = statOf(real);
     this.#reread.delete(real);
+    this.#changed.delete(real);
     if (!stat) this.#seen.delete(real);
     else this.#seen.set(real, known && known.size === stat.size ? { ...stat, sha256: known.sha256 } : stat);
   }
@@ -94,13 +97,27 @@ export class FileGuard {
   forget(file: string): void {
     const real = canonicalPath(file);
     this.#seen.delete(real);
+    this.#changed.delete(real);
     this.#reread.add(real);
   }
 
-  /** Forget every read, e.g. after compaction or a branch switch drops file contents from context: each must be read again. */
-  reset(): void {
+  /**
+   * Rebuild the memory from what the context shows now (see `contextReads`), after a session start (resume, reload,
+   * fork), compaction or branch switch. A file read earlier but no longer in view must be read again. One in view
+   * counts as read when it was not modified after the read (`at`, ms); otherwise it is stale.
+   */
+  restore(inContext: Iterable<{ file: string; at: number }>): void {
     for (const real of this.#seen.keys()) this.#reread.add(real);
     this.#seen.clear();
+    this.#changed.clear();
+    for (const { file, at } of inContext) {
+      const real = canonicalPath(file);
+      const stat = statOf(real);
+      if (!stat) continue;
+      this.#reread.delete(real);
+      if (Math.max(stat.mtimeMs, stat.ctimeMs) <= at) this.#seen.set(real, stat);
+      else this.#changed.add(real);
+    }
   }
 
   /**
@@ -122,6 +139,7 @@ export class FileGuard {
     const current = statOf(real);
     if (!current) return mode === 'edit' || mode === 'delete' ? { refusal: `${display} does not exist.` } : {};
     if (this.#reread.has(real)) return { refusal: rereadRefusal(display) };
+    if (this.#changed.has(real)) return { refusal: staleRefusal(display) };
     const seen = this.#seen.get(real);
     if (!seen) return { refusal: unreadRefusal(display) };
     // ctime and inode also move on a same-size rewrite that restored the mtime, or a rename over the file. With a
@@ -251,7 +269,7 @@ async function runQuery(
     const copied = copiedElision(query, data?.toString('utf8') ?? '');
     if (copied) {
       throw new Error(
-        `The new text contains "${copied}": a placeholder Octocode puts where it trimmed an earlier call or result in your context, not file content. Re-read the source and write the full text.`,
+        `The new text contains "${copied}": a placeholder Octocode puts where it cut a tool's output, not file content. Re-read the source and write the full text.`,
       );
     }
     capture = await checkpoints?.capture(file, () => lastUserEntry(ctx), data && checked ? { data, sha256: checked, mode: current?.mode ?? 0o644 } : null);
@@ -309,7 +327,7 @@ async function workspaceRefusal(file: string, query: FileQuery, ctx: ExtensionTo
   return verdict.allowed ? undefined : `${query.path} is ${inside ? 'a file that runs in later sessions' : `outside the workspace (${root})`}. ${verdict.message}`;
 }
 
-/** The first context-shortening placeholder a change would add to the file (one already in the file or the replaced text is fine). */
+/** The first output-cut placeholder a change would add to the file (one already in the file or the replaced text is fine). */
 export function copiedElision(query: Pick<FileQuery, 'type' | 'edits' | 'content'>, original: string): string | undefined {
   const added = query.type === 'write' ? [{ oldText: '', newText: query.content ?? '' }] : query.type === 'edit' ? (query.edits ?? []) : [];
   for (const { oldText, newText } of added) {

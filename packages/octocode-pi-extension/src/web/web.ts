@@ -6,6 +6,7 @@ import { capOutputToFile, saveFullOutput } from '../shared/spill.js';
 import { shortPath } from '../shared/format.js';
 import { capChars, errorMessage, textResult } from '../shared/util.js';
 import { fetchUrl, unreadReason } from './fetch.js';
+import { savedPageLead, savedPageTools } from './leads.js';
 import { collapseLinkRuns } from './html.js';
 import { search } from './search.js';
 
@@ -81,7 +82,10 @@ export function registerWebTool(pi: ExtensionAPI): void {
         // (sidebars, tables of contents) so content comes first.
         const file = saveFullOutput(text, 'web');
         if (file) {
-          const hint = `the whole page (${lines} lines, links included) is in ${shortPath(file)}: search it or read it by line range`;
+          // Octocode tools take an absolute path; without them the short form is enough to read.
+          const tools = savedPageTools(pi.getActiveTools());
+          const where = tools.clasify || tools.localSearch || tools.localFetch ? file : shortPath(file);
+          const hint = `the whole page (${lines} lines, links included) is in ${where}: ${savedPageLead(tools)}`;
           return textResult<WebDetails>(capOutputToFile(capChars(collapseLinkRuns(text), max, hint), { label: 'web' }), { ...size, file });
         }
         // Nothing holds the rest, so nothing is folded and the note says exactly what stays out of reach.

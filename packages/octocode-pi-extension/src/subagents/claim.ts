@@ -3,6 +3,7 @@ import { envFlag, envInt } from '../shared/env.js';
 import { shortPath } from '../shared/format.js';
 import { errorMessage } from '../shared/util.js';
 import type { Team } from '../team/session.js';
+import { currentCatalog } from './catalog.js';
 import { routeModel, type ModelRoute } from './model.js';
 import type { Identity } from './process.js';
 import type { AgentProfile } from './profiles.js';
@@ -107,7 +108,7 @@ export function claimRun(runs: AgentRuns, profiles: Map<string, AgentProfile>, p
   const overLimit = subagentLimitError(runs.running.keys(), maxSubagents());
   if (overLimit) throw new Error(overLimit);
   // An explicit model is strict; a profile's is a preference that falls back to this session's model.
-  const route = routeModel({ explicit: params.model, preferred: profile?.model, available: ctx.modelRegistry?.getAvailable() ?? [], parent: ctx.model });
+  const route = routeModel({ explicit: params.model, preferred: profile?.model, available: ctx.modelRegistry?.getAvailable() ?? [], parent: ctx.model, catalog: currentCatalog() });
   if ('error' in route) throw new Error(route.error);
   // Joining gives the child its parent's address for sendMessage; without a usable team database it still runs, alone.
   let parentId: string | undefined;

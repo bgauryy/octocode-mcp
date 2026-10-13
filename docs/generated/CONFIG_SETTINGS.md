@@ -107,12 +107,12 @@ Environment values take precedence over `.octocoderc`. Aliases are listed in pri
 | `storage.cloneCache.ttl` | `OCTOCODE_CACHE_TTL_MS` | `86400000` | integer (60000–2592000000) | Milliseconds a ghCloneRepo checkout stays fresh before it is re-fetched. |
 | `storage.cloneCache.maxSize` | `OCTOCODE_MAX_CACHE_SIZE` | `2147483648` | integer (1048576–1099511627776) | Byte cap for the on-disk ghCloneRepo cache; least-recently-used checkouts are evicted above it. |
 | `storage.cloneCache.maxClones` | `OCTOCODE_MAX_CLONES` | `50` | integer (1–1000) | Maximum repositories the ghCloneRepo cache keeps. |
-| `ranking.enabled` | `OCTOCODE_RANKING_ENABLED` | `false` | boolean | Rank goal-bearing read-tool evidence with the configured classification provider. OCTOCODE_RANKING_ENABLED: shell or trusted home .env |
+| `ranking.enabled` | `OCTOCODE_RANKING_ENABLED` | `false` | boolean | Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool. OCTOCODE_RANKING_ENABLED: shell or trusted home .env |
 | `ranking.maxCandidates` | `OCTOCODE_RANKING_MAX_CANDIDATES` | `64` | integer (1–256) | Maximum complete evidence units classified per ranking operation; other units keep their original order. |
 | `ranking.maxChars` | `OCTOCODE_RANKING_MAX_CHARS` | `131072` | integer (1024–1048576) | Maximum evidence characters sent for one ranking operation. |
 | `ranking.timeoutMs` | `OCTOCODE_RANKING_TIMEOUT_MS` | `10000` | integer (100–60000) | Total ranking deadline in milliseconds, bounded by the enclosing request deadline. |
 | `classification.type` | `OCTOCODE_CLASSIFICATION_TYPE` | jev | `jev` | Classification vendor. Per-vendor defaults (host, model, endpoint) are built in. |
-| `classification.api` | `OCTOCODE_CLASSIFICATION_API` | unset | string | Classification provider API key (bearer credential). Never appears in ResolvedConfig; shell environment wins over the trusted home config file. Credential-only; excluded from ResolvedConfig. |
+| `classification.api` | `OCTOCODE_CLASSIFICATION_API` | unset | string | Classification provider API key, required for goals ranking and the beta clasify tool. Credential values are omitted from resolved configuration and diagnostics. Credential-only; excluded from ResolvedConfig. |
 | `classification.apiHost` | `OCTOCODE_CLASSIFICATION_API_HOST` | vendor default (jev: https://api.typesafe.ai) | url | Optional override of the selected vendor's default API root. Requires HTTP or HTTPS at config validation; provider policy may require HTTPS except loopback. OCTOCODE_CLASSIFICATION_API_HOST: shell or trusted home .env Credential-only; excluded from ResolvedConfig. |
 | `classification.maxConcurrency` | `OCTOCODE_CLASSIFICATION_CONCURRENCY` | `10` | integer (1–64) | Process-wide maximum in-flight classification provider requests per provider endpoint. |
 

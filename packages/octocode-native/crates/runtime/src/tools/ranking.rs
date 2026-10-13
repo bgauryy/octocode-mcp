@@ -118,19 +118,22 @@ pub(crate) fn needs_candidate_states(
 }
 
 /// Rank one already-sanitized result row at the shared response boundary.
-/// Remote discovery has fetched exactly one provider page at this point;
-/// local tools are admitted only when their complete selected view fits in
-/// this row. The source digest covers the *original* item order so a saved
-/// plan cannot silently apply to a changed provider page.
+/// ghSearchCode has fetched exactly one provider page at this point. The
+/// source digest covers the *original* item order so a saved plan cannot
+/// silently apply to a changed provider page.
 pub(crate) fn apply_sanitized_rows(
     tool: ToolId,
     structured: &mut Value,
     queries: &[Value],
     row_indices: &[usize],
-    explicit_sort: &[bool],
     response_query: &mut Value,
     runtime: &Runtime,
 ) -> Result<(), crate::runtime::ExecutionError> {
+    // Local search/fetch and GitHub file reads rank before their own source
+    // pagination. The shared response boundary owns only code-search pages.
+    if tool != ToolId::GhSearchCode {
+        return Ok(());
+    }
     let Some(rows) = structured.get_mut("results").and_then(Value::as_array_mut) else {
         return Ok(());
     };
@@ -151,42 +154,12 @@ pub(crate) fn apply_sanitized_rows(
         if !has_goals && query.get("ranking").is_none() {
             continue;
         }
-        // These two tools rank before their own source pagination. Never
-        // apply a second pass to the page they returned here.
-        if matches!(
-            tool,
-            ToolId::LocalSearch | ToolId::LocalFetch | ToolId::GhGetFileContent
-        ) {
-            continue;
-        }
         let failed = row["status"] == "error";
         let data = &mut row["data"];
         if !data.is_object() || failed {
             continue;
         }
-        let mut selection = selection(
-            tool,
-            query,
-            data,
-            explicit_sort.get(admitted_index).copied().unwrap_or(false),
-        );
-        let values = if tool == ToolId::StructureSearch && selection.key.is_some() {
-            match flat_file_units(data) {
-                Some(units) => units,
-                None => {
-                    selection.key = None;
-                    selection.skip = Some("unsupportedShape");
-                    Vec::new()
-                }
-            }
-        } else {
-            selection
-                .key
-                .and_then(|key| data.get(key))
-                .and_then(Value::as_array)
-                .cloned()
-                .unwrap_or_default()
-        };
+        let values = data["files"].as_array().cloned().unwrap_or_default();
         let candidates = values
             .iter()
             .map(|item| {
@@ -198,29 +171,22 @@ pub(crate) fn apply_sanitized_rows(
                 }
             })
             .collect::<Vec<_>>();
-        let source = crate::digest::json_sha256(&crate::canonical_json::canonicalize(json!({
-            "tool": tool.as_str(),
-            "path": query.get("path"),
-            "owner": query.get("owner"),
-            "repo": query.get("repo"),
-            "page": query.get("page"),
-            "items": candidates.iter().map(|candidate| candidate.state.as_ref()).collect::<Vec<_>>(),
-        })));
+        let source = candidate_source_digest(tool, query, &candidates);
         let outcome = match order_scoped(
             Some(runtime),
             query,
             &source,
             query["ranking"].as_str(),
             &candidates,
-            selection.skip,
-            selection.scope,
+            None,
+            RankingScope::ProviderPage,
         ) {
             Ok(outcome) => outcome,
             Err(Failure::Cancelled) => return Err(crate::runtime::ExecutionError::Cancelled),
             Err(Failure::Stale) => {
                 let mut restart = query.clone();
                 if let Some(restart) = restart.as_object_mut() {
-                    for field in ["ranking", "snapshot", "page", "matchPage", "scanOffset"] {
+                    for field in ["ranking", "page"] {
                         restart.remove(field);
                     }
                 }
@@ -233,84 +199,65 @@ pub(crate) fn apply_sanitized_rows(
                 continue;
             }
         };
-        if tool == ToolId::StructureSearch && selection.key.is_some() {
-            let ordered = outcome
-                .order
-                .iter()
-                .map(|&i| values[i].clone())
-                .collect::<Vec<_>>();
-            data["files"] = Value::Array(group_file_units(&ordered));
-        } else if let Some(key) = selection.key
-            && let Some(array) = data.get_mut(key).and_then(Value::as_array_mut)
-        {
+        if let Some(array) = data.get_mut("files").and_then(Value::as_array_mut) {
             let original = std::mem::take(array);
             *array = outcome.order.iter().map(|&i| original[i].clone()).collect();
         }
         data["ranking"] = serde_json::to_value(&outcome.receipt).unwrap_or(Value::Null);
         // A provider's next page is a different candidate set. A response
         // page over this same row, however, must replay the saved plan.
-        strip_plan_from_tool_continuations(
-            data,
-            tool,
-            !explicit_sort.get(admitted_index).copied().unwrap_or(false),
-        );
+        strip_plan_from_tool_continuations(data, tool);
         let response_row = if queries.len() == 1 {
             Some(&mut *response_query)
         } else {
             response_query.pointer_mut(&format!("/queries/{admitted_index}"))
         };
         if let Some(response_row) = response_row.and_then(Value::as_object_mut) {
-            if !explicit_sort.get(admitted_index).copied().unwrap_or(false) {
-                response_row.remove("sort");
-            }
             response_row.insert("ranking".into(), json!(outcome.token));
         }
     }
     Ok(())
 }
 
+fn candidate_source_digest(tool: ToolId, query: &Value, candidates: &[Candidate]) -> String {
+    let mut source = json!({
+        "tool": tool.as_str(),
+        "path": query.get("path"),
+        "owner": query.get("owner"),
+        "repo": query.get("repo"),
+        "page": query.get("page"),
+        "items": candidates.iter().map(|candidate| candidate.state.as_ref()).collect::<Vec<_>>(),
+    });
+    source.sort_all_objects();
+    crate::digest::json_sha256(&source)
+}
+
 /// A tool continuation changes the candidate set or view. Only the shared
 /// response pager, whose query is set separately above, may replay this plan.
-fn strip_plan_from_tool_continuations(value: &mut Value, tool: ToolId, implicit_sort: bool) {
+fn strip_plan_from_tool_continuations(value: &mut Value, tool: ToolId) {
     let Some(fields) = value.as_object_mut() else {
         return;
     };
     for name in ["next", "hints"] {
         if let Some(leads) = fields.get_mut(name).and_then(Value::as_object_mut) {
             for lead in leads.values_mut() {
-                scrub_lead(lead, tool, implicit_sort, name == "hints");
+                scrub_lead(lead, tool, name == "hints");
             }
         }
     }
     // Descend only through tool-owned result collections. A source payload
     // may itself contain a `next` object or tool-shaped JSON; it is evidence,
     // not a continuation for this response.
-    for name in [
-        "files",
-        "repositories",
-        "artifacts",
-        "pullRequests",
-        "issues",
-        "commits",
-        "matches",
-        "symbols",
-        "locations",
-        "references",
-        "implementations",
-        "importers",
-        "entries",
-        "children",
-        "members",
-    ] {
+    for name in ["files", "matches"] {
         if let Some(items) = fields.get_mut(name).and_then(Value::as_array_mut) {
             for item in items {
-                strip_plan_from_tool_continuations(item, tool, implicit_sort);
+                strip_plan_from_tool_continuations(item, tool);
             }
         }
     }
 }
 
-fn scrub_lead(lead: &mut Value, tool: ToolId, implicit_sort: bool, hint: bool) {
+fn scrub_lead(lead: &mut Value, tool: ToolId, hint: bool) {
     let Some(fields) = lead.as_object_mut() else {
         return;
     };
@@ -332,177 +279,7 @@ fn scrub_lead(lead: &mut Value, tool: ToolId, implicit_sort: bool, hint: bool) {
         if hint || !same_tool {
             row.remove("goals");
         }
-        if implicit_sort && same_tool {
-            row.remove("sort");
-        }
     }
-}
-
-fn flat_file_units(data: &Value) -> Option<Vec<Value>> {
-    let mut units = Vec::new();
-    for group in data["files"].as_array()? {
-        let fields = group.as_object()?;
-        if fields.len() != 2 || !fields.contains_key("dir") || !fields.contains_key("files") {
-            return None;
-        }
-        let dir = group["dir"].as_str()?;
-        for file in group["files"].as_array()? {
-            units.push(json!({"dir":dir,"entry":file}));
-        }
-    }
-    Some(units)
-}
-
-fn group_file_units(units: &[Value]) -> Vec<Value> {
-    let mut groups: Vec<Value> = Vec::new();
-    for unit in units {
-        let dir = &unit["dir"];
-        let entry = &unit["entry"];
-        if let Some(group) = groups.last_mut()
-            && group["dir"] == *dir
-            && let Some(files) = group["files"].as_array_mut()
-        {
-            files.push(entry.clone());
-        } else {
-            groups.push(json!({"dir":dir,"files":[entry]}));
-        }
-    }
-    groups
-}
-
-struct Selection {
-    key: Option<&'static str>,
-    skip: Option<&'static str>,
-    scope: RankingScope,
-}
-
-fn selection(tool: ToolId, query: &Value, data: &Value, explicit_sort: bool) -> Selection {
-    let provider = |key| Selection {
-        key: Some(key),
-        skip: None,
-        scope: RankingScope::ProviderPage,
-    };
-    let selected = |key| Selection {
-        key: Some(key),
-        skip: None,
-        scope: RankingScope::SelectedView,
-    };
-    let skipped = |reason, scope| Selection {
-        key: None,
-        skip: Some(reason),
-        scope,
-    };
-    match tool {
-        ToolId::GhSearchRepo => {
-            if query.get("repo").is_some() && query.get("owner").is_some() {
-                skipped("exactLookup", RankingScope::ProviderPage)
-            } else if query["sort"]
-                .as_str()
-                .is_some_and(|sort| sort != "best-match")
-            {
-                skipped("authoritativeSort", RankingScope::ProviderPage)
-            } else {
-                provider("repositories")
-            }
-        }
-        ToolId::GhSearchCode => {
-            if explicit_sort {
-                skipped("authoritativeSort", RankingScope::ProviderPage)
-            } else {
-                provider("files")
-            }
-        }
-        ToolId::GhSearchHistory => {
-            if explicit_sort {
-                skipped("authoritativeSort", RankingScope::ProviderPage)
-            } else if data.get("pullRequests").is_some() {
-                provider("pullRequests")
-            } else if data.get("issues").is_some() {
-                provider("issues")
-            } else {
-                provider("commits")
-            }
-        }
-        ToolId::ArtifactSearch => {
-            if query.get("packageName").is_some() {
-                skipped("exactLookup", RankingScope::ProviderPage)
-            } else {
-                provider("artifacts")
-            }
-        }
-        ToolId::GhStructure => skipped("hierarchicalOrder", RankingScope::SelectedView),
-        ToolId::GhGetHistoryItem => skipped("sectionAndPatchOrder", RankingScope::SelectedView),
-        ToolId::AstTopology => skipped("graphOrder", RankingScope::SelectedView),
-        ToolId::StructureSearch => {
-            if query["operation"] != "files" {
-                skipped("hierarchicalOrder", RankingScope::SelectedView)
-            } else if explicit_sort {
-                skipped("authoritativeSort", RankingScope::SelectedView)
-            } else if complete_view(tool, query, data) {
-                selected("files")
-            } else {
-                skipped("incompleteSelection", RankingScope::SelectedView)
-            }
-        }
-        ToolId::AstSearch => {
-            if query["operation"] == "syntaxTree" {
-                skipped("structuralOrder", RankingScope::SelectedView)
-            } else if complete_view(tool, query, data) && data.get("files").is_some() {
-                selected("files")
-            } else {
-                skipped("incompleteSelection", RankingScope::SelectedView)
-            }
-        }
-        ToolId::LspSearch => {
-            if matches!(
-                query["operation"].as_str(),
-                Some("references" | "implementation")
-            ) && complete_view(tool, query, data)
-                && data.get("files").is_some()
-            {
-                selected("files")
-            } else {
-                skipped("identityOrIncompleteSelection", RankingScope::SelectedView)
-            }
-        }
-        ToolId::GhGetFileContent => skipped("unsupportedContentView", RankingScope::SelectedView),
-        _ => skipped("unsupportedOperation", RankingScope::SelectedView),
-    }
-}
-
-fn complete_view(tool: ToolId, query: &Value, data: &Value) -> bool {
-    let first = ["page", "matchPage", "importerPage", "filePage"]
-        .iter()
-        .all(|field| query[*field].as_u64().is_none_or(|page| page <= 1));
-    let no_offset = ["scanOffset", "offset"]
-        .iter()
-        .all(|field| query[*field].as_u64().is_none_or(|offset| offset == 0));
-    fn incomplete(tool: ToolId, value: &Value) -> bool {
-        match value {
-            Value::Object(fields) => {
-                if fields.get("isPartial") == Some(&Value::Bool(true))
-                    || fields.get("terminalLimit") == Some(&Value::Bool(true))
-                    || fields.get("hasMore") == Some(&Value::Bool(true))
-                {
-                    return true;
-                }
-                if let Some(next) = fields.get("next").and_then(Value::as_object)
-                    && next
-                        .keys()
-                        .any(|name| crate::tools::id::is_remaining(tool, name))
-                {
-                    return true;
-                }
-                fields
-                    .iter()
-                    .filter(|(key, _)| key.as_str() != "next")
-                    .any(|(_, child)| incomplete(tool, child))
-            }
-            Value::Array(items) => items.iter().any(|child| incomplete(tool, child)),
-            _ => false,
-        }
-    }
-    first && no_offset && !incomplete(tool, data)
 }
 
 impl Plan {
@@ -813,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_structure_files_reorder_entries_and_replay_without_a_second_judgment() {
+    fn code_page_reorders_files_and_replays_without_a_second_judgment() {
         let executor = tokio::runtime::Runtime::new().expect("runtime");
         let calls = std::sync::Arc::new(AtomicUsize::new(0));
         let runtime = test_runtime(
@@ -821,50 +598,39 @@ mod tests {
             executor.handle().clone(),
         );
         let query =
-            json!({"operation":"files","path":".","sort":"path","goals":["wanted evidence"]});
+            json!({"owner":"a","repo":"b","keywords":["target"],"goals":["wanted evidence"]});
         let baseline = json!({"results":[{"index":0,"data":{"files":[
-            {"dir":"a","files":["one.rs","two.rs"]},
-            {"dir":"b","files":["three.rs"]}
-        ],"pagination":{"currentPage":1,"hasMore":false}}}]});
+            {"path":"one.rs"},{"path":"two.rs"},{"path":"three.rs"}
+        ],"pagination":{"currentPage":1,"hasMore":true}}}]});
         let mut first = baseline.clone();
         let mut response_query = query.clone();
         apply_sanitized_rows(
-            ToolId::StructureSearch,
+            ToolId::GhSearchCode,
             &mut first,
             std::slice::from_ref(&query),
             &[0],
-            &[false],
             &mut response_query,
             &runtime,
         )
-        .expect("first");
+        .expect("first page");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             first["results"][0]["data"]["ranking"]["scope"],
-            "selectedView"
+            "providerPage"
         );
         assert_eq!(
-            flat_file_units(&first["results"][0]["data"])
-                .expect("valid grouped files")
-                .iter()
-                .map(|unit| unit["entry"].as_str().unwrap_or_default())
-                .collect::<Vec<_>>(),
-            ["three.rs", "two.rs", "one.rs"]
+            first["results"][0]["data"]["files"],
+            json!([{"path":"three.rs"},{"path":"two.rs"},{"path":"one.rs"}])
         );
-        assert!(
-            response_query.get("sort").is_none(),
-            "default sort omission must survive response paging"
-        );
+        assert!(response_query.get("ranking").is_some());
+
         let mut replay = baseline;
         let mut replay_query = response_query.clone();
-        let mut validated_replay = response_query;
-        validated_replay["sort"] = json!("path");
         apply_sanitized_rows(
-            ToolId::StructureSearch,
+            ToolId::GhSearchCode,
             &mut replay,
-            &[validated_replay],
+            &[response_query],
             &[0],
-            &[false],
             &mut replay_query,
             &runtime,
         )
@@ -874,71 +640,18 @@ mod tests {
             replay["results"][0]["data"]["files"],
             first["results"][0]["data"]["files"]
         );
-
-        let mut exact_sort = json!({"results":[{"index":0,"data":{"files":[
-            {"dir":"a","files":["one.rs","two.rs"]}
-        ]}}]});
-        let mut explicit_query = query.clone();
-        apply_sanitized_rows(
-            ToolId::StructureSearch,
-            &mut exact_sort,
-            &[query],
-            &[0],
-            &[true],
-            &mut explicit_query,
-            &runtime,
-        )
-        .expect("explicit sort");
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            exact_sort["results"][0]["data"]["ranking"]["reason"],
-            "authoritativeSort"
-        );
-        assert_eq!(
-            exact_sort["results"][0]["data"]["files"][0]["files"],
-            json!(["one.rs", "two.rs"])
-        );
-    }
-
-    #[test]
-    fn a_terminal_last_page_or_nested_resume_is_not_a_complete_selected_view() {
-        let complete = json!({"files":[{"path":"a.rs"},{"path":"b.rs"}]});
-        assert!(complete_view(
-            ToolId::AstSearch,
-            &json!({"page":1}),
-            &complete
-        ));
-        assert!(!complete_view(
-            ToolId::AstSearch,
-            &json!({"page":2}),
-            &complete
-        ));
-        assert!(!complete_view(
-            ToolId::AstSearch,
-            &json!({"scanOffset":5}),
-            &complete
-        ));
-        let nested = json!({"files":[{"path":"a.rs","next":{"nextMatchPage":{"tool":"astSearch","query":{}}}}]});
-        assert!(!complete_view(ToolId::AstSearch, &json!({}), &nested));
-        let importer = json!({"files":[{"path":"a.rs"}],"next":{"nextImporterPage":{"tool":"lspSearch","query":{}}}});
-        assert!(!complete_view(ToolId::LspSearch, &json!({}), &importer));
     }
 
     #[test]
     fn every_tool_continuation_starts_a_new_candidate_plan() {
-        let mut data = json!({"next":{"nextPage":{"tool":"ghSearchCode","query":{"queries":[{"page":2,"sort":"best-match","ranking":"old"}]}},
+        let mut data = json!({"next":{"nextPage":{"tool":"ghSearchCode","query":{"queries":[{"page":2,"ranking":"old"}]}},
             "read":{"tool":"ghGetFileContent","query":{"queries":[{"path":"a.rs","goals":["old"],"ranking":"old"}]}}},
             "hints":{"verify":{"tool":"ghGetFileContent","query":{"queries":[{"path":"a.rs","goals":["old"],"ranking":"old"}]}}},
             "files":[{"evidence":{"tool":"ghSearchCode","query":{"queries":[{"goals":["source"],"ranking":"source"}]},"next":{"sourceValue":{"tool":"ghSearchCode","query":{"queries":[{"ranking":"source"}]}}}},"next":{"nextMatchPage":{"tool":"ghSearchCode","query":{"queries":[{"matchPage":2,"goals":["old"],"ranking":"old"}]}}}}]});
-        strip_plan_from_tool_continuations(&mut data, ToolId::GhSearchCode, true);
+        strip_plan_from_tool_continuations(&mut data, ToolId::GhSearchCode);
         assert!(
             data["next"]["nextPage"]["query"]["queries"][0]
                 .get("ranking")
-                .is_none()
-        );
-        assert!(
-            data["next"]["nextPage"]["query"]["queries"][0]
-                .get("sort")
                 .is_none()
         );
         assert!(
@@ -976,75 +689,67 @@ mod tests {
     }
 
     #[test]
-    fn rejected_rows_do_not_misalign_queries_or_sort_provenance() {
+    fn rejected_rows_do_not_misalign_goal_queries() {
         let executor = tokio::runtime::Runtime::new().expect("runtime");
         let calls = std::sync::Arc::new(AtomicUsize::new(0));
         let runtime = test_runtime(
             std::sync::Arc::new(ReverseJudge(calls.clone())),
             executor.handle().clone(),
         );
-        let explicit = json!({"operation":"files","path":".","sort":"path","goals":["wanted"]});
-        let omitted = explicit.clone();
+        let plain = json!({"owner":"a","repo":"b","keywords":["target"]});
+        let goal = json!({"owner":"a","repo":"b","keywords":["target"],"goals":["wanted"]});
         let mut structured = json!({"results":[
             {"index":0,"status":"error","data":{"errorCode":"invalidInput"}},
-            {"index":1,"data":{"files":[{"dir":"a","files":["one.rs","two.rs"]}]}},
-            {"index":2,"data":{"files":[{"dir":"b","files":["three.rs","four.rs"]}]}}
+            {"index":1,"data":{"files":[{"path":"one.rs"},{"path":"two.rs"}]}},
+            {"index":2,"data":{"files":[{"path":"three.rs"},{"path":"four.rs"}]}}
         ]});
-        let mut response_query = json!({"queries":[explicit.clone(),omitted.clone()]});
+        let mut response_query = json!({"queries":[plain.clone(),goal.clone()]});
         apply_sanitized_rows(
-            ToolId::StructureSearch,
+            ToolId::GhSearchCode,
             &mut structured,
-            &[explicit, omitted],
+            &[plain, goal],
             &[1, 2],
-            &[true, false],
             &mut response_query,
             &runtime,
         )
         .expect("mixed rows");
-        assert_eq!(
-            structured["results"][1]["data"]["ranking"]["reason"],
-            "authoritativeSort"
-        );
+        assert!(structured["results"][1]["data"].get("ranking").is_none());
         assert_eq!(
             structured["results"][2]["data"]["ranking"]["status"],
             "ranked"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert!(response_query["queries"][0].get("ranking").is_some());
+        assert!(response_query["queries"][0].get("ranking").is_none());
         assert!(response_query["queries"][1].get("ranking").is_some());
-        assert_eq!(response_query["queries"][0]["sort"], "path");
-        assert!(response_query["queries"][1].get("sort").is_none());
     }
 
     #[test]
-    fn malformed_structure_group_is_reported_without_dropping_its_evidence() {
+    fn malformed_code_page_keeps_evidence_and_skips_judgment() {
         let executor = tokio::runtime::Runtime::new().expect("runtime");
         let calls = std::sync::Arc::new(AtomicUsize::new(0));
         let runtime = test_runtime(
             std::sync::Arc::new(ReverseJudge(calls.clone())),
             executor.handle().clone(),
         );
-        let query = json!({"operation":"files","path":".","sort":"path","goals":["wanted"]});
-        let files = json!([
-            {"dir":"a","files":["one.rs"]},
-            {"dir":"b","files":["two.rs"],"note":"retain this group evidence"}
-        ]);
-        let mut structured = json!({"results":[{"index":0,"data":{"files":files}}]});
+        let query = json!({"owner":"a","repo":"b","keywords":["target"],"goals":["wanted"]});
+        let files = json!({"unexpected":"shape"});
+        let mut structured =
+            json!({"results":[{"index":0,"data":{"files":files,"marker":"retain"}}]});
         let mut response_query = query.clone();
         apply_sanitized_rows(
-            ToolId::StructureSearch,
+            ToolId::GhSearchCode,
             &mut structured,
             &[query],
             &[0],
-            &[false],
             &mut response_query,
             &runtime,
         )
-        .expect("malformed group");
+        .expect("malformed page");
         assert_eq!(structured["results"][0]["data"]["files"], files);
+        assert_eq!(structured["results"][0]["data"]["marker"], "retain");
         assert_eq!(
             structured["results"][0]["data"]["ranking"]["reason"],
-            "unsupportedShape"
+            "noCandidates"
         );
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
@@ -1171,6 +876,42 @@ mod tests {
     }
 
     #[test]
+    fn tools_without_goal_controls_do_not_enter_shared_ranking() {
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let runtime = test_runtime(
+            std::sync::Arc::new(ReverseJudge(calls.clone())),
+            executor.handle().clone(),
+        );
+        for tool in [
+            ToolId::GhSearchRepo,
+            ToolId::GhSearchHistory,
+            ToolId::ArtifactSearch,
+            ToolId::StructureSearch,
+            ToolId::AstSearch,
+            ToolId::LspSearch,
+        ] {
+            let query = json!({"goals":["find evidence"]});
+            let mut result =
+                json!({"results":[{"index":0,"data":{"files":[{"path":"a.rs"},{"path":"b.rs"}]}}]});
+            let unchanged = result.clone();
+            let mut response_query = query.clone();
+            apply_sanitized_rows(
+                tool,
+                &mut result,
+                &[query],
+                &[0],
+                &mut response_query,
+                &runtime,
+            )
+            .expect("unsupported tool is a no-op");
+            assert_eq!(result, unchanged, "{tool}");
+            assert!(response_query.get("ranking").is_none(), "{tool}");
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
     fn binding_uses_canonical_source_identity_across_path_spellings() {
         let limits = Limits {
             enabled: false,
@@ -1199,6 +940,77 @@ mod tests {
                 limits,
                 None,
             )
+        );
+    }
+
+    #[test]
+    fn ranked_page_rejects_null_evidence_drift_but_accepts_key_reordering() {
+        let executor = tokio::runtime::Runtime::new().expect("runtime");
+        let calls = std::sync::Arc::new(AtomicUsize::new(0));
+        let runtime = test_runtime(
+            std::sync::Arc::new(ReverseJudge(calls.clone())),
+            executor.handle().clone(),
+        );
+        let query = json!({"owner":"o","repo":"r","keywords":["queue"],"goals":["find queue"]});
+        let original = json!({"results":[{"index":0,"data":{"files":[
+            {"path":"a.rs","detail":null},
+            {"path":"b.rs"}
+        ]}}]});
+        let mut first = original.clone();
+        let mut replay_query = query.clone();
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut first,
+            std::slice::from_ref(&query),
+            &[0],
+            &mut replay_query,
+            &runtime,
+        )
+        .expect("initial ranked page");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(first["results"][0]["data"]["ranking"]["status"], "ranked");
+
+        let mut same_evidence = json!({"results":[{"index":0,"data":{"files":[
+            {"detail":null,"path":"a.rs"},
+            {"path":"b.rs"}
+        ]}}]});
+        let mut same_response = replay_query.clone();
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut same_evidence,
+            std::slice::from_ref(&replay_query),
+            &[0],
+            &mut same_response,
+            &runtime,
+        )
+        .expect("same source with reordered object keys");
+        assert_eq!(
+            same_evidence["results"][0]["data"]["ranking"]["status"],
+            "ranked"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1, "replay does not rescore");
+
+        let mut changed = original;
+        changed["results"][0]["data"]["files"][0]
+            .as_object_mut()
+            .expect("file object")
+            .remove("detail");
+        let mut changed_response = replay_query.clone();
+        apply_sanitized_rows(
+            ToolId::GhSearchCode,
+            &mut changed,
+            &[replay_query],
+            &[0],
+            &mut changed_response,
+            &runtime,
+        )
+        .expect("changed source is reported in its row");
+        assert_eq!(changed["results"][0]["status"], "error");
+        assert_eq!(changed["results"][0]["data"]["errorCode"], "staleSnapshot");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "stale replay does not rescore"
         );
     }
 

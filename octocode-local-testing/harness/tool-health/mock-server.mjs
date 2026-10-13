@@ -412,6 +412,22 @@ export async function startMock({ fixtureDir, tmpDir, token, configureModel, cla
       send(200, { sha: commit.tree, url: `${base}/repos/${full}/git/trees/${commit.tree}`, tree, truncated: false });
       return true;
     }
+    if (rest === 'pulls') {
+      const state = url.searchParams.get('state') ?? 'open';
+      const head = url.searchParams.get('head');
+      const baseRef = url.searchParams.get('base');
+      const sort = url.searchParams.get('sort') === 'updated' ? 'updated_at' : 'created_at';
+      const direction = url.searchParams.get('direction') === 'asc' ? 1 : -1;
+      const pulls = (repo === model.repos[0] ? model.pulls : [])
+        .map(pr => pullJson(base, repo, pr, model))
+        .filter(pr => (state === 'all' || pr.state === state)
+          && (!head || head === pr.head.label || head === pr.head.ref)
+          && (!baseRef || baseRef === pr.base.ref))
+        .sort((a, b) => direction * (a[sort].localeCompare(b[sort]) || a.number - b.number));
+      const { slice, headers: h } = page(pulls, url, base);
+      send(200, slice, h);
+      return true;
+    }
     if ((m = /^(pulls|issues)\/(\d+)(?:\/(\w+))?$/.exec(rest))) {
       const number = Number(m[2]);
       const pr = repo === model.repos[0] && model.pulls.find(x => x.number === number);

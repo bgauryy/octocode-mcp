@@ -18,7 +18,7 @@ interface PackageManifest {
 interface DxtManifest {
   version: string;
   icon: string;
-  tools: Array<{ name: string }>;
+  tools: Array<{ name: string; description: string }>;
   server: { mcp_config: { env: Record<string, string> } };
 }
 
@@ -58,6 +58,31 @@ describe('published package release contract', () => {
         .filter(name => !isCliOnlyTool(name))
         .sort()
     );
+  });
+
+  it('advertises both beta and API prerequisites for clasify', async () => {
+    const { configFieldEnvNames } = await import('@octocodeai/config');
+    const { getPublicToolCatalog, TOOL_NAMES } =
+      await import('@octocodeai/config/schema');
+    const descriptions = new Map(
+      dxtManifest.tools.map(tool => [tool.name, tool.description])
+    );
+    const betaGate = `beta: requires ${configFieldEnvNames('local.beta')[0]}`;
+    const apiEnv = configFieldEnvNames('classification.api')[0];
+
+    expect(descriptions.get(TOOL_NAMES.CLASIFY)).toContain(
+      `(${betaGate} and ${apiEnv})`
+    );
+    for (const tool of getPublicToolCatalog().tools) {
+      if (
+        !tool.beta ||
+        tool.cliOnly ||
+        typeof tool.name !== 'string' ||
+        tool.name === TOOL_NAMES.CLASIFY
+      )
+        continue;
+      expect(descriptions.get(tool.name)).toContain(`(${betaGate})`);
+    }
   });
 
   it('keeps all published release versions synchronized', () => {

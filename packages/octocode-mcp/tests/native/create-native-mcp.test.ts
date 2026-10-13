@@ -25,7 +25,6 @@ vi.mock('@modelcontextprotocol/server/stdio', () => ({
 import {
   createNativeMcp,
   loadNativeBinding,
-  type ClassificationProbe,
   startNativeMcp,
   type NativeCatalog,
   type NativeCatalogTool,
@@ -70,12 +69,6 @@ class FakeRuntime implements NativeRuntime {
     this.options = options;
   }
 
-  probe: ClassificationProbe = { probed: false, available: false };
-
-  async probeClassification(): Promise<ClassificationProbe> {
-    return this.probe;
-  }
-
   catalog(): NativeCatalog {
     return this.makeCatalog();
   }
@@ -84,6 +77,7 @@ class FakeRuntime implements NativeRuntime {
   hang = false;
   /** When set, `executeMcp` rejects with it. */
   failure: unknown;
+  providerAvailable = true;
 
   cancel(requestId: string): boolean {
     this.cancelled.push(requestId);
@@ -109,6 +103,15 @@ class FakeRuntime implements NativeRuntime {
       throw new Error('cancelled');
     }
     if (tool === 'clasify') {
+      if (!this.providerAvailable) {
+        return {
+          content: [
+            { type: 'text', text: 'Classification provider returned HTTP 401' },
+          ],
+          structuredContent: { errorCode: 'classificationProviderError' },
+          isError: true,
+        };
+      }
       // Native clasify receipts carry no rendered text block.
       return {
         content: [],
@@ -174,12 +177,12 @@ describe('createNativeMcp registration + execution', () => {
     ['missing', undefined, false],
     ['blank', '   ', false],
   ])(
-    'omits clasify from discovery when OCTOCODE_CLASSIFICATION_API is %s',
+    'omits clasify from discovery with beta enabled when OCTOCODE_CLASSIFICATION_API is %s',
     async (_label, credential, nativeAvailable) => {
-      // Native owns credential resolution. This fixture supplies the catalog
+      // Native owns beta and credential resolution. This fixture supplies the catalog
       // availability state that the adapter must honor without reinterpreting it.
       const instance = await createNativeMcp({
-        env: { OCTOCODE_CLASSIFICATION_API: credential },
+        env: { OCTOCODE_BETA: '1', OCTOCODE_CLASSIFICATION_API: credential },
         binding: bindingFor(() => ({
           fingerprint: getNativeContractFingerprint(),
           tools: [
@@ -208,9 +211,10 @@ describe('createNativeMcp registration + execution', () => {
     }
   );
 
-  it('exposes clasify when OCTOCODE_CLASSIFICATION_API is nonblank', async () => {
+  it('exposes clasify when beta and OCTOCODE_CLASSIFICATION_API are enabled', async () => {
     const instance = await createNativeMcp({
       env: {
+        OCTOCODE_BETA: '1',
         OCTOCODE_CLASSIFICATION_API: 'test-key',
       },
       binding: bindingFor(() => ({
@@ -241,46 +245,18 @@ describe('createNativeMcp registration + execution', () => {
     await instance.close();
   });
 
-  it('probes clasify before reading the catalog and hides it when the provider fails', async () => {
-    const stderr = vi
-      .spyOn(process.stderr, 'write')
-      .mockImplementation(() => true);
-    let probed = false;
-    let clasifyAvailable = true;
-    const binding = {
-      NativeRuntime: class extends FakeRuntime {
-        constructor(options?: NativeRuntimeOptions) {
-          super(
-            () => ({
-              fingerprint: getNativeContractFingerprint(),
-              tools: [
-                tool('localFetch', true),
-                tool(TOOL_NAMES.CLASIFY, clasifyAvailable),
-              ],
-            }),
-            options
-          );
-        }
-        override catalog(): NativeCatalog {
-          expect(probed).toBe(true);
-          return super.catalog();
-        }
-        override async probeClassification(): Promise<ClassificationProbe> {
-          // Native removes clasify from its catalog on a failed probe.
-          probed = true;
-          clasifyAvailable = false;
-          return {
-            probed: true,
-            available: false,
-            code: 'classificationProviderError',
-            message: 'Classification provider returned HTTP 401',
-          };
-        }
-      },
-    };
-    const instance = await createNativeMcp({ env: {}, binding });
+  it('keeps clasify registered through provider failure and later recovery', async () => {
+    const instance = await createNativeMcp({
+      env: { OCTOCODE_BETA: '1', OCTOCODE_CLASSIFICATION_API: 'test-key' },
+      binding: bindingFor(() => ({
+        fingerprint: getNativeContractFingerprint(),
+        tools: [tool('localFetch', true), tool(TOOL_NAMES.CLASIFY, true)],
+      })),
+    });
+    const runtime = FakeRuntime.last!;
+    expect(runtime.executions).toHaveLength(0);
 
-    const client = new Client({ name: 'clasify-probe', version: '1' });
+    const client = new Client({ name: 'clasify-recovery', version: '1' });
     const [serverTransport, clientTransport] =
       InMemoryTransport.createLinkedPair();
     await Promise.all([
@@ -289,23 +265,42 @@ describe('createNativeMcp registration + execution', () => {
     ]);
 
     const list = await client.listTools();
-    expect(list.tools.map(t => t.name)).toEqual(['localFetch']);
-    // One prompt for every surface: it says clasify needs a provider key.
+    expect(list.tools.map(t => t.name)).toEqual([
+      'localFetch',
+      TOOL_NAMES.CLASIFY,
+    ]);
+    // One prompt for every surface: callers use only exposed controls.
     expect(client.getInstructions()).toBe(buildMcpInstructions());
-    expect(stderr).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'clasify disabled: provider check failed (classificationProviderError)'
-      )
-    );
+    const matrix = {
+      mainGoal: 'Check provider recovery.',
+      reasoning: 'The same host must retain the public tool.',
+      resources: [{ value: 'fixture' }],
+      questions: [{ type: 'yesno', ask: 'Is this a fixture?' }],
+    };
+    runtime.providerAvailable = false;
+    const failed = await client.callTool({
+      name: TOOL_NAMES.CLASIFY,
+      arguments: { queries: [matrix] },
+    });
+    expect(failed.isError).toBe(true);
+    expect(failed.structuredContent).toMatchObject({
+      errorCode: 'classificationProviderError',
+    });
+    runtime.providerAvailable = true;
+    const recovered = await client.callTool({
+      name: TOOL_NAMES.CLASIFY,
+      arguments: { queries: [matrix] },
+    });
+    expect(recovered.isError).toBe(false);
+    expect(runtime.executions).toHaveLength(2);
 
-    stderr.mockRestore();
     await client.close();
     await instance.close();
   });
 
   it('accepts a clasify queries[] matrix and normalizes it before execution', async () => {
     const instance = await createNativeMcp({
-      env: { OCTOCODE_CLASSIFICATION_API: 'test-key' },
+      env: { OCTOCODE_BETA: '1', OCTOCODE_CLASSIFICATION_API: 'test-key' },
       binding: bindingFor(() => ({
         fingerprint: getNativeContractFingerprint(),
         tools: [tool('localFetch', true), tool(TOOL_NAMES.CLASIFY, true)],
@@ -352,11 +347,13 @@ describe('createNativeMcp registration + execution', () => {
       const instance = await createNativeMcp({
         env: clasifyAvailable
           ? {
+              OCTOCODE_BETA: '1',
               OCTOCODE_CLASSIFICATION_API: 'test-key',
               OCTOCODE_CLASSIFICATION_API_HOST:
                 'https://classification.example.test',
             }
           : {
+              OCTOCODE_BETA: '1',
               OCTOCODE_CLASSIFICATION_API_HOST:
                 'https://classification.example.test',
             },

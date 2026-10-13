@@ -114,7 +114,7 @@ export interface StorageCloneCacheConfigOptions {
 }
 
 export interface RankingConfigOptions {
-  /** Rank goal-bearing read-tool evidence with the configured classification provider. */
+  /** Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool. */
   enabled?: boolean;
 
   /** Maximum complete evidence units classified per ranking operation; other units keep their original order. */
@@ -131,8 +131,8 @@ export interface ClassificationConfigOptions {
   /** Classification vendor. Per-vendor defaults (host, model, endpoint) are built in. */
   type?: ClassificationVendor;
 
-  /** Classification provider API key (bearer credential). */
-  /** Never appears in ResolvedConfig; shell environment wins over the trusted home config file. */
+  /** Classification provider API key, required for goals ranking and the beta clasify tool. */
+  /** Credential values are omitted from resolved configuration and diagnostics. */
   api?: string | null;
 
   /** Optional override of the selected vendor's default API root. */
@@ -826,7 +826,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "file": true,
     "resolved": true,
     "credential": false,
-    "description": "Rank goal-bearing read-tool evidence with the configured classification provider.",
+    "description": "Enable goal-based ordering on supported reads. Requires the classification API credential, independently of the public clasify tool.",
     "env": [
       {
         "name": "OCTOCODE_RANKING_ENABLED",
@@ -926,8 +926,8 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "file": true,
     "resolved": false,
     "credential": true,
-    "description": "Classification provider API key (bearer credential).",
-    "notes": "Never appears in ResolvedConfig; shell environment wins over the trusted home config file.",
+    "description": "Classification provider API key, required for goals ranking and the beta clasify tool.",
+    "notes": "Credential values are omitted from resolved configuration and diagnostics.",
     "env": [
       {
         "name": "OCTOCODE_CLASSIFICATION_API",

@@ -207,6 +207,7 @@ async fn clasify_redacts_evidence_but_rejects_a_credential_in_a_resource_read() 
     let workspace = Workspace::new();
     let file = workspace.write("trace.txt", "Evidence is present.\n");
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);

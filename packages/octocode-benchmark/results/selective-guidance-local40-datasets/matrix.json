@@ -1,0 +1,44 @@
+[
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 1.02,
+  "leaner_on": 22
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.07,
+  "leaner_on": 20
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 0.99,
+  "leaner_on": 18
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.05,
+  "leaner_on": 23
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 0.94,
+  "leaner_on": 20
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 0.95,
+  "leaner_on": 17
+ }
+]

@@ -86,7 +86,7 @@ export function resolveReadToolPath(cwd: string, raw: string): string {
 
 /**
  * The file a Pi `read` call showed the model (any range: Pi's own guard semantics); none for every other tool. For the
- * `file` tool's guard, compaction (which forgets a read once its result is trimmed) and report-read tracking. MCP
+ * `file` tool's guard, the reads restored from a session's context (`files/reads`) and report-read tracking. MCP
  * tools are the server's own contract (Octocode's `localFetch` pages and minifies by its own rules), so the extension
  * does not parse their inputs or results.
  */

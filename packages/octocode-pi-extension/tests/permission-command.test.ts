@@ -74,6 +74,8 @@ describe('/octocode permission and editor shortcut', () => {
     expect(shown).toMatch(/^Permission mode: workspace/);
     expect(shown).toContain('file.outside: ask');
     expect(shown).toContain('shell: allow');
+    expect(shown).toContain('hook.ask: ask');
+    expect(shown).toContain('provenance: ask');
     expect(shown).toContain('Session grants: none');
     expect(shown).toContain('Provenance index: 42');
     expect(shown).toMatch(/not a sandbox/);

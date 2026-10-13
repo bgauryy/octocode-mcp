@@ -14,3 +14,5 @@ fs.writeFileSync(path.join(agentDir, 'trust.json'), JSON.stringify({ [fs.realpat
 process.env['PI_CODING_AGENT_DIR'] = agentDir;
 // A fake Pi never connects the Octocode server: no first-prompt wait unless a test opts in (e2e runs the real server).
 process.env['OCTOCODE_MCP_WAIT_SECONDS'] = '0';
+// No models.dev requests from tests; the catalog is tested with an injected fetch.
+process.env['OCTOCODE_MODELS_DEV'] = '0';

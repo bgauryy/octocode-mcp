@@ -287,7 +287,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       goal: Type.String({ description: GOAL_DESCRIPTION, minLength: 1, maxLength: GOAL_MAX_CHARS }),
       task: Type.String({ description: 'Bounded scope, paths, evidence and decisions the subagent cannot infer, existing authorization and required output', maxLength: MAX_TASK_CHARS, minLength: 1 }),
       profile: Type.Optional(Type.String({ description: 'Profile name from the active Profiles list; omit for a general-purpose subagent. Profiles set instructions, tool exclusions and MCP access' })),
-      model: Type.Optional(Type.String({ description: 'Model override: provider/id or a bare id, optionally with a :thinking level. Refused when unavailable; omit to use the profile\'s model, else this session\'s' })),
+      model: Type.Optional(Type.String({ description: 'Model override: provider/id, bare id or purpose (small, medium), optionally :thinking. Refused when unavailable; omit for the profile\'s model, else this session\'s' })),
       background: Type.Optional(Type.Boolean({ description: 'Return at once for long or parallel work; the report arrives as a message. `sendMessage` redirects it; `coordinate stop` ends it' })),
       collaborate: Type.Optional(Type.Boolean({ description: 'Make subagents on one goal teammates that coordinate directly; useful for shared contracts, unnecessary for unrelated tasks' })),
       isolate: Type.Optional(Type.Boolean({ description: 'Work in a private git worktree; changes land on refs/octocode/pi/<id>, not in this tree. The report names the ref: ask the user to run `/agents merge <id>` to bring them in' })),

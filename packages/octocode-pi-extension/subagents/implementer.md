@@ -2,7 +2,7 @@
 name: implementer
 description: Use when a scoped change is ready to build; researches with Octocode MCP, edits with guarded file tools, verifies in the shell; returns changed paths, results and integration needs.
 excludeTools: browser
-model: claude-sonnet-5-5
+model: medium
 ---
 Complete the assigned change, including the tests and documentation it needs.
 

@@ -2,13 +2,16 @@ import path from 'node:path';
 import type { ExtensionContext, ToolAnnotations, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent';
 import { canonicalPath, isWithin, octocodeHome, repoKey, resolveToolPath } from '../shared/home.js';
 import type { Permission, PermissionRequest } from './ask.js';
+import { reasonAsks, type AskReason } from './mode.js';
 import { SHELL_TOOLS, simpleCommand } from './shell.js';
 
 /**
- * The permission step of the `tool_call` pipeline, after the hard refusals and the PreToolUse hooks: a provenance hit
- * asks, a hook's `ask` asks, then the call's action class goes through the mode table. Octocode's own tools that
- * need data only they have (the `file` review, memory scope, a browser page's own loads, the subagent profile) call
- * `Permission.check` from inside their `execute` instead, so nothing is asked twice.
+ * The permission step of the `tool_call` pipeline, after the hard refusals and the PreToolUse hooks. A provenance hit
+ * and a hook's `ask` are reasons that tighten the call's effect: one dialog names that effect, and one yes covers the
+ * call. Full runs a provenance hit. A hook ask still asks in full, and that dialog leaves the provenance why out.
+ * A call with no effect class still asks when a reason forces it. Octocode's own tools that need data only they have
+ * (the `file` review, memory scope, a browser page's own loads, the subagent profile) call `Permission.check` from
+ * inside their `execute` instead, so nothing is asked twice.
  */
 
 /** A gate's result: a block, or an `ask` a later gate turns into a question (PreToolUse `permissionDecision: "ask"`). */
@@ -129,19 +132,30 @@ export interface PermissionGateOptions {
   annotations: (toolName: string) => ToolAnnotations | undefined;
 }
 
-/** The `tool_call` gate: provenance, then a hook's ask, then the mode. A user's yes to the first two covers the call. */
+/** The `tool_call` gate: reasons that this mode still asks about tighten the effect; otherwise the effect's own rule. A user's yes covers the call. */
 export function permissionGate(options: PermissionGateOptions) {
   const { permission, provenance, annotations } = options;
   return async (event: ToolCallEvent, ctx: ExtensionContext, prior?: GateVerdict): Promise<ToolCallEventResult | undefined> => {
-    const target = CHANGE_TOOLS.has(event.toolName) ? text((event.input as Record<string, unknown>)['path']) : undefined;
+    const input = event.input as Record<string, unknown>;
+    const target = CHANGE_TOOLS.has(event.toolName) ? text(input['path']) : undefined;
     const refused = target && stateFolderRefusal(resolveToolPath(ctx.cwd, target), target, `Pi ${event.toolName}`);
     if (refused) return { block: true, reason: refused };
     const request = classify(event, ctx, annotations);
-    const base = { title: request?.title ?? `Run ${event.toolName}?`, what: request?.what ?? [`${event.toolName} ${args(event.input as Record<string, unknown>)}`], ...(event.parentToolCallId ? { nested: true } : {}), ...(ctx.signal ? { signal: ctx.signal } : {}) };
     const hit = provenance.check(event, ctx);
-    if (hit || prior?.ask) {
-      const why = [hit?.why, prior?.ask].filter(Boolean).join('\n');
-      const verdict = await permission.check(ctx, { ...base, action: hit ? 'provenance' : 'hook.ask', why });
+    const reasons: AskReason[] = [
+      ...(hit && reasonAsks(permission.mode, 'provenance') ? (['provenance'] as const) : []),
+      ...(prior?.ask && reasonAsks(permission.mode, 'hook.ask') ? (['hook.ask'] as const) : []),
+    ];
+    if (reasons.length > 0) {
+      const why = [reasons.includes('provenance') ? hit?.why : undefined, reasons.includes('hook.ask') ? prior?.ask : undefined].filter(Boolean).join('\n');
+      const tightened: PermissionRequest = {
+        ...(request ? { action: request.action, title: request.title, what: request.what } : { title: `Run ${event.toolName}?`, what: [`${event.toolName} ${args(input)}`] }),
+        ...(request?.nested || event.parentToolCallId ? { nested: true } : {}),
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+        reasons,
+        ...(why ? { why } : {}),
+      };
+      const verdict = await permission.check(ctx, tightened);
       return verdict.allowed ? undefined : { block: true, reason: verdict.message };
     }
     if (!request) return undefined;

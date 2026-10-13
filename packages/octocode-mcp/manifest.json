@@ -35,7 +35,7 @@
   "tools": [
     {
       "name": "clasify",
-      "description": "Locate lines, rank unread candidates, check sufficiency, or judge held state; no bodies (conditional: requires OCTOCODE_CLASSIFICATION_API)"
+      "description": "Locate unread source or make a bounded typed judgment; returns read leads, no bodies (beta: requires OCTOCODE_BETA and OCTOCODE_CLASSIFICATION_API)"
     },
     {
       "name": "ghSearchRepo",

@@ -33,17 +33,9 @@ export interface NativeCatalog {
   /** Resolved switches for host schema presentation. */
   presentation?: {
     deferred?: string[];
-    /** Local ranking is enabled and clasify is available. */
+    /** Ranking is configured for at least one visible goals-capable read tool. */
     ranking?: boolean;
   };
-}
-
-/** Startup check of the clasify provider (`probeClassification`). */
-export interface ClassificationProbe {
-  probed: boolean;
-  available: boolean;
-  code?: string;
-  message?: string;
 }
 
 /**
@@ -74,8 +66,6 @@ export declare class NativeRuntime {
     options?: NativeRequestOptions | null
   ): Promise<unknown>;
   cancel(requestId: string): boolean;
-  /** Startup clasify check; a failure makes clasify unavailable in `catalog()`. */
-  probeClassification(): Promise<ClassificationProbe>;
   close(): Promise<void>;
 }
 

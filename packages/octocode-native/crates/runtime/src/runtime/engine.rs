@@ -19,8 +19,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// The tool whose availability depends on the classification provider
-/// answering ([`ToolRuntime::probe_classification`]).
+/// Public classification is gated by its configured key and beta setting.
+/// Ranking uses the same provider without requiring this tool to be visible.
 const CLASSIFICATION_TOOL: ToolId = ToolId::Clasify;
 
 const LOCAL_DISABLED: &str =
@@ -85,11 +85,9 @@ pub struct ToolRuntime {
     page_replays: Arc<PageReplayMemo>,
     /// Registry answers for artifactSearch; `None` under memory storage.
     artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
-    /// Resolved from the immutable config and surface; only
-    /// [`ToolRuntime::probe_classification`] narrows it afterwards.
+    /// Resolved from the immutable config and surface. Provider failures are
+    /// request-local and do not remove an advertised tool.
     available_tools: std::sync::RwLock<Arc<[&'static str]>>,
-    /// Set when the startup probe found the classification provider unusable.
-    classification_unreachable: std::sync::atomic::AtomicBool,
     lsp_execution_config: Arc<crate::tools::lsp_search::LspExecutionConfig>,
     /// The sandbox workspace root (configured workspaceRoot, else host cwd).
     workspace_root: PathBuf,
@@ -531,7 +529,6 @@ impl ToolRuntime {
             page_replays: Arc::default(),
             artifact_cache,
             available_tools: std::sync::RwLock::default(),
-            classification_unreachable: std::sync::atomic::AtomicBool::new(false),
             lsp_execution_config,
             workspace_root,
         };
@@ -568,8 +565,14 @@ impl ToolRuntime {
     /// The classification credential (`classification.api`): a blank value
     /// is an explicit opt-out.
     fn classification_key(&self) -> Option<&str> {
+        let env = crate::config::CONFIG_FIELDS
+            .iter()
+            .find(|field| field.path == "classification.api")?
+            .env
+            .first()?
+            .name;
         self.config
-            .env_value("OCTOCODE_CLASSIFICATION_API")
+            .env_value(env)
             .filter(|value| !value.trim().is_empty())
     }
 
@@ -615,6 +618,25 @@ impl ToolRuntime {
                 .is_some_and(|names| names.iter().any(|name| name == tool))
     }
 
+    /// A visible read tool may use the provider through its opt-in `goals`
+    /// field even when the public clasify tool is hidden. Derive eligibility
+    /// from the embedded contract instead of maintaining another tool list.
+    fn ranking_surface_enabled(&self) -> bool {
+        self.config.resolved.ranking.enabled
+            && self
+                .available_tools()
+                .iter()
+                .filter_map(|name| ToolId::from_name(name))
+                .any(|id| {
+                    id != CLASSIFICATION_TOOL
+                        && crate::contracts::query_schema_value(id, None, "goals", "type").is_some()
+                })
+    }
+
+    fn ranking_available(&self) -> bool {
+        self.classification_key().is_some() && self.ranking_surface_enabled()
+    }
+
     /// Resolved presentation switches shared by MCP and CLI discovery.
     fn presentation(&self) -> Value {
         let mcp = &self.config.resolved.mcp;
@@ -630,8 +652,7 @@ impl ToolRuntime {
             .collect();
         json!({
             "deferred": deferred,
-            "ranking": self.config.resolved.ranking.enabled
-                && self.is_available(CLASSIFICATION_TOOL.as_str()),
+            "ranking": self.ranking_available(),
         })
     }
 
@@ -667,41 +688,6 @@ impl ToolRuntime {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
-    }
-
-    /// Host startup check for clasify: when it is available, send one
-    /// minimal judgment. A provider that cannot answer (bad key, quota,
-    /// unreachable host, invalid response) makes clasify unavailable in this
-    /// runtime, so hosts never offer it and no `next.clasify` lead names it.
-    /// A rate limit proves the key and endpoint work, so clasify stays.
-    pub async fn probe_classification(&self) -> Value {
-        let clasify = CLASSIFICATION_TOOL.as_str();
-        if !self.is_available(clasify) {
-            return json!({ "probed": false, "available": false });
-        }
-        let Err(error) = self.clasify_settings().probe().await else {
-            return json!({ "probed": true, "available": true });
-        };
-        let available = error.code == "classificationRateLimited";
-        if !available {
-            self.classification_unreachable
-                .store(true, std::sync::atomic::Ordering::Relaxed);
-            let mut tools = self
-                .available_tools
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            *tools = tools
-                .iter()
-                .copied()
-                .filter(|name| *name != clasify)
-                .collect();
-        }
-        json!({
-            "probed": true,
-            "available": available,
-            "code": error.code,
-            "message": error.message,
-        })
     }
 
     /// What keeps `tool` off this runtime, naming the setting (and its
@@ -743,20 +729,37 @@ impl ToolRuntime {
         let Some(id) = ToolId::from_name(tool) else {
             return "no such tool.".into();
         };
-        if id.is_local() && !self.config.resolved.local.enabled {
-            return format!("local tools are off by {}.", setting("local.enabled"));
+        let missing = self.missing_config_paths(id);
+        if missing.is_empty() {
+            "this surface does not run it.".into()
+        } else {
+            format!(
+                "it needs {}.",
+                missing
+                    .iter()
+                    .map(|path| setting(path))
+                    .collect::<Vec<_>>()
+                    .join(" and ")
+            )
         }
-        if id == CLASSIFICATION_TOOL
-            && self
-                .classification_unreachable
-                .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return "the classification provider failed the startup probe.".into();
-        }
-        match id.availability_config_path() {
-            Some(path) => format!("it needs {}.", setting(path)),
-            None => "this surface does not run it.".into(),
-        }
+    }
+
+    /// All unmet config prerequisites for a tool. The contract contributes
+    /// the beta flag; the credential remains a separate prerequisite, so
+    /// hiding public clasify never disables goals on other tools.
+    fn missing_config_paths(&self, id: ToolId) -> Vec<&'static str> {
+        id.availability_config_paths()
+            .filter(|path| match *path {
+                "local.enabled" => !self.config.resolved.local.enabled,
+                "local.beta" => !self.config.resolved.local.beta,
+                "storage.mode" => {
+                    self.input.runtime_surface != RuntimeSurface::Cli
+                        || self.config.resolved.storage.mode != "persistent"
+                }
+                "classification.api" => self.classification_key().is_none(),
+                _ => true,
+            })
+            .collect()
     }
 
     fn resolve_available(&self, id: ToolId) -> bool {
@@ -764,23 +767,7 @@ impl ToolRuntime {
         if self.input.runtime_surface != RuntimeSurface::Cli && id.is_cli_only() {
             return false;
         }
-        // Local tools follow the local switch; GitHub and other remote tools
-        // need no credentials.
-        let family = !id.is_local() || self.config.resolved.local.enabled;
-        // The tool's own runtime prerequisite (contract policy or setting).
-        let prerequisite = match id.availability_config_path() {
-            Some("local.beta") => self.config.resolved.local.beta,
-            Some("storage.mode") => {
-                self.input.runtime_surface == RuntimeSurface::Cli
-                    && self.config.resolved.storage.mode == "persistent"
-            }
-            Some("classification.api") => self
-                .classification_key()
-                .map(str::trim)
-                .is_some_and(|value| !value.is_empty()),
-            _ => true,
-        };
-        family && prerequisite && !self.excluded_by_tool_list(tool)
+        self.missing_config_paths(id).is_empty() && !self.excluded_by_tool_list(tool)
     }
 
     /// The resolved language-server settings `lspSearch` discovers with.
@@ -830,12 +817,10 @@ impl ToolRuntime {
                     && ToolId::from_name(name).is_some_and(ToolId::is_cli_only)
                 {
                     entry["unavailableReason"] = json!("cliOnly");
-                } else if name == CLASSIFICATION_TOOL.as_str()
-                    && self
-                        .classification_unreachable
-                        .load(std::sync::atomic::Ordering::Relaxed)
+                } else if ToolId::from_name(name)
+                    .is_some_and(|id| !self.missing_config_paths(id).is_empty())
                 {
-                    entry["unavailableReason"] = json!("providerUnreachable");
+                    entry["unavailableReason"] = json!("missingConfiguration");
                 }
                 entry
             })
@@ -976,7 +961,7 @@ impl ToolRuntime {
             Err(error) => {
                 if error.code == "missingConfiguration"
                     && let Some(id) = ToolId::from_name(&tool)
-                    && let Err(invalid) = self.admit_queries(id, &input)
+                    && let Err(invalid) = self.admit_queries(id, &input, mcp)
                     && invalid.code == "invalidInput"
                 {
                     return Err(invalid);
@@ -993,15 +978,7 @@ impl ToolRuntime {
         // Parse response-paging options before contract validation.
         let mut options = ResponsePageOptions::deserialize(&input).unwrap_or_default();
         options.render_text = Some(render_text);
-        let raw_explicit_sort = input["queries"]
-            .as_array()
-            .map(|rows| {
-                rows.iter()
-                    .map(|row| row.get("sort").is_some())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let (queries, rejected_rows) = self.admit_queries(id, &input)?;
+        let (queries, rejected_rows) = self.admit_queries(id, &input, mcp)?;
         let response_query = if queries.len() == 1 {
             queries[0].clone()
         } else {
@@ -1011,11 +988,6 @@ impl ToolRuntime {
         // a continuation (which carries only admitted rows), else every input
         // position not rejected.
         let rejected_at: Vec<usize> = rejected_rows.iter().map(|(index, _)| *index).collect();
-        let explicit_sort = raw_explicit_sort
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, explicit)| (!rejected_at.contains(&index)).then_some(explicit))
-            .collect::<Vec<_>>();
         let marked = options
             .response_snapshot
             .as_deref()
@@ -1045,7 +1017,6 @@ impl ToolRuntime {
             mcp,
             options,
             queries,
-            explicit_sort,
             rejected_rows,
             row_indices,
             response_query,
@@ -1092,32 +1063,25 @@ impl ToolRuntime {
         if self.is_available(tool) {
             return requested.ok_or_else(unavailable);
         }
-        if !mcp && requested.is_some_and(ToolId::is_beta) && !self.config.resolved.local.beta {
-            return Err(RuntimeError::new(
-                "missingConfiguration",
-                format!(
-                    "{tool} is a beta feature, disabled by default. Set OCTOCODE_BETA=true or local.beta:true before retrying."
-                ),
-            ));
-        }
         if !mcp
-            && requested.is_some_and(ToolId::is_clasify)
+            && !self.excluded_by_tool_list(tool)
+            && let Some(id) = requested
             && self
-                .classification_key()
-                .map(str::trim)
-                .is_none_or(str::is_empty)
+                .missing_config_paths(id)
+                .iter()
+                .any(|path| matches!(*path, "local.beta" | "classification.api"))
         {
-            let vendor = self.config.resolved.classification.r#type.as_str();
-            let p = crate::providers::classification::provider_for(vendor);
-            return Err(RuntimeError::new(
-                "missingConfiguration",
-                format!(
-                    "clasify requires OCTOCODE_CLASSIFICATION_API. Create a \
-                     classification provider API key ({}) and set \
-                     OCTOCODE_CLASSIFICATION_API before retrying.",
-                    p.docs_url(),
-                ),
-            ));
+            let mut message = format!(
+                "Tool {tool} is not available: {}",
+                self.unavailable_reason(tool)
+            );
+            if id == CLASSIFICATION_TOOL && self.classification_key().is_none() {
+                let provider = crate::providers::classification::provider_for(
+                    self.config.resolved.classification.r#type.as_str(),
+                );
+                message.push_str(&format!(" Provider setup: {}", provider.docs_url()));
+            }
+            return Err(RuntimeError::new("missingConfiguration", message));
         }
         Err(unavailable())
     }
@@ -1130,6 +1094,7 @@ impl ToolRuntime {
         &self,
         id: ToolId,
         input: &Value,
+        mcp: bool,
     ) -> Result<(Vec<Value>, Vec<(usize, Value)>), RuntimeError> {
         let tool = id.as_str();
         let (prepared, mut invalid) = prepare_queries(tool, input)?;
@@ -1151,6 +1116,7 @@ impl ToolRuntime {
                 issues.extend(crate::tools::clasify::context::unavailable_context_issues(
                     &query,
                     &prefix,
+                    mcp,
                     |name| self.is_available(name),
                 ));
             }
@@ -1203,6 +1169,7 @@ impl ToolRuntime {
             local_views: self.local_views.clone(),
             lsp_execution_config: self.lsp_execution_config.clone(),
             available_tools: self.available_tools(),
+            ranking_available: self.ranking_available(),
             clasify: self.clasify_settings(),
             artifact_cache: self.artifact_cache.clone(),
         }
@@ -1260,8 +1227,6 @@ struct ChannelRun {
     mcp: bool,
     options: ResponsePageOptions,
     queries: Vec<Value>,
-    /// Raw caller intent before contract defaults fill `sort`.
-    explicit_sort: Vec<bool>,
     rejected_rows: Vec<(usize, Value)>,
     /// Original input index of each admitted row (`row_indices` module).
     row_indices: Vec<usize>,
@@ -1416,7 +1381,6 @@ impl ChannelRun {
             &mut structured,
             &self.queries,
             &self.row_indices,
-            &self.explicit_sort,
             &mut response_query,
             &self.dispatcher.ranking_runtime(context),
         )?;
@@ -1830,7 +1794,7 @@ mod construction_tests {
     }
 
     #[test]
-    fn ranking_presentation_requires_config_and_available_classifier() {
+    fn ranking_presentation_requires_provider_and_an_available_goal_tool() {
         let home = tempfile::tempdir().expect("home");
         for (env, expected) in [
             (vec![], false),
@@ -1849,15 +1813,76 @@ mod construction_tests {
                     ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
                     ("DISABLE_TOOLS", "clasify"),
                 ],
+                true,
+            ),
+            (
+                vec![
+                    ("OCTOCODE_RANKING_ENABLED", "true"),
+                    ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
+                    ("TOOLS_TO_RUN", "ghSearchHistory"),
+                ],
+                false,
+            ),
+            (
+                vec![
+                    ("OCTOCODE_RANKING_ENABLED", "true"),
+                    ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
+                    ("TOOLS_TO_RUN", "ghSearchCode"),
+                ],
+                true,
+            ),
+            (
+                vec![
+                    ("OCTOCODE_RANKING_ENABLED", "true"),
+                    ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
+                    ("TOOLS_TO_RUN", "clasify"),
+                ],
+                false,
+            ),
+            (
+                vec![
+                    ("OCTOCODE_RANKING_ENABLED", "true"),
+                    ("OCTOCODE_CLASSIFICATION_API", "   "),
+                    ("DISABLE_TOOLS", "clasify"),
+                ],
                 false,
             ),
         ] {
             let runtime = runtime(home.path(), &env);
             assert_eq!(runtime.presentation()["ranking"], expected, "{env:?}");
-            // The startup provider probe narrows this same availability set.
-            *runtime.available_tools.write().expect("available tools") = Arc::from([]);
-            assert_eq!(runtime.presentation()["ranking"], false);
         }
+    }
+
+    #[tokio::test]
+    async fn hidden_public_clasify_keeps_goal_reads_available() {
+        let home = tempfile::tempdir().expect("home");
+        let runtime = runtime(
+            home.path(),
+            &[
+                ("OCTOCODE_RANKING_ENABLED", "true"),
+                ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
+                ("TOOLS_TO_RUN", "ghSearchCode"),
+            ],
+        );
+        assert!(!runtime.is_available("clasify"));
+        assert_eq!(runtime.presentation()["ranking"], true);
+        assert!(!runtime.is_available("clasify"));
+        assert!(runtime.dispatcher().ranking_available);
+    }
+
+    #[tokio::test]
+    async fn hidden_public_clasify_without_goal_surface_has_no_semantic_route() {
+        let home = tempfile::tempdir().expect("home");
+        let runtime = runtime(
+            home.path(),
+            &[
+                ("OCTOCODE_RANKING_ENABLED", "true"),
+                ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
+                ("TOOLS_TO_RUN", "ghSearchHistory"),
+            ],
+        );
+        assert_eq!(runtime.presentation()["ranking"], false);
+        assert!(!runtime.dispatcher().ranking_available);
     }
 
     #[test]

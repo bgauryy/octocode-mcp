@@ -250,6 +250,7 @@ pub fn query_path(path: &Path, extra: Value) -> Value {
 /// Runtime whose classification provider is the mock `server`.
 pub fn provider_runtime(workspace: &Workspace, server: &MockServer) -> ToolRuntime {
     workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("REQUEST_TIMEOUT", MOCK_PROVIDER_TIMEOUT_MS.into()),

@@ -1,0 +1,643 @@
+{
+ "anchor": "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised",
+ "order": [
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised",
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old"
+ ],
+ "timed": [
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised",
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old"
+ ],
+ "groups": {
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": {
+   "label": "Octocode selective guidance · selective-guidance-github30-2026-10-13 · mcp-clasify-revised",
+   "how": "local MCP · gpt-5.6-terra",
+   "measured": "Oct 2026",
+   "campaigns": [
+    "selective-guidance-github30-2026-10-13"
+   ],
+   "octocode": true,
+   "live": true,
+   "runs_per_question": 1,
+   "chars_median": 14154.0,
+   "chars_mean": 24544.933333333334,
+   "chars_total": 736348,
+   "correct_mean": 9.172413793103448,
+   "correct_judged": 58,
+   "anchor_leaner_x": 1.0,
+   "anchor_leaner_ci95": [
+    1.0,
+    1.0
+   ],
+   "anchor_leaner_on": 0,
+   "calls": 172,
+   "failed": 1,
+   "cost_usd": null,
+   "input_tokens": 3548305,
+   "secs_median": 100.681,
+   "secs_mean": 120.5877,
+   "model_secs_mean": null,
+   "tool_secs_mean": null,
+   "secs_total": 3617.6309999999994,
+   "anchor_faster_x": 1.0,
+   "anchor_faster_ci95": [
+    1.0,
+    1.0
+   ],
+   "anchor_faster_on": 0
+  },
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": {
+   "label": "Octocode selective guidance · selective-guidance-github30-2026-10-13 · mcp-clasify-old",
+   "how": "local MCP · gpt-5.6-terra",
+   "measured": "Oct 2026",
+   "campaigns": [
+    "selective-guidance-github30-2026-10-13"
+   ],
+   "octocode": true,
+   "live": true,
+   "runs_per_question": 1,
+   "chars_median": 16876.0,
+   "chars_mean": 24645.033333333333,
+   "chars_total": 739351,
+   "correct_mean": 8.933333333333334,
+   "correct_judged": 30,
+   "anchor_leaner_x": 0.9974631839399183,
+   "anchor_leaner_ci95": [
+    0.900104737968857,
+    1.0976248069641608
+   ],
+   "anchor_leaner_on": 17,
+   "calls": 179,
+   "failed": 1,
+   "cost_usd": null,
+   "input_tokens": 3713529,
+   "secs_median": 108.76849999999999,
+   "secs_mean": 115.53526666666667,
+   "model_secs_mean": null,
+   "tool_secs_mean": null,
+   "secs_total": 3466.0580000000004,
+   "anchor_faster_x": 0.9953679898559565,
+   "anchor_faster_ci95": [
+    0.7583256384407181,
+    1.3119555716656859
+   ],
+   "anchor_faster_on": 16
+  }
+ },
+ "rows": [
+  {
+   "q": "Q1",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 4897,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 7117
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 36.921,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 33.002
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q2",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10791,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9421
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 76.962,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 147.582
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q3",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9280,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 12909
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 130.856,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 120.592
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q4",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 32957,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 40380
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 110.119,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 120.57
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 7,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q5",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 74876,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 50719
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 38.845,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 189.249
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 8.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 8
+   }
+  },
+  {
+   "q": "Q6",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10744,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 7982
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 73.586,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 160.164
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q7",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 6120,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 6575
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 68.093,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 103.619
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q8",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 7545,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 7429
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 74.924,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 85.538
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q9",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9322,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9824
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 35.734,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 50.155
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q10",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 13972,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 17093
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 70.216,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 91.375
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q11",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 35828,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 37947
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 182.327,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 171.863
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q12",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 17548,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10381
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 183.556,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 34.178
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q13",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 14336,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 16659
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 52.124,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 32.502
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q14",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 4371,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 6090
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 92.613,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 107.493
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q15",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 11836,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 12837
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 78.526,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 17.412
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q16",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 8846,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 4218
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 167.657,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 110.044
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q17",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 17713,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 20812
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 160.144,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 180.445
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q18",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 4806,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 4432
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 16.555,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 70.861
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q19",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 51995,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 38764
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 307.295,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 218.364
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q20",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 20921,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 20083
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 175.526,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 150.803
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 10,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 10
+   }
+  },
+  {
+   "q": "Q21",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 78537,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 61733
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 264.087,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 78.121
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 6
+   }
+  },
+  {
+   "q": "Q22",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 11417,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 14135
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 52.162,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 59.435
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q23",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 16047,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 17854
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 108.749,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 47.355
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q24",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 6318,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 6978
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 51.49,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 106.381
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 4
+   }
+  },
+  {
+   "q": "Q25",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 18182,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 19487
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 131.219,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 133.427
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 8.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 7
+   }
+  },
+  {
+   "q": "Q26",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 23349,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 21198
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 71.057,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 204.619
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q27",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 13348,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 19294
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 203.823,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 69.436
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 7.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q28",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 109908,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 165024
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 262.15,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 147.007
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 8.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  },
+  {
+   "q": "Q29",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 49055,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 43637
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 124.641,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 251.238
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 8.5,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 6
+   }
+  },
+  {
+   "q": "Q30",
+   "chars": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 41483,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 28339
+   },
+   "secs": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 215.674,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 173.228
+   },
+   "correct": {
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 9,
+    "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 9
+   }
+  }
+ ],
+ "matrix": {
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": {
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": {
+    "geo_mean": 1.0,
+    "ci95": [
+     1.0,
+     1.0
+    ],
+    "median": 1.0
+   },
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": {
+    "geo_mean": 0.9974631839399183,
+    "ci95": [
+     0.900104737968857,
+     1.0976248069641608
+    ],
+    "median": 1.0654589843796773
+   }
+  },
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": {
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": {
+    "geo_mean": 1.0025432678628412,
+    "ci95": [
+     0.9111089930968158,
+     1.111012110979362
+    ],
+    "median": 0.9385956182381617
+   },
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": {
+    "geo_mean": 1.0,
+    "ci95": [
+     1.0,
+     1.0
+    ],
+    "median": 1.0
+   }
+  }
+ },
+ "leaner_count": {
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": {
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 0,
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 17
+  },
+  "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": {
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised": 13,
+   "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old": 0
+  }
+ },
+ "judged_pairs": [
+  {
+   "campaign": "selective-guidance-github30-2026-10-13",
+   "a": "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_old",
+   "b": "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised",
+   "arm_a": "mcp-clasify-old",
+   "arm_b": "mcp-clasify-revised",
+   "judged": 30,
+   "chars_b_over_a": 1.0025432678628412,
+   "chars_ci95": [
+    0.91215365375467,
+    1.1081692615346153
+   ],
+   "a_leaner_on": 13,
+   "questions": 30,
+   "secs_b_over_a": 1.0046535655066764,
+   "secs_ci95": [
+    0.7686987704803014,
+    1.3258837204750542
+   ],
+   "a_faster_on": 14,
+   "a_more_correct": 2,
+   "same": 24,
+   "b_more_correct": 4,
+   "a_wins": 12,
+   "b_wins": 16
+  },
+  {
+   "campaign": "selective-guidance-github30-2026-10-13",
+   "a": "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp",
+   "b": "octocode_selective_guidance_selective_guidance_github30_2026_10_13_mcp_clasify_revised",
+   "arm_a": "mcp",
+   "arm_b": "mcp-clasify-revised",
+   "judged": 28,
+   "chars_b_over_a": 1.0607516675485018,
+   "chars_ci95": [
+    0.9454552497842301,
+    1.1944696999899487
+   ],
+   "a_leaner_on": 14,
+   "questions": 28,
+   "secs_b_over_a": 1.0624725698578847,
+   "secs_ci95": [
+    0.8486217353737245,
+    1.3193382308896413
+   ],
+   "a_faster_on": 14,
+   "a_more_correct": 0,
+   "same": 26,
+   "b_more_correct": 2,
+   "a_wins": 14,
+   "b_wins": 9
+  }
+ ],
+ "questions": 30,
+ "question_set": "github-v2"
+}

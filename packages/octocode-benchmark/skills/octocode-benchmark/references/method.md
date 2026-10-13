@@ -85,6 +85,31 @@ dollar savings. Compute paired cost ratios per question; keep all retry spending
 Report provider HTTP median/p95 separately from whole-agent wall time. Do not equate a
 fast classification request with an entire research workflow or subtract overlapping time.
 
+### Selective use of semantics
+
+For a guidance change, compare off, previous-on and revised-on arms contemporaneously.
+Freeze descriptions, instructions, full build contents, questions and grading rules before
+dispatch; leave the ordinary solver brief unchanged. Separate known development questions
+from new questions withheld from the prompt author.
+
+Grade routing independently of answer quality, blind to arm. Judge each decision from the
+question and evidence visible before that call: could ordering avoid later reads, locate an
+unread answer, or provide a needed typed judgment? Count unnecessary calls, repeated relevance
+decisions, missed useful opportunities and uncertainty. An unexpected runtime skip is not
+automatically poor selection. Cheap exact success is not a missed semantic opportunity.
+Verify source/identity claims separately; scores cannot establish completeness or dismiss a
+finding. Full-page reordering alone does not establish context savings.
+
+Predeclare a meaningful change and quality guardrails. Retain failures and adverse cases;
+fewer calls alone is not an improvement when required evidence is missed. Controlled tool
+fixtures establish contract behavior, not autonomous agent selection.
+
+Keep invalid judge outputs and their usage in the accounting; an unparseable grade is
+missing, not a favorable score. Define schema/infrastructure retry rules before judging.
+Report paired grade coverage and missingness sensitivity separately from confidence
+intervals. Audit every result in batched tool responses before claiming a cited source was
+unread; answer quality, verified source coverage and routing quality are distinct checks.
+
 ## Time
 
 `result.json` gives each run's wall clock (`duration_ms`) and model time (`duration_api_ms`);

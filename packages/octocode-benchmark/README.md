@@ -13,6 +13,32 @@ other) · [results/index.html](results/index.html) (the dashboard as one file) �
 **Run it:** the [octocode-benchmark skill](skills/octocode-benchmark/SKILL.md) has the flow,
 the arms, and the rules.
 
+## Latest local MCP results — October 13, 2026
+
+The local `octocode-mcp` **20.2.0** build completed **140 valid Terra runs and 70 blind
+comparisons**, with goals and JEV enabled versus disabled. The solver was
+`gpt-5.6-terra` at medium effort; each question had one run per arm.
+
+| Corpus | Paired questions | Terra input-token change, enabled vs disabled [95% CI] |
+|---|---:|---:|
+| Local repositories | 40 | −0.9% [−10.3%, +8.4%] |
+| GitHub | 30 | **+12.6% [+2.8%, +23.1%]** |
+| Terraform, included in local | 8 | −21.1% [−45.1%, +10.4%] |
+
+Changes use question-weighted geometric means. Local and Terraform savings are
+inconclusive. Blind quality scores tied within one point in **66/70 comparisons**;
+the [full report](results/gated-jev-2026-10-13.md) includes source audits of all four
+larger differences. These are development questions, not a held-out evaluation.
+
+Agents made **zero goals requests and zero `clasify` calls**, so this run demonstrated
+no active reranking savings. Separately from Terra, JEV consumed **40,588 input and
+2,920 output tokens** across **146 startup probes**, including setup and the retried
+attempt. No JEV request classified research evidence; this startup overhead is not
+a per-query cost. See the [local dashboard](results/gated-jev-local.html) and
+[GitHub dashboard](results/gated-jev-github.html) for individual results.
+
+## Package layout
+
 ```
 compare/
   arms/               one brief per arm + the shared runner brief

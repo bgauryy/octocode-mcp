@@ -142,27 +142,55 @@ pub(super) fn prepare(tool: &str, query: &Value) -> Result<Value, Classification
         .ok_or_else(|| error("invalidClassificationContext", "Context query is missing."))
 }
 
-/// Why a clasify context tool is unavailable: the gate that enables it (from
-/// the config contract's env bindings) and the context tools that are enabled.
-pub(crate) fn unavailable_context_message(tool: &str, available: impl Fn(&str) -> bool) -> String {
+/// Why a clasify context tool is unavailable: every possible prerequisite
+/// (with env bindings from the config contract) and the enabled context tools.
+pub(crate) fn unavailable_context_message(
+    tool: &str,
+    mcp: bool,
+    available: impl Fn(&str) -> bool,
+) -> String {
     let id = ToolId::from_name(tool);
-    let gate = id.map(ToolId::availability_env_vars).unwrap_or_default();
-    let enable = match id.and_then(ToolId::availability_config_path) {
-        Some(path) if !gate.is_empty() => format!(
-            "Enable it with {} (config {path}); tools.enabled/tools.disabled can also exclude it.",
-            gate.iter()
-                .map(|var| format!("{var}=true"))
-                .collect::<Vec<_>>()
-                .join(" or ")
-        ),
-        _ => "Check tools.enabled/tools.disabled.".to_owned(),
-    };
     let enabled = crate::tools::id::clasify_policy::SCOUT_TOOLS
         .iter()
         .map(|id| id.as_str())
         .filter(|name| available(name))
         .collect::<Vec<_>>()
         .join(", ");
+    if mcp && id.is_some_and(ToolId::is_cli_only) {
+        return format!(
+            "Context tool {tool} is available only through the CLI; run `octocode {tool}`. Enabled context tools: {enabled}."
+        );
+    }
+    let gates = id
+        .into_iter()
+        .flat_map(ToolId::availability_config_paths)
+        .map(|path| {
+            let vars = crate::config::CONFIG_FIELDS
+                .iter()
+                .find(|field| field.path == path)
+                .map(|field| {
+                    field
+                        .env
+                        .iter()
+                        .map(|binding| binding.name)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if vars.is_empty() {
+                path.to_owned()
+            } else {
+                format!("{path} ({})", vars.join(" | "))
+            }
+        })
+        .collect::<Vec<_>>();
+    let enable = if gates.is_empty() {
+        "Check tools.enabled/tools.disabled.".to_owned()
+    } else {
+        format!(
+            "Check {} and tools.enabled/tools.disabled.",
+            gates.join(" and ")
+        )
+    };
     format!(
         "Context tool {tool} is disabled in this runtime. {enable} Enabled context tools: {enabled}."
     )
@@ -174,6 +202,7 @@ pub(crate) fn unavailable_context_message(tool: &str, available: impl Fn(&str) -
 pub(crate) fn unavailable_context_issues(
     query: &Value,
     prefix: &[String],
+    mcp: bool,
     available: impl Fn(&str) -> bool,
 ) -> Vec<contracts::ValidationIssue> {
     query["resources"]
@@ -189,7 +218,7 @@ pub(crate) fn unavailable_context_issues(
                 contracts::ValidationIssue {
                     rule_id: "clasify.context-tool-available".into(),
                     path,
-                    message: unavailable_context_message(tool, &available),
+                    message: unavailable_context_message(tool, mcp, &available),
                     schema: None,
                     received: Some(Value::String(tool.to_owned())),
                 }
@@ -271,7 +300,9 @@ fn read_tool<'a>(
     if !dispatcher.available_tools.contains(&tool) {
         let mut unavailable = error(
             "classificationContextUnavailable",
-            unavailable_context_message(tool, |name| dispatcher.available_tools.contains(&name)),
+            unavailable_context_message(tool, false, |name| {
+                dispatcher.available_tools.contains(&name)
+            }),
         );
         unavailable.hints = Vec::new();
         return Err(ContextFailure::from(unavailable));

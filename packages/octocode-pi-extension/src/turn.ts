@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-import { isOctocodeTool, type OctocodeMcp } from './mcp/octocode.js';
+import type { OctocodeMcp } from './mcp/octocode.js';
+import { isOctocodeTool } from './shared/octocode-tools.js';
 import { envFlag } from './shared/env.js';
 import { octocodePrompt } from './prompt.js';
 import type { AgentProfile } from './subagents/profiles.js';

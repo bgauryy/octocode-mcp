@@ -26,10 +26,12 @@ const classificationEnv = gateEnv('classification.api');
 
 function describe(tool) {
   const text = tool.shortDescription.replace(/\.$/, '');
-  if (tool.beta) return `${text} (beta: requires ${betaEnv})`;
-  if (tool.name === TOOL_NAMES.CLASIFY)
-    return `${text} (conditional: requires ${classificationEnv})`;
-  return text;
+  const requiredEnv = [];
+  if (tool.beta) requiredEnv.push(betaEnv);
+  if (tool.name === TOOL_NAMES.CLASIFY) requiredEnv.push(classificationEnv);
+  if (!requiredEnv.length) return text;
+  const gate = tool.beta ? 'beta' : 'conditional';
+  return `${text} (${gate}: requires ${requiredEnv.join(' and ')})`;
 }
 
 function manifestTools() {

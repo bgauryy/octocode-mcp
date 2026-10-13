@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { INFERRED_CACHE_TTL_SECONDS, PromptCacheLifetimes, inferredPromptCache, promptCacheTtlMs, warmingDecision } from '../src/compaction/cache.js';
-import { REQUEST_PRESSURE_CHARS, contextChars } from '../src/compaction/images.js';
-import { KEEP_RECENT_RESULTS, registerCompaction } from '../src/compaction/register.js';
+import { contextChars } from '../src/compaction/images.js';
+import { registerCompaction } from '../src/compaction/register.js';
 import type { FileGuard } from '../src/files/tool.js';
 import { CACHE_RETENTION_ENV, childCacheRetention, chooseSessionCacheRetention } from '../src/shared/env.js';
 import { subagentProcessEnv } from '../src/subagents/process.js';
@@ -54,28 +54,6 @@ function fakePi(models: TestModel[]) {
   return { pi, ctx, handlers, registerProvider, usage, catalog: () => catalog, fire: (name: string, event: unknown = {}) => handlers.get(name)!(event, ctx) };
 }
 
-/**
- * A realistic warm session at about 120k tokens: a long opening message, then turns each with a long thinking block and
- * its signature (Pi resends both to Anthropic), a tool call and a mid-size result, the history the user's sessions
- * trimmed on a warm cache. Its old results are worth less than rewriting the thinking after them for 24 reuses.
- */
-function warmHistory(model: TestModel, turns = KEEP_RECENT_RESULTS * 2) {
-  const opening = { id: 'brief', message: { role: 'user', content: 'b'.repeat(300_000) } };
-  return [opening, ...Array.from({ length: turns }, (_, index) => [
-    {
-      id: `a${index}`,
-      message: {
-        ...reply(model, { cacheRead: 100_000 }),
-        content: [
-          { type: 'thinking', thinking: 't'.repeat(1_500), thinkingSignature: 's'.repeat(1_600) },
-          { type: 'toolCall', id: `c${index}`, name: 'bash', arguments: { command: `echo ${index}` } },
-        ],
-      },
-    },
-    { id: `r${index}`, message: { role: 'toolResult', toolName: 'bash', toolCallId: `c${index}`, content: [{ type: 'text', text: 'x'.repeat(4_000) }] } },
-  ]).flat()];
-}
-
 const turnEnd = (entries: Array<{ id: string; message: unknown }>, message: unknown) => ({
   entries: [],
   message,
@@ -85,7 +63,7 @@ const turnEnd = (entries: Array<{ id: string; message: unknown }>, message: unkn
 
 function compaction(models: TestModel[]) {
   const pi = fakePi(models);
-  registerCompaction(pi.pi, { reset: vi.fn(), forget: vi.fn() } as unknown as FileGuard);
+  registerCompaction(pi.pi, { restore: vi.fn(), forget: vi.fn() } as unknown as FileGuard);
   return pi;
 }
 
@@ -102,34 +80,6 @@ describe('request size', () => {
     expect(contextChars(entries)).toBeGreaterThanOrEqual(3 + 5 + 'bash'.length + 'command'.length + 'ls'.length + 5 + 4 + 2);
     expect(contextChars(withArgs)).toBeGreaterThanOrEqual(10_000);
     expect(contextChars(withArgs)).toBeLessThanOrEqual(JSON.stringify(args).length + 'file'.length + 8);
-  });
-});
-
-describe('warm-cache trims', () => {
-  it('keeps a warm 120k-token context with a long thinking history untouched, for a model that declares no promptCache', async () => {
-    const model = opus();
-    const history = warmHistory(model);
-    expect(contextChars(history)).toBeLessThan(REQUEST_PRESSURE_CHARS);
-    const session = compaction([model]);
-    const last = history.at(-2)!.message;
-    expect(await session.fire('turn_end', turnEnd(history, last))).toBeUndefined();
-    // A later turn without usage (aborted by the user) does not make the model look cacheless: the cache is still warm.
-    expect(await session.fire('turn_end', turnEnd(history, { ...reply(model, {}), stopReason: 'aborted', usage: undefined }))).toBeUndefined();
-  });
-
-  it('still trims under real pressure: a filling context window or an oversized request', async () => {
-    const model = opus();
-    const history = warmHistory(model);
-    const last = history.at(-2)!.message;
-    const full = compaction([model]);
-    full.usage.percent = 60;
-    expect(((await full.fire('turn_end', turnEnd(history, last))) as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
-    const images = history.map((entry, index) =>
-      (entry.message as { role: string }).role === 'toolResult' && index < 40 ? { ...entry, message: { ...(entry.message as object), content: [{ type: 'text', text: 'shot' }, { type: 'image', data: 'i'.repeat(100_000), mimeType: 'image/png' }] } } : entry,
-    );
-    expect(contextChars(images)).toBeGreaterThanOrEqual(REQUEST_PRESSURE_CHARS);
-    const heavy = compaction([model]);
-    expect(((await heavy.fire('turn_end', turnEnd(images, last))) as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
   });
 });
 
@@ -174,7 +124,7 @@ describe('prompt-cache lifetimes for models that declare none', () => {
     for (const session of [declared, other, withHeaders]) expect(session.registerProvider).not.toHaveBeenCalled();
   });
 
-  it('keeps the inferred lifetime for trims when the registry refuses the registration, and does not retry it every turn', () => {
+  it('keeps the inferred lifetime for idle-warming decisions when the registry refuses the registration, and does not retry it every turn', () => {
     const model = opus();
     const pi = fakePi([model]);
     pi.registerProvider.mockImplementation(() => {
@@ -255,7 +205,7 @@ describe('cache retention', () => {
     expect(subagentProcessEnv(undefined, {})[CACHE_RETENTION_ENV]).toBe('short');
   });
 
-  it('chooses retention at session start, before the first request, so trims and Pi\'s warmer use one lifetime', async () => {
+  it('chooses retention at session start, before the first request, so pi-ai and Pi\'s warmer use one lifetime', async () => {
     const saved = process.env[CACHE_RETENTION_ENV];
     delete process.env[CACHE_RETENTION_ENV];
     try {

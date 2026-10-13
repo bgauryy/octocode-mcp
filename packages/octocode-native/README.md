@@ -231,7 +231,7 @@ the MCP server tool of the same name.
 | `ghGetHistoryItem` | Read one PR, issue, commit, or comparison. |
 | `ghCloneRepo` | Clone into the local cache for offline analysis. |
 | `artifactSearch` | Package lookup/discovery across 8 registries. |
-| `clasify` | Apply Noul, Choice, or Score questions to one resource matrix or a batch of independent matrices. Requires a classification key (`OCTOCODE_CLASSIFICATION_API` or `classification.api` in `.octocoderc`); CLI calls without one report the missing key. |
+| `clasify` | Apply Noul, Choice, or Score questions to one resource matrix or a batch of independent matrices. Public availability requires beta and a nonblank classification API credential ([gate details](../../docs/OCTOCODE_CLASIFY.md#availability)). |
 
 ### System
 

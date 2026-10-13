@@ -47,6 +47,7 @@ fn shared_client(endpoint: &Url) -> Result<reqwest::Client, ClassificationError>
     CLIENTS.get(bypass_proxy, || {
         let builder = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
             .connect_timeout(CONNECT_TIMEOUT)
             .user_agent(concat!("octocode-native/", env!("CARGO_PKG_VERSION")));
         let builder = if bypass_proxy {
@@ -56,6 +57,17 @@ fn shared_client(endpoint: &Url) -> Result<reqwest::Client, ClassificationError>
         };
         builder.build().map_err(|_| transport_error())
     })
+}
+
+/// Stable account partition for provider admission and exact-input judgment
+/// reuse. The full digest keeps credentials out of cache keys and diagnostics.
+pub(crate) fn account_scope(base_url: &str, endpoint_path: &str, key: &SecretString) -> String {
+    let endpoint = endpoint(base_url, endpoint_path).map_or_else(
+        |_| format!("{base_url}|{endpoint_path}"),
+        |endpoint| crate::providers::classification::gate::endpoint_key(&endpoint),
+    );
+    let account = crate::digest::json_sha256(&key.expose_secret());
+    format!("{endpoint}#{account}")
 }
 
 /// Error returned by the classification transport layer. `code` is a stable
@@ -328,7 +340,7 @@ pub(super) fn check_budget(budget: &RequestBudget) -> Result<(), ClassificationE
     budget.check().map_err(budget_error)
 }
 
-async fn wait<T>(
+pub(super) async fn wait<T>(
     budget: &RequestBudget,
     future: impl Future<Output = T>,
 ) -> Result<T, ClassificationError> {
@@ -511,13 +523,11 @@ async fn attempt(
     if let Err(error) = check_budget(budget) {
         return Attempt::Done(Err(error));
     }
-    let remaining = budget.deadline.saturating_duration_since(Instant::now());
     *provider_calls = provider_calls.saturating_add(1);
     let sent = wait(
         budget,
         client
             .post(endpoint.clone())
-            .timeout(remaining)
             .bearer_auth(key.expose_secret())
             .header(reqwest::header::ACCEPT, "application/json")
             .header(reqwest::header::CONTENT_TYPE, "application/json")

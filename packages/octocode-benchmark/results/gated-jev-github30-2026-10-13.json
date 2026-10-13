@@ -1,0 +1,1334 @@
+{
+  "arms": {
+    "off": "mcp",
+    "on": "mcp-clasify"
+  },
+  "bootstrap": {
+    "resampling_unit": "question",
+    "samples": 10000,
+    "seed": 42,
+    "within_question": "mean each arm over matched valid passes, then on/off"
+  },
+  "campaigns": {
+    "off": "gated-jev-github30-2026-10-13",
+    "on": "gated-jev-github30-2026-10-13"
+  },
+  "question_sets": {
+    "off": "github-v2",
+    "on": "github-v2"
+  },
+  "ratio_definition": "on/off; below 1 is less on-arm resource usage",
+  "subsets": {
+    "all": {
+      "adoption": {
+        "off": {
+          "clasify_calls": 0,
+          "goal_queries": 0,
+          "per_tool_errors": {
+            "artifactSearch": 0,
+            "ghGetFileContent": 1,
+            "ghGetHistoryItem": 0,
+            "ghSearchCode": 2,
+            "ghSearchHistory": 0,
+            "ghSearchRepo": 0,
+            "ghStructure": 0
+          },
+          "ranking_replay_queries": 0,
+          "tool_calls": {
+            "artifactSearch": 2,
+            "ghGetFileContent": 91,
+            "ghGetHistoryItem": 10,
+            "ghSearchCode": 30,
+            "ghSearchHistory": 1,
+            "ghSearchRepo": 16,
+            "ghStructure": 32
+          },
+          "tool_errors_total": 3
+        },
+        "on": {
+          "clasify_calls": 0,
+          "goal_queries": 0,
+          "per_tool_errors": {
+            "artifactSearch": 0,
+            "ghGetFileContent": 0,
+            "ghGetHistoryItem": 0,
+            "ghSearchCode": 1,
+            "ghSearchHistory": 0,
+            "ghSearchRepo": 0,
+            "ghStructure": 1
+          },
+          "ranking_replay_queries": 0,
+          "tool_calls": {
+            "artifactSearch": 2,
+            "ghGetFileContent": 92,
+            "ghGetHistoryItem": 9,
+            "ghSearchCode": 31,
+            "ghSearchHistory": 1,
+            "ghSearchRepo": 19,
+            "ghStructure": 35
+          },
+          "tool_errors_total": 2
+        }
+      },
+      "correctness": {
+        "absent_judgments": 0,
+        "head_to_head_within_one_tie": {
+          "off": 0,
+          "on": 2,
+          "within_one_tie": 28
+        },
+        "judged_valid_pairs": 30,
+        "off_mean_whole_point_scores": 9.033333333333333,
+        "on_mean_whole_point_scores": 9.3
+      },
+      "every_question": [
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.5759770635279915,
+              0.5759770635279915
+            ],
+            "geomean_on_over_off": 0.5759770635279915,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.5759770635279915,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 6627,
+              "off_correctness": 10,
+              "on_chars": 3817,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q1",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              2.134988222504077,
+              2.134988222504077
+            ],
+            "geomean_on_over_off": 2.134988222504077,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 2.134988222504077,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 5519,
+              "off_correctness": 9,
+              "on_chars": 11783,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q2",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.8669708461720786,
+              0.8669708461720786
+            ],
+            "geomean_on_over_off": 0.8669708461720786,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.8669708461720786,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 16876,
+              "off_correctness": 10,
+              "on_chars": 14631,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q3",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.3580753450205147,
+              1.3580753450205147
+            ],
+            "geomean_on_over_off": 1.3580753450205147,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.3580753450205147,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 26810,
+              "off_correctness": 9,
+              "on_chars": 36410,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q4",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.0147177071965998,
+              1.0147177071965998
+            ],
+            "geomean_on_over_off": 1.0147177071965998,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.0147177071965998,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 69644,
+              "off_correctness": 9,
+              "on_chars": 70669,
+              "on_correctness": 8,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q5",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.1203844980164785,
+              1.1203844980164785
+            ],
+            "geomean_on_over_off": 1.1203844980164785,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.1203844980164785,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 6554,
+              "off_correctness": 10,
+              "on_chars": 7343,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q6",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.0581786030061893,
+              1.0581786030061893
+            ],
+            "geomean_on_over_off": 1.0581786030061893,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.0581786030061893,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 5655,
+              "off_correctness": 9,
+              "on_chars": 5984,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q7",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.6409335727109515,
+              0.6409335727109515
+            ],
+            "geomean_on_over_off": 0.6409335727109515,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.6409335727109515,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 15039,
+              "off_correctness": 10,
+              "on_chars": 9639,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q8",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.3715747583854463,
+              1.3715747583854463
+            ],
+            "geomean_on_over_off": 1.3715747583854463,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.3715747583854463,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 8795,
+              "off_correctness": 10,
+              "on_chars": 12063,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 1
+          },
+          "q": "Q9",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.7893585536897639,
+              0.7893585536897639
+            ],
+            "geomean_on_over_off": 0.7893585536897639,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.7893585536897639,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 15543,
+              "off_correctness": 9,
+              "on_chars": 12269,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 1,
+            "on": 0
+          },
+          "q": "Q10",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.8810783293862464,
+              0.8810783293862464
+            ],
+            "geomean_on_over_off": 0.8810783293862464,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.8810783293862464,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 45181,
+              "off_correctness": 10,
+              "on_chars": 39808,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q11",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.6247600767754318,
+              1.6247600767754318
+            ],
+            "geomean_on_over_off": 1.6247600767754318,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.6247600767754318,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 9378,
+              "off_correctness": 9,
+              "on_chars": 15237,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q12",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.1194331983805668,
+              1.1194331983805668
+            ],
+            "geomean_on_over_off": 1.1194331983805668,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.1194331983805668,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 14820,
+              "off_correctness": 4,
+              "on_chars": 16590,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q13",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.6277753591641271,
+              0.6277753591641271
+            ],
+            "geomean_on_over_off": 0.6277753591641271,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.6277753591641271,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 6891,
+              "off_correctness": 10,
+              "on_chars": 4326,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q14",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.2737665463297232,
+              1.2737665463297232
+            ],
+            "geomean_on_over_off": 1.2737665463297232,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.2737665463297232,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 13296,
+              "off_correctness": 10,
+              "on_chars": 16936,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q15",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.9696384211979023,
+              0.9696384211979023
+            ],
+            "geomean_on_over_off": 0.9696384211979023,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.9696384211979023,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 3623,
+              "off_correctness": 10,
+              "on_chars": 3513,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q16",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.9972789115646259,
+              0.9972789115646259
+            ],
+            "geomean_on_over_off": 0.9972789115646259,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.9972789115646259,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 15435,
+              "off_correctness": 10,
+              "on_chars": 15393,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q17",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.9176763485477178,
+              0.9176763485477178
+            ],
+            "geomean_on_over_off": 0.9176763485477178,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.9176763485477178,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 6025,
+              "off_correctness": 10,
+              "on_chars": 5529,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q18",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.8889942174613708,
+              0.8889942174613708
+            ],
+            "geomean_on_over_off": 0.8889942174613708,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.8889942174613708,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 42196,
+              "off_correctness": 9,
+              "on_chars": 37512,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q19",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.8140862639735162,
+              0.8140862639735162
+            ],
+            "geomean_on_over_off": 0.8140862639735162,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.8140862639735162,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 20843,
+              "off_correctness": 9,
+              "on_chars": 16968,
+              "on_correctness": 8,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q20",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.9249965378756405,
+              0.9249965378756405
+            ],
+            "geomean_on_over_off": 0.9249965378756405,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.9249965378756405,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 72210,
+              "off_correctness": 9,
+              "on_chars": 66794,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q21",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.9998489425981874,
+              0.9998489425981874
+            ],
+            "geomean_on_over_off": 0.9998489425981874,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.9998489425981874,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 13240,
+              "off_correctness": 9,
+              "on_chars": 13238,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q22",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.3575144102347814,
+              1.3575144102347814
+            ],
+            "geomean_on_over_off": 1.3575144102347814,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.3575144102347814,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 14226,
+              "off_correctness": 8,
+              "on_chars": 19312,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q23",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.144236572118286,
+              1.144236572118286
+            ],
+            "geomean_on_over_off": 1.144236572118286,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.144236572118286,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 4971,
+              "off_correctness": 10,
+              "on_chars": 5688,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q24",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.0756684999051773,
+              1.0756684999051773
+            ],
+            "geomean_on_over_off": 1.0756684999051773,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.0756684999051773,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 15819,
+              "off_correctness": 8,
+              "on_chars": 17016,
+              "on_correctness": 7,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q25",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              2.659263392857143,
+              2.659263392857143
+            ],
+            "geomean_on_over_off": 2.659263392857143,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 2.659263392857143,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 8960,
+              "off_correctness": 8,
+              "on_chars": 23827,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q26",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.7252519264967398,
+              0.7252519264967398
+            ],
+            "geomean_on_over_off": 0.7252519264967398,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.7252519264967398,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 13496,
+              "off_correctness": 8,
+              "on_chars": 9788,
+              "on_correctness": 8,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q27",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.2997186985828777,
+              1.2997186985828777
+            ],
+            "geomean_on_over_off": 1.2997186985828777,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.2997186985828777,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 131887,
+              "off_correctness": 7,
+              "on_chars": 171416,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q28",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              0.603052598622417,
+              0.603052598622417
+            ],
+            "geomean_on_over_off": 0.603052598622417,
+            "leaner_on_questions": 1,
+            "median_on_over_off": 0.603052598622417,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 63880,
+              "off_correctness": 9,
+              "on_chars": 38523,
+              "on_correctness": 10,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q29",
+          "valid": 1
+        },
+        {
+          "chars": {
+            "bootstrap_ci95": [
+              1.4372322660277355,
+              1.4372322660277355
+            ],
+            "geomean_on_over_off": 1.4372322660277355,
+            "leaner_on_questions": 0,
+            "median_on_over_off": 1.4372322660277355,
+            "paired": 1,
+            "questions": 1
+          },
+          "invalid": 0,
+          "judged": 1,
+          "passes": [
+            {
+              "invalid_reason": null,
+              "off_chars": 27546,
+              "off_correctness": 9,
+              "on_chars": 39590,
+              "on_correctness": 9,
+              "pass": 1,
+              "valid_pair": true
+            }
+          ],
+          "planned": 1,
+          "prior_attempts": {
+            "off": 0,
+            "on": 0
+          },
+          "q": "Q30",
+          "valid": 1
+        }
+      ],
+      "final_runs": {
+        "off": 30,
+        "on": 30
+      },
+      "invalid_pairs": 0,
+      "metrics": {
+        "chars": {
+          "bootstrap_ci95": [
+            0.9226475955420006,
+            1.1792768417118633
+          ],
+          "geomean_on_over_off": 1.041012916845674,
+          "leaner_on_questions": 15,
+          "median_on_over_off": 1.0072833248973936,
+          "paired": 30,
+          "questions": 30
+        },
+        "reported_input_tokens": {
+          "bootstrap_ci95": [
+            1.0284440265504649,
+            1.2311870167740069
+          ],
+          "geomean_on_over_off": 1.125537714925906,
+          "leaner_on_questions": 9,
+          "median_on_over_off": 1.1324922712898733,
+          "paired": 30,
+          "questions": 30
+        },
+        "reported_output_tokens": {
+          "bootstrap_ci95": [
+            1.0061738410880325,
+            1.2016684709780105
+          ],
+          "geomean_on_over_off": 1.097754275453258,
+          "leaner_on_questions": 10,
+          "median_on_over_off": 1.0477478372681208,
+          "paired": 30,
+          "questions": 30
+        },
+        "wall_seconds": {
+          "bootstrap_ci95": [
+            0.7887601000104585,
+            1.2231227673936842
+          ],
+          "geomean_on_over_off": 0.9822847918966172,
+          "leaner_on_questions": 15,
+          "median_on_over_off": 0.9689128737962345,
+          "paired": 30,
+          "questions": 30
+        }
+      },
+      "planned_pairs": 30,
+      "prior_attempts": {
+        "off": {
+          "attempts": [
+            {
+              "arm": "mcp",
+              "attempt": "attempt-001",
+              "cached_input_tokens": null,
+              "calls": 0,
+              "chars": 1,
+              "clasify_calls": 0,
+              "classification_http": null,
+              "classification_usage": null,
+              "codex_receipts": null,
+              "cost_usd": null,
+              "failed": 0,
+              "goal_queries": 0,
+              "goal_tool_queries": {},
+              "initial_goal_queries": 0,
+              "input_tokens": null,
+              "model_in": 0,
+              "model_out": 1,
+              "model_secs": null,
+              "ok": false,
+              "output_tokens": null,
+              "pass": 1,
+              "problems": [
+                "Codex error: \"Selected model is at capacity. Please try a different model.\"",
+                "Codex turn.failed: {\"message\": \"Selected model is at capacity. Please try a different model.\"}",
+                "Codex made no MCP calls; tool availability/research is unverified",
+                "Codex completion missing",
+                "Codex usage missing",
+                "runner ended with runner_failed"
+              ],
+              "q": "Q10",
+              "ranking_replay_queries": 0,
+              "ranking_replay_tool_queries": {},
+              "secs": 3.799,
+              "setup_secs": 0.335,
+              "solver_secs": 3.463,
+              "tool_calls": {},
+              "tool_chars": {},
+              "tool_failed_calls": {},
+              "tool_secs": null,
+              "turns": null,
+              "uncached_input_tokens": null
+            }
+          ],
+          "count": 1,
+          "invalid": 1,
+          "ok": 0
+        },
+        "on": {
+          "attempts": [
+            {
+              "arm": "mcp-clasify",
+              "attempt": "attempt-001",
+              "cached_input_tokens": null,
+              "calls": 0,
+              "chars": 1,
+              "clasify_calls": 0,
+              "classification_http": {
+                "attempts": 2,
+                "completed": 2,
+                "failed_or_unknown": 0,
+                "input_tokens_complete": true,
+                "known_input_tokens": 556,
+                "known_output_tokens": 40,
+                "output_tokens_complete": true,
+                "rejected_before_upstream": 0,
+                "resolved_models": {
+                  "jev-1.13.0": 2
+                },
+                "scope": "All traced transport attempts, including preflight/startup probes; unknown usage is not zero"
+              },
+              "classification_usage": null,
+              "codex_receipts": null,
+              "cost_usd": null,
+              "failed": 0,
+              "goal_queries": 0,
+              "goal_tool_queries": {},
+              "initial_goal_queries": 0,
+              "input_tokens": null,
+              "model_in": 0,
+              "model_out": 1,
+              "model_secs": null,
+              "ok": false,
+              "output_tokens": null,
+              "pass": 1,
+              "problems": [
+                "Codex error: \"Selected model is at capacity. Please try a different model.\"",
+                "Codex turn.failed: {\"message\": \"Selected model is at capacity. Please try a different model.\"}",
+                "Codex made no MCP calls; tool availability/research is unverified",
+                "Codex completion missing",
+                "Codex usage missing",
+                "runner ended with runner_failed"
+              ],
+              "q": "Q9",
+              "ranking_replay_queries": 0,
+              "ranking_replay_tool_queries": {},
+              "secs": 5.242,
+              "setup_secs": 0.724,
+              "solver_secs": 4.518,
+              "tool_calls": {},
+              "tool_chars": {},
+              "tool_failed_calls": {},
+              "tool_secs": null,
+              "turns": null,
+              "uncached_input_tokens": null
+            }
+          ],
+          "count": 1,
+          "invalid": 1,
+          "ok": 0
+        }
+      },
+      "provider": {
+        "off": {
+          "attempts_known": 0,
+          "completed_known": 0,
+          "failed_or_unknown_known": 0,
+          "input_usage_complete": false,
+          "known_input_tokens": null,
+          "known_output_tokens": null,
+          "missing_trace_runs": 30,
+          "output_usage_complete": false,
+          "rejected_before_upstream_known": 0,
+          "scope": "Traced transport attempts, including probes; missing trace or usage is unknown, not zero",
+          "traced_runs": 0
+        },
+        "on": {
+          "attempts_known": 60,
+          "completed_known": 60,
+          "failed_or_unknown_known": 0,
+          "input_usage_complete": true,
+          "known_input_tokens": 16680,
+          "known_output_tokens": 1200,
+          "missing_trace_runs": 0,
+          "output_usage_complete": true,
+          "rejected_before_upstream_known": 0,
+          "scope": "Traced transport attempts, including probes; missing trace or usage is unknown, not zero",
+          "traced_runs": 30
+        }
+      },
+      "provider_prior_attempts": {
+        "off": {
+          "attempts_known": 0,
+          "completed_known": 0,
+          "failed_or_unknown_known": 0,
+          "input_usage_complete": false,
+          "known_input_tokens": null,
+          "known_output_tokens": null,
+          "missing_trace_runs": 1,
+          "output_usage_complete": false,
+          "rejected_before_upstream_known": 0,
+          "scope": "Traced transport attempts, including probes; missing trace or usage is unknown, not zero",
+          "traced_runs": 0
+        },
+        "on": {
+          "attempts_known": 2,
+          "completed_known": 2,
+          "failed_or_unknown_known": 0,
+          "input_usage_complete": true,
+          "known_input_tokens": 556,
+          "known_output_tokens": 40,
+          "missing_trace_runs": 0,
+          "output_usage_complete": true,
+          "rejected_before_upstream_known": 0,
+          "scope": "Traced transport attempts, including probes; missing trace or usage is unknown, not zero",
+          "traced_runs": 1
+        }
+      },
+      "questions": [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4",
+        "Q5",
+        "Q6",
+        "Q7",
+        "Q8",
+        "Q9",
+        "Q10",
+        "Q11",
+        "Q12",
+        "Q13",
+        "Q14",
+        "Q15",
+        "Q16",
+        "Q17",
+        "Q18",
+        "Q19",
+        "Q20",
+        "Q21",
+        "Q22",
+        "Q23",
+        "Q24",
+        "Q25",
+        "Q26",
+        "Q27",
+        "Q28",
+        "Q29",
+        "Q30"
+      ],
+      "valid_pairs": 30
+    }
+  }
+}

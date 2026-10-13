@@ -1,0 +1,296 @@
+[
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 1.01,
+  "leaner_on": 20
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 1.03,
+  "leaner_on": 21
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.08,
+  "leaner_on": 21
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "leaner_x": 0.99,
+  "leaner_on": 18
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "leaner_x": 1.04,
+  "leaner_on": 21
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "leaner_x": 0.99,
+  "leaner_on": 21
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "leaner_x": 0.99,
+  "leaner_on": 20
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 1.02,
+  "leaner_on": 22
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.07,
+  "leaner_on": 20
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "leaner_x": 0.98,
+  "leaner_on": 17
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "leaner_x": 1.02,
+  "leaner_on": 18
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "leaner_x": 0.98,
+  "leaner_on": 19
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "leaner_x": 0.97,
+  "leaner_on": 19
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 0.99,
+  "leaner_on": 18
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.05,
+  "leaner_on": 23
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "leaner_x": 0.96,
+  "leaner_on": 19
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "leaner_x": 1.01,
+  "leaner_on": 18
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "leaner_x": 0.96,
+  "leaner_on": 16
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "leaner_x": 0.92,
+  "leaner_on": 19
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 0.94,
+  "leaner_on": 20
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 0.95,
+  "leaner_on": 17
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "leaner_x": 0.92,
+  "leaner_on": 15
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "leaner_x": 0.96,
+  "leaner_on": 20
+ },
+ {
+  "pair": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "row": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "leaner_x": 0.92,
+  "leaner_on": 18
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "leaner_x": 1.01,
+  "leaner_on": 22
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 1.02,
+  "leaner_on": 23
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 1.04,
+  "leaner_on": 21
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.09,
+  "leaner_on": 25
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "leaner_x": 1.05,
+  "leaner_on": 20
+ },
+ {
+  "pair": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "row": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "leaner_x": 1.0,
+  "leaner_on": 24
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "leaner_x": 0.96,
+  "leaner_on": 19
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 0.98,
+  "leaner_on": 22
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 0.99,
+  "leaner_on": 21
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.04,
+  "leaner_on": 20
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "leaner_x": 0.96,
+  "leaner_on": 20
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "leaner_x": 0.96,
+  "leaner_on": 18
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp_clasify",
+  "leaner_x": 1.01,
+  "leaner_on": 19
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_revised",
+  "leaner_x": 1.02,
+  "leaner_on": 21
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp_clasify_old",
+  "leaner_x": 1.04,
+  "leaner_on": 24
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp~octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "col": "octocode_selective_guidance_selective_guidance_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.09,
+  "leaner_on": 22
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp~gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "col": "gated_jev_current_local_mcp_gated_jev_local40_2026_10_13_local_mcp",
+  "leaner_x": 1.0,
+  "leaner_on": 16
+ },
+ {
+  "pair": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp~local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "row": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp",
+  "col": "local_20_2_0_goals_ablation_local40_terra_goals_2026_10_13_local_mcp_clasify",
+  "leaner_x": 1.04,
+  "leaner_on": 22
+ }
+]

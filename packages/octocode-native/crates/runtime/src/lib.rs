@@ -24,4 +24,4 @@ pub mod security;
 pub mod tools;
 
 /// Identifies the native boundary independently of generated tool contracts.
-pub const NATIVE_ABI_VERSION: u32 = 5;
+pub const NATIVE_ABI_VERSION: u32 = 6;

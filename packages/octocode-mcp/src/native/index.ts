@@ -22,7 +22,6 @@ import {
 } from '@octocodeai/config/mcp';
 import {
   NATIVE_ABI_VERSION,
-  type ClassificationProbe,
   type NativeCatalog,
   type NativeCatalogTool,
   type NativeRuntime as NativeAddonRuntime,
@@ -40,20 +39,10 @@ import packageJson from '../../package.json';
  */
 export type NativeRuntime = Pick<
   NativeAddonRuntime,
-  | 'abiVersion'
-  | 'probeClassification'
-  | 'catalog'
-  | 'executeMcp'
-  | 'cancel'
-  | 'close'
+  'abiVersion' | 'catalog' | 'executeMcp' | 'cancel' | 'close'
 >;
 
-export type {
-  ClassificationProbe,
-  NativeCatalog,
-  NativeCatalogTool,
-  NativeRuntimeOptions,
-};
+export type { NativeCatalog, NativeCatalogTool, NativeRuntimeOptions };
 
 export interface NativeRuntimeBinding {
   NativeRuntime: new (options?: NativeRuntimeOptions) => NativeRuntime;
@@ -279,14 +268,6 @@ export async function createNativeMcp({
     throw new Error(
       `Native addon ABI ${actual} does not match expected ${NATIVE_ABI_VERSION}; ` +
         'rebuild or reinstall @octocodeai/octocode-native'
-    );
-  }
-  // An enabled clasify whose provider cannot answer (bad key, quota, host
-  // down) leaves the catalog before tools/list, so agents never call it.
-  const probe = await runtime.probeClassification();
-  if (probe.probed && !probe.available) {
-    process.stderr.write(
-      `[octocode-mcp] clasify disabled: provider check failed (${probe.code}): ${probe.message}\n`
     );
   }
   const catalog = runtime.catalog();

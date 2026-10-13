@@ -48,7 +48,7 @@ pub async fn run<C: crate::providers::github::ConditionalCache>(
         owner: query.owner.as_str(),
         repo: query.repo.as_str(),
         path: query.path.as_deref().unwrap_or_default().trim_matches('/'),
-        reference: query.ref_.as_deref(),
+        reference: query.ref_.as_ref().map(|value| value.as_str()),
     };
     if error.reason == Some(ProviderErrorReason::PathIsFile) {
         return Err(file_failure(error, &at));
@@ -318,7 +318,11 @@ pub(crate) async fn execute<C: crate::providers::github::ConditionalCache>(
     }
     // Continuations read the same commit.
     let pinned = GhStructureQuery {
-        ref_: Some(commit_sha.clone()),
+        ref_: Some(commit_sha.parse().map_err(
+            |error: crate::contracts::tool_types::error::ConversionError| {
+                ProviderError::new(ProviderErrorKind::Decode, error.to_string())
+            },
+        )?),
         ..query.clone()
     };
     attach_continuations(

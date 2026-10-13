@@ -24,7 +24,11 @@ pub(super) fn code(query: &GhSearchCodeQuery, extension: Option<&str>) -> String
     // `path` is a repository path prefix (schema contract); a dotted segment
     // such as `types/lodash.merge` is a directory, so never split it into a
     // `filename:` qualifier.
-    push(&mut parts, "filename", filename.as_deref());
+    push(
+        &mut parts,
+        "filename",
+        filename.as_ref().map(|value| value.as_str()),
+    );
     match extension {
         Some(extension) => push(&mut parts, "extension", Some(extension)),
         None => {

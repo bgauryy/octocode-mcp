@@ -21,7 +21,7 @@ export function success(result) {
 }
 
 export function answer(request, mode = 'score') {
-  const high = mode === 'tie' || /Cancellation removes|greeter\.ts|demo-docs|tiny-pulse/.test(JSON.stringify(request.state));
+  const high = mode === 'tie' || /Cancellation removes|greeter\.ts|demo-docs|tiny-pulse|Add greeter module/.test(JSON.stringify(request.state));
   const answers = Object.fromEntries(Object.entries(request.questions ?? {}).map(([id, q]) => {
     if (q.type === 'noul') return [id, { type: 'noul', noul: high ? 0.99 : 0.01 }];
     assert.equal(q.type, 'score');

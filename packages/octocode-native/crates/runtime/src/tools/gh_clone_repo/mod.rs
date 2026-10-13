@@ -29,11 +29,11 @@ impl Sparse {
     fn of(query: &GhCloneRepoQuery) -> Option<Self> {
         let mut paths = Vec::<String>::new();
         match query.path.as_ref()? {
-            GhCloneRepoQueryPath::String(path) => paths.push(path.clone()),
+            GhCloneRepoQueryPath::String(path) => paths.push(path.to_string()),
             GhCloneRepoQueryPath::Array(values) => {
                 for path in values {
-                    if !paths.contains(path) {
-                        paths.push(path.clone());
+                    if !paths.iter().any(|known| known == path.as_str()) {
+                        paths.push(path.to_string());
                     }
                 }
             }
@@ -231,7 +231,7 @@ pub async fn run<C: ConditionalCache>(
     if git.code != GIT_FAILED {
         return Err(CloneFailure::Clone(git));
     }
-    let reference = query.ref_.as_deref().unwrap_or("HEAD");
+    let reference = query.ref_.as_ref().map_or("HEAD", |value| value.as_str());
     let answer = provider
         .transport
         .commit_sha(&query.owner, &query.repo, reference, request)
@@ -256,7 +256,7 @@ pub(crate) fn explain_git_failure(
     };
     match (api.kind, api.reason) {
         (_, Some(ProviderErrorReason::RefNotFound)) => {
-            let reference = query.ref_.as_deref().unwrap_or("HEAD");
+            let reference = query.ref_.as_ref().map_or("HEAD", |value| value.as_str());
             CloneFailure::Clone(CloneError {
                 hints: vec![
                     "Verify the branch, tag, or SHA (ghStructure lists a ref), or omit ref for the default branch.".into(),
@@ -334,7 +334,8 @@ fn execute_clone(
     // default-branch clone recorded: a hit needs no GitHub API call.
     let known_branch = query
         .ref_
-        .clone()
+        .as_ref()
+        .map(ToString::to_string)
         .or_else(|| context.resolved_default_branch.map(str::to_owned))
         .or_else(|| {
             (!force_refresh)

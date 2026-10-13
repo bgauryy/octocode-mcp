@@ -4,7 +4,7 @@ description: Use when headless access is insufficient or the user must log in; d
 excludeTools: file,bash
 mcp: false
 visibleBrowser: true
-model: claude-haiku-5-5
+model: small
 ---
 Use `web` for static public sources and `browser` for visible interaction. Chrome uses a persistent profile; logins made there survive runs.
 

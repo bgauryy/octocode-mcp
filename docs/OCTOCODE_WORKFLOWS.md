@@ -85,7 +85,7 @@ A search result is a candidate. It does not prove identity, completeness, or beh
 | Package versions, dependencies, release source | `artifactSearch`, not memory | Source behavior or equivalence with the installed version. |
 | A local checkout of a remote repo (CLI) | `ghCloneRepo` | Proof; local analysis of the checkout supplies it. |
 | Source content ordered for a broad described target | `goals`, when present in the enabled schema | Coverage of every goal or unread page; search still retrieves lexical matches. |
-| A location or typed judgment from expensive unread evidence | `clasify` (needs a provider key) | Identity, safe deletion, or absence; verify the source. See [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md). |
+| A location or typed judgment from expensive unread evidence | `clasify` when [available](OCTOCODE_CLASIFY.md#availability) | Identity, safe deletion, or absence; verify the source. |
 
 A tool's availability, a recognized file extension, a parser, and a running language server are separate facts. See the [language and feature reference](../packages/octocode-native/docs/engine/SUPPORTED_LANGUAGES_AND_FEATURES.md).
 

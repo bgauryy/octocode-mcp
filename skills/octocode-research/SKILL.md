@@ -46,12 +46,12 @@ Scale depth to risk. End a lookup once the exact evidence answers it. Deletions,
 
 ## SEMANTIC? (goals or clasify)
 
-Use a semantic route only when a described target cannot be found cheaply with exact tools and selecting evidence can avoid later reads, or when a typed label is itself needed. Choose optional local `goals` for source content first, or `clasify` for locations/judgments first; do not repeat the same relevance decision in both. Exact reads, small results, exhaustive audits, identity checks, and finding verdicts use direct evidence. Verify the deciding source and keep incomplete scope unresolved. If unavailable, use targeted reads. Admission and evidence-scope checks live in `references/clasify.md`.
+Use a semantic route when selecting unread evidence could avoid later reads, or when a typed label is itself needed. Prefer a cheap exact anchor when it answers the question. Choose optional read-tool `goals` for source content first, or `clasify` for locations/judgments first; do not repeat the same relevance decision in both. Prefer direct reads for bounded evidence. Use deterministic tools for exhaustive coverage and identity. Source evidence settles findings; typed opinions cannot dismiss them. Verify deciding source and keep incomplete scope unresolved. If unavailable, use targeted reads. Admission and evidence-scope checks live in `references/clasify.md`.
 
 ## Tools
 
 - Prefer exposed Octocode MCP tools; else `npx -y octocode`. Read `schema <name> --view query` before an unfamiliar call or after a validation error.
-- GitHub access can use `GH_TOKEN` or `GITHUB_TOKEN`; classification uses `OCTOCODE_CLASSIFICATION_API`, and beta topology uses `OCTOCODE_BETA=1` when needed. These and optional local-tool settings such as `OCTOCODE_ENABLE_LOCAL`, `OCTOCODE_STORAGE_MODE`, and `OCTOCODE_LSP_PREWARM` can be set in `<HOME>/.octocode/.env`; inspect live config before changing them. Never print credential values.
+- GitHub access can use `GH_TOKEN` or `GITHUB_TOKEN`. Optional read-tool goals need a nonblank `OCTOCODE_CLASSIFICATION_API` and ranking enabled; public `clasify` needs the credential and beta (`OCTOCODE_BETA=1`). Beta topology also uses `OCTOCODE_BETA=1`. These and optional local-tool settings such as `OCTOCODE_ENABLE_LOCAL`, `OCTOCODE_STORAGE_MODE`, and `OCTOCODE_LSP_PREWARM` can be set in `<HOME>/.octocode/.env`; inspect live config before changing them. Never print credential values.
 - Batch ≤5 independent rows; keep dependent probes sequential. Add `mainGoal`/`reasoning` only in multi-call research on an unknown; omit them on simple lookups.
 - Run each `next.*` page unchanged, or narrow it and name what stays unread; `hints.*` leads are optional (a successful row shows most only with `extras:["hints"]`).
 - Read the smallest useful span (`references/reading-flows.md`); expand when nearby context can resolve the claim.

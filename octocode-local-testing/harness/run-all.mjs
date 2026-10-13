@@ -38,6 +38,7 @@ const HERMETIC = {
   'large-files': script('large-files'),
   'local-ranking': script('local-ranking'),
   'read-tool-ranking': script('read-tool-ranking'),
+  'classification-retry': script('classification-retry'),
   'tool-health': script('tool-health'),
 };
 const LIVE_SUITES = { remote: script('remote'), github: script('github'), 'review-large': script('review-large'), artifacts: script('artifacts'), clasify: script('clasify') };

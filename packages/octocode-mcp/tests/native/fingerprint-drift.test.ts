@@ -9,10 +9,6 @@ class FakeRuntime {
 
   constructor(private readonly fingerprint: string) {}
 
-  async probeClassification() {
-    return { probed: false, available: false };
-  }
-
   catalog() {
     return {
       fingerprint: this.fingerprint,

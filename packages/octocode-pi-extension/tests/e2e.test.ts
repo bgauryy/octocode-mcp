@@ -311,20 +311,16 @@ describe('with another MCP server and Octocode disabled', () => {
     expect(fs.readFileSync(path.join(s.cwd, 'existing.txt'), 'utf8')).toBe('replaced');
   });
 
-  it('trims old large tool results with persistent context edits at the turn boundary', async () => {
+  it('keeps every tool result verbatim: no context edits after a turn, even with a cold cache', async () => {
     fs.writeFileSync(path.join(s.cwd, 'big.txt'), 'line of text\n'.repeat(1_000));
     const reads = Array.from({ length: 22 }, () => fauxToolCall('read', { path: 'big.txt' }));
-    // The reads ran past any prompt-cache lifetime (the call message, and every earlier request of this session, are an
-    // hour old), so the cache is cold and trims are due. The faux provider reports cache use, so the inferred lifetime applies.
     const realNow = Date.now.bind(Date);
     const later = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 60 * 60_000 + 1);
     const cold = () => fauxAssistantMessage(reads, { stopReason: 'toolUse', timestamp: realNow() });
     const results = await s.run('read a lot', [cold, say('done')]).finally(() => later.mockRestore()).then((turns) => turns.at(-1)!.lastResults);
     expect(results).toHaveLength(22);
-    // 13k-char results: six fit the 80k verbatim budget, the older 16 are trimmed.
-    expect(results.slice(0, 16).every((result) => /were trimmed/.test(result.text))).toBe(true);
-    expect(results.slice(16).every((result) => result.text.length > 10_000)).toBe(true);
-    expect(s.session.sessionManager.getEntries().filter((entry) => entry.type === 'context_edit')).toHaveLength(16);
+    expect(results.every((result) => result.text.length > 10_000)).toBe(true);
+    expect(s.session.sessionManager.getEntries().filter((entry) => entry.type === 'context_edit')).toHaveLength(0);
   });
 
   it('reports unavailable askUser without inventing an answer or approval', async () => {
@@ -365,7 +361,7 @@ describe('compaction', () => {
   }, 60_000);
   afterAll(() => s.dispose());
 
-  it("lets Pi summarize on the user's model, listing files the file tool changed", async () => {
+  it("summarizes on the user's model with Octocode's handoff sections, listing files the file tool changed", async () => {
     fs.writeFileSync(path.join(s.cwd, 'notes.txt'), 'hello\n');
     await s.run('Please read notes.txt and create todo.txt', [
       calls(fauxToolCall('read', { path: 'notes.txt' })),
@@ -378,26 +374,53 @@ describe('compaction', () => {
     expect(log.length).toBeGreaterThan(0);
     expect(new Set(log.map((call) => call.model))).toEqual(new Set(['faux-1']));
     expect(log.some((call) => call.text.includes('keep the notes'))).toBe(true);
+    for (const section of ['## Errors & Fixes', '## Where We Stopped', '## Follow-ups', 'only record']) expect(log.some((call) => call.text.includes(section))).toBe(true);
     const entry = compactionEntries().at(-1)!;
-    expect(entry.fromHook).not.toBe(true);
+    expect(entry.fromHook).toBe(true);
     expect(entry.details).toMatchObject({ readFiles: ['notes.txt'], modifiedFiles: ['todo.txt'] });
     expect(entry.summary).toContain('Pi summary');
     expect(entry.summary).toMatch(/<read-files>\nnotes\.txt\n<\/read-files>[\s\S]*<modified-files>\ntodo\.txt\n<\/modified-files>/);
+    // Code, not the model, keeps the user's own words, oldest first.
+    expect(entry.summary).toMatch(/## User Messages \(verbatim, oldest first\)\n<user-message>\nPlease read notes\.txt and create todo\.txt\n<\/user-message>\n<user-message>\nNow keep going with the plan\n<\/user-message>/);
   }, 60_000);
 
-  it('makes a file read before compaction need a fresh read before it is changed', async () => {
-    const write = () => calls(fauxToolCall('file', { queries: [{ reasoning: 'replace', type: 'write', path: 'notes.txt', content: 'x' }] }));
-    const refused = await s.run('overwrite', [write(), say('done')]);
-    expect(refused.at(-1)!.lastResults[0]!.text).toMatch(/FAILED write notes\.txt: .*Read it again/);
-    const turns = await s.run('read, then overwrite', [calls(fauxToolCall('read', { path: 'notes.txt' })), write(), say('done')]);
+  it('reads the files worked on back into the context after compaction, so they can be changed without a fresh read', async () => {
+    const turns = await s.run('overwrite', [calls(fauxToolCall('file', { queries: [{ reasoning: 'replace', type: 'write', path: 'notes.txt', content: 'x' }] })), say('done')]);
     expect(turns.at(-1)!.lastResults[0]!.text).toMatch(/OK write notes\.txt/);
+    const restored = s.session.sessionManager.getEntries().filter((entry) => entry.type === 'custom_message' && (entry as { customType?: string }).customType === 'octocode-restored-files') as Array<{ content: string; details: { files: string[] } }>;
+    expect(restored).toHaveLength(1);
+    expect(restored[0]!.content).toMatch(/<file path="todo\.txt">\nx\n<\/file>/);
+    expect(restored[0]!.content).toMatch(/<file path="notes\.txt">\nhello\n<\/file>/);
   }, 60_000);
 
-  it('carries file-tool paths forward through the next Pi compaction', async () => {
+  it('carries file lists forward through the next compaction, and puts the summary first in the next request', async () => {
     await s.run('more', [say(`Even more. ${'detail '.repeat(300)}`)]);
     script('## Goal\nNext summary');
     await s.session.compact();
     expect(compactionEntries().at(-1)!.details!['modifiedFiles']).toEqual(expect.arrayContaining(['todo.txt', 'notes.txt']));
+    const log: string[] = [];
+    s.faux.setResponses([(context: TranscriptContext) => {
+      const messages = context.messages.filter((message) => (message as { role: string }).role !== 'system');
+      log.push(JSON.stringify(messages[0]));
+      return fauxAssistantMessage('ok');
+    }]);
+    await s.session.prompt('continue');
+    expect(log[0]).toContain('Next summary');
+  }, 60_000);
+
+  it("falls back to Pi's default summary when Octocode's fails", async () => {
+    await s.run('more', [say(`Again. ${'detail '.repeat(300)}`)]);
+    let calls = 0;
+    s.faux.setResponses(Array.from({ length: 6 }, () => () => {
+      calls += 1;
+      if (calls === 1) throw new Error('summary provider down');
+      return fauxAssistantMessage('## Goal\nDefault summary');
+    }));
+    await s.session.compact();
+    const entry = compactionEntries().at(-1)!;
+    expect(entry.fromHook).not.toBe(true);
+    expect(entry.summary).toContain('Default summary');
+    expect(entry.details!['modifiedFiles']).toEqual(expect.arrayContaining(['todo.txt']));
   }, 60_000);
 });
 

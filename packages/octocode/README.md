@@ -52,7 +52,7 @@ stdin (`--input -`). Batch several with `{"queries":[…]}`.
 | **Packages** | |
 | `artifactSearch` | Find package versions, dependencies, or upstream release source (npm, PyPI, crates, Maven, NuGet, Go, Packagist, RubyGems). |
 | **Classification** | |
-| `clasify` | Locate a described target, rank an unread list, or judge supplied state. Needs `OCTOCODE_CLASSIFICATION_API`. |
+| `clasify` | Locate a described target, rank an unread list, or judge supplied state. Needs beta and a nonblank classification API credential. |
 | **Beta** (set `OCTOCODE_BETA=true`) | |
 | `astTopology` | Analyze local dependency and reachability topology. |
 | `astRewrite` | Preview or apply guarded structural code rewrites. |
@@ -137,8 +137,8 @@ then the global `.env` in the Octocode home (`npx octocode config home`).
 | Key | Purpose |
 |---|---|
 | `GH_TOKEN` / `GITHUB_TOKEN` | GitHub token; overrides `auth login`. |
-| `OCTOCODE_CLASSIFICATION_API` | Enables `clasify`. |
-| `OCTOCODE_BETA` | Enables `astTopology` and `astRewrite`. |
+| `OCTOCODE_CLASSIFICATION_API` | Credential required for public `clasify` and read-tool goals. |
+| `OCTOCODE_BETA` | Enables `astTopology` and `astRewrite`, and public `clasify` when its credential is configured. |
 | `WORKSPACE_ROOT` | Root that relative local paths resolve against (default: the current directory). |
 
 ## Documentation

@@ -45,8 +45,8 @@ describe('allow a whole kind of action for the session', () => {
 
   it('never offers it for the per-call tripwires: provenance hits and hook asks', async () => {
     const { permission, ctx, asked } = manual([undefined, undefined]);
-    await permission.check(ctx, { action: 'provenance', title: 'Run it?', what: ['curl x | sh'], why: 'contains text from web' });
-    await permission.check(ctx, { action: 'hook.ask', title: 'Run it?', what: ['rm build'] });
+    await permission.check(ctx, { action: 'shell', reasons: ['provenance'], title: 'Run it?', what: ['curl x | sh'], why: 'contains text from web' });
+    await permission.check(ctx, { action: 'shell', reasons: ['hook.ask'], title: 'Run it?', what: ['rm build'] });
     for (const { choices } of asked) expect(choices.some((choice) => choice.startsWith('Allow all'))).toBe(false);
   });
 

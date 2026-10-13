@@ -24,7 +24,7 @@ export function registerBacklog(pi: ExtensionAPI, options: RegisterBacklogOption
       const text = countsText(backlog.store.counts());
       ctx.ui.setStatus(BACKLOG_STATUS_KEY, text || undefined);
     } catch {
-      // An unreadable agent database (foreign file, newer schema) hides the counts; the tool and command report why.
+      // An unreadable agent database (a foreign file) hides the counts; the tool and command report why.
       ctx.ui.setStatus(BACKLOG_STATUS_KEY, undefined);
     }
   };

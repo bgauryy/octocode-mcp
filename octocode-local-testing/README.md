@@ -21,7 +21,7 @@ and exits non-zero when any suite fails, errors, times out or reports no checks.
 
 | Kind | Suites | Runs |
 |---|---|---|
-| Hermetic (default) | `acceptance` (acceptance.test.mjs), `usage-regressions`, `lsp-importers`, `rewrite`, `grammar`, `workflows`, `chain-check`, `lead-replay`, `navigate`, `repo-sweep`, `deps-flows`, `large-files`, `local-ranking`, `read-tool-ranking`, `tool-health` | Always. Only local clones and fixtures; run-all gives each a fresh empty `OCTOCODE_HOME` and `GH_CONFIG_DIR`, strips GitHub and classifier credentials, and routes HTTP(S) to a dead proxy (loopback exempt, so `tool-health`'s loopback mock works) |
+| Hermetic (default) | `acceptance` (acceptance.test.mjs), `usage-regressions`, `lsp-importers`, `rewrite`, `grammar`, `workflows`, `chain-check`, `lead-replay`, `navigate`, `repo-sweep`, `deps-flows`, `large-files`, `local-ranking`, `read-tool-ranking`, `classification-retry`, `tool-health` | Always. Only local clones and fixtures; run-all gives each a fresh empty `OCTOCODE_HOME` and `GH_CONFIG_DIR`, strips GitHub and classifier credentials, and routes HTTP(S) to a dead proxy (loopback exempt, so `tool-health`'s loopback mock works) |
 | Live | `remote`, `github`, `review-large`, `artifacts`, `clasify` | Only with `OCTOCODE_LIVE=1`, with your own credentials. The same switch enables the GitHub/registry sections of `chain-check` and `lead-replay` |
 | Bench (not correctness) | `perf`, `competitors`, `kpi`, `soak` | Only when named |
 
@@ -35,7 +35,8 @@ MCP, CLI and config vitest suites run under (`test-utils/external-effects-guard.
 | `harness/mcp-client.mjs` | Shared stdio MCP client, `next.*` page walker, check recorder |
 | `harness/workflows.mjs` | Regression checks for every fixed defect + continuation hygiene |
 | `harness/local-ranking.mjs` | Raw local search/fetch ranking edge cases with a loopback classifier: source drift, full evidence, nested clasify, redaction, and replay |
-| `harness/read-tool-ranking.mjs` | Explicit all-13 read-tool ranking acceptance: schema gates, scope, complete payloads, protected operations, terminal pages, failure fallback, no hidden hydration, and CLI/MCP agreement |
+| `harness/read-tool-ranking.mjs` | All-13 read-tool applicability and evidence acceptance: four goal-capable source tools, nine ordinary tools without ranking controls, schema gates, complete payloads, terminal pages, failure fallback, no hidden hydration, and CLI/MCP agreement |
+| `harness/classification-retry.mjs` | Hermetic CLI/MCP/N-API checks for exact judgment reuse, account isolation, retry limits and usage, failed flights, and source/goal/account changes during ranked replay |
 | `harness/read-tool-ranking-impact.mjs` | Manually selected, budgeted real-provider comparison on labeled fixtures. Requires `OCTOCODE_LIVE=1`; retains no-benefit, insufficient, and skipped outcomes separately from mechanical acceptance |
 | `harness/usage-regressions.mjs` | Input shapes and failures mined from recorded agent sessions, replayed on MCP and the CLI: batch/brief placement, guessed field names, wrong-tool rows, regex repairs, bounded large reads, root-policy hints, warm LSP |
 | `harness/grammar.mjs` | All 12 Tree-sitter grammars and their extensions on small fixtures |

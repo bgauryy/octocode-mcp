@@ -12,7 +12,7 @@ npx octocode schema localSearch --view query
 
 ## 16 public tools
 
-The default catalog contains 12 tools; a classification key adds `clasify`. `OCTOCODE_BETA=true` adds nothing on MCP.
+The default catalog contains 12 tools; public `clasify` appears only with beta and a nonblank classification API credential. `OCTOCODE_BETA=true` alone adds nothing on MCP. Read-tool goals use a separate ranking gate.
 
 | Evidence question | Tool |
 |---|---|
@@ -21,7 +21,7 @@ The default catalog contains 12 tools; a classification key adds `clasify`. `OCT
 | Local text / layout / syntax / content / identity | `localSearch` / `structureSearch` / `astSearch` / `localFetch` / `lspSearch` |
 | Topology / rewrite / packages / classification | `astTopology` / `astRewrite` / `artifactSearch` / `clasify` |
 
-`ghCloneRepo`, `astTopology` and `astRewrite` are CLI-only; MCP never lists them. `ghCloneRepo` needs persistent storage (the default). `astTopology` and `astRewrite` need `OCTOCODE_BETA=true`; `clasify` needs a classification key (`OCTOCODE_CLASSIFICATION_API`). Check reach with `schema` (`availability`), `auth status`, and `lsp-server status <file>`; report an unavailable tool as a gap, not as empty.
+`ghCloneRepo`, `astTopology` and `astRewrite` are CLI-only; MCP never lists them. `ghCloneRepo` needs persistent storage (the default). `astTopology` and `astRewrite` need `OCTOCODE_BETA=true`; public `clasify` needs beta and a nonblank classification API credential (`OCTOCODE_CLASSIFICATION_API` or `classification.api`). Check reach with `schema` (`availability`), `auth status`, and `lsp-server status <file>`; report an unavailable tool as a gap, not as empty.
 
 ## Output and recovery
 

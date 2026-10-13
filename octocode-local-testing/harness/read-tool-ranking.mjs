@@ -16,6 +16,8 @@ const selected = process.argv.slice(2).find(arg => !arg.startsWith('--'))?.split
 const cases = selected ? CASES.filter(row => selected.includes(row.tool)) : CASES;
 assert.equal(READ_TOOLS.length, 13);
 assert.equal(new Set(READ_TOOLS).size, 13);
+assert.deepEqual(CASES.filter(row => row.scope).map(row => row.tool).sort(),
+  ['ghGetFileContent', 'ghSearchCode', 'localFetch', 'localSearch']);
 if (selected) assert.deepEqual([...cases.map(row => row.tool)].sort(), [...selected].sort(), 'unknown tool selection');
 const ctx = await setup();
 const checks = [], tools = [], raw = [], schemas = [];
@@ -37,6 +39,16 @@ async function check(tool, name, run) {
 }
 const ordinary = { OCTOCODE_RANKING_ENABLED: 'false' };
 const sorted = rows => [...rows].sort();
+const expectedItems = { localFetch: 80, localSearch: 5, structureSearch: 5, astSearch: 8,
+  ghSearchRepo: 3, ghSearchCode: 5, ghGetFileContent: 80, ghSearchHistory: 2, artifactSearch: 3 };
+function assertRankingFields(schema, spec, shown, opaque = shown) {
+  const branches = schema.oneOf ?? schema.anyOf ?? [schema];
+  for (const branch of branches) {
+    const eligible = spec.scope !== null;
+    assert.equal(fieldsInEveryBranch(branch, 'goals'), shown && eligible, `${spec.tool} goals on ${branch.properties?.operation?.const ?? 'query'}`);
+    assert.equal(fieldsInEveryBranch(branch, 'ranking'), opaque && eligible, `${spec.tool} ranking on ${branch.properties?.operation?.const ?? 'query'}`);
+  }
+}
 function valid(spec, run) {
   for (const response of run.responses) {
     const validate = validators.get(spec.tool);
@@ -60,7 +72,8 @@ try {
   for (const [label, overrides, shown] of [
     ['enabled', {}, true], ['disabled', ordinary, false],
     ['missing provider key', { OCTOCODE_CLASSIFICATION_API: '' }, false],
-    ['classifier disabled', { DISABLE_TOOLS: 'clasify' }, false],
+    ['public clasify hidden', { DISABLE_TOOLS: 'clasify' }, true],
+    ['beta off', { OCTOCODE_BETA: 'false' }, true],
   ]) {
     await check('all13', `CLI/MCP schema gating: ${label}`, async () => {
       const server = await startServer({ env: { ...ctx.env, ...overrides }, cwd: ctx.fixture, timeoutMs: 60000 });
@@ -73,15 +86,13 @@ try {
           if (cliOnly) assert.equal(tool, undefined, `${spec.tool} remains CLI-only`);
           else {
             assert.ok(tool, `${spec.tool} is exposed`);
-            assert.equal(fieldsInEveryBranch(tool.inputSchema.properties.queries.items, 'goals'), shown, `${spec.tool} MCP goals`);
-            assert.equal(fieldsInEveryBranch(tool.inputSchema.properties.queries.items, 'ranking'), false, `${spec.tool} MCP hides opaque continuation plans`);
+            assertRankingFields(tool.inputSchema.properties.queries.items, spec, shown, false);
           }
           const full = await ctx.cliArgs(['schema', spec.tool, '--view', 'full'], overrides);
           const schema = full.json.querySchema;
           schemas.push({ label, tool: spec.tool, surface: 'cli.schema.full', rawResponse: full.rawResponse, payload: full.json });
           assert.ok(schema, `${spec.tool} CLI schema`);
-          assert.equal(fieldsInEveryBranch(schema, 'goals'), shown, `${spec.tool} CLI goals`);
-          assert.equal(fieldsInEveryBranch(schema, 'ranking'), shown, `${spec.tool} CLI ranking`);
+          assertRankingFields(schema, spec, shown);
         }
         for (const excluded of ['clasify', 'astRewrite', 'ghCloneRepo']) {
           const full = await ctx.cliArgs(['schema', excluded, '--view', 'full'], overrides);
@@ -106,6 +117,78 @@ try {
   mcp = await startServer({ env: ctx.env, cwd: ctx.fixture, timeoutMs: 60000 });
   for (const spec of schemasOnly ? [] : cases) {
     const plain = materialize(spec.query, ctx), ranked = { ...plain, goals: spec.goals };
+    if (spec.scope === null) {
+      await check(spec.tool, 'unsupported tools reject ranking controls and preserve complete ordinary evidence', async () => {
+        const before = ctx.calls();
+        const baseline = await walk(ctx, spec, plain, { overrides: ordinary });
+        const enabled = await walk(ctx, spec, plain);
+        for (const run of [baseline, enabled]) valid(spec, run);
+        assert.ok(baseline.rows.length);
+        if (expectedItems[spec.tool]) assert.equal(baseline.rows.length, expectedItems[spec.tool], 'ordinary walk covers the independent fixture inventory');
+        assert.deepEqual(enabled.rows, baseline.rows, 'feature availability cannot alter ordinary evidence or order');
+        assert.ok(enabled.responses.every(response => dataOf(response).ranking === undefined));
+        const cliOnly = contract.tools.find(row => row.name === spec.tool).cliOnly;
+        if (!cliOnly) {
+          const throughMcp = await walk(ctx, spec, plain, { surface: 'mcp', mcp });
+          valid(spec, throughMcp);
+          assert.deepEqual(throughMcp.rows, baseline.rows);
+          raw.push({ tool: spec.tool, mcp: throughMcp });
+        }
+        for (const field of [{ goals: spec.goals }, { ranking: 'unsupported-plan' }]) {
+          const rejected = await ctx.cli(spec.tool, { ...plain, ...field });
+          assert.equal(rejected.code, 2, 'CLI rejects unsupported controls');
+          assert.equal(rejected.json.errorCode ?? dataOf(rejected)?.errorCode, 'invalidInput');
+          if (!cliOnly) {
+            const rejectedMcp = await mcp.raw(spec.tool, { queries: [{ ...plain, ...field }] });
+            assert.ok(rejectedMcp.isError || rejectedMcp.sc?.errorCode || rejectedMcp.sc?.results?.some(row => row.status === 'error'), 'MCP rejects unsupported controls');
+          }
+        }
+        assert.equal(ctx.calls(), before, 'unsupported routes never classify');
+        raw.push({ tool: spec.tool, baseline, enabled });
+        tools.push({ tool: spec.tool, scope: null, status: 'unsupported', pages: enabled.responses.length, evidenceItems: enabled.rows.length, providerCalls: 0 });
+      });
+      await check(spec.tool, 'other operations and nested clasify resources reject ranking controls', async () => {
+        const variants = [spec.query, spec.control, ...(spec.protected ?? []),
+          ...(spec.unsupported ?? []).map(row => row.query)];
+        for (const variant of variants) {
+          const query = materialize(variant, ctx), before = ctx.calls();
+          // The ordinary route stays available even for operations that previously skipped ranking.
+          success(await ctx.cli(spec.tool, query));
+          for (const field of [{ goals: spec.goals }, { ranking: 'unsupported-plan' }]) {
+            const rejected = await ctx.cli(spec.tool, { ...query, ...field });
+            assert.equal(rejected.code, 2);
+            assert.equal(rejected.json.errorCode ?? dataOf(rejected)?.errorCode, 'invalidInput');
+            const resource = { resources: [{ id: 'source', tool: spec.tool, query: { ...query, ...field } }],
+              questions: [{ id: 'answer', type: 'yesno', ask: 'Does the evidence explain greeting behavior?' }] };
+            const nested = await ctx.cli('clasify', resource);
+            assert.equal(nested.code, 2, 'nested queries cannot reintroduce unsupported controls');
+            const nestedMcp = await mcp.raw('clasify', { queries: [resource] });
+            assert.equal(nestedMcp.isError, true);
+            const payloads = [nested.json];
+            if (contract.tools.find(row => row.name === spec.tool).cliOnly) {
+              assert.equal(nestedMcp.sc?.errorCode, 'invalidInput');
+              assert.ok(nestedMcp.sc.error.includes(`Context tool ${spec.tool} is disabled`), 'MCP refuses CLI-only resources before their query is executed');
+            } else payloads.push(nestedMcp.sc);
+            for (const payload of payloads) {
+              const rejectedResource = payload.queries?.[0]?.resources?.[0];
+              assert.equal(rejectedResource?.coverage?.state, 'error');
+              assert.equal(rejectedResource?.error?.errorCode, 'invalidClassificationContext');
+              assert.ok(rejectedResource.error.error.includes(`Unknown field: ${Object.keys(field)[0]}`), 'the unsupported ranking field causes rejection');
+            }
+          }
+          assert.equal(ctx.calls(), before, 'invalid controls cannot spend provider work');
+        }
+      });
+      if (['structureSearch', 'astSearch', 'lspSearch'].includes(spec.tool)) await check(spec.tool, 'all ordinary pages preserve evidence without ranking', async () => {
+        const baseline = await walk(ctx, spec, plain);
+        const run = await walk(ctx, spec, { ...plain, pageSize: 3 });
+        assert.ok(run.responses.length > 1, 'fixture spans multiple pages');
+        assert.equal(run.providerCalls, 0);
+        assert.ok(run.responses.every(response => dataOf(response).ranking === undefined));
+        equalEvidence(run, baseline, 'pagination retains all original evidence');
+      });
+      continue;
+    }
     let baseline, disabled, enabled;
     await check(spec.tool, 'no-goals / disabled / enabled preserve complete evidence', async () => {
       const before = ctx.calls();
@@ -113,8 +196,7 @@ try {
       disabled = await walk(ctx, spec, ranked, { overrides: ordinary });
       assert.equal(ctx.calls(), before, 'ordinary and disabled routes never classify');
       assert.ok(baseline.rows.length, 'fixture contains evidence');
-      const expected = { localFetch: 80, localSearch: 5, structureSearch: 5, astSearch: 8,
-        ghSearchRepo: 3, ghSearchCode: 5, ghGetFileContent: 80, ghSearchHistory: 3, artifactSearch: 3 }[spec.tool];
+      const expected = expectedItems[spec.tool];
       if (expected) assert.equal(baseline.rows.length, expected, 'ordinary walk covers the independent fixture inventory');
       assert.ok(baseline.responses.every(response => dataOf(response).ranking === undefined), 'no-goals output remains ordinary');
       enabled = await walk(ctx, spec, ranked);
@@ -122,11 +204,6 @@ try {
       equalEvidence(disabled, baseline, 'disabled receipt cannot change evidence');
       equalEvidence(enabled, baseline, 'every original evidence item and payload remains exactly once');
       receipt(spec, enabled);
-      if (!spec.scope) {
-        assert.equal(enabled.providerCalls, 0);
-        assert.deepEqual(enabled.rows, baseline.rows, 'structural output order is protected');
-        assert.ok(enabled.responses.every(response => dataOf(response).ranking.status === 'skipped'));
-      }
       if (spec.scope === 'selectedView') assert.ok(enabled.provider.slice(1).every(calls => calls === 0), 'same candidate view replays without classification');
       if (spec.scope === 'providerPage') enabled.responses.forEach((response, index) => {
         const items = dataOf(response)[spec.kind];
@@ -147,8 +224,16 @@ try {
       receipt(spec, throughMcp);
       raw.push({ tool: spec.tool, mcp: throughMcp });
     });
+    for (const overrides of [{ DISABLE_TOOLS: 'clasify' }, { OCTOCODE_BETA: 'false' }]) await check(spec.tool, `hidden public clasify (${Object.keys(overrides)[0]}) preserves ranked evidence and replay`, async () => {
+      const hidden = await walk(ctx, spec, ranked, { overrides });
+      valid(spec, hidden);
+      assert.deepEqual(hidden.rows, enabled.rows, 'tool visibility does not change ranking or evidence');
+      receipt(spec, hidden);
+      assert.equal(hidden.providerCalls, enabled.providerCalls, 'hidden public tool leaves provider work unchanged');
+      if (spec.scope === 'selectedView') assert.ok(hidden.provider.slice(1).every(calls => calls === 0), 'saved ranking replays without provider work');
+    });
     await check(spec.tool, 'availability gates make zero provider calls', async () => {
-      for (const overrides of [ordinary, { OCTOCODE_CLASSIFICATION_API: '' }, { DISABLE_TOOLS: 'clasify' }]) {
+      for (const overrides of [ordinary, { OCTOCODE_CLASSIFICATION_API: '' }, { ...ordinary, DISABLE_TOOLS: 'clasify' }]) {
         const before = ctx.calls();
         const output = success(await ctx.cli(spec.tool, ranked, overrides));
         assert.equal(ctx.calls(), before);
@@ -159,7 +244,7 @@ try {
     await check(spec.tool, 'ordinary-route control retains evidence without goals', async () => {
       const before = ctx.calls();
       const control = materialize(spec.control, ctx);
-      const run = await walk(ctx, { ...spec, kind: spec.tool === 'lspSearch' ? 'files' : spec.kind }, control);
+      const run = await walk(ctx, spec, control);
       valid(spec, run);
       assert.ok(run.rows.length, 'ordinary control contains evidence');
       assert.equal(ctx.calls(), before);
@@ -180,29 +265,17 @@ try {
         assert.deepEqual(actualPayload, expectedPayload, 'skip does not alter evidence');
       }
     });
-    if (['structureSearch', 'astSearch', 'lspSearch'].includes(spec.tool)) await check(spec.tool, 'terminal pages are not mislabeled as complete selected views', async () => {
-      const paged = { ...ranked, pageSize: 3 };
-      const run = await walk(ctx, spec, paged);
-      assert.ok(run.responses.length > 1, 'fixture spans multiple pages');
-      assert.equal(run.providerCalls, 0, 'every partial selection, including its final page, skips ranking');
-      assert.ok(run.responses.every(response => dataOf(response).ranking.status === 'skipped'));
-      equalEvidence(run, baseline, 'partial-page skips retain all original evidence');
-      raw.push({ tool: spec.tool, terminalPageControl: run });
-    });
-    if (spec.tool === 'ghSearchRepo') await check(spec.tool, 'invalid earlier batch row cannot change admitted sort intent', async () => {
-      for (const sortedQuery of [false, true]) {
-        const query = { ...ranked, ...(sortedQuery ? { sort: 'stars:desc' } : {}) };
-        const before = ctx.calls();
-        const result = await ctx.cliArgs([spec.tool, JSON.stringify({ queries: [{ owner: 123 }, query] }), '--json']);
-        const invalid = result.json.results?.find(row => row.index === 0);
-        const admitted = result.json.results?.find(row => row.index === 1);
-        assert.equal(invalid?.status, 'error', 'invalid first row is rejected independently');
-        assert.ok(admitted?.data, 'valid second row executes');
-        assert.equal(admitted.data.ranking.status, sortedQuery ? 'skipped' : dataOf(enabled.responses[0]).ranking.status);
-        if (sortedQuery) assert.equal(ctx.calls(), before, 'explicit authoritative sort makes no classification calls');
-        else assert.ok(ctx.calls() > before, 'omitted sort remains eligible after admission');
-        raw.push({ tool: spec.tool, admissionControl: { sortedQuery, result } });
-      }
+    if (spec.tool === 'ghSearchCode') await check(spec.tool, 'invalid earlier batch row cannot shift the ranked query', async () => {
+      const before = ctx.calls();
+      const result = await ctx.cliArgs([spec.tool, JSON.stringify({ queries: [{ owner: 123 }, ranked] }), '--json']);
+      const invalid = result.json.results?.find(row => row.index === 0);
+      const admitted = result.json.results?.find(row => row.index === 1);
+      assert.equal(invalid?.status, 'error', 'invalid first row is rejected independently');
+      assert.ok(admitted?.data, 'valid second row executes');
+      assert.equal(admitted.data.ranking.status, dataOf(enabled.responses[0]).ranking.status);
+      assert.ok(ctx.calls() > before, 'the admitted query receives classification');
+      assert.deepEqual(evidence(spec, admitted.data), evidence(spec, dataOf(enabled.responses[0])), 'ranking uses the admitted query and evidence');
+      raw.push({ tool: spec.tool, admissionControl: result });
     });
     if (enabled.providerCalls === 0) continue;
     await check(spec.tool, 'opaque continuation plans reject changed goals and malformed plans', async () => {

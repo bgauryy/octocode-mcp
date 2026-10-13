@@ -14,7 +14,7 @@ export interface AgentProfile {
   tools?: string;
   /** Comma-separated tools the child must not have (Pi's --exclude-tools), e.g. `file` for read-only profiles. */
   excludeTools?: string;
-  /** Preferred model: `provider/id` or a bare id, optionally `:thinking`. Unavailable here: the child runs on the parent's model. */
+  /** Preferred model: `provider/id`, a bare id, or a purpose (`small`, `medium`), optionally `:thinking`. Unavailable here: the child runs on the parent's model. */
   model?: string;
   /** When set, the child's `browser` tool opens a visible Chrome on the persistent profile (logins stay). */
   visibleBrowser?: boolean;

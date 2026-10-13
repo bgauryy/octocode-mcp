@@ -2,13 +2,14 @@ import type { Api, Model } from '@earendil-works/pi-ai';
 import type { CacheWarmingDecisionEvent, CacheWarmingDecisionEventResult, ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { CACHE_RETENTION_ENV } from '../shared/env.js';
 import { isRecord } from '../shared/util.js';
-import { idleContinuation, idleGaps, lastReplyAt } from './policy.js';
 
 /**
  * Prompt-cache lifetimes, in seconds, for a model that declares no `promptCache` (a custom-provider model in models.json)
  * but whose replies show caching: Anthropic's cache TTLs, 5 minutes for short retention and 1 hour for long.
  */
 export const INFERRED_CACHE_TTL_SECONDS = { short: 300, long: 3600 } as const;
+/** Idle gaps needed before this session's own history is trusted over Pi's constant continuation estimate. */
+const MIN_IDLE_SAMPLES = 5;
 
 type PromptCache = NonNullable<Model<Api>['promptCache']>;
 type CacheModel = Pick<Model<Api>, 'provider' | 'id' | 'api' | 'promptCache' | 'compat'>;
@@ -26,7 +27,7 @@ export function inferredPromptCache(model: Pick<Model<Api>, 'compat'>, grantedLo
 /**
  * The lifetime, in ms, of the cache entry a session request writes: the `promptCache` tier for the retention in use
  * (`PI_CACHE_RETENTION=long`, else short), the rule Pi's cache warmer applies (cache-warmer.js `getPromptCacheTtlMs`;
- * Pi sets no per-request retention for session requests), so trims and the warmer agree. Undefined without that tier.
+ * Pi sets no per-request retention for session requests), so idle-warming decisions and the warmer agree. Undefined without that tier.
  */
 export function promptCacheTtlMs(promptCache: PromptCache | undefined, env: NodeJS.ProcessEnv = process.env): number | undefined {
   const seconds = promptCache?.[env[CACHE_RETENTION_ENV] === 'long' ? 'long' : 'short'];
@@ -44,7 +45,7 @@ const keyOf = (model: Pick<Model<Api>, 'provider' | 'id'>) => `${model.provider}
  * Prompt-cache lifetimes for models that declare none. Once a model's reply shows caching, it is known to cache for the
  * rest of the process (a later reply without usage, such as an aborted one, does not undo that), and:
  *
- * - trims wait for its inferred lifetime (`of`);
+ * - idle-warming decisions use its inferred lifetime (`of`);
  * - an `anthropic-messages` model also gets those lifetimes in Pi's model registry through `pi.registerProvider`, so Pi's
  *   cache warmer, which skips a model without `promptCache`, keeps its cache warm. The registration lists every model of
  *   the provider as the registry has it (models.json definitions, auth and headers config stay Pi's, and a models.json
@@ -90,7 +91,7 @@ export class PromptCacheLifetimes {
       });
       for (const entry of models) if (inferred(entry)) this.supplied.add(keyOf(entry));
     } catch {
-      // Trims still use the inferred lifetime; only Pi's warmer stays off for this provider.
+      // Idle-warming decisions still use the inferred lifetime; only Pi's warmer stays off for this provider.
       this.refused.add(model.provider);
     }
   }
@@ -116,4 +117,40 @@ export function warmingDecision(
   if (q === undefined) return undefined;
   const action = q * event.missCost > event.warmCost ? 'warm' : 'stop';
   return action === event.action ? undefined : { action };
+}
+
+/**
+ * q(t): the chance a refresh now is used, from this session's idle gaps (prompt after a finished run). Of the gaps that
+ * lasted longer than `idleMs`, the share that ended after a tenth of the lifetime (sooner, the entry is still warm
+ * without the refresh) and within the lifetime (later, the refreshed entry has expired too). Undefined with too few.
+ */
+export function idleContinuation(gaps: readonly number[], idleMs: number, ttlMs: number): number | undefined {
+  const survivors = gaps.filter((gap) => gap > idleMs);
+  if (survivors.length < MIN_IDLE_SAMPLES) return undefined;
+  return survivors.filter((gap) => gap > idleMs + ttlMs / 10 && gap <= idleMs + ttlMs).length / survivors.length;
+}
+
+/** When the session's last reply was requested (its idle start), or undefined without one. */
+export function lastReplyAt(branch: readonly unknown[]): number | undefined {
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const message = (branch[index] as { type?: string; message?: { role?: string; timestamp?: number } }).message;
+    if ((branch[index] as { type?: string }).type === 'message' && message?.role === 'assistant' && typeof message.timestamp === 'number') return message.timestamp;
+  }
+  return undefined;
+}
+
+/** Idle gaps in a session branch: from a finished run's last reply to the next user prompt, in ms. */
+export function idleGaps(branch: readonly unknown[]): number[] {
+  const gaps: number[] = [];
+  let finished: number | undefined;
+  for (const entry of branch) {
+    const message = (entry as { type?: string; message?: { role?: string; timestamp?: number; stopReason?: string } }).message;
+    if ((entry as { type?: string }).type !== 'message' || typeof message?.timestamp !== 'number') continue;
+    if (message.role === 'assistant') finished = message.stopReason === 'stop' ? message.timestamp : undefined;
+    else if (message.role === 'user' && finished !== undefined) {
+      gaps.push(message.timestamp - finished);
+      finished = undefined;
+    }
+  }
+  return gaps;
 }

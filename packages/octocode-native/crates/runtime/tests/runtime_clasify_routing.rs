@@ -3,6 +3,7 @@
 use crate::support;
 
 use octocode_native::runtime::FailureKind;
+use octocode_native::{config::RuntimeSurface, runtime::ToolRuntime};
 use serde_json::{Value, json};
 use support::{LocateTopPassage, Workspace, provider_runtime};
 use wiremock::matchers::{method, path};
@@ -381,15 +382,20 @@ async fn a_missing_file_resource_is_not_found_like_its_read() {
     runtime.close().await;
 }
 
-/// A context tool this runtime does not enable (astTopology with beta off) is
-/// rejected at validation, like MCP's availability-scoped schema, naming the
-/// gate that enables it and the context tools that are enabled.
+/// A context tool excluded from this runtime is rejected at validation, like
+/// MCP's availability-scoped schema, naming its possible gates and the enabled
+/// context tools.
 #[tokio::test]
 async fn a_disabled_context_tool_is_rejected_at_validation_naming_its_gate() {
     let server = provider(0).await;
     let workspace = Workspace::new();
     let file = steps(&workspace);
-    let runtime = provider_runtime(&workspace, &server);
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
+        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+        ("DISABLE_TOOLS", "astTopology".into()),
+    ]);
     let input = json!({"queries":[{
         "reasoning":"Rank dependents.","mainGoal":"Which modules import steps.",
         "resources":[{"id":"deps","tool":"astTopology","query":{
@@ -407,8 +413,48 @@ async fn a_disabled_context_tool_is_rejected_at_validation_naming_its_gate() {
         .iter()
         .find(|issue| issue.path.join(".") == "queries.0.resources.0.tool")
         .unwrap_or_else(|| panic!("{error:?}"));
-    assert!(issue.message.contains("OCTOCODE_BETA"), "{}", issue.message);
+    assert!(
+        issue.message.contains("tools.disabled"),
+        "{}",
+        issue.message
+    );
     assert!(issue.message.contains("localFetch"), "{}", issue.message);
     assert!(!issue.message.contains("astRewrite"), "{}", issue.message);
+    runtime.close().await;
+}
+
+#[tokio::test]
+async fn mcp_cli_only_context_names_its_surface_without_suggesting_beta() {
+    let server = provider(0).await;
+    let workspace = Workspace::new();
+    let file = steps(&workspace);
+    let mut input = workspace.config(&[
+        ("OCTOCODE_BETA", "true".into()),
+        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+    ]);
+    input.runtime_surface = RuntimeSurface::Mcp;
+    let runtime = ToolRuntime::new(input).expect("MCP runtime");
+    let result = runtime
+        .execute_mcp(
+            "cli-only-context".into(),
+            "clasify".into(),
+            json!({"queries":[{
+                "reasoning":"Inspect dependents.","mainGoal":"Which modules import steps?",
+                "resources":[{"id":"deps","tool":"astTopology","query":{
+                    "operation":"dependents","source":file
+                }}],
+                "questions":[{"id":"t","type":"yesno","ask":"Is this relevant?"}]
+            }]}),
+        )
+        .await
+        .expect("MCP reports invalid input in band");
+    assert_eq!(result["isError"], true, "{result}");
+    let text = result.to_string();
+    assert!(
+        text.contains("CLI") && text.contains("octocode astTopology"),
+        "{text}"
+    );
+    assert!(!text.contains("OCTOCODE_BETA"), "{text}");
     runtime.close().await;
 }

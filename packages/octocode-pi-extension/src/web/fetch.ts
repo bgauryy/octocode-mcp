@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { CrossHostRedirect, NetworkError, publicFetch, type PublicFetchInit } from './guard.js';
-import { describeHtml } from './html.js';
+import { describeHtml, RENDER_ADVICE } from './html.js';
 
 export const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 const TIMEOUT_MS = 30_000;
@@ -129,7 +129,7 @@ function describeFetchError(error: unknown, url: string, tries: number): Error {
   if (!(error instanceof NetworkError)) return error instanceof Error ? error : new Error(String(error));
   const cause = (error as { cause?: { code?: unknown; message?: unknown } }).cause;
   const detail = [cause?.code, cause?.message].filter((part) => typeof part === 'string' && part).join(': ');
-  return new Error(`Could not fetch ${url}: ${detail || error.message}${tries > 1 ? ` (tried ${tries} times)` : ''}. The site may block automated requests; try the browser tool.`);
+  return new Error(`Could not fetch ${url}: ${detail || error.message}${tries > 1 ? ` (tried ${tries} times)` : ''}. The site may block automated requests; ${RENDER_ADVICE}.`);
 }
 
 /**
@@ -158,7 +158,7 @@ async function fetchWithRetry(url: string, init: PublicFetchInit, env: NodeJS.Pr
 function httpError(response: Response, url: string): Error {
   const after = response.headers.get('retry-after');
   const status = [response.status, response.statusText].filter(Boolean).join(' ');
-  const hint = response.status === 401 || response.status === 403 ? ' (login or bot block: try the browser tool, or a dedicated MCP tool for private content)' : '';
+  const hint = response.status === 401 || response.status === 403 ? ` (login or bot block: ${RENDER_ADVICE}, or use a dedicated MCP tool for private content)` : '';
   return new Error(`HTTP ${status} for ${url}${after ? ` (retry after ${after})` : ''}${hint}`);
 }
 

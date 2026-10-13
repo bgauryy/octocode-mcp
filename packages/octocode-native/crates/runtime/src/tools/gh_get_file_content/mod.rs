@@ -160,7 +160,7 @@ fn file_read(result: GhGetFileContentResult, query: &GhGetFileContentQuery) -> F
     };
     let cache = !result.files.is_empty() && result.files.iter().all(|file| file.from_cache);
     let mut data = serde_json::to_value(&result).unwrap_or_default();
-    if data["commitSha"].as_str() == query.ref_.as_deref()
+    if data["commitSha"].as_str() == query.ref_.as_ref().map(|value| value.as_str())
         && let Some(map) = data.as_object_mut()
     {
         map.remove("commitSha");
@@ -193,7 +193,7 @@ where
         .resolve_reference(
             &query.owner,
             &query.repo,
-            query.ref_.as_deref(),
+            query.ref_.as_ref().map(|value| value.as_str()),
             query.force_refresh.unwrap_or(false),
             request_context,
         )

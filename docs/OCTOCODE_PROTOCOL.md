@@ -100,10 +100,10 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - **Ranking:** hits in a file rank declaration > deciding statement (assignment, `if`, `return`, `throw`) > code > comment. For an exact identifier, the file that declares it ranks first.
 
 ### 3.10 Goals and clasify: selective evidence
-- Optional `goals` ranks independent evidence within a disclosed selected view or provider page. Structural and incomplete operations preserve order and report a skip. `clasify` returns locations or typed judgments before the agent reads selected bodies. Both use the configured classification provider.
+- Optional `goals` ranks source evidence only on `localFetch`, `localSearch`, `ghGetFileContent`, and `ghSearchCode`, within a disclosed selected view or provider page. Other tools have no ranking controls and keep their ordinary behavior; eligible but incomplete operations can report a skip. `clasify` independently returns locations or typed judgments before the agent reads selected bodies. Both routes use the configured classification provider.
 - Choose semantic selection when it can avoid later reads; prefer an adequate cheap exact route. Use one semantic stage per relevance decision. A useful typed label for held evidence is a separate deliverable, not a saving on context already read.
 - Scores order attention, not proof. Verify deciding source, retain unjudged candidates and required continuations, and keep incomplete scope unresolved. No universal score or file-count cutoff determines usefulness.
-- Ranking is disabled by default; its optional fields require ranking enabled and clasify available. Setup, outputs, shared internals, prompts, and measured tradeoffs: [goals and clasify guide](OCTOCODE_CLASIFY.md).
+- Ranking is disabled by default; its optional fields require ranking enabled and a nonblank classification API credential, independently of beta and public `clasify` visibility. Public `clasify` needs the credential and beta. Setup, outputs, shared internals, prompts, and measured tradeoffs: [goals and clasify guide](OCTOCODE_CLASIFY.md#availability).
 
 ### 3.11 Security: sanitize input and output
 - **Input:** the contract is validated before execution; unknown fields are rejected and nothing is silently clamped. Local paths stay inside the sandbox, and sensitive files are refused even inside allowed roots.

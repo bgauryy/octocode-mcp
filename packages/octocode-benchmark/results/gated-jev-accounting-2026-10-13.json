@@ -1,0 +1,603 @@
+{
+  "checks": [],
+  "corpora": {
+    "github30": {
+      "arms": {
+        "mcp": {
+          "all_attempts_terra": {
+            "cached_input_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 2883072,
+              "total_if_complete": null
+            },
+            "input_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 3475786,
+              "total_if_complete": null
+            },
+            "output_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 44615,
+              "total_if_complete": null
+            },
+            "uncached_input_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 592714,
+              "total_if_complete": null
+            }
+          },
+          "final_cells": 30,
+          "jev_all_attempts": {
+            "trace_expected": false
+          },
+          "prior_attempts": 1,
+          "valid_final_cells": 30,
+          "valid_final_terra": {
+            "cached_input_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 2883072,
+              "total_if_complete": 2883072
+            },
+            "input_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 3475786,
+              "total_if_complete": 3475786
+            },
+            "output_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 44615,
+              "total_if_complete": 44615
+            },
+            "uncached_input_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 592714,
+              "total_if_complete": 592714
+            }
+          }
+        },
+        "mcp-clasify": {
+          "all_attempts_terra": {
+            "cached_input_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 3335168,
+              "total_if_complete": null
+            },
+            "input_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 3978131,
+              "total_if_complete": null
+            },
+            "output_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 49294,
+              "total_if_complete": null
+            },
+            "uncached_input_tokens": {
+              "complete": false,
+              "expected": 31,
+              "known": 30,
+              "known_lower_bound": 642963,
+              "total_if_complete": null
+            }
+          },
+          "final_cells": 30,
+          "jev_all_attempts": {
+            "classification": {
+              "attempts": 0,
+              "failed_or_unknown": 0,
+              "input_tokens": {
+                "complete": true,
+                "expected": 0,
+                "known": 0,
+                "known_lower_bound": 0,
+                "total_if_complete": 0
+              },
+              "output_tokens": {
+                "complete": true,
+                "expected": 0,
+                "known": 0,
+                "known_lower_bound": 0,
+                "total_if_complete": 0
+              }
+            },
+            "missing_final_trace_files": [],
+            "startup": {
+              "attempts": 62,
+              "failed_or_unknown": 0,
+              "input_tokens": {
+                "complete": true,
+                "expected": 62,
+                "known": 62,
+                "known_lower_bound": 17236,
+                "total_if_complete": 17236
+              },
+              "output_tokens": {
+                "complete": true,
+                "expected": 62,
+                "known": 62,
+                "known_lower_bound": 1240,
+                "total_if_complete": 1240
+              }
+            }
+          },
+          "prior_attempts": 1,
+          "valid_final_cells": 30,
+          "valid_final_terra": {
+            "cached_input_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 3335168,
+              "total_if_complete": 3335168
+            },
+            "input_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 3978131,
+              "total_if_complete": 3978131
+            },
+            "output_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 49294,
+              "total_if_complete": 49294
+            },
+            "uncached_input_tokens": {
+              "complete": true,
+              "expected": 30,
+              "known": 30,
+              "known_lower_bound": 642963,
+              "total_if_complete": 642963
+            }
+          }
+        }
+      },
+      "blind_judgments": 30,
+      "judge_usage": {
+        "attempt_transcripts": 30,
+        "deduplicated_top_level_aliases": 0,
+        "model_usage": {
+          "cacheRead": {
+            "complete": true,
+            "expected": 30,
+            "known": 30,
+            "known_lower_bound": 613033,
+            "total_if_complete": 613033
+          },
+          "cacheWrite": {
+            "complete": true,
+            "expected": 30,
+            "known": 30,
+            "known_lower_bound": 320024,
+            "total_if_complete": 320024
+          },
+          "input": {
+            "complete": true,
+            "expected": 30,
+            "known": 30,
+            "known_lower_bound": 222,
+            "total_if_complete": 222
+          },
+          "output": {
+            "complete": true,
+            "expected": 30,
+            "known": 30,
+            "known_lower_bound": 48692,
+            "total_if_complete": 48692
+          }
+        }
+      },
+      "paired_metrics": {
+        "input_tokens": {
+          "bootstrap_ci95": [
+            1.0284440265504649,
+            1.2311870167740069
+          ],
+          "geomean_on_over_off": 1.125537714925906,
+          "leaner_on_questions": 9,
+          "median_on_over_off": 1.1324922712898733,
+          "paired": 30
+        },
+        "output_tokens": {
+          "bootstrap_ci95": [
+            1.0061738410880325,
+            1.2016684709780105
+          ],
+          "geomean_on_over_off": 1.097754275453258,
+          "leaner_on_questions": 10,
+          "median_on_over_off": 1.0477478372681208,
+          "paired": 30
+        },
+        "uncached_input_tokens": {
+          "bootstrap_ci95": [
+            0.9201628881159244,
+            1.2839483764524666
+          ],
+          "geomean_on_over_off": 1.0926080993786624,
+          "leaner_on_questions": 11,
+          "median_on_over_off": 1.0852680964370085,
+          "paired": 30
+        }
+      },
+      "valid_pairs": 30
+    },
+    "local40": {
+      "arms": {
+        "local-mcp": {
+          "all_attempts_terra": {
+            "cached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 1570560,
+              "total_if_complete": 1570560
+            },
+            "input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 2107714,
+              "total_if_complete": 2107714
+            },
+            "output_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 33004,
+              "total_if_complete": 33004
+            },
+            "uncached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 537154,
+              "total_if_complete": 537154
+            }
+          },
+          "final_cells": 40,
+          "jev_all_attempts": {
+            "trace_expected": false
+          },
+          "prior_attempts": 0,
+          "valid_final_cells": 40,
+          "valid_final_terra": {
+            "cached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 1570560,
+              "total_if_complete": 1570560
+            },
+            "input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 2107714,
+              "total_if_complete": 2107714
+            },
+            "output_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 33004,
+              "total_if_complete": 33004
+            },
+            "uncached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 537154,
+              "total_if_complete": 537154
+            }
+          }
+        },
+        "local-mcp-clasify": {
+          "all_attempts_terra": {
+            "cached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 1424128,
+              "total_if_complete": 1424128
+            },
+            "input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 1875305,
+              "total_if_complete": 1875305
+            },
+            "output_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 32217,
+              "total_if_complete": 32217
+            },
+            "uncached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 451177,
+              "total_if_complete": 451177
+            }
+          },
+          "final_cells": 40,
+          "jev_all_attempts": {
+            "classification": {
+              "attempts": 0,
+              "failed_or_unknown": 0,
+              "input_tokens": {
+                "complete": true,
+                "expected": 0,
+                "known": 0,
+                "known_lower_bound": 0,
+                "total_if_complete": 0
+              },
+              "output_tokens": {
+                "complete": true,
+                "expected": 0,
+                "known": 0,
+                "known_lower_bound": 0,
+                "total_if_complete": 0
+              }
+            },
+            "missing_final_trace_files": [],
+            "startup": {
+              "attempts": 80,
+              "failed_or_unknown": 0,
+              "input_tokens": {
+                "complete": true,
+                "expected": 80,
+                "known": 80,
+                "known_lower_bound": 22240,
+                "total_if_complete": 22240
+              },
+              "output_tokens": {
+                "complete": true,
+                "expected": 80,
+                "known": 80,
+                "known_lower_bound": 1600,
+                "total_if_complete": 1600
+              }
+            }
+          },
+          "prior_attempts": 0,
+          "valid_final_cells": 40,
+          "valid_final_terra": {
+            "cached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 1424128,
+              "total_if_complete": 1424128
+            },
+            "input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 1875305,
+              "total_if_complete": 1875305
+            },
+            "output_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 32217,
+              "total_if_complete": 32217
+            },
+            "uncached_input_tokens": {
+              "complete": true,
+              "expected": 40,
+              "known": 40,
+              "known_lower_bound": 451177,
+              "total_if_complete": 451177
+            }
+          }
+        }
+      },
+      "blind_judgments": 40,
+      "judge_usage": {
+        "attempt_transcripts": 40,
+        "deduplicated_top_level_aliases": 0,
+        "model_usage": {
+          "cacheRead": {
+            "complete": true,
+            "expected": 40,
+            "known": 40,
+            "known_lower_bound": 299856,
+            "total_if_complete": 299856
+          },
+          "cacheWrite": {
+            "complete": true,
+            "expected": 40,
+            "known": 40,
+            "known_lower_bound": 312986,
+            "total_if_complete": 312986
+          },
+          "input": {
+            "complete": true,
+            "expected": 40,
+            "known": 40,
+            "known_lower_bound": 248,
+            "total_if_complete": 248
+          },
+          "output": {
+            "complete": true,
+            "expected": 40,
+            "known": 40,
+            "known_lower_bound": 41878,
+            "total_if_complete": 41878
+          }
+        }
+      },
+      "paired_metrics": {
+        "input_tokens": {
+          "bootstrap_ci95": [
+            0.8966896539970861,
+            1.0842304339500062
+          ],
+          "geomean_on_over_off": 0.9907607900285031,
+          "leaner_on_questions": 15,
+          "median_on_over_off": 1.0403011205656627,
+          "paired": 40
+        },
+        "output_tokens": {
+          "bootstrap_ci95": [
+            0.915394474500607,
+            1.1019493748231826
+          ],
+          "geomean_on_over_off": 1.0038101568641566,
+          "leaner_on_questions": 18,
+          "median_on_over_off": 1.0476558458762821,
+          "paired": 40
+        },
+        "uncached_input_tokens": {
+          "bootstrap_ci95": [
+            0.7583386313846239,
+            1.0892624702852582
+          ],
+          "geomean_on_over_off": 0.9075232149799137,
+          "leaner_on_questions": 23,
+          "median_on_over_off": 0.9445051093807753,
+          "paired": 40
+        }
+      },
+      "valid_pairs": 40
+    }
+  },
+  "jev_all_scopes": {
+    "classification": {
+      "attempts": 0,
+      "failed_or_unknown": 0,
+      "input_tokens": {
+        "complete": true,
+        "known": 0,
+        "known_lower_bound": 0,
+        "total_if_complete": 0
+      },
+      "output_tokens": {
+        "complete": true,
+        "known": 0,
+        "known_lower_bound": 0,
+        "total_if_complete": 0
+      }
+    },
+    "startup": {
+      "attempts": 146,
+      "failed_or_unknown": 0,
+      "input_tokens": {
+        "complete": true,
+        "known": 146,
+        "known_lower_bound": 40588,
+        "total_if_complete": 40588
+      },
+      "output_tokens": {
+        "complete": true,
+        "known": 146,
+        "known_lower_bound": 2920,
+        "total_if_complete": 2920
+      }
+    }
+  },
+  "judge_calibration": {
+    "assistant_turns": 1,
+    "model_usage": {
+      "cacheRead": {
+        "complete": true,
+        "expected": 1,
+        "known": 1,
+        "known_lower_bound": 0,
+        "total_if_complete": 0
+      },
+      "cacheWrite": {
+        "complete": true,
+        "expected": 1,
+        "known": 1,
+        "known_lower_bound": 3839,
+        "total_if_complete": 3839
+      },
+      "input": {
+        "complete": true,
+        "expected": 1,
+        "known": 1,
+        "known_lower_bound": 4,
+        "total_if_complete": 4
+      },
+      "output": {
+        "complete": true,
+        "expected": 1,
+        "known": 1,
+        "known_lower_bound": 495,
+        "total_if_complete": 495
+      }
+    }
+  },
+  "parent_evidence_comparison": {
+    "mismatches": [],
+    "path": "/Users/bgaryy/code/octocode/packages/octocode-benchmark/campaigns/gated-jev-2026-10-13/evidence.json"
+  },
+  "setup_jev": {
+    "classification": {
+      "attempts": 0,
+      "failed_or_unknown": 0,
+      "input_tokens": {
+        "complete": true,
+        "expected": 0,
+        "known": 0,
+        "known_lower_bound": 0,
+        "total_if_complete": 0
+      },
+      "output_tokens": {
+        "complete": true,
+        "expected": 0,
+        "known": 0,
+        "known_lower_bound": 0,
+        "total_if_complete": 0
+      }
+    },
+    "startup": {
+      "attempts": 4,
+      "failed_or_unknown": 0,
+      "input_tokens": {
+        "complete": true,
+        "expected": 4,
+        "known": 4,
+        "known_lower_bound": 1112,
+        "total_if_complete": 1112
+      },
+      "output_tokens": {
+        "complete": true,
+        "expected": 4,
+        "known": 4,
+        "known_lower_bound": 80,
+        "total_if_complete": 80
+      }
+    }
+  },
+  "status": "complete_input_audit"
+}

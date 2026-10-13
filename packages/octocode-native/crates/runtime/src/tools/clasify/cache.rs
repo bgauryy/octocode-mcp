@@ -2,7 +2,7 @@
 //!
 //! A resumed walk (`next.clasify`) or a repeated matrix re-sends pages the
 //! provider already judged. The key is a SHA-256 of the exact provider input
-//! (endpoint, model, evidence state, and questions), so a hit can only replay the answer
+//! (account scope, model, evidence state, and questions), so a hit can only replay the answer
 //! to the identical question over identical evidence; any change to the
 //! evidence, a brief, or a question misses. Only complete successful answer
 //! sets are stored. Entries expire so a provider-side model update is picked
@@ -72,9 +72,14 @@ impl<F> Drop for Flight<'_, F> {
 /// are hashed as canonical JSON written straight into the digest: a hit
 /// copies nothing. Each JSON value delimits itself, so the two need no
 /// length prefix.
-pub(crate) fn key(endpoint: &str, model: &str, state: &Value, questions: &[Value]) -> [u8; 32] {
+pub(crate) fn key(
+    account_scope: &str,
+    model: &str,
+    state: &Value,
+    questions: &[Value],
+) -> [u8; 32] {
     let mut digest = Sha256::new();
-    for part in [endpoint, model] {
+    for part in [account_scope, model] {
         digest.update((part.len() as u64).to_le_bytes());
         digest.update(part.as_bytes());
     }
@@ -97,15 +102,12 @@ impl std::io::Write for DigestWriter<'_> {
     }
 }
 
-/// The bytes of `canonical_json::canonicalize(value).to_string()`, written
-/// from the borrowed value: keys sorted, null members dropped.
+/// Canonical JSON of the provider input, written from the borrowed value:
+/// keys sorted and explicit null members retained.
 fn write_canonical(out: &mut impl std::io::Write, value: &Value) {
     match value {
         Value::Object(map) => {
-            let mut members = map
-                .iter()
-                .filter(|(_, member)| !member.is_null())
-                .collect::<Vec<_>>();
+            let mut members = map.iter().collect::<Vec<_>>();
             members.sort_unstable_by(|a, b| a.0.cmp(b.0));
             let _ = out.write_all(b"{");
             for (index, (name, member)) in members.into_iter().enumerate() {
@@ -210,7 +212,7 @@ mod tests {
         assert_ne!(
             base,
             key("https://b/v1", "jev", &json!({"a":1,"b":2}), &q),
-            "another provider judges independently"
+            "another account scope judges independently"
         );
         assert_ne!(
             base,
@@ -222,10 +224,20 @@ mod tests {
             base,
             key("https://a/v1", "jev", &json!({"a":1,"b":2}), &other)
         );
+        assert_ne!(
+            key("https://a/v1", "jev", &json!({}), &q),
+            key("https://a/v1", "jev", &json!({"x":null}), &q),
+            "the provider receives different JSON state bytes"
+        );
+        assert_ne!(
+            key("https://a/v1", "jev", &json!({}), &[json!({"ask":null})]),
+            key("https://a/v1", "jev", &json!({}), &[json!({})]),
+            "the provider receives different JSON question bytes"
+        );
     }
 
-    /// The digest reads the same canonical bytes the shared canonicalizer
-    /// produces, without cloning the value.
+    /// The digest writes key-sorted JSON, retaining explicit null members,
+    /// without cloning the value.
     #[test]
     fn canonical_writer_matches_the_canonicalizer() {
         let value = json!({
@@ -236,10 +248,9 @@ mod tests {
         });
         let mut written = Vec::new();
         write_canonical(&mut written, &value);
-        assert_eq!(
-            String::from_utf8(written).unwrap(),
-            crate::canonical_json::canonicalize(value).to_string()
-        );
+        let mut expected = value;
+        expected.sort_all_objects();
+        assert_eq!(String::from_utf8(written).unwrap(), expected.to_string());
     }
 
     #[test]

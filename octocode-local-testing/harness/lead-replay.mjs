@@ -197,13 +197,17 @@ const WREL = `.octocode/tmp/lead-replay-${process.pid}`;
 const WABS = path.join(ROOT, WREL);
 const SREL = `${WREL}-stale`; // its own corpus: mutating it must not stale any snapshot taken from the main workspace
 const SABS = path.join(ROOT, SREL);
+const PREL = `${WREL}-count-pages`;
+const PABS = path.join(ROOT, PREL);
 const write = (rel, text, base = WABS) => { const f = path.join(base, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, text); };
 function buildWorkspace() {
   fs.rmSync(WABS, { recursive: true, force: true });
   fs.rmSync(SABS, { recursive: true, force: true });
+  fs.rmSync(PABS, { recursive: true, force: true });
   fs.mkdirSync(WABS, { recursive: true });
   fs.mkdirSync(SABS, { recursive: true });
-  for (const dir of [WABS, SABS]) spawnSync('git', ['init', '-q'], { cwd: dir });
+  fs.mkdirSync(PABS, { recursive: true });
+  for (const dir of [WABS, SABS, PABS]) spawnSync('git', ['init', '-q'], { cwd: dir });
   write('.gitignore', 'build/\n*.log\n');
   write('package.json', JSON.stringify({ name: 'lead-replay-fixture', private: true, main: 'src/a.ts' }));
   write('tsconfig.json', JSON.stringify({ compilerOptions: { target: 'es2022', module: 'esnext', strict: true } }));
@@ -220,6 +224,7 @@ function buildWorkspace() {
   write('big.txt', Array.from({ length: 4000 }, (_, i) => `line ${i + 1} lorem ipsum dolor sit amet needleBig${i % 500 === 0 ? 'Hit' : ''}`).join('\n') + '\n');
   write('minified.js', `${Array.from({ length: 3500 }, (_, i) => `function f${i}(a){return a+${i}}`).join(';')};var needleToken=1;\n`);
   fs.writeFileSync(path.join(WABS, 'blob.bin'), Buffer.from(Array.from({ length: 2048 }, (_, i) => (i * 7) % 256)));
+  for (let i = 0; i < 101; i++) write(`f${String(i).padStart(3, '0')}.ts`, `export const page${i} = 'needleCountPages';\n`, PABS);
 }
 
 // Fixture calls: [tool, query, label]. Empty, scope-miss, gitignored, paging and failure cases per tool.
@@ -445,6 +450,17 @@ function scopeChanges(src, lead, { mutable = new Set(), additions = false } = {}
   }
   return changed;
 }
+// A count-view continuation materializes localSearch's default pageSize.
+// Accept that one field only when the source page reports the same effective
+// size, while comparing every other field against the original query.
+function sourceScopeForPage(source, lead, sq, lq) {
+  if (source.tool !== 'localSearch' || lead.tool !== source.tool || lead.key !== 'nextPage' ||
+      Object.hasOwn(sq, 'pageSize') || sq.resultView !== lq.resultView) return sq;
+  const reported = source.entry.sc?.results?.[lead.rowIndex ?? 0]?.data?.pagination?.pageSize;
+  return Number.isInteger(reported) && reported > 0 && lq.pageSize === reported
+    ? { ...sq, pageSize: reported }
+    : sq;
+}
 function fileHolds(rel, text) {
   const abs = path.isAbsolute(rel) ? rel : path.join(ROOT, rel);
   try {
@@ -502,7 +518,7 @@ function judge(lead, source, entry, shown, { walked = false } = {}) {
   // A same-tool lead keeps everything it does not mutate.
   if (single && sameTool && (flag || key === 'includeSkipped' || PAGE_KEYS.test(key) || /^(restart|retry)$/.test(key))) {
     const mutable = MUTABLE.find(([re]) => re.test(key))?.[1];
-    const changed = scopeChanges(sq, lq, { mutable, additions: ADDS_OPTIONS.test(key) || /^continue/.test(key) });
+    const changed = scopeChanges(sourceScopeForPage(source, lead, sq, lq), lq, { mutable, additions: ADDS_OPTIONS.test(key) || /^continue/.test(key) });
     record(lead, source, 'keeps-scope', changed.length === 0, changed.join('; '));
   }
   // narrowScope keeps the question (what is searched) and changes where it looks.
@@ -564,6 +580,45 @@ function judge(lead, source, entry, shown, { walked = false } = {}) {
   }
   flush(lead, source);
   return out;
+}
+
+// Default countMatches pagination must keep its query scope and return every
+// file once, including the file beyond the first 100-file page.
+{
+  const firstQuery = { path: PREL, matchString: 'needleCountPages', resultView: 'countMatches', extras: H };
+  let source = { label: 'ls countMatches full union', tool: 'localSearch', args: { queries: [firstQuery] }, entry: await exec('localSearch', { queries: [firstQuery] }, 'countMatches full union'), depth: 0 };
+  const expected = new Set(Array.from({ length: 101 }, (_, i) => path.join(PABS, `f${String(i).padStart(3, '0')}.ts`)));
+  const seenFiles = new Set();
+  const pageSizes = [];
+  let pageCount = 0;
+  let duplicate = false;
+  let allOk = true;
+  let next;
+  do {
+    const row = source.entry.sc?.results?.[0];
+    const pagination = row?.data?.pagination;
+    allOk &&= !outcomeOf(source.entry).error && row?.status !== 'error' && pagination?.totalItems === 101;
+    const files = row?.data?.files ?? [];
+    pageSizes.push(files.length);
+    for (const file of files) {
+      const absolute = path.resolve(ROOT, file.path);
+      if (seenFiles.has(absolute)) duplicate = true;
+      seenFiles.add(absolute);
+    }
+    pageCount += 1;
+    next = leadsOf(source.entry.sc).find(l => l.key === 'nextPage');
+    if (!next) break;
+    const sourceQuery = rowOf(source.args);
+    const leadQuery = rowOf(next.query);
+    const unchanged = scopeChanges(sourceScopeForPage(source, next, sourceQuery, leadQuery), leadQuery);
+    check('countMatches default nextPage keeps scope', unchanged.length === 0, unchanged.join('; '));
+    if (pageCount === 1) {
+      check('countMatches wrong pageSize still changes scope', scopeChanges(sourceScopeForPage(source, next, sourceQuery, { ...leadQuery, pageSize: 99 }), { ...leadQuery, pageSize: 99 }).some(s => s.startsWith('pageSize:')), 'pageSize 99 must not inherit the reported 100');
+      check('countMatches wrong path still changes scope', scopeChanges(sourceScopeForPage(source, next, sourceQuery, { ...leadQuery, path: WREL }), { ...leadQuery, path: WREL }).some(s => s.startsWith('path:')), 'path change must remain visible');
+    }
+    source = { label: 'ls countMatches full union page', tool: 'localSearch', args: next.query, entry: await exec(next.tool, next.query, 'countMatches full union nextPage'), depth: 0 };
+  } while (pageCount < 3);
+  check('countMatches pages report complete 101-file union', allOk && !next && pageCount === 2 && pageSizes[0] === 100 && pageSizes[1] === 1 && !duplicate && seenFiles.size === expected.size && [...expected].every(p => seenFiles.has(p)), `pages=${pageCount} sizes=${pageSizes.join(',')} unique=${seenFiles.size} duplicate=${duplicate} next=${!!next} allOk=${allOk}`);
 }
 
 // Replay: breadth-first over every distinct lead, bounded per key and by the time budget.
@@ -644,5 +699,5 @@ console.log(`[${SUITE}] replayed/emitted per key: ${keyTable}`);
 const result = summary();
 writeResults(SUITE, { stats, keyStats: Object.fromEntries(keyStats), unexercised, failures, replayed, sources: sources.map(s => ({ label: s.label, tool: s.tool, args: s.args, ms: s.entry.ms, outcome: outcomeOf(s.entry).text })), results: result.results });
 client.close();
-if (!process.env.OCTOCODE_LEAD_REPLAY_KEEP) { fs.rmSync(WABS, { recursive: true, force: true }); fs.rmSync(SABS, { recursive: true, force: true }); }
+if (!process.env.OCTOCODE_LEAD_REPLAY_KEEP) { fs.rmSync(WABS, { recursive: true, force: true }); fs.rmSync(SABS, { recursive: true, force: true }); fs.rmSync(PABS, { recursive: true, force: true }); }
 process.exitCode = result.failed.length ? 1 : 0;

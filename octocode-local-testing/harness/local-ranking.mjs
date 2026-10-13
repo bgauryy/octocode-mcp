@@ -64,6 +64,7 @@ const env = {
   OCTOCODE_CLASSIFICATION_API: 'fixture-key',
   OCTOCODE_CLASSIFICATION_API_HOST: `http://127.0.0.1:${mock.address().port}`,
   OCTOCODE_RANKING_ENABLED: 'true',
+  OCTOCODE_BETA: 'true',
   OCTOCODE_RANKING_MAX_CANDIDATES: '256',
   OCTOCODE_RANKING_MAX_CHARS: '1048576',
   OCTOCODE_RANKING_TIMEOUT_MS: '10000',
@@ -139,7 +140,9 @@ try {
     ['enabled', {}, true],
     ['disabled', { OCTOCODE_RANKING_ENABLED: 'false' }, false],
     ['missing key', { OCTOCODE_CLASSIFICATION_API: '' }, false],
-    ['clasify disabled', { DISABLE_TOOLS: 'clasify' }, false],
+    ['clasify hidden', { DISABLE_TOOLS: 'clasify' }, true],
+    ['beta off', { OCTOCODE_BETA: 'false' }, true],
+    ['read-only allowlist', { TOOLS_TO_RUN: 'localSearch,localFetch' }, true],
   ]) {
     await check(`schema: ${label} on CLI and fresh MCP`, async () => {
       const server = await startServer({ env: { ...env, ...overrides }, cwd: fixture, timeoutMs: 25000 });
@@ -171,9 +174,69 @@ try {
       }
     } finally { server.close(); }
   });
+  await check('schema: hidden clasify still probes ranking provider failure', async () => {
+    mode = '401';
+    const before = calls;
+    const server = await startServer({ env: { ...env, DISABLE_TOOLS: 'clasify' }, cwd: fixture, timeoutMs: 25000 });
+    try {
+      assert.ok(calls > before, 'goals-only MCP checks provider readiness');
+      assert.ok(!server.tools.some(tool => tool.name === 'clasify'));
+      for (const name of ['localSearch', 'localFetch']) {
+        const schema = server.tools.find(tool => tool.name === name)?.inputSchema.properties.queries.items;
+        assert.ok(schema);
+        assert.equal(schema.properties.goals, undefined, 'failed provider hides goals');
+      }
+    } finally { server.close(); }
+  });
+  await check('schema: no usable semantic surface makes no startup provider call', async () => {
+    for (const overrides of [
+      { DISABLE_TOOLS: 'clasify', OCTOCODE_RANKING_ENABLED: 'false' },
+      { OCTOCODE_BETA: 'false', OCTOCODE_RANKING_ENABLED: 'false' },
+      { TOOLS_TO_RUN: 'ghGetHistoryItem' },
+      { OCTOCODE_CLASSIFICATION_API: '' },
+    ]) {
+      const before = calls;
+      const server = await startServer({ env: { ...env, ...overrides }, cwd: fixture, timeoutMs: 25000 });
+      try {
+        assert.equal(calls, before, 'no usable semantic surface means no probe');
+        assert.ok(!server.tools.some(tool => tool.name === 'clasify'));
+      } finally { server.close(); }
+    }
+  });
+  for (const overrides of [{ DISABLE_TOOLS: 'clasify' }, { OCTOCODE_BETA: 'false' }]) await check(`hidden clasify (${Object.keys(overrides)[0]}): goals work, public calls and handoffs stay disabled`, async () => {
+    const server = await startServer({ env: { ...env, ...overrides }, cwd: fixture, timeoutMs: 25000 });
+    try {
+      assert.ok(!server.tools.some(tool => tool.name === 'clasify'));
+      const publicQuery = { resources: [{ value: { evidence: 'waiting request' } }], questions: [{ id: 'q', type: 'yesno', ask: 'Does the evidence mention a waiting request?' }] };
+      const beforePublic = calls;
+      const cliRejected = await cli('clasify', publicQuery, overrides);
+      assert.notEqual(cliRejected.code, 0, 'CLI rejects hidden public clasify');
+      const mcpRejected = await server.raw('clasify', { queries: [publicQuery] });
+      assert.ok(mcpRejected.isError || mcpRejected.sc?.errorCode, 'MCP rejects hidden public clasify');
+      assert.equal(calls, beforePublic, 'rejected public calls do not send evidence');
+      const plain = { ...search, goals: undefined, matchString: 'ordinary bookkeeping', pageSize: 5, extras: ['hints'], mainGoal: goals[0] };
+      const visible = successful(await cli('localSearch', plain));
+      assert.ok(visible.hints?.clasify, 'control produces a classification handoff');
+      for (const result of [await cli('localSearch', plain, overrides), { json: (await server.call('localSearch', plain)).sc }]) {
+        const row = successful(result);
+        assert.equal(row.hints?.clasify, undefined);
+        assert.equal(row.next?.clasify, undefined);
+        assert.ok(!JSON.stringify(result.json).includes('"tool":"clasify"'), 'hidden tool receives no executable lead');
+      }
+      const beforeRank = calls;
+      const cliRanked = successful(await cli('localSearch', search, overrides));
+      const mcpRanked = successful({ json: (await server.call('localSearch', search)).sc });
+      for (const row of [cliRanked, mcpRanked]) {
+        assert.equal(row.ranking?.status, 'ranked');
+        assert.ok(JSON.stringify(row).includes(marker));
+      }
+      assert.ok(calls > beforeRank, 'goals invoke the provider with public clasify hidden');
+      return { tools: server.tools.length, discoveryChars: JSON.stringify(server.tools).length, instructionChars: server.init.instructions?.length ?? 0 };
+    } finally { server.close(); }
+  });
   for (const [label, query, tool] of [['search', search, 'localSearch'], ['fetch', fetch, 'localFetch']]) {
     await check(`${label}: gates make no provider calls`, async () => {
-      for (const overrides of [{ OCTOCODE_RANKING_ENABLED: 'false' }, { OCTOCODE_CLASSIFICATION_API: '' }, { DISABLE_TOOLS: 'clasify' }]) {
+      for (const overrides of [{ OCTOCODE_RANKING_ENABLED: 'false' }, { OCTOCODE_CLASSIFICATION_API: '' }, { OCTOCODE_CLASSIFICATION_API: '   ' }, { OCTOCODE_CLASSIFICATION_API: undefined }, { DISABLE_TOOLS: 'clasify', OCTOCODE_RANKING_ENABLED: 'false' }]) {
         const before = calls;
         const row = successful(await cli(tool, query, overrides));
         assert.equal(calls, before);

@@ -22,9 +22,6 @@ function bindingFor(catalog: NativeCatalog) {
   return {
     NativeRuntime: class implements NativeRuntime {
       readonly abiVersion = NATIVE_ABI_VERSION;
-      async probeClassification() {
-        return { probed: true, available: true };
-      }
       catalog(): NativeCatalog {
         return catalog;
       }
@@ -47,8 +44,16 @@ function bindingFor(catalog: NativeCatalog) {
 const TOOLS = [
   'localSearch',
   'localFetch',
+  'ghGetFileContent',
+  'structureSearch',
+  'astSearch',
+  'lspSearch',
   'ghSearchRepo',
   'ghSearchCode',
+  'ghSearchHistory',
+  'ghGetHistoryItem',
+  'ghStructure',
+  'artifactSearch',
   TOOL_NAMES.CLASIFY,
 ];
 
@@ -97,24 +102,35 @@ function queryRow(schema: { properties?: Record<string, unknown> }) {
 
 describe('read-tool ranking schema', () => {
   it.each([
-    { ranking: false, classifier: true, shown: false },
-    { ranking: true, classifier: false, shown: false },
-    { ranking: true, classifier: true, shown: true },
+    { ranking: false, clasifyListed: true, shown: false },
+    { ranking: true, clasifyListed: false, shown: true },
+    { ranking: true, clasifyListed: true, shown: true },
   ])(
-    'exposes optional goals with $ranking ranking and $classifier classifier',
-    async ({ ranking, classifier, shown }) => {
+    'uses native ranking=$ranking independently of public clasify=$clasifyListed',
+    async ({ ranking, clasifyListed, shown }) => {
       const server = await connect(
         { ranking },
-        TOOLS.filter(name => classifier || name !== TOOL_NAMES.CLASIFY)
+        TOOLS.filter(name => clasifyListed || name !== TOOL_NAMES.CLASIFY)
       );
       try {
+        expect(
+          server.listed.some(tool => tool.name === TOOL_NAMES.CLASIFY)
+        ).toBe(clasifyListed);
         for (const name of TOOLS.filter(
           name => !['clasify', 'ghCloneRepo', 'astRewrite'].includes(name)
         )) {
           const schema = queryRow(
             server.listed.find(tool => tool.name === name)!.inputSchema
           );
-          expect(JSON.stringify(schema).includes('"goals"'), name).toBe(shown);
+          const supportsRanking = [
+            'localFetch',
+            'localSearch',
+            'ghGetFileContent',
+            'ghSearchCode',
+          ].includes(name);
+          expect(JSON.stringify(schema).includes('"goals"'), name).toBe(
+            shown && supportsRanking
+          );
           expect(schema.required ?? []).not.toContain('goals');
         }
       } finally {

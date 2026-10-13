@@ -31,6 +31,9 @@ pub(crate) struct DomainDispatcher {
     pub local_views: Arc<crate::security::scan::SanitizedViewMemo>,
     pub lsp_execution_config: Arc<LspExecutionConfig>,
     pub available_tools: Arc<[&'static str]>,
+    /// Provider readiness and an enabled goals surface, independent of the
+    /// public clasify tool's visibility in `available_tools`.
+    pub ranking_available: bool,
     pub clasify: crate::tools::clasify::ClasifySettings,
     /// Registry answers for artifactSearch; `None` under memory storage.
     pub artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
@@ -49,7 +52,7 @@ impl DomainDispatcher {
                 max_chars: settings.max_chars as usize,
                 timeout: std::time::Duration::from_millis(settings.timeout_ms as u64),
             },
-            available: self.available_tools.contains(&ToolId::Clasify.as_str()),
+            available: self.ranking_available,
             judge: Arc::new(self.clasify.clone()),
             handle: self.handle.clone(),
             context: context.clone(),

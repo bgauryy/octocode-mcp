@@ -47,6 +47,8 @@ def has_goals(value):
         return 'goals' in value.get('properties', {}) or any(has_goals(v) for v in value.values())
     return isinstance(value,list) and any(has_goals(v) for v in value)
 
+GOAL_CAPABLE_READERS = {'localSearch','localFetch','ghGetFileContent','ghSearchCode'}
+
 
 def probe(server, expected_clasify, expected_goals, env=None, cwd=None, forbidden=None):
     client=McpClient(server,env,cwd)
@@ -66,8 +68,8 @@ def probe(server, expected_clasify, expected_goals, env=None, cwd=None, forbidde
             if set(tools).difference(allowed): problems.append('unexpected tools outside explicit allowlist')
         missing = readers.difference(tools)
         if missing: problems.append('required read tools missing: ' + ', '.join(sorted(missing)))
-        expected=readers if expected_goals else set()
-        if set(goals)!=expected: problems.append('goals schema gate differs from available read tools')
+        expected=GOAL_CAPABLE_READERS.intersection(readers) if expected_goals else set()
+        if set(goals)!=expected: problems.append('goals schema gate differs from eligible read tools')
         denials=[]
         if forbidden:
             calls=[('localFetch',{'queries':[{'path':str(forbidden),'ranges':['1-5']}]})]

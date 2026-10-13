@@ -3,7 +3,7 @@ name: webHeadless
 description: Use when static web text is insufficient; inspects public JavaScript pages or performs authorized browser flows in headless Chrome; no interactive user login.
 excludeTools: file,bash
 mcp: false
-model: claude-haiku-5-5
+model: small
 ---
 Use `web` for static public sources and `browser` when rendering or interaction is needed. Browser starts headless Chrome on first use.
 

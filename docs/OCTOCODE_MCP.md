@@ -50,8 +50,8 @@ The discovery catalog has 16 tools. With default settings and no provider key, M
 | Package | `artifactSearch` |
 | Semantic assessment | `clasify` |
 
-- `ghCloneRepo`, `astTopology`, and `astRewrite` are never registered on MCP, with or without `OCTOCODE_BETA`. No MCP description or lead names the beta tools; the shared prompt names them only in its `<cli>` section. Run them as `npx octocode astTopology` / `npx octocode astRewrite` with `OCTOCODE_BETA=true`; `astRewrite` applies only with the complete set of preview hashes.
-- `clasify` needs a nonblank classification key and a passing startup provider check; otherwise it is left out. See [Clasify availability](OCTOCODE_CLASIFY.md#availability).
+- `ghCloneRepo`, `astTopology`, and `astRewrite` are never registered on MCP, with or without `OCTOCODE_BETA`. No MCP description or lead names the two CLI-only beta tools; the shared prompt names them only in its `<cli>` section. Run them as `npx octocode astTopology` / `npx octocode astRewrite` with `OCTOCODE_BETA=true`; `astRewrite` applies only with the complete set of preview hashes.
+- `clasify` needs beta and a nonblank classification API credential; otherwise it is left out. Goals on supported read tools have a separate ranking gate. Provider errors are reported by real calls, and later calls can recover in the same session. See [availability](OCTOCODE_CLASIFY.md#availability).
 - GitHub discovery is three tools with no `operation` field: `ghSearchRepo` (repositories), `ghSearchCode` (indexed code), `ghStructure` (repository tree). Removed compatibility names cannot be re-enabled.
 - Every tool takes up to 5 `queries` per call. MCP publishes input schemas, titles, and descriptions, not output schemas.
 - Server instructions are one prompt for every surface and tool subset, at most 2,000 characters (`MAX_MCP_INSTRUCTION_CHARS`), because hosts truncate near 2 KB. The grammar inventory and `schema` guidance are CLI-only; MCP clients get schemas through `tools/list`. `npx octocode schema` prints the live CLI catalog.
@@ -67,8 +67,8 @@ Set per-client settings in the client `env` block; env vars beat `.octocoderc` f
 | `OCTOCODE_ENABLE_LOCAL` | `true` | Local filesystem and LSP tools on or off |
 | `TOOLS_TO_RUN` / `DISABLE_TOOLS` | unset | Strict allowlist / removals from the default set |
 | `WORKSPACE_ROOT`, `ALLOWED_PATHS` | — | Bound local path resolution |
-| `OCTOCODE_BETA` | `false` | Enables CLI-only beta tools; registers nothing on MCP |
-| `OCTOCODE_CLASSIFICATION_API` | unset | Registers `clasify` ([key](AUTHENTICATION.md#classification-key-clasify)) |
+| `OCTOCODE_BETA` | `false` | Enables CLI-only beta tools and, with a classification API credential, public `clasify` on MCP |
+| `OCTOCODE_CLASSIFICATION_API` | unset | Credential required for public `clasify` and read-tool goals ([availability](OCTOCODE_CLASIFY.md#availability)) |
 | `OCTOCODE_OUTPUT_FORMAT` | `yaml` | Encoding of the MCP text channel (`yaml` or `json`); `structuredContent` is always JSON |
 
 Every other setting: [generated settings](generated/CONFIG_SETTINGS.md). Development overrides (`OCTOCODE_NATIVE_BINDING`, `OCTOCODE_ALLOW_CONTRACT_DRIFT`): [DEVELOPMENT.md](../skills-dev/octocode-dev/docs/DEVELOPMENT.md#development-environment-variables).

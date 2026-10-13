@@ -10,8 +10,7 @@ use std::time::Instant;
 impl RankJudge for ClasifySettings {
     fn identity(&self) -> Value {
         json!({
-            "baseUrl": self.base_url,
-            "endpointPath": self.endpoint_path,
+            "accountScope": self.key.as_ref().map(|key| super::transport::account_scope(&self.base_url, &self.endpoint_path, key)),
             "model": self.model,
         })
     }
@@ -37,7 +36,7 @@ impl RankJudge for ClasifySettings {
         let deadline = (Instant::now() + call.limits.timeout).min(call.context.deadline);
         let budget = super::transport::budget(deadline, call.context.cancellation.clone());
         let gate = crate::providers::classification::gate::lease(
-            &super::run::account_gate_key(&self.base_url, &self.endpoint_path, key),
+            &super::transport::account_scope(&self.base_url, &self.endpoint_path, key),
             self.max_concurrency,
         );
         let answers = call.handle.block_on(async {
@@ -109,5 +108,31 @@ impl RankJudge for ClasifySettings {
         }
         super::stats::record_classification(call.home, call.stats_enabled, usage);
         answers.into_iter().map(|(result, _)| result).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use secrecy::SecretString;
+    use std::time::Duration;
+
+    #[test]
+    fn provider_identity_changes_with_account_key() {
+        let settings = |key: &str| ClasifySettings {
+            key: Some(SecretString::from(key.to_owned())),
+            base_url: "https://api.example.test".into(),
+            endpoint_path: "v1/systemone".into(),
+            model: "jev-latest".into(),
+            provider: &crate::providers::classification::jev::JEV,
+            timeout: Duration::from_secs(10),
+            retries: 0,
+            max_concurrency: 1,
+        };
+        assert_ne!(
+            RankJudge::identity(&settings("account-a")),
+            RankJudge::identity(&settings("account-b")),
+            "a saved plan cannot cross account credentials"
+        );
     }
 }

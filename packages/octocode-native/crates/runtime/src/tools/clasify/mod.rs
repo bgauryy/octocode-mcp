@@ -98,49 +98,7 @@ impl ClasifySettings {
             record_usage,
         )
     }
-
-    /// One minimal yes/no judgment through the same key, endpoint, gate, and
-    /// response validation a real call uses, bounded by [`PROBE_TIMEOUT`]
-    /// with one retry. `Ok` means the provider answered.
-    pub(crate) async fn probe(&self) -> Result<(), ClassificationError> {
-        let Some(key) = self.key.clone() else {
-            return Err(ClassificationError::new(
-                "missingConfiguration",
-                "No classification provider key is configured.",
-                "Set OCTOCODE_CLASSIFICATION_API.",
-            ));
-        };
-        let gate = crate::providers::classification::gate::lease(
-            &run::account_gate_key(&self.base_url, &self.endpoint_path, &key),
-            self.max_concurrency,
-        );
-        let budget = transport::budget(
-            std::time::Instant::now() + self.timeout.min(PROBE_TIMEOUT),
-            tokio_util::sync::CancellationToken::new(),
-        );
-        let question = transport::provider_question(
-            &json!({"type":"yesno","ask":"Is this state a connectivity check?"}),
-        )?;
-        judge(
-            &json!("octocode connectivity check"),
-            &question,
-            key,
-            &self.base_url,
-            &self.endpoint_path,
-            &self.model,
-            self.provider,
-            budget,
-            self.retries.min(1),
-            &gate,
-        )
-        .await
-        .map(drop)
-    }
 }
-
-/// Upper bound on [`ClasifySettings::probe`], so a startup check never holds
-/// a host's handshake for the full request timeout.
-const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Semantic assessment is nondeterministic and billed per evaluation. Query
 /// replay cannot serve a page of the original judgment.

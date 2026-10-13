@@ -33,9 +33,9 @@ async function serve(handler: http.RequestListener): Promise<string> {
 
 const privateOk = { OCTOCODE_WEB_ALLOW_PRIVATE: '1' };
 
-function webTool(): WebTool {
+function webTool(active: string[] = []): WebTool {
   let tool: WebTool | undefined;
-  registerWebTool({ registerTool: (definition: WebTool) => (tool = definition) } as unknown as ExtensionAPI);
+  registerWebTool({ registerTool: (definition: WebTool) => (tool = definition), getActiveTools: () => active } as unknown as ExtensionAPI);
   return tool!;
 }
 
@@ -216,6 +216,23 @@ describe('web tool', () => {
     const tool = webTool();
     expect(text(await tool.execute('id', { url: `${base}/` }))).toBe('hello from the page');
     await expect(tool.execute('id', {})).rejects.toThrow('Provide url or query.');
+  });
+
+  it('names the Octocode tools this session has for reading the saved page, clasify first', async () => {
+    vi.stubEnv('OCTOCODE_WEB_ALLOW_PRIVATE', '1');
+    vi.stubEnv('OCTOCODE_HOME', tmp());
+    const base = await serve((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('y'.repeat(30_000));
+    });
+    const call = async (active: string[]) => text(await webTool(active).execute('id', { url: `${base}/`, maxChars: 1_000 }));
+    const all = await call(['mcp__octocode__clasify', 'mcp__octocode__localSearch', 'mcp__octocode__localFetch']);
+    expect(all).toMatch(/is in \/\S+: locate a described target with mcp__octocode__clasify \(resource \{tool:"localFetch", query:\{path:<this file>, fullContent:true\}\}, a locate question; a hit in a table of contents is not the section, read the hit\); search literal text with mcp__octocode__localSearch \(headings: regex "\^#\{1,3\} "\); read line ranges with mcp__octocode__localFetch\]$/);
+    const saved = /is in (\/\S+):/.exec(all)![1]!;
+    expect(fs.readFileSync(saved, 'utf8')).toBe('y'.repeat(30_000));
+    // Without the classification provider the local tools remain; without Octocode tools the generic wording stands.
+    expect(await call(['mcp__octocode__localSearch', 'mcp__octocode__localFetch'])).toMatch(/is in \/\S+: search literal text with mcp__octocode__localSearch \(headings: regex "\^#\{1,3\} "\); read line ranges with mcp__octocode__localFetch\]$/);
+    expect(await call(['read', 'bash'])).toMatch(/is in \S+: search it or read it by line range\]$/);
   });
 
   it('returns 20 KB of a page by default, more with maxChars, and says how to get the rest', async () => {

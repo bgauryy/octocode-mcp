@@ -46,6 +46,7 @@ fn should_use_search_for_prs(q: &GhSearchHistoryQuery) -> bool {
 fn needs_issue_search_qualifiers(q: &GhSearchHistoryQuery) -> bool {
     query::needs_issue_search_qualifiers(&search(q).expect("qualifiers"))
 }
+
 async fn execute(
     transport: &GitHubTransport,
     query: &GhSearchHistoryQuery,

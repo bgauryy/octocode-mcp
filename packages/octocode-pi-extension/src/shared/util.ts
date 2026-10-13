@@ -112,10 +112,10 @@ export async function withTimeout<T>(work: Promise<T>, ms: number, label: string
 }
 
 /**
- * The placeholders Octocode leaves where it trimmed text the model later sees again: trimmed call arguments and
- * tool results (compaction) and `capChars` cuts. A model that copies one into a file writes a hole, not content.
+ * The placeholders Octocode leaves where it cut text the model later sees: `capChars` cuts, and the cuts of a kept
+ * user message or a tool result in a compaction summary. A model that copies one into a file writes a hole, not content.
  */
-const ELISION_MARKER = /\[(?:… ?)?\d+ more characters (?:of this earlier, successful call omitted[^\]\n]*|from this earlier tool result were trimmed[^\]\n]*|cut[^\]\n]*)\]/g;
+const ELISION_MARKER = /\[… \d+ (?:more characters cut|characters of this message are left out here|characters in the middle left out for the summary)[^\]\n]*\]/g;
 
 export function elisionMarkers(text: string): string[] {
   return text.match(ELISION_MARKER) ?? [];

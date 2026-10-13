@@ -10,6 +10,8 @@ Each campaign's runs and judgments live in [runs/](runs/), one JSON per campaign
 
 | Campaign | Arms | Report |
 |---|---|---|
+| Current gated JEV, local MCP (Oct 13) | Terra, 40 local + 30 GitHub, ON/OFF; 140/140 valid cells, 70 blind comparisons. Zero goals/clasify use; local input tokens tied, GitHub +12.6%; JEV probes accounted separately | [Report](gated-jev-2026-10-13.md), [local dashboard](gated-jev-local.html), [GitHub dashboard](gated-jev-github.html) |
+| Selective goals/clasify guidance (Oct 13) | Off / old / revised, Terra, 40 local + 30 GitHub + 12 transfer questions; 244/246 valid cells, 162 quality comparisons. Lower local goal adoption; no general model-token saving demonstrated | [Report](selective-guidance-2026-10-13.md), [data](selective-guidance-2026-10-13.json) |
 | Terra goals/JEV off vs on (Oct 13) | 40 pinned local + 30 GitHub questions, 8-question Terraform slice; local 20.2.0 MCP, Terra researchers, Sonnet source-checking judge. 70/70 valid pairs; no general token-saving benefit demonstrated | [Report](terra-goals-2026-10-13.md), [local dashboard](local-goals.html), [local matrix](LOCAL_MATRIX.md) |
 | pi-local-now-vs-published-231129 (Oct 12) | Octocode local 20.x after the fix round vs published 19.1.0 (and vs local-before), pi runner Sonnet 5.5, codex gpt-5.5 judge, 30 × 1: median wall 41.7 → 26.5 s (published 24.9), 0 rateLimited, correctness and chars unchanged, missing `queries` wrapper 7 → 12 | [pi-local-now-vs-published-231129-2026-10-12.md](pi-local-now-vs-published-231129-2026-10-12.md) |
 | pi-local-vs-published-164221 (Oct 12) | Octocode local 20.x vs published 19.1.0 vs gh lean, pi runner Sonnet 5.5, codex gpt-5.5 judge, 30 × 1 (not comparable with claude-runner campaigns) | [pi-local-vs-published-164221-2026-10-12.md](pi-local-vs-published-164221-2026-10-12.md) |
@@ -80,7 +82,7 @@ headline calculation.
 
 Write new reports as
 `<comparison-name>-<HHMMSS>-<YYYY-MM-DD>.md` using
-[REPORT_TEMPLATE.md](../skills/octocode-benchmark/references/REPORT_TEMPLATE.md). Measurement is in Unicode
+[output guidance](../skills/octocode-benchmark/output.md). Measurement is in Unicode
 characters delivered to the runner; correctness takes precedence over
 footprint. Failed probes inside a complete run remain counted.
 

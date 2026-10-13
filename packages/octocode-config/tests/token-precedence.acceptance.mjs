@@ -13,11 +13,21 @@ const base = path.join(root, '.octocode/octocode-dev/token-precedence');
 await fs.mkdir(base, { recursive: true });
 const fixture = await fs.mkdtemp(path.join(base, 'fixture-'));
 const observations = [];
+let classificationFixture = false;
 const server = http.createServer((req, res) => {
   observations.push(req.headers.authorization);
   req.resume();
-  res.writeHead(401, { 'Content-Type': 'application/json' });
-  res.end('{"message":"synthetic credential probe"}');
+  res.writeHead(
+    classificationFixture && observations.length === 1 ? 200 : 401,
+    {
+      'Content-Type': 'application/json',
+    }
+  );
+  res.end(
+    classificationFixture && observations.length === 1
+      ? '{"model":"fixture","answers":{"answer":{"type":"noul","noul":0.9}},"usage":{"input_tokens":2,"output_tokens":1}}'
+      : '{"message":"synthetic credential probe"}'
+  );
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const endpoint = `http://127.0.0.1:${server.address().port}`;
@@ -39,8 +49,8 @@ const groups = [
     aliases: ['OCTOCODE_CLASSIFICATION_API'],
     input: {
       reasoning: 'Probe source precedence on a local fixture endpoint.',
-      resources: [{ context: { value: 'fixture' } }],
-      questions: [{ type: 'noul', instructions: 'Is this a fixture?' }],
+      resources: [{ value: 'fixture' }],
+      questions: [{ type: 'yesno', ask: 'Is this a fixture?' }],
     },
   },
 ];
@@ -49,6 +59,7 @@ try {
   for (const group of groups)
     for (const alias of group.aliases)
       for (const source of ['workspace', 'process']) {
+        classificationFixture = group.tool === 'clasify';
         const name = `${group.tool}-${alias}-${source}`;
         const home = path.join(fixture, name, 'home'),
           cwd = path.join(fixture, name, 'workspace');
@@ -72,6 +83,8 @@ try {
           OCTOCODE_HOME: home,
           GITHUB_API_URL: endpoint,
           OCTOCODE_CLASSIFICATION_API_HOST: endpoint,
+          MAX_RETRIES: '0',
+          ...(group.tool === 'clasify' ? { OCTOCODE_BETA: '1' } : {}),
           ...(source === 'process' ? { [alias]: 'process-fixture' } : {}),
         };
         for (const surface of ['cli', 'mcp']) {
@@ -115,9 +128,11 @@ try {
               await client.close();
             }
           }
+          const requiredRequests =
+            group.tool === 'clasify' && surface === 'mcp' ? 2 : 1;
           assert.ok(
-            observations.length > 0,
-            `${name}/${surface}: no request reached local provider`
+            observations.length >= requiredRequests,
+            `${name}/${surface}: expected ${requiredRequests} local provider request(s)`
           );
           assert.ok(
             observations.every(

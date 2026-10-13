@@ -149,18 +149,6 @@ impl NativeRuntime {
             },
         )
     }
-    /// Startup clasify check; a failed probe makes clasify unavailable in
-    /// this runtime's catalog. Hosts call it before `catalog()`.
-    #[napi]
-    pub async fn probe_classification(&self) -> Value {
-        let mut probe = self.runtime.probe_classification().await;
-        if let Some(message) = probe.get_mut("message")
-            && let Some(text) = message.as_str()
-        {
-            *message = Value::String(scrub_error_text(text));
-        }
-        probe
-    }
     #[napi]
     pub async fn close(&self) {
         self.runtime.close().await;

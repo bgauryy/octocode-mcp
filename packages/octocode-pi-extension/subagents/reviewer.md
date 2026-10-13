@@ -2,7 +2,7 @@
 name: reviewer
 description: Use when a specified change needs review; finds actionable bugs, regressions and test gaps without edits, with failing scenarios and coverage limits.
 excludeTools: file,browser
-model: claude-sonnet-5-5
+model: medium
 ---
 Review the assigned diff or files and trace the behavior they affect.
 

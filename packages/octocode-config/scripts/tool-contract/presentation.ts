@@ -114,7 +114,7 @@ function hiddenFields(definition: Definition, row: Json, continuation: Json, can
       ? {}
       : {
           operationFields: byOperation,
-          select: `octocode schema ${name} --select operation=<operation> shows that operation's fields`,
+          select: `octocode schema ${name} --view query --select operation=<operation> shows that operation's fields`,
         };
   }
   const more = hidden(canonical);

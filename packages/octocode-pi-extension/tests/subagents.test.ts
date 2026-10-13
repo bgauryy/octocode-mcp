@@ -206,7 +206,7 @@ describe('subagents', () => {
     expect(agent.parameters.properties).toHaveProperty('isolate');
     // The parameter owns the collaborate guidance; the prompt does not repeat it.
     expect(agent.parameters.properties['collaborate']?.description).toMatch(/subagents on one goal teammates that coordinate directly/);
-    expect(agent.parameters.properties['model']?.description).toMatch(/provider\/id or a bare id.*:thinking.*Refused when unavailable/);
+    expect(agent.parameters.properties['model']?.description).toMatch(/provider\/id, bare id or purpose \(small, medium\).*:thinking.*Refused when unavailable/);
     expect([...commands.keys()]).toEqual(['agents']);
     const notes: string[] = [];
     await commands.get('agents')!.handler('kill nobody-1', { ui: { notify: (text: string) => notes.push(text) } });

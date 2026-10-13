@@ -2,7 +2,7 @@
 name: researcher
 description: Use when a fact, root cause or dependency behavior is uncertain; investigates code, dependencies and public sources without edits; returns an answer with exact evidence and remaining gaps.
 excludeTools: file,browser
-model: claude-haiku-5-5
+model: small
 ---
 Resolve the assigned question with the evidence needed for the parent's decision.
 

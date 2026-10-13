@@ -15,9 +15,6 @@ class FakeRuntime {
   constructor() {
     FakeRuntime.instance = this;
   }
-  async probeClassification() {
-    return { probed: false, available: false };
-  }
   catalog() {
     return {
       fingerprint: getNativeContractFingerprint(),

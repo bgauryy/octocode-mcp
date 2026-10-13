@@ -3,9 +3,9 @@ import path from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { agentDbPath, globalPaths, privateDir } from '../shared/home.js';
 import { loadSqlite } from '../shared/util.js';
-import { AgentDbError, ensureSchema } from './schema.js';
+import { AgentDbError, ensureSchema, schemaCurrent } from './schema.js';
 
-export { AGENT_APPLICATION_ID, AGENT_SCHEMA_VERSION, AgentDbError } from './schema.js';
+export { AGENT_APPLICATION_ID, AgentDbError } from './schema.js';
 
 /** An open agent database. Features write their own SQL against the schema tables (`./schema.ts`). */
 export interface AgentDb {
@@ -19,8 +19,8 @@ export interface AgentDb {
 }
 
 /**
- * Opens (creating, owner-only) and migrates the agent database at `file` (default `agentDbPath(env)`). Throws
- * `AgentDbError` for a file that is not ours or has a newer schema.
+ * Opens (creating, owner-only) the agent database at `file` (default `agentDbPath(env)`) and adds what the one schema has
+ * and the file lacks. Throws `AgentDbError` for a file that is not ours.
  */
 export function openAgentDb(file?: string, env: NodeJS.ProcessEnv = process.env): AgentDb {
   const target = file ?? agentDbPath(env);
@@ -52,9 +52,11 @@ export function openAgentDb(file?: string, env: NodeJS.ProcessEnv = process.env)
     }
   };
   try {
-    // Nothing that changes the file (journal mode included) before ensureSchema has checked it is ours or new.
+    // Nothing that changes the file (journal mode included) before ensureSchema has checked it is ours or new. A file
+    // that already has the whole schema is opened without a write lock; otherwise the additions are made under one,
+    // checked again there (another process may have just made them).
     db.exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
-    const { fts } = transaction(() => ensureSchema(db, target));
+    const { fts } = schemaCurrent(db) ? { fts: true } : transaction(() => ensureSchema(db, target));
     db.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
     tighten(target);
     let open = true;

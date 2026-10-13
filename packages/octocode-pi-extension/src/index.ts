@@ -1,11 +1,12 @@
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from '@earendil-works/pi-coding-agent';
 import { registerApi } from './api/register.js';
 import { registerAskUser } from './ask/tool.js';
-import { elisionGate, registerCompaction } from './compaction/register.js';
+import { registerCompaction } from './compaction/register.js';
 import { registerBashTool } from './files/bash.js';
 import { Checkpoints } from './files/checkpoint.js';
 import { registerCheckpoints } from './files/checkpoint-command.js';
 import { registerHooks, registerHooksCommand } from './hooks/register.js';
+import { contextReads } from './files/reads.js';
 import { FileGuard, registerFileTool } from './files/tool.js';
 import { registerMcpCommand } from './mcp/command.js';
 import { registerOctocodeMcp } from './mcp/octocode.js';
@@ -26,6 +27,8 @@ import { registerSessions } from './sessions/register.js';
 import { registerBacklog } from './backlog/index.js';
 import { registerMemory } from './memory/register.js';
 import { setCurrentSession } from './shared/home.js';
+import { currentCatalog } from './subagents/catalog.js';
+import { registerModelsCommand } from './subagents/models-command.js';
 import { loadProfiles, type AgentProfile } from './subagents/profiles.js';
 import { maxSubagents } from './subagents/claim.js';
 import { registerAgentTool, type AgentControl } from './subagents/tool.js';
@@ -115,6 +118,7 @@ export default function octocode(pi: ExtensionAPI): void {
     registerAskUser(pi);
     agents = registerAgentTool(pi, () => profiles, team, permission);
     commands.add('agents', agents.command);
+    registerModelsCommand(commands, () => profiles);
   }
   registerSkills(pi);
   registerUi(pi, isSubagent);
@@ -136,13 +140,16 @@ export default function octocode(pi: ExtensionAPI): void {
   pi.on('session_start', async (_event, ctx) => {
     // Per-session state first: a later step that throws (API port in use) must not carry the old session's over.
     turn.reset();
-    guard.reset();
+    // Reads in a resumed, reloaded or forked session's context still count; a new session starts empty.
+    guard.restore(contextReads(ctx));
     const skipped: string[] = [];
     profiles = loadProfiles(ctx.cwd, undefined, await projectTrust(ctx), process.env, (file, error) => skipped.push(`${file}: ${errorMessage(error)}`));
     // After the profiles: the main session leaves `browser` to the profiles that carry it.
     turn.settleTools();
     if (skipped.length > 0 && ctx.hasUI) ctx.ui.notify(`Skipped subagent profiles that could not be read:\n${skipped.join('\n')}`, 'warning');
     await api?.start(ctx);
+    // The models.dev index, refreshed in the background, so the first subagent of the day routes with it.
+    if (!isSubagent) currentCatalog();
   });
 
   // The tool-call pipeline, cheapest and most certain first; the first block wins. Hard refusals come first and are
@@ -151,7 +158,6 @@ export default function octocode(pi: ExtensionAPI): void {
   // no call of a batch before every call's checks ended, so their time is shown: live on the working line, then in the
   // row (`timed` reads `recordCheck`).
   const gates: Array<(event: ToolCallEvent, ctx: ExtensionContext, prior?: GateVerdict) => Promise<GateVerdict | undefined>> = [
-    elisionGate,
     collab.reservationGate,
     shellSafetyGate,
     hooks.preToolUse,

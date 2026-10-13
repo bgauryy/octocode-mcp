@@ -454,6 +454,7 @@ async fn public_identity_is_a_hard_cutover_and_missing_key_is_actionable() {
         .await
         .unwrap_err();
     assert_eq!(error.code, "missingConfiguration");
+    assert!(error.message.contains("OCTOCODE_BETA"));
     assert!(error.message.contains("OCTOCODE_CLASSIFICATION_API"));
     assert!(
         error
@@ -461,6 +462,42 @@ async fn public_identity_is_a_hard_cutover_and_missing_key_is_actionable() {
             .contains("https://docs.typesafe.ai/introduction")
     );
     runtime.close().await;
+}
+
+#[tokio::test]
+async fn public_clasify_requires_beta_and_a_nonblank_key_independently() {
+    let workspace = Workspace::new();
+    for (env, missing) in [
+        (
+            vec![("OCTOCODE_CLASSIFICATION_API", "secret".into())],
+            "OCTOCODE_BETA",
+        ),
+        (
+            vec![("OCTOCODE_BETA", "true".into())],
+            "OCTOCODE_CLASSIFICATION_API",
+        ),
+        (
+            vec![
+                ("OCTOCODE_BETA", "true".into()),
+                ("OCTOCODE_CLASSIFICATION_API", "  ".into()),
+            ],
+            "OCTOCODE_CLASSIFICATION_API",
+        ),
+    ] {
+        let runtime = workspace.runtime(&env);
+        assert!(!runtime.is_available("clasify"), "{env:?}");
+        assert_eq!(
+            clasify_catalog_entry(&runtime)["unavailableReason"],
+            "missingConfiguration"
+        );
+        let error = runtime
+            .execute("missing-gate".into(), "clasify".into(), call(query()))
+            .await
+            .expect_err("an unmet prerequisite blocks public clasify");
+        assert_eq!(error.code, "missingConfiguration");
+        assert!(error.message.contains(missing), "{}", error.message);
+        runtime.close().await;
+    }
 }
 
 fn clasify_catalog_entry(runtime: &octocode_native::runtime::ToolRuntime) -> serde_json::Value {
@@ -474,50 +511,70 @@ fn clasify_catalog_entry(runtime: &octocode_native::runtime::ToolRuntime) -> ser
 }
 
 #[tokio::test]
-async fn startup_probe_keeps_clasify_when_the_provider_answers() {
+async fn configured_clasify_is_available_without_contacting_the_provider() {
     let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/systemone"))
-        .respond_with(noul_response(0.9))
-        .expect(1)
-        .mount(&server)
-        .await;
     let workspace = Workspace::new();
     let runtime = provider_runtime(&workspace, &server);
-    let probe = runtime.probe_classification().await;
-    assert_eq!(probe, json!({"probed":true,"available":true}));
     assert!(runtime.is_available("clasify"));
     assert_eq!(clasify_catalog_entry(&runtime)["available"], true);
+    assert!(server.received_requests().await.unwrap().is_empty());
     runtime.close().await;
 }
 
 #[tokio::test]
-async fn startup_probe_disables_clasify_when_the_provider_rejects_it() {
+async fn provider_rejection_then_recovery_keeps_clasify_available_in_one_runtime() {
     let server = MockServer::builder().start().await;
+    let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let responder_attempts = attempts.clone();
     Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(401))
+        .and(path("/v1/systemone"))
+        .respond_with(move |_: &wiremock::Request| {
+            if responder_attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(401)
+            } else {
+                noul_response(0.9)
+            }
+        })
+        .expect(2)
         .mount(&server)
         .await;
     let workspace = Workspace::new();
     let runtime = provider_runtime(&workspace, &server);
-    let probe = runtime.probe_classification().await;
-    assert_eq!(probe["probed"], true);
-    assert_eq!(probe["available"], false);
-    assert_eq!(probe["code"], "classificationProviderError");
-    assert!(!runtime.is_available("clasify"));
-    let entry = clasify_catalog_entry(&runtime);
-    assert_eq!(entry["available"], false);
-    assert_eq!(entry["unavailableReason"], "providerUnreachable");
-    let error = runtime
-        .execute("after-probe".into(), "clasify".into(), call(query()))
+    assert!(server.received_requests().await.unwrap().is_empty());
+    let mut request = query();
+    request["questions"] = json!([{"id":"relevant","type":"yesno","ask":"Is it relevant?"}]);
+    let failed = runtime
+        .execute(
+            "provider-down".into(),
+            "clasify".into(),
+            call(request.clone()),
+        )
         .await
-        .unwrap_err();
-    assert_eq!(error.code, "toolUnavailable");
+        .expect("provider failure is a typed tool result");
+    assert!(
+        failed
+            .structured_content
+            .to_string()
+            .contains("classificationProviderError"),
+        "{}",
+        failed.structured_content
+    );
+    assert!(runtime.is_available("clasify"));
+    assert_eq!(clasify_catalog_entry(&runtime)["available"], true);
+    let recovered = runtime
+        .execute("provider-recovered".into(), "clasify".into(), call(request))
+        .await
+        .expect("the same runtime can use the recovered provider");
+    assert_eq!(
+        recovered.structured_content["queries"][0]["resources"][0]["answers"]["relevant"],
+        json!(0.9)
+    );
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
     runtime.close().await;
 }
 
 #[tokio::test]
-async fn startup_probe_disables_clasify_when_the_provider_is_unreachable() {
+async fn unreachable_provider_does_not_change_configured_availability() {
     let workspace = Workspace::new();
     // Bind then drop a listener: the port refuses connections.
     let port = std::net::TcpListener::bind("127.0.0.1:0")
@@ -526,44 +583,23 @@ async fn startup_probe_disables_clasify_when_the_provider_is_unreachable() {
         .unwrap()
         .port();
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         (
             "OCTOCODE_CLASSIFICATION_API_HOST",
             format!("http://127.0.0.1:{port}"),
         ),
     ]);
-    let started = Instant::now();
-    let probe = runtime.probe_classification().await;
-    assert!(started.elapsed() < Duration::from_secs(6), "{probe}");
-    assert_eq!(probe["available"], false, "{probe}");
-    assert!(!runtime.is_available("clasify"));
-    runtime.close().await;
-}
-
-#[tokio::test]
-async fn startup_probe_keeps_clasify_when_only_rate_limited() {
-    let server = MockServer::builder().start().await;
-    Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
-        .mount(&server)
-        .await;
-    let workspace = Workspace::new();
-    let runtime = provider_runtime(&workspace, &server);
-    let probe = runtime.probe_classification().await;
-    assert_eq!(probe["available"], true, "{probe}");
-    assert_eq!(probe["code"], "classificationRateLimited");
     assert!(runtime.is_available("clasify"));
+    assert_eq!(clasify_catalog_entry(&runtime)["available"], true);
     runtime.close().await;
 }
 
 #[tokio::test]
-async fn startup_probe_is_skipped_without_a_key() {
+async fn no_key_keeps_clasify_unavailable_without_provider_work() {
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[]);
-    assert_eq!(
-        runtime.probe_classification().await,
-        json!({"probed":false,"available":false})
-    );
+    assert!(!runtime.is_available("clasify"));
     runtime.close().await;
 }
 
@@ -726,6 +762,7 @@ async fn classification_max_concurrency_bounds_provider_requests_in_flight() {
     let workspace = Workspace::new();
     // Limit 4 → one call may hold at most 3 permits (fairness cap).
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("OCTOCODE_CLASSIFICATION_CONCURRENCY", "4".into()),
@@ -984,7 +1021,7 @@ async fn scout_expands_explicit_question_type_and_preserves_source_identity() {
 #[tokio::test]
 async fn search_rejects_removed_semantic_addon_without_calling_provider() {
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[("OCTOCODE_CLASSIFICATION_API", "secret".into())]);
+    let runtime = workspace.runtime(&[]);
     let error = runtime.execute("search".into(), "localSearch".into(), json!({"queries":[{
         "path":workspace.workspace, "matchString":"hooks", "mainGoal": "test", "reasoning":"Discover candidates.",
         "semanticRerank":{"questions":[{"id":"q","question":"Relevant?"}]}
@@ -1126,7 +1163,10 @@ async fn payload_over_max_chars_returns_an_executable_clasify_continuation() {
 #[tokio::test]
 async fn invalid_inner_query_is_rejected_with_the_exact_contract_field() {
     let workspace = Workspace::new();
-    let runtime = workspace.runtime(&[("OCTOCODE_CLASSIFICATION_API", "secret".into())]);
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
+        ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
+    ]);
     let input = json!({
         "id": "bad-inner-query",
         "reasoning": "Test that an invalid inner path surfaces its field name.","mainGoal":"Decide the next read.",
@@ -2014,6 +2054,7 @@ async fn empty_search_page_is_not_sent_to_the_provider() {
     let workspace = Workspace::new();
     let file = workspace.write("present.txt", "hello world\n");
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);
@@ -2268,6 +2309,7 @@ async fn clasify_locate_preflight_returns_a_typed_error_without_capture_or_provi
     let server = MockServer::builder().start().await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);
@@ -2707,6 +2749,7 @@ async fn gh_search_code_resource_is_judged_without_a_context_contract_violation(
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         // Own GitHub limiter key: the process-wide budget is keyed by host and
@@ -2774,6 +2817,7 @@ async fn a_lone_strong_locate_window_in_best_carries_an_exact_github_read() {
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         // Own GitHub limiter key: the process-wide budget is keyed by host and
@@ -3848,6 +3892,7 @@ async fn exhausted_provider_quota_fails_once_per_resource_and_is_remembered() {
     let runtime = workspace.runtime(&[
         // Its own account: the remembered 402 is per endpoint and key, and
         // pooled mock servers reuse ports across tests.
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "quota-secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("OCTOCODE_CLASSIFICATION_CONCURRENCY", "1".into()),
@@ -4012,6 +4057,7 @@ async fn provider_refusal_is_stated_once_and_keeps_every_captured_read() {
         .into_owned();
     let runtime = workspace.runtime(&[
         // Its own account: the remembered 402 is per endpoint and key.
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "quota-fanout-secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("OCTOCODE_CLASSIFICATION_CONCURRENCY", "1".into()),
@@ -4128,6 +4174,7 @@ async fn a_list_walk_rejudges_budget_deferred_candidates() {
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("GITHUB_TOKEN", "clasify-list-budget-fixture".into()),
@@ -4230,6 +4277,7 @@ async fn an_oversized_github_ranges_read_is_judged_in_fitting_windows() {
         .await;
     let workspace = Workspace::new();
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
         ("GITHUB_TOKEN", "clasify-gh-ranges-fixture".into()),
@@ -4797,6 +4845,7 @@ async fn failed_read_keeps_the_read_tools_recovery_lead() {
     let present = workspace.write("src/present.txt", "hello\n");
     let missing = present.parent().unwrap().join("no-such-dir");
     let runtime = workspace.runtime(&[
+        ("OCTOCODE_BETA", "true".into()),
         ("OCTOCODE_CLASSIFICATION_API", "secret".into()),
         ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
     ]);

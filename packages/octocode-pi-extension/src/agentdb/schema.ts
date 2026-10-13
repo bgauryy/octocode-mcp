@@ -3,27 +3,27 @@ import { num, type Row } from './rows.js';
 
 /**
  * The agent database's schema: durable sessions, backlog and memories, and the team's transient state (presence,
- * messages kept a day, leases, recent edits). It is one version until the schema is published; after that, changes
- * append forward steps keyed by `user_version`. A file that is not ours, or was written by a newer Octocode, is refused
- * and never dropped.
+ * messages kept a day, leases, recent edits). There is one schema and no version number: opening a database of ours
+ * adds what `SCHEMA` has and the file lacks (tables, columns, indexes, triggers), and never removes or rewrites
+ * anything. Builds of different ages share one file (every running Pi opens it), so an older build must not drop a
+ * newer build's columns or tables, nor a newer one rebuild an older one's: schema changes are additive (a new table,
+ * a column with a default, an index). A file that is not ours is refused and never touched.
  */
 
-
-/** The file is not an agent database this code may use (another app's file, or a newer schema). Not retried. */
+/** The file is not an agent database this code may use (another app's file, or not SQLite). Not retried. */
 export class AgentDbError extends Error {}
 
 /** Marks the file as an Octocode for Pi agent database ("OcPg"); a file with another id is never touched. */
 export const AGENT_APPLICATION_ID = 0x4f635067;
-export const AGENT_SCHEMA_VERSION = 1;
 
 /**
- * v1: sessions (`pid_started`: the process start time, so a reused pid is not taken for the session; `unpriced`: part of
+ * Sessions (`pid_started`: the process start time, so a reused pid is not taken for the session; `unpriced`: part of
  * its usage came from a model without pricing), the backlog (`goal`: what done means; `started_at`: when it was last
  * claimed; `from_item`: the row id of the item it came from, cleared by the store when that item is removed) and its
  * notes (`kind`: the agent's text or the change log the store writes on every update), memories and the team tables
  * (`agents.cache_read`: prompt tokens read from cache).
  */
-const V1 = `
+const SCHEMA = `
 CREATE TABLE sessions (
   id TEXT PRIMARY KEY, branch TEXT, head TEXT,
   cost REAL NOT NULL DEFAULT 0, tokens INTEGER NOT NULL DEFAULT 0, files_changed INTEGER NOT NULL DEFAULT 0, pid INTEGER,
@@ -83,8 +83,8 @@ CREATE TABLE edits (
 CREATE INDEX edits_recent ON edits(workspace, at);
 `;
 
-/** Step `i` moves a file from `user_version` i to i + 1. Append only; once the schema is published, never edit a shipped step. */
-const MIGRATIONS: ReadonlyArray<(db: DatabaseSync) => void> = [(db) => db.exec(V1)];
+/** The optional full-text index over memories: its table and triggers, owned by `ensureFts`, not by the reconcile. */
+const FTS_OBJECTS = /^memories_fts(?:_|$)/;
 
 const FTS = `
 CREATE VIRTUAL TABLE memories_fts USING fts5(title, keywords, body, content='memories', content_rowid='id', tokenize='porter unicode61');
@@ -103,33 +103,98 @@ INSERT INTO memories_fts(memories_fts) VALUES ('rebuild');
 
 const pragma = (db: DatabaseSync, name: string) => num((db.prepare(`PRAGMA ${name}`).get() as Row | undefined)?.[name]);
 
+interface SchemaObject {
+  type: 'table' | 'index' | 'trigger';
+  name: string;
+  tbl_name: string;
+  sql: string;
+}
+
+const objects = (db: DatabaseSync): SchemaObject[] =>
+  (db.prepare("SELECT type, name, tbl_name, sql FROM sqlite_master WHERE type IN ('table', 'index', 'trigger') AND sql IS NOT NULL AND substr(name, 1, 7) <> 'sqlite_'").all() as unknown as SchemaObject[]).filter(
+    (object) => !FTS_OBJECTS.test(object.name),
+  );
+interface Column {
+  name: string;
+  type: string;
+  notnull: number;
+  dflt_value: string | null;
+}
+const columns = (db: DatabaseSync, table: string): Column[] => db.prepare(`PRAGMA table_info(${quote(table)})`).all() as unknown as Column[];
+const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
+
+/** `SCHEMA` as SQLite stores it, read from a scratch in-memory database. */
+function reference(db: DatabaseSync): { objects: SchemaObject[]; columns: Map<string, Column[]> } {
+  const Database = db.constructor as new (file: string) => DatabaseSync;
+  const scratch = new Database(':memory:');
+  try {
+    scratch.exec(SCHEMA);
+    const all = objects(scratch);
+    return { objects: all, columns: new Map(all.filter((object) => object.type === 'table').map((table) => [table.name, columns(scratch, table.name)])) };
+  } finally {
+    scratch.close();
+  }
+}
+
+/** The SQL that adds what `SCHEMA` has and `db` lacks, in order (tables, then columns, then indexes and triggers). */
+function missing(db: DatabaseSync): string[] {
+  const want = reference(db);
+  const have = new Map(objects(db).map((object) => [object.name, object]));
+  const steps: string[] = [];
+  for (const table of want.objects.filter((object) => object.type === 'table')) {
+    if (!have.has(table.name)) {
+      steps.push(table.sql);
+      continue;
+    }
+    const present = new Set(columns(db, table.name).map((column) => column.name));
+    for (const column of want.columns.get(table.name)!) {
+      if (present.has(column.name)) continue;
+      // SQLite adds a NOT NULL column only with a default; without one it is added nullable rather than not at all.
+      const notNull = column.notnull && column.dflt_value !== null ? ' NOT NULL' : '';
+      const fallback = column.dflt_value !== null ? ` DEFAULT ${column.dflt_value}` : '';
+      steps.push(`ALTER TABLE ${quote(table.name)} ADD COLUMN ${quote(column.name)} ${column.type}${notNull}${fallback}`);
+    }
+  }
+  for (const object of want.objects.filter((each) => each.type !== 'table')) if (!have.has(object.name)) steps.push(object.sql);
+  return steps;
+}
+
+/** Whether `db` is ours with all of `SCHEMA` and its full-text index: then opening it needs no write. */
+export function schemaCurrent(db: DatabaseSync): boolean {
+  return pragma(db, 'application_id') === AGENT_APPLICATION_ID && missing(db).length === 0 && ftsWhole(db);
+}
+
 /**
- * Brings `db` to `latest` (run it inside one transaction), refusing another app's file or a newer schema. Then makes
- * sure the memory full-text index exists when SQLite has FTS5; returns whether it does.
+ * Adds to `db` what `SCHEMA` has and it lacks (run it inside one write transaction), refusing another app's file. Then
+ * makes sure the memory full-text index exists when SQLite has FTS5; returns whether it does.
  */
-export function ensureSchema(db: DatabaseSync, file: string, migrations = MIGRATIONS, latest = AGENT_SCHEMA_VERSION): { fts: boolean } {
+export function ensureSchema(db: DatabaseSync, file: string): { fts: boolean } {
   const applicationId = pragma(db, 'application_id');
-  let version = 0;
-  if (applicationId === AGENT_APPLICATION_ID) {
-    version = pragma(db, 'user_version');
-    if (version > latest) throw new AgentDbError(`${file} holds agent state of schema ${version}, written by a newer Octocode (this one knows ${latest}); upgrade, or set OCTOCODE_AGENT_DB to another file.`);
-  } else {
-    const tables = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1").get();
+  if (applicationId !== AGENT_APPLICATION_ID) {
+    const tables = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND substr(name, 1, 7) <> 'sqlite_' LIMIT 1").get();
     if (applicationId !== 0 || tables !== undefined) throw new AgentDbError(`${file} is not an Octocode agent database; set OCTOCODE_AGENT_DB to another file.`);
     db.exec(`PRAGMA application_id=${AGENT_APPLICATION_ID}`);
   }
-  for (; version < latest; version += 1) {
-    migrations[version]!(db);
-    db.exec(`PRAGMA user_version=${version + 1}`);
-  }
+  for (const step of missing(db)) db.exec(step);
   return { fts: ensureFts(db) };
 }
 
-/** The optional FTS5 index over memories (external content, kept in sync by triggers). False when FTS5 is missing. */
+const FTS_NAMES = ['memories_fts', 'memories_fts_insert', 'memories_fts_delete', 'memories_fts_update'];
+const ftsWhole = (db: DatabaseSync) => {
+  const present = new Set((db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'memories_fts%'").all() as Array<{ name: string }>).map((row) => row.name));
+  return FTS_NAMES.every((name) => present.has(name));
+};
+
+/**
+ * The optional FTS5 index over memories (external content, kept in sync by triggers), created whole when any part of
+ * it is missing. False when this SQLite lacks FTS5 (then nothing is touched, even an index another process made).
+ */
 function ensureFts(db: DatabaseSync): boolean {
-  if (db.prepare("SELECT 1 FROM sqlite_master WHERE name = 'memories_fts'").get() !== undefined) return true;
+  if (ftsWhole(db)) return true;
   db.exec('SAVEPOINT fts');
   try {
+    for (const trigger of FTS_NAMES.slice(1)) db.exec(`DROP TRIGGER IF EXISTS ${trigger}`);
+    db.exec('DROP TABLE IF EXISTS memories_fts');
     db.exec(FTS);
     db.exec('RELEASE fts');
     return true;

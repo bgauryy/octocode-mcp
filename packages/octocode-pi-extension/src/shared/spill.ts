@@ -33,7 +33,7 @@ export function saveFullOutput(text: string, label: string): string | undefined 
 
 /**
  * Saves `content` to `<session folder>/output/<label>-<sha256 prefix>.<extension>`, named by its content, so the same
- * bytes always land in the same file (a trim planned twice, or after a reload, points at one copy). Returns where it is
+ * bytes always land in the same file (saving the same content twice points at one copy). Returns where it is
  * and how to check it, as `<path> (sha256 <prefix>, <n> bytes)`, or undefined when it could not be written. Never throws.
  */
 export function saveContentCopy(content: string | Uint8Array, label: string, extension = 'txt'): string | undefined {
