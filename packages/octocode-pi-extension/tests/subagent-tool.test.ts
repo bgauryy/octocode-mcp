@@ -144,7 +144,7 @@ describe('agent tool with a scripted pi child', () => {
     expect('error' in late && late.error).toContain(`${facts.id} has finished and takes no more messages; its report (or failure) already reached you. To continue`);
     expect(updates.some((update) => update.content.some((part) => part.type === 'image'))).toBe(true);
 
-    const done = rendered(s.agent.renderResult(result, { isPartial: false, expanded: false }, theme, { isError: false }));
+    const done = rendered(s.agent.renderResult(result, { isPartial: false, expanded: false }, theme, { isError: false, durationMs: 250 }));
     expect(done).toMatch(/^ {2}⎿ {2}Done \([a-z]+-[a-z]+ · 1 tool call · ↑100 ↓20 · ≈\$0\.01 · \d+(ms|\.\d+s|s) · faux\/model\)\n/);
     const partial = rendered(s.agent.renderResult({ content: [{ type: 'text', text: 'working' }], details: { ...result.details, seconds: undefined } }, { isPartial: true, expanded: false }, theme, { isError: false }));
     expect(partial).toContain('→ bash ls -la');
@@ -186,6 +186,10 @@ describe('agent tool with a scripted pi child', () => {
     const failed = await s.run({ task: 'error please' });
     expect(failed).toMatchObject({ isError: true, details: { status: 'failed' }, usage: { input: 100, output: 20 } });
     expect(failed.content[0].text).toMatch(/failed: provider down\nRetry with a narrower task or do the work yourself\. The partial answer is unverified\.\n\nPartial answer:\npartial findings/);
+    const limited = await s.run({ task: 'length please' });
+    expect(limited).toMatchObject({ isError: true, details: { status: 'failed' }, usage: { input: 100, output: 20 } });
+    expect(limited.content[0].text).toContain('Model output limit reached; the report is incomplete');
+    expect(limited.content[0].text).toContain('Partial answer:\nunfinished findings');
     const silent = await s.run({ task: 'silent run' });
     expect(silent.content[0].text).toBe('(subagent returned no text)');
   });
@@ -505,6 +509,12 @@ describe('runSubagent', () => {
 });
 
 describe('subagent watchdog and exits', () => {
+  it('preserves an answer when its watchdog ends stalled shutdown', async () => {
+    const outcome = await runSubagent(['answer then stalled shutdown'], tmp(), undefined, { id: 'a-shutdown' }, undefined, () => undefined, undefined, { idleMs: Number.POSITIVE_INFINITY, maxMs: 300 });
+    expect(outcome.text).toBe('COMPLETED REPORT');
+    expect(outcome.error).toBeUndefined();
+  });
+
   it('kills a child that emits nothing for the idle limit and says what it last did', async () => {
     await expect(runSubagent(['hang'], tmp(), undefined, { id: 'a-hang' }, undefined, () => undefined, undefined, { idleMs: 300, maxMs: Number.POSITIVE_INFINITY }))
       .rejects.toThrow(/^Subagent stopped: no output for .*; last activity: started, .* ago\. Its process tree was killed\.$/);

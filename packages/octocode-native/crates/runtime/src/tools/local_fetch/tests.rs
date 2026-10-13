@@ -70,6 +70,137 @@ impl ContentScan for Safe {
 fn fetch(req: &LocalFetchQuery, paths: &impl PathAccess) -> LocalFetchResult {
     execute_local_fetch(req, paths, &Safe, &NeverCancel, &LocalFetchRegex, None)
 }
+
+#[test]
+fn goal_read_replays_skipped_plan_and_rejects_source_drift() {
+    let temp = Temp::new();
+    let path = temp.0.join("goals.txt");
+    fs::write(&path, "first\nsecond\nthird\n").expect("fixture");
+    let paths = Paths(temp.0.clone());
+    let mut query = q(&path);
+    query.goals = vec!["find second".parse().expect("goal")];
+    query.length = wire_positive(1);
+    let first = fetch(&query, &paths);
+    assert_eq!(
+        first.ranking.as_ref().map(|r| r.status),
+        Some(crate::contracts::tool_types::RankingStatus::Skipped)
+    );
+    let continued = first
+        .next
+        .expect("next")
+        .continue_window
+        .expect("page")
+        .query;
+    assert!(continued.ranking.is_some());
+    let second = fetch(&continued, &paths);
+    assert_eq!(second.content.as_deref(), Some("second\n"));
+    let mut switched_to_full = continued.clone();
+    switched_to_full.full_content = Some(true);
+    assert_eq!(
+        fetch(&switched_to_full, &paths).error_code.as_deref(),
+        Some("staleSnapshot"),
+        "a line plan cannot be replayed as a new fullContent view"
+    );
+    let mut changed = continued.clone();
+    changed.goals = vec!["a different goal".parse().expect("goal")];
+    assert_eq!(
+        fetch(&changed, &paths).error_code.as_deref(),
+        Some("staleSnapshot")
+    );
+}
+
+#[test]
+fn goal_read_with_no_matches_reports_empty_ranking_scope() {
+    let temp = Temp::new();
+    let path = temp.0.join("empty-selection.txt");
+    fs::write(&path, "ordinary text\n").expect("fixture");
+    let mut query = q(&path);
+    query.match_string = Some("missing".parse().expect("match"));
+    query.goals = vec!["find missing evidence".parse().expect("goal")];
+    let result = fetch(&query, &Paths(temp.0.clone()));
+    let receipt = result.ranking.expect("receipt");
+    assert_eq!(
+        receipt.status,
+        crate::contracts::tool_types::RankingStatus::Skipped
+    );
+    assert_eq!(receipt.ranked_items, 0);
+    assert_eq!(receipt.total_items, 0);
+}
+
+#[test]
+fn ranking_provider_sees_workspace_relative_path_and_complete_evidence() {
+    use crate::tools::ranking::{JudgeCall, RankJudge};
+    use serde_json::Value;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    struct PathJudge;
+    impl RankJudge for PathJudge {
+        fn identity(&self) -> Value {
+            serde_json::json!({"backend":"path-test"})
+        }
+        fn score(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, f64)>, String> {
+            Ok(call
+                .admitted
+                .iter()
+                .map(|&ordinal| {
+                    let state = call.candidates[ordinal].state.as_ref().expect("state");
+                    assert_eq!(state["path"], "src/evidence.txt");
+                    assert!(
+                        state["content"]
+                            .as_str()
+                            .is_some_and(|text| text.contains("evidence"))
+                    );
+                    (ordinal, -(ordinal as f64))
+                })
+                .collect())
+        }
+    }
+
+    let t = Temp::new();
+    let folder = t.0.join("src");
+    fs::create_dir_all(&folder).expect("folder");
+    let file = folder.join("evidence.txt");
+    let source = (0..6)
+        .map(|_| format!("{}\n", "evidence ".repeat(100)))
+        .collect::<String>();
+    fs::write(&file, &source).expect("fixture");
+    let policy = workspace_policy(&t.0);
+    let executor = tokio::runtime::Runtime::new().expect("runtime");
+    let ranking = crate::tools::ranking::Runtime {
+        limits: crate::tools::ranking::Limits {
+            enabled: true,
+            max_candidates: 64,
+            max_chars: 131_072,
+            timeout: Duration::from_secs(2),
+        },
+        available: true,
+        judge: Arc::new(PathJudge),
+        handle: executor.handle().clone(),
+        context: crate::runtime::ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: Instant::now() + Duration::from_secs(2),
+            walk_threads: None,
+            response_window: None,
+            github_credential: None,
+        },
+        home: t.0.clone(),
+        stats_enabled: false,
+    };
+    let mut query = q(&file);
+    query.goals = vec!["find evidence".parse().expect("goal")];
+    let result = execute_local_fetch_ranked(
+        &query,
+        &policy,
+        &Safe,
+        &NeverCancel,
+        &LocalFetchRegex,
+        None,
+        Some(&ranking),
+    );
+    assert_eq!(result.error_code, None);
+    assert_eq!(result.content.as_deref(), Some(source.as_str()));
+}
 pub(super) fn q(path: &Path) -> LocalFetchQuery {
     LocalFetchQuery {
         path: path.to_string_lossy().parse().expect("path"),
@@ -781,6 +912,40 @@ fn full_content_is_cut_at_the_configured_response_window() {
     );
     assert!(large.next.is_none());
     assert_eq!(large.returned_lines, Some(1_500));
+}
+
+#[test]
+fn goal_full_content_bounded_continuation_keeps_its_skip_plan() {
+    let t = Temp::new();
+    let paths = Paths(t.0.clone());
+    let file = t.0.join("bounded-goals.txt");
+    fs::write(&file, "let value = 1;\n".repeat(1_500)).expect("fixture");
+    let mut full = q(&file);
+    full.full_content = Some(true);
+    full.goals = vec!["find value".parse().expect("goal")];
+    let first = execute_local_fetch(
+        &full,
+        &paths,
+        &Safe,
+        &NeverCancel,
+        &LocalFetchRegex,
+        Some(10_000),
+    );
+    assert_eq!(first.error_code, None);
+    let next = first
+        .next
+        .expect("bounded next")
+        .continue_window
+        .expect("page")
+        .query;
+    assert_eq!(next.full_content, None);
+    assert!(next.ranking.is_some());
+    let second = fetch(&next, &paths);
+    assert_eq!(second.error_code, None);
+    assert_eq!(
+        second.ranking.as_ref().map(|receipt| receipt.status),
+        Some(crate::contracts::tool_types::RankingStatus::Skipped)
+    );
 }
 
 #[test]
@@ -2109,6 +2274,100 @@ fn line_walk_over_an_oversized_line_covers_every_byte_once() {
     assert!(byte_pages >= 3, "the 42 KB line spans several byte pages");
     assert_eq!(last_line, total_lines);
     assert!(text == source, "pages join into the source exactly once");
+}
+
+#[test]
+fn ranked_line_walk_keeps_byte_fallback_and_every_source_byte() {
+    use crate::tools::ranking::{JudgeCall, RankJudge};
+    use serde_json::Value;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    struct SourceOrderJudge;
+    impl RankJudge for SourceOrderJudge {
+        fn identity(&self) -> Value {
+            serde_json::json!({"backend":"source-order-test"})
+        }
+        fn score(&self, call: JudgeCall<'_>) -> Result<Vec<(usize, f64)>, String> {
+            Ok(call
+                .admitted
+                .iter()
+                .map(|&ordinal| (ordinal, -(ordinal as f64)))
+                .collect())
+        }
+    }
+
+    let t = Temp::new();
+    let paths = Paths(t.0.clone());
+    let file = t.0.join("ranked-giant.txt");
+    let mut source = (1..=1_164)
+        .map(|line| format!("var line_{line} = {line};\n"))
+        .collect::<String>();
+    source.push_str(&format!("    CSS: '{}',\n", "x".repeat(42_830)));
+    source.push_str("last line without newline");
+    fs::write(&file, &source).expect("fixture");
+    let executor = tokio::runtime::Runtime::new().expect("runtime");
+    let ranking = crate::tools::ranking::Runtime {
+        limits: crate::tools::ranking::Limits {
+            enabled: true,
+            max_candidates: 64,
+            max_chars: 131_072,
+            timeout: Duration::from_secs(10),
+        },
+        available: true,
+        judge: Arc::new(SourceOrderJudge),
+        handle: executor.handle().clone(),
+        context: crate::runtime::ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: Instant::now() + Duration::from_secs(10),
+            walk_threads: None,
+            response_window: None,
+            github_credential: None,
+        },
+        home: t.0.clone(),
+        stats_enabled: false,
+    };
+    let mut query = qj(&file, serde_json::json!({"unit":"lines","length":400}));
+    query.goals = vec!["find CSS".parse().expect("goal")];
+    let (mut text, mut units, mut pages) = (String::new(), Vec::new(), 0);
+    loop {
+        let page = execute_local_fetch_ranked(
+            &query,
+            &paths,
+            &Safe,
+            &NeverCancel,
+            &LocalFetchRegex,
+            None,
+            Some(&ranking),
+        );
+        assert_eq!(page.error_code, None, "{page:?}");
+        assert_eq!(
+            page.ranking.as_ref().map(|receipt| receipt.status),
+            Some(crate::contracts::tool_types::RankingStatus::Partial)
+        );
+        pages += 1;
+        assert!(pages < 40, "runaway paging");
+        units.push(page.pagination.as_ref().map(|pagination| pagination.unit));
+        text.push_str(page.content.as_deref().unwrap_or_default());
+        match page.next.and_then(|next| next.continue_window) {
+            Some(next) => query = next.query,
+            None => break,
+        }
+    }
+    assert!(
+        units
+            .windows(2)
+            .any(|pair| pair == [Some(WindowUnit::Lines), Some(WindowUnit::Bytes)])
+    );
+    assert!(
+        units
+            .windows(2)
+            .any(|pair| pair == [Some(WindowUnit::Bytes), Some(WindowUnit::Lines)])
+    );
+    assert_eq!(
+        text, source,
+        "ranking and mixed units preserve every source byte"
+    );
 }
 
 /// A regex read with more matches than the old 10,000 in-process cap

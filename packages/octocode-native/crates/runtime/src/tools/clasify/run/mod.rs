@@ -60,6 +60,7 @@ mod render;
 use crate::tools::clasify::items;
 use crate::tools::clasify::resource::tool_of;
 use capture::capture_resource;
+pub(super) use evidence::rank_candidate_item;
 use evidence::relativize_local_paths;
 pub(super) use hydrate::judged_line_windows;
 use render::{

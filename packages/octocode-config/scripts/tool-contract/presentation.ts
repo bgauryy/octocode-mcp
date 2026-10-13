@@ -1,7 +1,7 @@
 // CLI discovery content, rendered once here so the native binary serves
 // `schema`, `catalog` field lists and `<tool> --help` without Node. Every
 // schema view is a core Zod schema emitted once as JSON: `query` is the row
-// MCP lists, `full` the canonical row the enforcement contract carries, and
+// MCP lists, `full` the canonical row with unavailable addons omitted, and
 // each `--select operation=X` that operation's row. `query` also lists the
 // continuation fields the published row hides, one line each, and names the
 // other accepted fields it hides (per operation, or the whole row's) with
@@ -11,6 +11,8 @@ import {
   CLASIFY_SCOUT_TOOL_NAMES,
   DIRECT_TOOL_DEFINITIONS,
   getPublicToolCatalog,
+  getDirectToolDefinitionsWithAddons,
+  getPublicToolCatalogWithAddons,
   continuationFields,
   getToolSchemaVariants,
   operationSchemas,
@@ -122,12 +124,11 @@ function hiddenFields(definition: Definition, row: Json, continuation: Json, can
 }
 
 /** A tool's `schema` views and `--select operation=X` views. */
-function rendered(definition: Definition): { views: Json; selections: Json } {
+function rendered(definition: Definition, querySchema: Json): { views: Json; selections: Json } {
   const { name, inputSchema } = definition;
   const variants = getToolSchemaVariants(name);
-  // The canonical row is the enforcement contract's `querySchema`, emitted once.
-  const { $schema: _schema, ...canonical } = getPublicToolCatalog().tools.find(tool => tool.name === name)!
-    .querySchema as Json;
+  // Core's presentation catalog owns any availability-dependent row changes.
+  const { $schema: _schema, ...canonical } = querySchema;
   const row = publishedInputSchema(inputSchema, 'row');
   // The row hides the fields a `next.*` page or `hints.*` lead fills; name them once here.
   const continuation = continuationFields(inputSchema);
@@ -151,17 +152,35 @@ function rendered(definition: Definition): { views: Json; selections: Json } {
 
 /** The `cli-presentation.json` the native binary embeds beside the enforcement contract. */
 export function buildCliPresentation(): Json {
+  const availableTools = DIRECT_TOOL_DEFINITIONS.map(tool => tool.name);
+  const definitions = getDirectToolDefinitionsWithAddons({ availableTools });
+  const rankedDefinitions = getDirectToolDefinitionsWithAddons({ availableTools, ranking: true });
+  const catalog = getPublicToolCatalogWithAddons({ availableTools });
+  const rankedCatalog = getPublicToolCatalogWithAddons({ availableTools, ranking: true });
   return {
     fingerprint: getPublicToolCatalog().fingerprint,
     instructions: buildCliInstructions(),
     clasifyContextTools: [...CLASIFY_SCOUT_TOOL_NAMES],
-    tools: DIRECT_TOOL_DEFINITIONS.map(definition => ({
-      name: definition.name,
-      shortDescription: definition.shortDescription,
-      variantNames: Object.keys(operationSchemas(definition.inputSchema)),
-      fields: compactFields(definition),
-      help: toolHelpSection(definition.name),
-      ...rendered(definition),
-    })),
+    tools: definitions.map(definition => {
+      const { name } = definition;
+      const querySchema = catalog.tools.find(tool => tool.name === name)!.querySchema as Json;
+      const rankedSchema = rankedCatalog.tools.find(tool => tool.name === name)!.querySchema as Json;
+      const rankedDefinition = rankedDefinitions.find(tool => tool.name === name)!;
+      return {
+        name,
+        shortDescription: definition.shortDescription,
+        variantNames: Object.keys(operationSchemas(definition.inputSchema)),
+        fields: compactFields(definition),
+        help: toolHelpSection(name),
+        ...rendered(definition, querySchema),
+        // Emit only changed views; Rust selects them using native runtime truth.
+        ...(JSON.stringify(querySchema) !== JSON.stringify(rankedSchema) && {
+          ranking: {
+            fields: compactFields(rankedDefinition),
+            ...rendered(rankedDefinition, rankedSchema),
+          },
+        }),
+      };
+    }),
   };
 }

@@ -27,7 +27,10 @@ async fn default_family_keeps_every_family() {
         assert!(runtime.is_available(name), "{name}");
     }
     let catalog = runtime.catalog().expect("catalog");
-    assert_eq!(catalog["presentation"], json!({"deferred":[]}));
+    assert_eq!(
+        catalog["presentation"],
+        json!({"deferred":[], "ranking":false})
+    );
     runtime.close().await;
 }
 
@@ -65,7 +68,7 @@ async fn presentation_switches_reach_the_catalog() {
     let catalog = runtime.catalog().expect("catalog");
     assert_eq!(
         catalog["presentation"],
-        json!({"deferred":["ghSearchRepo","ghStructure"]})
+        json!({"deferred":["ghSearchRepo","ghStructure"], "ranking":false})
     );
     assert!(
         runtime.is_available("ghSearchRepo"),

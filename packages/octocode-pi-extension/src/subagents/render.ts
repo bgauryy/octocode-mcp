@@ -131,8 +131,7 @@ export function renderAgentResult(result: AgentToolResult<unknown>, { isPartial 
     return resultBlock(theme, context, { summary: `Running in the background as ${details.id}`, ...(note ? { body: note } : {}), prefaceLabel: 'prompt', preface: promptPreface(theme, task, note ? 'Note' : undefined), max: 0, ...timingOf(result.details) });
   }
   const timing = timingOf(result.details);
-  const durationMs = timing.durationMs ?? (details.seconds === undefined ? undefined : details.seconds * 1000);
-  return resultBlock(theme, context, { summary: doneSummary(details, durationMs), body, prefaceLabel: 'prompt', preface: promptPreface(theme, task, body.trim() ? 'Report' : undefined), ...timing, ...(durationMs === undefined ? {} : { durationMs }) });
+  return resultBlock(theme, context, { summary: doneSummary(details, context.durationMs), body, prefaceLabel: 'prompt', preface: promptPreface(theme, task, body.trim() ? 'Report' : undefined), ...timing });
 }
 
 /**

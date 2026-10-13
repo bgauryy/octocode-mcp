@@ -35,9 +35,9 @@ SKIP_FILES = re.compile(r"(^|/)(tests?\.rs|.*_tests?\.rs|.*\.(test|spec)\.[jt]s|
 TEXT_EXT = {".rs", ".ts", ".js", ".mjs", ".json", ".md", ".yaml", ".yml", ".toml", ".txt"}
 
 
-def question_terms() -> dict[str, list[str]]:
+def question_terms(question_dir=None) -> dict[str, list[str]]:
     out = {}
-    for f in sorted((PKG / "compare/github-questions").glob("Q*.md"), key=lambda p: int(p.stem[1:])):
+    for f in sorted((question_dir or PKG / "compare/github-questions").glob("Q*.md"), key=lambda p: int(p.stem[1:])):
         body = f.read_text().split("## Question", 1)[-1]
         found = set(re.findall(r"\b[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\b", body))      # owner/repo, paths
         found |= set(re.findall(r"\b[a-z]+[A-Z][A-Za-z0-9]{2,}\b", body))           # camelCase
@@ -52,28 +52,17 @@ def question_terms() -> dict[str, list[str]]:
 
 
 def mcp_surface(cmd: str) -> str:
-    msgs = [
-        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
-         "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "leak-check", "version": "1"}}},
-        {"jsonrpc": "2.0", "method": "notifications/initialized"},
-        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-    ]
-    env = {**os.environ, "OCTOCODE_ALLOW_CONTRACT_DRIFT": "1", "NODE_ENV": "development"}
-    proc = subprocess.Popen(shlex.split(cmd), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                            stderr=subprocess.DEVNULL, text=True, env=env)
-    for m in msgs:
-        proc.stdin.write(json.dumps(m) + "\n")
-    proc.stdin.flush()
-    text, seen = [], set()
-    for line in proc.stdout:
-        msg = json.loads(line)
-        if msg.get("id") in (1, 2):
-            text.append(json.dumps(msg["result"], ensure_ascii=False))
-            seen.add(msg["id"])
-        if seen == {1, 2}:
-            break
-    proc.kill()
-    return "\n".join(text)
+    from mcp_probe import McpClient
+    command = shlex.split(cmd)
+    client = McpClient({"command":command[0],"args":command[1:]})
+    try:
+        init = client.call("initialize", {"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"leak-check","version":"2"}})
+        client.proc.stdin.write('{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
+        client.proc.stdin.flush()
+        catalog = client.call("tools/list")
+        return json.dumps(init, ensure_ascii=False) + "\n" + json.dumps(catalog, ensure_ascii=False)
+    finally:
+        client.close()
 
 
 def scan_text(name: str, text: str, terms: dict[str, list[str]]) -> list[dict]:
@@ -113,9 +102,10 @@ def scan_product(terms: dict[str, list[str]]) -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mcp-cmd", default=f"node {REPO}/packages/octocode-mcp/dist/index.js")
+    ap.add_argument("--question-dir", type=Path, default=os.environ.get("QUESTION_DIR"))
     ap.add_argument("--json", type=Path, help="write all hits here")
     args = ap.parse_args()
-    terms = question_terms()
+    terms = question_terms(args.question_dir)
     visible = []
     for brief in sorted((PKG / "compare/arms").glob("*.md")):
         visible += scan_text(f"compare/arms/{brief.name}", brief.read_text(), terms)

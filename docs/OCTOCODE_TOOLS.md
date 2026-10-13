@@ -358,6 +358,8 @@ Paging and errors: follow `next.nextPage`; unknown totals stay unknown, and an e
 
 Lexical search. Outlines and metadata: `structureSearch`; syntax: `astSearch`; file graphs: `astTopology`.
 
+`goals` optionally asks for semantic relevance ordering of matched files. It does not retrieve files outside the lexical scope. See [goal-based relevance ranking](#goal-based-relevance-ranking).
+
 | Field | Values and meaning |
 |---|---|
 | `path`, `matchString` | Required. A `ghCloneRepo` `localPath` is valid as-is. With `regex` unset, `matchString` is literal in every tool, whatever its shape (`a\|b`, `.*`, `matches[0]`); pass `regex:"rust"` or `"pcre2"` to run a regex. An empty literal search whose text has regex characters says the regex reading exists. |
@@ -403,7 +405,7 @@ Rows: `path` is relative to `root` (the queried directory, or a queried file's p
 
 | Key | When and what |
 |---|---|
-| `next.nextPage`, `next.nextMatchPage` | Without `pageSize`/`matchPageSize`, `nextPage` walks the rest in about 24 KB pages. With either set, `nextPage` moves to the next files and `nextMatchPage` to each shown file's next rows (later match pages list only files with rows left). |
+| `next.nextPage`, `next.nextMatchPage` | Without `pageSize`/`matchPageSize`, `nextPage` walks the rest in about 24 KB pages. With either set, `nextMatchPage` finishes the shown files' remaining rows first (later match pages list only files with rows left), then `nextPage` advances to the next files and resets the match page. This gives one executable route without repeated file pages. A terminal match-cursor limit still allows advancing to later files. |
 | `next.restart` | Stale snapshot: rerun from page 1. |
 | `next.expandValues` | A clipped value. On a `pageSize`/`matchPageSize` page: the same page with a wider `matchContentLength`. On a default page: one `localFetch` of the clipped lines per file (`expandValues2`, …), or for a multiline match the file searched alone with a wider `matchContentLength`. |
 | `hints.read` | With `extras:["hints"]`, `localFetch` on the first page of a complete result: a shown declaration of the searched symbol, whole; else ±6 lines around the top file's hits (a `matchString` read past 10 ranges). |
@@ -508,6 +510,29 @@ Rows are `{dir, files}` groups with a workspace-relative `dir` (`dir + "/" + nam
 - With `extras:["hints"]`, `files` page 1 offers `hints.read`: the `minify:"symbols"` outline of the first source or doc file.
 - A filtered `tree` that skipped dot entries offers `hints.includeHidden`. An empty listing whose skipped entries (`.gitignore`, dot entries, the default prune) hold matches offers `next.includeSkipped` with only the flags that find them, and a warning naming the rule, entry or directory; `files` lists `.gitignore`d entries once `defaultExcludes:false`, so that one flag is its lead for a pruned directory.
 - A missing `path`: `pathNotFound` with `hints.viewTree` (nearest existing parent). A file as `path`: `notADirectory` with `next.read`, its `minify:"symbols"` outline.
+
+### Goal-based relevance ranking
+
+All 13 clasify-readable tools accept `goals`, a list of 1–5 nonblank strings (up to 1,000 characters each). MCP and CLI schemas expose it as optional only with [ranking enabled](CONFIGURATION.md#read-tool-relevance-ranking) and `clasify` available; otherwise they omit it and its ranking continuation field. Eligible operations judge sanitized evidence against each goal and put the highest-scoring candidates first; structural and incomplete operations report a zero-call skip. See the [per-tool scope table](OCTOCODE_CLASIFY.md#how-goals-rerank-source). Search scores sanitized match evidence without hydrating unseen file bodies and orders files; fetch orders contiguous text windows while preserving source line numbers. The best score across the goals determines order; ties keep the original order. `mainGoal` remains optional workflow metadata.
+
+CLI schema discovery uses configured availability without contacting the provider. MCP also checks provider availability at startup, so a failed startup probe hides the ranking fields in that session.
+
+For the choice between exact reads, ranked content, and a `clasify` matrix, see [routing, prompts, and measured savings](OCTOCODE_CLASIFY.md#ranked-content-or-a-clasify-matrix). `goals` promotes evidence matching **any** goal; it does not certify that all requested conditions hold. Explicit `goals` inside a `clasify` resource requests two semantic stages, with provider work for each.
+
+For a ranked search used as a `clasify` resource, candidates deferred by the matrix's evidence budget remain explicit unjudged entries with executable `hints.read` calls. The matrix preserves the search's original page continuation instead of resizing that page and changing its ranking plan. Read those entries directly or classify them with a suitable evidence budget.
+
+A ranked fetch window can shrink to fit a classification budget only while retaining its existing ranking plan. If a terminal page has no recoverable plan, or shrinking would change selected source ranges, the oversized evidence remains explicitly unjudged with its read lead. Verification reads use original source locations without ranking controls.
+
+<!-- tool: localFetch -->
+```json
+{"path":"docs/guide.md","goals":["Explain how cancelling a queued request releases its resources"]}
+```
+
+Provider budgets limit the classified scope. The visible `ranking` receipt gives `status`, `scope` (`selectedView` or `providerPage`), `rankedItems`, `totalItems`, and a reason when needed. Unranked candidates remain in their original order after ranked candidates. A `partial` ranking is not a whole-corpus relevance judgment. A `fallback` preserves ordinary ordering after a provider error or timeout. `skipped` explains a disabled gate, unsupported view, or a single candidate whose order cannot change. Calls without goals follow their usual behavior.
+
+Copy the `ranking` token from `next.*` unchanged. It fixes the order for the same candidate set across CLI processes and MCP calls without repeating classification. A new provider page uses a new page-local decision, never the previous page’s permutation. Source, goals, selection, or relevant configuration changes invalidate the plan and return `staleSnapshot` with `next.restart`. A fetch offset addresses the ranked view; use its source gutters and `sourceLineRanges` for original locations.
+
+Explicit non-relevance search sorts and reverse ordering remain authoritative. Search views that return only paths or counts lack match evidence and skip ranking. Fetch ranking applies to raw line views, using complete lines in windows of about 2,048 characters. Oversized lines and an unterminated final window remain unranked. Byte windows, `fullContent`, minified views, and files above the 10 MiB streaming threshold retain their requested representation and report skipped ranking. Follow every continuation needed by the question: ranking never authorizes treating omitted pages as absent evidence. It can reduce caller input when the answer appears sooner, while adding classification cost and latency. With statistics enabled, provider calls and reported tokens contribute to the existing classification counters.
 
 ### `localFetch`
 
@@ -734,9 +759,9 @@ An `lsp-servers.json` entry adds an extension or replaces a built-in server (ano
 
 ## Semantic assessment reference
 
-`clasify` takes 1–5 matrices in `queries[]`; each has optional `mainGoal` and `reasoning`, 1–25 `resources` (supplied `{value}` state or one unread `{tool,query}` read), and 1–25 `questions`, and results are keyed by query, resource, and question IDs. Read `npx octocode schema clasify --view query` before you write a call, and run `next.clasify` unchanged. Flows: LOCATE a described target in a large file, GATE a large fetch with `sufficient`, SCOUT an unread list, JUDGE a supplied `value` only when the label is the deliverable. Question types, limits, outputs, credentials, and handoffs: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md).
+`clasify` accepts matrices in `queries[]`, each with `resources` (unread `{tool,query}` or held `{value}`) and typed `questions`. Results are keyed by query, resource, and question IDs. Read `npx octocode schema clasify --view query` for current fields, and copy needed `next.clasify` continuations unchanged.
 
-Not for a known identifier or literal (use `localSearch`, `astSearch`, or `lspSearch`; an identifier target returns `hints.findText`), latency-sensitive work, or state you can decide yourself. A low score defers a candidate, never discards it; `sufficient` stops screening only when its read shows the deciding line; scores never prove absence.
+Use [goals](#goal-based-relevance-ranking) for reordered source, or a matrix for locations and judgments first. The [goals and clasify guide](OCTOCODE_CLASIFY.md) owns flows, question types, output, limits, availability, prompts, and measured tradeoffs. Scores guide inspection; verify deciding source and keep unread evidence reachable.
 
 ## Clone and local tools workflow
 

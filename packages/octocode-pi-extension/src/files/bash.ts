@@ -147,6 +147,7 @@ export function registerBashTool(
       background: Type.Optional(Type.Boolean({ description: 'Start the command and return at once; its exit arrives later as a message. For servers, watchers and long builds' })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
+      signal?.throwIfAborted();
       current = ctx;
       const settings = settingsFor(ctx);
       if (params.background) {

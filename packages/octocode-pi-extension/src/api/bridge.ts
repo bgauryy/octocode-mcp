@@ -80,8 +80,6 @@ export class OctocodeApi {
   private lastResult: { text: string; stopReason?: string } | undefined;
   private counter = 0;
   private lastAssistantText = '';
-  /** When each running tool call's `tool.start` was published, keyed by call id; cleared on start/stop. */
-  private readonly toolStarts = new Map<string, number>();
 
   constructor(
     private readonly pi: ExtensionAPI,
@@ -122,9 +120,9 @@ export class OctocodeApi {
     });
     // `wait` answers once Pi has settled: after agent_end it may still continue (a queued follow-up, a compaction
     // retry), and the caller wants the final answer, not an intermediate one.
-    pi.on('agent_settled', () => {
+    pi.on('agent_settled', (event) => {
       if (!this.server) return;
-      const result = this.lastResult ?? { text: '' };
+      const result = { ...(this.lastResult ?? { text: '' }), ...(event.aborted ? { stopReason: 'aborted' } : {}) };
       log.publish('agent.settled', result);
       for (const waiter of [...this.waiters]) {
         this.waiters.delete(waiter);
@@ -143,19 +141,16 @@ export class OctocodeApi {
     });
     pi.on('tool_execution_start', (event) => {
       if (!this.server) return;
-      this.toolStarts.set(event.toolCallId, Date.now());
       log.publish('tool.start', { id: event.toolCallId, name: event.toolName, hint: toolHint(event.args), ...nesting(event.parentToolCallId) });
     });
     pi.on('tool_execution_end', (event) => {
       if (!this.server) return;
-      const started = this.toolStarts.get(event.toolCallId);
-      this.toolStarts.delete(event.toolCallId);
       log.publish('tool.end', {
         id: event.toolCallId,
         name: event.toolName,
         isError: event.isError,
         ...nesting(event.parentToolCallId),
-        ...(started !== undefined ? { durationMs: Date.now() - started } : {}),
+        ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
       });
     });
     pi.on('session_compact', () => void (this.server && log.publish('compaction', {})));
@@ -197,7 +192,6 @@ export class OctocodeApi {
     this.ctx = undefined;
     this.lastResult = undefined;
     this.lastAssistantText = '';
-    this.toolStarts.clear();
     for (const waiter of this.waiters) waiter.reject(new RpcError(ERR.unavailable, 'The session ended'));
     this.waiters.clear();
     if (record) removeRecord(this.dir, record.id);

@@ -123,7 +123,7 @@ describe('a subagent\'s usage', () => {
     const s = setup();
     const result = await s.run({ goal: GOAL, task: 'unpriced answer' });
     expect(result.details).toMatchObject({ input: 400, cacheRead: 300, output: 20, cost: 0, unpriced: true });
-    const done = rendered(s.agent.renderResult(result, { isPartial: false, expanded: false }, theme, { isError: false }));
+    const done = rendered(s.agent.renderResult(result, { isPartial: false, expanded: false }, theme, { isError: false, durationMs: 250 }));
     expect(done).toMatch(/Done \([a-z]+-[a-z]+ · 0 tool calls · ↑400 \(75% cached\) ↓20 · cost n\/a · /);
   });
 });

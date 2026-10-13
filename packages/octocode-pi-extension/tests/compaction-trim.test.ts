@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI, SessionEntry } from '@earendil-works/pi-coding-agent';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promptCacheTtlMs } from '../src/compaction/cache.js';
 import { TRIM_PRESSURE_PERCENT, trimsDue } from '../src/compaction/policy.js';
@@ -35,8 +35,11 @@ function register(model?: { promptCache?: { short?: number; long?: number } }) {
   const usage = { percent: 80 as number | null };
   const registered = model && { provider: 'p', id: 'm', api: 'anthropic-messages', ...model };
   const modelRegistry = { getAll: () => (registered ? [registered] : []), find: () => registered };
-  const ctx = { model: registered, modelRegistry, hasUI: true, cwd: '/repo', sessionManager: { getSessionId: () => session, getBranch: () => [] }, getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent: usage.percent }) };
+  const entries: SessionEntry[] = [];
+  const sessionManager = { getSessionId: () => session, getBranch: () => entries, getLeafId: () => entries.at(-1)?.id ?? null, getEntry: (id: string) => entries.find((entry) => entry.id === id) };
+  const ctx = { model: registered, modelRegistry, hasUI: true, cwd: '/repo', sessionManager, getContextUsage: () => ({ tokens: 1, contextWindow: 100, percent: usage.percent }) };
   return {
+    entries,
     usage,
     reset,
     forget,
@@ -131,10 +134,26 @@ describe('trim plan memo', () => {
     // ...unless Pi kept the cache warm meanwhile.
     const kept = session();
     await kept.fire('cache_warming_decision', { type: 'cache_warming_decision', action: 'warm' });
+    kept.entries.push({ type: 'usage', kind: 'cache_warm', id: 'warm', parentId: null, timestamp: new Date().toISOString(), provider: 'p', model: 'm', usage: {} } as SessionEntry);
     expect(await kept.fire('turn_end', { ...turnEnd(big), ...turn(Date.now() - ttl - 1) })).toBeUndefined();
+    // A warm decision with no successful usage entry must not hide an expired cache.
+    const failed = session();
+    await failed.fire('cache_warming_decision', { type: 'cache_warming_decision', action: 'warm' });
+    expect(((await failed.fire('turn_end', { ...turnEnd(big), ...turn(Date.now() - ttl - 1) })) as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
     const stopped = session();
     await stopped.fire('cache_warming_decision', { type: 'cache_warming_decision', action: 'stop' });
     expect(((await stopped.fire('turn_end', { ...turnEnd(big), ...turn(Date.now() - ttl - 1) })) as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
+  });
+
+  it.each(['error', 'aborted', 'stop', 'toolUse', 'length'])('updates foreground cache freshness only for successful replies: %s', async (stopReason) => {
+    const s = register({ promptCache: { short: 300 } });
+    s.usage.percent = 10;
+    const old = { role: 'assistant', timestamp: Date.now() - 300_001, stopReason: 'stop' };
+    await s.fire('turn_end', { ...turnEnd([]), message: old });
+    const big = [...Array.from({ length: KEEP_RECENT_RESULTS + 10 }, (_, index) => [call(index, 40_000), result(index)]).flat(), tail];
+    const outcome = await s.fire('turn_end', { ...turnEnd(big), message: { role: 'assistant', timestamp: Date.now(), stopReason } });
+    if (stopReason === 'error' || stopReason === 'aborted') expect((outcome as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
+    else expect(outcome).toBeUndefined();
   });
 
   it('waits for the inferred cache lifetime when a model declares no cache but its turn reports cache use', async () => {

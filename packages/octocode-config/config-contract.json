@@ -505,6 +505,55 @@
         }
       }
     },
+    "ranking": {
+      "title": "Read-tool relevance ranking",
+      "file": true,
+      "resolved": true,
+      "fields": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Rank goal-bearing read-tool evidence with the configured classification provider.",
+          "env": {
+            "OCTOCODE_RANKING_ENABLED": {
+              "priority": 0,
+              "dotenv": "home",
+              "workspaceNarrowsTo": "false"
+            }
+          }
+        },
+        "maxCandidates": {
+          "type": "number",
+          "minimum": 1,
+          "span": 255,
+          "defaultOffset": 63,
+          "description": "Maximum complete evidence units classified per ranking operation; other units keep their original order.",
+          "env": {
+            "OCTOCODE_RANKING_MAX_CANDIDATES": { "priority": 0 }
+          }
+        },
+        "maxChars": {
+          "type": "number",
+          "minimum": 1024,
+          "span": 1047552,
+          "defaultOffset": 130048,
+          "description": "Maximum evidence characters sent for one ranking operation.",
+          "env": {
+            "OCTOCODE_RANKING_MAX_CHARS": { "priority": 0 }
+          }
+        },
+        "timeoutMs": {
+          "type": "number",
+          "minimum": 100,
+          "span": 59900,
+          "defaultOffset": 9900,
+          "description": "Total ranking deadline in milliseconds, bounded by the enclosing request deadline.",
+          "env": {
+            "OCTOCODE_RANKING_TIMEOUT_MS": { "priority": 0 }
+          }
+        }
+      }
+    },
     "classification": {
       "title": "Classification provider",
       "file": true,

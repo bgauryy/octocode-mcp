@@ -331,7 +331,7 @@ describe('web tool', () => {
     expect(render({ content: [{ type: 'text', text: 'Search failed: offline\nmore' }] }, { isError: true })).toContain('⎿  Search failed: offline');
   });
 
-  it('records the page size, search provider and duration in details', async () => {
+  it('records the page size and search provider without duplicating Pi execution timing', async () => {
     vi.stubEnv('OCTOCODE_WEB_ALLOW_PRIVATE', '1');
     const base = await serve((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -340,7 +340,7 @@ describe('web tool', () => {
     const tool = webTool();
     const fetched = (await tool.execute('1', { url: `${base}/` })) as unknown as { details: Record<string, unknown> };
     expect(fetched.details).toMatchObject({ kind: 'fetch', bytes: 17, lines: 2 });
-    expect(typeof fetched.details['durationMs']).toBe('number');
+    expect(fetched.details).not.toHaveProperty('durationMs');
     expect(webSummary(fetched.details)).toBe('Fetched 17B · 2 lines');
     expect(webSummary(undefined)).toBeUndefined();
     expect(webSummary({ kind: 'other' })).toBeUndefined();

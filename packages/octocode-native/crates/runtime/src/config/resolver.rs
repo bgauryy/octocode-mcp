@@ -253,8 +253,14 @@ pub(super) fn workspace_file_allowed(field: &ConfigFieldSpec) -> bool {
 /// environment binding may narrow to (`storage.mode: memory`): protection
 /// stops it widening, not opting out.
 pub(super) fn workspace_setting_allowed(field: &ConfigFieldSpec, value: &Value) -> bool {
+    let scalar = match value {
+        Value::String(value) => Some(value.as_str()),
+        Value::Bool(true) => Some("true"),
+        Value::Bool(false) => Some("false"),
+        _ => None,
+    };
     workspace_file_allowed(field)
-        || value.as_str().is_some_and(|value| {
+        || scalar.is_some_and(|value| {
             field
                 .env
                 .iter()

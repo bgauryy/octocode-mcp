@@ -108,8 +108,9 @@ export class TeamTicker {
     }
     const stamp = dbStamp(file);
     const now = Date.now();
-    // Unchanged file: re-read only when a listed agent could have gone silent since (liveness is time-based).
-    if (!force && stamp === this.stamp && (now - this.readAt < this.source.maxAgeMs || this.cached.members.length === 0)) return;
+    // Retry failed reads; liveness and recent traffic also expire even without a database write.
+    if (!force && !this.cached.retrying && stamp === this.stamp &&
+      (now - this.readAt < this.source.maxAgeMs || (this.cached.members.length === 0 && this.cached.traffic.length === 0))) return;
     this.cached = this.source.read();
     this.stamp = stamp;
     this.readAt = now;

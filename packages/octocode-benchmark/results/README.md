@@ -6,10 +6,12 @@ each other. [index.html](index.html) is the same as a dashboard. Rebuild both wi
 `skills/octocode-benchmark/dashboard/build_datasets.py --static results/index.html`.
 Each campaign's runs and judgments live in [runs/](runs/), one JSON per campaign.
 
-## Current harness (fresh `claude -p` agent per question, transcript-measured)
+## Current harness (fresh isolated agents, transcript-measured)
 
 | Campaign | Arms | Report |
 |---|---|---|
+| Terra goals/JEV off vs on (Oct 13) | 40 pinned local + 30 GitHub questions, 8-question Terraform slice; local 20.2.0 MCP, Terra researchers, Sonnet source-checking judge. 70/70 valid pairs; no general token-saving benefit demonstrated | [Report](terra-goals-2026-10-13.md), [local dashboard](local-goals.html), [local matrix](LOCAL_MATRIX.md) |
+| pi-local-now-vs-published-231129 (Oct 12) | Octocode local 20.x after the fix round vs published 19.1.0 (and vs local-before), pi runner Sonnet 5.5, codex gpt-5.5 judge, 30 × 1: median wall 41.7 → 26.5 s (published 24.9), 0 rateLimited, correctness and chars unchanged, missing `queries` wrapper 7 → 12 | [pi-local-now-vs-published-231129-2026-10-12.md](pi-local-now-vs-published-231129-2026-10-12.md) |
 | pi-local-vs-published-164221 (Oct 12) | Octocode local 20.x vs published 19.1.0 vs gh lean, pi runner Sonnet 5.5, codex gpt-5.5 judge, 30 × 1 (not comparable with claude-runner campaigns) | [pi-local-vs-published-164221-2026-10-12.md](pi-local-vs-published-164221-2026-10-12.md) |
 | lean-vs-mcp-114934 (Oct 9) | Octocode v20 MCP vs gh lean, Sonnet 5.5, 30 × 1 | Correctness tied, gh-lean 0.71× characters, time tied ([data](runs/lean-vs-mcp-114934-2026-10-09.json)) |
 | mcp-clasify-ab-111154 (Oct 9) | Octocode v20 MCP, clasify on vs off, Sonnet 5.5, 30 × 1 | [mcp-clasify-ab-111154-2026-10-09.md](mcp-clasify-ab-111154-2026-10-09.md) |
@@ -83,6 +85,8 @@ characters delivered to the runner; correctness takes precedence over
 footprint. Failed probes inside a complete run remain counted.
 
 ## Supplementary probes (not headline campaigns)
+
+The October 13 feature checks are separate from autonomous agent measurements: [local ranking](local-ranking-2026-10-13.md), [all 13 read tools](read-tool-ranking-2026-10-13.md), [PR/AST/LSP classification](review-classification-2026-10-13.md), and [red/white selective semantics](selective-semantics-2026-10-13.md). They retain exact-route controls, full-traversal overhead and unsuccessful judgments.
 
 | Comparison | Report | Outcome |
 |---|---|---|

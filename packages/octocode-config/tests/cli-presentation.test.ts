@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   DIRECT_TOOL_DEFINITIONS,
+  CLASIFY_SCOUT_TOOL_NAMES,
+  getDirectToolDefinitionsWithAddons,
+  getPublicToolCatalogWithAddons,
   getPublicToolCatalog,
   operationSchemas,
   publishedInputSchema,
@@ -10,7 +13,7 @@ import { buildCliPresentation, toolHelpSection } from '../scripts/tool-contract/
 type Json = Record<string, unknown>;
 const presentation = buildCliPresentation() as Json & { tools: Json[]; fingerprint: string };
 const tool = (name: string): Json => presentation.tools.find(entry => entry.name === name)!;
-const definition = (name: string) => DIRECT_TOOL_DEFINITIONS.find(entry => entry.name === name)!;
+const definition = (name: string) => getDirectToolDefinitionsWithAddons().find(entry => entry.name === name)!;
 
 describe('CLI presentation embedded by the native binary', () => {
   it('describes every catalog tool under the enforcement fingerprint', () => {
@@ -39,6 +42,22 @@ describe('CLI presentation embedded by the native binary', () => {
         expect(line.length, `${entry.name}.${field}`).toBeLessThanOrEqual(160);
       }
     }
+  });
+
+  it('generates optional ranking fields only in the enabled read-tool presentation', () => {
+    for (const name of CLASIFY_SCOUT_TOOL_NAMES) {
+      const plain = tool(name);
+      const ranked = plain.ranking as Json;
+      expect(ranked).toBeDefined();
+      expect(JSON.stringify({ ...plain, ranking: undefined })).not.toMatch(/"goals"|"ranking"/);
+      for (const view of ['query', 'full']) {
+        const schema = ((ranked.views as Json)[view] as Json).querySchema as Json;
+        expect(JSON.stringify(schema)).toContain('"goals"');
+        expect((schema.required ?? []) as string[]).not.toContain('goals');
+      }
+      expect(((ranked.views as Json).query as Json).continuationFields).toHaveProperty('ranking');
+    }
+    expect(presentation.tools.filter(entry => entry.ranking).map(entry => entry.name).sort()).toEqual([...CLASIFY_SCOUT_TOOL_NAMES].sort());
   });
 
   it('names the fields the query view hides and the call that shows them', () => {
@@ -96,7 +115,7 @@ describe('CLI presentation embedded by the native binary', () => {
 
   it('serves the canonical row from the enforcement contract, not a second emission', () => {
     const full = (tool('lspSearch').views as Json).full as Json;
-    const { $schema: _schema, ...querySchema } = getPublicToolCatalog().tools.find(entry => entry.name === 'lspSearch')!
+    const { $schema: _schema, ...querySchema } = getPublicToolCatalogWithAddons().tools.find(entry => entry.name === 'lspSearch')!
       .querySchema as Json;
     expect(full.querySchema).toEqual(querySchema);
     expect(full.querySchema).not.toHaveProperty('$schema');

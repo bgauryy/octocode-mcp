@@ -336,7 +336,7 @@ export async function createNativeMcp({
     title: 'Octocode MCP',
     version: packageJson.version,
   };
-  // Presentation switches (config `mcp.*`, resolved by native). Deferred
+  // Presentation switches resolved by native. Deferred
   // tools stay available but leave tools/list; `run` executes them.
   const presentation = catalog.presentation ?? {};
   const availableNames = availableTools.map(tool => tool.name);
@@ -356,6 +356,7 @@ export async function createNativeMcp({
   const definitions = new Map(
     getDirectToolDefinitionsWithAddons({
       availableTools: availableNames,
+      ranking: presentation.ranking === true,
       ...(catalog.lspServers && { lspServers: catalog.lspServers }),
     }).map(definition => [definition.name, definition])
   );

@@ -1706,6 +1706,82 @@ async fn file_chunks_reach_hit_lines_the_search_page_only_counted() {
     runtime.close().await;
 }
 
+#[tokio::test]
+async fn hydrated_search_skips_inner_match_replays_and_reaches_later_files() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "model":"resolved",
+            "answers":{"answer":{"type":"noul","noul":0.7}},
+            "usage":{"input_tokens":3,"output_tokens":1}
+        })))
+        .expect(3)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    for name in ["a", "b", "c"] {
+        workspace.write(
+            &format!("src/{name}.txt"),
+            format!("needle {name} first\nneedle {name} second\nneedle {name} third\n"),
+        );
+    }
+    let root = workspace
+        .workspace
+        .join("src")
+        .to_string_lossy()
+        .into_owned();
+    let runtime = provider_runtime(&workspace, &server);
+    let input = json!({
+        "id":"hydrated-axis", "reasoning":"Judge each file once.", "mainGoal":"Find evidence.",
+        "resources":[{"id":"hits","tool":"localSearch","candidateEvidence":"fileChunks",
+            "query":{"path":root,"matchString":"needle","pageSize":2,"matchPageSize":1,
+                "sort":"path","mainGoal":"Find files.","reasoning":"Read hits."},
+            "maxChars":20_000}],
+        "questions":[{"id":"relevant","type":"yesno","ask":"Is there a needle?"}]
+    });
+    let first = runtime
+        .execute(
+            "hydrated-axis-first".into(),
+            "clasify".into(),
+            verbose(input),
+        )
+        .await
+        .expect("first page");
+    let first_query = &first.structured_content["queries"][0];
+    assert_eq!(
+        first_query["resources"][0]["pages"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+    let next = &first_query["next"]["clasify"]["queries"][0];
+    assert_eq!(next["resources"][0]["query"]["page"], 2, "{first_query}");
+    assert_eq!(
+        next["resources"][0]["query"]["matchPage"]
+            .as_u64()
+            .unwrap_or(1),
+        1
+    );
+    let second = runtime
+        .execute(
+            "hydrated-axis-second".into(),
+            "clasify".into(),
+            json!({"queries":[next]}),
+        )
+        .await
+        .expect("second page");
+    assert_eq!(
+        second.structured_content["queries"][0]["resources"][0]["pages"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    let requests = server.received_requests().await.expect("requests");
+    assert_eq!(requests.len(), 3, "each hydrated file is judged once");
+    runtime.close().await;
+}
+
 /// 64 identical error objects (12.2 KB of 38 KB, each with
 /// a one-window read) were repeated: hit windows a spent budget left unjudged state their
 /// error once per resource, and each file's unjudged windows share one read

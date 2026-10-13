@@ -132,7 +132,8 @@
     "ghSearchRepo": {
       "evidence": [
         "src/tools/gh_search_repo/mod.rs",
-        "tests/runtime_github.rs"
+        "tests/runtime_github.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "ghSearchRepo"
@@ -200,13 +201,22 @@
         ],
         "topics": [
           "forwarded"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
     "ghSearchCode": {
       "evidence": [
         "src/tools/gh_search_code/query.rs",
-        "tests/runtime_github.rs"
+        "tests/runtime_github.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "ghSearchCode"
@@ -260,6 +270,14 @@
         ],
         "repo": [
           "forwarded"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -267,7 +285,8 @@
       "evidence": [
         "src/tools/gh_structure/mod.rs",
         "tests/runtime_github.rs",
-        "tests/runtime_gh_structure.rs"
+        "tests/runtime_gh_structure.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "tree/refs/languages"
@@ -329,6 +348,14 @@
         ],
         "repo": [
           "forwarded"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -337,7 +364,8 @@
         "src/tools/gh_get_file_content/mod.rs",
         "src/tools/local_fetch/tests.rs",
         "src/tools/local_fetch/block.rs",
-        "tests/runtime_github.rs"
+        "tests/runtime_github.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "ghGetFileContent"
@@ -420,13 +448,22 @@
         ],
         "wholeWord": [
           "forwarded"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
     "ghSearchHistory": {
       "evidence": [
         "src/tools/gh_search_history/tests.rs",
-        "tests/runtime_github.rs"
+        "tests/runtime_github.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "commit",
@@ -497,13 +534,22 @@
         ],
         "until": [
           "forwarded"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
     "ghGetHistoryItem": {
       "evidence": [
         "src/tools/gh_get_history_item/mod.rs",
-        "tests/runtime_github.rs"
+        "tests/runtime_github.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "commit",
@@ -595,6 +641,14 @@
         "status": [
           "forwarded",
           "output-control"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -602,7 +656,8 @@
       "evidence": [
         "src/providers/artifact/mod.rs",
         "src/providers/artifact/registries.rs",
-        "src/tools/artifact_search/mod.rs"
+        "src/tools/artifact_search/mod.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "npm:discovery",
@@ -657,6 +712,14 @@
         ],
         "version": [
           "forwarded"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -704,6 +767,7 @@
     "localSearch": {
       "evidence": [
         "src/tools/local_search/tests.rs",
+        "src/tools/ranking.rs",
         "tests/runtime_local.rs"
       ],
       "variants": [
@@ -739,6 +803,10 @@
         ],
         "fileLacks": [
           "consumed"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
         ],
         "include": [
           "consumed"
@@ -788,6 +856,10 @@
           "consumed",
           "output-control"
         ],
+        "ranking": [
+          "consumed",
+          "continuation"
+        ],
         "path": [
           "consumed",
           "security-policy"
@@ -824,7 +896,8 @@
     "structureSearch": {
       "evidence": [
         "src/tools/structure_search/tests.rs",
-        "tests/runtime_local.rs"
+        "tests/runtime_local.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "files",
@@ -941,6 +1014,14 @@
         ],
         "time.modifiedWithin": [
           "consumed"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -948,7 +1029,8 @@
       "evidence": [
         "src/tools/ast_search/mod.rs",
         "src/tools/ast_search/policy_tests.rs",
-        "tests/runtime_local.rs"
+        "tests/runtime_local.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "match:pattern",
@@ -1070,6 +1152,14 @@
         ],
         "symbolName": [
           "consumed"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -1077,7 +1167,8 @@
       "evidence": [
         "src/tools/ast_graph/tests.rs",
         "src/tools/ast_graph/analysis.rs",
-        "tests/runtime_local.rs"
+        "tests/runtime_local.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "cycles",
@@ -1178,6 +1269,14 @@
         ],
         "target": [
           "consumed"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     },
@@ -1294,6 +1393,9 @@
       "evidence": [
         "src/tools/local_fetch/tests.rs",
         "src/tools/local_fetch/executor.rs",
+        "src/tools/local_fetch/ranking.rs",
+        "src/tools/ranking.rs",
+        "src/tools/numbered.rs",
         "tests/runtime_local.rs"
       ],
       "variants": [
@@ -1326,6 +1428,10 @@
           "consumed",
           "output-control"
         ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
         "length": [
           "consumed",
           "output-control"
@@ -1353,6 +1459,10 @@
           "consumed",
           "output-control"
         ],
+        "ranking": [
+          "consumed",
+          "continuation"
+        ],
         "reasoning": [
           "workflow-metadata"
         ],
@@ -1376,7 +1486,8 @@
     "lspSearch": {
       "evidence": [
         "src/tools/lsp_search/tests.rs",
-        "tests/runtime_local.rs"
+        "tests/runtime_local.rs",
+        "src/tools/ranking.rs"
       ],
       "variants": [
         "anchored",
@@ -1484,6 +1595,14 @@
         "workspaceRoot": [
           "consumed",
           "security-policy"
+        ],
+        "goals": [
+          "consumed",
+          "continuation"
+        ],
+        "ranking": [
+          "consumed",
+          "continuation"
         ]
       }
     }

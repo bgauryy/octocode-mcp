@@ -6,6 +6,7 @@ const batchPays = (...args: Parameters<typeof batchNet>) => batchNet(...args) > 
 import { KEEP_RECENT_RESULTS, planContextTrims, registerCompaction } from '../src/compaction/register.js';
 import type { FileGuard } from '../src/files/tool.js';
 import { CACHE_RETENTION_ENV } from '../src/shared/env.js';
+import { contextChars, contextTokenChars, imageTokenChars } from '../src/compaction/images.js';
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
 
@@ -44,6 +45,22 @@ describe('batch economics', () => {
     expect(batchPays({ savedChars: 40_000, rewriteChars: 60_000 }, { due: false, rates, futureRequests: 20 })).toBe(true);
     // A cold cache (or real pressure) costs nothing extra: any batch pays.
     expect(batchPays(batch, { due: true, rates, futureRequests: 1 })).toBe(true);
+  });
+
+  it('does not price base64 as text tokens when an image trim would invalidate a large warm text prefix', () => {
+    const image = { id: 'image', message: { role: 'toolResult', toolName: 'browser', toolCallId: 'shot', content: [{ type: 'image', data: 'A'.repeat(450_000), mimeType: 'image/png' }] } };
+    const entries = [
+      image,
+      ...Array.from({ length: KEEP_RECENT_RESULTS }, (_, index) => ({ id: `r${index}`, message: { role: 'toolResult', toolName: 'bash', toolCallId: `c${index}`, content: [{ type: 'text', text: 'ok' }] } })),
+      { id: 'user', message: { role: 'user', content: 'u'.repeat(300_000) } },
+    ];
+    // The transport remains large, but Pi prices the image as visual tokens rather than 112,500 text tokens.
+    expect(contextChars(entries)).toBe(750_024);
+    expect(contextTokenChars(entries)).toBe(300_024 + imageTokenChars(image.message));
+    const economy = { due: false, rates, futureRequests: 20 };
+    expect(planContextTrims(entries, new Map(), new Set(), { net: (batch) => batchNet(batch, economy) })).toEqual([]);
+    // At real request/context pressure the same image still clears the unchanged byte floor and is safely saved.
+    expect(planContextTrims(entries, new Map(), new Set(), { net: (batch) => batchNet(batch, { ...economy, due: true }) })).toHaveLength(1);
   });
 });
 
@@ -121,7 +138,7 @@ describe('turn_end policy', () => {
     registerCompaction(pi, { reset: vi.fn(), forget: vi.fn() } as unknown as FileGuard);
     const decide = handlers.get('cache_warming_decision')!;
     const event = { type: 'cache_warming_decision', action: 'warm', warmCost: 0.01, missCost: 1, continuationProbability: 1 };
-    expect(await decide(event, { hasUI: false, sessionManager: { getBranch: () => [] } })).toEqual({ action: 'stop' });
-    expect(await decide(event, { hasUI: true, sessionManager: { getBranch: () => [] } })).toBeUndefined();
+    expect(await decide(event, { hasUI: false, sessionManager: { getSessionId: () => 's', getBranch: () => [] } })).toEqual({ action: 'stop' });
+    expect(await decide(event, { hasUI: true, sessionManager: { getSessionId: () => 's', getBranch: () => [] } })).toBeUndefined();
   });
 });

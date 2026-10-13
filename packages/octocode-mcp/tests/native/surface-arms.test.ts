@@ -52,12 +52,15 @@ const TOOLS = [
   TOOL_NAMES.CLASIFY,
 ];
 
-async function connect(presentation?: NativeCatalog['presentation']) {
+async function connect(
+  presentation?: NativeCatalog['presentation'],
+  available = TOOLS
+) {
   const instance = await createNativeMcp({
     env: {},
     binding: bindingFor({
       fingerprint: getNativeContractFingerprint(),
-      tools: TOOLS.map(name => ({ name, available: true })),
+      tools: available.map(name => ({ name, available: true })),
       ...(presentation && { presentation }),
     }),
   });
@@ -82,6 +85,59 @@ async function connect(presentation?: NativeCatalog['presentation']) {
 
 afterEach(() => {
   executions.length = 0;
+});
+
+function queryRow(schema: { properties?: Record<string, unknown> }) {
+  return (
+    schema.properties?.queries as {
+      items: { properties: Record<string, unknown>; required?: string[] };
+    }
+  ).items;
+}
+
+describe('read-tool ranking schema', () => {
+  it.each([
+    { ranking: false, classifier: true, shown: false },
+    { ranking: true, classifier: false, shown: false },
+    { ranking: true, classifier: true, shown: true },
+  ])(
+    'exposes optional goals with $ranking ranking and $classifier classifier',
+    async ({ ranking, classifier, shown }) => {
+      const server = await connect(
+        { ranking },
+        TOOLS.filter(name => classifier || name !== TOOL_NAMES.CLASIFY)
+      );
+      try {
+        for (const name of TOOLS.filter(
+          name => !['clasify', 'ghCloneRepo', 'astRewrite'].includes(name)
+        )) {
+          const schema = queryRow(
+            server.listed.find(tool => tool.name === name)!.inputSchema
+          );
+          expect(JSON.stringify(schema).includes('"goals"'), name).toBe(shown);
+          expect(schema.required ?? []).not.toContain('goals');
+        }
+      } finally {
+        await server.close();
+      }
+    }
+  );
+
+  it('keeps goals exposed when available clasify is deferred', async () => {
+    const server = await connect({
+      ranking: true,
+      deferred: [TOOL_NAMES.CLASIFY],
+    });
+    try {
+      expect(
+        queryRow(
+          server.listed.find(tool => tool.name === 'localFetch')!.inputSchema
+        ).properties
+      ).toHaveProperty('goals');
+    } finally {
+      await server.close();
+    }
+  });
 });
 
 describe('deferred tools', () => {

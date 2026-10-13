@@ -150,6 +150,13 @@ pub(super) fn budget_spent(candidate: Candidate, remaining: usize) -> CapturedPa
     }
 }
 
+fn ranking_requested(source: &Value) -> bool {
+    source
+        .pointer("/query/goals")
+        .and_then(Value::as_array)
+        .is_some_and(|goals| !goals.is_empty())
+}
+
 /// The search page that starts at file row `position` of `source`'s page, so
 /// a replay resumes at the first deferred candidate. A smaller page size that
 /// divides the new offset keeps every later page aligned. `None` while the
@@ -163,6 +170,13 @@ pub(super) fn resume_search(
     if !matches!(tool, ToolId::LocalSearch | ToolId::GhSearchCode)
         || receipt.is_some_and(crate::tools::clasify::context::has_inner_page)
     {
+        return None;
+    }
+    // A ranked local search binds its order to the original page query. A
+    // smaller page would need a new ranking plan and could replay candidates
+    // in another order, even when the original page is terminal. Report each
+    // deferred candidate as unjudged instead; retain the real nextPage.
+    if tool == ToolId::LocalSearch && ranking_requested(source) {
         return None;
     }
     let mut resumed = source.clone();
@@ -350,6 +364,25 @@ pub(super) fn shrunk_page(
                 .find_map(|call| call.pointer("/query/queries/0/snapshot"))
         })
         .cloned();
+    let ranked = ranking_requested(source);
+    let ranking = source
+        .pointer("/query/ranking")
+        .or_else(|| {
+            data.get("next")
+                .and_then(Value::as_object)
+                .and_then(|next| {
+                    next.values()
+                        .find_map(|call| call.pointer("/query/queries/0/ranking"))
+                })
+        })
+        .filter(|token| token.is_string())
+        .cloned();
+    // Re-reading with a smaller unit/length is safe only with the ordering
+    // already chosen for this selected view. A terminal first page has no
+    // continuation token to recover, so leave it explicitly unjudged.
+    if ranked && ranking.is_none() {
+        return None;
+    }
     let mut read = source.clone();
     let query = read.get_mut("query")?.as_object_mut()?;
     query.remove("fullContent");
@@ -358,6 +391,9 @@ pub(super) fn shrunk_page(
     query.insert("length".into(), json!(smaller));
     if let Some(snapshot) = snapshot {
         query.entry("snapshot").or_insert(snapshot);
+    }
+    if ranked && let Some(ranking) = ranking {
+        query.entry("ranking").or_insert(ranking);
     }
     Some(read)
 }
@@ -375,6 +411,7 @@ pub(super) fn split_ranges(source: &Value, state: &Value) -> Option<Vec<(u64, u6
         .is_none_or(|minify| minify.as_str() == Some("none"));
     let data = state.pointer("/results/0/data")?;
     if !source_view
+        || (tool_of(source) == Some(ToolId::LocalFetch) && ranking_requested(source))
         || data.get("pagination").is_some()
         || PARTIAL_READ_FIELDS
             .iter()
@@ -556,6 +593,26 @@ mod tests {
         assert!(resume_search(&list, None, 1).is_none());
     }
 
+    #[test]
+    fn nested_goals_search_never_repages_deferred_candidates() {
+        let source = json!({"tool":"localSearch","query":{
+            "path":"/r","matchString":"x","page":1,"pageSize":3,
+            "goals":["find the relevant implementation"]
+        }});
+        assert!(
+            resume_search(&source, None, 1).is_none(),
+            "a terminal first page cannot carry its ranking plan into a resized query"
+        );
+        let receipt = json!({"next":{"nextPage":{"tool":"localSearch","query":{
+            "path":"/r","matchString":"x","page":2,"pageSize":3,
+            "goals":["find the relevant implementation"],"ranking":"saved plan"
+        }}}});
+        assert!(
+            resume_search(&source, Some(&receipt), 1).is_none(),
+            "deferred rows must stay explicit while the real nextPage keeps its ranking plan"
+        );
+    }
+
     /// A list whose candidates are its rows resumes at the first
     /// deferred row; a list that groups rows (AST matches per file) or a
     /// later page of unknown size does not.
@@ -631,6 +688,14 @@ mod tests {
         assert!(rest.is_none());
         let matched = json!({"tool":"localFetch","query":{"path":"/r/a.txt","ranges":["3-10"],"matchString":"x"}});
         assert!(split_ranges(&matched, &state).is_none());
+        let ranked = json!({"tool":"localFetch","query":{
+            "path":"/r/a.txt","ranges":["3-10"],
+            "goals":["find the relevant section"]
+        }});
+        assert!(
+            split_ranges(&ranked, &state).is_none(),
+            "splitting selected ranges would change the bound ranked view"
+        );
         let paged = json!({"results":[{"data":{"totalLines":30,"pagination":{"unit":"lines"}}}]});
         assert!(split_ranges(&source, &paged).is_none());
     }
@@ -667,5 +732,37 @@ mod tests {
         assert!(shrunk_page(&outline, &whole, 43_477, 6_000).is_none());
         let restored = restore_chunk(smaller, Some(&json!(8)));
         assert_eq!(restored["query"]["length"], 8);
+    }
+
+    #[test]
+    fn ranked_fetch_shrink_reuses_plan_or_leaves_page_unjudged() {
+        let source = json!({"tool":"localFetch","query":{
+            "path":"/r/a.txt","goals":["find the relevant section"]
+        }});
+        let state = json!({"results":[{"data":{
+            "pagination":{"unit":"lines","offset":0,"length":8,"hasMore":true},
+            "next":{"continueWindow":{"tool":"localFetch","query":{"queries":[{
+                "path":"a.txt","snapshot":"v1","ranking":"ranked-order"
+            }]}}}
+        }}]});
+        let smaller = shrunk_page(&source, &state, 2_233, 2_000).expect("ranked shrink");
+        assert_eq!(smaller["query"]["ranking"], "ranked-order");
+        assert_eq!(smaller["query"]["snapshot"], "v1");
+        assert_eq!(smaller["query"]["length"], 7);
+
+        let terminal = json!({"results":[{"data":{
+            "pagination":{"unit":"lines","offset":0,"length":8}
+        }}]});
+        assert!(
+            shrunk_page(&source, &terminal, 2_233, 2_000).is_none(),
+            "a terminal ranked page has no plan to reuse"
+        );
+        let continued = json!({"tool":"localFetch","query":{
+            "path":"/r/a.txt","goals":["find the relevant section"],
+            "snapshot":"v1","ranking":"ranked-order"
+        }});
+        let smaller = shrunk_page(&continued, &terminal, 2_233, 2_000)
+            .expect("the source plan supports a later shrink");
+        assert_eq!(smaller["query"]["ranking"], "ranked-order");
     }
 }

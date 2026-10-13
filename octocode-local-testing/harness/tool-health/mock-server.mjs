@@ -205,9 +205,11 @@ function makeGitRepo(model, tmpDir) {
  * smart HTTP serves `octo/demo.git` behind Basic auth: `gitAuth` records each
  * credential check as `{ user, tokenMatches }` (never the secret itself).
  */
-export async function startMock({ fixtureDir, tmpDir, token } = {}) {
+export async function startMock({ fixtureDir, tmpDir, token, configureModel, classificationResponder } = {}) {
   const model = buildModel(fixtureDir);
+  configureModel?.(model);
   const requests = [];
+  const classificationRequests = [];
   const unhandled = [];
   const gitAuth = [];
   const repoGit = tmpDir ? makeGitRepo(model, tmpDir) : { reason: 'no tmpDir' };
@@ -215,7 +217,7 @@ export async function startMock({ fixtureDir, tmpDir, token } = {}) {
   const server = http.createServer((req, res) => {
     const chunks = [];
     req.on('data', chunk => { chunks.push(chunk); });
-    req.on('end', () => {
+    req.on('end', async () => {
       const raw = Buffer.concat(chunks);
       const body = raw.toString('utf8');
       const url = new URL(req.url, base);
@@ -227,7 +229,7 @@ export async function startMock({ fixtureDir, tmpDir, token } = {}) {
         res.end(text);
       };
       try {
-        const handled = route(req.method, url, body, req.headers, send);
+        const handled = await route(req.method, url, body, req.headers, send);
         if (!handled) { unhandled.push(`${req.method} ${url.pathname}${url.search}`); send(404, { message: 'Not Found' }); }
       } catch (error) {
         unhandled.push(`${req.method} ${url.pathname}: ${error.message}`);
@@ -275,12 +277,18 @@ export async function startMock({ fixtureDir, tmpDir, token } = {}) {
     child.stdin.end(raw);
   }
 
-  function route(method, url, body, headers, send) {
+  async function route(method, url, body, headers, send) {
     const p = (decodeURIComponent(url.pathname).replace(/\/+$/, '') || '/').replace(/^\/api\/v3(?=\/|$)/, '') || '/';
     let m;
     // ---- jev classification provider
     if (method === 'POST' && p === '/v1/systemone') {
       const request = JSON.parse(body || '{}');
+      classificationRequests.push(request);
+      if (classificationResponder) {
+        const response = await classificationResponder(request);
+        send(response.status ?? 200, response.body);
+        return true;
+      }
       const answers = Object.fromEntries(Object.entries(request.questions ?? {}).map(([id, q]) => [id, jevAnswer(q)]));
       send(200, { model: request.model || 'jev-mock', answers, usage: { input_tokens: 10, output_tokens: 2 } });
       return true;
@@ -424,7 +432,7 @@ export async function startMock({ fixtureDir, tmpDir, token } = {}) {
 
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   base = `http://127.0.0.1:${server.address().port}`;
-  return { url: base, model, requests, unhandled, gitAuth, git: !!repoGit.root, gitHead: repoGit.head, gitUnavailable: repoGit.reason, close: () => new Promise(resolve => { server.closeAllConnections?.(); server.close(() => resolve()); }) };
+  return { url: base, model, requests, classificationRequests, unhandled, gitAuth, git: !!repoGit.root, gitHead: repoGit.head, gitUnavailable: repoGit.reason, close: () => new Promise(resolve => { server.closeAllConnections?.(); server.close(() => resolve()); }) };
 }
 
 // `node mock-server.mjs <fixtureDir> [port]`: run standalone for debugging.

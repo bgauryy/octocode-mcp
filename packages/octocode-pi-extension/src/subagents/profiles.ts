@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { parseFrontmatter, type ExtensionContext } from '@earendil-works/pi-coding-agent';
+import { parseArgs, parseFrontmatter, SettingsManager, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import type { Permission } from '../permission/ask.js';
 import type { ActionClass } from '../permission/mode.js';
 import { globalPaths, piAgentDir, projectAgentDirs } from '../shared/home.js';
@@ -66,6 +66,7 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
   const tools = field('tools');
   const excludeTools = field('excludeTools');
   const model = field('model');
+  selectedTools(tools);
   // Switches take YAML booleans only: a quoted "false" is a string, and a string never flips a switch.
   const flag = (key: string) => {
     const value = frontmatter[key];
@@ -87,13 +88,35 @@ export function parseProfile(fallbackName: string, text: string): AgentProfile {
 
 const toolList = (list: string | undefined): string[] => (list ?? '').split(',').map((name) => name.trim()).filter(Boolean);
 
-/** The workspace classes a profile's tools reach (its `tools` allow list, less `excludeTools`): what a spawn grant may carry. */
-export function profileReach(profile: AgentProfile | undefined): ActionClass[] {
-  const allowed = toolList(profile?.tools);
-  const excluded = new Set(toolList(profile?.excludeTools));
-  // Excluding `file` drops Pi's edit and write too (buildAgentArgs).
-  if (excluded.has('file')) for (const name of ['edit', 'write']) excluded.add(name);
-  const has = (names: string[]) => names.some((name) => !excluded.has(name) && (allowed.length === 0 || allowed.includes(name)));
+/** Pi owns selector validation. Its matcher is private; only `*` is special in a tool-name pattern. */
+function selectedTools(tools: string | undefined): string[] | undefined {
+  if (!tools) return undefined;
+  const parsed = parseArgs(['--tools', tools]);
+  const error = parsed.diagnostics.find((diagnostic) => diagnostic.type === 'error');
+  if (error) throw new Error(error.message);
+  return parsed.tools;
+}
+
+const matchesTool = (patterns: readonly string[], name: string): boolean =>
+  patterns.some((pattern) => new RegExp(`^${pattern.split('*').map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`).test(name));
+
+/** Excluding our file tool also excludes the native tools it replaces, including when a pattern matches it. */
+export function profileExcludes(excludeTools: string | undefined): string[] {
+  const excluded = toolList(excludeTools);
+  return [...new Set(matchesTool(excluded, 'file') ? [...excluded, 'edit', 'write'] : excluded)];
+}
+
+/** The workspace classes exposed by the child's native selection and Octocode's direct extension tools. */
+export function profileReach(profile: AgentProfile | undefined, defaultTools?: readonly string[]): ActionClass[] {
+  const selected = selectedTools(profile?.tools);
+  const modifiers = selected?.some((name) => /^[+-]/.test(name)) === true;
+  const excluded = profileExcludes(profile?.excludeTools);
+  // Native SettingsManager resolves ordered +/- entries. Only powershell among the checked tools depends on
+  // defaults: file/bash register directly, and excluding file also removes native edit/write.
+  const defaults = SettingsManager.inMemory({ defaultTools: [...(defaultTools ?? []), ...(modifiers ? selected! : [])] }).getDefaultTools() ?? [];
+  const has = (names: string[]) => names.some((name) => !matchesTool(excluded, name) && (
+    selected && !modifiers ? matchesTool(selected, name) : name === 'file' || name === 'bash' || defaults.includes(name)
+  ));
   return [...(has(['file', 'edit', 'write']) ? ['file.workspace' as const] : []), ...(has(['bash', 'powershell']) ? ['shell' as const] : [])];
 }
 
@@ -104,9 +127,9 @@ const REACH_TEXT: Record<string, string> = { 'file.workspace': 'edit files in th
  * classes the profile reaches when the user allowed this spawn, none when the mode itself allows spawning (the child
  * inherits the mode). A refusal throws, before anything starts.
  */
-export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, profile: AgentProfile | undefined, task: string, signal?: AbortSignal): Promise<ActionClass[]> {
+export async function askSpawn(permission: Permission, ctx: Pick<ExtensionContext, 'hasUI' | 'ui'>, profile: AgentProfile | undefined, task: string, signal?: AbortSignal, defaultTools?: readonly string[]): Promise<ActionClass[]> {
   const name = profile?.name ?? 'general';
-  const reach = profileReach(profile);
+  const reach = profileReach(profile, defaultTools);
   const may = reach.length > 0 ? `may ${reach.map((action) => REACH_TEXT[action]).join(' and ')}` : 'may only read and research';
   const verdict = await permission.check(ctx, {
     action: 'agent.spawn',

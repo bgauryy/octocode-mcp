@@ -43,14 +43,14 @@
     "node": "^24.15.0"
   },
   "dependencies": {
-    "@earendil-works/pi-mcp": "^0.99.2",
+    "@earendil-works/pi-mcp": "^1.1.0",
     "chrome-launcher": "^1.2.1",
     "octocode-mcp": "^20.2.0"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.99.2",
-    "@earendil-works/pi-coding-agent": "^0.99.2",
-    "@earendil-works/pi-tui": "^0.99.2",
+    "@earendil-works/pi-ai": "^1.1.0",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
+    "@earendil-works/pi-tui": "^1.1.0",
     "@modelcontextprotocol/server": "^2.1.0",
     "@types/node": "^24.13.4",
     "@vitest/coverage-v8": "^5.0.2",
@@ -79,9 +79,9 @@
     ]
   },
   "peerDependencies": {
-    "@earendil-works/pi-ai": "^0.99.2",
-    "@earendil-works/pi-coding-agent": "^0.99.2",
-    "@earendil-works/pi-tui": "^0.99.2",
+    "@earendil-works/pi-ai": "^1.1.0",
+    "@earendil-works/pi-coding-agent": "^1.1.0",
+    "@earendil-works/pi-tui": "^1.1.0",
     "typebox": "*"
   },
   "publishConfig": {

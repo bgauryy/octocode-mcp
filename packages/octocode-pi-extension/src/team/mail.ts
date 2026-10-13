@@ -11,12 +11,14 @@ export class Mail {
   private held: { batch: Message[]; parentId: string | undefined } | undefined;
   /** Aborted while mail is held: a wait at the end of the run (background work) stops for it. */
   private holding = new AbortController();
+  /** Notices already handed to Pi whose database acknowledgement still needs retrying. */
+  private notified: DeadLetter[] = [];
 
-  constructor(private readonly pi: ExtensionAPI) {}
+  constructor(private readonly pi: Pick<ExtensionAPI, 'sendMessage'>) {}
 
   /** A team notice for this agent, read at its next step; never starts a turn. False when the session cannot take it. */
   notice(text: string): boolean {
-    return this.inject(text, { messages: [{ from: 'team', text, at: Date.now() }] }, { deliverAs: 'steer' });
+    return this.inject(text, { messages: [{ from: 'team', text, at: Date.now() }] }, { triggerTurn: false, deliverAs: 'steer' });
   }
 
   /**
@@ -56,26 +58,35 @@ export class Mail {
   settled(): boolean {
     const held = this.held;
     if (!held || !this.send(held.batch, held.parentId, true)) return false;
-    this.reset();
+    this.releaseInterrupt();
     return true;
   }
 
   /** Forgets held mail (the agent left): never started, it stays undelivered. */
   reset(): void {
+    this.notified = [];
+    this.releaseInterrupt();
+  }
+
+  private releaseInterrupt(): void {
     this.held = undefined;
     if (this.holding.signal.aborted) this.holding = new AbortController();
   }
 
   /** Tells this agent, once and without waking it, about messages it sent that their recipients left without reading. */
   reportDeadLetters(db: TeamStore, id: string): void {
+    this.recordNotices(db);
     const letters = db.deadLetters(id);
     if (letters.length === 0) return;
-    const told: DeadLetter[] = [];
-    for (const letter of letters) {
-      if (!this.notice(deadLetterText(letter))) break; // Told on a later tick.
-      told.push(letter);
-    }
-    db.markNotified(told);
+    if (!this.notice(letters.map(deadLetterText).join('\n\n'))) return;
+    this.notified = letters;
+    this.recordNotices(db);
+  }
+
+  private recordNotices(db: TeamStore): void {
+    if (this.notified.length === 0) return;
+    db.markNotified(this.notified);
+    this.notified = [];
   }
 
   private inject(content: string, details: MailDetails, options: { triggerTurn?: boolean; deliverAs: 'steer' }): boolean {

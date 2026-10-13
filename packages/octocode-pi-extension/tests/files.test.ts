@@ -322,7 +322,7 @@ describe('file change rendering', () => {
     const expandedCall = tool!.renderCall(args, theme, { lastComponent: undefined, expanded: true }).render(120).join('\n');
     expect(expandedCall).toContain('↳ Fix the off-by-one in the loop');
     expect(expandedCall).toContain('↳ Add the missing test');
-    const single = tool!.renderCall({ queries: [args.queries[0]] }, theme, { lastComponent: undefined, isPartial: false, isError: false, state: { durationMs: 1200 } }).render(120).join('\n');
+    const single = tool!.renderCall({ queries: [args.queries[0]] }, theme, { lastComponent: undefined, isPartial: false, isError: false, durationMs: 1200 }).render(120).join('\n');
     expect(single).toBe('● File(edit src/a.ts · 2 edits) · 1.2s');
     const diff = Array.from({ length: 30 }, (_, index) => `+${index} added line ${index}`).join('\n');
     const result = { content: [], details: { outcomes: [{ type: 'edit', path: 'src/a.ts', reasoning: '', ok: true, message: 'ok', diff }, { type: 'write', path: 'test/a.test.ts', reasoning: '', ok: false, message: 'has not been read' }] } };
@@ -332,8 +332,8 @@ describe('file change rendering', () => {
     expect(collapsed).toMatch(/… \+\d+ diff lines \(ctrl\+o to expand\)/);
     expect(collapsed).toMatch(/✗ write test\/a\.test\.ts: has not been read/);
     expect(collapsed).not.toContain('added line');
-    const one = { content: [], details: { outcomes: [result.details.outcomes[0]], durationMs: 5 } };
-    const oneCollapsed = tool!.renderResult(one, { expanded: false, isPartial: false }, theme, { lastComponent: undefined, isError: false }).render(120).join('\n').split('\n');
+    const one = { content: [], details: { outcomes: [result.details.outcomes[0]] } };
+    const oneCollapsed = tool!.renderResult(one, { expanded: false, isPartial: false }, theme, { lastComponent: undefined, isError: false, durationMs: 5 }).render(120).join('\n').split('\n');
     expect(oneCollapsed[0]).toMatch(/^ {2}⎿ {2}✓ edit src\/a\.ts \+30 -0$/);
     expect(oneCollapsed).toHaveLength(1 + 6 + 1);
     expect(oneCollapsed.at(-1)).toMatch(/… \+\d+ lines \(ctrl\+o to expand\)/);

@@ -30,9 +30,11 @@ export interface NativeCatalog {
   tools: NativeCatalogTool[];
   /** Language labels whose LSP server resolves on this machine. */
   lspServers?: string[];
-  /** Config `mcp.*` switches: available tools served only through the deferred-tool dispatcher. */
+  /** Resolved switches for host schema presentation. */
   presentation?: {
     deferred?: string[];
+    /** Local ranking is enabled and clasify is available. */
+    ranking?: boolean;
   };
 }
 

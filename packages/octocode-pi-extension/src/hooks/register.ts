@@ -7,7 +7,7 @@ import { HOOKS_ENV, envFlag } from '../shared/env.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { configFileLines, repoKey, tildePath } from '../shared/home.js';
 import { projectTrust } from '../shared/trust.js';
-import { clipText, contentText, errorMessage } from '../shared/util.js';
+import { clipText, contentText, errorMessage, isRecord } from '../shared/util.js';
 import { commandsFor, emptyHooks, HOOK_EVENTS, hookCalls, hookFiles, loadHooks, type HookCommand, type HookConfig, type HookEvent } from './config.js';
 import { capContext, interpret, runHook, type HookVerdict } from './runner.js';
 
@@ -241,8 +241,12 @@ export function registerHooks(pi: ExtensionAPI, env: NodeJS.ProcessEnv = process
   });
 
   pi.on('tool_result', async (event, ctx) => {
+    if (event.isError) return undefined;
+    const outcomes = event.toolName === 'file' && isRecord(event.details) && Array.isArray(event.details['outcomes']) ? event.details['outcomes'] : undefined;
     const feedback: string[] = [];
-    for (const call of hookCalls(event.toolName, event.input, ctx.cwd)) {
+    for (const [index, call] of hookCalls(event.toolName, event.input, ctx.cwd).entries()) {
+      // A file batch may succeed only in part. Success hooks must not touch rejected or failed queries.
+      if (outcomes && (!isRecord(outcomes[index]) || outcomes[index]['ok'] !== true)) continue;
       const verdict = await dispatch(ctx, 'PostToolUse', call.names, () => ({ tool_name: call.tool_name, pi_tool_name: event.toolName, tool_input: call.tool_input, tool_response: contentText(event.content) }));
       feedback.push(...[verdict.block, verdict.context].filter((text): text is string => Boolean(text)));
     }

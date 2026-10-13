@@ -21,6 +21,7 @@ pub(super) fn cursor(
     result_identity: &str,
     reusable: Option<super::manifest::Fresh>,
     policy_key: String,
+    ranking: Option<&str>,
 ) -> (Option<Value>, bool) {
     let page = query.page().max(1);
     let match_page = query.match_page().max(1);
@@ -60,6 +61,7 @@ pub(super) fn cursor(
         match_page,
         snapshot.as_deref(),
         streamed,
+        ranking,
     );
     (next, leftover_matches)
 }
@@ -70,6 +72,7 @@ pub(super) fn stale_snapshot(query: &LocalSearchQuery) -> ToolError {
     let mut restart = normalized_query(query, streamed_layout(query));
     if let Some(object) = restart.as_object_mut() {
         object.remove("snapshot");
+        object.remove("ranking");
     }
     restart["page"] = json!(1);
     restart["matchPage"] = json!(1);
@@ -129,24 +132,39 @@ pub(super) fn build_next(
     match_page: u32,
     snapshot: Option<&str>,
     streamed: bool,
+    ranking: Option<&str>,
 ) -> Option<Value> {
     let mut map = serde_json::Map::new();
-    let base = normalized_query(q, streamed);
+    let mut base = normalized_query(q, streamed);
+    if let Some(token) = ranking {
+        base["ranking"] = json!(token);
+    }
+    if let Some(snapshot) = snapshot {
+        base["snapshot"] = json!(snapshot);
+    }
     // A `nextPage` continuation is never emitted past the contract page
     // maximum; callers must narrow the query to reach later results.
     let cursor = |field: &str, current: u32| {
         crate::tools::paging::admitted(ToolId::LocalSearch, None, field, current as usize + 1)
     };
-    if page < total_pages
-        && let Some(next_page) = cursor("page", page)
+    let next_match_page = leftover_matches
+        .then(|| cursor("matchPage", match_page))
+        .flatten();
+    // Finish every match row in the current files before advancing files.
+    // Emitting nextPage on each match page creates duplicate executable
+    // routes to the same later file page. At the match-page ceiling the
+    // unreachable suffix is terminal, but later file pages remain reachable.
+    if (!leftover_matches || next_match_page.is_none())
+        && page < total_pages
+        && let Some(n) = crate::tools::paging::admitted_query(
+            ToolId::LocalSearch,
+            None,
+            &base,
+            "page",
+            page,
+            &[("matchPage", 1)],
+        )
     {
-        let mut n = base.clone();
-        n["page"] = json!(next_page);
-        // A new file page starts at each file's first match row.
-        n["matchPage"] = json!(1);
-        if let Some(s) = snapshot {
-            n["snapshot"] = json!(s)
-        };
         map.insert(
             "nextPage".into(),
             Continuation::new(ToolId::LocalSearch, n)
@@ -154,12 +172,9 @@ pub(super) fn build_next(
                 .build(),
         );
     }
-    if leftover_matches && let Some(next_match_page) = cursor("matchPage", match_page) {
+    if let Some(next_match_page) = next_match_page {
         let mut n = base;
         n["matchPage"] = json!(next_match_page);
-        if let Some(s) = snapshot {
-            n["snapshot"] = json!(s)
-        };
         map.insert(
             "nextMatchPage".into(),
             Continuation::new(ToolId::LocalSearch, n)

@@ -1,454 +1,251 @@
-# Octocode Clasify
+# Goals, relevance ranking, and clasify
 
-**Ask a question about code you have not read. Get back where to look, not the code.**
+Use `goals` when useful source should arrive first. Use `clasify` when locations or typed judgments should arrive before source bodies. Both use the configured classification provider; choose the output that advances the question and verify the deciding evidence.
 
-> **In 30 seconds**
->
-> - `clasify` runs a search or a file read *for* your agent, asks a judge model your question about each result, and returns scores plus the exact lines to read next.
-> - Use it when you can **describe** what you want but do not know its **name**, and the alternative is reading a lot.
-> - Finding described code among 54 files, the agent read **1.9 KB instead of 644 KB**, with the answer ranked first.
-> - It never proves anything. It tells the agent what to read.
+## Ranked content or a clasify matrix
 
-## The idea in one picture
+| Need | Route | What comes back |
+|---|---|---|
+| A known name, condition, or source range | Ordinary search, AST/LSP, or a bounded read | Direct evidence |
+| Relevant evidence before less useful pages | A supported read tool with optional `goals` | Reordered source, a ranking receipt, and continuations |
+| Which unread candidate or source window to inspect | `clasify` with a read resource | Judgments or locations, then source-read leads |
+| A typed label for evidence already held | `clasify` with a `value` resource | The requested label; this does not save already-read context |
 
-```mermaid
-flowchart LR
-    A([Agent]) -- "read to run + question" --> C[clasify]
-    C -- "runs the read server-side" --> R[(search hits,<br/>files, PRs)]
-    R --> J[judge model<br/>scores each page]
-    J -- "scores + exact lines,<br/>no file bodies" --> A
-    A -- "reads only the winner" --> W[hints.read]
-```
-
-The agent's context never receives the bodies clasify judged, only the scores and the read it chose to run.
-
-## Quick start
-
-1. Set the provider key, then restart MCP ([AUTHENTICATION.md](AUTHENTICATION.md#classification-key-clasify)):
-
-   ```bash
-   export OCTOCODE_CLASSIFICATION_API='your-provider-key'
-   ```
-
-2. Wrap the read you would have run in a `resource`, and ask what the answer must contain:
-
-   ```json
-   {"queries":[{"mainGoal":"The ast-grep code that expands a fix template into replacement text.",
-     "resources":[{"id":"s","tool":"localSearch","query":{"path":"crates","matchString":"fix","fileHas":["template"]}}],
-     "questions":[{"id":"rel","type":"relevant","ask":"Builds replacement text from a fix template and matched metavariables"},
-                  {"id":"suf","type":"sufficient","ask":"Shows where template metavariables are replaced by matched text"}]}]}
-   ```
-
-3. Read the top page. Each page is one file with its scores:
-
-   ```json
-   {"path":"crates/core/src/replacer/template.rs","line":1,"endLine":388,"answers":{"rel":0.97,"suf":0.86}}
-   ```
-
-   Run its `hints.read` (or read its `path` and lines when it has none). From a shell: `npx octocode clasify --input request.json`.
-
-## Pick a flow
-
-| I want to… | Flow | Wrap this read | Ask | Then |
-|---|---|---|---|---|
-| find **which** of many files, PRs, or packages is the one | **Scout** | `localSearch`, `ghSearchCode`, `ghSearchHistory`, … | `relevant` + `sufficient` | read the `rank` 1 page's `hints.read` |
-| find **where** in one large file | **Locate** | `localFetch`, `ghGetFileContent` | `locate` | run `hints.read`; if it misses, run `next.clasify` |
-| know whether a large fetch is **worth reading** | **Gate** | the fetch | `sufficient` | read the bounded `hints.read`, not the whole fetch |
-| get a **label** for facts I already hold | **Judge** | a `value` | `yesno`, `choice`, or `score` | use the label, only when the label is the deliverable |
-
-Clasify ranks attention. It never proves identity, reachability, absence, or edit safety: read the deciding source.
-
-## Terms
-
-- **Resource:** the read clasify runs for you (`tool` + `query`), or a `value` you already hold.
-- **Page:** one judged unit: one file of a search, one PR, or one window of a file.
-- **`relevant` / `sufficient`:** "is this the right area?" / "does this page alone answer?" With 2+ judged pages, each page carries `rank` (1 = best, by relevant, else the first yes/no question, then sufficient). Read ranks 1–3 and pages with sufficient ≥ 0.7: by `hints.read`, or for a local page, whose read is implied, by its own `path` + `line`–`endLine`. Any other page is read the same way.
-- **`hints.read`:** the exact read to run next; copy it unchanged.
-- **`next.clasify`:** the same call, continued over the candidates not judged yet.
-- **`coverage:"partial"`:** more candidates remain; never read it as "not found".
-
-## At a glance
-
-Task: find where ast-grep fills a fix template with matched metavariables, described in words. The word `fix` appears in 54 files.
-
-```mermaid
-xychart-beta
-    title "KB the agent reads to find the answer (lower is better)"
-    x-axis ["Read all 54 files", "Read the search hits", "clasify Scout", "fileHas + Scout"]
-    y-axis "KB" 0 --> 700
-    bar [644, 58, 11.8, 1.9]
-```
-
-```text
-Find the fix-template code among 54 files (described, word `fix`)
-  Read all 54 files        ████████████████████████████████████    644 KB  answer found by reading everything
-  Read the search hits     ███▏                                     58 KB  listed, not ranked
-  clasify Scout            ▋                                      11.8 KB  answer ranked 1st
-  fileHas + clasify Scout  ▏                                       1.9 KB  answer ranked 1st
-```
-
-| Route | Calls | Agent reads | Result |
-|---|---:|---:|---|
-| Read all 54 files | 54 | 644 KB | found, after reading everything |
-| Read the search hits (`localSearch "fix"`) | 4 | 58 KB | the file is listed, not ranked |
-| **clasify Scout** over that search | 2 | **11.8 KB**, 54× less than reading | **ranked first**, relevant 0.97 |
-| **`fileHas:["template"]` + clasify Scout** | 1 | **1.9 KB**, 339× less | **ranked first**, same answer |
-
-```mermaid
-flowchart LR
-    subgraph Without["Without clasify"]
-        A1[search 'fix'] --> A2[4 pages, 54 files] --> A3[guess which to open] --> A4[read files to check]
-    end
-    subgraph With["With clasify"]
-        B1[search 'fix' + fileHas] --> B2[Scout: 9 files judged whole] --> B3[read the top file]
-    end
-```
-
-The trade-off is time: a Scout or Locate call takes 0.4–5.6 s, a search 0.05–0.6 s. More tasks: [Benchmarks](#benchmarks).
-
-## When to use it
+Prefer an adequate cheap exact route. Semantic selection helps when the target is described, the captured evidence can support the question, and selecting evidence can avoid later reads. File size, candidate count, a score, or an optional hint alone does not establish a benefit. Exhaustive audits still need their complete scope.
 
 ```mermaid
 flowchart TD
-    Q([Question]) --> L{Do you know the<br/>name or literal?}
-    L -- yes --> S[search it: localSearch / astSearch / lspSearch<br/>ghSearchCode / ghSearchHistory]
-    L -- no --> K{What is unread?}
-    K -- "many candidates" --> N[narrow: fileHas, include, keywords] --> SC[Scout]
-    K -- "one large file" --> LO[Locate]
-    K -- "nothing: facts in hand" --> J[Judge]
-    SC --> V[read hints.read, verify]
-    LO --> V
+    Q[Research question] --> E{Cheap exact route answers it?}
+    E -- yes --> D[Read direct evidence]
+    E -- no --> H{Evidence already held?}
+    H -- yes --> L{Typed label useful?}
+    L -- yes --> J[clasify value]
+    L -- no --> D
+    H -- no --> B{Can selecting evidence avoid reads?}
+    B -- no --> D
+    B -- yes --> O{Needed output}
+    O -- source --> G[Read-tool goals if available]
+    O -- locations or judgments --> C[clasify read resource]
+    C --> R[Read promising source]
+    D & G & R --> V[Verify required conditions and coverage]
 ```
 
-| ✅ Use it when | ❌ Skip it when |
-|---|---|
-| the target is **described, not named**: "the code that re-indents a multi-line fix value" | **you know the name**: search `instantiationDepth` for 1.8 KB, not clasify for 16 KB |
-| the alternative is **reading a lot**: more than about 10 candidate files, or one file over about 500 lines | **the file is small** (under about 300 lines): reading it costs about as much as one judgment |
-| the candidates are **many and noisy**: search hits, GitHub files, PR lists | **the list is short** (about 15 rows or fewer): 13 PRs cost 2.8 KB to list and 2.8 KB to judge |
-| you will **read the winner anyway**: clasify picks what to read | **you need proof** (identity, every caller, absence, edit safety): use `lspSearch`, read the source |
-| a few seconds per call are fine | **latency matters**: a call takes 0.4–5.6 s |
+Use one semantic stage per relevance decision. Adding `goals` inside a `clasify` resource explicitly requests two stages; use that composition only for distinct questions. Availability permits a call, but the runtime does not predict whether every explicit call will be economical.
 
-### Where it pays, by source tool
+## Quick start
 
-The following table rates each source tool, measured on ast-grep (`crates/`, 156 Rust files) and TypeScript's `checker.ts`.
+Set up the [classification credential](AUTHENTICATION.md#classification-key-clasify). For goals, also enable [read-tool relevance ranking](CONFIGURATION.md#read-tool-relevance-ranking). Ranking is disabled by default; CLI and MCP expose optional `goals` only when ranking is enabled and `clasify` is available. Restart MCP after changing configuration.
 
-| Source tool | Flow | Value | Without clasify | With clasify |
-|---|---|---|---|---|
-| `localSearch` + `fileHas` | Scout | **highest** | 9 files, 124 KB to read | 1 call, 1.9 KB, answer first |
-| `localSearch` | Scout | **high** | 54 files, 58 KB of hits, no ranking | 2 calls, 11.8 KB, all 54 judged, answer first |
-| `localFetch` | Locate | **high** | `checker.ts` is 3 MB | 4 calls, 16 KB, both guards in the top 2 |
-| `ghSearchCode` | Scout | **high** | 14.5 KB of hits for 20 files, no ranking | 8.1 KB, each of the 20 files judged whole |
-| `ghGetFileContent` | Locate, Gate | medium | read the file at a ref | the same Locate, no clone |
-| `ghSearchHistory`, `ghGetHistoryItem` | Scout | medium | keyword lists mix fixes with bot bumps | ranks by content: the binding fix #2677 scored 0.88 |
-| `astSearch`, `lspSearch` | Scout | low | short lists are cheap to read | only for long lists (dozens of rows) |
-| `artifactSearch`, `structureSearch`, `ghStructure` | Scout, `choice` | low | names usually decide | when names carry the meaning |
+To receive source in relevance order:
 
-Other tools' descriptions never name clasify. Its own `resources[].tool` field says what feeds it (a search or history list for Scout, a file read for Locate), and a wide result offers a ready `hints.clasify` call.
-
-## Let the tools hand off: goal-first
-
-You rarely have to write a clasify request by hand. When a read or search is too wide to read, and you told it **what you are looking for**, it hands you a ready `hints.clasify` call. Run it unchanged, then read the window it returns.
-
-```mermaid
-flowchart LR
-    Q["read or search<br/>+ mainGoal: what you want"] --> W{wide?}
-    W -- no --> A[read the result]
-    W -- yes --> H["hints.clasify<br/>(ready call)"]
-    H --> C[clasify Locate / Scout]
-    C --> R["best window + hints.read<br/>(about 1 KB)"]
-    R --> V[read only those lines]
-```
-
-The handoff appears only when all three hold:
-
-1. **clasify is available.** A provider key is set; without one the lead is dropped and the descriptions never mention clasify.
-2. **The query describes its target.** `mainGoal` (or `reasoning`) says what the answer is, in words: "Where does the text model choose the line ending for new text?" A goal that is just a name (`encodeNode`, `"retry"`) is a literal lookup. Search it instead: a Locate of a literal costs 1.5–9× more than reading its hits.
-3. **The result is wide.**
-
-| Source call | Wide when | Hand-off | What you get |
-|---|---|---|---|
-| `localSearch`, `ghSearchCode` | 8 or more files for a plain multi-word phrase | **Scout** (`relevant` + `sufficient`) over the same search | every file judged whole, ranked; read the top `hints.read` |
-| `localFetch`, `ghGetFileContent` without `matchString` | a paged read of a file of 2,000 or more lines, with a goal that asks *where* | **Locate** over the file | the best window and its exact read |
-| `localFetch`, `ghGetFileContent` with `matchString` | 60 or more lines returned, or more match pages | **Locate** over the file (Locate needs contiguous source, so it judges the file, not the hit windows) | the window that answers the goal, out of all the hits |
-
-A successful row shows `hints.clasify` by default. You don't need `extras: ["hints"]` for it, because the handoff exists to replace a wide read. The handoff carries only the brief you sent.
-
-**Example** (2026-10-09, VS Code `textModel.ts`, 2,745 lines). Three common literals (`EOL`, `eol`, `setValue`) with `contextLines:1` and the goal "Where does the text model choose the line ending for new text?":
-
-| Step | Characters read |
-|---|---:|
-| the wide `matchString` read (142 lines of hits) | 8,493 |
-| its `hints.clasify` → Locate | 925: best window 487–494 (`exists` 0.81), runner-ups at 1306 and 195 |
-| the window's `hints.read` | about 400; line 491 `createTextBuffer(value, this._options.defaultEOL)` answers it |
-
-Going to clasify first, with the goal in `mainGoal`, skips the 8.5 KB read entirely.
-
-**Why the goal matters.** In the 2026-10-09 GitHub benchmark, 0 of 144 file reads sent `mainGoal` or `reasoning`, so no handoff could fire. The brief is optional, and agents skip it for simple lookups. That is right for a lookup and wrong for a described target. If your agent researches described targets, tell it in your prompt or rules: *"When you can describe the target but not name it, put the description in `mainGoal` and run `hints.clasify` when a read or search offers it."*
-
-**Opt-in detail.** clasify's own output is compact. `extras: ["details"]` adds every page's full answers and runner-up windows, and `extras: ["stats"]` adds provider usage (calls, tokens, time).
-
-## Worked examples
-
-The following examples are real calls from 2026-10-08, trimmed to the deciding fields.
-
-### Scout a wide local search, narrowed first
-
-Goal: find where ast-grep fills a fix template with matched metavariables. The word `fix` hits 54 files. Narrow to the files that also mention `template`, then Scout:
-
+<!-- tool: localFetch -->
 ```json
-{"queries":[{"mainGoal":"The ast-grep code that expands a rule's fix template: it substitutes matched metavariables ($A, $$$ARGS) into the replacement text.",
-  "resources":[{"id":"s","tool":"localSearch","query":{"path":"crates","matchString":"fix","fileHas":["template"]}}],
-  "questions":[{"id":"rel","type":"relevant","ask":"Builds replacement text from a fix template and matched metavariables"},
-               {"id":"suf","type":"sufficient","ask":"Shows where metavariables in the fix template are replaced by matched text"}]}]}
+{"queries":[{"path":"docs/guide.md","goals":["Evidence explaining how cancellation releases capacity while a request is still queued"]}]}
 ```
 
-The `relevant` score of each judged file:
+To locate evidence before receiving its body:
 
-```text
-core/src/replacer/template.rs  ██████████████████████████████████▉  0.97  ← the answer: read it
-config/src/fixer.rs            █████████████████████████████████▊   0.94  ← its caller
-core/src/replacer.rs           █████████████████████████████████▍   0.93
-core/src/replacer/indent.rs    ██████████████████████████████▌      0.85
-outline/src/extractor.rs       ███████████████████████████          0.75
-cli/src/run.rs                 ███████████▏                         0.31  ← defer
-core/src/matcher/pattern.rs    █████▍                               0.15
-```
-
-All 9 files were judged whole: 1 call, 1.9 KB, 0.7 s. `template.rs` also scored highest on `sufficient` (0.86; the next was 0.43). Next, read `template.rs`: its page carries no `hints.read` because that read is the page itself, so run `localFetch` with `matchString:"fn replace_fixer", block:true` or the page's lines. Without `fileHas`, the same Scout judges all 54 files in 2 calls and 11.8 KB, with the same top two.
-
-### Locate in one large file
-
-Goal: find where a multi-line value is re-indented when it is inserted into a fix. `indent.rs` has 423 lines.
-
+<!-- tool: clasify -->
 ```json
-{"queries":[{"mainGoal":"Find the ast-grep code that decides how a multi-line metavariable value is re-indented when inserted into a fix.",
-  "resources":[{"id":"f","tool":"localFetch","query":{"path":"crates/core/src/replacer/indent.rs"}}],
-  "questions":[{"id":"loc","type":"locate","ask":"Where a multi-line replacement value gets re-indented to the insertion column"}]}]}
+{"queries":[{"resources":[{"id":"guide","tool":"localFetch","query":{"path":"docs/guide.md"}}],"questions":[{"id":"where","type":"locate","ask":"Where does the document explain how cancellation releases capacity while a request is still queued?"}]}]}
 ```
 
-```json
-{"best":{"loc":[{"line":173,"endLine":178,"exists":0.97,"probability":0.78}]},
- "hints":{"read":{"tool":"localFetch","query":{"queries":[{"path":".../indent.rs","ranges":["173-178"]}]}}}}
-```
+Choose either route for that relevance decision. Follow a returned source-read lead or read the original `path` and line range. Discover current fields with `npx octocode schema localFetch --view query` or `npx octocode schema clasify --view query`; run a saved matrix with `npx octocode clasify --input request.json`.
 
-Run `hints.read`: lines 173–178 open `pub fn indent_lines`. That read's `hints.readBlock` (`173-193`) returns the whole function. Two small reads replace 423 lines.
+## How goals rerank source
 
-### Scout a GitHub code search
+`goals` requests relevance scoring and descending ordering before the selected evidence is paged. Remote discovery ranks one provider page at a time. It is the reranking pass; no additional public `clasify` call is needed for the same question.
 
-```json
-{"queries":[{"mainGoal":"The ast-grep source that expands a fix template by substituting matched metavariables into replacement text.",
-  "resources":[{"id":"s","tool":"ghSearchCode","query":{"owner":"ast-grep","repo":"ast-grep","keywords":["fix"],"extensions":["rs"],"pageSize":20}}],
-  "questions":[{"id":"rel","type":"relevant","ask":"Builds replacement text from a fix template and matched metavariables"},
-               {"id":"suf","type":"sufficient","ask":"Shows where template metavariables are replaced by matched text"}]}]}
-```
+All 13 clasify-readable tools accept optional goals when available (`astTopology` is CLI-only). Accepting goals does not promise a provider call: operations that preserve structure, explicit order, or incomplete selections return `skipped` without classification.
 
-Each of the 20 files is fetched and judged whole at the search's `commitSha`. `config/src/fixer.rs` ranks first (relevant 0.96, sufficient 0.73), then `rule_config.rs` (0.93) and `rewrite.rs` (0.81); unrelated CLI printers stay below 0.3. The call returns 8.1 KB in 5.6 s with `coverage:"partial"`: the index has more pages, and `next.clasify` judges them. Each page's `hints.read` is a `ghGetFileContent` read pinned to that commit.
-
-### Screen pull requests
-
-A broad `keywords:["fix"]` list of the 20 newest merged PRs scored at most 0.61: the binding fix was not on that page. Treat that as a signal to narrow, not to read the 0.61 row. With `keywords:["metavar"]`, 13 PRs came back and the fix #2677 scored 0.88, in 1.5 s. Each row carries a `ghGetHistoryItem` `hints.read`. For a list this short, the gain is ranking by content, not bytes: the list alone is 2.8 KB.
-
-## Write questions that work
-
-The judge sees only `mainGoal`, the question, and the evidence, never your conversation.
-
-| Weak | Strong | Why |
+| Tool | What can be ranked | Scope and limits |
 |---|---|---|
-| `mainGoal: "how fixes work"` | `"The ast-grep code that expands a rule's fix template into replacement text."` | names the artifact kind and what it does |
-| `ask: "Is this relevant?"` | `ask: "Builds replacement text from a fix template and matched metavariables"` | one checkable fact |
-| `ask: "Handles parsing and validation of config"` | two questions: `"Parses sgconfig.yml"`, `"Validates rule fields"` | one fact per question |
-| `ask: "find escapeRegExpCharacters"` | `localSearch matchString:"escapeRegExpCharacters"` | a literal is a search; clasify returns a `localSearch` lead instead |
+| `localSearch` | Files containing sanitized matches | Complete selected view; lexical retrieval scope is unchanged |
+| `localFetch` | Complete raw-text windows | Complete selected view, original line locations preserved |
+| `ghSearchRepo` | Repository rows and selected metadata | One provider page; exact lookup and explicit sort skip |
+| `ghSearchCode` | File hits and returned snippets | One provider page; no extra body reads |
+| `ghGetFileContent` | Complete raw-text windows with `minify:"none"` | Selected view bound to resolved revision and path |
+| `ghSearchHistory` | PR, issue, or commit records | One provider page; explicit sorting stays authoritative |
+| `artifactSearch` | Package discovery records | One provider page; exact package/version lookup skips |
+| `structureSearch` | Flat file rows | Complete selection only; trees and incomplete walks skip |
+| `astSearch` | File groups with returned match evidence | Complete selection only; single-file outlines and syntax trees skip |
+| `lspSearch` | File groups of references or implementations | Complete file groups only (`groupByFile:true`); identity and structural operations skip |
+| `ghStructure` | None | Tree ordering conveys structure; zero-call skip |
+| `ghGetHistoryItem` | None | Section cursors and patch/hunk ordering are preserved; zero-call skip |
+| `astTopology` | None | Graph, path, cycle, and diagnostic ordering are preserved; zero-call skip |
 
-Pair `relevant` (is this the area) with `sufficient` (does this page alone answer). Put every question about the same evidence in one matrix: all questions of a page share one provider request.
+Mutation and clone tools do not accept goals. Public `clasify` uses its existing typed questions.
 
-## Read the scores
+Multiple goals use the highest score across goals: evidence relevant to **any** goal moves earlier. This does not prove that all requested conditions hold. Equal scores keep the original order.
 
-Scores are attention, not proof. In the runs on this page:
+The `ranking` receipt reports `ranked`, `partial`, `skipped`, or `fallback`, plus `scope: selectedView | providerPage`. A selected view is the requested selection, not the whole repository. A provider page says nothing about unseen pages. Candidate, evidence, and time budgets bound provider work. Unscored candidates remain after scored candidates in their original order; a partial ranking cannot establish the best result across the whole source. Provider failure preserves ordinary order.
 
-- **The answer** scored 0.94–0.97 `relevant`, and 0.73–0.86 `sufficient`.
-- **Related code** (callers, neighbors) scored 0.75–0.94 `relevant`, but `sufficient` stayed under 0.5.
-- **Unrelated files** stayed under about 0.3.
+Copy `next.*` unchanged. Its ranking plan fixes the order while replaying the same candidate set across pages and processes. A continuation to a new provider page starts a new page-local decision. Source, goals, selected view, or relevant configuration changes invalidate the plan. Exact verification uses original source locations without ranking again.
 
-| You see | Do |
-|---|---|
-| high `sufficient` | read it; stop only if the read shows the deciding line |
-| high `relevant`, low `sufficient` | read it and keep screening: it is near the answer |
-| best score mid-band (about 0.4–0.7) | unresolved: narrow the source or follow `next.clasify` |
-| low | defer, never discard |
-| `coverage:"partial"` | more candidates remain: run `next.clasify` before you say "not found" |
+Representation choices remain authoritative: explicit non-relevance sorts, count/path-only searches, transformed or full-content fetches, byte reads, and streaming files can skip ranking. A single candidate cannot be reordered. See the [ranking reference](OCTOCODE_TOOLS.md#goal-based-relevance-ranking) for representation limits and continuation rules. `mainGoal` describes workflow intent; it does not enable ranking.
 
-## Benchmarks
+## Clasify flows and questions
 
-Measured on 2026-10-08 against fixed ground truth. Bars show the kilobytes the agent reads (tool JSON; about 4 bytes per token), on a linear scale per task; "read" rows count raw file bytes. "Without" is the best direct route; a literal route assumes the agent already knows the deciding word.
-
-```text
-Which of 156 Rust files parses sgconfig.yml (described, word `config`)
-  Read all 156 files        ████████████████████████████████████  1,260 KB
-  Read the search hits      ███▌                                    126 KB  997 lines in 71 files, no ranking
-  clasify Scout             ██                                       74 KB  answer ranked 1st (0.97)
-  Search the known literal  ▍                                      15.6 KB  cheapest when you know `sgconfig`
-
-Recursion guard in checker.ts (52,760 lines, 3 MB)
-  Read the file             ████████████████████████████████████  3,000 KB
-  clasify Locate            ▏                                        16 KB  both guards in top 2
-  Search `depth`            ▏                                      11.3 KB  misses one of the two guards
-  Search the known literal  ▏                                       1.8 KB  finds one guard
-
-Re-indent logic in indent.rs (423 lines)
-  Read the file   ████████████████████████████████████   11.6 KB
-  clasify Locate  █▊                                      0.6 KB  indent_lines, lines 173-178
-
-Fix-template code on GitHub (20 files)
-  Read the search hits  ████████████████████████████████████   14.5 KB  unranked
-  clasify Scout         ████████████████████                    8.1 KB  each file judged whole
-
-Which of 87 GitHub files implements organize-imports
-  clasify Scout         ████████████████████████████████████     43 KB  implementation ranked 1st (0.97)
-  Read the search hits  ████████████████████                     24 KB  guess from file names
-
-Scout evidence: whole files vs search snippets (156 files)
-  Snippets (candidateEvidence:search)  ████████████████████████████████████    161 KB  18 calls, answer scored 0.69
-  Whole files (default)                ████████████████▌                        74 KB  4 calls, answer scored 0.97
-```
-
-| Task | Without clasify | With clasify | Quality |
+| Flow | Resource | Question | Next step |
 |---|---|---|---|
-| Fix-template code among 54 files | 4 calls, 58 KB, unranked | 1–2 calls, 1.9–11.8 KB | answer first |
-| `sgconfig.yml` parser among 156 files | 7 calls, 126 KB | 4 calls, 74 KB | answer 0.97, next 0.64 |
-| Same, literal `sgconfig` known | 2 calls, 15.6 KB | 4 calls, 74 KB | both find it: search |
-| Recursion guard in `checker.ts` | search `depth`: 11.3 KB, one guard missed | 4 calls, 16 KB | both guards top 2 |
-| Same, literal `instantiationDepth` known | 1 call, 1.8 KB, one guard | 4 calls, 16 KB | search is cheaper; clasify is more complete |
-| Arrow-function decision in `parser.ts` (10,767 lines) | 1 call, 3.7 KB with the literal | 1 call, 2.4 KB | exact function first |
-| Described targets in 364–770-line files (3 tasks) | 4.6–6.5 KB | 1.3–3.0 KB, verify read included | top 1 correct in all three |
-| organize-imports among 87 GitHub files | 2 calls, 24 KB, guess by name | 3 calls, 43 KB | implementation first (0.97) |
-| Re-indent logic in `indent.rs` | read 11.6 KB | 1 call, 0.6 KB | exact function |
-| PR that fixed metavariable bindings | 20 PRs, none fits | narrowed keywords + Scout | #2677 at 0.88 |
+| Scout | An unread search or list | `relevant`; add `sufficient` if page completeness matters | Inspect promising candidates |
+| Locate | Raw file evidence | `locate` | Read the returned source windows |
+| Gate | An unread evidence page | `sufficient` | Verify the page; its read may still return the whole page |
+| Judge | Evidence already held in `value` | A needed typed question | Use the label within its evidence scope |
 
-Speed and size per call:
-
-| Call | Calls | Agent reads | Wall time |
-|---|---:|---:|---:|
-| Scout 9 local files | 1 | 1.9 KB | 0.7 s |
-| Scout 54 local files | 2 | 11.8 KB | 3.4 s |
-| Scout 20 GitHub files | 1 | 8.1 KB | 5.6 s |
-| Screen 13 PRs | 1 | 2.8 KB | 1.5 s |
-| Locate in 423 lines | 1 | 0.6 KB | 0.4–0.7 s |
-
-Provider tokens are billed by the classification provider, separately from the host model. The kilobytes above are what enter the agent's context.
-
-Takeaways:
-
-- **Quality:** every scaled task ranked the answer first, judged every candidate, and kept second valid answers that one literal search missed.
-- **Tokens:** the win is against reading files. Against a search whose literal you already know, the search stays cheaper.
-- **Narrow first:** `fileHas` before Scout cut 11.8 KB to 1.9 KB with the same answer.
-- **Rules:** `sufficient` stops screening only when its read shows the deciding line. A low score defers a candidate; it never discards one. Scores never prove absence.
-
-## Reference
-
-Field-level detail for each flow, the limits, the output shape, and availability.
+A resource is `{id?, tool, query}` for an unread read, or `{id?, value}` for supplied evidence. Matrices live in `queries[]`. Each resource/page is judged independently; separate resources are not combined into a joint argument. Independent questions about the same evidence can share one matrix and one provider request per page.
 
 ### Questions
 
-Each question is `{id?, type, ask}` and states one fact. Put every independent question about the same evidence in one matrix; they are batched into one provider request per page.
-
-| `type` | Answer |
+| Type | Answer |
 |---|---|
-| `relevant`, `supports`, `sufficient`, `adds` (needs `known`) | P(yes) presets |
-| `yesno` | P(yes), optional `labels:{true,false}` |
-| `choice` | one label from `labels:{label: meaning}`; add `insufficient` when no label may fit |
-| `score` | a level on `labels:[low … high]` |
-| `locate` | ranked line windows: `{exists, probability}` |
+| `relevant`, `supports`, `sufficient`, `adds` (`known` required) | P(yes) presets |
+| `yesno` | P(yes), with optional true/false labels |
+| `choice` | A label from a label-to-meaning map; include an unresolved option when needed |
+| `score` | An ordered level from the supplied labels |
+| `locate` | Source windows with `exists` and `probability` |
 
-How to phrase them: [Write questions that work](#write-questions-that-work).
+### Write questions that work
 
-### Scout
+State the behavior, condition, and evidence needed. The provider sees the submitted evidence and question, not the agent's conversation.
 
-A list resource fans out into one page per candidate: a file (`localSearch`, `ghSearchCode`, `astSearch`, `lspSearch`), a repository, a PR or commit, or a package. Each page has answers and its own `hints.read`. A bare path list (`structureSearch`, `ghStructure`) stays one page: ask a `choice` over the paths.
+- Goal: “Code showing how an aborted request releases capacity while still queued.”
+- Locate: “Where is queued cancellation handled before execution starts?”
+- Typed question: “Does this captured path release reserved capacity when the queued request is cancelled?”
 
-- **Files, not snippets (default).** A `localSearch`/`ghSearchCode` candidate is judged on its file: whole when it fits its share of the budget, else in windows around its hits, so search a word the answer region holds. GitHub files are read whole within their share, with the anchored window as the fallback. `candidateEvidence:"search"` keeps snippets only.
-- **Scale.** One call hydrates up to 40 files and judges up to 48 pages per query. The rest continues through `next.clasify`, which reaches every candidate once.
-- **Act per page.** See [Read the scores](#read-the-scores).
-- **Handoff.** A descriptive `localSearch`/`ghSearchCode` page with 8 or more files carries `hints.clasify`; run it unchanged.
+Ask separate questions when separate conditions need separate answers. Add `sufficient` only when that answer changes the next step. Keep exact counts, calculations, and identity checks in deterministic tools. `prefilter` can narrow file evidence around useful literals; it also narrows what the judge can know.
 
-An end-to-end Scout: [Scout a wide local search](#scout-a-wide-local-search-narrowed-first).
+### Agent prompt
 
-### Locate
+> Choose the smallest adequate evidence route. Prefer exact searches and bounded reads when they answer the question. Use optional goals for source in relevance order, or clasify for locations and needed labels, when selection can avoid later reads. Use one semantic stage per relevance decision. Check captured scope and ranking or coverage receipts. Verify deciding source conditions, follow needed continuations unchanged, and keep missing evidence unresolved. Scores guide attention; they do not prove absence, identity, or finding validity.
 
-`locate` needs an unminified `localFetch`/`ghGetFileContent` page or a file-chunk search. The runtime tags small passages, asks Jev one Choice (which passage answers) and one Noul (does any) in one request, and maps the answer to a declaration-aligned window: its context lines never reach above the passage's declaration.
+## Read the scores
 
-- `best[questionId]` lists up to three windows `{line, endLine, exists, probability}`, ranked by `exists`, then `probability`; rows whose `exists` differs by 0.02 or less rank by `probability`.
-- `hints.read` is the exact read of the top row. Run it unchanged; the read's `hints.readBlock` expands to the enclosing declaration.
-- On an open walk, `best` ranks only the pages judged so far. If its read lacks the answer, follow `next.clasify`; `carry` holds the running top three.
-- `prefilter:[terms]` on a file read judges only up to three 600-line windows around rare literals.
-- A literal-only ask (`find escapeRegExpCharacters`) over local resources skips the provider and returns a `localSearch` lead instead.
+There is no universal accept, reject, or stopping score. Confidence describes the model's answer distribution, not verified correctness.
 
-### Judge supplied state
+| Result | Interpretation and action |
+|---|---|
+| Relevant candidate | A promising place to inspect; verify the source |
+| Sufficient judgment | The model thinks the captured page answers; confirm every required condition |
+| Low relevance | Defer attention if appropriate; keep the candidate reachable |
+| Locate `exists` and `probability` | Whether a window answers, and which window; do not multiply them into a new score |
+| Partial coverage or an unjudged page | Evidence remains; continue or read it before a completeness claim |
+| Error or insufficient evidence | Refine scope or obtain the missing source; do not turn it into “no” |
 
-Use a `value` resource only for a small evidence set you already hold, when the label changes the next read, test, or edit. Never paste an unread body into `value`: use a read resource.
+`best[questionId]` ranks located windows among the pages judged so far. Read hints can appear at query or page level; local windows may instead imply a read through `path`, `line`, and `endLine`. Preserve returned refs and snapshots. `carry` preserves a Locate walk's accumulated candidates; copy it through `next.clasify`.
 
-```json
-{"queries":[{"mainGoal":"Decide whether the abort claim holds.",
-  "resources":[{"id":"e","value":{"claim":"Aborting a queued task guarantees it never starts.","observations":["Started tasks continue after abort."]}}],
-  "questions":[{"id":"support","type":"choice","ask":"Support for the exact claim",
-    "labels":{"supported":"Covers the claim.","contradicted":"Conflicts with it.","insufficient":"A deciding condition is missing."}}]}]}
+## PR review, AST, and LSP
+
+Use classification to prioritize inspection only when it can avoid work. Establish identities with LSP, structural conditions with AST, and findings with source and relevant executable checks.
+
+| Situation | Useful route |
+|---|---|
+| Known predicate, definition, or reference | Precise AST, LSP, or direct source |
+| Broad candidates whose snippets contain the deciding behavior | Optional relevance screening, then source verification |
+| Returned rows omit a guard, callee, or build condition | Expand bounded evidence or refine the query first |
+| One selected patch that must be reviewed | Read the patch directly |
+| Missing callers, partial dynamic references, or an exhaustive audit | Resolve coverage; scores cannot close the gap |
+| Optional typed second opinion on a cross-file claim | Supply one complete bounded evidence packet with revisions, then independently check its conclusion |
+
+AST/LSP resources judge returned rows grouped by file; source behind their read hints is not automatically included. A file score is not a verdict on each reference. `localSearch`/`ghSearchCode` resources can hydrate files within budget; `candidateEvidence:"search"` retains snippets instead.
+
+PR summaries do not expand into patches automatically. Request the needed sections, preserve `headSha`, `baseSha`, or `mergeCommitSha`, and verify deciding source at that revision. `locate` works on raw file evidence, not patches. Separate patch, caller, and test resources remain independent judgments.
+
+The [PR/AST/LSP checks](../packages/octocode-benchmark/results/review-classification-2026-10-13.md) found candidate promotion but also confidently wrong regression and missing-context judgments. They do not support automated finding dismissal or a claim of better review accuracy.
+
+## Let the tools hand off: goal-first
+
+A supplied target and remaining candidate or source work can produce an optional `hints.clasify` lead. Hints suggest a possible next read; they neither invoke the provider nor certify a saving. Metadata-only search leads set `candidateEvidence:"search"` to avoid reading unseen file bodies. Use a lead only when it meets the routing rule, and then run it unchanged.
+
+Read calls already carrying `goals` or a ranking plan do not receive another automatic classification lead. Explicit composition remains available for a distinct question. `mainGoal` and `reasoning` provide the target for eligible handoffs; they do not activate ranking. Exact-identifier leads use the cheaper text route. Full-content, anchored, or transformed reads retain their requested purpose.
+
+## Shared internals, separate decisions
+
+```mermaid
+flowchart LR
+    A[Agent] --> G[Supported read tool + goals]
+    A --> C[Public clasify]
+    C --> D[Secured read dispatcher]
+    D --> E[Evidence pages]
+    G --> R[Relevance questions and ordering]
+    E --> Q[Typed questions]
+    R & Q --> P[Shared provider transport, adaptive gate and stats]
+    P --> O[Ranked source or compact judgments]
+    O --> A
 ```
 
-### Limits
+Ranking uses the lower-level classifier adapter, not recursive public tool dispatch. Public `clasify` obtains evidence through the normal secured read dispatcher. Both sanitize evidence and use the shared configured concurrency controls, deadlines, cancellation, and provider accounting.
 
-| Limit | Value |
+Public matrix judgments have a process-local cache. Fresh ranking calls do not share that judgment cache; ranked continuations reuse their saved order. A clasify resource containing explicit goals performs both requested stages. Deferred candidates remain visible with their source-read leads; `next.clasify` alone need not revisit every explicitly unjudged candidate.
+
+### Which model does what
+
+The main agent chooses scope, uses tools, verifies evidence, and writes the answer. Octocode's adapter uses `jev-latest` for bounded relevance and typed judgments in both routes. The current contract has no per-query model selector. Record the actual provider version when it is available; an alias is not a fixed benchmark version. These checks do not establish a best main-agent or classifier model.
+
+## How this can save context
+
+Goals can bring deciding source into earlier pages. Clasify can keep unread bodies out of the main agent's context until selected source reads are needed. The benefit comes from avoiding later reads; consuming every page removes it. Reordering rows within one fully returned page does not reduce that page’s response tokens; metadata ranking can only help by avoiding later verification reads. Compare complete responses and required source reads against the cheapest adequate direct route, and account for provider usage separately.
+
+The [red/white evaluation](../packages/octocode-benchmark/results/selective-semantics-2026-10-13.md) corrected a grader that kept reading after adequate evidence had arrived. These are retrospective sufficient-source prefixes in `o200k_base` tokens, not observed autonomous stopping:
+
+| Task | Sequential read | Goals | Cheapest tested exact route |
+|---|---:|---:|---:|
+| Django callback rollback, two repeats | 4,814 | 1,051–1,058 | 266, phrase selected after results |
+| Tokio close with an outstanding permit, one run | 3,433 | 1,254 | 1,016 |
+
+Goals reduced context by about 78% and 63% against sequential reading; exact queries won both comparisons without classifier work. Tokio Locate returned insufficient source despite a high score. All real classifier work in that check totaled 48 requests, 97,050 reported input tokens, and 9,182 output tokens, including unsuccessful work. This establishes neither net token/dollar savings nor automatic route-choice reliability.
+
+The [earlier local-ranking study](../packages/octocode-benchmark/results/local-ranking-2026-10-13.md) retains its broad-route comparisons and controls where exact or exhaustive work cost more. The [review study](../packages/octocode-benchmark/results/review-classification-2026-10-13.md) retains PR/AST/LSP failures and complete source-read costs. Their measurements apply to those conditions, not universal score or size thresholds.
+
+The [all-tool evaluation](../packages/octocode-benchmark/results/read-tool-ranking-2026-10-13.md) checks each of the 13 tools separately. In one GitHub file fixture, goals moved sufficient source from page 5 to page 2: 2,073 → 1,367 response tokens, a retrospective 34.1% reduction. Reading every page instead cost 60.3% more, and an exact phrase read needed only 67 tokens with no classifier call. No complete traversal in that run saved response tokens; metadata ordering did not eliminate its required source verification.
+
+Enabling the MCP goals surface added 372 tokenizer-counted tokens to the loaded tool catalog. The bounded real-provider run resolved `jev-latest` to `jev-1.13.0` and used 29 requests with 13,679 reported input / 551 output tokens. Structural skips made no provider calls but still added response overhead. These single paired fixtures support keeping ranking opt-in, using exact routes when adequate, and checking whether earlier evidence actually avoids later reads.
+
+### Autonomous Terra comparison
+
+The [40-local / 30-GitHub paired benchmark](../packages/octocode-benchmark/results/terra-goals-2026-10-13.md) offered goals and clasify to fresh `gpt-5.6-terra` sessions using the local Octocode build. Every final pair completed and received independent source-checked grading. This single development pass **did not demonstrate general token savings**:
+
+| Corpus | Terra-only input tokens, on/off | 95% interval | Observable characters, on/off |
+|---|---:|---:|---:|
+| 40 local questions | 1.119 | 1.002–1.256 | 1.044 |
+| 30 GitHub questions | 1.064 | 0.968–1.171 | 1.012 |
+| 8 Terraform questions, within local | 1.080 | 0.813–1.403 | 1.035 |
+
+Ratios below one mean less usage. Correctness was similar; local wall time increased about 19.5%. Goals were used in 59 of 70 on-arm questions, but public clasify was never called. Many goal requests skipped single candidates, exact lookups, or structural views. Some cheaper on-arm answers came from narrower lexical queries or fewer reads; one Terraform case grew 6.3× after a broader file filter even though both goal requests skipped. The report retains every question, provider failures, cached-input accounting and all retry costs. These results support optional selection when it can avoid reads, and do not establish direct clasify adoption, reduced false positives, or net monetary savings.
+
+JEV tokens are separate from the Terra ratios above. At [TypeSafe's published rate](https://typesafe.ai/blog/introducing-system-one-models-and-jev) of $0.042 per million input tokens with free output, the 581,317 known JEV input tokens cost about **$0.0244** across both campaigns; 18 aborted requests have unknown usage. Successful JEV HTTP requests had medians of 366 ms locally and 400 ms on GitHub, including startup probes. The report includes separate token accounts, verified pricing sources, a cache-aware dollar scenario and latency distributions. Cheap classification can pay for itself by avoiding a small amount of expensive model work, but this run does not establish that saving or a workflow speedup.
+
+The same architecture audit removed candidate preparation when ranking is disabled, unavailable, unsupported, a singleton, or replaying a saved order. An 8 MB development probe fell from about 1.22 seconds to 0.34 seconds with identical output; both benchmark arms include that optimization. See the report for memory bounds and measurement limits.
+
+## Reference
+
+### Output and limits
+
+Results follow `queries[] → resources[] → pages[] → answers[questionId]`. They contain judgments and source locations, not bodies. `coverage:"partial"` means more scope remains; a page without answers or an error is explicitly unjudged. `extras:["details"]` adds full answers and runner-up windows; `extras:["stats"]` adds provider usage.
+
+Evidence and request budgets are execution bounds, not usefulness thresholds. An oversized page reports `classificationContextTooLarge` with a source lead; unread remainder continues or remains explicitly unjudged. Changed sources reject stale continuation plans.
+
+| Matrix limit | Value |
 |---|---:|
 | Queries per call | 5 |
-| Resources / questions / cells (resources × questions) per query | 25 / 25 / 25 |
+| Resources / questions / cells per query | 25 / 25 / 25 |
 | Cells per call | 50 |
-| Pages judged per query per call (one provider request each) | 48 |
-| Evidence per resource per call (`maxChars`, default and maximum) | 1,000,000 chars |
+| Pages judged per query per call | 48 |
+| Evidence per resource per call (`maxChars`, default and maximum) | 1,000,000 characters |
 | Characters per page | 80,000 |
 | Hydrated files per search page / characters per file | 40 / 32,000 |
-| `prefilter` terms | 8 |
+| Prefilter terms | 8 |
 | Choice labels / score levels | 2–255 / 2–10 |
-| `carry` rows per question | 3 |
+| Locate carry rows per question | 3 |
 
-A page over its limit fails with `classificationContextTooLarge` and keeps its `hints.read`. A candidate that does not fit this call's remainder resumes through `next.clasify`, never silently dropped. A replay whose source changed fails with `staleSnapshot`.
-
-### Output
-
-Results run `queries[] → resources[] → pages[] → answers[questionId]` and never hold source bodies.
-
-- A resource states a shared `path`, `ref`, and `totalLines` once. A page is `{path?, line, endLine, totalLines?, answers, rank?}` (`totalLines` only when the resource does not state it); `scope` appears only for a byte or disjoint-line span, and an uncertain choice or score keeps its `probabilities`.
-- A page carries `hints.read` unless that read is `localFetch {path, ranges:["line-endLine"]}` of the page itself.
-- `coverage` appears only as `partial` (more remains: never read it as absence) or `error`.
-- A failed page or answer carries `error:{errorCode, error, hints?}`. A page with neither `answers` nor `error` was not judged, for the reason the resource states.
-- `extras:["details"]` adds the full receipt: `source`, `scope`, full page answers, and runner-up windows; `extras:["stats"]` adds provider `usage`.
-- A page's `hints.read` is the located read, the result itself: it shows without `extras:["hints"]`.
-
-Run `next.clasify` and `hints.read` unchanged. Treat `partial`, `error`, `insufficient`, and mid-band scores as unresolved. Cite the source, not the score.
-
-### How it works
-
-1. **Preflight:** invalid matrices fail before any read or provider call.
-2. **Secured read:** each read runs through the normal dispatcher and output sanitizer, so clasify never reads or leaks more than a direct call could.
-3. **Pages:** searches split into per-file candidates. Small files are judged whole, smallest first, and leftover budget flows to larger files. Locate pages split into declaration-grouped passages.
-4. **Provider:** one gate per endpoint (default concurrency 10, `OCTOCODE_CLASSIFICATION_CONCURRENCY`). Throttles halve the limit, and repeated failures open a 10 s circuit. All questions of a page share one request. A process-local cache (30 min) reuses identical judgments within a long-lived MCP process.
-5. **Output:** shared failures collapse and limitations hoist. Every judgment ends in an executable step (`hints.read`, `next.clasify`, or a search lead).
+See [tool fields](OCTOCODE_TOOLS.md#semantic-assessment-reference), [CLI schema discovery](../packages/octocode/docs/OCTOCODE_CLI.md), and [ranking settings](CONFIGURATION.md#read-tool-relevance-ranking).
 
 ### Availability
 
-Clasify needs `OCTOCODE_CLASSIFICATION_API`; setup, the optional host, and the blank-value kill switch are in [AUTHENTICATION.md](AUTHENTICATION.md#classification-key-clasify).
+`clasify` requires a nonblank `OCTOCODE_CLASSIFICATION_API`. Provider setup, the optional host, and the blank-value kill switch are in [authentication](AUTHENTICATION.md#classification-key-clasify). Evidence disclosure is described under [classification egress](SECURITY.md#classification-egress).
 
-- **No key:** MCP does not list `clasify` and drops `hints.clasify` leads. Restart MCP after changing the key.
-- **MCP startup:** one minimal judgment probes the provider. On failure (bad key, HTTP 402 quota, unreachable host) `clasify` is hidden, and stderr says `clasify disabled: provider check failed (<errorCode>)`. A rate limit keeps it.
-- **HTTP 402** (`classificationQuotaExhausted`) pauses provider requests to that key for 60 s.
-- **CLI:** no probe; a failing provider surfaces on the call.
-- **Model:** `jev-latest`, the newest stable Jev release (`jev-1.13.0` on 2026-10-08).
+MCP checks the provider at startup; authentication, quota, or connection failures can hide clasify and goals in that session. The CLI does not probe during schema discovery; provider failure is reported when called. Restart MCP after changing provider configuration. Use `npx octocode config check OCTOCODE_CLASSIFICATION_API` and the live schema to inspect availability.
 
-```bash
-npx octocode config check OCTOCODE_CLASSIFICATION_API
-npx octocode schema clasify --view query
-npx octocode clasify --input request.json
-```
+### Usage stats
 
-CLI exit codes: `0` judged (a `next.clasify` continuation that remains is still `0`); `2` invalid input; `3`/`4`/`7`/`5` when every read failed with not-found, auth, rate-limit, or another error; `5` also covers a missing key. Full table: [OCTOCODE_PROTOCOL.md](OCTOCODE_PROTOCOL.md#38-pages-leads-and-failure-hints).
-
-#### Usage stats
-
-With `OCTOCODE_ENABLE_STATS=true` and persistent storage, `<octocode-home>/stats.json` `stats.clasify` counts successful provider requests: `calls`, `input_tokens`, `output_tokens`, `known_usage_calls`, and `unknown_usage_calls`. Cached judgments add nothing, failed attempts have no token receipt, and a stats failure never fails a call. For an isolated benchmark, use a unique `OCTOCODE_HOME` and report provider usage separately from host tokens.
+With `OCTOCODE_ENABLE_STATS=true` and persistent storage, `<octocode-home>/stats.json` records `stats.clasify`: attempted `calls`, reported `input_tokens` and `output_tokens`, and `known_usage_calls` / `unknown_usage_calls`. Failed attempts and retries count; missing receipts mean unknown usage, not zero. Cached judgments add no requests. Use an isolated `OCTOCODE_HOME` for experiments and report provider work separately from caller context.

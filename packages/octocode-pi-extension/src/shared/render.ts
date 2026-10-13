@@ -56,12 +56,7 @@ export function clip(text: string, max: number): string {
 /** Renderer state kept per tool row (`context.state`). */
 export interface ToolRow {
   startedAt?: number;
-  endedAt?: number;
   timer?: ReturnType<typeof setInterval>;
-  /** From `details.durationMs`, for rows restored from a saved session. */
-  durationMs?: number;
-  /** The header drew a finished row without a duration; a later `resultBlock` redraws it once one is known. */
-  missingDuration?: boolean;
   /** `checks 1.2s · queued 3s`: the time the call waited before it ran (see `timingOf`). */
   waits?: string;
   /** The call was interrupted (Esc, a kill, a requested stop), not failed: drawn `◼` in the warning colour. */
@@ -77,6 +72,8 @@ export interface RenderContext {
   isPartial?: boolean;
   isError?: boolean;
   expanded?: boolean;
+  /** Pi's recorded execution time, including when a completed row is restored. */
+  durationMs?: number | undefined;
   /** The call's arguments (Pi passes them to both renderers). */
   args?: unknown;
 }
@@ -133,7 +130,6 @@ function track(context: RenderContext, phase: Phase): ToolRow {
       rowTimers.delete(state.timer);
     }
     state.timer = undefined;
-    if (state.startedAt !== undefined) state.endedAt ??= Date.now();
   }
   return state;
 }
@@ -181,17 +177,16 @@ function lines(context: RenderContext): Lines {
 
 /**
  * `<glyph> Name(summary) · 1.2s`, clipped to the width with the time kept. `lines` are extra sub-lines (one per
- * query of a batched call), clipped to the width; callers sanitize them (they may be styled). The duration comes from `durationMs`, else the live clock started
- * when execution began, else `details.durationMs` recorded by `resultBlock` (restored sessions).
+ * query of a batched call), clipped to the width; callers sanitize them (they may be styled). Pi owns completed
+ * execution timing; the local clock estimates elapsed time only while running. Custom messages can supply a duration.
  */
 export function toolHeader(theme: Theme, context: RenderContext, name: string, summary: string, options: { durationMs?: number; meta?: string; lines?: string[] } = {}): Component {
   const base = phaseOf(context);
   const state = track(context, base);
   const phase: Phase = base === 'error' && state.stopped ? 'stopped' : base;
-  const measured = state.startedAt !== undefined ? (state.endedAt ?? Date.now()) - state.startedAt : undefined;
-  const duration = options.durationMs ?? measured ?? state.durationMs;
+  const measured = phase === 'running' && state.startedAt !== undefined ? Date.now() - state.startedAt : undefined;
+  const duration = context.durationMs ?? options.durationMs ?? measured;
   const finished = phase === 'done' || phase === 'error' || phase === 'stopped';
-  state.missingDuration = finished && duration === undefined;
   const meta = [options.meta ? clip(options.meta, 60) : '', duration !== undefined && phase !== 'pending' ? formatDuration(duration, true) : '', finished ? (state.waits ?? '') : ''].filter(Boolean);
   const text = clip(summary, context.expanded ? SUMMARY_CHARS_EXPANDED : SUMMARY_CHARS);
   const left = `${glyph(theme, phase)} ${theme.fg('toolTitle', theme.bold(clip(name, 60)))}${text ? theme.fg('muted', '(') : ''}`;
@@ -230,8 +225,6 @@ interface ResultBlockOptions {
   spill?: string;
   /** The label before `spill` (default `saved`; `log` for a job's log). */
   spillLabel?: string;
-  /** `details.durationMs`, so restored rows still show their time. */
-  durationMs?: number;
   /** The pre-run waits `timingOf` read from the details; shown in the header. */
   waits?: string;
   /** Expanded view; defaults to `context.expanded` (pass renderResult's `options.expanded`). */
@@ -242,11 +235,10 @@ interface ResultBlockOptions {
 export function resultBlock(theme: Theme, context: RenderContext, options: ResultBlockOptions): Component {
   const state = rowState(context);
   const waitsChanged = options.waits !== undefined && state.waits !== options.waits;
-  if (waitsChanged) state.waits = options.waits;
-  if ((options.durationMs !== undefined && state.durationMs === undefined) || waitsChanged) {
-    state.durationMs ??= options.durationMs;
-    // The header already drew without this (a restored row, or waits known only now): redraw once, after this pass.
-    if ((state.missingDuration || waitsChanged) && context.invalidate) {
+  if (waitsChanged) {
+    state.waits = options.waits;
+    // The header already drew without these waits: redraw once, after this pass.
+    if (context.invalidate) {
       const invalidate = context.invalidate;
       queueMicrotask(() => invalidate());
     }
@@ -298,43 +290,35 @@ export function spillPath(text: string): string | undefined {
   return /Full output: (.+?); search it or read it by line range\.\]\s*$/.exec(text)?.[1];
 }
 
-/** The duration `timed` recorded in a result's details, if any. */
-export function durationOf(details: unknown): number | undefined {
-  return isRecord(details) && typeof details['durationMs'] === 'number' ? details['durationMs'] : undefined;
-}
-
 /** Waits shorter than this are not shown: they are routine. */
 const WAIT_SHOW_MS = 250;
 
 /**
- * `durationOf` plus the pre-run waits `timed` recorded (`checks 1.2s` in `tool_call` checks such as PreToolUse
+ * The pre-run waits `timed` recorded (`checks 1.2s` in `tool_call` checks such as PreToolUse
  * hooks, `queued 3s` waiting for the rest of the batch's checks or the tool's lock), for `resultBlock`'s options.
  */
-export function timingOf(details: unknown): { durationMs?: number; waits?: string } {
-  const durationMs = durationOf(details);
+export function timingOf(details: unknown): { waits?: string } {
   const wait = (key: string, label: string): string => {
     const value = isRecord(details) ? details[key] : undefined;
     return typeof value === 'number' && value >= WAIT_SHOW_MS ? `${label} ${formatDuration(value, true)}` : '';
   };
   const waits = [wait('checkMs', 'checks'), wait('queuedMs', 'queued')].filter(Boolean).join(' · ');
-  return { ...(durationMs !== undefined ? { durationMs } : {}), ...(waits ? { waits } : {}) };
+  return waits ? { waits } : {};
 }
 
 /**
- * Wrap a tool's `execute` so its result carries `details.durationMs` (details are kept in the session, so the time
- * survives a resume), plus `checkMs` / `queuedMs` when the call waited before it ran (see `takeTiming`). Existing
- * details are merged, never replaced. Pi passes the tool call id first; that is how the wait is found.
+ * Keep `checkMs` / `queuedMs` in the result when a call waited before it ran (see `takeTiming`). Pi owns execution
+ * duration; this wrapper records only the approval and queue waits. Existing details are merged, never replaced.
+ * Pi passes the tool call id first; that is how the wait is found.
  */
 export function timed<A extends unknown[], R>(execute: (...args: A) => Promise<R>): (...args: A) => Promise<R> {
   return (async (...args: A) => {
-    const started = Date.now();
-    const waits = typeof args[0] === 'string' ? takeTiming(args[0], started) : {};
+    const waits = typeof args[0] === 'string' ? takeTiming(args[0]) : {};
     const result = await execute(...args);
-    if (!isRecord(result)) return result;
-    const timing = { durationMs: Date.now() - started, ...waits };
+    if (!isRecord(result) || Object.keys(waits).length === 0) return result;
     const details = result['details'];
-    if (details === undefined || details === null) return { ...result, details: timing };
-    if (isRecord(details) && !Array.isArray(details)) return { ...result, details: { ...timing, ...details } };
+    if (details === undefined || details === null) return { ...result, details: waits };
+    if (isRecord(details) && !Array.isArray(details)) return { ...result, details: { ...waits, ...details } };
     return result;
   }) as (...args: A) => Promise<R>;
 }
@@ -342,7 +326,7 @@ export function timed<A extends unknown[], R>(execute: (...args: A) => Promise<R
 /**
  * `pi.registerTool(timedTool({ ... }))`: the tool with its `execute` wrapped by `timed`. Prefer this to
  * `execute: timed(...)`, which loses the parameter types Pi's generic `registerTool` would infer. `exclusive` adds the
- * one-call-at-a-time lock of `exclusive()`; the recorded duration excludes the wait for it.
+ * one-call-at-a-time lock of `exclusive()`; its wait is included in `queuedMs`.
  */
 export function timedTool<TParams extends TSchema, TDetails, TState>(
   tool: ToolDefinition<TParams, TDetails, TState>,

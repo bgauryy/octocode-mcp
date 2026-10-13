@@ -24,7 +24,13 @@ if [ ! -f "$SNAP/octocode-mcp/dist/index.js" ]; then
   mkdir -p "$SNAP/node_modules/@octocodeai/config" "$SNAP/node_modules/@octocodeai/octocode-core"
   cp -R "$CONFIG/dist" "$CONFIG/contract" "$CONFIG/package.json" "$SNAP/node_modules/@octocodeai/config/"
   cp -R "$CORE/dist" "$CORE/package.json" "$SNAP/node_modules/@octocodeai/octocode-core/"
+  # LSP discovery walks addon install ancestors; freeze its bundled TS server too.
+  TSGO="$REPO/node_modules/@typescript/native-preview-$PLATFORM"
+  [ -d "$TSGO" ] || { echo "bundled TypeScript LSP missing: $PLATFORM" >&2; exit 2; }
+  mkdir -p "$SNAP/node_modules/@typescript"
+  cp -R "$(cd "$TSGO" && pwd -P)" "$SNAP/node_modules/@typescript/native-preview-$PLATFORM"
   { shasum -a 256 "$ADDON" "$REPO/packages/octocode-mcp/dist/index.js"; git -C "$REPO" rev-parse HEAD; } > "$SNAP/fingerprint.txt"
+  shasum -a 256 "$SNAP/node_modules/@typescript/native-preview-$PLATFORM/lib/tsgo"* >> "$SNAP/fingerprint.txt"
   for module in @octocodeai/octocode-native/runtime @octocodeai/config @octocodeai/octocode-core/mcp; do
     resolved="$(cd "$SNAP/octocode-mcp/dist" && node --input-type=module -e "console.log(import.meta.resolve('$module'))")"
     case "$resolved" in "file://$SNAP"/*) ;; *) echo "snapshot not used for $module ($resolved)" >&2; exit 2 ;; esac

@@ -615,8 +615,7 @@ impl ToolRuntime {
                 .is_some_and(|names| names.iter().any(|name| name == tool))
     }
 
-    /// MCP presentation switches (`mcp.*` config): the available tools served
-    /// only through the deferred-tool dispatcher.
+    /// Resolved presentation switches shared by MCP and CLI discovery.
     fn presentation(&self) -> Value {
         let mcp = &self.config.resolved.mcp;
         let deferred: Vec<&str> = ToolId::ALL
@@ -629,7 +628,11 @@ impl ToolRuntime {
                     && self.is_available(name)
             })
             .collect();
-        json!({ "deferred": deferred })
+        json!({
+            "deferred": deferred,
+            "ranking": self.config.resolved.ranking.enabled
+                && self.is_available(CLASSIFICATION_TOOL.as_str()),
+        })
     }
 
     /// CLI `graph ingest`: builds and publishes a code-graph snapshot under
@@ -990,6 +993,14 @@ impl ToolRuntime {
         // Parse response-paging options before contract validation.
         let mut options = ResponsePageOptions::deserialize(&input).unwrap_or_default();
         options.render_text = Some(render_text);
+        let raw_explicit_sort = input["queries"]
+            .as_array()
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| row.get("sort").is_some())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let (queries, rejected_rows) = self.admit_queries(id, &input)?;
         let response_query = if queries.len() == 1 {
             queries[0].clone()
@@ -1000,6 +1011,11 @@ impl ToolRuntime {
         // a continuation (which carries only admitted rows), else every input
         // position not rejected.
         let rejected_at: Vec<usize> = rejected_rows.iter().map(|(index, _)| *index).collect();
+        let explicit_sort = raw_explicit_sort
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, explicit)| (!rejected_at.contains(&index)).then_some(explicit))
+            .collect::<Vec<_>>();
         let marked = options
             .response_snapshot
             .as_deref()
@@ -1029,6 +1045,7 @@ impl ToolRuntime {
             mcp,
             options,
             queries,
+            explicit_sort,
             rejected_rows,
             row_indices,
             response_query,
@@ -1186,6 +1203,7 @@ impl ToolRuntime {
             local_views: self.local_views.clone(),
             lsp_execution_config: self.lsp_execution_config.clone(),
             available_tools: self.available_tools(),
+            clasify: self.clasify_settings(),
             artifact_cache: self.artifact_cache.clone(),
         }
     }
@@ -1242,6 +1260,8 @@ struct ChannelRun {
     mcp: bool,
     options: ResponsePageOptions,
     queries: Vec<Value>,
+    /// Raw caller intent before contract defaults fill `sort`.
+    explicit_sort: Vec<bool>,
     rejected_rows: Vec<(usize, Value)>,
     /// Original input index of each admitted row (`row_indices` module).
     row_indices: Vec<usize>,
@@ -1390,6 +1410,16 @@ impl ChannelRun {
             context,
             self.output.redact_emails,
         )?;
+        let mut response_query = self.response_query.clone();
+        crate::tools::ranking::apply_sanitized_rows(
+            self.id,
+            &mut structured,
+            &self.queries,
+            &self.row_indices,
+            &self.explicit_sort,
+            &mut response_query,
+            &self.dispatcher.ranking_runtime(context),
+        )?;
         crate::tools::clasify::handoff::attach(&mut structured, tool, &by_row);
         // An invalid continuation is a runtime defect: it fails loudly in
         // debug builds; otherwise finalize dropped it and marked its row,
@@ -1413,7 +1443,7 @@ impl ChannelRun {
             stored: std::time::Instant::now(),
             bytes: 0,
             structured: structured.clone(),
-            response_query: self.response_query.clone(),
+            response_query: response_query.clone(),
             failure,
             source_digest: source_digest.clone(),
         };
@@ -1437,7 +1467,7 @@ impl ChannelRun {
             })
             .unwrap_or_default();
         let seed = pageable.then(|| seed_of(&structured));
-        let stage = self.stage(structured, self.response_query.clone(), true);
+        let stage = self.stage(structured, response_query.clone(), true);
         let finished = stage::finish(
             stage::StageInput {
                 failure,
@@ -1450,7 +1480,7 @@ impl ChannelRun {
             && super::row_indices::is_paged(outcome)
         {
             let seed = seed_of(&body);
-            let stage = self.stage(body, self.response_query.clone(), true);
+            let stage = self.stage(body, response_query.clone(), true);
             let mut finished = stage::finish(
                 stage::StageInput {
                     failure,
@@ -1797,6 +1827,37 @@ mod construction_tests {
         }
         assert!(!runtime.is_available("localSearch"));
         assert!(!runtime.is_available("noSuchTool"));
+    }
+
+    #[test]
+    fn ranking_presentation_requires_config_and_available_classifier() {
+        let home = tempfile::tempdir().expect("home");
+        for (env, expected) in [
+            (vec![], false),
+            (vec![("OCTOCODE_RANKING_ENABLED", "true")], false),
+            (vec![("OCTOCODE_CLASSIFICATION_API", "fixture-key")], false),
+            (
+                vec![
+                    ("OCTOCODE_RANKING_ENABLED", "true"),
+                    ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
+                ],
+                true,
+            ),
+            (
+                vec![
+                    ("OCTOCODE_RANKING_ENABLED", "true"),
+                    ("OCTOCODE_CLASSIFICATION_API", "fixture-key"),
+                    ("DISABLE_TOOLS", "clasify"),
+                ],
+                false,
+            ),
+        ] {
+            let runtime = runtime(home.path(), &env);
+            assert_eq!(runtime.presentation()["ranking"], expected, "{env:?}");
+            // The startup provider probe narrows this same availability set.
+            *runtime.available_tools.write().expect("available tools") = Arc::from([]);
+            assert_eq!(runtime.presentation()["ranking"], false);
+        }
     }
 
     #[test]

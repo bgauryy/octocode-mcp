@@ -30,7 +30,16 @@ pub const GAP: &str = "--\n";
 /// `ranges`, in order, with one line-omission marker between non-adjacent
 /// windows. `None` when the content does not map onto the ranges.
 #[must_use]
+#[cfg(test)]
 fn number_lines(content: &str, ranges: &[(u64, u64)]) -> Option<String> {
+    number_lines_with_order(content, ranges, false)
+}
+
+fn number_lines_with_order(
+    content: &str,
+    ranges: &[(u64, u64)],
+    reordered: bool,
+) -> Option<String> {
     if ranges.is_empty() {
         return None;
     }
@@ -53,10 +62,10 @@ fn number_lines(content: &str, ranges: &[(u64, u64)]) -> Option<String> {
     let mut index = 0;
     let mut prev_end: Option<u64> = None;
     for &(start, end) in ranges {
-        if start < 1 || end < start || prev_end.is_some_and(|prev| start <= prev) {
+        if start < 1 || end < start || (!reordered && prev_end.is_some_and(|prev| start <= prev)) {
             return None;
         }
-        if prev_end.is_some_and(|prev| start > prev + 1)
+        if (reordered || prev_end.is_some_and(|prev| start > prev + 1))
             && records
                 .get(index)
                 .is_some_and(|record| omission_span(record).is_some())
@@ -161,10 +170,40 @@ pub fn numbered_view(data: &Value) -> Option<String> {
         return None;
     }
     let content = data.get("content").and_then(Value::as_str)?;
+    let reordered = ranked_read(data);
     match data.get("sourceLineRanges").and_then(ranges_of) {
-        Some(ranges) => number_lines(content, &ranges),
-        None => is_numbered(content).then(|| content.to_owned()),
+        Some(ranges) => number_lines_with_order(content, &ranges, reordered),
+        None => (is_numbered(content) || (reordered && is_numbered_reordered(content)))
+            .then(|| content.to_owned()),
     }
+}
+
+fn ranked_read(data: &Value) -> bool {
+    matches!(
+        data.pointer("/ranking/status").and_then(Value::as_str),
+        Some("ranked" | "partial")
+    )
+}
+
+fn is_numbered_reordered(content: &str) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    let mut count = 0;
+    for record in content.split_inclusive('\n') {
+        if record.trim_end_matches(['\n', '\r']) == GAP.trim_end() {
+            continue;
+        }
+        let Some(line) = record
+            .split_once(SEPARATOR)
+            .and_then(|(number, _)| number.parse::<u64>().ok())
+        else {
+            return false;
+        };
+        if line == 0 || !seen.insert(line) {
+            return false;
+        }
+        count += 1;
+    }
+    count > 0
 }
 
 /// Number one file-read row in place. The numbers state the source range, so
@@ -177,13 +216,19 @@ fn number_file_row(data: &mut Value) -> bool {
     let Some(map) = data.as_object_mut() else {
         return false;
     };
+    let reordered = matches!(
+        map.get("ranking")
+            .and_then(|rank| rank.get("status"))
+            .and_then(Value::as_str),
+        Some("ranked" | "partial")
+    );
     let Some(ranges) = map.get("sourceLineRanges").and_then(ranges_of) else {
         return false;
     };
     let Some(numbered) = map
         .get("content")
         .and_then(Value::as_str)
-        .and_then(|content| number_lines(content, &ranges))
+        .and_then(|content| number_lines_with_order(content, &ranges, reordered))
     else {
         return false;
     };
@@ -653,5 +698,21 @@ mod tests {
         let mut other = local.clone();
         number_read_rows(ToolId::LocalSearch, &mut other);
         assert_eq!(other, local);
+    }
+
+    #[test]
+    fn ranked_read_numbers_backwards_source_windows_and_keeps_gap_markers() {
+        let mut response = serde_json::json!({"results":[{"data":{
+            "content":"late\n... [lines 8-9 not requested] ...\nearlier\n",
+            "sourceLineRanges":[{"line":10,"endLine":10},{"line":3,"endLine":3}],
+            "ranking":{"status":"ranked","rankedItems":2,"totalItems":2}
+        }}]});
+        number_read_rows(ToolId::LocalFetch, &mut response);
+        let data = &response["results"][0]["data"];
+        assert_eq!(data["content"], "10\tlate\n--\n3\tearlier\n");
+        assert_eq!(
+            numbered_view(data).as_deref(),
+            Some("10\tlate\n--\n3\tearlier\n")
+        );
     }
 }

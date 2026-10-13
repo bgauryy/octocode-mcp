@@ -42,6 +42,7 @@ const SHUTDOWN_WAIT_MS = 6_000;
 
 type Outcome = Awaited<ReturnType<typeof runSubagent>>;
 type AgentUpdate = (update: { content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }>; details: RunDetails }) => void;
+interface LingeringRun { until: number; run: Run; ctx: ExtensionContext; timer?: NodeJS.Timeout }
 
 /** An isolated run's private worktree; `finish` commits its changes to the agent's ref and removes it, once, and returns the text for the report. */
 class Isolation {
@@ -203,7 +204,11 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   pi.on('tool_result', async (event, ctx) => void (!event.isError && background.size > 0 && runs.read.observe(event.toolName, event.input, ctx.cwd)));
   const panel = new AgentsView(team);
   // Finished background runs still reachable (OCTOCODE_SUBAGENT_LINGER_SECONDS): a message resumes their saved conversation.
-  const lingering = new Map<string, { until: number; run: Run; ctx: ExtensionContext }>();
+  const lingering = new Map<string, LingeringRun>();
+  const forgetLinger = (id: string): boolean => {
+    clearTimeout(lingering.get(id)?.timer);
+    return lingering.delete(id);
+  };
   const resuming = new Set<string>();
   let launching = new AbortController();
   const cancelLaunches = () => {
@@ -214,10 +219,25 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   const savedSession = (run: Run, eligible: boolean) =>
     eligible && lingerSeconds() > 0 && run.identity.scratch ? { dir: path.join(run.identity.scratch, 'session'), id: run.identity.id } : undefined;
   /** Called when the run reported: it stays reachable for the window, and the report says so. */
-  const lingerFor = (run: Run, ctx: ExtensionContext) => (): string => {
-    const seconds = lingerSeconds();
-    lingering.set(run.identity.id, { until: Date.now() + seconds * 1000, run, ctx });
-    return `\n\n${run.identity.id} stays reachable for ${seconds} s: \`sendMessage\` to it continues this conversation; \`coordinate stop ${run.identity.id}\` ends that.`;
+  const lingerFor = (run: Run, ctx: ExtensionContext) => {
+    const session = runs.session;
+    return (): string => {
+      const seconds = lingerSeconds();
+      if (session !== runs.session || seconds === 0) return '';
+      const id = run.identity.id;
+      forgetLinger(id);
+      const entry: LingeringRun = { until: Date.now() + seconds * 1000, run, ctx };
+      lingering.set(id, entry);
+      // Release the saved context when the window ends, even if nobody messages this name again.
+      const expire = () => {
+        const remaining = entry.until - Date.now();
+        if (remaining <= 0) { forgetLinger(id); return; }
+        entry.timer = setTimeout(expire, Math.min(remaining, 2_147_483_647));
+        entry.timer.unref();
+      };
+      expire();
+      return `\n\n${id} stays reachable for ${seconds} s: \`sendMessage\` to it continues this conversation; \`coordinate stop ${id}\` ends that.`;
+    };
   };
   const stopAll = async (by = 'session shutdown'): Promise<void> => {
     // Wait (bounded) for stopped children to file their reports; a named stop files them without starting a turn.
@@ -236,7 +256,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     await stopAll();
     // A child still closing keeps its entry (and its slot) until it exits; its report waits for this session's next start.
     runs.session += 1;
-    lingering.clear();
+    for (const id of lingering.keys()) forgetLinger(id);
     panel.stop(ctx);
   });
   // Worktrees left by a Pi process that died: their changes are saved to the agent's ref, then the worktree goes (kept when saving fails).
@@ -277,7 +297,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       launchSignal.throwIfAborted();
       const goal = checkGoal(params.goal);
       // The spawn ask first (claimRun refuses an unknown profile): a denied spawn claims and starts nothing.
-      const grants = params.profile && !getProfiles().has(params.profile) ? [] : await askSpawn(permission, ctx, getProfiles().get(params.profile ?? ''), params.task, launchSignal);
+      const grants = params.profile && !getProfiles().has(params.profile) ? [] : await askSpawn(permission, ctx, getProfiles().get(params.profile ?? ''), params.task, launchSignal, pi.getSettings().defaultTools);
       // An isolated run's name must not repeat a saved ref: `/agents merge <name>` would be ambiguous.
       const refs = params.isolate ? await pendingRefs(ctx.cwd) : [];
       launchSignal.throwIfAborted();
@@ -318,8 +338,8 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   const resume = async (id: string, text: string, from: string, signal?: AbortSignal): Promise<string | undefined> => {
     const prior = lingering.get(id);
     if (!prior || (from !== prior.run.identity.parentId && from !== USER_SENDER)) return undefined;
-    if (Date.now() > prior.until) {
-      lingering.delete(id);
+    if (Date.now() >= prior.until) {
+      forgetLinger(id);
       return undefined;
     }
     if (resuming.has(id)) throw new Error(`${id} is already awaiting permission to resume.`);
@@ -330,7 +350,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
     resuming.add(id);
     let run: Run | undefined;
     try {
-      const grants = await askSpawn(permission, ctx, getProfiles().get(params.profile ?? ''), text, launchSignal);
+      const grants = await askSpawn(permission, ctx, getProfiles().get(params.profile ?? ''), text, launchSignal, pi.getSettings().defaultTools);
       launchSignal.throwIfAborted();
       if (lingering.get(id) !== prior) throw new Error(`Subagent ${id} is no longer available to resume.`);
       // Keep the saved conversation and model, but renew authorization from the parent's current policy.
@@ -343,7 +363,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
       const resumed = run;
       const launch = (signal: AbortSignal) => runSubagent(args, ctx.cwd, resumed.profile, resumed.identity, signal, track(undefined));
       startBackground(runs, run, details, text, launch, () => Promise.resolve('').finally(resumed.release), ctx.sessionManager.getSessionId(), lingerFor(run, ctx));
-      lingering.delete(id);
+      forgetLinger(id);
     } catch (error) {
       run?.release();
       throw error;
@@ -355,7 +375,7 @@ export function registerAgentTool(pi: ExtensionAPI, getProfiles: () => Map<strin
   team.setResumer(resume);
   return {
     // A lingering run has nothing running: stopping it ends its window.
-    stop: (id, by) => (lingering.delete(id) ? undefined : stopBackground(background, id, by)),
+    stop: (id, by) => (forgetLinger(id) ? undefined : stopBackground(background, id, by)),
     // Reports still inside their batching window go out now: a held headless run hands them to its next turn.
     settle: () => Promise.all([...background.values()].map((entry) => entry.done)).then(() => runs.reports.flush()),
     background: () => background.size,

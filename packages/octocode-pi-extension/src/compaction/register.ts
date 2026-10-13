@@ -4,8 +4,9 @@ import { chooseSessionCacheRetention } from '../shared/env.js';
 import { readPaths } from '../shared/home.js';
 import { saveContentCopy } from '../shared/spill.js';
 import { cutText, elisionMarkers, isRecord } from '../shared/util.js';
-import { contextChars, hasImage, imageChars, imageNote, isRequestTooLarge, keptImageResults, parts, saveImages, texts, withoutImages, type ContextEntry } from './images.js';
+import { contextChars, contextTokenChars, hasImage, imageChars, imageNote, imageTokenChars, isRequestTooLarge, keptImageResults, parts, saveImages, texts, withoutImages, type ContextEntry } from './images.js';
 import { PromptCacheLifetimes, promptCacheTtlMs, warmingDecision } from './cache.js';
+import { CacheWarmObservation } from './cache-warm.js';
 import { recentWindowChars, trimValue, trimsDue, type TrimBatch } from './policy.js';
 import { TooLargeRecovery } from './recovery.js';
 
@@ -51,8 +52,9 @@ const ARG_KEEP_CHARS = 160;
 /** A call counts as a candidate only when shrinking it saves at least this much. */
 const ARGS_MIN_SAVED_CHARS = 1_000;
 
-/** The request time of a turn's assistant message (Pi stamps it when the request starts). */
+/** Successful reply's request time (Pi stamps it at request start); failed attempts do not prove a cache refresh. */
 function requestTime(message: unknown): number | undefined {
+  if (isRecord(message) && (message['stopReason'] === 'error' || message['stopReason'] === 'aborted')) return undefined;
   return isRecord(message) && message['role'] === 'assistant' && typeof message['timestamp'] === 'number' ? message['timestamp'] : undefined;
 }
 
@@ -67,13 +69,10 @@ const KEEP_VERBATIM_TOOLS = new Set(['agent', 'askUser']);
 export type TrimMemo = Map<string, false | { saved: number }>;
 
 /**
- * Plan append-only context edits that shrink old, large tool results and the
- * large arguments of old successful tool calls (a written file's content, edit
- * texts: the result is on disk). Pi keeps the raw entries in the session; only
- * future model context changes. The recent window is bounded by count and size; a batch must clear the floor and,
- * given `net` (the policy's value, `batchNet`), only the batch worth most runs: an edit rewrites the cached prompt from
- * its position on, so on a warm cache a batch of the newest candidates can pay where one reaching back cannot. Calls
- * whose result failed keep their arguments, so the model can still see what it sent.
+ * Append-only edits shrink old tool results and successful calls' large arguments; Pi retains the raw entries.
+ * The recent window is bounded by count and size. Batches must clear the floor; with `net`, the highest-value batch
+ * wins. An edit rewrites the cache from its position onward, so a newer suffix may pay where the whole batch cannot.
+ * Failed calls keep their arguments so the model can see what it sent.
  */
 export function planContextTrims(
   entries: ContextEntry[],
@@ -118,9 +117,9 @@ export function planContextTrims(
   for (const id of memo.keys()) if (!present.has(id)) memo.delete(id);
   const position = new Map(entries.map((entry, index) => [entry.id, index]));
   const items = [
-    ...candidates.map((entry) => ({ entry, saved: resultChars(entry.message) - TRIM_KEEP_CHARS })),
-    ...oldImages.map((entry) => ({ entry, saved: imageChars(entry.message, IMAGE_CHARS) })),
-    ...calls.map((call) => ({ entry: call.entry, saved: call.saved })),
+    ...candidates.map((entry) => ({ entry, saved: resultChars(entry.message) - TRIM_KEEP_CHARS, tokenChars: contextTokenChars([entry]) - TRIM_KEEP_CHARS })),
+    ...oldImages.map((entry) => ({ entry, saved: imageChars(entry.message, IMAGE_CHARS), tokenChars: imageTokenChars(entry.message) })),
+    ...calls.map((call) => ({ entry: call.entry, saved: call.saved, tokenChars: call.saved })),
   ].sort((a, b) => position.get(b.entry.id)! - position.get(a.entry.id)!);
   const start = chooseBatchStart(entries, items, position, options.net);
   if (start === undefined) return [];
@@ -146,18 +145,23 @@ export function planContextTrims(
  * (newest first in `items`); one clears the floor when it saves TRIM_MIN_SAVED_CHARS, or TRIM_STEP_MIN_SAVED_CHARS
  * over at least TRIM_STEP items. Without `net` the whole set is taken; with it, the start of greatest positive value.
  */
-function chooseBatchStart(entries: ContextEntry[], items: Array<{ entry: ContextEntry; saved: number }>, position: Map<string, number>, net?: (batch: TrimBatch) => number): number | undefined {
+function chooseBatchStart(
+  entries: ContextEntry[], items: Array<{ entry: ContextEntry; saved: number; tokenChars: number }>,
+  position: Map<string, number>, net?: (batch: TrimBatch) => number,
+): number | undefined {
   const tail: number[] = new Array<number>(entries.length + 1).fill(0);
-  for (let index = entries.length - 1; index >= 0; index--) tail[index] = tail[index + 1]! + contextChars([entries[index]!]);
+  for (let index = entries.length - 1; index >= 0; index--) tail[index] = tail[index + 1]! + contextTokenChars([entries[index]!]);
   let best: { start: number; value: number } | undefined;
   let saved = 0;
+  let tokenChars = 0;
   items.forEach((item, count) => {
     saved += item.saved;
+    tokenChars += item.tokenChars;
     const start = position.get(item.entry.id)!;
     const next = items[count + 1];
     if (next && position.get(next.entry.id) === start) return;
     if (saved < TRIM_MIN_SAVED_CHARS && (count + 1 < TRIM_STEP || saved < TRIM_STEP_MIN_SAVED_CHARS)) return;
-    const value = net ? net({ savedChars: saved, rewriteChars: tail[start]! }) : saved;
+    const value = net ? net({ savedChars: tokenChars, rewriteChars: tail[start]! }) : saved;
     if (value > 0 && (!best || value >= best.value)) best = { start, value };
   });
   return best?.start;
@@ -312,15 +316,13 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
   const memo: TrimMemo = new Map();
   let memoSession: string | undefined;
   const forget = () => memo.clear();
-  // When the cached prompt was last written: each request, and each refresh Pi sends to keep it warm (by default
-  // while a run is active, at 90% of the lifetime).
-  let refreshed: number | undefined;
+  const warms = new CacheWarmObservation();
   const tooLarge = new TooLargeRecovery();
   const lifetimes = new PromptCacheLifetimes();
   pi.on('cache_warming_decision', async (event, ctx) => {
-    const decision = warmingDecision(event, ctx, promptCacheTtlMs(lifetimes.of(ctx.model)));
-    if ((decision?.action ?? event.action) === 'warm') refreshed = Date.now();
-    return decision;
+    // A later extension may change this decision. Only Pi's successful usage entry confirms it ran.
+    warms.begin(ctx);
+    return warmingDecision(event, ctx, promptCacheTtlMs(lifetimes.of(ctx.model)));
   });
   pi.on('turn_end', async (event, ctx) => {
     lifetimes.observe(pi, ctx, event.message);
@@ -330,6 +332,7 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
       memoSession = session;
       tooLarge.reset();
     }
+    warms.observe(ctx);
     const entries = event.context.contextEntries.flatMap((entry) =>
       entry.sourceEntry.type === 'message' && entry.messages.length === 1 ? [{ id: entry.sourceEntry.id, message: entry.messages[0] }] : [],
     );
@@ -339,11 +342,9 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
       return { entries: [...event.entries, ...recovery] };
     }
     if (isRequestTooLarge(event.message)) return undefined;
-    const at = requestTime(event.message);
-    // A refresh Pi sent during this turn's tool calls is newer than the request that started it.
-    if (at !== undefined && (refreshed === undefined || at > refreshed)) refreshed = at;
+    warms.record(requestTime(event.message));
     const usage = ctx.getContextUsage();
-    const due = trimsDue({ written: refreshed, ttlMs: promptCacheTtlMs(lifetimes.of(ctx.model)) }, usage?.percent, Date.now(), contextChars(entries));
+    const due = trimsDue({ written: warms.written, ttlMs: promptCacheTtlMs(lifetimes.of(ctx.model)) }, usage?.percent, Date.now(), contextChars(entries));
     // A cold cache or real pressure makes any batch free; on a warm cache only a batch that pays for its rewrite runs.
     const settings = pi.getSettings();
     const net = trimValue({ due, model: ctx.model, entries, usage, settings });
@@ -353,7 +354,6 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
     return { entries: [...event.entries, ...trims] };
   });
   pi.on('agent_before_settle', async (event) => (tooLarge.shouldRetry(event.outcome) ? { continue: true } : undefined));
-
   // Pi writes the summary (the user's model, prompt, auth and retry policy); Octocode only adds the paths its `file`
   // tool changed to the file lists Pi appends and carries forward, which know only Pi's read/write/edit.
   pi.on('session_before_compact', async (event) => {
@@ -368,15 +368,19 @@ export function registerCompaction(pi: ExtensionAPI, guard: FileGuard): void {
     chooseSessionCacheRetention(ctx.hasUI);
     forget();
     tooLarge.reset();
+    warms.reset();
   });
+  pi.on('model_select', async () => warms.reset());
   pi.on('before_agent_start', async (_event, ctx) => void chooseSessionCacheRetention(ctx.hasUI));
   pi.on('session_compact', async () => {
     forget();
+    warms.reset();
     guard.reset();
   });
   pi.on('session_tree', async () => {
     forget();
     tooLarge.reset();
+    warms.reset();
     guard.reset();
   });
 }

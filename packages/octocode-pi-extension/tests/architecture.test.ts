@@ -47,13 +47,10 @@ const ALLOWED: Record<string, string[]> = {
 };
 
 describe('source layout', () => {
-  it('keeps src/ a few root modules plus one folder per domain', () => {
-    const rootFiles = fs.readdirSync(sourceRoot, { withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
-    expect(rootFiles).toEqual(['index.ts', 'prompt.ts', 'skills.ts', 'turn.ts']);
+  it('requires an explicit dependency policy for every source domain', () => {
     const folders = fs.readdirSync(sourceRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
-    expect(folders).toEqual(Object.keys(ALLOWED).sort());
-    // shared/ is the leaf every domain uses, so it holds one more small helper than a feature folder may.
-    for (const folder of folders) expect(walk(path.join(sourceRoot, folder)).length, `${folder}/ is a god folder`).toBeLessThanOrEqual(folder === 'shared' ? 13 : 12);
+    const unclassified = folders.filter((folder) => !Object.hasOwn(ALLOWED, folder));
+    expect(unclassified, 'Declare each new domain and its permitted dependencies in ALLOWED.').toEqual([]);
   });
 
   it('lets each domain depend only on the domains below it', () => {

@@ -130,6 +130,34 @@ fn candidates_past_page(state: &Value) -> Option<u64> {
     Some(count("totalItems")?.saturating_sub(seen))
 }
 
+/// Hydration judged the current files' source text, so another match window
+/// of those same files would repeat that work. Advance to the next file page
+/// using the same admitted transition as public localSearch. Its inner-page
+/// continuation carries the pinned snapshot and ranking plan to copy.
+fn hydrated_search_next(state: &Value, receipt: &Value) -> Option<Value> {
+    if let Some(next) = crate::tools::clasify::context::continuation_named(receipt, "nextPage") {
+        return Some(next);
+    }
+    let pagination = state.pointer("/results/0/data/pagination")?;
+    let page = pagination.get("currentPage")?.as_u64()?;
+    let total = pagination.get("totalPages")?.as_u64()?;
+    if page >= total {
+        return None;
+    }
+    let page = u32::try_from(page).ok()?;
+    let mut next = crate::tools::clasify::context::continuation_named(receipt, "nextMatchPage")?;
+    let query = crate::tools::paging::admitted_query(
+        crate::tools::id::ToolId::LocalSearch,
+        None,
+        next.get("query")?,
+        "page",
+        page,
+        &[("matchPage", 1)],
+    )?;
+    next["query"] = query;
+    Some(next)
+}
+
 /// The bounds every delegated read of one resource shares.
 pub(super) struct Reader<'a> {
     dispatcher: &'a DomainDispatcher,
@@ -247,7 +275,7 @@ impl PageWalk<'_> {
     fn page(&mut self, state: Value, receipt: Option<Value>) -> Result<Step, ExecutionError> {
         if let Some(candidates) = positioned_search_candidates(&self.source, &state) {
             self.uncaptured = candidates_past_page(&state);
-            self.search_page(candidates, receipt)?;
+            self.search_page(candidates, &state, receipt)?;
             return Ok(Step::Done);
         }
         // The read is parsed once per page: whether it is an outline and how
@@ -291,16 +319,14 @@ impl PageWalk<'_> {
     fn search_page(
         &mut self,
         candidates: Vec<(usize, Value)>,
+        state: &Value,
         receipt: Option<Value>,
     ) -> Result<(), ExecutionError> {
         let left = self.remaining_chars();
         let mut next = if self.hydrated && tool_of(&self.source) == Some(ToolId::LocalSearch) {
-            crate::tools::clasify::context::continuation_named(
-                &receipt
-                    .clone()
-                    .unwrap_or_else(|| fallback_context(&self.source)),
-                "nextPage",
-            )
+            receipt
+                .as_ref()
+                .and_then(|receipt| hydrated_search_next(state, receipt))
         } else {
             receipt
                 .as_ref()
@@ -802,5 +828,27 @@ mod tests {
             json!({"startLine":1,"endLine":200,"totalLines":400})
         );
         assert!(matches!(pages[1], CapturedPage::Failed { .. }));
+    }
+
+    #[test]
+    fn hydrated_search_advances_outer_files_without_rejudging_inner_match_pages() {
+        let state = json!({"results":[{"data":{"pagination":{"currentPage":1,"totalPages":3}}}]});
+        let receipt = json!({"next":{"nextMatchPage":{"tool":"localSearch","query":{
+            "path":"/repo", "page":1, "matchPage":2,
+            "snapshot":"pinned", "ranking":"saved", "goals":["decide"]
+        }}}});
+        let next = hydrated_search_next(&state, &receipt).expect("outer continuation");
+        assert_eq!(next["query"]["page"], 2);
+        assert_eq!(next["query"]["matchPage"], 1);
+        assert_eq!(next["query"]["snapshot"], "pinned");
+        assert_eq!(next["query"]["ranking"], "saved");
+        assert_eq!(next["query"]["goals"], json!(["decide"]));
+        assert!(
+            hydrated_search_next(
+                &json!({"results":[{"data":{"pagination":{"currentPage":3,"totalPages":3}}}]}),
+                &receipt,
+            )
+            .is_none()
+        );
     }
 }

@@ -11,6 +11,7 @@ import { registerSessions, RESUME_MESSAGE_TYPE, RUNNING_WORK_TYPE } from '../src
 import { describeWork, unreportedWork, workList } from '../src/sessions/work.js';
 import { processStartTime } from '../src/shared/process.js';
 import { SessionIndex } from '../src/sessions/store.js';
+import * as sessionStore from '../src/sessions/store.js';
 import { vi } from 'vitest';
 import { fakeCtx, fakePi, rendered, theme } from './fake-pi.js';
 import { tmp } from './helpers.js';
@@ -142,6 +143,27 @@ describe('session extras', () => {
       if (savedAgentDir === undefined) delete process.env['PI_CODING_AGENT_DIR'];
       else process.env['PI_CODING_AGENT_DIR'] = savedAgentDir;
     }
+  });
+
+  it('ignores git results after shutdown and older results that finish last', async () => {
+    const requests: Array<(state: { branch: string }) => void> = [];
+    vi.spyOn(sessionStore, 'gitState').mockImplementation(() => new Promise((resolve) => requests.push(resolve)));
+    const host = setup();
+    await host.start();
+    await host.fire('agent_end', { type: 'agent_end' }, host.ctx);
+    requests[1]!({ branch: 'new' });
+    await Promise.resolve();
+    requests[0]!({ branch: 'old' });
+    await Promise.resolve();
+    expect(row(host.id)?.branch).toBe('new');
+    await host.fire('agent_end', { type: 'agent_end' }, host.ctx);
+    await host.fire('session_shutdown', { type: 'session_shutdown' }, host.ctx);
+    const write = vi.spyOn(SessionIndex.prototype, 'git');
+    Object.defineProperty(host.ctx, 'hasUI', { get: () => { throw new Error('stale Pi context'); } });
+    requests[2]!({ branch: 'closed' });
+    await Promise.resolve();
+    expect(write).not.toHaveBeenCalled();
+    expect(row(host.id)?.branch).toBe('new');
   });
 
   it('keeps no rows for a subagent and registers only the after-compaction running-work note', async () => {

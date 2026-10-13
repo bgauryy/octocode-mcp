@@ -13,7 +13,7 @@ import { stopTree } from '../shared/process.js';
 import { sanitizeTerminalText } from '../shared/sanitize.js';
 import { addUsage, contentText, emptyUsage, isRecord, toolHint } from '../shared/util.js';
 import { AGENT_COLLABORATE_ENV, AGENT_ID_ENV, AGENT_GOAL_ENV, AGENT_ROLE_ENV, AGENT_SCRATCH_ENV, PARENT_ID_ENV, PARENT_PID_ENV, TEAM_WORKSPACE_ENV } from '../team/store.js';
-import type { AgentProfile } from './profiles.js';
+import { profileExcludes, type AgentProfile } from './profiles.js';
 import { imagesOf } from './screenshots.js';
 import { ReportTracker } from './report.js';
 
@@ -119,18 +119,12 @@ export function buildAgentArgs(
   // preference is routed by `routeModel` before this, so an unavailable one never reaches Pi.
   if (model) args.push('--model', model);
   if (profile?.tools) args.push('--tools', profile.tools);
-  if (profile?.excludeTools) args.push('--exclude-tools', expandExcludes(profile.excludeTools));
+  if (profile?.excludeTools) args.push('--exclude-tools', profileExcludes(profile.excludeTools).join(','));
   if (profile?.prompt) args.push('--append-system-prompt', promptFile(profile.prompt, promptDir ?? sessionOutputDir('output')));
   // `--` stops Pi's flag parsing, so a task starting with `-` stays the message; Pi still reads a positional `@path`
   // after `--` as a file to attach, so a leading `@` gets a space in front.
   args.push('--', task.startsWith('@') ? ` ${task}` : task);
   return args;
-}
-
-/** Excluding `file` makes a profile read-only, so Pi's own edit and write must go too. */
-function expandExcludes(excludeTools: string): string {
-  const names = excludeTools.split(',').map((name) => name.trim()).filter(Boolean);
-  return [...new Set(names.includes('file') ? [...names, 'edit', 'write'] : names)].join(',');
 }
 
 /** How long a cancelled subagent gets to exit after SIGTERM before it is killed. */
@@ -228,6 +222,7 @@ export function runSubagent(
     let toolsRunning = 0;
     let settling = false;
     let stalled: Error | undefined;
+    let cancelled = false;
     const watchdog = Number.isFinite(limits.idleMs) || Number.isFinite(limits.maxMs)
       ? setInterval(() => {
         if (streamFailure || stalled) return;
@@ -254,6 +249,12 @@ export function runSubagent(
       if (!event) return;
       // Calls a tool makes itself (a codemode script) are part of that call, not activity of their own.
       if (event['parentToolCallId']) return;
+      if (event['type'] === 'agent_settled') {
+        // Pi can abort after a normal reply or between tools without an aborted assistant message.
+        // A watchdog stopping shutdown after an answer still preserves that completed report.
+        cancelled = event['aborted'] === true && !stalled;
+        return;
+      }
       if (event['type'] === 'tool_execution_start') {
         toolsRunning++;
         settling = false;
@@ -344,7 +345,10 @@ export function runSubagent(
         const last = finalText ? `\nLast progress: ${sanitizeTerminalText(finalText).trim().slice(0, 500)}` : '';
         reject(new Error(`Subagent ${exitReason(code, exitSignal)}: ${sanitizeTerminalText(stderr).trim() || 'no output'}${last}`));
       }
-      else resolve({ text: sanitizeTerminalText(finalText), usage, ...(error ? { error: sanitizeTerminalText(error) } : {}) });
+      else {
+        const failure = cancelled ? 'Subagent cancelled before its run settled' : error;
+        resolve({ text: sanitizeTerminalText(finalText), usage, ...(failure ? { error: sanitizeTerminalText(failure) } : {}) });
+      }
     };
     // Install cleanup before invoking a callback that can fail (for example, recording worktree ownership).
     try {

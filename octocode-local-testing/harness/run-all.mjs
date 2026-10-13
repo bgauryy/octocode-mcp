@@ -36,10 +36,12 @@ const HERMETIC = {
   'repo-sweep': script('repo-sweep'),
   'deps-flows': script('deps-flows'),
   'large-files': script('large-files'),
+  'local-ranking': script('local-ranking'),
+  'read-tool-ranking': script('read-tool-ranking'),
   'tool-health': script('tool-health'),
 };
 const LIVE_SUITES = { remote: script('remote'), github: script('github'), 'review-large': script('review-large'), artifacts: script('artifacts'), clasify: script('clasify') };
-const BENCH = { perf: script('perf'), competitors: script('competitors'), kpi: script('kpi'), soak: script('soak') };
+const BENCH = { perf: script('perf'), competitors: script('competitors'), kpi: script('kpi'), soak: script('soak'), 'ranking-impact': script('read-tool-ranking-impact') };
 const ALL = { ...HERMETIC, ...LIVE_SUITES, ...BENCH };
 
 const named = process.argv[2]?.split(',');

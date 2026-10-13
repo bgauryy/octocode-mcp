@@ -14,11 +14,14 @@
 set -euo pipefail
 mkdir -p "$1"; CAMP="$(cd "$1" && pwd)"   # absolute: runners and MCP servers start elsewhere
 ARMS="$2"; PASSES="${3:-1}"; QRANGE="${4:-1-30}"; JOBS="${5:-4}"
+[ "$JOBS" -ge 1 ] && [ "$JOBS" -le 4 ] || { echo "jobs must be 1–4" >&2; exit 2; }
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../../../.." && pwd)"
-if [[ ",$ARMS," == *",mcp"* ]] && [ -z "${OCTO_MCP_CMD:-}" ]; then
+if [[ ",$ARMS," == *",mcp"* || ",$ARMS," == *",local-mcp"* ]] && [ -z "${OCTO_MCP_CMD:-}" ]; then
   export OCTO_MCP_CMD="$("$HERE/snapshot_build.sh" "$CAMP/build")"
 fi
+export BENCH_RATE_LIMIT_DIR="$CAMP/state/ratelimit"
+mkdir -p "$BENCH_RATE_LIMIT_DIR"
 FIRST="${QRANGE%-*}"; LAST="${QRANGE#*-}"
 
 for p in $(seq 1 "$PASSES"); do

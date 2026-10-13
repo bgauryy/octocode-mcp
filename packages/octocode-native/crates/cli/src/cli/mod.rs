@@ -285,6 +285,7 @@ fn compact_tool_catalog(
                     }
                     let fields = presentation_tools
                         .and_then(|tools| tools.iter().find(|candidate| candidate["name"] == name))
+                        .map(|tool| schema::configured_tool(tool, catalog))
                         .and_then(|tool| tool["fields"].as_str())
                         .unwrap_or("[]");
                     json!({
@@ -299,6 +300,7 @@ fn compact_tool_catalog(
     json!({
         "fingerprint": catalog["fingerprint"],
         "grammarCapabilities": catalog["grammarCapabilities"],
+        "presentation": catalog["presentation"],
         "tools": tools
     })
 }

@@ -17,6 +17,11 @@ export class Inbox {
   /** Seen by the model, not yet recorded (the database was busy): recorded on the next tick. */
   private readonly seenIds = new Set<number>();
 
+  /** Only newly handed mail needs a context scan; earlier conversation mail is already accounted for. */
+  get awaitingContext(): boolean {
+    return this.unseen.size > 0;
+  }
+
   /** Forgets everything (the agent left); with the database, first records what the model saw, if it can. */
   reset(db?: TeamStore, id?: string): void {
     try {
@@ -34,6 +39,7 @@ export class Inbox {
     this.record(db, id);
     if (db.waiting(id, this.handed) === 0) return;
     const batch = db.pending(id, this.handed);
+    if (batch.length === 0) return; // Another process can remove the recipient between the two reads.
     const before = this.handed;
     // Marked first: Pi may call the model with the batch, and report it seen, before `send` returns.
     this.handed = batch.at(-1)!.id;

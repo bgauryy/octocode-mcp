@@ -390,6 +390,7 @@ pub struct LocalFetchResult {
     pub resource_missing: bool,
     pub source_sha256: Option<String>,
     pub content: Option<String>,
+    pub ranking: Option<crate::contracts::tool_types::Ranking>,
     pub content_view: Option<MinifyMode>,
     pub minify_fallback: Option<MinifyFallback>,
     pub error_code: Option<String>,
@@ -432,6 +433,7 @@ impl LocalFetchResult {
             resource_missing: false,
             source_sha256: None,
             content: None,
+            ranking: None,
             content_view: None,
             minify_fallback: None,
             error_code: None,
@@ -630,6 +632,7 @@ impl Serialize for LocalFetchResult {
             map.serialize_entry("path", &self.path)?;
         }
         opt(&mut map, "content", &self.content)?;
+        opt(&mut map, "ranking", &self.ranking)?;
         // `none` is the default view; only a transformed view is news (a
         // tool with another default clears its own before this).
         opt(

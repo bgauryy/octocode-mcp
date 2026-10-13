@@ -4,7 +4,6 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeSharedAgentDb, openAgentDb, sharedAgentDb, type AgentDb } from '../src/agentdb/db.js';
 import { boardRows, showBoard } from '../src/backlog/board.js';
-import { doItPrompt } from '../src/backlog/command.js';
 import { registerBacklog } from '../src/backlog/index.js';
 import { countsText } from '../src/backlog/format.js';
 import { BacklogError, BacklogStore, parseRef } from '../src/backlog/store.js';
@@ -445,10 +444,17 @@ describe('/octocode backlog', () => {
 
   it('"do" marks the item ongoing and sends it to the agent, as a follow-up while busy', async () => {
     const t = setup();
-    storeFor(fs.realpathSync(t.cwd)).add({ title: 'Fix login', body: 'The form hangs.', state: 'todo', createdBy: 'user' });
+    storeFor(fs.realpathSync(t.cwd)).add({ title: 'Fix login', goal: 'Login submits without freezing; focused tests pass.', body: 'The form hangs.', state: 'todo', createdBy: 'user' });
     await t.command.handler('do B1', fakeCtx({ cwd: t.cwd, hasUI: false }));
-    expect(t.sent.at(-1)).toEqual({ message: doItPrompt(storeFor(fs.realpathSync(t.cwd)).get('B1')!), options: undefined });
-    expect(t.sent.at(-1)!.message).toBe('Work on backlog item B1: Fix login\n\nThe form hangs.\n\nAdd follow-ups you leave for later with from: B1. When finished, mark it done with the backlog tool (note what changed and how it was verified).');
+    const sent = t.sent.at(-1)!;
+    expect(sent.options).toBeUndefined();
+    expect(sent.message).toContain('Work on backlog item B1: Fix login');
+    expect(sent.message).toContain('Goal: Login submits without freezing; focused tests pass.');
+    expect(sent.message).toContain('The form hangs.');
+    expect(sent.message).toContain('from: B1');
+    expect(sent.message).toContain('Mark it done only after verifying its goal');
+    expect(sent.message).toContain('If blocked, record the blocker instead.');
+    expect(sent.message).toContain('Follow existing permissions');
     expect(storeFor(fs.realpathSync(t.cwd)).get('B1')).toMatchObject({ state: 'ongoing', assignee: 'session-test' });
     await t.command.handler('do B1', fakeCtx({ cwd: t.cwd, hasUI: false, idle: false }));
     expect(t.sent.at(-1)!.options).toEqual({ deliverAs: 'followUp' });
@@ -457,7 +463,7 @@ describe('/octocode backlog', () => {
   it('falls back to select lists without a custom component: actions, move, priority, delegate, delete', async () => {
     const t = setup();
     const store = storeFor(fs.realpathSync(t.cwd));
-    store.add({ title: 'first', state: 'todo', createdBy: 'user' });
+    store.add({ title: 'first', goal: 'The selected action changes the item and repaints the board.', state: 'todo', createdBy: 'user' });
     const rpc = (selects: Array<string | undefined>, confirms: boolean[] = []) => fakeCtx({ cwd: t.cwd, mode: 'rpc', ui: { selects, confirms } });
     await t.command.handler('', rpc(['B1 [todo p2] first', 'Move to…', 'backlog', undefined]));
     expect(store.get('B1')!.state).toBe('backlog');
@@ -466,13 +472,38 @@ describe('/octocode backlog', () => {
     await t.command.handler('', rpc(['+ Add an item', undefined]));
     await t.command.handler('B1', rpc(['Delegate to a subagent']));
     expect(t.sent.at(-1)!.message).toMatch(/^Delegate backlog item B1 to a subagent with the agent tool: first/);
+    expect(t.sent.at(-1)!.message).toContain('Goal: The selected action changes the item and repaints the board.');
+    expect(t.sent.at(-1)!.message).toContain("in the subagent's task");
+    expect(t.sent.at(-1)!.message).toContain('Mark it done only after verifying its goal');
     expect(store.get('B1')!.state).toBe('ongoing');
     const edits = fakeCtx({ cwd: t.cwd, mode: 'rpc', ui: { selects: ['Edit'] } });
     Object.assign(edits.ui, { editor: async () => 'renamed\n\nnew body' });
     await t.command.handler('B1', edits);
     expect(store.get('B1')).toMatchObject({ title: 'renamed', body: 'new body' });
+    await t.command.handler('B1', rpc(['Delete'], [false]));
+    expect(store.get('B1')).toBeDefined();
     await t.command.handler('B1', rpc(['Delete'], [true]));
     expect(store.get('B1')).toBeUndefined();
+  });
+
+  it('rejects extra arguments before acting and completes the same item references that dispatch accepts', async () => {
+    const t = setup();
+    const store = storeFor(fs.realpathSync(t.cwd));
+    const before = store.add({ title: 'keep me', state: 'todo', createdBy: 'user' });
+    const ctx = fakeCtx({ cwd: t.cwd, mode: 'rpc' });
+    const confirm = vi.spyOn(ctx.ui, 'confirm');
+    for (const args of ['do B1 extra', 'export extra', 'B1 done extra', 'B1 delete extra', 'constructor', '__proto__']) {
+      await t.command.handler(args, ctx);
+      expect(ctx.ui.notes.at(-1)?.type).toBe('warning');
+      expect(store.get('B1')).toEqual(before);
+    }
+    expect(t.sent).toEqual([]);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(t.cwd, '.octocode', 'backlog.md'))).toBe(false);
+    expect(t.commands.complete('backlog #1 d')!.map((item) => item.value)).toEqual(['backlog #1 done', 'backlog #1 delete']);
+    await t.command.handler('#1 done', ctx);
+    expect(store.get('B1')?.state).toBe('done');
+    for (const syntax of ['add <title>', 'do <id>', 'export', 'backlog|todo|ongoing|done|delete']) expect(t.command.description).toContain(syntax);
   });
 
   it('shows the board, moves items with arrows, and "d" hands the selected item over', async () => {

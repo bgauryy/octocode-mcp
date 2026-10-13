@@ -1,4 +1,5 @@
-import type { ContextEditEntryDraft } from '@earendil-works/pi-coding-agent';
+import type { ImageContent } from '@earendil-works/pi-ai';
+import { estimateTokens, type ContextEditEntryDraft } from '@earendil-works/pi-coding-agent';
 import { saveContentCopy } from '../shared/spill.js';
 import { isRecord } from '../shared/util.js';
 
@@ -122,6 +123,12 @@ export function imageChars(message: unknown, least = 0): number {
   }, 0);
 }
 
+/** Pi's visual-token estimate in text-character units, independent of an image's base64 transport size. */
+export function imageTokenChars(message: unknown): number {
+  const content = parts(message).filter((part): part is ImageContent => isRecord(part) && part['type'] === 'image');
+  return estimateTokens({ role: 'user', content, timestamp: 0 }) * 4;
+}
+
 const length = (value: unknown) => (typeof value === 'string' ? value.length : 0);
 
 /** About the length of `value` as JSON (strings, keys and scalars; quotes and separators counted roughly), without serializing it. */
@@ -154,4 +161,9 @@ export function contextChars(entries: ContextEntry[]): number {
     if (isRecord(message) && typeof message['content'] === 'string') return sum + message['content'].length;
     return sum + parts(message).reduce<number>((total, part) => total + partChars(part), 0);
   }, 0);
+}
+
+/** Economic estimate: text stays in character units, while images use Pi's visual-token estimate instead of bytes. */
+export function contextTokenChars(entries: ContextEntry[]): number {
+  return contextChars(entries) + entries.reduce((sum, entry) => sum + imageTokenChars(entry.message) - imageChars(entry.message), 0);
 }

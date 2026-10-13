@@ -2,7 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { formatDuration } from '../src/shared/format.js';
-import { appKey, clip, durationOf, expandKey, plural, queryTarget, resultBlock, stopRowTimers, timed, timedTool, timingOf, toolHeader, type ToolRow } from '../src/shared/render.js';
+import { appKey, clip, expandKey, plural, queryTarget, resultBlock, stopRowTimers, timed, timedTool, timingOf, toolHeader, type ToolRow } from '../src/shared/render.js';
 import { recordCheck } from '../src/shared/locks.js';
 import { visibleWidth } from '@earendil-works/pi-tui';
 import { rendered, theme } from './fake-pi.js';
@@ -55,17 +55,18 @@ describe('toolHeader', () => {
     expect(context.state.timer).toBeDefined();
     vi.advanceTimersByTime(2_100);
     expect(context.invalidate).toHaveBeenCalledTimes(2);
-    const done = toolHeader(theme, { ...context, isPartial: false, lastComponent: header }, 'Bash', 'sleep 2');
+    const doneContext = { ...context, isPartial: false, durationMs: 1_900 };
+    const done = toolHeader(theme, { ...doneContext, lastComponent: header }, 'Bash', 'sleep 2');
     expect(done).toBe(header);
-    expect(rendered(done)).toBe('● Bash(sleep 2) · 2.1s');
+    expect(rendered(done)).toBe('● Bash(sleep 2) · 1.9s');
     expect(context.state.timer).toBeUndefined();
     vi.advanceTimersByTime(5_000);
     expect(context.invalidate).toHaveBeenCalledTimes(2);
-    expect(rendered(toolHeader(theme, { ...context, isPartial: false }, 'Bash', 'sleep 2'))).toBe('● Bash(sleep 2) · 2.1s');
+    expect(rendered(toolHeader(theme, doneContext, 'Bash', 'sleep 2'))).toBe('● Bash(sleep 2) · 1.9s');
   });
 
   it('marks errors with ✗ and clips to the width while keeping the time', () => {
-    const header = toolHeader(theme, row({ isPartial: false, isError: true }), 'Web', 'x'.repeat(100), { durationMs: 1_500, meta: 'bg' });
+    const header = toolHeader(theme, row({ isPartial: false, isError: true, durationMs: 1_500 }), 'Web', 'x'.repeat(100), { meta: 'bg' });
     const text = rendered(header, 40);
     expect(text.startsWith('✗ Web(xxx')).toBe(true);
     expect(text.endsWith(') · bg · 1.5s')).toBe(true);
@@ -77,16 +78,18 @@ describe('toolHeader', () => {
     expect(text).toBe('○ N(ab)\n  sub');
   });
 
-  it('picks up details.durationMs for a restored row and redraws once', async () => {
-    const context = row({ isPartial: false });
-    expect(rendered(toolHeader(theme, context, 'Read', 'a.ts'))).toBe('● Read(a.ts)');
-    resultBlock(theme, context, { summary: 'Read 3 lines', durationMs: 42 });
-    await Promise.resolve();
-    expect(context.invalidate).toHaveBeenCalledTimes(1);
+  it('shows native duration immediately for restored rows without a result-driven redraw', async () => {
+    const context = row({ isPartial: false, durationMs: 42 });
     expect(rendered(toolHeader(theme, context, 'Read', 'a.ts'))).toBe('● Read(a.ts) · 42ms');
-    resultBlock(theme, context, { summary: 'Read 3 lines', durationMs: 42 });
+    resultBlock(theme, context, { summary: 'Read 3 lines' });
     await Promise.resolve();
-    expect(context.invalidate).toHaveBeenCalledTimes(1);
+    expect(context.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('does not invent completed durations when Pi has no recorded timing', () => {
+    const context = row({ isPartial: false, state: { startedAt: Date.now() - 5_000, durationMs: 42 } });
+    expect(rendered(toolHeader(theme, context, 'Read', 'a.ts'))).toBe('● Read(a.ts)');
+    expect(rendered(toolHeader(theme, { ...context, durationMs: 0 }, 'Read', 'a.ts'))).toBe('● Read(a.ts) · 0ms');
   });
 });
 
@@ -143,12 +146,11 @@ describe('resultBlock', () => {
 });
 
 describe('timed', () => {
-  it('adds durationMs to the details and keeps existing details', async () => {
-    const plain = await timed(async (): Promise<{ content: never[]; details?: unknown }> => ({ content: [] }))();
-    expect(durationOf(plain.details)).toBeGreaterThanOrEqual(0);
-    const merged = await timed(async (value: number) => ({ content: [], details: { value, durationMs: 7 } }))(3);
-    expect(merged.details).toEqual({ value: 3, durationMs: 7 });
-    expect(durationOf(undefined)).toBeUndefined();
+  it('leaves results untouched when no pre-run waits were recorded', async () => {
+    const plain = { content: [], details: undefined };
+    expect(await timed(async () => plain)()).toBe(plain);
+    const detailed = { content: [], details: { value: 3 } };
+    expect(await timed(async () => detailed)()).toBe(detailed);
   });
 
   it('lets errors propagate', async () => {
@@ -162,6 +164,7 @@ describe('timed', () => {
     expect(first.details.checkMs).toBe(400);
     expect(first.details.queuedMs).toBeGreaterThanOrEqual(300);
     expect(first.details['kept']).toBe(true);
+    expect(first.details).not.toHaveProperty('durationMs');
     const again = (await run('call-wait')) as unknown as { details: Record<string, unknown> };
     expect(again.details.checkMs).toBeUndefined();
     recordCheck('call-fast', 5);
@@ -172,14 +175,21 @@ describe('timed', () => {
 });
 
 describe('timingOf', () => {
-  it('reads duration and waits, and the header shows waits worth noting', () => {
+  it('reads only waits and combines them with Pi duration in the header', async () => {
     expect(timingOf(undefined)).toEqual({});
-    expect(timingOf({ durationMs: 12 })).toEqual({ durationMs: 12 });
+    expect(timingOf({ durationMs: 12 })).toEqual({});
     const timing = timingOf({ durationMs: 1200, checkMs: 3400, queuedMs: 150 });
-    expect(timing).toEqual({ durationMs: 1200, waits: 'checks 3.4s' });
-    const context = { state: {} as ToolRow, isPartial: false, executionStarted: true };
+    expect(timing).toEqual({ waits: 'checks 3.4s' });
+    const context = { state: {} as ToolRow, isPartial: false, executionStarted: true, durationMs: 900, invalidate: vi.fn() };
     resultBlock(theme, context, { summary: 'ok', ...timing });
+    await Promise.resolve();
+    expect(context.invalidate).toHaveBeenCalledOnce();
+    resultBlock(theme, context, { summary: 'ok', ...timing });
+    await Promise.resolve();
+    expect(context.invalidate).toHaveBeenCalledOnce();
     const header = rendered(toolHeader(theme, context, 'Tool', 'x'));
+    expect(header).toContain('900ms');
+    expect(header).not.toContain('1.2s');
     expect(header).toContain('checks 3.4s');
     expect(header).not.toContain('queued');
     const slowQueue = { state: {} as ToolRow, isPartial: false, executionStarted: true };
@@ -189,6 +199,32 @@ describe('timingOf', () => {
 });
 
 describe('timedTool', () => {
+  it('records the exclusive lock wait without adding an execution duration', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    let entered!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const tool = timedTool({
+      name: 't', label: 'T', description: '', parameters: {} as never,
+      execute: async (id) => {
+        if (id === 'holder') {
+          entered();
+          await held;
+        }
+        return { content: [], details: { id } };
+      },
+    }, { exclusive: true });
+    const first = tool.execute('holder', {} as never, undefined, undefined, {} as never);
+    await started;
+    recordCheck('waiter', 400);
+    const second = tool.execute('waiter', {} as never, undefined, undefined, {} as never);
+    await vi.advanceTimersByTimeAsync(300);
+    release();
+    const [, result] = await Promise.all([first, second]);
+    expect(result.details).toEqual({ id: 'waiter', checkMs: 400, queuedMs: 300 });
+  });
+
   it('is opt-in on timedTool and never sets the batch-wide sequential mode', async () => {
     let running = 0;
     let peak = 0;

@@ -101,6 +101,22 @@ describe('registerTurnSetup', () => {
     expect(fake.pi.getActiveTools()).toEqual(['read', 'bash', 'edit', 'write', 'file']);
   });
 
+  it('keeps browser available when the agent tool is disabled', () => {
+    const fake = fakePi();
+    for (const name of ['read', 'file', 'browser']) fake.tools.set(name, { name });
+    const turn = registerTurnSetup(fake.pi, {
+      isSubagent: false,
+      profiles: () => new Map([['browser', { name: 'browser', description: '', prompt: '', tools: 'read,browser' }]]),
+      octocode: fakeOctocode().mcp,
+    });
+    process.argv = ['node', 'pi'];
+    turn.settleTools();
+    expect(fake.pi.getActiveTools()).toContain('browser');
+    fake.tools.set('agent', { name: 'agent' });
+    turn.settleTools();
+    expect(fake.pi.getActiveTools()).not.toContain('browser');
+  });
+
   it('prefers Octocode MCP from the first turn once its server is connected, though its tools register after the snapshot', async () => {
     const { fake, state } = setup();
     // Pi snapshots selectedTools before before_agent_start; the extension's client connects (and registers) before it.

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createFauxCore, fauxAssistantMessage, fauxToolCall, getCurrentSystemPrompt, getCurrentTools, type TranscriptContext } from '@earendil-works/pi-ai';
 import { createAgentSession, createMcpExtension, createToolSearchExtension, DefaultResourceLoader, SessionManager, SettingsManager, type ExtensionFactory } from '@earendil-works/pi-coding-agent';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Mail } from '../src/team/mail.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENTRY = path.join(HERE, '..', process.env['OCTOCODE_E2E_ENTRY'] === 'dist' ? 'dist/index.js' : 'src/index.ts');
@@ -138,6 +139,11 @@ describe('with Octocode MCP (default)', () => {
 
   it('exposes MCP tools and Octocode guidance from the first request', async () => {
     const turn = (await s.run('hello', [say('ready')])).at(-1)!;
+    // Real Pi + the local MCP, before provider-specific encoding. Project context and user skills are disabled here.
+    // The separate prompt-size test guards only extension-owned prose/schemas, not this complete fixture prefix.
+    const fixedChars = turn.systemPrompt.length + JSON.stringify(turn.toolContracts).length;
+    console.log(`default Pi + Octocode prefix: ${fixedChars} chars (prompt ${turn.systemPrompt.length}, ${turn.tools.length} tools)`);
+    expect(fixedChars, 'default runtime prompt and declarations grew beyond their 5% headroom').toBeLessThan(43_500);
     expect(turn.tools).toContain('file');
     expect(turn.tools).toContain('read');
     expect(turn.tools).toContain('mcp__octocode__localFetch');
@@ -154,7 +160,22 @@ describe('with Octocode MCP (default)', () => {
     const next = (await s.run('continue', [say('ready')])).at(-1)!;
     expect(next.tools).toContain('mcp__octocode__localSearch');
     expect(next.systemPrompt).toBe(turn.systemPrompt);
+    expect(next.toolContracts).toEqual(turn.toolContracts);
   }, 60_000);
+
+  it('records passive team notices during streaming without an extra model request', async () => {
+    const mail = new Mail({ sendMessage: s.session.sendCustomMessage.bind(s.session) });
+    let requests = 0;
+    const unsubscribe = s.session.agent.subscribe((event) => { if (event.type === 'turn_start') requests++; });
+    try {
+      await s.run('finish this step', [() => {
+        expect(mail.notice('passive notice: earlier mail was not delivered')).toBe(true);
+        return fauxAssistantMessage('done');
+      }]);
+    } finally { unsubscribe(); }
+    expect(requests).toBe(1);
+    expect(JSON.stringify(s.session.sessionManager.getBranch())).toContain('passive notice: earlier mail was not delivered');
+  });
 
   it('researches through Octocode, reads with read, then edits, writes and deletes with batched file calls', async () => {
     const appPath = path.join(s.cwd, 'app.ts');

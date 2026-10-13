@@ -30,6 +30,10 @@ const SHARED_MODULES: &[(&str, &str)] = &[
     ("id", "tool identity and generated query limits"),
     ("leads", "follow-up queries one tool offers into another"),
     ("line_spans", "line-span arithmetic"),
+    (
+        "ranking",
+        "shared bounded relevance ordering for local search files and fetch windows",
+    ),
     ("match_keys", "JSON/TOML key matching"),
     ("module_boundaries", "this guard"),
     ("num", "numeric conversions"),

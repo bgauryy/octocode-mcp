@@ -13,7 +13,7 @@ The semantic check is conditional: use it when a judgment changes the next read.
 flowchart LR
   F[FRAME] --> C[CLASSIFY] --> M[MODEL] --> S{"SEMANTIC?"}
   M -- "known anchor" --> R
-  S -- "admitted" --> Q[clasify] --> R
+  S -- "admitted" --> Q[goals or clasify] --> R
   S -- "skip" --> R["SEARCH/READ"]
   R --> P[PROVE] --> D["DECIDE/PATCH"] --> V[VERIFY]
 ```
@@ -44,9 +44,9 @@ Scale depth to risk. End a lookup once the exact evidence answers it. Deletions,
 - Review: `APPROVE` only after applicable checks pass; `REQUEST_CHANGES` for a proven blocker; `COMMENT` when verification is incomplete.
 - Recovery: use an empty or stalled result to revise scope, query, or evidence source. Keep changes understandable and avoid repeating a call without a reason it can produce new evidence.
 
-## SEMANTIC? (clasify)
+## SEMANTIC? (goals or clasify)
 
-Use `clasify` when a semantic judgment changes the next read: a described target in a known file you would otherwise read whole (`locate`), a search too wide to read (Scout), or an explicit classification request. Search literals directly. Treat classification as a routing hint and verify the deciding source. If unavailable, use targeted reads. Query shapes and admission details live in `references/clasify.md`.
+Use a semantic route only when a described target cannot be found cheaply with exact tools and selecting evidence can avoid later reads, or when a typed label is itself needed. Choose optional local `goals` for source content first, or `clasify` for locations/judgments first; do not repeat the same relevance decision in both. Exact reads, small results, exhaustive audits, identity checks, and finding verdicts use direct evidence. Verify the deciding source and keep incomplete scope unresolved. If unavailable, use targeted reads. Admission and evidence-scope checks live in `references/clasify.md`.
 
 ## Tools
 

@@ -73,6 +73,33 @@ describe('Octocode MCP launch and ownership', () => {
     expect(isOctocodeTool('mcp__other__x')).toBe(false);
   });
 
+  it('inherits global settings for a trusted project MCP override, but replaces them for a new transport', () => {
+    const agentDir = tmp();
+    const cwd = tmp();
+    vi.stubEnv('PI_CODING_AGENT_DIR', agentDir);
+    fs.mkdirSync(path.join(cwd, '.pi'));
+    const projectConfig = path.join(cwd, '.pi', 'mcp.json');
+    const global = { command: 'octocode-mcp', enabled: false, env: { TEST: 'kept' } };
+    fs.writeFileSync(path.join(agentDir, 'mcp.json'), JSON.stringify({ mcpServers: { octocode: global } }));
+    const writeProject = (octocode: unknown) => fs.writeFileSync(projectConfig, JSON.stringify({ mcpServers: { octocode } }));
+    writeProject({ exposure: 'direct' });
+    expect(configuredOctocodeServer(cwd, true, agentDir)).toEqual({ ...global, exposure: 'direct' });
+    const mcp = new OctocodeMcp(fakePi().pi);
+    const ctx = fakeCtx({ cwd });
+    expect(mcp.owner(ctx)).toEqual({ by: 'user', enabled: false });
+    writeProject({ enabled: true, toolExposure: { localFetch: 'direct' } });
+    expect(configuredOctocodeServer(cwd, true, agentDir)).toEqual({ ...global, enabled: true, toolExposure: { localFetch: 'direct' } });
+    expect(mcp.owner(ctx)).toEqual({ by: 'user', enabled: true });
+    expect(configuredOctocodeServer(cwd, false, agentDir)).toEqual(global);
+    writeProject({ command: 'replacement' });
+    expect(configuredOctocodeServer(cwd, true, agentDir)).toEqual({ command: 'replacement' });
+    writeProject({ enabled: true, env: { TEST: 'invalid override' } });
+    expect(configuredOctocodeServer(cwd, true, agentDir)).toEqual(global);
+    fs.unlinkSync(path.join(agentDir, 'mcp.json'));
+    writeProject({ enabled: false });
+    expect(configuredOctocodeServer(cwd, true, agentDir)).toBeUndefined();
+  });
+
 
   it('is owned by the user\'s mcp.json entry, else by this extension, unless OCTOCODE_MCP=0', () => {
     const agentDir = tmp();
@@ -142,16 +169,58 @@ describe('Octocode MCP client', () => {
 
   it('follows tools/list_changed: a new tool registers, a withdrawn one is hidden', async () => {
     const { fake, ctx, mcp, call } = session(echo);
+    const registered = vi.spyOn(fake.pi, 'registerTool');
     await mcp.start(ctx);
     await mcp.ready(ctx);
+    const shout = fake.tools.get('mcp__octocode__shout');
+    registered.mockClear();
     await call('grow');
     await vi.waitFor(() => expect(fake.tools.get('mcp__octocode__late')).toMatchObject({ exposure: 'direct' }));
     expect(mcp.status().tools).toBe(10);
+    expect(registered).toHaveBeenCalledTimes(1);
+    expect(fake.tools.get('mcp__octocode__shout')).toBe(shout);
+    registered.mockClear();
     // A tool the server withdraws is hidden from the model, not left callable.
     await call('shrink');
     await vi.waitFor(() => expect(fake.tools.get('mcp__octocode__late')).toMatchObject({ exposure: 'hidden' }));
     expect(mcp.status().tools).toBe(9);
+    expect(registered).toHaveBeenCalledTimes(1);
+    expect(fake.tools.get('mcp__octocode__shout')).toBe(shout);
+    // Reintroducing a withdrawn tool makes it callable again without replacing the unchanged tools.
+    registered.mockClear();
+    await call('grow');
+    await vi.waitFor(() => expect(fake.tools.get('mcp__octocode__late')).toMatchObject({ exposure: 'direct' }));
+    expect(registered).toHaveBeenCalledTimes(1);
+    expect(text(await call('late'))).toBe('late tool works');
     await mcp.close();
+  });
+
+  it('keeps unchanged definitions on reconnect and refreshes changed tools or namespace instructions', async () => {
+    let instructions = 'First instructions';
+    let description = 'Uppercase the given text';
+    const { fake, ctx, mcp, call } = session((cwd) => ({ ...echo(cwd), env: { ECHO_INSTRUCTIONS: instructions, ECHO_SHOUT_DESCRIPTION: description } }));
+    const registered = vi.spyOn(fake.pi, 'registerTool');
+    try {
+      await mcp.start(ctx);
+      await mcp.ready(ctx);
+      const shout = fake.tools.get('mcp__octocode__shout');
+      registered.mockClear();
+      await mcp.restart(ctx);
+      expect(registered).not.toHaveBeenCalled();
+      expect(fake.tools.get('mcp__octocode__shout')).toBe(shout);
+      expect(text(await call('shout', { text: 'reconnected' }))).toBe('RECONNECTED');
+      description = 'Updated uppercase description';
+      await mcp.restart(ctx);
+      expect(registered).toHaveBeenCalledTimes(1);
+      expect(fake.tools.get('mcp__octocode__shout').description).toBe(description);
+      registered.mockClear();
+      instructions = 'New instructions';
+      await mcp.restart(ctx);
+      expect(registered).toHaveBeenCalledTimes(mcp.status().tools);
+      expect(fake.tools.get('mcp__octocode__shout').namespace.instructions).toBe(instructions);
+    } finally {
+      await mcp.close();
+    }
   });
 
   it('reconnects once after the process dies, then reports a clear error until restart', async () => {

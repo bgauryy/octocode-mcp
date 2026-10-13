@@ -1,6 +1,6 @@
 # Context, cache and cost
 
-How Octocode keeps long Pi sessions inside the context window without losing anything, keeps the provider's prompt
+How Octocode keeps long Pi sessions inside the context window while retaining raw evidence, keeps the provider's prompt
 cache warm instead of rewriting it, and shows what a session costs. Each part names who owns it: Octocode (this
 package) or Pi. Measured numbers come from the user's last 40 Pi sessions on 2026-10-12 (6.3k replies, 938M prompt
 tokens, Opus 5.5 behind an Anthropic-compatible gateway).
@@ -25,7 +25,7 @@ Two layers keep a session in its window: Octocode's trims (every turn, no model 
 (rarely, with a model call). Trims are the cheap layer: research on SWE-agent–style agents found that masking old
 observations matches LLM summarization at about half the cost ([JetBrains, 2025](https://arxiv.org/html/2508.21433)).
 
-### Nothing is lost
+### Recoverable trims
 
 Every piece of context a trim removes is saved first, and the note in its place names the file, its SHA-256 prefix
 and its byte count, so the model reads back the exact removed bytes instead of rerunning the call.
@@ -102,6 +102,9 @@ A trim changes the cached prompt from its first edit on, so whether a batch runs
    - `later` blends a read with a fresh write by the share of this session's requests that found the cache cold;
    - N, the requests expected to reuse the context, is the number that already did, capped by the growth that fits
      before Pi's own compaction (`contextWindow − compaction.reserveTokens`).
+   - S and R use text-character estimates and Pi's visual-token estimate for images. Base64 payload length affects
+     request-size pressure and the batch floor, but is never priced as text tokens: a large encoded screenshot does
+     not justify rewriting a long cached text prefix by itself.
 
    Because R depends on where the first edit is, the planner compares every batch made of the newest candidates back
    to an older one and takes the one worth most: on a warm cache a batch near the end can pay where one reaching back
@@ -194,7 +197,9 @@ Pi's `cache_warming_decision` event:
   q(t) is the share of past gaps longer than the current idle time t that ended after t + τ/10 and by t + τ (τ the
   lifetime), and a refresh is sent when q(t) × the miss cost beats the refresh cost. With fewer than 5 past gaps,
   Pi's own decision stands.
-- A refresh counts as a write for the trims, so a planned trim waits for the next real expiry.
+- Only a successful refresh counts as a write for trimming. Octocode observes Pi's persisted `cache_warm` usage
+  on the active branch and uses the preceding decision time as a conservative request-start bound. A failed or
+  cancelled warm does not postpone trimming; completion time is never treated as the start of the cache lifetime.
 
 ## Cost and usage
 
@@ -265,6 +270,9 @@ alone is worth a brief. A log the retention sweep already removed is shown as `l
 
 ## Check it yourself
 
+- **Fixed context:** `tests/prompt-size.test.ts` budgets extension-owned descriptions, schemas, guidelines and the
+  Octocode section. `tests/e2e.test.ts` also budgets a real Pi request with the local MCP: base prompt, active tools and
+  server instructions. Personal skills, repository instructions, other MCP servers and conversation history add to it.
 - **This session:** the footer shows `↑… (N% cached)` and `≈$`; a cache miss notice appears when Pi's
   `showCacheMissNotices` setting is on.
 - **Past sessions:** each reply's `usage` in `~/.pi/agent/sessions/*/*.jsonl` has `input`, `cacheRead`,

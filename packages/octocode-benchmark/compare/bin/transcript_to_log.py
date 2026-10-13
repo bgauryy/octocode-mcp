@@ -127,13 +127,71 @@ def parse_pi(transcript: Path, run_dir: Path, max_turns: int):
     return uses, order, results, final, problems
 
 
+def parse_codex(transcript: Path, run_dir: Path):
+    """Codex JSONL: MCP item arguments/results, reported usage, honest timing limits."""
+    uses, order, results, problems = {}, [], {}, []
+    answer = ""
+    usage = None
+    end = {}
+    completed = False
+    tool_started, tool_seconds = {}, 0.0
+    for line in transcript.read_text(encoding="utf-8").splitlines():
+        if not line.strip(): continue
+        event = json.loads(line)
+        kind = event.get("type")
+        item = event.get("item", {})
+        ident = item.get("id")
+        if kind == "bench_end": end = event
+        elif kind == "turn.completed":
+            usage = event.get("usage")
+            completed = True
+        elif kind in ("turn.failed", "error"):
+            problems.append("Codex " + kind + ": " + json.dumps(event.get("error", event.get("message", ""))))
+        if item.get("type") == "mcp_tool_call":
+            if ident not in uses:
+                uses[ident] = ("mcp__" + item.get("server", "unknown") + "__" + item.get("tool", "unknown"), item.get("arguments") or {})
+                order.append(ident)
+            if kind == "item.started": tool_started[ident] = event.get("_t")
+            if kind == "item.completed":
+                payload = item.get("result") or {}
+                text = result_text(payload.get("content"))
+                # Codex renders MCP content; structuredContent is retained separately in raw JSONL.
+                if not text and item.get("error"): text = json.dumps(item["error"], ensure_ascii=False)
+                results[ident] = (text, bool(item.get("error") or payload.get("isError") or payload.get("is_error") or item.get("status") == "failed"))
+                if ident in tool_started and event.get("_t") is not None:
+                    tool_seconds += event["_t"] - tool_started.pop(ident)
+        elif kind == "item.completed" and item.get("type") == "agent_message":
+            answer = item.get("text", "")
+        elif item.get("type") in ("command_execution", "file_change", "web_search"):
+            problems.append("unexpected built-in tool: " + item["type"])
+    runner = json.loads((run_dir / "runner.json").read_text()) if (run_dir / "runner.json").exists() else {}
+    preflight = json.loads((run_dir / "preflight.json").read_text()) if (run_dir / "preflight.json").exists() else {}
+    if not preflight.get("ok"): problems.append("MCP preflight unavailable or failed")
+    if not order: problems.append("Codex made no MCP calls; tool availability/research is unverified")
+    if not completed: problems.append("Codex completion missing")
+    if not usage: problems.append("Codex usage missing")
+    ok = completed and bool(end) and end.get("exit") == 0 and not end.get("reason")
+    if end.get("errors"): problems += end["errors"]
+    raw_usage = usage or {}
+    final = {"type":"result", "runner":"codex", "model":runner.get("model"),
+        "subtype":"success" if ok else end.get("reason") or "runner_failed", "is_error":not ok,
+        "result":answer, "usage":raw_usage, "provider_usage":raw_usage,
+        "total_cost_usd":None, "num_turns":None, "tool_calls":len(order),
+        "duration_ms":round((end["_t"]-end["start"])*1000) if end else None,
+        "duration_api_ms":None, "setup_duration_ms":end.get("setup_ms"),
+        "solver_duration_ms":end.get("solver_ms"), "observed_tool_duration_ms":round(tool_seconds*1000),
+        "measurement_notes":["Codex reports session token totals; internal sampling turns and API time unavailable.",
+            "Tool characters are MCP content blocks in Codex JSONL; exact internal prompt framing is unavailable."]}
+    return uses, order, results, final, problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--transcript", required=True, type=Path)
     ap.add_argument("--log", required=True, type=Path)
     ap.add_argument("--run-dir", required=True, type=Path)
     ap.add_argument("--question", required=True)
-    ap.add_argument("--format", choices=["claude", "pi"], default="claude")
+    ap.add_argument("--format", choices=["claude", "pi", "codex"], default="claude")
     ap.add_argument("--max-turns", type=int, default=60)
     args = ap.parse_args()
 
@@ -144,7 +202,9 @@ def main() -> int:
     problems: list[str] = []
     if args.format == "pi":
         uses, order, results, final, problems = parse_pi(args.transcript, args.run_dir, args.max_turns)
-    for line in ([] if args.format == "pi" else args.transcript.read_text(encoding="utf-8").splitlines()):
+    elif args.format == "codex":
+        uses, order, results, final, problems = parse_codex(args.transcript, args.run_dir)
+    for line in ([] if args.format in ("pi", "codex") else args.transcript.read_text(encoding="utf-8").splitlines()):
         if not line.strip():
             continue
         event = json.loads(line)

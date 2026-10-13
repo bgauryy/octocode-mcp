@@ -99,17 +99,16 @@ External to local is one flow: `artifactSearch` maps a package to its repository
 - **LSP:** real language servers (tsserver, rust-analyzer, pyright, clangd, …) resolve definitions, references, call hierarchy, hover, and diagnostics from 1-based positions taken from a real anchor. A missing server gives a `serverUnavailable` error and a `hints.textSearch` lead.
 - **Ranking:** hits in a file rank declaration > deciding statement (assignment, `if`, `return`, `throw`) > code > comment. For an exact identifier, the file that declares it ranks first.
 
-### 3.10 clasify: semantic judgment before reading
-- `clasify` (optional; needs a classification API key) judges unread candidates. **Scout** rates each item of a list result, **Locate** finds the line window that answers a question, and **Judge** answers typed questions about supplied state, including `sufficient` (does this snippet already answer?).
-- It returns verdicts and windows, never file bodies, plus the exact `hints.read` for what is worth opening. The provider gets the evidence, the questions, and any brief, never tokens, cursors, or snapshots.
-- It pays when the target is described, not named: Scout over a 54-file search returned the answer first for 1.9–11.8 KB against 58 KB of unranked hits, and Locate in a 3 MB file read 16 KB. It costs more when the name is known (1.8 KB by search against 16 KB), for small files and short lists, and when it judges search snippets instead of files (scores stay flat, 0.16–0.38). Scores never prove absence. Read to verify scores from 0.36 to 0.69: its errors fell there. Measurements: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md#at-a-glance).
-- Without a key, it leaves the tool list and every `hints.*`.
-- Modes, cache, and limits: [OCTOCODE_CLASIFY.md](OCTOCODE_CLASIFY.md).
+### 3.10 Goals and clasify: selective evidence
+- Optional `goals` ranks independent evidence within a disclosed selected view or provider page. Structural and incomplete operations preserve order and report a skip. `clasify` returns locations or typed judgments before the agent reads selected bodies. Both use the configured classification provider.
+- Choose semantic selection when it can avoid later reads; prefer an adequate cheap exact route. Use one semantic stage per relevance decision. A useful typed label for held evidence is a separate deliverable, not a saving on context already read.
+- Scores order attention, not proof. Verify deciding source, retain unjudged candidates and required continuations, and keep incomplete scope unresolved. No universal score or file-count cutoff determines usefulness.
+- Ranking is disabled by default; its optional fields require ranking enabled and clasify available. Setup, outputs, shared internals, prompts, and measured tradeoffs: [goals and clasify guide](OCTOCODE_CLASIFY.md).
 
 ### 3.11 Security: sanitize input and output
 - **Input:** the contract is validated before execution; unknown fields are rejected and nothing is silently clamped. Local paths stay inside the sandbox, and sensitive files are refused even inside allowed roots.
 - **Output:** the native secret scanner reads every byte bound for the model, including PEM blocks split across page windows, and replaces values with typed markers. Searches never match inside a secret.
-- **Egress:** `clasify` is the only tool that sends content to a third party, and its payload excludes credentials and cursors. Details: [SECURITY.md](SECURITY.md).
+- **Classification egress:** `clasify` and enabled `goals` send sanitized evidence and questions to the configured classifier. Their payloads exclude credentials and continuation tokens. Details: [SECURITY.md](SECURITY.md#classification-egress).
 
 ### 3.12 Local caching and GitHub rate limits
 - GitHub file bodies and listings are cached in memory and, with persistent storage, on a disk cache that the CLI and MCP share. Reads at a commit SHA never need revalidation.

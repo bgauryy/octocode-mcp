@@ -222,6 +222,37 @@ fn workspace_may_still_opt_out_of_storage_persistence() {
 }
 
 #[test]
+fn workspace_may_disable_but_not_enable_protected_boolean_ranking() {
+    let widened = resolve(Layers {
+        project_rc: Some(r#"{"ranking":{"enabled":true}}"#),
+        ..NONE
+    });
+    assert!(!widened.resolved.ranking.enabled);
+    assert_eq!(
+        protected_storage_diagnostics(&widened, "ranking.enabled"),
+        1
+    );
+
+    let narrowed = resolve(Layers {
+        global_rc: Some(r#"{"ranking":{"enabled":true}}"#),
+        project_rc: Some(r#"{"ranking":{"enabled":false}}"#),
+        ..NONE
+    });
+    assert!(!narrowed.resolved.ranking.enabled);
+    assert_eq!(
+        protected_storage_diagnostics(&narrowed, "ranking.enabled"),
+        0
+    );
+
+    let process = resolve(Layers {
+        env: &[("OCTOCODE_RANKING_ENABLED", "true")],
+        project_rc: Some(r#"{"ranking":{"enabled":false}}"#),
+        ..NONE
+    });
+    assert!(process.resolved.ranking.enabled);
+}
+
+#[test]
 fn global_layers_still_set_storage_persistence() {
     let out = resolve(Layers {
         global_env: Some("OCTOCODE_STORAGE_MODE=memory"),

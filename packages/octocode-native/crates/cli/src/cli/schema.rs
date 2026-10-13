@@ -41,6 +41,15 @@ fn enabled(machine: &Value, name: &str) -> bool {
     machine_entry(machine, name).is_some_and(|tool| tool["availability"]["enabled"] == true)
 }
 
+/// Select a core-generated presentation using the runtime's resolved switch.
+pub(super) fn configured_tool<'a>(tool: &'a Value, machine: &Value) -> &'a Value {
+    if machine["presentation"]["ranking"] == true {
+        tool.get("ranking").unwrap_or(tool)
+    } else {
+        tool
+    }
+}
+
 /// `octocode schema`: instructions, the grammar inventory, and every enabled
 /// tool with its compact field list.
 pub(super) fn catalog(machine: &Value) -> Result<Value, SchemaError> {
@@ -98,9 +107,10 @@ pub(super) fn tool_view(
             .join(", ");
         return Err(usage(format!("Unknown tool: {name}. Known tools: {known}")));
     };
+    let configured = configured_tool(tool, machine);
     let view = view.unwrap_or("full");
     let mut value = match select {
-        None => tool["views"][view].clone(),
+        None => configured["views"][view].clone(),
         Some(_) if view != "query" => {
             return Err(usage("--select requires --view query and a tool name"));
         }
@@ -279,6 +289,37 @@ mod tests {
             value.get("grammars").is_none(),
             "no structural grammars, no line"
         );
+    }
+
+    #[test]
+    fn ranking_schema_follows_the_resolved_presentation_switch() {
+        let mut machine = machine(&[]);
+        for enabled in [false, true] {
+            machine["presentation"] = json!({ "ranking": enabled });
+            for name in ["localSearch", "localFetch"] {
+                for view in ["query", "full"] {
+                    let row = tool_view(&machine, name, Some(view), None).expect("schema");
+                    assert_eq!(
+                        row["querySchema"]["properties"].get("goals").is_some(),
+                        enabled
+                    );
+                    assert!(
+                        !row["querySchema"]["required"]
+                            .as_array()
+                            .expect("required")
+                            .contains(&json!("goals"))
+                    );
+                    if view == "query" {
+                        assert_eq!(row["continuationFields"].get("ranking").is_some(), enabled);
+                    } else {
+                        assert_eq!(
+                            row["querySchema"]["properties"].get("ranking").is_some(),
+                            enabled
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

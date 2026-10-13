@@ -13,5 +13,22 @@
 - `local-questions/` — 30 questions against the pinned clones in
   `octocode-local-testing/repos/`, run by arms named `local-…`; `answers/` holds the ground
   truth the judge reads (runners never see it).
+- `local-questions-v2/` — 40 source-backed questions across nine pinned clones, including
+  eight Terraform questions. `catalog.json` selects repositories per question;
+  `repositories.json` records revisions and tracked-file hashes. Rubrics and tool coverage
+  checks live outside the solver corpus. CLI-only topology and rewrite checks are a
+  separate applicability lane.
+
+`RUNNER=codex RUNNER_MODEL=gpt-5.6-terra` selects fresh Codex execution for MCP arms.
+`QUESTION_DIR` selects the question catalog, `QUESTION_REPO_MAP` its repository manifest,
+and `ANSWER_DIR` the private judge rubrics. `render_question.py` substitutes repository
+tokens; `codex_runner.py` materializes only the selected tracked files into each local lab.
+`mcp_probe.py` checks the live schema gates and denies evaluator paths before research.
+
+Use `with_credentials.mjs -- <command> ...` to resolve canonical Octocode credentials into
+the child environment without saving them. `BENCH_CLASSIFICATION_TRACE=1` records JEV HTTP
+attempt metadata through `classification_proxy.mjs`; failed or unreported usage stays unknown.
+Run summaries preserve invalid attempts, goals adoption and provider usage. Pass
+`--question-set` to the summary and matrix commands to keep corpora separate.
 
 The flow and its rules: [`../skills/octocode-benchmark/SKILL.md`](../skills/octocode-benchmark/SKILL.md).

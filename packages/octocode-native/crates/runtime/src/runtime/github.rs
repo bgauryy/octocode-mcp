@@ -124,7 +124,7 @@ pub(super) struct GitHubServices {
     auto_page_chars: usize,
     /// Sanitized full views of recently paged files (scoped to this runtime's
     /// single security policy), so each `next.continueWindow` skips a full rescan.
-    sanitized_views: crate::security::scan::SanitizedViewMemo,
+    sanitized_views: Arc<crate::security::scan::SanitizedViewMemo>,
 }
 
 impl GitHubServices {
@@ -168,7 +168,7 @@ impl GitHubServices {
             clone_limits,
             git,
             auto_page_chars,
-            sanitized_views: crate::security::scan::SanitizedViewMemo::new(),
+            sanitized_views: Arc::new(crate::security::scan::SanitizedViewMemo::new()),
         })
     }
 
@@ -181,6 +181,7 @@ impl GitHubServices {
         regex: &LocalFetchRegex,
         handle: &tokio::runtime::Handle,
         paths: &PathPolicy,
+        ranking: &crate::tools::ranking::Runtime,
     ) -> Result<DomainResult, ExecutionError> {
         let Some(github_tool) = tool.github() else {
             return Err(ExecutionError::WorkerFailed);
@@ -196,6 +197,7 @@ impl GitHubServices {
             security,
             regex,
             paths,
+            ranking,
         ))?;
         if result.failure == Some(FailureKind::Authentication) {
             if context.github_credential.is_some() {
@@ -276,6 +278,7 @@ impl GitHubServices {
         security: &ContentSecurity,
         regex: &LocalFetchRegex,
         paths: &PathPolicy,
+        ranking: &crate::tools::ranking::Runtime,
     ) -> Result<DomainResult, ExecutionError> {
         context.check()?;
         // Generated query types carry the meta fields, so every tool parses
@@ -304,6 +307,16 @@ impl GitHubServices {
             }
             GitHubTool::GhGetFileContent => {
                 let query = typed!(gh_get_file_content::GhGetFileContentQuery);
+                let ranked_shape =
+                    (!query.goals.is_empty() || query.ranking.is_some()).then(|| {
+                        gh_get_file_content::RankedShape {
+                            security: security.clone(),
+                            memo: self.sanitized_views.clone(),
+                            context: context.clone(),
+                            regex: *regex,
+                            ranking: ranking.clone(),
+                        }
+                    });
                 let security =
                     crate::security::scan::MemoizedScan::new(security, &self.sanitized_views);
                 match gh_get_file_content::run(
@@ -314,6 +327,7 @@ impl GitHubServices {
                     &security,
                     context,
                     regex,
+                    ranked_shape,
                 )
                 .await
                 {

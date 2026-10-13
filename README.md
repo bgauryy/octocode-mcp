@@ -21,7 +21,7 @@ Octocode gives Cursor, Claude, VS Code, Codex, Pi, and any MCP client deep, cite
 - **Evidence, not guesses:** every answer cites exact files and lines.
 - **Research loop:** orient → search → read exact evidence → prove identity with LSP.
 - **Lean context:** reads return only the lines you need; 2–3.2× fewer characters than `gh` at equal correctness ([benchmarks](#benchmarks)).
-- **Judge before you read:** `clasify` asks an AI judge (Jev) which unread files answer the question, so the agent opens only the right one.
+- **Prioritize evidence:** optional goals reorder supported read results; `clasify` asks an AI judge (Jev) which unread evidence to inspect, then the agent verifies the source.
 - **Next step built in:** every result carries the read or search to run next.
 - **Secure by default:** read-only research, secrets redacted, path guardrails.
 - **Free and open source** under the MIT license.
@@ -105,17 +105,9 @@ xychart-beta
 | `gh` + Headroom | **2.6× less** | 9.3 / 8.6 |
 | `gh` + RTK | **3.2× less** | 9.3 / 9.4 |
 
-Finding code by description among 54 files, `clasify` ranked the answer first while the agent read **1.9 KB instead of 644 KB**:
+Read tools can use optional `goals` to rank independent evidence within their disclosed scope; `clasify` returns locations or judgments before selected reads. In two source-verified development cases, goals reduced response context by 63–78% versus sequential reading. Tested exact queries were cheaper in both, though the Django query was selected after seeing results. Classification adds separate provider work, so these are conditional context savings, not net cost savings.
 
-```mermaid
-xychart-beta
-    title "KB the agent reads to find the answer (lower is better)"
-    x-axis ["Read all 54 files", "Read the search hits", "clasify", "fileHas + clasify"]
-    y-axis "KB" 0 --> 700
-    bar [644, 58, 11.8, 1.9]
-```
-
-Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/SUMMARY.md) · [clasify results](https://github.com/bgauryy/octocode/blob/main/docs/OCTOCODE_CLASIFY.md#at-a-glance).
+Details: [benchmark summary](https://github.com/bgauryy/octocode/blob/main/packages/octocode-benchmark/results/SUMMARY.md) · [goals and clasify guide](docs/OCTOCODE_CLASIFY.md) · [selection checks and limitations](packages/octocode-benchmark/results/selective-semantics-2026-10-13.md).
 
 ---
 
@@ -179,7 +171,7 @@ All settings: [CONFIGURATION.md](https://github.com/bgauryy/octocode/blob/main/d
 - Research tools are read-only (only the CLI beta `astRewrite` edits files) and never run shell strings.
 - Every byte to the model is scanned, and 300+ kinds of secrets are redacted.
 - Local reads stay inside the workspace and `ALLOWED_PATHS`; secret files such as `.env` are blocked.
-- `clasify` is the only tool that sends content to a third party, and only with its key set.
+- `clasify` and explicitly enabled goal ranking send sanitized evidence to the configured classification provider, only with its key set.
 
 Details: [SECURITY.md](https://github.com/bgauryy/octocode/blob/main/docs/SECURITY.md).
 

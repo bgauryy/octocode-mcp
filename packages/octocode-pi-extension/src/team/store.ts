@@ -132,7 +132,10 @@ export class TeamStore {
 
   private prune(now = Date.now()): void {
     if (now - this.prunedAt < PRUNE_INTERVAL_MS) return;
-    this.db.prepare('DELETE FROM messages WHERE created_at < ?').run(now - MESSAGE_RETENTION_MS);
+    this.db.prepare(`DELETE FROM messages WHERE created_at < ? AND NOT EXISTS (
+      SELECT 1 FROM deliveries d WHERE d.message = messages.id AND d.completed_at IS NULL
+        AND (d.dead_at IS NULL OR d.notified_at IS NULL)
+    )`).run(now - MESSAGE_RETENTION_MS);
     this.db.prepare('DELETE FROM leases WHERE expires_at < ?').run(now);
     this.edits.prune(now);
     this.prunedAt = now;

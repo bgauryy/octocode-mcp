@@ -9,8 +9,8 @@ import { AGENT_COLLABORATE_ENV } from './team/store.js';
 const FILE_COVERS = ['edit', 'write'];
 
 /**
- * Tools the user named on purpose: `--tools`/`-t` on the command line and plain names in the `defaultTools` setting
- * (`+name` adds to Pi's defaults and `-name` removes, so neither names edit/write deliberately unless written out).
+ * Tools the user named on purpose: `--tools`/`-t` on the command line and plain or `+name` entries in `defaultTools`.
+ * A `-name` entry removes a tool and does not protect it from the default loadout's substitutions.
  */
 export function explicitTools(argv: readonly string[], defaultTools: readonly string[] | undefined): Set<string> {
   const names = new Set<string>();
@@ -98,7 +98,7 @@ export function registerTurnSetup(pi: ExtensionAPI, options: { isSubagent: boole
     /** Once per session (not on a reload), after its profiles load: settle the starting tool set. */
     settleTools() {
       if (startReason === 'reload') return;
-      const delegateBrowser = !options.isSubagent && [...options.profiles().values()].some(profileHasBrowser);
+      const delegateBrowser = !options.isSubagent && pi.getActiveTools().includes('agent') && [...options.profiles().values()].some(profileHasBrowser);
       const next = sessionTools(pi.getActiveTools(), explicitTools(process.argv, pi.getSettings().defaultTools), delegateBrowser);
       if (next) pi.setActiveTools(next);
     },

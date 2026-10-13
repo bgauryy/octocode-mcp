@@ -7,7 +7,7 @@ import { z } from 'zod';
 const server = new McpServer({ name: 'echo', version: '1.0.0' }, { instructions: process.env.ECHO_INSTRUCTIONS ?? 'Echo test server.' });
 server.registerTool(
   'shout',
-  { description: 'Uppercase the given text', inputSchema: z.object({ text: z.string() }) },
+  { description: process.env.ECHO_SHOUT_DESCRIPTION ?? 'Uppercase the given text', inputSchema: z.object({ text: z.string() }) },
   async ({ text }) => ({ content: [{ type: 'text', text: text.toUpperCase() }] }),
 );
 server.registerTool(

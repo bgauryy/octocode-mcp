@@ -25,7 +25,7 @@ describe('subagent renderers', () => {
     expect(rendered(renderAgentCall({ background: true }, theme, ctx()))).toMatch(/Agent\(general\).*background/);
   });
 
-  it('draws a background start, a seconds fallback and a run without details', () => {
+  it('draws a background start, Pi\'s native duration and a run without details', () => {
     const background = rendered(renderAgentResult({ content: [{ type: 'text', text: 'started' }], details: details({ status: 'background' }) }, { isPartial: false, expanded: false }, theme, ctx()));
     expect(background).toContain('Running in the background as general-0001');
     expect(background).not.toContain('started');
@@ -35,8 +35,8 @@ describe('subagent renderers', () => {
     expect(warned(false)).toContain('to expand');
     expect(warned(true)).toContain('Not isolated: no git repo');
     expect(warned(true)).not.toContain('Started general-0001');
-    const fallback = rendered(renderAgentResult({ content: [{ type: 'text', text: 'answer' }], details: details({ seconds: 90 }) }, { isPartial: false, expanded: false }, theme, ctx()));
-    expect(fallback).toContain('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · 1m30s)');
+    const finished = rendered(renderAgentResult({ content: [{ type: 'text', text: 'answer' }], details: details({ seconds: 5 }) }, { isPartial: false, expanded: false }, theme, ctx({ durationMs: 90_000 })));
+    expect(finished).toContain('Done (general-0001 · 2 tool calls · ↑1.5k ↓500 · 1m30s)');
     const bare = rendered(renderAgentResult({ content: [{ type: 'text', text: 'Subagent failed\ndetail' }], details: undefined }, { isPartial: false, expanded: false }, theme, ctx({ isError: true })));
     expect(bare).toContain('Subagent failed');
   });

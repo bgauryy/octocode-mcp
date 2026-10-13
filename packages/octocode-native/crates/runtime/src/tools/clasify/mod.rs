@@ -10,6 +10,7 @@ pub(crate) mod handoff;
 pub mod items;
 mod locate;
 mod output;
+mod ranking;
 pub mod resource;
 pub(crate) mod run;
 pub(crate) mod stats;
@@ -46,6 +47,7 @@ impl crate::tools::output::ToolOutput for Output {
 /// Clasify's resolved provider settings. Clasify is its own product: it
 /// runs through [`ClasifySettings::call`] and never enters the ordinary
 /// results loop.
+#[derive(Clone)]
 pub(crate) struct ClasifySettings {
     pub(crate) key: Option<SecretString>,
     pub(crate) base_url: String,

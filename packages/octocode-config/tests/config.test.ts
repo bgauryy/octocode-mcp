@@ -99,6 +99,8 @@ describe('PROTECTED_KEYS', () => {
     for (const k of [
       'GITHUB_API_URL',
       'OCTOCODE_CLASSIFICATION_API_HOST',
+      // Automatic local ranking may send source evidence to the provider.
+      'OCTOCODE_RANKING_ENABLED',
       'OCTOCODE_ALLOW_PRIVATE_REGISTRY',
       'OCTOCODE_LSP_CONFIG',
       'ALLOWED_PATHS',
@@ -155,6 +157,7 @@ describe('PROTECTED_KEYS', () => {
       'OCTOCODE_ALLOW_PRIVATE_REGISTRY',
       'OCTOCODE_LSP_CONFIG',
       'OCTOCODE_CLASSIFICATION_API_HOST',
+      'OCTOCODE_RANKING_ENABLED',
     ];
     expect([...PROTECTED_KEYS].sort()).toEqual([...CANONICAL].sort());
   });

@@ -138,6 +138,15 @@ pub(super) fn file_read_template(source: &Value, receipt: &Value) -> Option<Valu
         .get("query")
         .filter(|query| query.is_object())?
         .clone();
+    if tool == ToolId::LocalFetch
+        && let Some(fields) = query.as_object_mut()
+    {
+        // A verification read names original source lines, not ranked view
+        // offsets. Reusing the ranking cursor after narrowing to ranges is
+        // stale, while keeping goals would score the source a second time.
+        fields.remove("goals");
+        fields.remove("ranking");
+    }
     if tool == ToolId::GhGetFileContent
         && query.get("ref").is_none()
         && let Some(reference) = receipt.pointer("/source/ref").filter(|r| r.is_string())
@@ -278,9 +287,73 @@ pub(super) fn candidate_state(source: &Value, state: Value) -> Value {
     payload
 }
 
+/// A ranking candidate is already a sanitized result item. Strip every
+/// routing/control subtree before either the maxChars budget or Jev sees it;
+/// keep the original item untouched in the public result and source digest.
+pub(in crate::tools::clasify) fn rank_candidate_item(mut state: Value) -> Value {
+    fn strip(value: &mut Value) {
+        match value {
+            Value::Object(fields) => {
+                fields.retain(|key, _| {
+                    !CONTROL_FIELDS.contains(&key.as_str())
+                        && !matches!(
+                            key.as_str(),
+                            "ranking" | "snapshot" | "pagination" | "matchIndices"
+                        )
+                });
+                for child in fields.values_mut() {
+                    strip(child);
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    strip(item);
+                }
+            }
+            _ => {}
+        }
+    }
+    strip(&mut state);
+    state
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ranking_candidate_exposes_only_returned_evidence_to_judge() {
+        let public = json!({
+            "evidence": {
+                "path":"a.rs",
+                "matches":[{"value":"needle","matchIndices":[{"line":1}],
+                    "next":{"read":{"query":{"ranking":"secret-plan"}}}}],
+                "pagination":{"hasMore":true},
+                "hints":{"text":["follow"]},
+                "diagnostics":{"requestId":"private"},
+                "snapshot":"opaque"
+            }
+        });
+        let projected = rank_candidate_item(public);
+        assert_eq!(
+            projected,
+            json!({"evidence":{"path":"a.rs","matches":[{"value":"needle"}]}})
+        );
+    }
+
+    #[test]
+    fn ranked_file_verification_read_selects_original_source_without_scoring() {
+        let source = json!({"tool":"localFetch","query":{
+            "path":"a.txt","goals":["find the answer"],
+            "ranking":"ranked-order","snapshot":"v1","offset":4,"length":8
+        }});
+        let read = file_read_template(&source, &json!({}))
+            .expect("a direct file has an exact read template");
+        assert!(read["query"].get("goals").is_none());
+        assert!(read["query"].get("ranking").is_none());
+        assert_eq!(read["query"]["snapshot"], "v1");
+        assert_eq!(read["query"]["path"], "a.txt");
+    }
 
     #[test]
     fn provider_paths_are_workspace_relative_or_file_names() {

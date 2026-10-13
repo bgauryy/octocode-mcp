@@ -40,6 +40,25 @@ function setup(mode: 'manual' | 'workspace' | 'full' = 'workspace') {
 }
 
 describe('a lingering background subagent', () => {
+  it('releases expired continuations without waiting for a message to their names', async () => {
+    process.env['OCTOCODE_SUBAGENT_LINGER_SECONDS'] = '1';
+    const t = setup('full');
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    try {
+      const id = await t.start('linger once');
+      await t.control.settle();
+      expect(t.reports()[0]).toContain('reachable for 1 s');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(t.control.stop(id, 'parent')).toBeDefined();
+      expect(await t.team.send(id, 'linger expired', { replyRequired: false })).toEqual({ error: expect.stringMatching(/has finished/) });
+    } finally {
+      await t.control.stopAll();
+      t.team.stop();
+      vi.useRealTimers();
+      delete process.env['OCTOCODE_SUBAGENT_LINGER_SECONDS'];
+    }
+  });
+
   it('renews approval and uses the current parent mode for a continuation', async () => {
     process.env['OCTOCODE_SUBAGENT_LINGER_SECONDS'] = '60';
     const t = setup('full');

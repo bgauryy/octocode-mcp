@@ -12,7 +12,31 @@ commands, no session persistence, and only the arm's tools:
   through `compare/bin/guard/gh`, which passes reads and refuses anything that writes
   (non-GET `api`, `pr merge`, `auth`, …). A refused command is a failed call for that arm.
 
-The prompt is `compare/arms/runner.md` + the arm brief + the question. Nothing else.
+The prompt is `compare/arms/runner.md` (or `local-runner.md`) + the arm brief + the question.
+No reference answer, coverage label or tool sequence is added.
+
+### Codex and local corpora
+
+`RUNNER=codex` uses `codex_runner.py` for MCP arms: an ephemeral session, ignored user
+configuration, no project instructions, and disabled shell, web, memory, skills, plugins,
+apps and multiagent tools. Direct MCP exposure is configured explicitly. A completed answer
+without an MCP tool call is invalid. `RUNNER_REASONING` must match between arms.
+
+Each trial has a fresh working directory and Octocode home. A local question receives only
+tracked files from repositories selected by `catalog.json`; `repositories.json` pins their
+commits and hashes. The runner checks revisions and clean tracked state before and after
+copying. A path allowlist denies the original checkout, question catalog and private rubrics;
+`mcp_probe.py` tests both a direct read and nested clasify access. Preserve `corpus.json` for
+source mapping after deleting temporary copies. Shared campaign state is limited to the
+GitHub rate-limit directory; response caches remain private. Confirm needed LSP backends
+against the frozen runtime with project configuration and automatic installation disabled.
+
+Set `RUNNER_TIMEOUT` and `RUNNER_MAX_TOOL_CALLS` before launch. Codex has no exposed internal
+turn counter: its tool-call budget stops the process when excess dispatch is observed, so
+the first excess call may already have reached the server. Count that attempt and any
+provider work. A wall deadline terminates the process group. Use `RUNNER_MAX_ATTEMPTS` and
+an explicit campaign-wide retry budget; archived attempts stay under `attempts/` with their
+original and relocated measurement logs. No retry of a valid but weak answer.
 
 ## What is counted
 
@@ -25,11 +49,41 @@ From the stream-json transcript (`transcript_to_log.py`), per tool call:
 Plus the final answer as model-out. `total_chars = model-in + model-out`, in Unicode code
 points. System prompt, tool schemas and the model's reasoning are not counted; the schema
 cost of an MCP server shows separately as its tools/list size. Characters approximate tokens;
-`result.json` carries the exact token usage and cost of each run.
+`result.json` carries host-reported token usage and cost when available.
 
 An MCP tool_result in the transcript is the server's `structuredContent` JSON. A logging proxy
 in front of the server measured the same 2,245 characters for the same call as the
 transcript did, so transcript numbers and the earlier proxy-measured v20 runs line up.
+
+Codex JSONL exports MCP text content, not its full internal prompt framing. Its character
+metric therefore measures observable tool arguments, text responses and the final answer.
+Reported input tokens include cached input; `cached_input_tokens` is a subset, not an
+additional charge. Missing fields are null. Report schema size separately and use session
+tokens for claims about total agent context cost.
+
+### JEV accounting
+
+The off arm blanks the provider credential and disables ranking; goals and clasify must be
+absent from live discovery. The on arm enables ranking with the configured provider and
+offers optional semantics through ordinary production descriptions. Do not force goals on
+exact reads. Report first goal queries, ranking replays and explicit clasify calls separately.
+
+`BENCH_CLASSIFICATION_TRACE=1` starts a transparent loopback proxy before discovery and
+research. It forwards exact request bytes to the configured HTTPS provider, recording body
+hashes and lengths, status, duration, requested/resolved model and reported usage. It saves
+no evidence body or credential. Startup availability probes, failed attempts and unfinished
+requests count in the provider denominator. Unknown failure usage is not zero. Proxy setup
+and drain time are separate from solver time; instrumentation adds a small latency cost.
+Agent and JEV tokens are different work at different prices. Label agent-only input,
+cached-input subset, uncached input and output separately from JEV input/output. Never sum
+their raw tokens into a cost metric. For monetary estimates, multiply each category by its
+own verified rate and record the source, date and processing tier. Cache writes may have
+a separate price: charge their premium without counting their input tokens twice.
+Missing cache-write counts, failed-request usage or pricing multipliers remain unknown.
+An explicitly labeled rate scenario is useful, but is not actual billing or proof of net
+dollar savings. Compute paired cost ratios per question; keep all retry spending separate.
+Report provider HTTP median/p95 separately from whole-agent wall time. Do not equate a
+fast classification request with an entire research workflow or subtract overlapping time.
 
 ## Time
 
@@ -38,6 +92,8 @@ the rest is tool calls plus harness overhead. Report the median wall time per qu
 mean split into model and tools (means add up, medians don't), and the per-question geometric
 mean of time ratios. Time depends on the day, the network and GitHub's rate limits, so only
 compare arms run in the same campaign; older campaigns timed differently are shown as untimed.
+Codex does not report API time. Report measured setup, solver and tool elapsed time where
+available; do not infer a model/tool split by subtracting overlapping intervals.
 
 ## Overfitting
 
@@ -67,6 +123,13 @@ Judge scores are noisy: the same answer can move a point between judgings. So co
 reported rounded to whole points and arms within one point are called tied. Head-to-head
 counts ("A more correct on n questions") come only from pairs judged together.
 
+For local questions, `ANSWER_DIR` supplies private source-backed rubrics. Before presenting
+copied paths to the judge, verify the original pinned checkout and normalize each lab root
+using its `corpus.json`. Judges run outside the repository without inherited instructions.
+Retain failed judge attempts. Calibrate the chosen judge on known positive, incorrect,
+unsupported and appropriately uncertain answers before using scores; disclose whether
+human calibration was available.
+
 ## Aggregating
 
 The question is the unit. For each pair of arms, per question, divide one arm's characters
@@ -74,6 +137,9 @@ by the other's. The headline is the **geometric mean** of those ratios, with a 9
 interval (10,000 resamples over questions), the median, and how many questions each side
 was leaner on. A pooled total is dominated by the few huge questions, so it is shown only as
 a budget, never as the headline. More passes narrow the interval; one pass is a snapshot.
+Include invalid and missing cells in coverage and budget denominators, but exclude them
+from valid-pair efficiency ratios. Every summary has a question-set identity; each MCP arm
+keeps its own group. Local, Terraform subsets and GitHub must remain distinguishable.
 
 ## Fairness and caveats to state
 

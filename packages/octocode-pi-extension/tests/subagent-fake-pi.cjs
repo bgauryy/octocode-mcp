@@ -39,12 +39,21 @@ if (task.includes('linger')) {
   // A stalled model stream: no events at all.
   process.on('SIGTERM', () => process.exit(143));
   setTimeout(() => undefined, 60_000);
+} else if (task.startsWith('answer then stalled shutdown')) {
+  emit(say('COMPLETED REPORT'));
+  process.on('SIGTERM', () => {
+    emit({ type: 'agent_settled', aborted: true });
+    process.exit(143);
+  });
+  setTimeout(() => undefined, 60_000);
 } else if (task.startsWith('slow')) {
   emit({ type: 'tool_execution_start', toolName: 'bash', args: { command: 'sleep 60' } });
   process.on('SIGTERM', () => process.exit(143));
   setTimeout(() => undefined, 60_000);
 } else if (task.startsWith('error')) {
   emit(say('partial findings', { stopReason: 'error', errorMessage: 'provider down' }));
+} else if (task.startsWith('length')) {
+  emit(say('unfinished findings', { stopReason: 'length' }));
 } else if (task.startsWith('silent')) {
   emit({ type: 'message_end', message: { role: 'assistant', content: [], usage, stopReason: 'stop' } });
 } else if (task.startsWith('long')) {

@@ -28,11 +28,21 @@ PKG = HERE.parents[2]
 RESULTS = PKG / "results"
 
 
-def build() -> dict[str, list]:
-    m = json.loads((RESULTS / "matrix_summary.json").read_text())
+def complete_sum(rows, key):
+    values = [r.get(key) for r in rows]
+    return sum(values) if values and all(v is not None for v in values) else None
+
+
+def rounded(value, digits=1):
+    return round(value, digits) if value is not None else None
+
+
+def build(matrix_path=None, question_dir=None) -> dict[str, list]:
+    m = json.loads((matrix_path or RESULTS / "matrix_summary.json").read_text())
+    question_set = m.get("question_set", "github-v2")
     notes = json.loads((HERE / "release-notes.json").read_text())
-    titles = dict(re.findall(r"^\| \[Q(\d+)\.md\]\(Q\d+\.md\) \| (.+?) \|$",
-                             (PKG / "compare/github-questions/README.md").read_text(), re.M))
+    question_dir = question_dir or PKG / "compare/github-questions"
+    titles = {p.stem[1:]: p.read_text().splitlines()[0].lstrip("# ") for p in question_dir.glob("Q*.md")}
     order, G, an = m["order"], m["groups"], m["anchor"]
     groups = []
     for i, g in enumerate(order):
@@ -48,9 +58,9 @@ def build() -> dict[str, list]:
             "leaner_x": round(s["anchor_leaner_x"], 2), "ci_low": round(s["anchor_leaner_ci95"][0], 2),
             "ci_high": round(s["anchor_leaner_ci95"][1], 2), "leaner_on": s["anchor_leaner_on"],
             # Timing exists only for arms run with the current harness (null = not measured comparably).
-            "secs_median": round(s["secs_median"], 1) if "secs_median" in s else None,
-            "model_secs_mean": round(s["model_secs_mean"], 1) if "model_secs_mean" in s else None,
-            "tool_secs_mean": round(s["tool_secs_mean"], 1) if "tool_secs_mean" in s else None,
+            "secs_median": rounded(s.get("secs_median")),
+            "model_secs_mean": rounded(s.get("model_secs_mean")),
+            "tool_secs_mean": rounded(s.get("tool_secs_mean")),
             "faster_x": round(s["anchor_faster_x"], 2) if "anchor_faster_x" in s else None,
             "faster_ci_low": round(s["anchor_faster_ci95"][0], 2) if "anchor_faster_ci95" in s else None,
             "faster_ci_high": round(s["anchor_faster_ci95"][1], 2) if "anchor_faster_ci95" in s else None,
@@ -75,24 +85,31 @@ def build() -> dict[str, list]:
     live_runs = []
     for path in sorted((RESULTS / "runs").glob("*.json")):
         doc = json.loads(path.read_text())
+        inferred = "local-v1" if any(r["arm"].startswith("local-") for r in doc["runs"]) else "github-v2"
+        if doc.get("question_set", inferred) != question_set:
+            continue
         scores = {}
         for j in doc["judgments"]:
             for arm, s in j["scores"].items():
                 scores.setdefault(arm, []).append(s["correctness"])
         for arm in sorted({r["arm"] for r in doc["runs"]}):
             rs = [r for r in doc["runs"] if r["arm"] == arm]
+            valid = [r for r in rs if r.get("ok", True)]
+            attempts = rs + [r for r in doc.get("prior_attempts", []) if r["arm"] == arm]
             live_runs.append({
                 "run": f"{doc['campaign']}:{arm}", "campaign": doc["campaign"], "arm": arm, "runs": len(rs),
-                "calls": sum(r["calls"] for r in rs), "failed": sum(r["failed"] for r in rs),
-                "clasify_calls": sum(r["clasify_calls"] for r in rs),
-                "median_chars": round(st.median(r["chars"] for r in rs)),
-                "input_tokens": sum(r["input_tokens"] for r in rs), "output_tokens": sum(r["output_tokens"] for r in rs),
-                "cost_usd": round(sum(r["cost_usd"] or 0 for r in rs), 2),
-                "median_secs": round(st.median(r["secs"] for r in rs), 1) if all(r.get("secs") for r in rs) else None,
+                "valid_runs": len(valid), "attempts": len(attempts), "question_set": question_set,
+                "calls": sum(r["calls"] for r in attempts), "failed": sum(r["failed"] for r in attempts),
+                "clasify_calls": sum(r["clasify_calls"] for r in attempts),
+                "median_chars": round(st.median(r["chars"] for r in valid)) if valid else None,
+                "input_tokens": complete_sum(attempts, "input_tokens"), "output_tokens": complete_sum(attempts, "output_tokens"),
+                "cost_usd": rounded(complete_sum(attempts, "cost_usd"), 2),
+                "median_secs": round(st.median(r["secs"] for r in valid), 1) if valid and all(r.get("secs") is not None for r in valid) else None,
                 "correctness": round(st.mean(scores[arm])) if scores.get(arm) else None,
             })
     return {"groups": groups, "per_question": per_question, "matrix": matrix, "head_to_head": head_to_head,
-            "live_runs": live_runs, "tool_map": notes["tool_map"], "changes": notes["changes"]}
+            "live_runs": live_runs, "tool_map": notes["tool_map"], "changes": notes["changes"],
+            "corpus": [{"question_set": question_set, "questions": m["questions"]}]}
 
 
 STATIC_SHELL = """<!doctype html>
@@ -137,8 +154,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, help="directory for one <dataset>.json per dataset (dashboard assets)")
     ap.add_argument("--static", type=Path, help="write a self-contained HTML copy of the dashboard here")
+    ap.add_argument("--matrix", type=Path, help="matrix JSON for one question set")
+    ap.add_argument("--questions", type=Path, help="matching public question directory for titles")
     args = ap.parse_args()
-    data = build()
+    data = build(args.matrix, args.questions)
     if args.out:
         args.out.mkdir(parents=True, exist_ok=True)
         for name, rows in data.items():

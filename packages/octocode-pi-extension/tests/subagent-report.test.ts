@@ -1,10 +1,41 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { ReportTracker } from '../src/subagents/report.js';
+import { describe, expect, it, vi } from 'vitest';
+import { REPORT_MAX_BYTES, ReportTracker } from '../src/subagents/report.js';
+import { capOutput } from '../src/shared/util.js';
 import { tmp } from './helpers.js';
 
 describe('incremental subagent reports', () => {
+  it('marks output-limit answers incomplete and accepts a later successful retry', () => {
+    const report = new ReportTracker(tmp());
+    report.answer('The analysis is unfinished', 'length');
+    expect(report.result()).toEqual({ text: 'The analysis is unfinished', answered: false, error: 'Model output limit reached; the report is incomplete' });
+    report.answer('Verified complete report', 'stop');
+    expect(report.result()).toEqual({ text: 'Verified complete report', answered: true });
+  });
+
+  it.each([
+    ['multibyte bytes', 'שלום😀'.repeat(2000)],
+    ['lines', 'line\n'.repeat(300)],
+    ['exact byte boundary', 'x'.repeat(REPORT_MAX_BYTES)],
+    ['empty first line', `\n${'x'.repeat(9000)}`],
+  ])('keeps the exact whole-report preview across %s overflow and retries', (_name, first) => {
+    const scratch = tmp();
+    const report = new ReportTracker(scratch);
+    const sections = [first];
+    report.answer(first, 'stop');
+    for (let i = 0; i < 5; i++) {
+      report.incoming('custom');
+      report.answer('superseded '.repeat(1000), 'stop');
+      const next = `follow-up ${i}\nmore evidence`;
+      report.answer(next, 'stop');
+      sections.push(next);
+      const whole = sections.join('\n\n---\n\n');
+      expect(report.result().text.split('\nFull report:')[0]).toBe(capOutput(whole, REPORT_MAX_BYTES, 200));
+      expect(fs.readFileSync(path.join(scratch, 'report.md'), 'utf8')).toBe(whole);
+    }
+  });
+
   it('preserves a large partial answer when a child fails before completing a report', () => {
     const scratch = tmp();
     const report = new ReportTracker(scratch);
@@ -72,5 +103,20 @@ describe('incremental subagent reports', () => {
     unavailable.answer(text, 'stop');
     expect(unavailable.result().text).not.toContain('Full report:');
     expect(Buffer.byteLength(unavailable.result().text)).toBeLessThan(9 * 1024);
+  });
+
+  it('keeps the prior report and a bounded preview when a later disk append fails', () => {
+    const scratch = tmp();
+    const report = new ReportTracker(scratch);
+    const first = 'verified evidence\n'.repeat(1000);
+    report.answer(first, 'stop');
+    const append = vi.spyOn(fs, 'appendFileSync').mockImplementationOnce(() => { throw new Error('disk full'); });
+    try {
+      report.incoming('custom');
+      report.answer('later evidence', 'stop');
+      expect(fs.readFileSync(path.join(scratch, 'report.md'), 'utf8')).toBe(first);
+      expect(report.result().text).toBe(capOutput(`${first}\n\n---\n\nlater evidence`, REPORT_MAX_BYTES, 200));
+      expect(report.result().text).not.toContain('Full report:');
+    } finally { append.mockRestore(); }
   });
 });

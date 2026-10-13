@@ -233,7 +233,10 @@ pub(super) async fn cancellable<F: Future>(
     loop {
         tokio::select! {
             biased;
-            output = &mut future => return Ok(output),
+            output = &mut future => {
+                cancel.check().map_err(LspFailure::cancelled)?;
+                return Ok(output);
+            },
             _ = poll.tick() => cancel.check().map_err(LspFailure::cancelled)?,
         }
     }

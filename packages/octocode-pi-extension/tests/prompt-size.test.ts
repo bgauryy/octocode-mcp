@@ -21,8 +21,9 @@ interface Size {
 }
 
 /**
- * What one request carries as fixed context: every active tool's description, JSON schema and prompt guidelines, plus
- * the `octocode` prompt section. `exclude` mirrors a subagent profile's `excludeTools`.
+ * Extension-owned descriptions, JSON schemas, prompt guidelines and the `octocode` section. This fake host excludes
+ * Pi's base prompt/tools, MCP, skill metadata, repository instructions and snippets. e2e.test.ts also budgets the real
+ * default Pi + MCP prefix. `exclude` mirrors a subagent profile's `excludeTools`.
  */
 async function promptSize(options: { subagent: boolean; exclude?: string[] }): Promise<Size> {
   if (options.subagent) process.env['OCTOCODE_SUBAGENT'] = '1';

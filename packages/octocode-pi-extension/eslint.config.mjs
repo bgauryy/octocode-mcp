@@ -1,6 +1,6 @@
 import tseslint from 'typescript-eslint';
 
-// Keep modules small: split a file before it outgrows these limits.
+// Dependency and ownership boundaries are checked in tests/architecture.test.ts.
 export default tseslint.config(
   { ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'themes/**', 'subagents/**'] },
   {
@@ -11,10 +11,8 @@ export default tseslint.config(
   {
     files: ['src/**/*.ts'],
     rules: {
-      'max-lines': ['error', { max: 400 }],
       // Long prose (strings, template literals, comments, URLs) may run on; code may not.
       'max-len': ['error', { code: 200, ignoreStrings: true, ignoreTemplateLiterals: true, ignoreComments: true, ignoreUrls: true, ignoreRegExpLiterals: true }],
     },
   },
-  { files: ['tests/**/*.ts'], rules: { 'max-lines': ['error', { max: 600 }] } },
 );

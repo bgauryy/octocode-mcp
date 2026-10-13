@@ -166,6 +166,8 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
             // A hop keeps the patch grep that narrowed the row it came from.
             context_lines: None,
             extras: Vec::new(),
+            goals: Vec::new(),
+            ranking: None,
             page: q
                 .page()
                 .or((!nested).then_some(1))
@@ -199,9 +201,17 @@ pub(super) fn commit_query(q: &HistoryItemRequest, reference: &str, nested: bool
             },
         })
     };
-    typed()
+    let mut row = typed()
         .map(|query| query_row(&query, &[]))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if let Ok(original) = serde_json::to_value(&q.query)
+        && let Some(goals) = original.get("goals")
+        && goals.is_array()
+        && !goals.as_array().is_some_and(Vec::is_empty)
+    {
+        row["goals"] = goals.clone();
+    }
+    row
 }
 
 /// `next.*` for a commit or comparison file page (also nested per PR commit

@@ -225,18 +225,13 @@ function guardedOperations(display: string, checked: string | null, initial?: { 
 }
 
 async function runQuery(
-  query: FileQuery,
-  index: number,
-  id: string,
-  guard: FileGuard,
-  ctx: ExtensionToolContext,
-  signal: AbortSignal | undefined,
-  permission: Permission,
-  checkpoints?: Checkpoints,
+  query: FileQuery, index: number, id: string, guard: FileGuard, ctx: ExtensionToolContext,
+  signal: AbortSignal | undefined, permission: Permission, checkpoints?: Checkpoints,
 ): Promise<QueryOutcome> {
   const base = { type: query.type, path: query.path, reasoning: query.reasoning };
   const file = resolveToolPath(ctx.cwd, query.path);
   let capture: Capture | undefined;
+  let operations: ReturnType<typeof guardedOperations> | undefined;
   try {
     if (query.type === 'edit' && !query.edits?.length) throw new Error('edit needs a non-empty edits array.');
     if (query.type === 'write' && query.content === undefined) throw new Error('write needs content.');
@@ -263,14 +258,16 @@ async function runQuery(
     const note = capture?.note ? ` (${capture.note})` : '';
     if (query.type === 'delete') {
       await withFileMutationQueue(file, async () => {
+        signal?.throwIfAborted();
         if (((await sha256File(file)) ?? null) !== checked) throw changedOnDisk(query.path);
+        signal?.throwIfAborted();
         await fs.promises.rm(file);
       });
       guard.record(file);
       const unsaved = await settleCheckpoint(ctx, checkpoints, capture, file, true, null);
       return { ...base, ok: true, message: `Deleted ${query.path}${note}${unsaved}` };
     }
-    const operations = guardedOperations(query.path, checked, data ? { file, data } : undefined);
+    operations = guardedOperations(query.path, checked, data ? { file, data } : undefined);
     const tool = query.type === 'edit' ? createEditToolDefinition(ctx.cwd, { operations }) : createWriteToolDefinition(ctx.cwd, { operations });
     const args = query.type === 'edit' ? { path: query.path, edits: query.edits } : { path: query.path, content: query.content };
     const result = await tool.execute(`${id}:${index}`, args as never, signal, undefined, ctx);
@@ -281,8 +278,11 @@ async function runQuery(
     const diff = isRecord(result.details) && typeof result.details['diff'] === 'string' ? result.details['diff'] : undefined;
     return { ...base, ok: true, message, ...(diff ? { diff } : {}) };
   } catch (error) {
-    await settleCheckpoint(ctx, checkpoints, capture, file, false);
-    return { ...base, ok: false, message: errorMessage(error) };
+    // Pi can observe cancellation after writeFile succeeded: retain both the read guard and the undo checkpoint.
+    const written = operations?.written();
+    if (written) guard.record(file, written);
+    const note = await settleCheckpoint(ctx, checkpoints, capture, file, written !== undefined, written?.sha256);
+    return { ...base, ok: false, message: `${errorMessage(error)}${written ? ' The file was changed; inspect it before retrying.' : ''}${note}` };
   }
 }
 
@@ -385,7 +385,7 @@ export function registerFileTool(pi: ExtensionAPI, guard: FileGuard, permission:
         outcomes.push(skipped ?? (await runQuery(query, index, id, guard, ctx, signal, permission, checkpoints)));
       }
       if (outcomes.every((outcome) => !outcome.ok)) throw new Error(formatOutcomes(outcomes));
-      return { content: [{ type: 'text' as const, text: formatOutcomes(outcomes) }], details: { outcomes } as { outcomes: QueryOutcome[]; durationMs?: number } };
+      return { content: [{ type: 'text' as const, text: formatOutcomes(outcomes) }], details: { outcomes } };
     })),
     renderCall: renderFileCall,
     renderResult: renderFileResult,

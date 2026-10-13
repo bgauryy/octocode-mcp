@@ -2132,8 +2132,28 @@ async fn long_awaits_observe_cancellation() {
     let result = cancellable(&cancel, std::future::pending::<()>()).await;
     assert_eq!(result.expect_err("cancelled").code, "cancelled");
     assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn ready_awaits_observe_cancellation_at_completion() {
+    struct CancelAfterFirst(std::sync::atomic::AtomicUsize);
+    impl crate::tools::cancel::CancellationCheck for CancelAfterFirst {
+        fn check(&self) -> Result<(), String> {
+            if self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                Ok(())
+            } else {
+                Err("cancelled after launch".into())
+            }
+        }
+    }
+    let cancel = CancelAfterFirst(std::sync::atomic::AtomicUsize::new(0));
+    let error = cancellable(&cancel, std::future::ready(7))
+        .await
+        .expect_err("a ready result cannot bypass cancellation");
+    assert_eq!(error.code, "cancelled");
+    assert_eq!(error.message, "cancelled after launch");
     assert_eq!(
-        cancellable(&crate::tools::cancel::NeverCancel, async { 7 })
+        cancellable(&crate::tools::cancel::NeverCancel, std::future::ready(7))
             .await
             .expect("completes"),
         7

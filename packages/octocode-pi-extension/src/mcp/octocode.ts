@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import { CONFIG_DIR_NAME, getAgentDir, type ExtensionAPI, type ExtensionContext, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { MCP_ENV, MCP_WAIT_ENV, envFlag, envInt } from '../shared/env.js';
 import { octocodeHome } from '../shared/home.js';
@@ -47,16 +48,22 @@ const DEFAULT_CONNECT_WAIT_SECONDS = 10;
 export const octocodeMcpEnabled = (env: NodeJS.ProcessEnv = process.env): boolean => envFlag(env, MCP_ENV, true);
 
 /**
- * The `octocode` entry of Pi's `mcp.json` (global, then the project's in a trusted project, which replaces it), which
+ * The `octocode` entry of Pi's `mcp.json` (global, then the trusted project's replacement or settings override), which
  * takes precedence over the registration; undefined when neither file defines one. Unreadable files count as absent.
  */
 export function configuredOctocodeServer(cwd: string, projectTrusted: boolean, agentDir = getAgentDir()): { enabled?: unknown } | undefined {
-  let entry: { enabled?: unknown } | undefined;
+  let entry: Record<string, unknown> | undefined;
   for (const file of [path.join(agentDir, 'mcp.json'), ...(projectTrusted ? [path.join(cwd, CONFIG_DIR_NAME, 'mcp.json')] : [])]) {
     try {
       const servers = (JSON.parse(fs.readFileSync(file, 'utf8')) as { mcpServers?: Record<string, unknown> }).mcpServers;
       const found = servers && typeof servers === 'object' ? servers[OCTOCODE_SERVER] : undefined;
-      if (found && typeof found === 'object') entry = found as { enabled?: unknown };
+      if (found && typeof found === 'object' && !Array.isArray(found)) {
+        const config = found as Record<string, unknown>;
+        // Pi project entries without a transport override only enabled/exposure/toolExposure of the global server.
+        if (file !== path.join(agentDir, 'mcp.json') && config['command'] === undefined && config['url'] === undefined && config['type'] === undefined) {
+          if (entry && Object.keys(config).every((key) => ['enabled', 'exposure', 'toolExposure'].includes(key))) entry = { ...entry, ...config };
+        } else entry = config;
+      }
     } catch {
       // Missing or malformed: Pi reports a malformed file itself.
     }
@@ -74,7 +81,7 @@ export type OctocodeOwner = { by: 'user'; enabled: boolean } | { by: 'extension'
 export class OctocodeMcp {
   private readonly server: OctocodeServer;
   /** What is registered with Pi under each tool name; Pi cannot unregister, so a withdrawn tool is registered hidden. */
-  private readonly registered = new Map<string, ToolDefinition>();
+  private readonly registered = new Map<string, { tool: Tool; definition: ToolDefinition }>();
   private ctx: ExtensionContext | undefined;
   /** Who ran the server when the session started. */
   private owned: OctocodeOwner = { by: 'off' };
@@ -164,12 +171,16 @@ export class OctocodeMcp {
     const namespace = { name: OCTOCODE_TOOL_PREFIX.replace(/__$/, ''), ...(instructions ? { instructions: sanitizeTerminalText(instructions).trim() } : {}) };
     const listed = new Set<string>();
     for (const tool of tools) {
+      const name = `${OCTOCODE_TOOL_PREFIX}${tool.name}`;
+      listed.add(name);
+      const previous = this.registered.get(name);
+      // Pi rebuilds the complete registry per registration. A reconnect or an unrelated tool change needs no rebuild.
+      if (previous && isDeepStrictEqual(previous.tool, tool) && isDeepStrictEqual(previous.definition.namespace, namespace)) continue;
       const definition = octocodeToolDefinition(tool, { prefix: OCTOCODE_TOOL_PREFIX, namespace, call: (name, args, signal) => this.server.call(name, args, signal) });
-      listed.add(definition.name);
-      this.registered.set(definition.name, definition);
+      this.registered.set(definition.name, { tool, definition });
       this.pi.registerTool(definition);
     }
-    for (const [name, definition] of this.registered) {
+    for (const [name, { definition }] of this.registered) {
       if (listed.has(name)) continue;
       this.registered.delete(name);
       this.pi.registerTool({ ...definition, exposure: 'hidden' });

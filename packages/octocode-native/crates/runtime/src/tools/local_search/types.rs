@@ -230,6 +230,8 @@ pub struct LocalSearchResult {
     pub files: Vec<SearchFile>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pagination: Option<FilePagination>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ranking: Option<crate::contracts::tool_types::Ranking>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub hints: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

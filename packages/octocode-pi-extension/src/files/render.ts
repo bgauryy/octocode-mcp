@@ -11,14 +11,13 @@ import { contentText, isRecord } from '../shared/util.js';
  */
 
 
-/** What a bash result keeps: Pi's truncation fields, the background job, and the time it took. */
+/** What a bash result keeps: Pi's truncation fields and the background job. */
 export interface BashDetails {
   truncation?: NonNullable<BashToolDetails>['truncation'];
   fullOutputPath?: string;
   job?: string;
   pid?: number;
   log?: string;
-  durationMs?: number;
 }
 
 const BASH_STATUS = /^Command (?:exited with code (-?\d+)|timed out after (\d+) seconds|aborted|(terminated without an exit code))\.?$/;

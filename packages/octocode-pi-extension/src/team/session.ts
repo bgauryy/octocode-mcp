@@ -317,7 +317,7 @@ export class Team {
 
   /** Pi is about to call the model with `messages`: team mail among them is now delivered. */
   onContext(messages: ReadonlyArray<{ role?: string; customType?: string; details?: unknown }>): void {
-    const me = this.me?.id;
+    const me = this.inbox.awaitingContext ? this.me?.id : undefined;
     const db = this.db;
     const ids = me && db ? messages.flatMap((message) => mailIds(message, me)) : [];
     if (!me || !db || ids.length === 0) return;

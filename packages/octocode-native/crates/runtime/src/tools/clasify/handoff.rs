@@ -1,25 +1,13 @@
-//! Search → clasify → read handoff. A wide file-search page for a semantic
-//! search (a plain multi-word phrase, never an exact literal, identifier,
-//! path, quoted string, alternation, or regex) suggests one relevance +
-//! sufficiency matrix over the search resource, asking the caller's
-//! `mainGoal` when sent, else the phrase. Every candidate
-//! remains reachable through clasify paging; the host reads relevant
-//! candidates through their `next.read`, and a sufficient one ends screening
-//! (its read still verifies the deciding lines). File count alone never triggers it: a literal
-//! search's hits are already the answer. A local content search is screened on
-//! hydrated hit-cluster windows (`fileChunks`): a one-line hit of the searched
-//! phrase carries only that phrase, so snippet judgments cannot rank the
-//! candidates. Clasify stays the only semantic tool:
-//! this only shapes its request. Availability is not decided here; the
-//! cross-tool `next` filter drops the handoff when clasify is disabled.
+//! Optional search/read → clasify leads for an explicit target.
+//! Multiple candidates or unfinished raw coverage can offer another way to
+//! inspect evidence. These structural conditions do not establish a saving;
+//! the caller chooses whether to follow the lead and verifies source evidence.
+//! Existing pages remain intact. Availability is handled by the shared lead
+//! filter, and explicit local ranking never receives a second semantic offer.
 use crate::tools::id::ToolId;
 use crate::tools::id::query_limits::clasify::MAIN_GOAL_MAX_LENGTH;
 use serde_json::{Map, Value, json};
 
-/// Files a semantic search page must list before screening beats reading the
-/// top hit directly. The one handoff threshold; core's clasify gate text names
-/// the same number.
-const WIDE_RESULT_FILES: usize = 8;
 /// Result views whose files are not evidence-bearing hits.
 const NON_HIT_VIEWS: [&str; 4] = ["filesWithout", "countLines", "countMatches", "matchOnly"];
 
@@ -60,12 +48,18 @@ pub(crate) fn attach(structured: &mut Value, tool: &str, queries: &[Option<&Valu
         let Some(Some(query)) = queries.get(index) else {
             continue;
         };
+        // A local goal or ranked continuation already chose a semantic stage.
+        // Do not suggest a second pass or copy ranking into a matrix resource.
+        if matches!(id, ToolId::LocalSearch | ToolId::LocalFetch)
+            && (query.get("goals").is_some() || query.get("ranking").is_some())
+        {
+            continue;
+        }
         let Some(data) = row.get_mut("data").and_then(Value::as_object_mut) else {
             continue;
         };
         if !search {
-            if let Some((name, lead)) =
-                large_read_lead(tool, query, data).or_else(|| wide_match_lead(tool, query, data))
+            if let Some((name, lead)) = file_read_lead(tool, query, data)
                 && data.get("next").is_none_or(|next| next.get(name).is_none())
                 && let Some(next) = data
                     .entry("next")
@@ -90,78 +84,83 @@ pub(crate) fn attach(structured: &mut Value, tool: &str, queries: &[Option<&Valu
     }
 }
 
-/// Lines a file must have before a paged read without `matchString` offers a
-/// clasify locate instead of the next page.
-const LARGE_READ_LINES: u64 = 2_000;
+/// Only a caller-supplied brief defines the target. Search text is lexical
+/// evidence, not an implicit request for a semantic judgment.
+fn target(query: &Value) -> Option<String> {
+    ["mainGoal", "reasoning"]
+        .iter()
+        .filter_map(|key| query.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|text| !text.is_empty())
+        .map(|text| text.chars().take(MAIN_GOAL_MAX_LENGTH).collect())
+}
 
-/// The lead for one file-read row (`localFetch` / `ghGetFileContent`): a
-/// read of a file of at least [`LARGE_READ_LINES`] lines that stopped before
-/// its end (more pages, or a partial row) and has no `matchString`, whose
-/// `mainGoal` asks where something is. A literal goal (only one identifier
-/// or quoted literal; see `locate::identifier_target`) is a literal lookup:
-/// a local read gets a `findText` lead (`localSearch`, exact and cheaper
-/// than locate), a remote read nothing. Any other locate goal, including a
-/// described one that mentions an identifier, gets `clasify`, which reads
-/// the whole file with the goal as its target. Reads
-/// that select a range, a match, or a transformed view are already targeted
-/// and get nothing. The cross-tool filter drops the lead when its tool is
-/// unavailable.
-fn large_read_lead(
+/// Preserve explicit exact-identifier searches instead of proposing a second
+/// semantic interpretation of their hits. Reuse Locate's literal parser.
+fn exact_search(tool: &str, query: &Value) -> bool {
+    if query.get("wholeWord") == Some(&Value::Bool(true)) {
+        return true;
+    }
+    let literal = |text: &str| crate::tools::clasify::locate::identifier_target(text).is_some();
+    if tool == ToolId::GhSearchCode.as_str() {
+        query
+            .get("keywords")
+            .and_then(Value::as_array)
+            .is_some_and(|keywords| keywords.iter().filter_map(Value::as_str).any(literal))
+    } else {
+        query
+            .get("matchString")
+            .and_then(Value::as_str)
+            .is_some_and(literal)
+    }
+}
+
+/// A source continuation or partial receipt establishes unfinished coverage;
+/// line count and the wording/language of a target do not.
+fn unfinished(data: &Map<String, Value>) -> bool {
+    data.get("pagination").and_then(|page| page.get("hasMore")) == Some(&Value::Bool(true))
+        || data.get("isPartial") == Some(&Value::Bool(true))
+        || data
+            .get("next")
+            .and_then(Value::as_object)
+            .is_some_and(|next| next.keys().any(|name| name.starts_with("nextMatchPage")))
+}
+
+/// Do not broaden an explicitly bounded, exhaustive, or transformed read.
+/// A raw unfinished file or match walk may offer Locate for the caller's target.
+fn file_read_lead(
     tool: &str,
     query: &Value,
     data: &Map<String, Value>,
 ) -> Option<(&'static str, Value)> {
-    if !ToolId::from_name(tool).is_some_and(crate::tools::clasify::is_file_read_tool) {
-        return None;
-    }
-    if ["matchString", "ranges", "block"]
-        .iter()
-        .any(|key| query.get(*key).is_some())
+    if query.get("fullContent") == Some(&Value::Bool(true))
+        || query.get("ranges").is_some()
+        || query.get("block") == Some(&Value::Bool(true))
+        || query.get("unit").and_then(Value::as_str) == Some("bytes")
         || query
             .get("minify")
             .and_then(Value::as_str)
             .is_some_and(|minify| minify != "none")
+        || !unfinished(data)
     {
         return None;
     }
-    let total = data
-        .get("totalLines")
-        .or_else(|| {
-            data.get("pagination")
-                .and_then(|page| page.get("totalLines"))
-        })
-        .and_then(Value::as_u64)?;
-    let paged = data.get("pagination").and_then(|page| page.get("hasMore"))
-        == Some(&Value::Bool(true))
-        || data.get("isPartial") == Some(&Value::Bool(true));
-    if total < LARGE_READ_LINES || !paged {
-        return None;
-    }
-    let goal: String = query
-        .get("mainGoal")?
-        .as_str()?
-        .chars()
-        .take(MAIN_GOAL_MAX_LENGTH)
-        .collect();
+    let goal = target(query)?;
     let path = query.get("path")?.as_str()?;
-    // One rule with locate: a goal whose only content is one literal is a
-    // literal lookup, whatever words surround it.
     if let Some(literal) = crate::tools::clasify::locate::identifier_target(&goal) {
-        return (tool == ToolId::LocalFetch.as_str())
+        // A match walk already supplies the cheap exact route.
+        return (tool == ToolId::LocalFetch.as_str() && query.get("matchString").is_none())
             .then(|| crate::tools::clasify::locate::literal_file_search(path, literal))
             .flatten()
             .map(|search| ("findText", search));
     }
-    if goal.trim().is_empty() || generic_read_goal(&goal) || !locate_goal(&goal) {
-        return None;
-    }
-    let resource = json!({"id": "file", "tool": tool, "query": file_coordinates(query)});
-    // The handoff carries only the brief the caller sent.
     let mut matrix = json!({
-        "mainGoal": goal,
-        "resources": [resource],
+        "resources": [{"id": "file", "tool": tool, "query": file_coordinates(query)}],
         "questions": [{"id": "target", "type": "locate", "ask": goal}],
     });
+    if let Some(main_goal) = query.get("mainGoal").filter(|value| value.is_string()) {
+        matrix["mainGoal"] = main_goal.clone();
+    }
     if let Some(reasoning) = query.get("reasoning").filter(|value| value.is_string()) {
         matrix["reasoning"] = reasoning.clone();
     }
@@ -173,10 +172,10 @@ fn large_read_lead(
     ))
 }
 
-/// The fields of a file-read query that name the file (`path`, and a
-/// remote read's `owner`, `repo`, `ref`): a clasify resource reads it whole.
+/// Coordinates of the file behind a raw read; explicit bounded reads never
+/// enter this handoff. Preserve a supplied snapshot as well as a remote ref.
 fn file_coordinates(query: &Value) -> Value {
-    let read: Map<String, Value> = ["path", "owner", "repo", "ref"]
+    let read: Map<String, Value> = ["path", "owner", "repo", "ref", "snapshot"]
         .iter()
         .filter_map(|key| {
             query
@@ -185,257 +184,6 @@ fn file_coordinates(query: &Value) -> Value {
         })
         .collect();
     Value::Object(read)
-}
-
-/// Lines the row's `sourceLineRanges` cover.
-fn source_lines(data: &Map<String, Value>) -> Option<usize> {
-    let ranges = data.get("sourceLineRanges")?.as_array()?;
-    ranges
-        .iter()
-        .map(|range| {
-            let (line, end) = (
-                range.get("line")?.as_u64()?,
-                range.get("endLine")?.as_u64()?,
-            );
-            usize::try_from(end.checked_sub(line)? + 1).ok()
-        })
-        .sum()
-}
-
-/// Source lines a matchString read must return before a locate over its
-/// hits beats reading them all.
-const WIDE_MATCH_LINES: usize = 60;
-/// The lead for a wide `matchString` read (a long list, or common literals,
-/// returning at least [`WIDE_MATCH_LINES`] source lines or leaving match
-/// pages): clasify LOCATE over the file, asking the caller's described goal
-/// (`mainGoal`, else `reasoning`). Locate needs contiguous source, so the
-/// resource is the file, not the hit windows; the host receives only the
-/// located lines. A literal or generic goal gets nothing: a locate of a
-/// literal costs more than reading its hits (clasify eval 2026-10-07), and
-/// without a goal there is no target.
-fn wide_match_lead(
-    tool: &str,
-    query: &Value,
-    data: &Map<String, Value>,
-) -> Option<(&'static str, Value)> {
-    query.get("matchString")?;
-    let goal: String = ["mainGoal", "reasoning"]
-        .iter()
-        .find_map(|key| query.get(*key).and_then(Value::as_str))?
-        .chars()
-        .take(MAIN_GOAL_MAX_LENGTH)
-        .collect();
-    if goal.trim().is_empty()
-        || generic_read_goal(&goal)
-        || crate::tools::clasify::locate::identifier_target(&goal).is_some()
-    {
-        return None;
-    }
-    // Source lines returned: the row's `sourceLineRanges` (before the
-    // response stage numbers the content, which states them), else the
-    // lines of a view that does not map onto source lines.
-    let returned = source_lines(data).unwrap_or_else(|| {
-        data.get("content")
-            .and_then(Value::as_str)
-            .map_or(0, |content| content.lines().count())
-    });
-    let more_hits = data
-        .get("next")
-        .and_then(Value::as_object)
-        .is_some_and(|next| next.keys().any(|name| name.starts_with("nextMatchPage")));
-    if returned < WIDE_MATCH_LINES && !more_hits {
-        return None;
-    }
-    // The handoff carries only the brief the caller sent: a goal taken from
-    // `reasoning` is the locate target, not a second `mainGoal`.
-    let mut matrix = json!({
-        "resources": [{"id": "file", "tool": tool, "query": file_coordinates(query)}],
-        "questions": [{"id": "target", "type": "locate", "ask": goal}],
-    });
-    if query.get("mainGoal").is_some_and(Value::is_string) {
-        matrix["mainGoal"] = json!(goal);
-    }
-    if let Some(reasoning) = query.get("reasoning").filter(|value| value.is_string()) {
-        matrix["reasoning"] = reasoning.clone();
-    }
-    Some((
-        ToolId::Clasify.as_str(),
-        crate::tools::result::Continuation::new(ToolId::Clasify, matrix)
-            .confidence("medium")
-            .build(),
-    ))
-}
-
-/// Words that ask where something is.
-const LOCATE_WORDS: &[&str] = &[
-    "where", "which", "find", "finds", "locate", "locates", "identify", "pinpoint",
-];
-/// Openers of a question about the file's behavior.
-const QUESTION_OPENERS: &[&str] = &[
-    "how", "why", "when", "what", "who", "whether", "does", "do", "is", "are", "can",
-];
-
-/// Whether a read goal asks where something is ("where the timer fires",
-/// "find the retry floor", "How does X avoid Y?"), not to understand,
-/// review, or check the file: a locate over a non-locate goal has no target.
-fn locate_goal(goal: &str) -> bool {
-    let words: Vec<String> = goal
-        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .filter(|word| !word.is_empty())
-        .map(str::to_lowercase)
-        .collect();
-    goal.trim_end().ends_with('?')
-        || words
-            .first()
-            .is_some_and(|word| QUESTION_OPENERS.contains(&word.as_str()))
-        || words
-            .iter()
-            .any(|word| LOCATE_WORDS.contains(&word.as_str()))
-}
-
-/// Words that describe reading itself, not what to find in the file.
-const GENERIC_READ_WORDS: &[&str] = &[
-    "a",
-    "about",
-    "all",
-    "an",
-    "and",
-    "any",
-    "are",
-    "as",
-    "at",
-    "body",
-    "browse",
-    "by",
-    "check",
-    "code",
-    "content",
-    "contents",
-    "context",
-    "detail",
-    "details",
-    "do",
-    "does",
-    "entire",
-    "explore",
-    "file",
-    "files",
-    "first",
-    "flow",
-    "flows",
-    "for",
-    "from",
-    "full",
-    "get",
-    "here",
-    "how",
-    "i",
-    "important",
-    "in",
-    "inspect",
-    "into",
-    "is",
-    "it",
-    "its",
-    "key",
-    "learn",
-    "line",
-    "lines",
-    "logic",
-    "look",
-    "lookup",
-    "main",
-    "me",
-    "more",
-    "next",
-    "of",
-    "on",
-    "or",
-    "overview",
-    "page",
-    "pages",
-    "part",
-    "parts",
-    "read",
-    "relevant",
-    "remaining",
-    "rest",
-    "review",
-    "scan",
-    "section",
-    "sections",
-    "see",
-    "skim",
-    "source",
-    "structure",
-    "subset",
-    "summary",
-    "the",
-    "these",
-    "this",
-    "those",
-    "to",
-    "top",
-    "understand",
-    "understanding",
-    "we",
-    "what",
-    "where",
-    "which",
-    "whole",
-];
-
-/// Whether a read goal names nothing to locate ("read key sections",
-/// "understand this code"): a locate over it judges every window against the
-/// act of reading and only adds provider calls.
-fn generic_read_goal(goal: &str) -> bool {
-    goal.split(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .filter(|word| !word.is_empty())
-        .all(|word| GENERIC_READ_WORDS.contains(&word.to_lowercase().as_str()))
-}
-
-/// Whether a search term already names what it wants, so its hits are the
-/// answer and a locate pass adds only cost. Only a plain phrase of two or more
-/// words (letters, digits, `-`, `'`) with no `camelCase` token is semantic;
-/// every single token (`retry`, `spawn_blocking`, `newElementWith`), quoted
-/// string, `a|b` alternation, path (`src/x.rs`), member access, and regex is
-/// literal.
-fn literal_term(term: &str) -> bool {
-    let term = term.trim();
-    let plain_phrase = term.split_whitespace().nth(1).is_some()
-        && term
-            .chars()
-            .all(|c| c.is_alphanumeric() || c.is_whitespace() || matches!(c, '-' | '\''))
-        && !term
-            .split_whitespace()
-            .any(crate::tools::clasify::locate::has_camel_case);
-    let quoted = term.len() > 1
-        && ['"', '\'', '`']
-            .iter()
-            .any(|q| term.starts_with(*q) && term.ends_with(*q));
-    !plain_phrase || quoted
-}
-
-/// The searched phrase when it reads as described behavior rather than an
-/// exact literal. `localSearch` judges its `matchString` (a `wholeWord`
-/// search is an exact identifier); `ghSearchCode` judges its ANDed
-/// `keywords` as one phrase.
-fn semantic_phrase(tool: &str, query: &Value) -> Option<String> {
-    let phrase = if tool == ToolId::GhSearchCode.as_str() {
-        query
-            .get("keywords")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .collect::<Vec<_>>()
-            .join(" ")
-    } else if query.get("wholeWord") == Some(&Value::Bool(true)) {
-        return None;
-    } else {
-        query.get("matchString")?.as_str()?.to_owned()
-    };
-    (!literal_term(&phrase)).then(|| phrase.trim().to_owned())
 }
 
 fn request(tool: &str, query: &Value, data: &Map<String, Value>) -> Option<Value> {
@@ -448,18 +196,16 @@ fn request(tool: &str, query: &Value, data: &Map<String, Value>) -> Option<Value
         return None;
     }
     let files = data.get("files")?.as_array()?;
-    if files.len() < WIDE_RESULT_FILES {
+    if files.len() < 2 {
         return None;
     }
-    let phrase = semantic_phrase(tool, query)?;
-    // The question target is the search brief when the caller sent one,
-    // else the searched phrase; cut to clasify's goal bound.
+    let goal = target(query)?;
+    if exact_search(tool, query)
+        || crate::tools::clasify::locate::identifier_target(&goal).is_some()
+    {
+        return None;
+    }
     let brief = query.get("mainGoal").and_then(Value::as_str);
-    let goal: String = brief
-        .unwrap_or(&phrase)
-        .chars()
-        .take(MAIN_GOAL_MAX_LENGTH)
-        .collect();
     // The search reruns as sent, less what the matrix states for it: the
     // brief (a resource read inherits the matrix brief) and the search's own
     // output opt-ins (clasify's output has its own `extras`).
@@ -489,9 +235,11 @@ fn request(tool: &str, query: &Value, data: &Map<String, Value>) -> Option<Value
         json!({"id":"relevant", "type":"relevant", "ask":goal})
     };
     let mut resource = json!({"id": "candidates", "tool": tool, "query": search});
-    // Local reads are cheap and unmetered; GitHub hydration spends API budget
-    // without changing the ranking, so it screens snippets.
-    if tool == ToolId::LocalSearch.as_str() && !metadata_only {
+    // Metadata routing must not implicitly hydrate unseen file bodies.
+    if metadata_only {
+        resource["candidateEvidence"] =
+            json!(crate::tools::clasify::CandidateEvidence::Search.to_string());
+    } else if tool == ToolId::LocalSearch.as_str() {
         resource["candidateEvidence"] =
             json!(crate::tools::clasify::CandidateEvidence::FileChunks.to_string());
     }
@@ -516,242 +264,6 @@ fn request(tool: &str, query: &Value, data: &Map<String, Value>) -> Option<Value
 mod tests {
     use super::*;
 
-    /// The clasify offer of a large read, if that is the lead it gets.
-    fn locate_offer(tool: &str, query: &Value, data: &Value) -> Option<Value> {
-        large_read_lead(tool, query, data.as_object().expect("data"))
-            .filter(|(name, _)| *name == ToolId::Clasify.as_str())
-            .map(|(_, offer)| offer)
-    }
-
-    /// A wide matchString read with a described goal offers a locate over the
-    /// file (locate needs contiguous source); a narrow read, a literal or missing goal, or a
-    /// read without matchString gets none. The offer passes clasify's input.
-    #[test]
-    fn a_wide_match_read_with_a_described_goal_offers_locate_over_its_hits() {
-        let content: String = (1..=80).map(|line| format!("node kind {line}\n")).collect();
-        let wide = json!({"totalLines":4000,"content":content});
-        let query = json!({"path":"src/emit.ts","matchString":["Kind","node"],"contextLines":1,
-            "mainGoal":"Where does the emitter pick the encoder for a node kind?"});
-        let (name, offer) =
-            wide_match_lead("localFetch", &query, wide.as_object().unwrap()).expect("offer");
-        assert_eq!(name, "clasify");
-        let row = &offer["query"]["queries"][0];
-        assert_eq!(
-            row["resources"],
-            json!([{"id":"file","tool":"localFetch","query":{"path":"src/emit.ts"}}])
-        );
-        assert_eq!(row["questions"][0]["type"], "locate");
-        crate::contracts::prepare_many_and_validate("clasify", offer["query"].clone())
-            .expect("the offer validates");
-        // More match pages count as wide even when this page is short.
-        let short_paged = json!({"content":"node\n","next":{"nextMatchPage":{}}});
-        assert!(wide_match_lead("localFetch", &query, short_paged.as_object().unwrap()).is_some());
-        let narrow = json!({"content":"node\n... [lines 2-9 not requested] ...\nnode\n",
-            "sourceLineRanges":[{"line":1,"endLine":1},{"line":10,"endLine":10}]});
-        assert_eq!(source_lines(narrow.as_object().unwrap()), Some(2));
-        assert!(wide_match_lead("localFetch", &query, narrow.as_object().unwrap()).is_none());
-        let mut literal = query.clone();
-        literal["mainGoal"] = json!("encodeNode");
-        assert!(wide_match_lead("localFetch", &literal, wide.as_object().unwrap()).is_none());
-        let mut no_goal = query.clone();
-        no_goal.as_object_mut().unwrap().remove("mainGoal");
-        assert!(wide_match_lead("localFetch", &no_goal, wide.as_object().unwrap()).is_none());
-        // A goal taken from `reasoning` is the target; the lead carries only
-        // the brief the caller sent, never a copied `mainGoal`.
-        let mut reasoned = no_goal.clone();
-        reasoned["reasoning"] = json!("Where does the emitter pick the encoder?");
-        let (_, offer) =
-            wide_match_lead("localFetch", &reasoned, wide.as_object().unwrap()).expect("offer");
-        let row = &offer["query"]["queries"][0];
-        assert!(row.get("mainGoal").is_none(), "{row}");
-        assert_eq!(row["reasoning"], reasoned["reasoning"]);
-        assert_eq!(row["questions"][0]["ask"], reasoned["reasoning"]);
-        let mut ranged = query.clone();
-        ranged.as_object_mut().unwrap().remove("matchString");
-        assert!(wide_match_lead("localFetch", &ranged, wide.as_object().unwrap()).is_none());
-    }
-
-    #[test]
-    fn a_paged_read_of_a_large_file_without_match_string_offers_locate() {
-        let query =
-            json!({"path":"src/server.c","mainGoal":"find the housekeeping timer","reasoning":"r"});
-        let paged = json!({"totalLines":8615,"pagination":{"unit":"bytes","offset":0,"length":20000,"hasMore":true}});
-        let offer = locate_offer("localFetch", &query, &paged).expect("offer");
-        assert_eq!(
-            offer["query"]["queries"][0],
-            json!({
-                "mainGoal":"find the housekeeping timer",
-                "reasoning":"r",
-                "resources":[{"id":"file","tool":"localFetch","query":{"path":"src/server.c"}}],
-                "questions":[{"id":"target","type":"locate","ask":"find the housekeeping timer"}]
-            })
-        );
-        // The handoff carries only the brief the caller sent; no mainGoal,
-        // no handoff.
-        let goal_only = json!({"path":"src/server.c","mainGoal":"find the housekeeping timer"});
-        let offer_without_reasoning =
-            locate_offer("localFetch", &goal_only, &paged).expect("offer");
-        assert!(
-            offer_without_reasoning["query"]["queries"][0]
-                .get("reasoning")
-                .is_none()
-        );
-        let bare = json!({"path":"src/server.c","reasoning":"r"});
-        assert!(large_read_lead("localFetch", &bare, paged.as_object().unwrap()).is_none());
-        let prepared =
-            crate::contracts::prepare_many_and_validate("clasify", offer["query"].clone())
-                .expect("the offer validates");
-        let mut normalized = prepared;
-        crate::tools::clasify::normalize_rows(&mut normalized);
-        assert_eq!(normalized[0]["resources"][0]["query"]["fullContent"], true);
-        let gh = json!({"owner":"o","repo":"r","path":"a.go","ref":"main",
-            "mainGoal":"where the cache is flushed","reasoning":"r"});
-        let partial = json!({"totalLines":2000,"isPartial":true});
-        assert!(locate_offer("ghGetFileContent", &gh, &partial).is_some());
-        // Small, complete, targeted, transformed, or non-file reads get nothing.
-        for (tool, query, data) in [
-            (
-                "localFetch",
-                query.clone(),
-                json!({"totalLines":1999,"pagination":{"hasMore":true}}),
-            ),
-            (
-                "localFetch",
-                query.clone(),
-                json!({"totalLines":8615,"pagination":{"hasMore":false}}),
-            ),
-            (
-                "localFetch",
-                json!({"path":"a","mainGoal":"find g","matchString":"cron"}),
-                paged.clone(),
-            ),
-            (
-                "localFetch",
-                json!({"path":"a","mainGoal":"find g","ranges":["1-50","900-950"]}),
-                paged.clone(),
-            ),
-            (
-                "localFetch",
-                json!({"path":"a","mainGoal":"find g","minify":"symbols"}),
-                paged.clone(),
-            ),
-            ("localSearch", query.clone(), paged.clone()),
-        ] {
-            assert!(
-                large_read_lead(tool, &query, data.as_object().unwrap()).is_none(),
-                "{query}"
-            );
-        }
-    }
-
-    /// A literal goal (its only content is one identifier or quoted literal;
-    /// the locate classifier `identifier_target`) is a literal lookup:
-    /// localSearch finds it exactly, so the read offers that search instead
-    /// of a locate. A remote read has no literal-search lead and gets
-    /// nothing. A described goal that only mentions an identifier is not
-    /// literal: it gets the clasify locate, or nothing when it locates
-    /// nothing.
-    #[test]
-    fn only_a_literal_goal_offers_a_literal_search_instead_of_locate() {
-        let paged = json!({"totalLines":3137,"pagination":{"hasMore":true}});
-        let query = |goal: &str| json!({"path":"django/db/models/query.py","mainGoal":goal,"reasoning":"r"});
-        for goal in [
-            "Where bulk_update refuses pk changes",
-            "why does worker_threads reject 0 in Builder::new or maxThreads",
-        ] {
-            let lead = large_read_lead("localFetch", &query(goal), paged.as_object().unwrap());
-            assert!(
-                lead.as_ref().is_none_or(|(name, _)| *name != "findText"),
-                "{goal}: {lead:?}"
-            );
-        }
-        let offer = locate_offer(
-            "localFetch",
-            &query("Where bulk_update refuses pk changes"),
-            &paged,
-        )
-        .expect("a described goal gets the clasify locate");
-        assert_eq!(
-            offer["query"]["queries"][0]["questions"][0]["ask"],
-            "Where bulk_update refuses pk changes"
-        );
-        for (goal, literal) in [
-            ("find bulk_update", "bulk_update"),
-            ("MAX_CALL_CAPTURES", "MAX_CALL_CAPTURES"),
-            ("where is `newElementWith()` defined", "newElementWith"),
-            (
-                "where is Type_instantiation_is_excessively_deep_and_possibly_infinite reported",
-                "Type_instantiation_is_excessively_deep_and_possibly_infinite",
-            ),
-        ] {
-            let query = query(goal);
-            let (name, lead) =
-                large_read_lead("localFetch", &query, paged.as_object().unwrap()).expect(goal);
-            assert_eq!(name, "findText", "{goal}");
-            assert_eq!(lead["tool"], "localSearch", "{goal}");
-            assert_eq!(
-                lead["query"]["queries"][0]["path"], "django/db/models/query.py",
-                "{lead}"
-            );
-            assert_eq!(
-                lead["query"]["queries"][0]["matchString"], literal,
-                "{lead}"
-            );
-            crate::contracts::prepare_many_and_validate("localSearch", lead["query"].clone())
-                .expect("the literal search validates");
-            let remote = json!({"owner":"o","repo":"r","path":"query.py","mainGoal":goal});
-            assert!(
-                large_read_lead(
-                    "ghGetFileContent",
-                    &remote,
-                    json!({"totalLines":3137,"isPartial":true})
-                        .as_object()
-                        .unwrap()
-                )
-                .is_none(),
-                "{goal}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_goal_that_locates_nothing_gets_no_large_read_lead() {
-        let paged = json!({"totalLines":8615,"pagination":{"hasMore":true}});
-        for goal in [
-            "read key sections",
-            "Understand the flow",
-            "read the rest of this file",
-            "lookup: subset of the main sections",
-            "understand this code",
-            "Review file",
-            "octocode-local-testing regression check",
-            "Understand QuerySet",
-            "understand the eviction policy",
-            "read key sections on retries",
-            "g",
-        ] {
-            let query = json!({"path":"src/server.c","mainGoal":goal,"reasoning":"r"});
-            assert!(
-                large_read_lead("localFetch", &query, paged.as_object().unwrap()).is_none(),
-                "{goal}"
-            );
-        }
-        // A goal that asks where something is gets a locate.
-        for goal in [
-            "where the eviction policy runs",
-            "find the retry backoff",
-            "Locate where objects are batched when saving many rows",
-            "How does the scheduler avoid starving remote tasks?",
-            "Which branch rejects an empty header",
-        ] {
-            let query = json!({"path":"src/server.c","mainGoal":goal,"reasoning":"r"});
-            assert!(
-                locate_offer("localFetch", &query, &paged).is_some(),
-                "{goal}"
-            );
-        }
-    }
-
     fn run(structured: &mut Value, tool: &str, queries: &[Value]) {
         let by_row = row_queries(queries, &[]);
         attach(structured, tool, &by_row);
@@ -768,327 +280,328 @@ mod tests {
         structured["results"][0]["data"]["next"].get("clasify")
     }
 
-    #[test]
-    fn wide_local_search_screens_all_candidates_without_hydrating_top_files() {
-        let mut out = local_rows(9);
-        let search = json!({
-            "mainGoal":"find retry", "reasoning":"Find production retry policy, including exceptions.",
-            "path":"/repo", "matchString":"retry delay", "page":2,
-            "pageSize":9, "include":["src/**"], "snapshot":"search-snapshot"
-        });
-        run(&mut out, "localSearch", std::slice::from_ref(&search));
-        let next = handoff(&out).expect("wide semantic page hands off");
-        assert_eq!(next["tool"], "clasify");
-        let query = &next["query"]["queries"][0];
-        assert_eq!(query["resources"].as_array().map(Vec::len), Some(1));
-        assert_eq!(query["resources"][0]["tool"], "localSearch");
-        // The search reruns as sent; its brief rides on the matrix only.
-        let mut rerun = search.clone();
-        rerun.as_object_mut().unwrap().remove("mainGoal");
-        rerun.as_object_mut().unwrap().remove("reasoning");
-        assert_eq!(query["resources"][0]["query"], rerun);
-        assert_eq!(query["mainGoal"], search["mainGoal"]);
-        assert_eq!(
-            query["resources"][0]["candidateEvidence"], "fileChunks",
-            "one-line snippets of the searched phrase cannot rank candidates"
-        );
-        assert_eq!(query["reasoning"], search["reasoning"]);
-        assert_eq!(
-            query["questions"],
-            json!([
-                {"id":"relevant","type":"relevant","ask":"find retry"},
-                {"id":"sufficient","type":"sufficient","ask":"find retry"}
-            ])
-        );
+    fn file_offer(query: &Value, data: &Value) -> Option<Value> {
+        file_read_lead("localFetch", query, data.as_object().expect("data")).map(|(_, offer)| offer)
     }
 
     #[test]
-    fn literal_term_separates_exact_literals_from_described_behavior() {
-        for literal in [
-            "retry",
-            "newElementWith",
-            "spawn_blocking",
-            "$scope",
-            "v2",
-            "\"retry delay\"",
-            "'retry delay'",
-            "`retry delay`",
-            "foo|bar",
-            "retry | backoff",
-            "src/runtime/mod.rs",
-            "config.json",
-            "self.retry",
-            "fn (a|b)\\d+",
-            "sample.?limit",
-            "^use serde",
-            "Result<T, E>",
-            "std::fs read",
-            "useState hook",
-            "",
-            "   ",
-        ] {
-            assert!(literal_term(literal), "literal: {literal:?}");
-        }
-        for semantic in [
-            "retry delay",
-            "how retries back off",
-            "HTTP retry policy",
-            "don't retry twice",
-            "rate-limit handling",
-        ] {
-            assert!(!literal_term(semantic), "semantic: {semantic:?}");
-        }
-    }
-
-    #[test]
-    fn literal_searches_do_not_hand_off() {
+    fn search_requires_an_explicit_target_and_multiple_candidates() {
         for query in [
-            json!({"mainGoal":"who uses it","matchString":"newElementWith","regex":"literal"}),
-            json!({"mainGoal":"who uses it","matchString":"spawn_blocking","resultView":"files"}),
-            json!({"mainGoal":"who uses it","matchString":"get object","wholeWord":true}),
-            json!({"mainGoal":"who uses it","matchString":"retry"}),
-            json!({"mainGoal":"who uses it","matchString":"\"retry delay\""}),
-            json!({"mainGoal":"who uses it","matchString":"retry|backoff"}),
-            json!({"mainGoal":"who uses it","matchString":"src/retry.rs"}),
-            json!({"mainGoal":"how is the limit enforced","matchString":"sample.?limit"}),
+            json!({"matchString":"retry delay"}),
+            json!({"matchString":"retry delay","mainGoal":" ","reasoning":""}),
         ] {
-            let mut wide = local_rows(12);
-            run(&mut wide, "localSearch", std::slice::from_ref(&query));
-            assert!(handoff(&wide).is_none(), "{query}");
+            let mut out = local_rows(12);
+            run(&mut out, "localSearch", &[query]);
+            assert!(handoff(&out).is_none());
         }
-        let files: Vec<Value> = (0..12)
-            .map(|n| json!({"owner":"o","repo":"r","path":format!("a{n}.rs")}))
-            .collect();
-        for keywords in [
-            json!(["sync"]),
-            json!(["useState"]),
-            json!(["spawn_blocking", "tokio"]),
-            json!(["\"retry delay\""]),
-            json!(["retry|backoff"]),
-            json!([]),
+        let query = json!({"matchString":"retry","mainGoal":"Locate the retry backoff condition"});
+        for count in [0, 1, 2] {
+            let mut out = local_rows(count);
+            run(&mut out, "localSearch", std::slice::from_ref(&query));
+            assert_eq!(handoff(&out).is_some(), count > 1);
+        }
+    }
+
+    #[test]
+    fn explicit_targets_do_not_depend_on_english_or_question_punctuation() {
+        for goal in [
+            "Capacity released when a queued operation is cancelled",
+            "La condition qui libère la capacité réservée",
+            "排队任务取消时释放预留容量",
         ] {
-            let mut wide = json!({"results":[{"index":0,"data":{"files":files.clone()}}]});
+            let mut out = local_rows(2);
             run(
-                &mut wide,
-                "ghSearchCode",
-                &[json!({"mainGoal":"who uses it","owner":"o","keywords":keywords})],
-            );
-            assert!(handoff(&wide).is_none(), "{keywords}");
-        }
-    }
-
-    /// Callers rarely send a brief, so the query shape alone gates the
-    /// handoff: the searched phrase becomes the ask, and the matrix carries
-    /// no brief the caller did not send.
-    #[test]
-    fn a_semantic_search_without_a_goal_asks_its_phrase() {
-        let mut local = local_rows(12);
-        run(
-            &mut local,
-            "localSearch",
-            &[json!({"matchString":"retry delay"})],
-        );
-        let files: Vec<Value> = (0..8).map(|n| json!({"path":format!("a{n}.rs")})).collect();
-        let mut github = json!({"results":[{"index":0,"data":{"files":files}}]});
-        run(
-            &mut github,
-            "ghSearchCode",
-            &[json!({"owner":"o","repo":"r","keywords":["retry","backoff"]})],
-        );
-        for (output, ask) in [(&local, "retry delay"), (&github, "retry backoff")] {
-            let query = &handoff(output).expect("query-shape handoff")["query"]["queries"][0];
-            assert!(query.get("mainGoal").is_none(), "{query}");
-            assert!(query.get("reasoning").is_none(), "{query}");
-            assert_eq!(query["questions"][0]["ask"], ask);
-            assert_eq!(query["questions"][1]["ask"], ask);
-            crate::contracts::prepare_many_and_validate(
-                "clasify",
-                json!({"queries":[query.clone()]}),
-            )
-            .unwrap_or_else(|error| panic!("{:?}: {query}", error.issues.first()));
-        }
-    }
-
-    #[test]
-    fn metadata_candidates_use_a_routing_question_instead_of_content_support() {
-        for (tool, query) in [
-            (
+                &mut out,
                 "localSearch",
-                json!({"mainGoal":"find retry", "matchString":"retry delay", "resultView":"files"}),
-            ),
-            (
-                "ghSearchCode",
-                json!({"mainGoal":"find retry", "keywords":["retry", "delay"], "fields":["path"]}),
-            ),
-            (
-                "ghSearchCode",
-                json!({"mainGoal":"find retry", "keywords":["retry", "delay"], "matchIn":"path"}),
-            ),
-        ] {
-            let mut out = local_rows(9);
-            run(&mut out, tool, &[query]);
-            let query = &handoff(&out).expect("metadata handoff")["query"]["queries"][0];
-            assert!(
-                query["resources"][0].get("candidateEvidence").is_none(),
-                "paths alone have no hit windows to hydrate"
+                &[json!({"matchString":"cancel","mainGoal":goal})],
             );
-            let questions = &query["questions"];
-            assert_eq!(questions[0]["type"], "yesno");
-            assert!(
-                questions[0]["ask"]
-                    .as_str()
-                    .expect("ask")
-                    .contains("routing judgment")
-            );
-            assert_eq!(questions[1]["type"], "sufficient");
+            let query = &handoff(&out).expect("explicit target")["query"]["queries"][0];
+            assert_eq!(query["questions"][0]["ask"], goal);
+            let offer = file_offer(
+                &json!({"path":"src/queue.rs","mainGoal":goal}),
+                &json!({"pagination":{"hasMore":true}}),
+            )
+            .expect("unfinished raw file");
+            assert_eq!(offer["query"]["queries"][0]["questions"][0]["ask"], goal);
         }
     }
 
-    /// A wide localSearch output for "retry delay" and an 8-file ghSearchCode
-    /// output, each run through the handoff with its query.
-    fn retry_outputs(local_goal: &str, github_query: Value) -> (Value, Value) {
-        let mut local = local_rows(9);
-        run(
-            &mut local,
-            "localSearch",
-            &[json!({"mainGoal":local_goal,"matchString":"retry delay"})],
+    #[test]
+    fn reasoning_can_supply_the_target_without_inventing_main_goal() {
+        let query = json!({"path":"src/queue.rs","reasoning":"Locate the cancellation guard"});
+        let offer = file_offer(&query, &json!({"isPartial":true})).expect("target");
+        let matrix = &offer["query"]["queries"][0];
+        assert!(matrix.get("mainGoal").is_none());
+        assert_eq!(matrix["reasoning"], query["reasoning"]);
+        assert_eq!(matrix["questions"][0]["ask"], query["reasoning"]);
+        assert_eq!(
+            target(&json!({"mainGoal":" ","reasoning":" cible explicite "})).as_deref(),
+            Some("cible explicite")
         );
-        let files: Vec<Value> = (0..8)
-            .map(|n| json!({"owner":"o","repo":"r","path":format!("a{n}.rs")}))
-            .collect();
-        let mut github = json!({"results":[{"index":0,"data":{"files":files}}]});
-        run(&mut github, "ghSearchCode", &[github_query]);
-        (local, github)
     }
 
     #[test]
-    fn emitted_handoffs_are_schema_valid_clasify_queries() {
-        let (local, github) = retry_outputs(
-            "how retries back off",
-            json!({"mainGoal":"how sync retries","owner":"o","keywords":["sync","retry"]}),
+    fn file_lead_requires_unfinished_coverage_not_a_size_threshold() {
+        let query = json!({"path":"src/queue.rs","mainGoal":"Locate the cancellation guard"});
+        for data in [
+            json!({"totalLines":12,"pagination":{"hasMore":true}}),
+            json!({"totalLines":12,"isPartial":true}),
+        ] {
+            assert!(file_offer(&query, &data).is_some());
+        }
+        for data in [
+            json!({"totalLines":4000,"pagination":{"hasMore":false}}),
+            json!({"totalLines":4000,"content":"complete"}),
+        ] {
+            assert!(file_offer(&query, &data).is_none());
+        }
+        assert!(file_offer(&json!({"path":"src/queue.rs"}), &json!({"isPartial":true})).is_none());
+    }
+
+    #[test]
+    fn match_lead_preserves_the_source_continuation_and_requires_more_coverage() {
+        let query = json!({"path":"src/queue.rs","matchString":"cancel","mainGoal":"Locate the cancellation guard"});
+        let continuation = json!({"tool":"localFetch","query":{"queries":[{"path":"src/queue.rs","matchString":"cancel","offset":1}]}});
+        let mut out = json!({"results":[{"index":0,"data":{
+            "content":"cancel", "next":{"nextMatchPage":continuation.clone()}
+        }}]});
+        run(&mut out, "localFetch", std::slice::from_ref(&query));
+        assert!(handoff(&out).is_some());
+        assert_eq!(
+            out["results"][0]["data"]["next"]["nextMatchPage"],
+            continuation
         );
-        for output in [&local, &github] {
-            let query = handoff(output).expect("handoff")["query"]["queries"][0].clone();
-            serde_json::from_value::<crate::contracts::tool_types::ClasifyQuery>(query.clone())
-                .unwrap_or_else(|error| panic!("generated ClasifyQuery: {error}: {query}"));
-            let prepared = crate::contracts::prepare_many_and_validate(
-                "clasify",
-                json!({"queries":[query.clone()]}),
-            )
-            .unwrap_or_else(|error| {
-                panic!(
-                    "clasify input contract: {:?}: {query}",
-                    error.issues.first().map(|i| (&i.path, &i.message))
-                )
-            });
-            assert_eq!(prepared.len(), 1);
-            // Continuations publish only the unified input shape.
-            let text = query.to_string();
-            for nested in [
-                "\"context\"",
-                "\"questionType\"",
-                "\"target\"",
-                "\"instructions\"",
-            ] {
-                assert!(!text.contains(nested), "{nested} in {query}");
+        assert_eq!(out["results"][0]["data"]["content"], "cancel");
+        assert!(file_offer(&query, &json!({"content":"cancel\n".repeat(100)})).is_none());
+    }
+
+    #[test]
+    fn selected_exhaustive_or_transformed_reads_do_not_offer_broader_classification() {
+        for extra in [
+            json!({"fullContent":true}),
+            json!({"ranges":["1-50"]}),
+            json!({"block":true}),
+            json!({"unit":"bytes"}),
+            json!({"minify":"symbols"}),
+            json!({"minify":"standard"}),
+        ] {
+            let mut query =
+                json!({"path":"src/queue.rs","mainGoal":"Locate the cancellation guard"});
+            query
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            for matched in [false, true] {
+                if matched {
+                    query["matchString"] = json!("cancel");
+                }
+                assert!(
+                    file_offer(&query, &json!({"isPartial":true})).is_none(),
+                    "{query}"
+                );
             }
         }
     }
 
     #[test]
-    fn narrow_pages_and_non_hit_views_stay_lean() {
-        let mut narrow = local_rows(WIDE_RESULT_FILES - 1);
-        run(
-            &mut narrow,
-            "localSearch",
-            &[json!({"mainGoal":"g","matchString":"retry delay"})],
-        );
-        assert!(handoff(&narrow).is_none());
-        let mut exact = local_rows(WIDE_RESULT_FILES);
-        run(
-            &mut exact,
-            "localSearch",
-            &[json!({"mainGoal":"g","matchString":"retry delay"})],
-        );
-        assert!(handoff(&exact).is_some(), "the threshold is inclusive");
-        for query in [
-            json!({"mainGoal":"g","matchString":"retry delay","resultView":"filesWithout"}),
-            json!({"mainGoal":"g","matchString":"retry delay","invertMatch":true}),
-        ] {
-            let mut wide = local_rows(12);
-            run(&mut wide, "localSearch", &[query]);
-            assert!(handoff(&wide).is_none());
+    fn explicit_local_goals_or_ranking_do_not_suggest_a_second_semantic_stage() {
+        for tool in ["localSearch", "localFetch"] {
+            for semantic in [
+                json!({"goals":["Locate the cancellation guard"]}),
+                json!({"ranking":"saved-order"}),
+            ] {
+                let mut query = json!({"path":"src/queue.rs","matchString":"cancel","mainGoal":"Locate the cancellation guard"});
+                query
+                    .as_object_mut()
+                    .unwrap()
+                    .extend(semantic.as_object().unwrap().clone());
+                let mut out = if tool == "localSearch" {
+                    local_rows(12)
+                } else {
+                    json!({"results":[{"index":0,"data":{"isPartial":true,"content":"cancel"}}]})
+                };
+                let unchanged = out.clone();
+                run(&mut out, tool, &[query]);
+                assert_eq!(out, unchanged, "{tool}");
+            }
         }
     }
 
     #[test]
-    fn github_search_handoff_preserves_scope_for_both_result_shapes() {
-        let objects: Vec<Value> = (0..8)
-            .map(|n| json!({"owner":"o","repo":"r","path":format!("a{n}.rs")}))
-            .collect();
-        let strings: Vec<Value> = (0..8).map(|n| json!(format!("o/r:b{n}.rs"))).collect();
-        let search = json!({
-            "mainGoal":"find retry policy", "reasoning":"Screen candidates before reading.",
-            "owner":"o", "repo":"r", "keywords":["retry", "backoff"]
-        });
-        for files in [objects, strings] {
-            let mut out = json!({"results":[{"index":0,"data":{"files":files}}]});
-            run(&mut out, "ghSearchCode", std::slice::from_ref(&search));
-            let resource = &handoff(&out).expect("handoff")["query"]["queries"][0]["resources"][0];
-            assert_eq!(resource["tool"], "ghSearchCode");
-            assert_eq!(
-                resource["query"],
-                json!({"owner":"o", "repo":"r", "keywords":["retry", "backoff"]})
-            );
-            assert!(resource.get("candidateEvidence").is_none());
+    fn exact_identifiers_keep_the_existing_cheap_routes() {
+        for query in [
+            json!({"matchString":"newElementWith"}),
+            json!({"matchString":"spawn_blocking"}),
+            json!({"matchString":"get object","wholeWord":true}),
+            json!({"matchString":"\"retry delay\""}),
+        ] {
+            let mut query = query;
+            query["mainGoal"] = json!("Locate the cancellation guard");
+            let mut out = local_rows(12);
+            run(&mut out, "localSearch", &[query]);
+            assert!(handoff(&out).is_none());
         }
-        let mut out = local_rows(9);
-        run(&mut out, "ghSearchRepo", &[search]);
+        let mut out = local_rows(12);
+        run(
+            &mut out,
+            "ghSearchCode",
+            &[
+                json!({"keywords":["spawn_blocking","tokio"],"mainGoal":"Locate the cancellation guard"}),
+            ],
+        );
+        assert!(handoff(&out).is_none());
+        let data = json!({"pagination":{"hasMore":true}});
+        let query = json!({"path":"src/queue.rs","mainGoal":"find bulk_update"});
+        let (name, offer) = file_read_lead("localFetch", &query, data.as_object().unwrap())
+            .expect("literal search");
+        assert_eq!(name, "findText");
+        assert_eq!(offer["tool"], "localSearch");
+        assert_eq!(offer["query"]["queries"][0]["matchString"], "bulk_update");
+        assert!(file_read_lead("ghGetFileContent", &query, data.as_object().unwrap()).is_none());
+        let mut matched = query;
+        matched["matchString"] = json!("bulk_update");
+        assert!(file_offer(&matched, &data).is_none());
+    }
+
+    #[test]
+    fn search_handoff_preserves_scope_but_keeps_briefs_on_the_matrix() {
+        let search = json!({
+            "mainGoal":"Locate the retry condition", "reasoning":"Read the production retry policy",
+            "path":"/repo", "matchString":"retry", "page":2,
+            "pageSize":2, "include":["src/**"], "snapshot":"search-snapshot", "extras":["stats"]
+        });
+        let mut out = local_rows(2);
+        run(&mut out, "localSearch", std::slice::from_ref(&search));
+        let matrix = &handoff(&out).expect("handoff")["query"]["queries"][0];
+        let mut rerun = search.clone();
+        for key in ["mainGoal", "reasoning", "extras"] {
+            rerun.as_object_mut().unwrap().remove(key);
+        }
+        assert_eq!(matrix["resources"][0]["query"], rerun);
+        assert_eq!(matrix["resources"][0]["candidateEvidence"], "fileChunks");
+        assert_eq!(matrix["mainGoal"], search["mainGoal"]);
+        assert_eq!(matrix["reasoning"], search["reasoning"]);
+    }
+
+    #[test]
+    fn file_handoff_preserves_revision_coordinates() {
+        let query = json!({"owner":"o","repo":"r","ref":"sha","path":"a.rs","snapshot":"snapshot",
+            "mainGoal":"Locate the cancellation guard"});
+        let (_, offer) = file_read_lead(
+            "ghGetFileContent",
+            &query,
+            json!({"isPartial":true}).as_object().unwrap(),
+        )
+        .expect("offer");
+        assert_eq!(
+            offer["query"]["queries"][0]["resources"][0]["query"],
+            json!({"owner":"o","repo":"r","ref":"sha","path":"a.rs","snapshot":"snapshot"})
+        );
+    }
+
+    #[test]
+    fn non_hit_views_and_inverted_searches_do_not_offer_classification() {
+        for view in NON_HIT_VIEWS {
+            let mut out = local_rows(12);
+            run(
+                &mut out,
+                "localSearch",
+                &[
+                    json!({"matchString":"retry","mainGoal":"Locate the retry condition","resultView":view}),
+                ],
+            );
+            assert!(handoff(&out).is_none());
+        }
+        let mut out = local_rows(12);
+        run(
+            &mut out,
+            "localSearch",
+            &[
+                json!({"matchString":"retry","mainGoal":"Locate the retry condition","invertMatch":true}),
+            ],
+        );
         assert!(handoff(&out).is_none());
     }
 
     #[test]
-    fn rows_after_a_rejected_query_keep_their_own_query() {
-        // Inputs: 0 ok, 1 rejected, 2 ok, 3 ok. Output rows keep those positions.
-        let queries = [
-            json!({"mainGoal":"goal-0","matchString":"retry a"}),
-            json!({"mainGoal":"goal-2","matchString":"retry b"}),
-            json!({"mainGoal":"goal-3","matchString":"retry c"}),
-        ];
-        let mut out = json!({"root":"/repo","results":[
-            {"index":0,"data":{"files": local_rows(9)["results"][0]["data"]["files"].clone()}},
-            {"index":1,"status":"error","data":{}},
-            {"index":2,"data":{"files": local_rows(9)["results"][0]["data"]["files"].clone()}},
-            {"index":3,"data":{"files": local_rows(9)["results"][0]["data"]["files"].clone()}},
-        ]});
-        let by_row = row_queries(&queries, &[1]);
-        assert_eq!(by_row.len(), 4);
-        assert!(by_row[1].is_none());
-        attach(&mut out, "localSearch", &by_row);
-        let goal = |row: usize| {
-            out["results"][row]["data"]["next"]["clasify"]["query"]["queries"][0]["mainGoal"]
-                .clone()
-        };
-        assert_eq!(goal(0), "goal-0");
-        assert!(out["results"][1]["data"].get("next").is_none());
-        assert_eq!(goal(2), "goal-2");
-        assert_eq!(goal(3), "goal-3");
+    fn metadata_candidates_get_a_routing_question() {
+        for (tool, selection) in [
+            (
+                "localSearch",
+                json!({"matchString":"retry","resultView":"files"}),
+            ),
+            (
+                "ghSearchCode",
+                json!({"keywords":["retry"],"fields":["path"]}),
+            ),
+            (
+                "ghSearchCode",
+                json!({"keywords":["retry"],"matchIn":"path"}),
+            ),
+        ] {
+            let mut query = selection;
+            query["mainGoal"] = json!("Locate the retry condition");
+            let mut out = local_rows(2);
+            run(&mut out, tool, &[query]);
+            let matrix = &handoff(&out).expect("metadata routing")["query"]["queries"][0];
+            assert_eq!(matrix["resources"][0]["candidateEvidence"], "search");
+            assert_eq!(matrix["questions"][0]["type"], "yesno");
+            assert!(
+                matrix["questions"][0]["ask"]
+                    .as_str()
+                    .unwrap()
+                    .contains("missing file bodies are not negative evidence")
+            );
+        }
     }
 
     #[test]
-    fn generated_handoffs_satisfy_the_tool_output_contract() {
-        let (local, github) = retry_outputs(
-            "find retry",
-            json!({"mainGoal":"find sync","keywords":["sync","retry"]}),
-        );
-        for (tool, output) in [("localSearch", &local), ("ghSearchCode", &github)] {
-            assert!(handoff(output).is_some(), "{tool} produced a handoff");
-            if let Err(violation) = crate::contracts::validate_output(tool, output) {
-                panic!(
-                    "{tool}: {:?}",
-                    violation.issues.first().map(|i| (&i.path, &i.message))
-                );
-            }
+    fn generated_handoffs_validate_for_local_and_remote_tools() {
+        for (tool, query) in [
+            (
+                "localSearch",
+                json!({"path":"/repo","matchString":"retry","mainGoal":"Locate the retry condition"}),
+            ),
+            (
+                "ghSearchCode",
+                json!({"owner":"o","repo":"r","keywords":["retry"],"reasoning":"Locate the retry condition"}),
+            ),
+        ] {
+            let mut out = local_rows(2);
+            run(&mut out, tool, std::slice::from_ref(&query));
+            let matrix = &handoff(&out).expect("handoff")["query"];
+            crate::contracts::prepare_many_and_validate("clasify", matrix.clone())
+                .expect("valid input");
+            crate::contracts::validate_output(tool, &out).expect("valid output");
         }
+        let query = json!({"path":"src/queue.rs","mainGoal":"Locate the cancellation guard"});
+        let offer = file_offer(&query, &json!({"isPartial":true})).unwrap();
+        crate::contracts::prepare_many_and_validate("clasify", offer["query"].clone())
+            .expect("valid Locate");
+    }
+
+    #[test]
+    fn rows_after_rejection_keep_their_own_target_and_coverage() {
+        let queries = [
+            json!({"mainGoal":"target zero","matchString":"retry"}),
+            json!({"mainGoal":"target two","matchString":"retry"}),
+        ];
+        let files = local_rows(2)["results"][0]["data"]["files"].clone();
+        let mut out = json!({"results":[
+            {"index":0,"data":{"files":files.clone()}},
+            {"index":1,"status":"error","data":{}},
+            {"index":2,"data":{"files":files,"pagination":{"hasMore":true}}}
+        ]});
+        let by_row = row_queries(&queries, &[1]);
+        assert!(by_row[1].is_none());
+        attach(&mut out, "localSearch", &by_row);
+        for (row, target) in [(0, "target zero"), (2, "target two")] {
+            assert_eq!(
+                out["results"][row]["data"]["next"]["clasify"]["query"]["queries"][0]["mainGoal"],
+                target
+            );
+        }
+        assert!(out["results"][1]["data"].get("next").is_none());
+        assert_eq!(out["results"][2]["data"]["pagination"]["hasMore"], true);
     }
 }

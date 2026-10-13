@@ -2,6 +2,7 @@ pub(crate) mod errors;
 mod leads;
 
 use std::path::Path;
+use std::sync::Arc;
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -78,6 +79,17 @@ pub struct FileRead {
     pub cache: bool,
 }
 
+/// Owned dependencies for shaping a ranked GitHub body off the async
+/// acquisition worker. The scanner keeps the same shared sanitized-view memo.
+#[derive(Clone)]
+pub(crate) struct RankedShape {
+    pub security: crate::security::ContentSecurity,
+    pub memo: Arc<crate::security::scan::SanitizedViewMemo>,
+    pub context: crate::runtime::ExecutionContext,
+    pub regex: crate::tools::local_fetch::LocalFetchRegex,
+    pub ranking: crate::tools::ranking::Runtime,
+}
+
 /// Run one ghGetFileContent row: the read, or the failure with its one
 /// recovery (a missing path walks to the case-corrected file or the nearest
 /// existing directory).
@@ -89,6 +101,7 @@ pub async fn run<C>(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
+    ranked_shape: Option<RankedShape>,
 ) -> Result<FileRead, GhFailure>
 where
     C: ConditionalCache,
@@ -102,6 +115,7 @@ where
         security,
         cancel,
         regex,
+        ranked_shape,
     )
     .await
     {
@@ -168,6 +182,7 @@ pub async fn execute<C>(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
+    ranked_shape: Option<RankedShape>,
 ) -> Result<GhGetFileContentResult, ProviderError>
 where
     C: ConditionalCache,
@@ -231,19 +246,42 @@ where
     } else {
         (None, None)
     };
-    shape(
-        query,
-        acquired,
-        Fetched {
-            window,
-            renamed_warning,
-            last_modified,
-            last_modified_by,
-        },
-        security,
-        cancel,
-        regex,
-    )
+    let fetched = Fetched {
+        window,
+        renamed_warning,
+        last_modified,
+        last_modified_by,
+    };
+    if query.goals.is_empty() && query.ranking.is_none() {
+        shape(query, acquired, fetched, security, cancel, regex, None)
+    } else {
+        let owned = ranked_shape.ok_or_else(|| {
+            ProviderError::new(
+                crate::providers::github::ProviderErrorKind::Configuration,
+                "ranked content context unavailable",
+            )
+        })?;
+        let query = query.clone();
+        tokio::task::spawn_blocking(move || {
+            let scanner = crate::security::scan::MemoizedScan::new(&owned.security, &owned.memo);
+            shape(
+                &query,
+                acquired,
+                fetched,
+                &scanner,
+                &owned.context,
+                &owned.regex,
+                Some(&owned.ranking),
+            )
+        })
+        .await
+        .map_err(|_| {
+            ProviderError::new(
+                crate::providers::github::ProviderErrorKind::Decode,
+                "ranked content worker failed",
+            )
+        })?
+    }
 }
 
 /// What the fetch side of a read hands its shaping: the response window,
@@ -264,6 +302,7 @@ fn shape(
     security: &impl ContentScan,
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
+    ranking: Option<&crate::tools::ranking::Runtime>,
 ) -> Result<GhGetFileContentResult, ProviderError> {
     let Fetched {
         window,
@@ -280,15 +319,33 @@ fn shape(
         window,
         first_page_bytes: Some(FIRST_PAGE_BYTES),
     };
-    let mut content = process_fetched_content(
-        &local,
-        &acquired.bytes,
-        Path::new(query.path.as_str()),
-        &facts,
-        security,
-        cancel,
-        regex,
-    );
+    let mut content = if local.goals.is_empty() && local.ranking.is_none() {
+        process_fetched_content(
+            &local,
+            &acquired.bytes,
+            Path::new(query.path.as_str()),
+            &facts,
+            security,
+            cancel,
+            regex,
+        )
+    } else {
+        let rank_path = format!(
+            "{}/{}/{}/{}",
+            query.owner, query.repo, acquired.resolved_ref, query.path
+        );
+        crate::tools::local_fetch::process_fetched_content_ranked(
+            &local,
+            &acquired.bytes,
+            Path::new(&rank_path),
+            query.path.as_str(),
+            &facts,
+            security,
+            cancel,
+            regex,
+            ranking,
+        )
+    };
     if content.error_code.as_deref() == Some("invalidPagination") {
         return Err(ProviderError::new(
             crate::providers::github::ProviderErrorKind::Decode,
@@ -537,6 +594,8 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
         path,
         ranges,
         reasoning,
+        goals,
+        ranking,
         ref_: _,
         regex,
         repo: _,
@@ -572,6 +631,16 @@ fn local_query(query: &GhGetFileContentQuery) -> Result<LocalFetchQuery, Provide
             .map_err(decode_display)?,
         regex: *regex,
         snapshot: None,
+        goals: goals
+            .iter()
+            .map(|goal| goal.as_str().parse())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(decode_display)?,
+        ranking: ranking
+            .as_ref()
+            .map(|plan| plan.as_str().parse())
+            .transpose()
+            .map_err(decode_display)?,
         unit: *unit,
     };
     let paged =
@@ -640,7 +709,7 @@ mod tests {
         query: &GhGetFileContentQuery,
         request_context: &RequestContext,
         window: Option<usize>,
-        security: &impl ContentScan,
+        security: &(impl ContentScan + Sync),
         cancel: &impl CancellationCheck,
     ) -> Result<GhGetFileContentResult, ProviderError>
     where
@@ -654,6 +723,7 @@ mod tests {
             security,
             cancel,
             &crate::tools::local_fetch::LocalFetchRegex,
+            None,
         )
         .await
     }
@@ -667,6 +737,108 @@ mod tests {
         ) -> Result<(String, Vec<String>), (String, String)> {
             Ok((text.replace("TOKEN", "[REDACTED]"), vec![]))
         }
+    }
+
+    struct TimedJudge(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+    impl crate::tools::ranking::RankJudge for TimedJudge {
+        fn identity(&self) -> Value {
+            json!({"model":"timed-test"})
+        }
+
+        fn score(
+            &self,
+            call: crate::tools::ranking::JudgeCall<'_>,
+        ) -> Result<Vec<(usize, f64)>, String> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            call.handle.block_on(async {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            });
+            Ok(call
+                .admitted
+                .iter()
+                .map(|&index| (index, index as f64))
+                .collect())
+        }
+    }
+
+    async fn ranked_body_is_shaped_off_the_acquisition_worker() {
+        let server = MockServer::builder().start().await;
+        let sha = "0123456789abcdef0123456789abcdef01234567";
+        mount_json(&server, "/api/v3/repos/a/b/contents/large.txt", 200, json!({
+            "type":"file", "encoding":"base64", "content":STANDARD.encode("line with useful evidence and a long suffix\n".repeat(300))
+        })).await;
+        let provider = mock_provider(&server, RetryPolicy::default());
+        let query: GhGetFileContentQuery = serde_json::from_value(json!({
+            "owner":"a", "repo":"b", "path":"large.txt", "ref":sha,
+            "unit":"lines", "length":100, "minify":"none", "goals":["find useful evidence"]
+        }))
+        .expect("ranked query");
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let context = crate::runtime::ExecutionContext {
+            cancellation: tokio_util::sync::CancellationToken::new(),
+            deadline: std::time::Instant::now() + Duration::from_secs(10),
+            walk_threads: None,
+            response_window: None,
+            github_credential: None,
+        };
+        let ranking = crate::tools::ranking::Runtime {
+            limits: crate::tools::ranking::Limits {
+                enabled: true,
+                max_candidates: 64,
+                max_chars: 131_072,
+                timeout: Duration::from_secs(5),
+            },
+            available: true,
+            judge: std::sync::Arc::new(TimedJudge(calls.clone())),
+            handle: tokio::runtime::Handle::current(),
+            context: context.clone(),
+            home: std::path::PathBuf::new(),
+            stats_enabled: false,
+        };
+        let owned = RankedShape {
+            security: crate::security::ContentSecurity,
+            memo: Arc::new(SanitizedViewMemo::new()),
+            context,
+            regex: crate::tools::local_fetch::LocalFetchRegex,
+            ranking,
+        };
+        let result = tokio::time::timeout(
+            Duration::from_secs(10),
+            execute(
+                &provider,
+                &query,
+                &fixture_context(Duration::from_secs(10), 1 << 20),
+                Some(50_000),
+                &Safe,
+                &NeverCancel,
+                &crate::tools::local_fetch::LocalFetchRegex,
+                Some(owned),
+            ),
+        )
+        .await
+        .expect("ranked read must not block the reactor")
+        .expect("ranked read");
+        assert_eq!(
+            result.files[0].content.ranking.as_ref().map(|r| &r.status),
+            Some(&crate::contracts::tool_types::RankingStatus::Ranked)
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn ranked_gh_body_runs_on_current_and_multithread_runtimes() {
+        let current = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("current runtime");
+        current.block_on(ranked_body_is_shaped_off_the_acquisition_worker());
+        let multi = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("multithread runtime");
+        multi.block_on(ranked_body_is_shaped_off_the_acquisition_worker());
     }
 
     #[derive(Default)]
@@ -1177,6 +1349,7 @@ mod tests {
             &Safe,
             &NeverCancel,
             &crate::tools::local_fetch::LocalFetchRegex,
+            None,
         )
         .await
     }

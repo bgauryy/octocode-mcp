@@ -72,7 +72,7 @@
 
 <div class="ob">
   <header class="ob-head" id="top">
-    <div class="ob-eyebrow">Octocode research benchmark</div>
+    <div class="ob-eyebrow" id="corpus-label">Octocode research benchmark</div>
     <h1 class="ob-title" id="title">Octocode benchmark</h1>
     <p class="ob-lede" id="takeaway" data-source="groups"></p>
     <nav class="ob-tabs" role="tablist" aria-label="Sections">
@@ -113,11 +113,11 @@
     <div class="ob-grid">
       <div class="ob-card" id="card-time">
         <h2>Time to answer</h2>
-        <p class="ob-note">Mean seconds per question from the agent's start to its answer: model time, then tool calls and harness overhead. Only tools run with the current harness are timed; older campaigns didn't record comparable times. Labels show the median.</p>
+        <p class="ob-note">Median elapsed seconds per question, including measured setup and tools. Hover for model/tool timing where the host reports it; an unavailable split remains unknown. Compare time within the same campaign.</p>
         <div class="ob-chart dash-skeleton" id="chart-time" data-source="groups"></div>
       </div>
       <div class="ob-card" id="card-correct">
-        <h2>Correctness is a tie</h2>
+        <h2>Correctness</h2>
         <p class="ob-note">Blind-judge correctness, rounded to whole points out of 10. The judge moves by about a point between runs, so tools within one point are equally correct. Hover for the exact mean.</p>
         <div class="ob-chart dash-skeleton" id="chart-correct" data-source="groups"></div>
       </div>
@@ -125,7 +125,7 @@
 
     <div class="ob-card" id="card-h2h">
       <h2>Head to head, same run</h2>
-      <p class="ob-note">Pairs answered in the same campaign by the same agent model and judged together, the fairest comparison here. "More correct" counts questions where one answer scored higher. Ratios are B ÷ A per question (geometric mean): above 1× means A used fewer characters or less time.</p>
+      <p class="ob-note">Pairs answered in the same campaign by the same agent model and judged together, the fairest comparison here. "More correct" requires a gap greater than one point; gaps of one point or less are tied. Ratios are B ÷ A per question (geometric mean): above 1× means A used fewer characters or less time.</p>
       <div class="ob-table-wrap">
         <table class="ob-t" id="table-h2h" data-source="head_to_head" data-row-key="pair">
           <thead><tr>
@@ -157,11 +157,11 @@
 
     <div class="ob-card" id="card-live">
       <h2>Live runs</h2>
-      <p class="ob-note">Every arm of the campaigns run with the current harness: one fresh agent per question, measured from its own transcript.</p>
+      <p class="ob-note">Every arm in this corpus: valid-run medians and all-attempt token/call budgets, including retained failures. Unreported costs remain unknown.</p>
       <div class="ob-table-wrap">
         <table class="ob-t" id="table-live" data-source="live_runs" data-row-key="run">
           <thead><tr>
-            <th data-field="campaign">Campaign</th><th data-field="arm">Arm</th><th class="n" data-field="runs">Runs</th><th class="n" data-field="calls">Tool calls</th>
+            <th data-field="campaign">Campaign</th><th data-field="arm">Arm</th><th class="n" data-field="runs">Final cells</th><th class="n" data-field="valid_runs">Valid</th><th class="n" data-field="attempts">Attempts</th><th class="n" data-field="calls">Tool calls</th>
             <th class="n" data-field="failed">Failed</th><th class="n" data-field="clasify_calls">clasify calls</th><th class="n" data-field="median_chars">Median chars / Q</th>
             <th class="n" data-field="median_secs">Median s / Q</th><th class="n" data-field="input_tokens">Input tokens</th><th class="n" data-field="cost_usd">Cost (USD)</th><th class="n" data-field="correctness">Correctness /10</th>
           </tr></thead>
@@ -189,10 +189,10 @@
 
   <section class="ob-page" id="method" role="tabpanel" aria-labelledby="tab-method" hidden>
     <div class="ob-method">
-      <div class="ob-card" id="m-questions"><h2>The questions</h2><p>One shared set of real GitHub research questions, from a single-file lookup to multi-hop traces across repositories, kernels and PR reviews. Each names its repositories and refs and nothing else: no hints, no answer key. Every tool answers the same set.</p></div>
-      <div class="ob-card" id="m-chars"><h2>What is counted</h2><p><b>Characters through the model.</b> Tool output read back into context, plus the tool calls and the final answer the agent wrote, taken from the agent's own transcript. Failed and refused calls count. System prompts and tool schemas don't.</p></div>
+      <div class="ob-card" id="m-questions"><h2>The questions</h2><p>One selected set of code research questions on GitHub or pinned local repositories, from a single-file lookup to multi-hop traces. Each names its repositories and refs and nothing else: no hints, no answer key. Every tool answers the same set.</p></div>
+      <div class="ob-card" id="m-chars"><h2>What is counted</h2><p><b>Observable characters.</b> Tool output read back into context, plus the tool calls and the final answer the agent wrote, taken from the agent's own transcript. Failed and refused calls count. System prompts, tool schemas and hidden host framing do not. Reported model tokens are measured separately; unavailable usage or timing is unknown.</p></div>
       <div class="ob-card" id="m-agents"><h2>The agents</h2><p>A fresh headless agent answers each question with one tool setup and nothing else: no project files, settings or memory. Octocode arms get only the MCP server; gh arms get only a read-only gh through Bash.</p></div>
-      <div class="ob-card" id="m-judge"><h2>The judge</h2><p>A blind judge from a different model family sees two answers as X and Y in random order with tool names removed, rebuilds the ground truth from GitHub, then scores correctness out of ten. Correctness comes first; fewer characters only break a tie.</p></div>
+      <div class="ob-card" id="m-judge"><h2>The judge</h2><p>A blind judge from a different model family sees two answers as X and Y in random order with tool names removed, verifies the ground truth against source, then scores correctness out of ten. Correctness comes first; fewer characters only break a tie.</p></div>
       <div class="ob-card" id="m-ratio"><h2>Averaging ratios</h2><p>For each question, the other tool's characters are divided by the anchor's. The headline is the geometric mean of those ratios across questions, with a bootstrap interval, so a few huge questions can't dominate.</p></div>
       <div class="ob-card" id="m-repro"><h2>Reproduce it</h2><p>Everything lives in <span class="ob-code">packages/octocode-benchmark</span>: <span class="ob-code">compare/bin/run_campaign.sh</span> runs arms, <span class="ob-code">judge_pair.sh</span> judges them, <span class="ob-code">matrix_summary.py</span> builds the matrix. <a href="https://github.com/bgauryy/octocode/tree/main/packages/octocode-benchmark">See the package on GitHub</a>.</p></div>
     </div>
@@ -248,11 +248,21 @@
 
   function axis(sel) { sel.attr('font-size', null).attr('font-family', null); return sel; }
 
+  function fitLabels(selection, width) {
+    selection.each(function (d) {
+      const text = d3.select(this), full = d.label;
+      for (let keep = Math.floor(full.length / 2); this.getComputedTextLength() > width && keep > 0; keep--) {
+        text.text(full.slice(0, keep) + '…' + full.slice(-keep));
+      }
+      text.append('title').text(full);
+    });
+  }
+
   function hbars(box, items, opts) {
     box.querySelector('svg')?.remove();
     const W = Math.max(box.clientWidth, 260), rowH = 34, top = 4, bottom = 26, H = top + items.length * rowH + bottom;
     const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
-    const labW = measure(svg, items.map((d) => d.label), 'ob-lbl') + 12;
+    const labW = Math.min(W * 0.48, measure(svg, items.map((d) => d.label), 'ob-lbl') + 12);
     const valW = measure(svg, items.map((d) => opts.fmt(d.value)), 'ob-val') + 10;
     const x = d3.scaleLinear([0, opts.max], [labW, W - valW]);
     const y = d3.scaleBand(items.map((d) => d.key), [top, top + items.length * rowH]).padding(0.32);
@@ -260,7 +270,7 @@
       .call(d3.axisBottom(x).ticks(opts.ticks || Math.max(2, Math.floor((W - labW - valW) / 90))).tickFormat(opts.tick).tickSize(-(H - bottom - top + 6))))
       .selectAll('text').attr('dy', '1em');
     svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-lbl').attr('x', 0)
-      .attr('y', (d) => y(d.key) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label);
+      .attr('y', (d) => y(d.key) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label).call(fitLabels, labW - 12);
     svg.append('g').selectAll('rect').data(items).join('rect').attr('x', x(0)).attr('y', (d) => y(d.key)).attr('height', y.bandwidth())
       .attr('rx', 4).attr('width', (d) => Math.max(2, x(d.value) - x(0))).attr('fill', (d) => col(d.key));
     svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-val').attr('x', (d) => x(d.value) + 6)
@@ -277,7 +287,7 @@
     const items = rows.filter((r) => !r.anchor);
     const W = Math.max(box.clientWidth, 260), rowH = 38, top = 22, bottom = 26, H = top + items.length * rowH + bottom;
     const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
-    const labW = measure(svg, items.map((d) => d.label), 'ob-lbl') + 12;
+    const labW = Math.min(W * 0.48, measure(svg, items.map((d) => d.label), 'ob-lbl') + 12);
     const valW = measure(svg, items.map((d) => f2(d.leaner_x) + '×'), 'ob-val') + 12;
     const lo = Math.min(0.8, d3.min(items, (d) => d.ci_low) * 0.9), hi = Math.max(1.5, d3.max(items, (d) => d.ci_high) * 1.1);
     const x = d3.scaleLog([lo, hi], [labW, W - valW]);
@@ -290,7 +300,7 @@
       .attr('stroke', 'var(--cds-chart-reference)').attr('stroke-width', 1.5).attr('stroke-dasharray', '4 3');
     svg.append('text').attr('class', 'ob-lbl-m').attr('x', x(1) + 6).attr('y', top - 8).text('same as anchor');
     svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-lbl').attr('x', 0)
-      .attr('y', (d) => y(d.id) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label);
+      .attr('y', (d) => y(d.id) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label).call(fitLabels, labW - 12);
     const g = svg.append('g').selectAll('g').data(items).join('g').attr('transform', (d) => `translate(0,${y(d.id) + y.bandwidth() / 2})`);
     g.append('line').attr('x1', (d) => x(d.ci_low)).attr('x2', (d) => x(d.ci_high)).attr('stroke', (d) => col(d.id))
       .attr('stroke-width', 3).attr('stroke-linecap', 'round').attr('opacity', 0.45);
@@ -308,40 +318,19 @@
   }
 
   function timeBars(box, rows) {
-    box.querySelector('svg')?.remove();
     const items = rows.filter((r) => r.secs_median != null);
     if (!items.length) { box.replaceChildren(el('div', 'ob-fail', 'No timed runs yet')); return; }
-    const W = Math.max(box.clientWidth, 260), rowH = 34, top = 4, bottom = 26, H = top + items.length * rowH + bottom;
-    const svg = d3.select(box).insert('svg', ':first-child').attr('width', '100%').attr('height', H).attr('viewBox', `0 0 ${W} ${H}`);
-    const fmtS = (v) => d3.format('.1f')(v) + ' s';
-    const labW = measure(svg, items.map((d) => d.label), 'ob-lbl') + 12;
-    const valW = measure(svg, items.map((d) => fmtS(d.secs_median)), 'ob-val') + 10;
-    const x = d3.scaleLinear([0, d3.max(items, (d) => d.model_secs_mean + d.tool_secs_mean) * 1.02], [labW, W - valW]);
-    const y = d3.scaleBand(items.map((d) => d.id), [top, top + items.length * rowH]).padding(0.32);
-    axis(svg.append('g').attr('class', 'ob-axis').attr('transform', `translate(0,${H - bottom + 6})`)
-      .call(d3.axisBottom(x).ticks(Math.max(2, Math.floor((W - labW - valW) / 70))).tickFormat((v) => v + ' s').tickSize(-(H - bottom - top + 6)))).selectAll('text').attr('dy', '1em');
-    svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-lbl').attr('x', 0)
-      .attr('y', (d) => y(d.id) + y.bandwidth() / 2).attr('dy', '0.35em').text((d) => d.label);
-    // Model time in the tool's color, tool + overhead time as the same hue at half strength, with a 2px gap.
-    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', x(0)).attr('y', (d) => y(d.id)).attr('height', y.bandwidth())
-      .attr('rx', 4).attr('width', (d) => Math.max(2, x(d.model_secs_mean) - x(0) - 1)).attr('fill', (d) => col(d.id));
-    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', (d) => x(d.model_secs_mean) + 1).attr('y', (d) => y(d.id))
-      .attr('height', y.bandwidth()).attr('rx', 4).attr('width', (d) => Math.max(2, x(d.model_secs_mean + d.tool_secs_mean) - x(d.model_secs_mean) - 1))
-      .attr('fill', (d) => col(d.id)).attr('opacity', 0.45);
-    svg.append('g').selectAll('text').data(items).join('text').attr('class', 'ob-val')
-      .attr('x', (d) => x(d.model_secs_mean + d.tool_secs_mean) + 6).attr('y', (d) => y(d.id) + y.bandwidth() / 2).attr('dy', '0.35em')
-      .text((d) => fmtS(d.secs_median));
-    const tip = makeTip(box);
-    svg.append('g').selectAll('rect').data(items).join('rect').attr('x', 0).attr('width', W)
-      .attr('y', (d) => y(d.id) - y.step() * y.paddingInner() / 2).attr('height', y.step()).attr('fill', 'transparent')
-      .on('mousemove', (ev, d) => {
-        const [mx, my] = d3.pointer(ev, box);
-        const lines = [[d.id, 'Median per question', fmtS(d.secs_median)], [null, 'Mean: model', fmtS(d.model_secs_mean)],
-          [null, 'Mean: tools + overhead', fmtS(d.tool_secs_mean)]];
-        if (d.faster_x != null) lines.push([null, LABEL[ANCHOR] + ' faster by', f2(d.faster_x) + '× (' + f2(d.faster_ci_low) + '–' + f2(d.faster_ci_high) + ')']);
-        tip.show(d.label, lines, mx, my);
-      })
-      .on('mouseleave', () => tip.hide());
+    const fmt = (v) => d3.format('.1f')(v) + ' s';
+    hbars(box, items.map((r) => ({ key: r.id, label: r.label, value: r.secs_median, r })), {
+      max: d3.max(items, (r) => r.secs_median) * 1.02, fmt, tick: fmt,
+      tip: (d) => {
+        const lines = [[d.key, 'Median per question', fmt(d.r.secs_median)]];
+        if (d.r.model_secs_mean != null && d.r.tool_secs_mean != null) {
+          lines.push([null, 'Mean: model', fmt(d.r.model_secs_mean)], [null, 'Mean: tools + overhead', fmt(d.r.tool_secs_mean)]);
+        } else lines.push([null, 'Model/tool split', 'Unknown']);
+        return lines;
+      },
+    });
   }
 
   function strip(box, pq) {
@@ -430,7 +419,7 @@
     const scored = rows.filter((r) => r.correctness != null);
     if (scored.length) {
       const lo = d3.least(scored, (r) => r.correctness), hi = d3.greatest(scored, (r) => r.correctness);
-      parts.push(document.createTextNode(' Correctness is a tie: every tool scored '),
+      parts.push(document.createTextNode(' Rounded mean correctness spans '),
         val(String(lo.correctness), 'groups', 'correctness', 'id=' + enc(lo.id)));
       if (hi.correctness !== lo.correctness) parts.push(document.createTextNode('–'), val(String(hi.correctness), 'groups', 'correctness', 'id=' + enc(hi.id)));
       parts.push(document.createTextNode(' out of 10.'));
@@ -492,9 +481,11 @@
 
   function draw() {
     const page = PAGES.find((p) => !document.getElementById(p).hidden);
+    const corpus = dash.data('corpus').data?.[0];
+    if (corpus) document.getElementById('corpus-label').textContent = corpus.question_set + ' · ' + corpus.questions + ' questions';
     const boxes = page === 'benchmark' ? [...document.querySelectorAll('#kpis,#chart-median,#chart-forest,#chart-time,#chart-correct')] : [];
     const groups = stateOk('groups', boxes);
-    if (groups) {
+    if (groups && groups.length) {
       const rows = [...groups].sort((a, b) => a.order - b.order);
       ORDER = rows.map((r) => r.id); LABEL = Object.fromEntries(rows.map((r) => [r.id, r.label]));
       ANCHOR = (rows.find((r) => r.anchor) || rows[0]).id;

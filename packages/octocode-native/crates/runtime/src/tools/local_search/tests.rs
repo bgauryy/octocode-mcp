@@ -1,5 +1,41 @@
 use super::*;
 
+#[test]
+fn goal_search_replays_skipped_order_and_rejects_changed_goals() {
+    let root = tempfile::tempdir().expect("fixture");
+    std::fs::write(root.path().join("a.txt"), "needle\n").expect("fixture");
+    std::fs::write(root.path().join("b.txt"), "needle\n").expect("fixture");
+    let (policy, security) = policy_for(root.path());
+    let request = ls_query(
+        serde_json::json!({"path":root.path(),"matchString":"needle","pageSize":1,"goals":["find needle"]}),
+        None,
+    );
+    let first =
+        execute_local_search(&request, &policy, &security, &NeverCancel, None, None).expect("page");
+    assert_eq!(
+        first.ranking.as_ref().map(|r| r.status),
+        Some(crate::contracts::tool_types::RankingStatus::Skipped)
+    );
+    let continued: LocalSearchQuery = serde_json::from_value(
+        first.next.expect("next")["nextPage"]["query"]["queries"][0].clone(),
+    )
+    .expect("continuation");
+    assert!(continued.ranking.is_some());
+    let second = execute_local_search(&continued, &policy, &security, &NeverCancel, None, None)
+        .expect("page");
+    assert_eq!(second.files.len(), 1);
+    let changed = ls_query(
+        serde_json::json!({"goals":["another goal"]}),
+        Some(&continued),
+    );
+    assert_eq!(
+        execute_local_search(&changed, &policy, &security, &NeverCancel, None, None)
+            .expect_err("stale")
+            .code,
+        "staleSnapshot"
+    );
+}
+
 /// Test query from wire JSON over a base query (or a minimal valid one);
 /// `null` removes a field so its contract default applies.
 fn ls_query(fields: serde_json::Value, base: Option<&LocalSearchQuery>) -> LocalSearchQuery {
@@ -1607,9 +1643,62 @@ fn next_page_restarts_match_rows_and_next_match_page_tracks_shown_files() {
     );
 }
 
-/// A grid page names what each page reaches: `nextMatchPage` the rows
-/// left in this page's files, `nextPage` the files after them. Row
-/// totals live once, as `matchedLineCount` beside the occurrence
+#[test]
+fn two_axis_pages_form_one_exact_once_continuation_chain() {
+    let root = tempfile::tempdir().expect("fixture");
+    for (name, count) in [("a.txt", 3), ("b.txt", 2), ("c.txt", 2)] {
+        std::fs::write(root.path().join(name), "foo\n".repeat(count)).expect("fixture");
+    }
+    let (policy, security) = policy_for(root.path());
+    let mut request = ls_query(
+        serde_json::json!({
+            "path":root.path(), "matchString":"foo", "pageSize":2,
+            "matchPageSize":2, "sort":"path", "contextLines":0,
+            "goals":["find every foo row"]
+        }),
+        None,
+    );
+    let mut seen = std::collections::HashSet::new();
+    let mut queries = std::collections::HashSet::new();
+    let mut pages = 0;
+    loop {
+        let key = serde_json::to_string(&request).expect("query");
+        assert!(
+            queries.insert(key),
+            "continuation repeated an executable query"
+        );
+        let result = execute_local_search(&request, &policy, &security, &NeverCancel, None, None)
+            .expect("page");
+        pages += 1;
+        for file in &result.files {
+            for row in file.matches.iter().flatten() {
+                assert!(
+                    seen.insert((file.path.clone(), row.line)),
+                    "repeated evidence"
+                );
+            }
+        }
+        let Some(next) = result.next else {
+            break;
+        };
+        let match_page = next.get("nextMatchPage");
+        let file_page = next.get("nextPage");
+        assert!(
+            match_page.is_none() || file_page.is_none(),
+            "duplicate page route: {next}"
+        );
+        let continuation = match_page.or(file_page).expect("one page route");
+        request = serde_json::from_value(continuation["query"]["queries"][0].clone())
+            .expect("continuation query");
+        assert!(pages < 10, "pagination must terminate");
+    }
+    assert_eq!(pages, 3);
+    assert_eq!(seen.len(), 7);
+}
+
+/// A grid page names `nextMatchPage` while rows remain in its files, then
+/// `nextPage` for later files. Row totals live once, as `matchedLineCount`
+/// beside the occurrence
 /// count, and a later match page says which match page it shows.
 #[test]
 fn grid_pages_count_the_rows_a_match_page_reaches_and_name_the_match_page() {
@@ -3431,13 +3520,21 @@ fn paged_results_keep_cursor_fields_only_in_their_continuations() {
     assert_eq!(pagination["totalPages"], 2, "{body}");
     assert!(pagination.get("snapshot").is_none(), "{body}");
     assert!(pagination.get("nextPage").is_none(), "{body}");
+    assert!(body["next"].get("nextPage").is_none(), "{body}");
+    let last_match_page = search_fixture(
+        &[("a.txt", "foo\nfoo\nfoo\n"), ("b.txt", "foo\n")],
+        ls_query(
+            serde_json::json!({"matchString": "foo", "pageSize": 1, "matchPage": 3, "matchPageSize": 1, "contextLines": 0}),
+            None,
+        ),
+    );
     assert_eq!(
-        body["next"]["nextPage"]["query"]["queries"][0]["page"], 2,
-        "{body}"
+        last_match_page["next"]["nextPage"]["query"]["queries"][0]["page"], 2,
+        "{last_match_page}"
     );
     assert!(
-        body["next"]["nextPage"]["query"]["queries"][0]["snapshot"].is_string(),
-        "{body}"
+        last_match_page["next"]["nextPage"]["query"]["queries"][0]["snapshot"].is_string(),
+        "{last_match_page}"
     );
     let file = &body["files"][0]["pagination"];
     assert_eq!(file["hasMore"], true, "{body}");

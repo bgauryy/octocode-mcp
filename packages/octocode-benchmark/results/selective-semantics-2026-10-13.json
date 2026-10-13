@@ -1,0 +1,2316 @@
+{
+  "question": "Where should goals or clasify be used after red/white challenges?",
+  "verdict": "Keep exact routes as default; no automatic semantic invocation. Conditional semantic guidance is retained, not a proven universal routing policy.",
+  "tokenizer": "tiktoken0.12.0, complete CLI JSON responses; first-task raw JSON reconstructed with compact serialization plus newline and validated against every recorded character count",
+  "rows": [
+    {
+      "task": "Django",
+      "route": "plainPaged",
+      "trial": 1,
+      "chars": 23159,
+      "tokens": {
+        "o200k_base": 5675,
+        "cl100k_base": 5614
+      },
+      "callerCalls": 7,
+      "providerUsage": {
+        "calls": 0,
+        "known_usage_calls": 0,
+        "unknown_usage_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "Page 6 contains the complete statement at 346-350: the on_commit callable registered in a nested atomic/savepoint does not run if rollback to that or an earlier savepoint occurred. Pages 1-5 do not resolve that callback-specific condition. Page 4 mentions deferring cache updates to commit and savepoint rollback independently, but does not establish whether callbacks registered within a rolled-back savepoint survive an eventual outer commit.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 6,
+        "chars": 19761,
+        "tokens": {
+          "cl100k_base": 4768,
+          "o200k_base": 4814
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "goalsPaged",
+      "trial": 1,
+      "chars": 7648,
+      "tokens": {
+        "o200k_base": 2204,
+        "cl100k_base": 2227
+      },
+      "callerCalls": 2,
+      "providerUsage": {
+        "calls": 15,
+        "known_usage_calls": 15,
+        "unknown_usage_calls": 0,
+        "input_tokens": 15253,
+        "output_tokens": 285
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "Page 1 contains 346-350 and the nested on_commit example at 352-358. The later rollback example at 360-361 is redundant for the task's yes/no answer, so waiting for it is a full-anchor scoring overread.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 1,
+        "chars": 3654,
+        "tokens": {
+          "cl100k_base": 1072,
+          "o200k_base": 1058
+        },
+        "providerRequests": 15,
+        "providerInputTokens": 15253,
+        "providerOutputTokens": 285,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "clasifyLocate",
+      "trial": 1,
+      "chars": 1761,
+      "tokens": {
+        "o200k_base": 493,
+        "cl100k_base": 480
+      },
+      "callerCalls": 3,
+      "providerUsage": {
+        "calls": 3,
+        "known_usage_calls": 3,
+        "unknown_usage_calls": 0,
+        "input_tokens": 13204,
+        "output_tokens": 1913
+      },
+      "caveat": "Original hint-parser failure retained; read saved public best windows without reclassification.",
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "The saved query-level hints.read names 343-350, and that exact lead was the first source read during the recorded post-result repair. It contains the complete 346-350 answer. The second best.where range 359-366 is redundant for adequacy. The original runner had parsed the wrong hints location and stopped after judgment; preserve that failure separately from the repaired observed sequence.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 2,
+        "chars": 1284,
+        "tokens": {
+          "cl100k_base": 360,
+          "o200k_base": 371
+        },
+        "providerRequests": 3,
+        "providerInputTokens": 13204,
+        "providerOutputTokens": 1913,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "plainLiteral",
+      "trial": 1,
+      "chars": 6882,
+      "tokens": {
+        "o200k_base": 1742,
+        "cl100k_base": 1734
+      },
+      "callerCalls": 2,
+      "providerUsage": {
+        "calls": 0,
+        "known_usage_calls": 0,
+        "unknown_usage_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "The first savepoint match page already contains 346-350 and identifies on_commit in nested atomic blocks. Its second page is unnecessary to establish the asked answer, although it was actually fetched.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 1,
+        "chars": 3446,
+        "tokens": {
+          "cl100k_base": 866,
+          "o200k_base": 873
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "goalsPaged",
+      "trial": 2,
+      "chars": 7648,
+      "tokens": {
+        "o200k_base": 2190,
+        "cl100k_base": 2215
+      },
+      "callerCalls": 2,
+      "providerUsage": {
+        "calls": 15,
+        "known_usage_calls": 15,
+        "unknown_usage_calls": 0,
+        "input_tokens": 15253,
+        "output_tokens": 285
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "Page 1 contains 346-350 and the nested on_commit example at 352-358. The later rollback example at 360-361 is redundant for the task's yes/no answer, so waiting for it is a full-anchor scoring overread.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 1,
+        "chars": 3654,
+        "tokens": {
+          "cl100k_base": 1066,
+          "o200k_base": 1051
+        },
+        "providerRequests": 15,
+        "providerInputTokens": 15253,
+        "providerOutputTokens": 285,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "plainPaged",
+      "trial": 2,
+      "chars": 23159,
+      "tokens": {
+        "o200k_base": 5675,
+        "cl100k_base": 5614
+      },
+      "callerCalls": 7,
+      "providerUsage": {
+        "calls": 0,
+        "known_usage_calls": 0,
+        "unknown_usage_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "Page 6 contains the complete statement at 346-350: the on_commit callable registered in a nested atomic/savepoint does not run if rollback to that or an earlier savepoint occurred. Pages 1-5 do not resolve that callback-specific condition. Page 4 mentions deferring cache updates to commit and savepoint rollback independently, but does not establish whether callbacks registered within a rolled-back savepoint survive an eventual outer commit.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 6,
+        "chars": 19761,
+        "tokens": {
+          "cl100k_base": 4768,
+          "o200k_base": 4814
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "plainLiteral",
+      "trial": 2,
+      "chars": 6882,
+      "tokens": {
+        "o200k_base": 1742,
+        "cl100k_base": 1734
+      },
+      "callerCalls": 2,
+      "providerUsage": {
+        "calls": 0,
+        "known_usage_calls": 0,
+        "unknown_usage_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "The first savepoint match page already contains 346-350 and identifies on_commit in nested atomic blocks. Its second page is unnecessary to establish the asked answer, although it was actually fetched.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 1,
+        "chars": 3446,
+        "tokens": {
+          "cl100k_base": 866,
+          "o200k_base": 873
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "clasifyLocate",
+      "trial": 2,
+      "chars": 1761,
+      "tokens": {
+        "o200k_base": 493,
+        "cl100k_base": 480
+      },
+      "callerCalls": 3,
+      "providerUsage": {
+        "calls": 3,
+        "known_usage_calls": 3,
+        "unknown_usage_calls": 0,
+        "input_tokens": 13204,
+        "output_tokens": 1913
+      },
+      "caveat": "Original hint-parser failure retained; read saved public best windows without reclassification.",
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "The saved query-level hints.read names 343-350, and that exact lead was the first source read during the recorded post-result repair. It contains the complete 346-350 answer. The second best.where range 359-366 is redundant for adequacy. The original runner had parsed the wrong hints location and stopped after judgment; preserve that failure separately from the repaired observed sequence.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 2,
+        "chars": 1284,
+        "tokens": {
+          "cl100k_base": 360,
+          "o200k_base": 371
+        },
+        "providerRequests": 3,
+        "providerInputTokens": 13204,
+        "providerOutputTokens": 1913,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Tokio",
+      "route": "plainPaged",
+      "trial": 1,
+      "chars": 11270,
+      "tokens": {
+        "o200k_base": 3433,
+        "cl100k_base": 3423
+      },
+      "callerCalls": 4,
+      "providerUsage": {
+        "calls": 0,
+        "known_usage_calls": 0,
+        "unknown_usage_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "The fourth ordinary source page supplies recv documentation at 188-197: None requires a closed channel and an empty buffer, and outstanding pre-close permits prevent recv from considering it closed until release. Pages 1-3 were independently read: weak-sender lifecycle, permit definitions, channel setup, and generic sender-disconnect behavior do not resolve existing reservations after Receiver::close.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 4,
+        "chars": 11270,
+        "tokens": {
+          "cl100k_base": 3423,
+          "o200k_base": 3433
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Tokio",
+      "route": "goalsPaged",
+      "trial": 1,
+      "chars": 21541,
+      "tokens": {
+        "o200k_base": 7070,
+        "cl100k_base": 7241
+      },
+      "callerCalls": 6,
+      "providerUsage": {
+        "calls": 8,
+        "known_usage_calls": 8,
+        "unknown_usage_calls": 0,
+        "input_tokens": 9248,
+        "output_tokens": 152
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "The first ranked source page already contains the explicit async recv rule at 193-197: pre-close outstanding permits mean recv does not consider the channel closed until they are released. Its blocking_recv documentation at 370-385 also explicitly gives the empty-buffer/closed condition and the same permit-release condition. This answers the asked close-with-reserved-capacity question without requiring the complete frozen 188-197 anchor. The six-page run is incurred harness work, not semantic evidence-arrival. Ranking is partial (8 of 34 windows, candidateBudget); that receipt alone does not imply delayed proof.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 1,
+        "chars": 4065,
+        "tokens": {
+          "cl100k_base": 1282,
+          "o200k_base": 1254
+        },
+        "providerRequests": 8,
+        "providerInputTokens": 9248,
+        "providerOutputTokens": 152,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Tokio",
+      "route": "clasifyLocate",
+      "trial": 1,
+      "chars": 1529,
+      "tokens": {
+        "o200k_base": 499,
+        "cl100k_base": 489
+      },
+      "callerCalls": 3,
+      "providerUsage": {
+        "calls": 4,
+        "known_usage_calls": 4,
+        "unknown_usage_calls": 0,
+        "input_tokens": 30888,
+        "output_tokens": 4634
+      },
+      "caveat": "Locate includes a duplicate absolute/relative-path read; no target proof",
+      "observedFullAnchorFoundIncludingRepair": false,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "insufficient",
+      "adjudicationReason": "The classifier scores 240-247 highly, but its location/score is not source proof. The executed unique read covers the tail of a normal receive example and recv forwarding to poll_fn(|cx| self.chan.recv(cx)).await. Neither close nor outstanding permits nor empty-buffer termination appears, and the delegated chan.recv implementation is unseen. The repeated relative/absolute lead read adds no evidence. This fails on substantive source sufficiency, not merely missing the frozen anchor.",
+      "earliestAdequateObservedPrefix": null
+    },
+    {
+      "task": "Tokio",
+      "route": "plainLiteral1:closed",
+      "trial": 1,
+      "chars": 3696,
+      "tokens": {
+        "o200k_base": 1016,
+        "cl100k_base": 1013
+      },
+      "callerCalls": 1,
+      "providerUsage": {
+        "calls": 0,
+        "known_usage_calls": 0,
+        "unknown_usage_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "adjudicationReason": "The first literal closed page directly supplies the complete recv contract at 188-197, including both empty-buffer finality and outstanding pre-close permits delaying closed status until release. This is adequate source proof from an ordinary route with no provider work.",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 1,
+        "chars": 3696,
+        "tokens": {
+          "cl100k_base": 1013,
+          "o200k_base": 1016
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result manual source-adequacy adjudication of saved calls; not observed agent stopping"
+      }
+    },
+    {
+      "task": "Tokio",
+      "route": "plainLiteral2:reserve",
+      "trial": 1,
+      "chars": 28787,
+      "tokens": {
+        "o200k_base": 8614,
+        "cl100k_base": 8612
+      },
+      "callerCalls": 10,
+      "providerUsage": {
+        "calls": 0,
+        "known_usage_calls": 0,
+        "unknown_usage_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": null,
+      "observedFullAnchorFoundIncludingRepair": false,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "partial-evidence",
+      "adjudicationReason": "The exhausted reserve pages are relevant, not wholly empty evidence. Page 2 says Permit tracks reserved capacity, Permit::send consumes it, and dropping it releases capacity; page 8 says Permit::send succeeds even after the receiver half closes (and page 9 states the owned version). That supports the negative sub-answer that closing does not make future delivery impossible. The observed slices do not explicitly establish when recv returns None or its outstanding-permit/empty-buffer termination contract, so they remain partial for the complete requested documented answer. No frozen-anchor-only failure is asserted.",
+      "earliestAdequateObservedPrefix": null
+    },
+    {
+      "task": "Django",
+      "route": "task-phrase-context10",
+      "trial": 1,
+      "chars": 1111,
+      "tokens": {
+        "o200k_base": 266,
+        "cl100k_base": 265
+      },
+      "callerCalls": 1,
+      "providerUsage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": "Post-result adversarial control drawn from task wording; not replacement frozen baseline.",
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 1,
+        "chars": 1111,
+        "tokens": {
+          "o200k_base": 266,
+          "cl100k_base": 265
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result exact challenge; not a replacement frozen baseline"
+      }
+    },
+    {
+      "task": "Django",
+      "route": "rollback-word-context3",
+      "trial": 1,
+      "chars": 4839,
+      "tokens": {
+        "o200k_base": 1171,
+        "cl100k_base": 1165
+      },
+      "callerCalls": 2,
+      "providerUsage": {
+        "calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0
+      },
+      "caveat": "Post-result adversarial control drawn from task wording; not replacement frozen baseline.",
+      "observedFullAnchorFoundIncludingRepair": true,
+      "metric": "Actual incurred complete response cost, including recorded repairs; not first sufficient evidence",
+      "sourceAdequacy": "sufficient",
+      "earliestAdequateObservedPrefix": {
+        "callerCalls": 2,
+        "chars": 4839,
+        "tokens": {
+          "o200k_base": 1171,
+          "cl100k_base": 1165
+        },
+        "providerRequests": 0,
+        "providerInputTokens": 0,
+        "providerOutputTokens": 0,
+        "metric": "Post-result exact challenge; not a replacement frozen baseline"
+      }
+    }
+  ],
+  "modelUsage": {
+    "calls": 48,
+    "known_usage_calls": 48,
+    "unknown_usage_calls": 0,
+    "input_tokens": 97050,
+    "output_tokens": 9182
+  },
+  "redMechanics": {
+    "planHash": "363aa1d1d57dc60b5b5d067db95250c2cdc52ce491dd3c5ee85e02922c8aa74b",
+    "runnerSha256": "fecfd0f62cc8358a96de214694efc0347d71739014c4af71e55d2616fc375bec",
+    "provider": "scripted loopback; no model invoked",
+    "paidRequests": 0,
+    "paidInputTokens": 0,
+    "loopbackRequests": 11,
+    "scriptedUsage": {
+      "unknown_usage_calls": 0,
+      "calls": 11,
+      "known_usage_calls": 11,
+      "input_tokens": 110,
+      "output_tokens": 22
+    },
+    "passed": 14,
+    "total": 14,
+    "results": [
+      {
+        "id": "exact-range",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": []
+      },
+      {
+        "id": "exact-identifier",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": []
+      },
+      {
+        "id": "small-file-explicit-goals",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": [
+          "singleCandidate"
+        ]
+      },
+      {
+        "id": "one-file-search-explicit-goals",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": [
+          "singleCandidate"
+        ]
+      },
+      {
+        "id": "exhaustive-full-read",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": [
+          "unsupportedView"
+        ]
+      },
+      {
+        "id": "count-only",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": [
+          "unsupportedView"
+        ]
+      },
+      {
+        "id": "explicit-source-sort",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": [
+          "explicitSort"
+        ]
+      },
+      {
+        "id": "exact-ast-condition",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": []
+      },
+      {
+        "id": "lsp-resolved-identity",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": []
+      },
+      {
+        "id": "exhaustive-search-pages",
+        "kind": "negative-route-control",
+        "passed": true,
+        "expectedCalls": 0,
+        "actualLoopbackRequests": 0,
+        "rankingReasons": []
+      },
+      {
+        "id": "misuse-small-list-goals",
+        "kind": "explicit-misuse-probe",
+        "passed": true,
+        "expectedCalls": 3,
+        "actualLoopbackRequests": 3,
+        "rankingReasons": []
+      },
+      {
+        "id": "misuse-exact-large-range-goals",
+        "kind": "explicit-misuse-probe",
+        "passed": true,
+        "expectedCalls": 2,
+        "actualLoopbackRequests": 2,
+        "rankingReasons": []
+      },
+      {
+        "id": "misuse-nested-goals-and-clasify",
+        "kind": "explicit-misuse-probe",
+        "passed": true,
+        "expectedCalls": 6,
+        "actualLoopbackRequests": 6,
+        "rankingReasons": []
+      },
+      {
+        "id": "already-held-precedence",
+        "kind": "host-deterministic-control",
+        "passed": true,
+        "actualLoopbackRequests": 0,
+        "observedExpires": 101000,
+        "limitation": "Minimal own mechanism only; source-grounded PR packet checks are preserved in prior report."
+      }
+    ]
+  },
+  "redEvidenceAudit": {
+    "kind": "Post-run deterministic evidence audit; no CLI/provider reruns",
+    "checks": [
+      {
+        "check": "small file is exact source",
+        "passed": true,
+        "observed": "Seven source lines, singleCandidate, no classifier"
+      },
+      {
+        "check": "full exhaustive file is exact source",
+        "passed": true,
+        "observed": "All80 lines in source order, no omission"
+      },
+      {
+        "check": "selected exact range preserves every selected line",
+        "passed": true,
+        "observed": "All35 lines, despite unnecessary two scripted requests"
+      },
+      {
+        "check": "exact-identifier exact match set",
+        "passed": true,
+        "observed": [
+          [
+            "src/consumer.ts",
+            1
+          ],
+          [
+            "src/consumer.ts",
+            3
+          ],
+          [
+            "src/other.ts",
+            1
+          ],
+          [
+            "src/policy.ts",
+            1
+          ],
+          [
+            "src/policy.ts",
+            5
+          ]
+        ]
+      },
+      {
+        "check": "exhaustive-search-pages exact match set",
+        "passed": true,
+        "observed": [
+          [
+            "src/consumer.ts",
+            1
+          ],
+          [
+            "src/consumer.ts",
+            3
+          ],
+          [
+            "src/other.ts",
+            1
+          ],
+          [
+            "src/policy.ts",
+            1
+          ],
+          [
+            "src/policy.ts",
+            5
+          ]
+        ]
+      },
+      {
+        "check": "misuse-small-list-goals exact match set",
+        "passed": true,
+        "observed": [
+          [
+            "src/consumer.ts",
+            1
+          ],
+          [
+            "src/consumer.ts",
+            3
+          ],
+          [
+            "src/other.ts",
+            1
+          ],
+          [
+            "src/policy.ts",
+            1
+          ],
+          [
+            "src/policy.ts",
+            5
+          ]
+        ]
+      },
+      {
+        "check": "exhaustive continuation exhausted",
+        "passed": true,
+        "observed": "Three pages; no duplicated or missing five match anchors"
+      },
+      {
+        "check": "count equals source",
+        "passed": true,
+        "observed": 5
+      },
+      {
+        "check": "explicit sort is respected",
+        "passed": true,
+        "observed": "path order"
+      },
+      {
+        "check": "AST exact condition identity",
+        "passed": true,
+        "observed": {
+          "files": [
+            {
+              "path": "src/policy.ts",
+              "matches": [
+                {
+                  "line": 2,
+                  "value": "role === \"admin\""
+                }
+              ]
+            }
+          ],
+          "matchCount": 1
+        }
+      },
+      {
+        "check": "LSP disambiguates same spelling",
+        "passed": true,
+        "observed": "consumer.ts:3 resolves to policy.ts:1, not other.ts:1"
+      },
+      {
+        "check": "nested request has two stages",
+        "passed": true,
+        "observed": [
+          [
+            "score"
+          ],
+          [
+            "score"
+          ],
+          [
+            "score"
+          ],
+          [
+            "noul"
+          ],
+          [
+            "noul"
+          ],
+          [
+            "noul"
+          ]
+        ]
+      },
+      {
+        "check": "task-phrase-context10 source establishes answer",
+        "passed": true,
+        "observed": {
+          "chars": 1111,
+          "calls": 1
+        }
+      },
+      {
+        "check": "rollback-word-context3 source establishes answer",
+        "passed": true,
+        "observed": {
+          "chars": 4839,
+          "calls": 2
+        }
+      },
+      {
+        "check": "post-result exact controls have zero classifier requests",
+        "passed": true,
+        "observed": 0
+      }
+    ],
+    "passed": true
+  },
+  "limits": [
+    "Two previously exposed public source tasks; repeats are not independent samples.",
+    "First task measured fixed-target arrival and original-source proof, not separate additional verifier calls promised in plan.",
+    "First Locate parser repaired without a new model request; original failure retained.",
+    "Second Locate repeats one exact read; all costs retained and failure not credited as savings.",
+    "The final provider budget disallows another second-task repetition.",
+    "No independent autonomous-agent selection accuracy, latency distribution, net token or dollar saving established.",
+    "The frozen full-anchor grader is invalid for first sufficient semantic evidence: it overread every successful Django arm and Tokio goals. Versioned retrospective source adjudications correct that separate metric without replacing original runs or costs.",
+    "Retrospective adequate prefixes show available source, not autonomous stopping performance. No fresh model runs were made after adjudication.",
+    "Both semantic routes lose to the cheapest tested adequate task-word exact route in these two tasks; Django strongest phrase control was chosen after seeing results."
+  ],
+  "plans": {
+    "root/plan.json": "40ee933798073728f98c3e532d853dcffdb5cc691a28dc8781cd0a79d9dfbd10",
+    "white/plan.json": "2748a67dd9a89c8497df6cf655436b1ecce2accef392e6085b0329490d162f20",
+    "white/plan-second.json": "c2e265c281a428cc2941c73cff03d0f6659a04c7860b47ca14be076a6a08bb41",
+    "red/plan.json": "363aa1d1d57dc60b5b5d067db95250c2cdc52ce491dd3c5ee85e02922c8aa74b",
+    "red/adversarial-exact-plan.json": "b13a6f5c32f0ac642b529c67d93f1bd96d4c07873dc2925c999f912167fcb01d"
+  },
+  "sourceAdequacyAdjudications": {
+    "Django": {
+      "version": 1,
+      "date": "2026-10-13",
+      "kind": "post-result independent manual source-adequacy adjudication",
+      "authorRole": "red team",
+      "newModelCalls": 0,
+      "newResearchToolCalls": 0,
+      "scope": "Two observed repeats of the first white task, including previously recorded post-result Locate parser repair; no sealed benchmark or prospective agent stopping-policy claim.",
+      "task": {
+        "id": "django-savepoint-callback-rollback",
+        "prompt": "In Django transactions, does an on_commit callback registered inside a nested atomic block run if that savepoint is rolled back? Cite the exact documentation lines.",
+        "corpus": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/python/docs/topics/db/transactions.txt",
+        "revision": "4fab678a0739d54401ccee7eb587553657c9f76e",
+        "sha256": "fce19bd320802338c10f437354a5c553cdcecede54063721e49a03f79d80c62a",
+        "answerWindowForScoringOnly": "346-361",
+        "baseQuery": {
+          "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/python/docs/topics/db/transactions.txt",
+          "unit": "lines",
+          "length": 60,
+          "extras": [
+            "hints"
+          ]
+        },
+        "goalsQuery": {
+          "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/python/docs/topics/db/transactions.txt",
+          "unit": "lines",
+          "length": 60,
+          "goals": [
+            "Explain whether an on_commit callback registered inside a nested atomic block runs after that savepoint is rolled back."
+          ],
+          "extras": [
+            "hints"
+          ]
+        },
+        "clasifyQuery": {
+          "resources": [
+            {
+              "id": "transactions",
+              "tool": "localFetch",
+              "query": {
+                "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/python/docs/topics/db/transactions.txt",
+                "unit": "lines",
+                "length": 60
+              }
+            }
+          ],
+          "questions": [
+            {
+              "id": "where",
+              "type": "locate",
+              "ask": "Where does the documentation say whether an on_commit callback registered inside a nested atomic block runs if its savepoint is rolled back?"
+            }
+          ]
+        },
+        "strongPlainQuery": {
+          "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/python/docs/topics/db/transactions.txt",
+          "matchString": "savepoint",
+          "contextLines": 3,
+          "length": 60,
+          "extras": [
+            "hints"
+          ]
+        }
+      },
+      "artifacts": {
+        "plan.json": "2748a67dd9a89c8497df6cf655436b1ecce2accef392e6085b0329490d162f20",
+        "runs.json": "46fb55780281ce08e4f5b0df8486f7c0c1c13e05a10d3cc070df2a43c445929b",
+        "locate-adjudication.json": "b9bdb0b5a408ceb705b4836f4fa12fdf943be20a6a40a6af91338934ea9007f0"
+      },
+      "source": {
+        "path": "octocode-local-testing/repos/python/docs/topics/db/transactions.txt",
+        "revision": "4fab678a0739d54401ccee7eb587553657c9f76e",
+        "sha256": "fce19bd320802338c10f437354a5c553cdcecede54063721e49a03f79d80c62a",
+        "numberedOutputMismatches": []
+      },
+      "metricMethod": "Recorded characters retained. Original first-task calls omitted literal stdout; byte/token values are explicitly for compact UTF-8 JSON plus LF reconstructed from saved parsed JSON, whose character count matches the recorded count for every call. Locate repair reads preserve literal stdout. Serialization token counts sum each call independently using tiktoken 0.12.0. Provider usage uses preserved receipts. Prefix metrics are retrospective adequate evidence, not actual stopping.",
+      "outcomes": [
+        {
+          "repetition": 1,
+          "arm": "plainPaged",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 6,
+          "reasoning": "Page 6 contains the complete statement at 346-350: the on_commit callable registered in a nested atomic/savepoint does not run if rollback to that or an earlier savepoint occurred. Pages 1-5 do not resolve that callback-specific condition. Page 4 mentions deferring cache updates to commit and savepoint rollback independently, but does not establish whether callbacks registered within a rolled-back savepoint survive an eventual outer commit.",
+          "evidence": {
+            "call": 6,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 7,
+            "responseCharacters": 23159
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 7,
+            "responseCharacters": 23159,
+            "serializationUtf8Bytes": 23159,
+            "serializationTokens": {
+              "cl100k_base": 5614,
+              "o200k_base": 5675
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 7,
+            "responseCharacters": 23159,
+            "serializationUtf8Bytes": 23159,
+            "serializationTokens": {
+              "cl100k_base": 5614,
+              "o200k_base": 5675
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 6,
+            "responseCharacters": 19761,
+            "serializationUtf8Bytes": 19761,
+            "serializationTokens": {
+              "cl100k_base": 4768,
+              "o200k_base": 4814
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count"
+          ],
+          "priorPageAssessment": [
+            {
+              "page": 1,
+              "lines": [
+                1,
+                60
+              ],
+              "adequate": false,
+              "reason": "Autocommit and request transaction behavior; no on_commit registration or rollback contract."
+            },
+            {
+              "page": 2,
+              "lines": [
+                61,
+                120
+              ],
+              "adequate": false,
+              "reason": "Request transaction exclusions and atomic/nested database changes; no callback semantics."
+            },
+            {
+              "page": 3,
+              "lines": [
+                121,
+                180
+              ],
+              "adequate": false,
+              "reason": "atomic examples, inner database rollback and exception handling; no callback semantics."
+            },
+            {
+              "page": 4,
+              "lines": [
+                181,
+                240
+              ],
+              "adequate": false,
+              "reason": "Mentions deferring cache alterations through on_commit and nested savepoints; does not specify cancellation of callbacks attached to a rolled-back savepoint when outer transaction commits."
+            },
+            {
+              "page": 5,
+              "lines": [
+                241,
+                300
+              ],
+              "adequate": false,
+              "reason": "Autocommit configuration and introduction to post-commit actions; no nested callback cancellation contract."
+            }
+          ]
+        },
+        {
+          "repetition": 1,
+          "arm": "goalsPaged",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 1,
+          "reasoning": "Page 1 contains 346-350 and the nested on_commit example at 352-358. The later rollback example at 360-361 is redundant for the task's yes/no answer, so waiting for it is a full-anchor scoring overread.",
+          "evidence": {
+            "call": 1,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 2,
+            "responseCharacters": 7648
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 2,
+            "responseCharacters": 7648,
+            "serializationUtf8Bytes": 7648,
+            "serializationTokens": {
+              "cl100k_base": 2227,
+              "o200k_base": 2204
+            },
+            "providerRequests": 15,
+            "providerInputTokens": 15253,
+            "providerOutputTokens": 285
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 2,
+            "responseCharacters": 7648,
+            "serializationUtf8Bytes": 7648,
+            "serializationTokens": {
+              "cl100k_base": 2227,
+              "o200k_base": 2204
+            },
+            "providerRequests": 15,
+            "providerInputTokens": 15253,
+            "providerOutputTokens": 285
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 1,
+            "responseCharacters": 3654,
+            "serializationUtf8Bytes": 3654,
+            "serializationTokens": {
+              "cl100k_base": 1072,
+              "o200k_base": 1058
+            },
+            "providerRequests": 15,
+            "providerInputTokens": 15253,
+            "providerOutputTokens": 285
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count"
+          ]
+        },
+        {
+          "repetition": 1,
+          "arm": "clasifyLocate",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 2,
+          "reasoning": "The saved query-level hints.read names 343-350, and that exact lead was the first source read during the recorded post-result repair. It contains the complete 346-350 answer. The second best.where range 359-366 is redundant for adequacy. The original runner had parsed the wrong hints location and stopped after judgment; preserve that failure separately from the repaired observed sequence.",
+          "evidence": {
+            "call": 2,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": false,
+            "pages": 1,
+            "responseCharacters": 704
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 1,
+            "responseCharacters": 704,
+            "serializationUtf8Bytes": 704,
+            "serializationTokens": {
+              "cl100k_base": 213,
+              "o200k_base": 222
+            },
+            "providerRequests": 3,
+            "providerInputTokens": 13204,
+            "providerOutputTokens": 1913
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 3,
+            "responseCharacters": 1761,
+            "serializationUtf8Bytes": 1761,
+            "serializationTokens": {
+              "cl100k_base": 480,
+              "o200k_base": 493
+            },
+            "providerRequests": 3,
+            "providerInputTokens": 13204,
+            "providerOutputTokens": 1913
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 2,
+            "responseCharacters": 1284,
+            "serializationUtf8Bytes": 1284,
+            "serializationTokens": {
+              "cl100k_base": 360,
+              "o200k_base": 371
+            },
+            "providerRequests": 3,
+            "providerInputTokens": 13204,
+            "providerOutputTokens": 1913
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "preserved literal stdout",
+            "preserved literal stdout"
+          ],
+          "repairCaveat": "Post-result parser repair already executed by white team; no model rerun. Original runner found false after its single judgment call. The repair read both saved best.where leads, though the first query-level hints.read lead alone is sufficient.",
+          "postResultRepairIncurredReadCalls": 2
+        },
+        {
+          "repetition": 1,
+          "arm": "plainLiteral",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 1,
+          "reasoning": "The first savepoint match page already contains 346-350 and identifies on_commit in nested atomic blocks. Its second page is unnecessary to establish the asked answer, although it was actually fetched.",
+          "evidence": {
+            "call": 1,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 2,
+            "responseCharacters": 6882
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 2,
+            "responseCharacters": 6882,
+            "serializationUtf8Bytes": 6882,
+            "serializationTokens": {
+              "cl100k_base": 1734,
+              "o200k_base": 1742
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 2,
+            "responseCharacters": 6882,
+            "serializationUtf8Bytes": 6882,
+            "serializationTokens": {
+              "cl100k_base": 1734,
+              "o200k_base": 1742
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 1,
+            "responseCharacters": 3446,
+            "serializationUtf8Bytes": 3446,
+            "serializationTokens": {
+              "cl100k_base": 866,
+              "o200k_base": 873
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count"
+          ]
+        },
+        {
+          "repetition": 2,
+          "arm": "goalsPaged",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 1,
+          "reasoning": "Page 1 contains 346-350 and the nested on_commit example at 352-358. The later rollback example at 360-361 is redundant for the task's yes/no answer, so waiting for it is a full-anchor scoring overread.",
+          "evidence": {
+            "call": 1,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 2,
+            "responseCharacters": 7648
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 2,
+            "responseCharacters": 7648,
+            "serializationUtf8Bytes": 7648,
+            "serializationTokens": {
+              "cl100k_base": 2215,
+              "o200k_base": 2190
+            },
+            "providerRequests": 15,
+            "providerInputTokens": 15253,
+            "providerOutputTokens": 285
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 2,
+            "responseCharacters": 7648,
+            "serializationUtf8Bytes": 7648,
+            "serializationTokens": {
+              "cl100k_base": 2215,
+              "o200k_base": 2190
+            },
+            "providerRequests": 15,
+            "providerInputTokens": 15253,
+            "providerOutputTokens": 285
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 1,
+            "responseCharacters": 3654,
+            "serializationUtf8Bytes": 3654,
+            "serializationTokens": {
+              "cl100k_base": 1066,
+              "o200k_base": 1051
+            },
+            "providerRequests": 15,
+            "providerInputTokens": 15253,
+            "providerOutputTokens": 285
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count"
+          ]
+        },
+        {
+          "repetition": 2,
+          "arm": "plainPaged",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 6,
+          "reasoning": "Page 6 contains the complete statement at 346-350: the on_commit callable registered in a nested atomic/savepoint does not run if rollback to that or an earlier savepoint occurred. Pages 1-5 do not resolve that callback-specific condition. Page 4 mentions deferring cache updates to commit and savepoint rollback independently, but does not establish whether callbacks registered within a rolled-back savepoint survive an eventual outer commit.",
+          "evidence": {
+            "call": 6,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 7,
+            "responseCharacters": 23159
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 7,
+            "responseCharacters": 23159,
+            "serializationUtf8Bytes": 23159,
+            "serializationTokens": {
+              "cl100k_base": 5614,
+              "o200k_base": 5675
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 7,
+            "responseCharacters": 23159,
+            "serializationUtf8Bytes": 23159,
+            "serializationTokens": {
+              "cl100k_base": 5614,
+              "o200k_base": 5675
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 6,
+            "responseCharacters": 19761,
+            "serializationUtf8Bytes": 19761,
+            "serializationTokens": {
+              "cl100k_base": 4768,
+              "o200k_base": 4814
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count"
+          ],
+          "priorPageAssessment": [
+            {
+              "page": 1,
+              "lines": [
+                1,
+                60
+              ],
+              "adequate": false,
+              "reason": "Autocommit and request transaction behavior; no on_commit registration or rollback contract."
+            },
+            {
+              "page": 2,
+              "lines": [
+                61,
+                120
+              ],
+              "adequate": false,
+              "reason": "Request transaction exclusions and atomic/nested database changes; no callback semantics."
+            },
+            {
+              "page": 3,
+              "lines": [
+                121,
+                180
+              ],
+              "adequate": false,
+              "reason": "atomic examples, inner database rollback and exception handling; no callback semantics."
+            },
+            {
+              "page": 4,
+              "lines": [
+                181,
+                240
+              ],
+              "adequate": false,
+              "reason": "Mentions deferring cache alterations through on_commit and nested savepoints; does not specify cancellation of callbacks attached to a rolled-back savepoint when outer transaction commits."
+            },
+            {
+              "page": 5,
+              "lines": [
+                241,
+                300
+              ],
+              "adequate": false,
+              "reason": "Autocommit configuration and introduction to post-commit actions; no nested callback cancellation contract."
+            }
+          ]
+        },
+        {
+          "repetition": 2,
+          "arm": "plainLiteral",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 1,
+          "reasoning": "The first savepoint match page already contains 346-350 and identifies on_commit in nested atomic blocks. Its second page is unnecessary to establish the asked answer, although it was actually fetched.",
+          "evidence": {
+            "call": 1,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 2,
+            "responseCharacters": 6882
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 2,
+            "responseCharacters": 6882,
+            "serializationUtf8Bytes": 6882,
+            "serializationTokens": {
+              "cl100k_base": 1734,
+              "o200k_base": 1742
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 2,
+            "responseCharacters": 6882,
+            "serializationUtf8Bytes": 6882,
+            "serializationTokens": {
+              "cl100k_base": 1734,
+              "o200k_base": 1742
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 1,
+            "responseCharacters": 3446,
+            "serializationUtf8Bytes": 3446,
+            "serializationTokens": {
+              "cl100k_base": 866,
+              "o200k_base": 873
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count"
+          ]
+        },
+        {
+          "repetition": 2,
+          "arm": "clasifyLocate",
+          "verdict": "sufficient",
+          "earliestAdequateObservedCall": 2,
+          "reasoning": "The saved query-level hints.read names 343-350, and that exact lead was the first source read during the recorded post-result repair. It contains the complete 346-350 answer. The second best.where range 359-366 is redundant for adequacy. The original runner had parsed the wrong hints location and stopped after judgment; preserve that failure separately from the repaired observed sequence.",
+          "evidence": {
+            "call": 2,
+            "sourceLines": [
+              346,
+              350
+            ],
+            "excerpt": "346\tSavepoints (i.e. nested :func:`atomic` blocks) are handled correctly. That is,\n347\tan :func:`on_commit` callable registered after a savepoint (in a nested\n348\t:func:`atomic` block) will be called after the outer transaction is committed,\n349\tbut not if a rollback to that savepoint or any previous savepoint occurred\n350\tduring the transaction::"
+          },
+          "originalFullAnchorMetric": {
+            "found": false,
+            "pages": 1,
+            "responseCharacters": 704
+          },
+          "originalRunnerIncurred": {
+            "toolCalls": 1,
+            "responseCharacters": 704,
+            "serializationUtf8Bytes": 704,
+            "serializationTokens": {
+              "cl100k_base": 213,
+              "o200k_base": 222
+            },
+            "providerRequests": 3,
+            "providerInputTokens": 13204,
+            "providerOutputTokens": 1913
+          },
+          "incurredIncludingRecordedRepair": {
+            "toolCalls": 3,
+            "responseCharacters": 1761,
+            "serializationUtf8Bytes": 1761,
+            "serializationTokens": {
+              "cl100k_base": 480,
+              "o200k_base": 493
+            },
+            "providerRequests": 3,
+            "providerInputTokens": 13204,
+            "providerOutputTokens": 1913
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 2,
+            "responseCharacters": 1284,
+            "serializationUtf8Bytes": 1284,
+            "serializationTokens": {
+              "cl100k_base": 360,
+              "o200k_base": 371
+            },
+            "providerRequests": 3,
+            "providerInputTokens": 13204,
+            "providerOutputTokens": 1913
+          },
+          "responseSerialization": [
+            "reconstructed compact JSON plus LF from saved parsed JSON; matches recorded character count",
+            "preserved literal stdout",
+            "preserved literal stdout"
+          ],
+          "repairCaveat": "Post-result parser repair already executed by white team; no model rerun. Original runner found false after its single judgment call. The repair read both saved best.where leads, though the first query-level hints.read lead alone is sufficient.",
+          "postResultRepairIncurredReadCalls": 2
+        }
+      ],
+      "conclusions": [
+        "The frozen 346-361 anchor extends beyond the complete answer statement at 346-350. Its completion is invalid as a semantic-proof-arrival metric for every sufficient arm; retain incurred full-anchor costs independently.",
+        "In both repeats, earliest adequate observed prefixes are plain paging 6 calls / 19761 characters; goals 1 / 3654; literal savepoint 1 / 3446; repaired Locate 2 / 1284. Original incurred paths were 7 / 23159, 2 / 7648, 2 / 6882, and 1 judgment / 704 plus 2 repair reads / 1057, respectively.",
+        "Locate improves the observed context size over the frozen literal savepoint control, but uses 3 provider requests and 13204 input / 1913 output tokens per repeat. This is not proof of net monetary or autonomous-agent savings.",
+        "The separate post-result adversarial exact phrase savepoint is rolled back already returned adequate source in 1111 characters and one zero-provider call. Compared with the earliest adequate repaired Locate prefix 1284, that is 13.5% fewer response characters. It remains post-result, not the frozen baseline.",
+        "The first plan promised a separate exact verifier for every route; ordinary/goals/literal source responses were instead treated as proof and that extra read was not incurred. Retain this deviation; do not add fictitious calls."
+      ]
+    },
+    "Tokio": {
+      "version": 1,
+      "date": "2026-10-13",
+      "kind": "post-result independent manual source-adequacy adjudication",
+      "authorRole": "red team",
+      "newModelCalls": 0,
+      "newResearchToolCalls": 0,
+      "status": "correction to semantic-proof-arrival metric; original raw runs and full-anchor completion retained",
+      "scope": "One observed second-task run, not a sealed benchmark, model rerun, agent routing evaluation, or prospective stopping evaluation.",
+      "task": {
+        "id": "tokio-bounded-channel-reserved-capacity-after-close",
+        "prompt": "A Tokio bounded channel is closed while a sender has reserved capacity. Can a receiver conclude the stream ended immediately, or what must happen first? Cite the source documentation.",
+        "source": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/rust/tokio/src/sync/mpsc/bounded.rs",
+        "revision": "facc6fc47eb2ba13a465a3179f8e34db620561ec",
+        "sha256": "34957f69bed085770fed49f9c57c78d2f6739ac39b9ba6186c2134038ca97d79",
+        "targetForIndependentScoringOnly": "188-197",
+        "plainPaged": {
+          "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/rust/tokio/src/sync/mpsc/bounded.rs",
+          "unit": "lines",
+          "length": 60
+        },
+        "goalsPaged": {
+          "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/rust/tokio/src/sync/mpsc/bounded.rs",
+          "unit": "lines",
+          "length": 60,
+          "goals": [
+            "Explain whether a receiver reports end-of-stream when a bounded channel closes but a sender still has reserved capacity."
+          ]
+        },
+        "clasifyLocate": {
+          "resources": [
+            {
+              "id": "bounded",
+              "tool": "localFetch",
+              "query": {
+                "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/rust/tokio/src/sync/mpsc/bounded.rs"
+              },
+              "prefilter": [
+                "closed"
+              ]
+            }
+          ],
+          "questions": [
+            {
+              "id": "where",
+              "type": "locate",
+              "ask": "Where does the documentation explain when a receiver finishes after the channel is closed but reserved capacity still exists?"
+            }
+          ]
+        },
+        "plainLiteralControls": [
+          {
+            "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/rust/tokio/src/sync/mpsc/bounded.rs",
+            "matchString": "closed",
+            "contextLines": 3,
+            "length": 60
+          },
+          {
+            "path": "/Users/bgaryy/code/octocode/octocode-local-testing/repos/rust/tokio/src/sync/mpsc/bounded.rs",
+            "matchString": "reserve",
+            "contextLines": 3,
+            "length": 60
+          }
+        ]
+      },
+      "source": {
+        "path": "octocode-local-testing/repos/rust/tokio/src/sync/mpsc/bounded.rs",
+        "revision": "facc6fc47eb2ba13a465a3179f8e34db620561ec",
+        "sha256": "34957f69bed085770fed49f9c57c78d2f6739ac39b9ba6186c2134038ca97d79",
+        "numberedOutputMismatches": []
+      },
+      "artifacts": {
+        "plan-second.json": "c2e265c281a428cc2941c73cff03d0f6659a04c7860b47ca14be076a6a08bb41",
+        "second-runs.json": "8deffb32089f16f79215b00d89a5e3002562d49f146f1bcbe4ec45e4c592d4ee"
+      },
+      "metricMethod": "Characters and UTF-8 bytes sum each call's literal stdout, including newline. Response token counts sum tiktoken 0.12.0 encoding counts per stdout independently. Provider usage is the preserved per-call receipt, never response-token estimates. Earliest adequate observed prefixes are retrospective readings of saved evidence, not executed stopping policies.",
+      "arms": [
+        {
+          "arm": "plainPaged",
+          "earliestAdequateCall": 4,
+          "verdict": "sufficient",
+          "reasoning": "The fourth ordinary source page supplies recv documentation at 188-197: None requires a closed channel and an empty buffer, and outstanding pre-close permits prevent recv from considering it closed until release. Pages 1-3 were independently read: weak-sender lifecycle, permit definitions, channel setup, and generic sender-disconnect behavior do not resolve existing reservations after Receiver::close.",
+          "priorPageAssessment": [
+            {
+              "page": 1,
+              "lines": "1-60",
+              "adequate": false,
+              "reason": "Sender/WeakSender lifecycle and start of Permit description; no receiver-close/outstanding-permit semantics."
+            },
+            {
+              "page": 2,
+              "lines": "61-120",
+              "adequate": false,
+              "reason": "Reserve yields permits guaranteeing capacity; receiver/channel definitions. No outstanding-permit termination contract."
+            },
+            {
+              "page": 3,
+              "lines": "121-180",
+              "adequate": false,
+              "reason": "Generic sender disconnection returns None, then examples/channel setup. Does not say Receiver::close with a still-live reservation is final."
+            }
+          ],
+          "evidence": [
+            {
+              "call": 4,
+              "sourceLines": [
+                188,
+                197
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "188\t    /// This method returns `None` if the channel has been closed and there are\n189\t    /// no remaining messages in the channel's buffer. This indicates that no\n190\t    /// further values can ever be received from this `Receiver`. The channel is\n191\t    /// closed when all senders have been dropped, or when [`close`] is called.\n192\t    ///\n193\t    /// If there are no messages in the channel's buffer, but the channel has\n194\t    /// not yet been closed, this method will sleep until a message is sent or\n195\t    /// the channel is closed.  Note that if [`close`] is called, but there are\n196\t    /// still outstanding [`Permits`] from before it was closed, the channel is\n197\t    /// not considered closed by `recv` until the permits are released."
+            }
+          ],
+          "observedCallSourceRanges": [
+            {
+              "call": 1,
+              "ranges": [
+                [
+                  1,
+                  60
+                ]
+              ]
+            },
+            {
+              "call": 2,
+              "ranges": [
+                [
+                  61,
+                  120
+                ]
+              ]
+            },
+            {
+              "call": 3,
+              "ranges": [
+                [
+                  121,
+                  180
+                ]
+              ]
+            },
+            {
+              "call": 4,
+              "ranges": [
+                [
+                  181,
+                  240
+                ]
+              ]
+            }
+          ],
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 4,
+            "exhausted": false,
+            "responseCharacters": 11270
+          },
+          "incurred": {
+            "toolCalls": 4,
+            "responseCharacters": 11270,
+            "responseUtf8Bytes": 11270,
+            "responseTokens": {
+              "cl100k_base": 3423,
+              "o200k_base": 3433
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 4,
+            "responseCharacters": 11270,
+            "responseUtf8Bytes": 11270,
+            "responseTokens": {
+              "cl100k_base": 3423,
+              "o200k_base": 3433
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          }
+        },
+        {
+          "arm": "goalsPaged",
+          "earliestAdequateCall": 1,
+          "verdict": "sufficient",
+          "reasoning": "The first ranked source page already contains the explicit async recv rule at 193-197: pre-close outstanding permits mean recv does not consider the channel closed until they are released. Its blocking_recv documentation at 370-385 also explicitly gives the empty-buffer/closed condition and the same permit-release condition. This answers the asked close-with-reserved-capacity question without requiring the complete frozen 188-197 anchor. The six-page run is incurred harness work, not semantic evidence-arrival. Ranking is partial (8 of 34 windows, candidateBudget); that receipt alone does not imply delayed proof.",
+          "originalFullAnchorCompletionInvalidAsProofArrival": true,
+          "ranking": {
+            "rankedItems": 8,
+            "totalItems": 34,
+            "status": "partial",
+            "reason": "candidateBudget"
+          },
+          "evidence": [
+            {
+              "call": 1,
+              "sourceLines": [
+                193,
+                197
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "193\t    /// If there are no messages in the channel's buffer, but the channel has\n194\t    /// not yet been closed, this method will sleep until a message is sent or\n195\t    /// the channel is closed.  Note that if [`close`] is called, but there are\n196\t    /// still outstanding [`Permits`] from before it was closed, the channel is\n197\t    /// not considered closed by `recv` until the permits are released."
+            },
+            {
+              "call": 1,
+              "sourceLines": [
+                370,
+                385
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "370\t    /// This method returns `None` if the channel has been closed and there are\n371\t    /// no remaining messages in the channel's buffer. This indicates that no\n372\t    /// further values can ever be received from this `Receiver`. The channel is\n373\t    /// closed when all senders have been dropped, or when [`close`] is called.\n374\t    ///\n375\t    /// If there are no messages in the channel's buffer, but the channel has\n376\t    /// not yet been closed, this method will block until a message is sent or\n377\t    /// the channel is closed.\n378\t    ///\n379\t    /// This method is intended for use cases where you are sending from\n380\t    /// asynchronous code to synchronous code, and will work even if the sender\n381\t    /// is not using [`blocking_send`] to send the message.\n382\t    ///\n383\t    /// Note that if [`close`] is called, but there are still outstanding\n384\t    /// [`Permits`] from before it was closed, the channel is not considered\n385\t    /// closed by `blocking_recv` until the permits are released."
+            }
+          ],
+          "observedCallSourceRanges": [
+            {
+              "call": 1,
+              "ranges": [
+                [
+                  190,
+                  198
+                ],
+                [
+                  345,
+                  395
+                ]
+              ]
+            },
+            {
+              "call": 2,
+              "ranges": [
+                [
+                  199,
+                  258
+                ]
+              ]
+            },
+            {
+              "call": 3,
+              "ranges": [
+                [
+                  259,
+                  294
+                ],
+                [
+                  396,
+                  419
+                ]
+              ]
+            },
+            {
+              "call": 4,
+              "ranges": [
+                [
+                  295,
+                  317
+                ],
+                [
+                  420,
+                  456
+                ]
+              ]
+            },
+            {
+              "call": 5,
+              "ranges": [
+                [
+                  121,
+                  153
+                ],
+                [
+                  318,
+                  344
+                ]
+              ]
+            },
+            {
+              "call": 6,
+              "ranges": [
+                [
+                  1,
+                  24
+                ],
+                [
+                  154,
+                  189
+                ]
+              ]
+            }
+          ],
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 6,
+            "exhausted": false,
+            "responseCharacters": 21541
+          },
+          "incurred": {
+            "toolCalls": 6,
+            "responseCharacters": 21541,
+            "responseUtf8Bytes": 21541,
+            "responseTokens": {
+              "cl100k_base": 7241,
+              "o200k_base": 7070
+            },
+            "providerRequests": 8,
+            "providerInputTokens": 9248,
+            "providerOutputTokens": 152
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 1,
+            "responseCharacters": 4065,
+            "responseUtf8Bytes": 4065,
+            "responseTokens": {
+              "cl100k_base": 1282,
+              "o200k_base": 1254
+            },
+            "providerRequests": 8,
+            "providerInputTokens": 9248,
+            "providerOutputTokens": 152
+          }
+        },
+        {
+          "arm": "clasifyLocate",
+          "earliestAdequateCall": null,
+          "verdict": "insufficient",
+          "reasoning": "The classifier scores 240-247 highly, but its location/score is not source proof. The executed unique read covers the tail of a normal receive example and recv forwarding to poll_fn(|cx| self.chan.recv(cx)).await. Neither close nor outstanding permits nor empty-buffer termination appears, and the delegated chan.recv implementation is unseen. The repeated relative/absolute lead read adds no evidence. This fails on substantive source sufficiency, not merely missing the frozen anchor.",
+          "duplicateRead": {
+            "call": 3,
+            "sameSourceLinesAsCall": 2,
+            "addedResponseCharacters": 402,
+            "addedProviderRequests": 0
+          },
+          "unexecutedFollowup": "Reading the preceding recv documentation could resolve the question, but that expansion was not performed in this arm; no success or cost for it is imputed.",
+          "evidence": [
+            {
+              "call": 2,
+              "sourceLines": [
+                240,
+                247
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "240\t    /// assert_eq!(Some(\"world\"), rx.recv().await);\n241\t    /// # }\n242\t    /// ```\n243\t    pub async fn recv(&mut self) -> Option<T> {\n244\t        use std::future::poll_fn;\n245\t        poll_fn(|cx| self.chan.recv(cx)).await\n246\t    }\n247\t"
+            }
+          ],
+          "observedCallSourceRanges": [
+            {
+              "call": 1,
+              "ranges": []
+            },
+            {
+              "call": 2,
+              "ranges": [
+                [
+                  240,
+                  247
+                ]
+              ]
+            },
+            {
+              "call": 3,
+              "ranges": [
+                [
+                  240,
+                  247
+                ]
+              ]
+            }
+          ],
+          "originalFullAnchorMetric": {
+            "found": false,
+            "pages": 3,
+            "exhausted": true,
+            "responseCharacters": 1529
+          },
+          "incurred": {
+            "toolCalls": 3,
+            "responseCharacters": 1529,
+            "responseUtf8Bytes": 1529,
+            "responseTokens": {
+              "cl100k_base": 489,
+              "o200k_base": 499
+            },
+            "providerRequests": 4,
+            "providerInputTokens": 30888,
+            "providerOutputTokens": 4634
+          },
+          "earliestAdequateObservedPrefix": null
+        },
+        {
+          "arm": "plainLiteral1:closed",
+          "earliestAdequateCall": 1,
+          "verdict": "sufficient",
+          "reasoning": "The first literal closed page directly supplies the complete recv contract at 188-197, including both empty-buffer finality and outstanding pre-close permits delaying closed status until release. This is adequate source proof from an ordinary route with no provider work.",
+          "evidence": [
+            {
+              "call": 1,
+              "sourceLines": [
+                188,
+                197
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "188\t    /// This method returns `None` if the channel has been closed and there are\n189\t    /// no remaining messages in the channel's buffer. This indicates that no\n190\t    /// further values can ever be received from this `Receiver`. The channel is\n191\t    /// closed when all senders have been dropped, or when [`close`] is called.\n192\t    ///\n193\t    /// If there are no messages in the channel's buffer, but the channel has\n194\t    /// not yet been closed, this method will sleep until a message is sent or\n195\t    /// the channel is closed.  Note that if [`close`] is called, but there are\n196\t    /// still outstanding [`Permits`] from before it was closed, the channel is\n197\t    /// not considered closed by `recv` until the permits are released."
+            }
+          ],
+          "observedCallSourceRanges": [
+            {
+              "call": 1,
+              "ranges": [
+                [
+                  23,
+                  32
+                ],
+                [
+                  185,
+                  200
+                ],
+                [
+                  252,
+                  267
+                ],
+                [
+                  305,
+                  316
+                ],
+                [
+                  367,
+                  368
+                ]
+              ]
+            }
+          ],
+          "originalFullAnchorMetric": {
+            "found": true,
+            "pages": 1,
+            "exhausted": false,
+            "responseCharacters": 3696
+          },
+          "incurred": {
+            "toolCalls": 1,
+            "responseCharacters": 3696,
+            "responseUtf8Bytes": 3696,
+            "responseTokens": {
+              "cl100k_base": 1013,
+              "o200k_base": 1016
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "earliestAdequateObservedPrefix": {
+            "toolCalls": 1,
+            "responseCharacters": 3696,
+            "responseUtf8Bytes": 3696,
+            "responseTokens": {
+              "cl100k_base": 1013,
+              "o200k_base": 1016
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          }
+        },
+        {
+          "arm": "plainLiteral2:reserve",
+          "earliestAdequateCall": null,
+          "verdict": "partial-evidence",
+          "reasoning": "The exhausted reserve pages are relevant, not wholly empty evidence. Page 2 says Permit tracks reserved capacity, Permit::send consumes it, and dropping it releases capacity; page 8 says Permit::send succeeds even after the receiver half closes (and page 9 states the owned version). That supports the negative sub-answer that closing does not make future delivery impossible. The observed slices do not explicitly establish when recv returns None or its outstanding-permit/empty-buffer termination contract, so they remain partial for the complete requested documented answer. No frozen-anchor-only failure is asserted.",
+          "evidence": [
+            {
+              "call": 2,
+              "sourceLines": [
+                1073,
+                1082
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "1073\t    /// available, it is reserved for the caller.\n1074\t    ///\n1075\t    /// If the channel is full, the function waits for the number of unreceived\n1076\t    /// messages to become less than the channel capacity. Capacity to send one\n1077\t    /// message is reserved for the caller. A [`Permit`] is returned to track\n1078\t    /// the reserved capacity. The [`send`] function on [`Permit`] consumes the\n1079\t    /// reserved capacity.\n1080\t    ///\n1081\t    /// Dropping [`Permit`] without sending a message releases the capacity back\n1082\t    /// to the channel."
+            },
+            {
+              "call": 8,
+              "sourceLines": [
+                1688,
+                1694
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "1688\timpl<T> Permit<'_, T> {\n1689\t    /// Sends a value using the reserved capacity.\n1690\t    ///\n1691\t    /// Capacity for the message has already been reserved. The message is sent\n1692\t    /// to the receiver and the permit is consumed. The operation will succeed\n1693\t    /// even if the receiver half has been closed. See [`Receiver::close`] for\n1694\t    /// more details on performing a clean shutdown."
+            },
+            {
+              "call": 9,
+              "sourceLines": [
+                1813,
+                1816
+              ],
+              "allCitedLinesPresent": true,
+              "excerpt": "1813\t    /// Capacity for the message has already been reserved. The message is sent\n1814\t    /// to the receiver and the permit is consumed. The operation will succeed\n1815\t    /// even if the receiver half has been closed. See [`Receiver::close`] for\n1816\t    /// more details on performing a clean shutdown."
+            }
+          ],
+          "observedCallSourceRanges": [
+            {
+              "call": 1,
+              "ranges": [
+                [
+                  59,
+                  80
+                ],
+                [
+                  85,
+                  97
+                ],
+                [
+                  296,
+                  302
+                ],
+                [
+                  460,
+                  466
+                ],
+                [
+                  549,
+                  555
+                ]
+              ]
+            },
+            {
+              "call": 2,
+              "ranges": [
+                [
+                  565,
+                  571
+                ],
+                [
+                  614,
+                  620
+                ],
+                [
+                  780,
+                  789
+                ],
+                [
+                  814,
+                  820
+                ],
+                [
+                  990,
+                  996
+                ],
+                [
+                  1070,
+                  1082
+                ],
+                [
+                  1086,
+                  1087
+                ]
+              ]
+            },
+            {
+              "call": 3,
+              "ranges": [
+                [
+                  1088,
+                  1094
+                ],
+                [
+                  1099,
+                  1106
+                ],
+                [
+                  1113,
+                  1134
+                ],
+                [
+                  1138,
+                  1150
+                ],
+                [
+                  1155,
+                  1160
+                ]
+              ]
+            },
+            {
+              "call": 4,
+              "ranges": [
+                [
+                  1161,
+                  1162
+                ],
+                [
+                  1174,
+                  1181
+                ],
+                [
+                  1183,
+                  1213
+                ],
+                [
+                  1218,
+                  1225
+                ],
+                [
+                  1234,
+                  1240
+                ]
+              ]
+            },
+            {
+              "call": 5,
+              "ranges": [
+                [
+                  1243,
+                  1250
+                ],
+                [
+                  1258,
+                  1275
+                ],
+                [
+                  1316,
+                  1329
+                ],
+                [
+                  1334,
+                  1349
+                ]
+              ]
+            },
+            {
+              "call": 6,
+              "ranges": [
+                [
+                  1353,
+                  1359
+                ],
+                [
+                  1366,
+                  1375
+                ],
+                [
+                  1380,
+                  1386
+                ],
+                [
+                  1391,
+                  1406
+                ],
+                [
+                  1413,
+                  1427
+                ]
+              ]
+            },
+            {
+              "call": 7,
+              "ranges": [
+                [
+                  1428,
+                  1437
+                ],
+                [
+                  1452,
+                  1470
+                ],
+                [
+                  1472,
+                  1478
+                ],
+                [
+                  1484,
+                  1499
+                ],
+                [
+                  1503,
+                  1506
+                ]
+              ]
+            },
+            {
+              "call": 8,
+              "ranges": [
+                [
+                  1507,
+                  1509
+                ],
+                [
+                  1534,
+                  1540
+                ],
+                [
+                  1550,
+                  1556
+                ],
+                [
+                  1561,
+                  1567
+                ],
+                [
+                  1601,
+                  1607
+                ],
+                [
+                  1686,
+                  1694
+                ],
+                [
+                  1704,
+                  1711
+                ],
+                [
+                  1808,
+                  1812
+                ]
+              ]
+            },
+            {
+              "call": 9,
+              "ranges": [
+                [
+                  1813,
+                  1822
+                ],
+                [
+                  1829,
+                  1836
+                ],
+                [
+                  1851,
+                  1857
+                ],
+                [
+                  1863,
+                  1873
+                ],
+                [
+                  1902,
+                  1914
+                ],
+                [
+                  1930,
+                  1935
+                ]
+              ]
+            },
+            {
+              "call": 10,
+              "ranges": [
+                [
+                  1936,
+                  1936
+                ]
+              ]
+            }
+          ],
+          "originalFullAnchorMetric": {
+            "found": false,
+            "pages": 10,
+            "exhausted": true,
+            "responseCharacters": 28787
+          },
+          "incurred": {
+            "toolCalls": 10,
+            "responseCharacters": 28787,
+            "responseUtf8Bytes": 28787,
+            "responseTokens": {
+              "cl100k_base": 8612,
+              "o200k_base": 8614
+            },
+            "providerRequests": 0,
+            "providerInputTokens": 0,
+            "providerOutputTokens": 0
+          },
+          "earliestAdequateObservedPrefix": null
+        }
+      ],
+      "conclusions": [
+        "The full-anchor completion metric is invalid as a semantic-proof-arrival metric: goals returned adequate observed source on page 1 although the harness incurred 6 pages to collect the complete frozen anchor.",
+        "Plain paging first becomes adequate on page 4; goals first becomes adequate on page 1. Thus this observed ranking improves evidence order relative to ordinary paging, despite a partial candidate-budget receipt.",
+        "The frozen literal closed control is still the cheapest adequate observed route in response characters and provider work: 3696 characters, one ordinary tool call, zero provider requests, versus the goals page-1 prefix at 4065 characters plus eight requests / 9248 provider input / 152 output tokens.",
+        "Locate's single distinct source range is insufficient. Its actual incurred cost retains the duplicate-read harness defect; no success is inferred from the high score.",
+        "Reserve returns relevant partial evidence but not the explicit receiver termination contract; call that limitation partial evidence, not absence of any useful evidence.",
+        "No universal semantic benefit or harm, net monetary cost, model accuracy, or autonomous route/stopping accuracy is established."
+      ]
+    }
+  },
+  "adjudicationHashes": {
+    "red/first-source-adequacy-v1.json": "f20ba03e6341e30744221dba4c92a3fa5dcc12abb782b2ebe9ed94d72677654c",
+    "red/second-source-adequacy-v1.json": "bdbe0b39ecc58e3834db0a535704d1063d04f26fd3564795d8f05c0b41f7fe1b"
+  }
+}

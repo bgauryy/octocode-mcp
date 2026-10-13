@@ -20,14 +20,29 @@ PKG="$(cd "$HERE/../.." && pwd)"
 REF="$PKG/skills/octocode-benchmark/references"
 DIR="$CAMP/judge/$A~$B"
 QDIR="github-questions"; [ "${A#local-}" = "$A" ] || QDIR="local-questions"
+QUESTION_DIR="${QUESTION_DIR:-$PKG/compare/$QDIR}"
+ANSWER_DIR="${ANSWER_DIR:-$QUESTION_DIR/answers}"
 mkdir -p "$DIR"
+valid_verdict() {
+  python3 - "$HERE" "$1" <<'PYVERDICT'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from campaign_summary import parse_verdict
+try:
+    parse_verdict(Path(sys.argv[2]).read_text())
+except (OSError, ValueError, AttributeError):
+    raise SystemExit(1)
+PYVERDICT
+}
 # Already judged: keep it (delete the verdict to judge again).
-if grep -q '```json' "$DIR/p$PASS-$Q.md" 2>/dev/null; then echo "$A~$B p$PASS $Q already judged"; exit 0; fi
+if valid_verdict "$DIR/p$PASS-$Q.md"; then echo "$A~$B p$PASS $Q already judged"; exit 0; fi
 
-python3 - "$CAMP" "$PKG" "$A" "$B" "$PASS" "$Q" "$DIR" "$QDIR" <<'PY'
-import hashlib, json, random, re, sys
+python3 - "$CAMP" "$PKG" "$A" "$B" "$PASS" "$Q" "$DIR" "$QDIR" "$QUESTION_DIR" <<'PY'
+import hashlib, json, random, re, subprocess, sys
 from pathlib import Path
 camp, pkg, a, b, p, q, out, qdir = Path(sys.argv[1]), Path(sys.argv[2]), *sys.argv[3:7], Path(sys.argv[7]), sys.argv[8]
+question_dir = Path(sys.argv[9])
 # Hide which tool wrote an answer: tool names, CLIs and arm ids become "[research tool]".
 IDENTITY = re.compile(
     r"(?:npx\s+octocode|octocode|headroom|\brtk\b|\bghc\b|\bgh\s+(?:api|search|pr|issue|repo)\b|\bgh[A-Z][A-Za-z]+"
@@ -40,11 +55,31 @@ LOCAL_IDENTITY = re.compile(
 clones = str(pkg.parents[1] / "octocode-local-testing" / "repos")
 arms = [a, b]
 random.Random(int(hashlib.sha256(f"42-{a}-{b}-{p}-{q}".encode()).hexdigest(), 16)).shuffle(arms)
-text = [(pkg / f"compare/{qdir}/{q}.md").read_text(), "", "# Answers to grade (blind)"]
+question = (question_dir / f"{q}.md").read_text()
+repo_file = question_dir / "repositories.json"
+if repo_file.exists():
+    for repository in json.loads(repo_file.read_text())["repositories"]:
+        question = question.replace("{{REPO:" + repository["id"] + "}}", repository["sourceRoot"])
+if "{{REPO:" in question:
+    raise SystemExit("Unresolved repository token in judge question")
+text = [question, "", "# Answers to grade (blind)",
+        "Disposable corpus paths are normalized to their identical pinned original source roots for verification."]
 for label, arm in zip("XY", arms):
+    status_file = camp / f"runs/{arm}-p{p}-{q}/status.json"
+    if not status_file.exists() or not json.loads(status_file.read_text()).get("ok"):
+        raise SystemExit(f"Refusing to score invalid or unverified run {arm}-p{p}-{q}")
     rows = [json.loads(l) for l in (camp / f"{arm}-p{p}-{q}.jsonl").read_text().splitlines() if l.strip()]
     calls = [r for r in rows if r.get("kind") != "answer"]
     answer = (camp / f"runs/{arm}-p{p}-{q}/answer.md").read_text()
+    corpus_file = camp / f"runs/{arm}-p{p}-{q}/corpus.json"
+    if corpus_file.exists():
+        for corpus in json.loads(corpus_file.read_text()):
+            source = corpus["sourceRoot"]
+            sha = subprocess.check_output(["git", "-C", source, "rev-parse", "HEAD"], text=True).strip()
+            dirty = subprocess.check_output(["git", "-C", source, "status", "--porcelain", "--untracked-files=no"], text=True)
+            if sha != corpus["commit"] or dirty.strip():
+                raise SystemExit("Pinned judge corpus changed; refusing to grade")
+            answer = answer.replace(corpus["solverRoot"], source)
     if qdir == "local-questions":   # the clones' root contains "octocode": keep it out of the redaction
         answer = LOCAL_IDENTITY.sub("[research tool]", answer.replace(clones, "\0CLONES\0"))
     answer = IDENTITY.sub("[research tool]", answer).replace("\0CLONES\0", clones)
@@ -65,7 +100,7 @@ if [ "$QDIR" = local-questions ]; then
   GROUND="This is a local question about pinned clones on this machine. Establish ground truth
 yourself FIRST with read-only shell commands on the clone the question names (\`rg -n\`, \`grep\`,
 \`sed -n\`, \`wc\`, \`git -C <clone> ls-files|show|log\`, \`ast-grep\`). The answer key
-$PKG/compare/local-questions/answers/$Q.md lists the expected facts and how they were checked:
+$ANSWER_DIR/$Q.md lists the expected facts and how they were checked:
 read it, then re-verify every fact you rely on against the clone (the key can be wrong)."
 fi
 PROMPT="$(cat "$DIR/p$PASS-$Q.packet.md")
@@ -95,7 +130,7 @@ if [ "${JUDGE_RUNNER:-pi}" = codex ]; then
       -s workspace-write -c sandbox_workspace_write.network_access=true -m "$MODEL" -C "$WORKDIR" \
       -o "$DIR/p$PASS-$Q.md" - < "$WORKDIR/prompt.md" > "$DIR/p$PASS-$Q.stderr.log" 2>&1 || true
     rm -rf "$WORKDIR"
-    if grep -q '```json' "$DIR/p$PASS-$Q.md" 2>/dev/null; then echo "$A~$B p$PASS $Q judged"; exit 0; fi
+    if valid_verdict "$DIR/p$PASS-$Q.md"; then echo "$A~$B p$PASS $Q judged"; exit 0; fi
     sleep $((attempt * 30))
   done
   echo "$A~$B p$PASS $Q NO VERDICT ($(tail -c 120 "$DIR/p$PASS-$Q.stderr.log" | tr '\n' ' '))"
@@ -104,10 +139,54 @@ fi
 # A provider hiccup (connection error, empty reply) is retried with backoff; a judge that
 # still returns no ```json verdict is reported, never scored.
 for attempt in 1 2 3; do
-  pi -p --no-session --provider "${JUDGE_PROVIDER:-guy-provider-openai}" --model "${JUDGE_MODEL:-gpt-5.5}" --tools bash,read \
+  WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/bench-judge-XXXXXX")"
+  python3 - "$WORKDIR/agent" <<'PYAGENT'
+import os, json, sys
+from pathlib import Path
+target = Path(sys.argv[1]); target.mkdir()
+source = Path(os.environ.get('PI_CODING_AGENT_DIR') or Path.home() / '.pi/agent')
+for name in ('auth.json', 'models.json'):
+    if (source / name).exists():
+        (target / name).symlink_to((source / name).resolve())
+(target / 'settings.json').write_text('{}\n')
+PYAGENT
+  echo "runner=pi model=${JUDGE_MODEL:-gpt-5.5} provider=${JUDGE_PROVIDER:-guy-provider-openai}" > "$DIR/JUDGE.txt"
+  (cd "$WORKDIR" && PI_CODING_AGENT_DIR="$WORKDIR/agent" perl -e 'alarm shift; exec @ARGV' "${JUDGE_TIMEOUT:-600}" pi -p --mode json --no-session \
+    --no-context-files --no-extensions --no-skills --no-prompt-templates --no-themes --no-mcp --offline \
+    --provider "${JUDGE_PROVIDER:-guy-provider-openai}" --model "${JUDGE_MODEL:-gpt-5.5}" --tools bash,read \
     --append-system-prompt "$REF/JUDGING.md" --append-system-prompt "$REF/example-verdict.md" \
-    "$PROMPT" > "$DIR/p$PASS-$Q.md" 2> "$DIR/p$PASS-$Q.stderr.log" || true
-  if grep -q '```json' "$DIR/p$PASS-$Q.md"; then echo "$A~$B p$PASS $Q judged"; exit 0; fi
+    "$PROMPT") > "$DIR/p$PASS-$Q.transcript.jsonl" 2> "$DIR/p$PASS-$Q.stderr.log" || true
+  python3 - "$DIR/p$PASS-$Q" <<'PYJUDGE'
+import json, sys
+from pathlib import Path
+base = sys.argv[1]
+messages = []
+for line in Path(base + '.transcript.jsonl').read_text().splitlines():
+    try:
+        event = json.loads(line)
+    except ValueError:
+        continue
+    if event.get('type') == 'message_end' and event.get('message', {}).get('role') == 'assistant':
+        messages.append(event['message'])
+last = messages[-1] if messages else {}
+Path(base + '.md').write_text('\n'.join(c.get('text', '') for c in last.get('content', []) if c.get('type') == 'text'))
+usage = [m.get('usage') for m in messages]
+report = {'assistant_messages': len(messages), 'model': last.get('model'), 'usage_complete': bool(usage) and all(usage)}
+for key in ('input', 'output', 'cacheRead', 'cacheWrite', 'totalTokens'):
+    values = [u[key] for u in usage if u and u.get(key) is not None]
+    report[key] = sum(values) if values else None
+costs = [u['cost']['total'] for u in usage if u and (u.get('cost') or {}).get('total') is not None]
+report['reported_cost_usd'] = sum(costs) if costs else None
+Path(base + '.usage.json').write_text(json.dumps(report, indent=1) + '\n')
+PYJUDGE
+  rm -rf "$WORKDIR/agent"
+  rmdir "$WORKDIR" 2>/dev/null || true
+  if valid_verdict "$DIR/p$PASS-$Q.md"; then echo "$A~$B p$PASS $Q judged"; exit 0; fi
+  mkdir -p "$DIR/attempts/p$PASS-$Q"
+  cp "$DIR/p$PASS-$Q.md" "$DIR/attempts/p$PASS-$Q/$attempt.md"
+  cp "$DIR/p$PASS-$Q.stderr.log" "$DIR/attempts/p$PASS-$Q/$attempt.stderr.log"
+  cp "$DIR/p$PASS-$Q.transcript.jsonl" "$DIR/attempts/p$PASS-$Q/$attempt.transcript.jsonl"
+  cp "$DIR/p$PASS-$Q.usage.json" "$DIR/attempts/p$PASS-$Q/$attempt.usage.json"
   sleep $((attempt * 30))
 done
 echo "$A~$B p$PASS $Q NO VERDICT ($(tail -c 120 "$DIR/p$PASS-$Q.stderr.log" | tr '\n' ' '))"

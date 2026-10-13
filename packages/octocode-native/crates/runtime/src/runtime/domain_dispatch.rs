@@ -31,11 +31,33 @@ pub(crate) struct DomainDispatcher {
     pub local_views: Arc<crate::security::scan::SanitizedViewMemo>,
     pub lsp_execution_config: Arc<LspExecutionConfig>,
     pub available_tools: Arc<[&'static str]>,
+    pub clasify: crate::tools::clasify::ClasifySettings,
     /// Registry answers for artifactSearch; `None` under memory storage.
     pub artifact_cache: Option<Arc<crate::providers::artifact::ArtifactCache>>,
 }
 
 impl DomainDispatcher {
+    pub(super) fn ranking_runtime(
+        &self,
+        context: &ExecutionContext,
+    ) -> crate::tools::ranking::Runtime {
+        let settings = &self.config.resolved.ranking;
+        crate::tools::ranking::Runtime {
+            limits: crate::tools::ranking::Limits {
+                enabled: settings.enabled,
+                max_candidates: settings.max_candidates as usize,
+                max_chars: settings.max_chars as usize,
+                timeout: std::time::Duration::from_millis(settings.timeout_ms as u64),
+            },
+            available: self.available_tools.contains(&ToolId::Clasify.as_str()),
+            judge: Arc::new(self.clasify.clone()),
+            handle: self.handle.clone(),
+            context: context.clone(),
+            home: self.home.clone(),
+            stats_enabled: crate::config::is_stats_enabled(&self.config.resolved),
+        }
+    }
+
     /// Every route matches the contract family exhaustively; within a
     /// family only the tools with their own runner are named. The runtime
     /// resolves the wire name once.
@@ -63,6 +85,7 @@ impl DomainDispatcher {
         query: &Value,
         context: &ExecutionContext,
     ) -> Result<dispatch::DomainResult, ExecutionError> {
+        let ranking = self.ranking_runtime(context);
         match self.github_services.get_or_init(|| {
             github::GitHubServices::new(
                 self.config.clone(),
@@ -78,6 +101,7 @@ impl DomainDispatcher {
                 &self.regex,
                 &self.handle,
                 &self.paths,
+                &ranking,
             ),
             Err(error) => Ok(github::provider_error(error.clone())),
         }
@@ -216,6 +240,7 @@ impl DomainDispatcher {
             ..Default::default()
         };
         let cargo = self.config.env_value("OCTOCODE_CARGO").map(str::to_owned);
+        let ranking = self.ranking_runtime(&context);
         // `lsp.prewarm`: `targeted` warms the server an offered lspSearch
         // call names; `all` also warms the file a read or search names.
         let prewarm_mode = self.config.resolved.lsp.prewarm.clone();
@@ -239,6 +264,7 @@ impl DomainDispatcher {
                             &views,
                             &rewrite,
                             cargo.as_deref(),
+                            Some(&ranking),
                         )
                     },
                 )

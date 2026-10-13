@@ -346,6 +346,10 @@ fn stream_window(
     }
     let held_last = streamed.last.max(streamed.first);
     let mut window_query = q.clone();
+    // The outer streamed fetch owns the source-wide skipped ranking receipt.
+    // This internal bounded read addresses only a temporary window digest.
+    window_query.goals.clear();
+    window_query.ranking = None;
     window_query.set_line_span(1, held_last + 1 - streamed.first);
     window_query.snapshot = None;
     if chunked {
@@ -578,8 +582,10 @@ fn read_bounded(q: &LocalFetchQuery) -> NextCalls {
 /// An error row whose recovery restarts from the first line window.
 fn restart_error(q: &LocalFetchQuery, code: &str, message: String) -> LocalFetchResult {
     let mut result = LocalFetchResult::error(q.path.to_string(), code, message);
+    let mut restart = line_chunk_query(q, 0);
+    restart.ranking = None;
     result.next = Some(NextCalls {
-        restart: Some(continuation(line_chunk_query(q, 0))),
+        restart: Some(continuation(restart)),
         ..NextCalls::default()
     });
     result

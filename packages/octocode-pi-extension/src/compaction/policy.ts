@@ -86,7 +86,7 @@ export function futureRequests(usage: { requests: number; tokens: number | null;
   return Math.max(1, Math.min(usage.requests, room));
 }
 
-/** A planned batch: the characters it removes, and the request characters from its first edited entry to the end. */
+/** A planned batch in token-equivalent character units: text characters, and Pi's image token estimates × 4. */
 export interface TrimBatch {
   savedChars: number;
   rewriteChars: number;

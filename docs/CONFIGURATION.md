@@ -171,6 +171,18 @@ Defaults, ranges, enums, and env mappings: [generated settings](generated/CONFIG
 - **GitHub rate limits:** a call waits out a primary or secondary limit, search spacing, or a full code-search window (10 searches a minute) for up to `network.maxRateLimitWait` (`OCTOCODE_MAX_RATE_LIMIT_WAIT`) and then sends; a longer wait fails at once with `rateLimited` and `retryAfter`. Waiting does not spend `network.timeout`, but the tool call's own deadline still bounds it. Processes sharing a token reserve search slots under one lock on `tmp/ratelimit/`, so they never take the same slot. Lower the wait when an MCP host gives tool calls less time than it plus the request (some hosts allow 60 s).
 - **Classification gate:** one process-wide gate per provider endpoint allows `OCTOCODE_CLASSIFICATION_CONCURRENCY` (`classification.maxConcurrency`) requests in flight; one tool call may use up to three quarters. Throttling (429/503/529) halves the gate, `Retry-After` pauses every caller, and the gate recovers gradually.
 
+## Read-tool relevance ranking
+
+Enable `ranking.enabled` in the home `.octocoderc`, or set `OCTOCODE_RANKING_ENABLED=true` in the shell, MCP environment, or home `.env`. A configured classification credential and an available `clasify` tool are also required. Ranking runs only when a supported read query supplies `goals`; ordinary calls make no classification request. See the [per-tool scope table](OCTOCODE_CLASIFY.md#how-goals-rerank-source) for eligible operations and zero-call skips. MCP and CLI read-tool schemas expose optional `goals` only when both gates are enabled. The CLI also exposes the opaque ranking continuation field; MCP discovery hides it. Copy returned continuations unchanged.
+
+```json
+{"ranking":{"enabled":true}}
+```
+
+The feature sends sanitized candidate evidence and the caller's goals to the configured classification provider. A workspace cannot enable it: `OCTOCODE_RANKING_ENABLED` is home-only, and a workspace `.env` or `.octocoderc` may only narrow it to `false`, subject to normal environment precedence.
+
+`ranking.maxCandidates`, `ranking.maxChars`, and `ranking.timeoutMs` bound provider work. See the [generated settings reference](generated/CONFIG_SETTINGS.md) for defaults, ranges, and environment names. Evidence outside these budgets stays reachable; the result's `ranking` receipt identifies partial ranking, skipped modes, or provider failure. Disable `ranking.enabled` to restore ordinary ordering. Choose scopes using the [routing guide and measured context tradeoffs](OCTOCODE_CLASIFY.md#how-this-can-save-context); ranking adds provider work and saves caller context only when earlier evidence lets the caller stop sooner.
+
 ## GitHub Enterprise
 
 Set `GITHUB_API_URL` (or `github.apiUrl` in the home `.octocoderc`) to the enterprise API root, for example `https://github.mycompany.com/api/v3`. A workspace file cannot set it. Tokens and device login: [AUTHENTICATION.md](AUTHENTICATION.md#github-enterprise).

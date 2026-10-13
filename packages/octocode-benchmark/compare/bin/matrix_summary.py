@@ -51,47 +51,58 @@ def boot_ci(xs, n=10000, seed=42):
     return gs[int(0.025 * n)], gs[int(0.975 * n)]
 
 
-def load_groups():
+def load_groups(question_set: str = "github-v2"):
     groups: dict[str, dict] = {}
     chars = defaultdict(lambda: defaultdict(list))   # group → q → [chars per run]
     secs = defaultdict(lambda: defaultdict(list))    # group → q → [(wall, model, tools) per run]; live campaigns only
     scores = defaultdict(lambda: defaultdict(list))  # group → q → [correctness per judged answer]
     pairs = []
-    def started(path):  # campaign names end in -HHMMSS-YYYY-MM-DD
-        m = re.search(r"-(\d{6})-(\d{4}-\d{2}-\d{2})$", path.stem)
-        return (m[2], m[1]) if m else ("", path.stem)
+    def started(path):  # Campaign dates may include a preceding HHMMSS.
+        m = re.search(r"-(?:(\d{6})-)?(\d{4}-\d{2}-\d{2})$", path.stem)
+        return (m[2], m[1] or "000000") if m else ("", path.stem)
 
     for path in sorted((RESULTS / "runs").glob("*.json"), key=started):
         doc = json.loads(path.read_text())
+        inferred_set = "local-v1" if any(r["arm"].startswith("local-") for r in doc["runs"]) else "github-v2"
+        if doc.get("question_set", inferred_set) != question_set:
+            continue
         # One group per (campaign, tool): pooling campaigns would mix agents, days and rate-limit
         # conditions. The short tag is the campaign name without its time and date.
         tag = re.sub(r"-\d{6}-\d{4}-\d{2}-\d{2}$", "", doc["campaign"])
         month = re.search(r"(\d{4})-(\d{2})-\d{2}$", doc["campaign"])
         when = f"{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][int(month[2]) - 1]} {month[1]}" if month else ""
         arm_group = {}
+        mcp_arms = {r["arm"] for r in doc["runs"] if r["arm"].startswith(("mcp", "local-mcp"))}
         for arm in sorted({r["arm"] for r in doc["runs"]}):
-            if arm.startswith("mcp"):
-                gid, label, how = slug(f"{doc['octocode_label']} {tag}"), f"{doc['octocode_label']} · {tag}", "local MCP"
+            is_mcp = arm in mcp_arms
+            if is_mcp:
+                suffix = f" · {arm}" if len(mcp_arms) > 1 else ""
+                label = f"{doc['octocode_label']} · {tag}{suffix}"
+                gid, how = slug(label), "local MCP"
             else:
                 base, base_label = LIVE.get(arm, (slug(arm), arm))
                 gid, label, how = f"{base}_{slug(tag)}", f"{base_label} · {tag}", arm
             arm_group[arm] = gid
-            g = groups.setdefault(gid, {"id": gid, "label": label, "octocode": arm.startswith("mcp"),
+            g = groups.setdefault(gid, {"id": gid, "label": label, "octocode": is_mcp,
                                         "how": f"{how} · {doc['runner_model']}", "measured": when,
                                         "campaigns": [], "runs": []})
             if doc["campaign"] not in g["campaigns"]:
                 g["campaigns"].append(doc["campaign"])
         for r in doc["runs"]:
+            groups[arm_group[r["arm"]]]["runs"].append(r)
+            if not r.get("ok", True):
+                continue
             chars[arm_group[r["arm"]]][r["q"]].append(r["chars"])
             if r.get("secs"):
-                secs[arm_group[r["arm"]]][r["q"]].append((r["secs"], r.get("model_secs", 0), r.get("tool_secs", 0)))
-            groups[arm_group[r["arm"]]]["runs"].append(r)
+                secs[arm_group[r["arm"]]][r["q"]].append((r["secs"], r.get("model_secs"), r.get("tool_secs")))
         by_pair = defaultdict(list)
+        runs_by = {(r["arm"], r["pass"], r["q"]): r for r in doc["runs"] if r.get("ok", True)}
         for j in doc["judgments"]:
+            if not all((arm, j["pass"], j["q"]) in runs_by for arm in j["scores"]):
+                continue
             for arm, s in j["scores"].items():
                 scores[arm_group[arm]][j["q"]].append(s["correctness"])
             by_pair[j["pair"]].append(j)
-        runs_by = {(r["arm"], r["pass"], r["q"]): r for r in doc["runs"]}
         for pair, js in by_pair.items():
             a, b = pair.split("~")
             ga, gb = arm_group[a], arm_group[b]
@@ -99,17 +110,21 @@ def load_groups():
             # Same-campaign ratios over every question both arms ran (B ÷ A: >1 = A leaner / faster).
             both = [(runs_by[(a, p, q)], runs_by[(b, p, q)]) for (arm, p, q) in runs_by if arm == a and (b, p, q) in runs_by]
             cr = [rb["chars"] / ra["chars"] for ra, rb in both]
+            if not cr:
+                continue
             tr = [rb["secs"] / ra["secs"] for ra, rb in both if ra.get("secs") and rb.get("secs")]
             ratios = {"chars_b_over_a": geo(cr), "chars_ci95": list(boot_ci(cr)), "a_leaner_on": sum(x > 1 for x in cr),
                       "questions": len(cr)}
             if tr:
                 ratios.update({"secs_b_over_a": geo(tr), "secs_ci95": list(boot_ci(tr)), "a_faster_on": sum(x > 1 for x in tr)})
             pairs.append({"campaign": doc["campaign"], "a": ga, "b": gb, "arm_a": a, "arm_b": b, "judged": len(js), **ratios,
-                          "a_more_correct": sum(d > 0 for d in diff), "same": sum(d == 0 for d in diff),
-                          "b_more_correct": sum(d < 0 for d in diff),
+                          "a_more_correct": sum(d > 1 for d in diff), "same": sum(abs(d) <= 1 for d in diff),
+                          "b_more_correct": sum(d < -1 for d in diff),
                           "a_wins": sum(j["winner"] == a for j in js), "b_wins": sum(j["winner"] == b for j in js)})
-    hist = json.loads((RESULTS / "per_question_summary.json").read_text())["rows"]
+    hist = json.loads((RESULTS / "per_question_summary.json").read_text())["rows"] if question_set == "github-v2" else []
     for key, (gid, label, how, when) in HISTORICAL.items():
+        if not hist:
+            break
         groups[gid] = {"id": gid, "label": label, "octocode": key == "octocode", "how": how, "measured": when,
                        "campaigns": ["Aug 2026 CLI campaigns (3 passes)"], "runs": []}
         for row in hist:
@@ -119,18 +134,27 @@ def load_groups():
     return groups, chars, scores, pairs, secs
 
 
-def build(anchor: str | None):
-    groups, chars, scores, pairs, secs = load_groups()
+def complete_sum(values):
+    values = list(values)
+    return sum(values) if values and all(v is not None for v in values) else None
+
+
+def build(anchor: str | None, question_set: str = "github-v2"):
+    groups, chars, scores, pairs, secs = load_groups(question_set)
+    questions = QS if question_set == "github-v2" else sorted(
+        {r["q"] for g in groups.values() for r in g["runs"]}, key=lambda q: int(q[1:]))
     live_octo = [g for g in groups.values() if g["octocode"] and g["runs"]]
     anchor = anchor or (live_octo[-1]["id"] if live_octo else "octocode_v18")
     live_other = [g["id"] for g in reversed(list(groups.values())) if g["runs"] and not g["octocode"]]
     order = ([anchor] + [g["id"] for g in reversed(live_octo) if g["id"] != anchor] + live_other
              + ["octocode_v18", "gh", "rtk", "headroom"])
-    order = [g for g in dict.fromkeys(order) if g in groups and all(chars[g][q] for q in QS)]
-    timed = [g for g in order if all(secs[g][q] for q in QS)]
+    order = [g for g in dict.fromkeys(order) if g in groups and questions and all(chars[g][q] for q in questions)]
+    if anchor not in order and order:
+        anchor = order[0]
+    timed = [g for g in order if all(secs[g][q] for q in questions)]
     rows = [{"q": q, "chars": {g: st.mean(chars[g][q]) for g in order},
              "secs": {g: (st.mean(t[0] for t in secs[g][q]) if g in timed else None) for g in order},
-             "correct": {g: (st.mean(scores[g][q]) if scores[g][q] else None) for g in order}} for q in QS]
+             "correct": {g: (st.mean(scores[g][q]) if scores[g][q] else None) for g in order}} for q in questions]
     matrix, leaner = {}, {}
     for a in order:
         matrix[a], leaner[a] = {}, {}
@@ -142,29 +166,30 @@ def build(anchor: str | None):
     summary = {}
     for g in order:
         c = [r["chars"][g] for r in rows]
-        sc = [s for q in QS for s in scores[g][q]]
+        sc = [s for q in questions for s in scores[g][q]]
         runs = groups[g]["runs"]
         summary[g] = {
             "label": groups[g]["label"], "how": groups[g]["how"], "measured": groups[g]["measured"],
             "campaigns": groups[g]["campaigns"], "octocode": groups[g]["octocode"], "live": bool(runs),
-            "runs_per_question": max(len(chars[g][q]) for q in QS) if runs else 3,
+            "runs_per_question": max(len(chars[g][q]) for q in questions) if runs else 3,
             "chars_median": st.median(c), "chars_mean": st.mean(c), "chars_total": sum(c),
             "correct_mean": st.mean(sc) if sc else None, "correct_judged": len(sc),
             "anchor_leaner_x": matrix[anchor][g]["geo_mean"], "anchor_leaner_ci95": matrix[anchor][g]["ci95"],
             "anchor_leaner_on": leaner[anchor][g],
             "calls": sum(r["calls"] for r in runs) if runs else None,
             "failed": sum(r["failed"] for r in runs) if runs else None,
-            "cost_usd": sum(r["cost_usd"] or 0 for r in runs) if runs else None,
-            "input_tokens": sum(r["input_tokens"] for r in runs) if runs else None,
+            "cost_usd": complete_sum(r.get("cost_usd") for r in runs),
+            "input_tokens": complete_sum(r.get("input_tokens") for r in runs),
         }
         if g in timed:
-            per_q = [[t for t in secs[g][q]] for q in QS]
+            per_q = [[t for t in secs[g][q]] for q in questions]
+            split_known = all(t[1] is not None and t[2] is not None for ts in per_q for t in ts)
             summary[g].update({
                 "secs_median": st.median(st.mean(t[0] for t in ts) for ts in per_q),
                 # Means split additively (wall = model + tools); medians of parts would not add up.
                 "secs_mean": st.mean(t[0] for ts in per_q for t in ts),
-                "model_secs_mean": st.mean(t[1] for ts in per_q for t in ts),
-                "tool_secs_mean": st.mean(t[2] for ts in per_q for t in ts),
+                "model_secs_mean": st.mean(t[1] for ts in per_q for t in ts) if split_known else None,
+                "tool_secs_mean": st.mean(t[2] for ts in per_q for t in ts) if split_known else None,
                 "secs_total": sum(t[0] for ts in per_q for t in ts),
             })
             if anchor in timed:
@@ -173,7 +198,7 @@ def build(anchor: str | None):
                 summary[g].update({"anchor_faster_x": geo(ratios), "anchor_faster_ci95": [lo, hi],
                                    "anchor_faster_on": sum(x > 1 for x in ratios)})
     return {"anchor": anchor, "order": order, "timed": timed, "groups": summary, "rows": rows, "matrix": matrix,
-            "leaner_count": leaner, "judged_pairs": pairs, "questions": len(QS)}
+            "leaner_count": leaner, "judged_pairs": pairs, "questions": len(questions), "question_set": question_set}
 
 
 def whole(x):
@@ -182,12 +207,14 @@ def whole(x):
 
 def render(m) -> str:
     A, G, an = m["order"], m["groups"], m["anchor"]
+    if not A:
+        return f"# Benchmark matrix — {m['question_set']}\n\nNo complete valid arm for this corpus. See campaign results for invalid and partial runs.\n"
     L = {g: G[g]["label"] for g in A}
     out = [
         f"# Benchmark matrix — {L[an]} vs every other tool",
         "",
-        "Same GitHub questions (`compare/github-questions/`). Characters = model-in + model-out from "
-        "the runner transcript or wrapper log. Correctness = blind gpt-5.5 judge, shown as a whole "
+        f"Question set: `{m['question_set']}`. Characters = model-in + model-out from "
+        "the runner transcript or wrapper log. Correctness = the recorded independent judge, shown as a whole "
         "number out of 10: judge scores move by a point between runs, so treat tools within one point "
         "as equally correct. Rebuild: `compare/bin/matrix_summary.py`.",
         "",
@@ -214,8 +241,10 @@ def render(m) -> str:
             fast = "anchor" if g == an else (f"{s['anchor_faster_x']:.2f}× ({s['anchor_faster_ci95'][0]:.2f}–{s['anchor_faster_ci95'][1]:.2f})"
                                              if "anchor_faster_x" in s else "—")
             on = "—" if g == an or "anchor_faster_on" not in s else f"{s['anchor_faster_on']}/{m['questions']}"
-            out.append(f"| {s['label']} | {s['secs_median']:.1f} | {s['secs_mean']:.1f} | {s['model_secs_mean']:.1f} | "
-                       f"{s['tool_secs_mean']:.1f} | {fast} | {on} |")
+            model = f"{s['model_secs_mean']:.1f}" if s['model_secs_mean'] is not None else "—"
+            tools = f"{s['tool_secs_mean']:.1f}" if s['tool_secs_mean'] is not None else "—"
+            out.append(f"| {s['label']} | {s['secs_median']:.1f} | {s['secs_mean']:.1f} | {model} | "
+                       f"{tools} | {fast} | {on} |")
     if m["judged_pairs"]:
         out += ["", "## Head-to-head (same campaign, same judge)", "",
                 "The fairest comparison: same agent model, same day, judged together. Ratios are B ÷ A per "
@@ -250,10 +279,11 @@ def render(m) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--anchor", help="group id to rate the others against (default: newest Octocode MCP group)")
+    ap.add_argument("--question-set", default="github-v2")
     ap.add_argument("--out", type=Path, default=RESULTS / "MATRIX.md")
     ap.add_argument("--json", type=Path, default=RESULTS / "matrix_summary.json")
     args = ap.parse_args()
-    m = build(args.anchor)
+    m = build(args.anchor, args.question_set)
     args.json.write_text(json.dumps(m, indent=1) + "\n")
     args.out.write_text(render(m))
     print(f"wrote {args.out} and {args.json}: anchor {m['anchor']}, groups {', '.join(m['order'])}")

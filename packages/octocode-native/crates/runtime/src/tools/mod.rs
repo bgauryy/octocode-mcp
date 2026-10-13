@@ -31,6 +31,7 @@ pub(crate) mod output;
 pub(crate) mod page_memo;
 pub(crate) mod page_windows;
 pub(crate) mod paging;
+pub(crate) mod ranking;
 pub(crate) mod result;
 pub(crate) mod root_read;
 pub(crate) mod source;

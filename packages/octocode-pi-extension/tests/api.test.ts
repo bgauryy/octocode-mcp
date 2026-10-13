@@ -156,6 +156,17 @@ describe('external API', () => {
     expect(await reply).toMatchObject({ text: 'done: 3 files', stopReason: 'stop', queued: 'turn' });
   });
 
+  it('reports an aborted run even when its last assistant answer stopped normally', async () => {
+    const { client, emit, sent, api } = await boot();
+    const publish = vi.spyOn(api.log, 'publish');
+    const reply = client.call('message.send', { text: 'continue the investigation', wait: true });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    emit('agent_end', { messages: [{ role: 'assistant', content: [{ type: 'text', text: 'partial findings' }], stopReason: 'stop' }] });
+    emit('agent_settled', { aborted: true });
+    expect(await reply).toMatchObject({ text: 'partial findings', stopReason: 'aborted', queued: 'turn' });
+    expect(publish).toHaveBeenCalledWith('agent.settled', { text: 'partial findings', stopReason: 'aborted' });
+  });
+
   it('answers a wait only once Pi has settled, never with an earlier run\'s text', async () => {
     const { client, emit, sent } = await boot();
     let answered = false;
@@ -221,22 +232,14 @@ describe('external API', () => {
       client.watch((event) => top.push(event), { topLevel: true, signal: controller.signal, onSubscribed }),
     ];
     await live;
-    const now = vi.spyOn(Date, 'now');
-    now.mockReturnValue(1_000);
     emit('tool_execution_start', { toolCallId: 'toolu_1', toolName: 'codemode', args: {} });
-    now.mockReturnValue(1_010);
     emit('tool_execution_start', { toolCallId: 'toolu_1/1', parentToolCallId: 'toolu_1', toolName: 'read', args: { path: 'a.ts' } });
-    now.mockReturnValue(1_020);
     emit('tool_execution_start', { toolCallId: 'toolu_1/1/2', parentToolCallId: 'toolu_1/1', toolName: 'bash', args: {} });
-    now.mockReturnValue(1_050);
-    emit('tool_execution_end', { toolCallId: 'toolu_1/1/2', parentToolCallId: 'toolu_1/1', toolName: 'bash', isError: true });
-    now.mockReturnValue(1_060);
-    emit('tool_execution_end', { toolCallId: 'toolu_1/1', parentToolCallId: 'toolu_1', toolName: 'read', isError: false });
-    now.mockReturnValue(1_100);
-    emit('tool_execution_end', { toolCallId: 'toolu_1', toolName: 'codemode', isError: false });
-    // An end whose start the bridge never saw has no duration.
-    emit('tool_execution_end', { toolCallId: 'toolu_9', toolName: 'bash', isError: false });
-    now.mockRestore();
+    emit('tool_execution_end', { toolCallId: 'toolu_1/1/2', parentToolCallId: 'toolu_1/1', toolName: 'bash', isError: true, durationMs: 30 });
+    emit('tool_execution_end', { toolCallId: 'toolu_1/1', parentToolCallId: 'toolu_1', toolName: 'read', isError: false, durationMs: 50 });
+    emit('tool_execution_end', { toolCallId: 'toolu_1', toolName: 'codemode', isError: false, durationMs: 100 });
+    // Pi owns execution timing even when the bridge did not observe the start.
+    emit('tool_execution_end', { toolCallId: 'toolu_9', toolName: 'bash', isError: false, durationMs: 0 });
     await vi.waitFor(() => expect(all).toHaveLength(7));
     await vi.waitFor(() => expect(top).toHaveLength(3));
     controller.abort();
@@ -249,12 +252,12 @@ describe('external API', () => {
       { id: 'toolu_1/1/2', name: 'bash', isError: true, parentId: 'toolu_1/1', depth: 2, durationMs: 30 },
       { id: 'toolu_1/1', name: 'read', isError: false, parentId: 'toolu_1', depth: 1, durationMs: 50 },
       { id: 'toolu_1', name: 'codemode', isError: false, depth: 0, durationMs: 100 },
-      { id: 'toolu_9', name: 'bash', isError: false, depth: 0 },
+      { id: 'toolu_9', name: 'bash', isError: false, depth: 0, durationMs: 0 },
     ]);
     expect(top.map((event) => `${event.type}:${event.data['id']}`)).toEqual(['tool.start:toolu_1', 'tool.end:toolu_1', 'tool.end:toolu_9']);
     expect(isNestedToolEvent({ seq: 1, at: 0, type: 'message', data: { parentId: 'x' } })).toBe(false);
 
-    // A start whose end never came does not leak into the next session.
+    // New-session events keep native timing without any previous-session clock state.
     emit('tool_execution_start', { toolCallId: 'toolu_2', toolName: 'bash', args: {} });
     await api.start(fakeCtx({ value: true }), { socket: true });
     const after = new ApiClient(api.instance!);
@@ -264,11 +267,11 @@ describe('external API', () => {
     const relive = new Promise<void>((resolve) => (resubscribed = resolve));
     const watch = after.watch((event) => seen.push(event), { signal: again.signal, onSubscribed: () => resubscribed() });
     await relive;
-    emit('tool_execution_end', { toolCallId: 'toolu_2', toolName: 'bash', isError: false });
+    emit('tool_execution_end', { toolCallId: 'toolu_2', toolName: 'bash', isError: false, durationMs: 12 });
     await vi.waitFor(() => expect(seen).toHaveLength(1));
     again.abort();
     await watch;
-    expect(seen[0]!.data).toEqual({ id: 'toolu_2', name: 'bash', isError: false, depth: 0 });
+    expect(seen[0]!.data).toEqual({ id: 'toolu_2', name: 'bash', isError: false, depth: 0, durationMs: 12 });
   });
 
   it('rejects unknown methods, bad params and calls after the session ended', async () => {

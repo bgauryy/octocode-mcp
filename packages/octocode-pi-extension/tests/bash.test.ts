@@ -68,6 +68,19 @@ describe('bash tool', () => {
     expect(result.content[0].text).toContain('hi');
   });
 
+  it('does not start a background command after its request was aborted', async () => {
+    const { tool, ctx, jobs, cwd } = setup();
+    const controller = new AbortController();
+    controller.abort();
+    try {
+      await expect(tool.execute('cancel-background', { command: 'echo started > cancelled.txt', background: true }, controller.signal, undefined, ctx)).rejects.toThrow(/abort/i);
+      expect(fs.existsSync(path.join(cwd, 'cancelled.txt'))).toBe(false);
+      expect(jobs.jobs.size).toBe(0);
+    } finally {
+      await jobs.stopAll('session end');
+    }
+  });
+
   it('stops a foreground command at its deadline and says how to run it longer', async () => {
     const { tool, ctx } = setup();
     const started = Date.now();
@@ -329,13 +342,13 @@ describe('bash rendering', () => {
     const { tool } = setup();
     expect(rendered(tool.renderCall({ command: 'yarn test' }, theme, { lastComponent: undefined, isPartial: true, executionStarted: false }))).toBe('○ Bash(yarn test)');
     expect(rendered(tool.renderCall({ command: 'sleep 1', timeout: 30 }, theme, { lastComponent: undefined, isPartial: true }))).toBe('○ Bash(sleep 1) · timeout 30s');
-    expect(rendered(tool.renderCall({ command: 'serve', background: true }, theme, done({ state: { durationMs: 40 } })))).toBe('● Bash(serve) · background · 40ms');
+    expect(rendered(tool.renderCall({ command: 'serve', background: true }, theme, done({ durationMs: 40 })))).toBe('● Bash(serve) · background · 40ms');
   });
 
   it('summarizes exit, line count and the last lines of output', () => {
     const { tool } = setup();
     const text = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join('\n');
-    const lines = rendered(tool.renderResult({ content: [{ type: 'text', text }], details: { durationMs: 5 } }, { expanded: false, isPartial: false }, theme, done())).split('\n');
+    const lines = rendered(tool.renderResult({ content: [{ type: 'text', text }] }, { expanded: false, isPartial: false }, theme, done({ durationMs: 5 }))).split('\n');
     expect(lines).toEqual(['  ⎿  exit 0 · 12 lines', '     … +9 lines (ctrl+o to expand)', '     line 10', '     line 11', '     line 12']);
     const expanded = rendered(tool.renderResult({ content: [{ type: 'text', text }] }, { expanded: true, isPartial: false }, theme, done()));
     expect(expanded.split('\n')).toHaveLength(13);

@@ -19,7 +19,6 @@ interface BacklogToolDetails {
   total?: number;
   /** remove: the removed item's ref. */
   removed?: string;
-  durationMs?: number;
 }
 
 /** The `⎿` line: `B12 → done`, `Added B3`, `Removed B1`, `3 items`. */
@@ -36,15 +35,14 @@ function backlogSummary(op: unknown, details: BacklogToolDetails, text: string):
 /** What the model reads about `backlog`: the description says what it is, `op` owns the operations, the guidelines only when to use it. */
 function backlogPrompt(subagent: boolean): { description: string; ops: string; promptSnippet: string; promptGuidelines: string[] } {
   const description =
-    'Track repository work across sessions. An item has a title, a goal (what done means) and a body; states: backlog = proposed, todo = accepted, ongoing = claimed, done. ' +
-    'Changes and times are logged automatically. ' +
+    'Track repository work across sessions: title, goal (done criteria), body. States: backlog proposed, todo accepted, ongoing claimed, done. Changes and times are logged. ' +
     (subagent ? 'A subagent proposes items and updates only items its parent has claimed. ' : 'An item another running session holds takes only notes. ') +
     'Text that looks like a secret is refused.';
   const ops =
-    'list: items (default ongoing+todo; filter with states, query, from); get: one item with goal, body, times, origin, derived items, notes and changes; list/get: follow Next for more; ' +
+    'list: items (default ongoing+todo; states/query/from filters); get: item details, times, origin, derived items, notes and changes; list/get: follow Next; ' +
     (subagent
       ? 'add: propose an item (state backlog); update: set state ongoing or done, or log progress with a note alone'
-      : 'add: new item (state backlog unless given); update: change an item (state ongoing claims it for you; a note alone logs progress); remove: delete an item and its notes, only a duplicate or one the user asked to drop');
+      : 'add: new item (default backlog); update: edit or claim with state ongoing; a note alone logs progress; remove: delete item and notes only for duplicates or user-requested removal');
   return {
     description,
     ops,
@@ -52,8 +50,8 @@ function backlogPrompt(subagent: boolean): { description: string; ops: string; p
     promptGuidelines: subagent
       ? ['Use backlog to note progress on the item your parent gave you and to propose follow-ups you find (from: that item, with a goal) instead of doing them; mark it done only after verifying its goal, noting what changed and how.']
       : [
-          'Use backlog for work that outlives this turn: propose follow-ups you discover (from: their source item, with a goal) and claim an item when you start it; steps of the current task need no item.',
-          'Close an item only after verifying its goal, with a note on what changed and how it was verified.',
+          'Use backlog for work beyond this turn, not current-task steps. Propose follow-ups with a goal and from their source item; claim an item when starting it.',
+          'Close only after verifying the goal; note what changed and how you verified it.',
         ],
   };
 }
@@ -72,7 +70,7 @@ export function registerBacklogTool(pi: ExtensionAPI, options: BacklogOptions & 
       op: StringEnum(subagent ? ['list', 'get', 'add', 'update'] as const : ['list', 'get', 'add', 'update', 'remove'] as const, { description: ops }),
       id: Type.Optional(Type.String({ description: `${subagent ? 'get/update' : 'get/update/remove'}: item id, e.g. "B12"` })),
       title: Type.Optional(Type.String({ maxLength: TITLE_MAX, description: `${subagent ? 'add' : 'add/update'}: one-line summary` })),
-      goal: Type.Optional(Type.String({ maxLength: GOAL_MAX, description: `${subagent ? 'add' : 'add/update'}: what done means, one checkable outcome, e.g. "the board shows each item's goal; yarn test passes"` })),
+      goal: Type.Optional(Type.String({ maxLength: GOAL_MAX, description: `${subagent ? 'add' : 'add/update'}: checkable done criterion, e.g. "board shows each item's goal; tests pass"` })),
       body: Type.Optional(Type.String({ maxLength: BODY_MAX, description: `${subagent ? 'add' : 'add/update'}: why it matters, evidence (paths, measurements), plan` })),
       state: Type.Optional(subagent ? StringEnum(SUBAGENT_STATES, { description: 'update: ongoing or done' }) : StringEnum(STATES, { description: 'add: initial state (default backlog); update: new state' })),
       priority: Type.Optional(StringEnum(PRIORITIES, { description: `${subagent ? 'add' : 'add/update'}: p0 urgent … p3 someday (default p2)` })),

@@ -148,13 +148,27 @@ describe('team resource bounds', () => {
     } finally { s.close(); }
   });
 
-  it('prunes expired messages on heartbeats without requiring a new lock', () => {
+  it('prunes only resolved old messages and preserves unread mail, open questions and unreported dead letters', () => {
     const s = setup();
     try {
-      s.store.send('peer', [s.id], 'old', { replyRequired: false });
-      s.store.renew(s.id, Date.now() + 25 * 3_600_000);
-      expect(s.store.pending(s.id)).toEqual([]);
-      expect(s.store.recent()).toEqual([]);
+      const unread = s.store.send('peer', [s.id], 'unread', { replyRequired: false }).id!;
+      const question = s.store.send('peer', [s.id], 'question', { replyRequired: true }).id!;
+      const complete = s.store.send('peer', [s.id], 'complete', { replyRequired: false }).id!;
+      s.store.ack(s.id, [question, complete]);
+      s.store.save(member('departing', Date.now()));
+      const dead = s.store.send('peer', ['departing'], 'dead', { replyRequired: false }).id!;
+      s.store.remove('departing');
+      const later = Date.now() + 25 * 3_600_000;
+      s.store.renew(s.id, later);
+      expect(s.store.pending(s.id).map((message) => message.id)).toEqual([unread]);
+      expect(s.store.replyTarget(question)).toBeDefined();
+      expect(s.store.replyTarget(complete)).toBeUndefined();
+      expect(s.store.deadLetters('peer').map((letter) => letter.id)).toEqual([dead]);
+      s.store.markNotified(s.store.deadLetters('peer'), later);
+      s.store.renew(s.id, later + 60_000);
+      expect(s.store.replyTarget(dead)).toBeUndefined();
+      expect(s.store.replyTarget(unread)).toBeDefined();
+      expect(s.store.replyTarget(question)).toBeDefined();
     } finally { s.close(); }
   });
 

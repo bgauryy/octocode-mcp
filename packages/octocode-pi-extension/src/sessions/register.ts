@@ -109,6 +109,7 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
   /** This session's running cost and tokens, and whether part of it came from a model without pricing. */
   let usage = emptyUsage();
   let unpriced = false;
+  let gitRevision = 0;
   const index = () => new SessionIndex(sharedAgentDb());
   const safely = (ctx: ExtensionContext, work: (sessions: SessionIndex) => void) => {
     try {
@@ -120,8 +121,13 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
     }
   };
   /** Records where git stands now, without waiting for it. */
-  const recordGit = (ctx: ExtensionContext, id: string, then?: (sessions: SessionIndex, state: { branch?: string; head?: string }) => void) =>
-    gitState(ctx.cwd).then((state) => safely(ctx, (sessions) => (then ? then(sessions, state) : sessions.git(id, state))));
+  const recordGit = (ctx: ExtensionContext, id: string) => {
+    const revision = ++gitRevision;
+    return gitState(ctx.cwd).then((state) => {
+      // A newer request or session shutdown makes this result stale, including its Pi context.
+      if (revision === gitRevision) safely(ctx, (sessions) => sessions.git(id, state));
+    });
+  };
 
   pi.registerMessageRenderer(RESUME_MESSAGE_TYPE, (message, { expanded }, theme) => {
     const [head = '', ...rest] = sanitizeTerminalText(contentText(message.content)).split('\n');
@@ -131,6 +137,7 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
   });
 
   pi.on('session_start', async (event, ctx) => {
+    gitRevision++;
     pending = undefined;
     const id = ctx.sessionManager.getSessionId();
     const entries = (ctx.sessionManager.getEntries?.() ?? []) as readonly Entry[];
@@ -185,7 +192,10 @@ export function registerSessions(pi: ExtensionAPI, options: SessionsOptions): vo
     void recordGit(ctx, id);
   });
 
-  pi.on('session_shutdown', async (_event, ctx) => safely(ctx, (sessions) => sessions.end(ctx.sessionManager.getSessionId())));
+  pi.on('session_shutdown', async (_event, ctx) => {
+    gitRevision++;
+    safely(ctx, (sessions) => sessions.end(ctx.sessionManager.getSessionId()));
+  });
 
   registerSessionsCommand(pi, options.commands, { index, current: currentSessionId });
 }

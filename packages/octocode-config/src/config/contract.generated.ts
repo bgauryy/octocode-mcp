@@ -113,6 +113,20 @@ export interface StorageCloneCacheConfigOptions {
   maxClones?: number;
 }
 
+export interface RankingConfigOptions {
+  /** Rank goal-bearing read-tool evidence with the configured classification provider. */
+  enabled?: boolean;
+
+  /** Maximum complete evidence units classified per ranking operation; other units keep their original order. */
+  maxCandidates?: number;
+
+  /** Maximum evidence characters sent for one ranking operation. */
+  maxChars?: number;
+
+  /** Total ranking deadline in milliseconds, bounded by the enclosing request deadline. */
+  timeoutMs?: number;
+}
+
 export interface ClassificationConfigOptions {
   /** Classification vendor. Per-vendor defaults (host, model, endpoint) are built in. */
   type?: ClassificationVendor;
@@ -150,6 +164,8 @@ export interface OctocodeConfig {
   output?: OutputConfigOptions;
 
   storage?: StorageConfigOptions;
+
+  ranking?: RankingConfigOptions;
 
   classification?: ClassificationConfigOptions;
 }
@@ -213,6 +229,13 @@ export interface RequiredStorageCloneCacheConfig {
   maxClones: number;
 }
 
+export interface RequiredRankingConfig {
+  enabled: boolean;
+  maxCandidates: number;
+  maxChars: number;
+  timeoutMs: number;
+}
+
 export interface RequiredClassificationConfig {
   type: ClassificationVendor;
   maxConcurrency: number;
@@ -228,6 +251,7 @@ export interface ResolvedConfigData {
   lsp: RequiredLspConfig;
   output: RequiredOutputConfig;
   storage: RequiredStorageConfig;
+  ranking: RequiredRankingConfig;
   classification: RequiredClassificationConfig;
 }
 
@@ -795,6 +819,82 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     "maximum": 1000
   },
   {
+    "path": "ranking.enabled",
+    "section": "ranking",
+    "key": "enabled",
+    "type": "boolean",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Rank goal-bearing read-tool evidence with the configured classification provider.",
+    "env": [
+      {
+        "name": "OCTOCODE_RANKING_ENABLED",
+        "priority": 0,
+        "dotenv": "home",
+        "workspaceNarrowsTo": "false"
+      }
+    ],
+    "defaultValue": false
+  },
+  {
+    "path": "ranking.maxCandidates",
+    "section": "ranking",
+    "key": "maxCandidates",
+    "type": "number",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Maximum complete evidence units classified per ranking operation; other units keep their original order.",
+    "env": [
+      {
+        "name": "OCTOCODE_RANKING_MAX_CANDIDATES",
+        "priority": 0
+      }
+    ],
+    "defaultValue": 64,
+    "minimum": 1,
+    "maximum": 256
+  },
+  {
+    "path": "ranking.maxChars",
+    "section": "ranking",
+    "key": "maxChars",
+    "type": "number",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Maximum evidence characters sent for one ranking operation.",
+    "env": [
+      {
+        "name": "OCTOCODE_RANKING_MAX_CHARS",
+        "priority": 0
+      }
+    ],
+    "defaultValue": 131072,
+    "minimum": 1024,
+    "maximum": 1048576
+  },
+  {
+    "path": "ranking.timeoutMs",
+    "section": "ranking",
+    "key": "timeoutMs",
+    "type": "number",
+    "file": true,
+    "resolved": true,
+    "credential": false,
+    "description": "Total ranking deadline in milliseconds, bounded by the enclosing request deadline.",
+    "env": [
+      {
+        "name": "OCTOCODE_RANKING_TIMEOUT_MS",
+        "priority": 0
+      }
+    ],
+    "defaultValue": 10000,
+    "minimum": 100,
+    "maximum": 60000
+  },
+  {
     "path": "classification.type",
     "section": "classification",
     "key": "type",
@@ -885,13 +985,13 @@ export type RuntimeSurface = (typeof RUNTIME_SURFACES)[number];
 export const DEFAULT_RUNTIME_SURFACE: RuntimeSurface = RUNTIME_SURFACES[0];
 export const ENV_TOKEN_VARS = ["GH_TOKEN","GITHUB_TOKEN"] as const;
 export type EnvTokenVar = (typeof ENV_TOKEN_VARS)[number];
-export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_HOME","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
-export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const PROTECTED_KEY_NAMES = ["PATH","HOME","SHELL","USER","LOGNAME","PWD","TMPDIR","NODE_OPTIONS","PYTHON","OCTOCODE_HOME","OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_RANKING_ENABLED","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
+export const HOME_TRUSTED_ENV_KEYS = ["OCTOCODE_AST_REWRITE_STATE_DIR","OCTOCODE_CARGO","GITHUB_API_URL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_STORAGE_MODE","OCTOCODE_RANKING_ENABLED","OCTOCODE_CLASSIFICATION_API_HOST"] as const;
 /** Home-trusted switches a workspace may set only to this narrowing value. */
-export const WORKSPACE_NARROW_ONLY_ENV: Readonly<Record<string, string>> = {"OCTOCODE_STORAGE_MODE":"memory"};
-export const CONFIG_SOURCE_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","GITHUB_API_URL","OCTOCODE_GITHUB_GRAPHQL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","TOOLS_TO_RUN","DISABLE_TOOLS","OCTOCODE_DEFER_TOOLS","REQUEST_TIMEOUT","MAX_RETRIES","OCTOCODE_MAX_RATE_LIMIT_WAIT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_LSP_PREWARM","OCTOCODE_OUTPUT_FORMAT","OCTOCODE_REDACT_EMAILS","OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH","OCTOCODE_STORAGE_MODE","OCTOCODE_ENABLE_STATS","OCTOCODE_CACHE_TTL_MS","OCTOCODE_MAX_CACHE_SIZE","OCTOCODE_MAX_CLONES","OCTOCODE_CLASSIFICATION_TYPE","OCTOCODE_CLASSIFICATION_API","OCTOCODE_CLASSIFICATION_API_HOST","OCTOCODE_CLASSIFICATION_CONCURRENCY"] as const;
+export const WORKSPACE_NARROW_ONLY_ENV: Readonly<Record<string, string>> = {"OCTOCODE_STORAGE_MODE":"memory","OCTOCODE_RANKING_ENABLED":"false"};
+export const CONFIG_SOURCE_ENV_KEYS = ["OCTOCODE_GITHUB_CLIENT_ID","GITHUB_API_URL","OCTOCODE_GITHUB_GRAPHQL","OCTOCODE_ENABLE_LOCAL","OCTOCODE_BETA","ALLOWED_PATHS","WORKSPACE_ROOT","TOOLS_TO_RUN","DISABLE_TOOLS","OCTOCODE_DEFER_TOOLS","REQUEST_TIMEOUT","MAX_RETRIES","OCTOCODE_MAX_RATE_LIMIT_WAIT","OCTOCODE_ALLOW_PRIVATE_REGISTRY","OCTOCODE_LSP_CONFIG","OCTOCODE_LSP_AUTO_INSTALL","OCTOCODE_LSP_CACHE_DIR","OCTOCODE_LSP_MAX_MEMORY_MB","OCTOCODE_TRUST_PROJECT_LSP_CONFIG","OCTOCODE_LSP_PREWARM","OCTOCODE_OUTPUT_FORMAT","OCTOCODE_REDACT_EMAILS","OCTOCODE_OUTPUT_DEFAULT_CHAR_LENGTH","OCTOCODE_STORAGE_MODE","OCTOCODE_ENABLE_STATS","OCTOCODE_CACHE_TTL_MS","OCTOCODE_MAX_CACHE_SIZE","OCTOCODE_MAX_CLONES","OCTOCODE_RANKING_ENABLED","OCTOCODE_RANKING_MAX_CANDIDATES","OCTOCODE_RANKING_MAX_CHARS","OCTOCODE_RANKING_TIMEOUT_MS","OCTOCODE_CLASSIFICATION_TYPE","OCTOCODE_CLASSIFICATION_API","OCTOCODE_CLASSIFICATION_API_HOST","OCTOCODE_CLASSIFICATION_CONCURRENCY"] as const;
 export type ConfigSourceEnvKey = (typeof CONFIG_SOURCE_ENV_KEYS)[number];
-export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "version": 1, "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "timeout": 30000, "maxRetries": 3, "maxRateLimitWait": 45000, "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "maxMemoryMb": undefined, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false, "pagination": { "defaultCharLength": 50000 } }, "storage": { "mode": "persistent", "stats": false, "cloneCache": { "ttl": 86400000, "maxSize": 2147483648, "maxClones": 50 } }, "classification": { "type": "jev", "maxConcurrency": 10 } };
+export const DEFAULT_CONFIG_VALUE: ResolvedConfigData = { "version": 1, "github": { "apiUrl": "https://api.github.com", "graphqlEnabled": true }, "local": { "enabled": true, "beta": false, "allowedPaths": [], "workspaceRoot": undefined }, "tools": { "enabled": null, "disabled": null }, "mcp": { "deferred": null }, "network": { "timeout": 30000, "maxRetries": 3, "maxRateLimitWait": 45000, "allowPrivateRegistry": false }, "lsp": { "configPath": undefined, "autoInstall": "prompt", "cacheDir": undefined, "maxMemoryMb": undefined, "trustProjectConfig": false, "prewarm": "targeted" }, "output": { "format": "yaml", "redactEmails": false, "pagination": { "defaultCharLength": 50000 } }, "storage": { "mode": "persistent", "stats": false, "cloneCache": { "ttl": 86400000, "maxSize": 2147483648, "maxClones": 50 } }, "ranking": { "enabled": false, "maxCandidates": 64, "maxChars": 131072, "timeoutMs": 10000 }, "classification": { "type": "jev", "maxConcurrency": 10 } };
 export const DEFAULT_GITHUB_API_URL = "https://api.github.com" as const;
 export const DEFAULT_GITHUB_GRAPHQL_ENABLED = true as const;
 export const DEFAULT_LOCAL_ENABLED = true as const;
@@ -935,6 +1035,16 @@ export const MAX_CLONE_CACHE_MAX_SIZE = 1099511627776;
 export const DEFAULT_CLONE_CACHE_MAX_CLONES = 50 as const;
 export const MIN_CLONE_CACHE_MAX_CLONES = 1;
 export const MAX_CLONE_CACHE_MAX_CLONES = 1000;
+export const DEFAULT_RANKING_ENABLED = false as const;
+export const DEFAULT_RANKING_MAX_CANDIDATES = 64 as const;
+export const MIN_RANKING_MAX_CANDIDATES = 1;
+export const MAX_RANKING_MAX_CANDIDATES = 256;
+export const DEFAULT_RANKING_MAX_CHARS = 131072 as const;
+export const MIN_RANKING_MAX_CHARS = 1024;
+export const MAX_RANKING_MAX_CHARS = 1048576;
+export const DEFAULT_RANKING_TIMEOUT_MS = 10000 as const;
+export const MIN_RANKING_TIMEOUT_MS = 100;
+export const MAX_RANKING_TIMEOUT_MS = 60000;
 export const DEFAULT_CLASSIFICATION_TYPE = "jev" as const;
 export const CLASSIFICATION_VENDORS = ["jev"] as const;
 export const DEFAULT_CLASSIFICATION_MAX_CONCURRENCY = 10 as const;

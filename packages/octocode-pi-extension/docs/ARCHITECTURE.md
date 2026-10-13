@@ -15,7 +15,7 @@ restart. The build bundles `dist/index.js` into `dist/pi/octocode-<content hash>
 entry's factory imports whichever bundle `dist/pi/current` names: after `yarn build`, `/reload` runs the new code
 (`tests/reload-entry.test.ts`). Subagents start fresh processes and load `dist/index.js`.
 
-Source map: `src/index.ts` composes the features (each registers its own tools, hooks and commands), `src/turn.ts` sets each turn's active tools and prompt section, and `src/prompt.ts` is the prompt text; each folder is one domain and may depend only on the ones below it (enforced by `tests/architecture.test.ts`).
+Source map: `src/index.ts` composes the features (each registers its own tools, hooks and commands), `src/turn.ts` settles the starting tools and adds each turn's prompt section, and `src/prompt.ts` is the prompt text. Each folder is one domain with permitted dependencies declared in `tests/architecture.test.ts`. Those checks require new domains to declare their dependencies, enforce dependency direction and shared ownership, and reject import cycles and imports from domains into root modules. File names, counts and lengths can change within those boundaries; split modules by responsibility.
 
 | Folder | Owns |
 |---|---|
@@ -37,6 +37,8 @@ Source map: `src/index.ts` composes the features (each registers its own tools, 
 | `compaction/` | Context trims and `file` paths for Pi's summaries (`register`), the cost decision of when trims pay and idle-warming continuation (`policy`), prompt-cache lifetimes for models that declare none and the registry supply (`cache`), image budgets and request size (`images`), and the staged `413` recovery (`recovery`). Behaviour: [CONTEXT-AND-COST.md](CONTEXT-AND-COST.md). |
 | `ui/` | The banner header, spinner, thinking label and `tok/s` status (`chrome`, `banner`), the two-line footer (`footer`), the working line and team activity (`activity`), the queued-message ledger installed on `pi.sendMessage` that survives Esc (`delivery`), and the answer-ready / waiting-for-you terminal notifications with focus reports and the title marker (`notify`). |
 | root | `prompt.ts` (the system prompt section), `turn.ts` (active tools and prompt per turn) and `skills.ts` (extra skill directories). |
+
+The extension keeps its MCP lifecycle on Pi 1.1.0. The native client can publish an older `tools/list` response after a newer one, and discard a refresh received during initial discovery; the real stdio fixture in `tests/fixtures/relist-mcp.mjs` exercises both cases. Our client guards refresh revisions and connection identity. Native MCP also spills model-facing text after 20 KiB; a result hook can restore complete evidence from its structured result, but cannot correct those lifecycle races. Revisit native ownership when it passes the same refresh-ordering and evidence checks, while retaining extension-only startup and one server owner.
 
 ## Liveness: who is still running
 

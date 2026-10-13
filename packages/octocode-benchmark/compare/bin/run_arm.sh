@@ -36,15 +36,41 @@ if [ "${ARM#local-}" != "$ARM" ]; then
   QDIR="local-questions"; RUNNER_BRIEF="local-runner.md"
   LOCAL_REPOS="${LOCAL_REPOS:-$REPO/octocode-local-testing/repos}"
 fi
-QFILE="$PKG/compare/$QDIR/$Q.md"
+QFILE="${QUESTION_DIR:-$PKG/compare/$QDIR}/$Q.md"
+export QUESTION_REPO_MAP="${QUESTION_REPO_MAP:-$(dirname "$QFILE")/repositories.json}"
+[ -z "${LOCAL_REPOS:-}" ] || export LOCAL_REPOS
 [ -f "$QFILE" ] || { echo "missing $QFILE" >&2; exit 2; }
 [ -f "$PKG/compare/arms/$ARM.md" ] || [ "${ARM#mcp}" != "$ARM" ] || [ "${ARM#local-mcp}" != "$ARM" ] \
   || { echo "unknown arm $ARM" >&2; exit 2; }
 
 ID="$ARM-p$PASS-$Q"
 RUN="$CAMP/runs/$ID"
-WORK="$CAMP/work/$ARM"   # empty cwd: no repo context leaks in
-rm -rf "$RUN"; mkdir -p "$RUN" "$WORK"
+WORK="$(mktemp -d -t octocode-bench-work)"  # fresh per question, outside evaluator storage
+trap 'rmdir "$WORK" 2>/dev/null || true' EXIT
+if [ -d "$RUN" ]; then
+  ATTEMPTS="$CAMP/attempts/$ID"
+  mkdir -p "$ATTEMPTS"
+  COUNT="$(find "$ATTEMPTS" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')"
+  [ "$((COUNT + 1))" -lt "${RUNNER_MAX_ATTEMPTS:-2}" ] || { echo "attempt cap reached: $ID" >&2; exit 2; }
+  PREVIOUS="$ATTEMPTS/attempt-$(printf '%03d' "$((COUNT + 1))")"
+  mv "$RUN" "$PREVIOUS"
+  if [ -f "$CAMP/$ID.jsonl" ]; then
+    mv "$CAMP/$ID.jsonl" "$PREVIOUS/measured.original.jsonl"
+    python3 - "$PREVIOUS" "$RUN" <<'PYRELOCATE'
+import json, sys
+from pathlib import Path
+old, previous = sys.argv[2], Path(sys.argv[1])
+rows = []
+for line in (previous / "measured.original.jsonl").read_text().splitlines():
+    row = json.loads(line)
+    if isinstance(row.get("artifact"), str) and row["artifact"].startswith(old + "/"):
+        row["artifact"] = str(previous) + row["artifact"][len(old):]
+    rows.append(row)
+(previous / "measured.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+PYRELOCATE
+  fi
+fi
+mkdir -p "$RUN"
 
 FLAGS=()
 EXTRA_PATH=""
@@ -56,7 +82,8 @@ case "$ARM" in
     python3 - "$RUN/mcp.json" "$ARM" "$LOCAL_REPOS" "${CMD[@]}" <<'PY'
 import json, sys
 path, arm, root, cmd = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4:]
-env = {"OCTOCODE_ALLOW_CONTRACT_DRIFT": "1", "NODE_ENV": "development", "WORKSPACE_ROOT": root}
+env = {"NODE_ENV": "development", "WORKSPACE_ROOT": root, "OCTOCODE_RANKING_ENABLED": str("clasify" in arm).lower(),
+       "TOOLS_TO_RUN": "localSearch,localFetch,structureSearch,astSearch,lspSearch" + (",clasify" if "clasify" in arm else "")}
 if "clasify" not in arm:
     env["OCTOCODE_CLASSIFICATION_API"] = ""   # explicitly blank = clasify off
 json.dump({"mcpServers": {"octocode": {"type": "stdio", "command": "sh",
@@ -79,7 +106,7 @@ PY
     python3 - "$RUN/mcp.json" "$ARM" "${CMD[@]}" <<'PY'
 import json, sys
 path, arm, cmd = sys.argv[1], sys.argv[2], sys.argv[3:]
-env = {"OCTOCODE_ALLOW_CONTRACT_DRIFT": "1", "NODE_ENV": "development"}
+env = {"NODE_ENV": "development", "OCTOCODE_RANKING_ENABLED": str("clasify" in arm).lower()}
 if "clasify" not in arm:
     env["OCTOCODE_CLASSIFICATION_API"] = ""   # explicitly blank = clasify off
 json.dump({"mcpServers": {"octocode": {"type": "stdio", "command": cmd[0], "args": cmd[1:], "env": env}}},
@@ -116,7 +143,21 @@ export PATH="$HERE/guard:$HERE:$PATH"
 [ -z "$EXTRA_PATH" ] || export PATH="$EXTRA_PATH:$PATH"   # local-shell: read-only git/find first
 export GHC_LOG="$RUN/ghc.jsonl"   # headroom wrapper's own log (diagnostic only)
 
+unset OCTOCODE_ALLOW_CONTRACT_DRIFT
 cd "$WORK"
+if [ "${RUNNER:-claude}" = codex ]; then
+  [ -f "$RUN/mcp.json" ] || { echo "Codex runner supports MCP-only arms" >&2; exit 2; }
+  printf '%s' "$PROMPT" > "$RUN/prompt.md"
+  set +e
+  python3 "$HERE/codex_runner.py" --run "$RUN" --prompt "$RUN/prompt.md" \
+    --mcp-config "$RUN/mcp.json" --model "${RUNNER_MODEL:-gpt-5.6-terra}" \
+    --timeout "${RUNNER_TIMEOUT:-600}" --max-tool-calls "${RUNNER_MAX_TOOL_CALLS:-30}"
+  STATUS=$?
+  set -e
+  python3 "$HERE/transcript_to_log.py" --format codex \
+    --transcript "$RUN/transcript.jsonl" --log "$CAMP/$ID.jsonl" --run-dir "$RUN" --question "$Q" | sed "s/^/$ID /"
+  exit "$STATUS"
+fi
 if [ "${RUNNER:-claude}" = pi ]; then
   printf '%s' "$PROMPT" > "$RUN/prompt.md"
   set +e

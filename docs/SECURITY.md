@@ -24,14 +24,14 @@ The runtime scans untrusted provider and filesystem content before rendering. De
 
 ### Classification egress
 
-`clasify` sends data to the configured provider (`OCTOCODE_CLASSIFICATION_API_HOST`, default Jev); nothing leaves without a key. Each request carries:
+`clasify` and enabled `goals` send sanitized evidence to the configured provider (`OCTOCODE_CLASSIFICATION_API_HOST`, default Jev); classification sends nothing without a key. Ranking sends the goals and authorized candidate evidence: paths with returned matches, raw text windows with source line numbers, or the selected metadata and snippets of result rows. It does not hydrate unseen bodies or widen requested fields, sections, or ranges. Each public clasify request carries:
 
 - the captured evidence, sanitized like a direct tool call, including a search page's absolute `base`;
 - the matrix `mainGoal` and `reasoning`, when set;
 - the question text;
 - a `read` descriptor naming the tool and its query (search text, paths, repositories).
 
-The `read` query passes the input security policy first: a rejected query is dropped, secrets are redacted, and paging tokens (`snapshot`) are removed. Treat everything in a clasify matrix as disclosed to that provider.
+The `read` query passes the input security policy first: a rejected query is dropped, secrets are redacted, and paging tokens (`snapshot`) are removed. Treat classification goals, questions, briefs, and selected evidence as disclosed to that provider. Shared path policy and sanitation apply before either route sends evidence.
 
 ## Filesystem policy
 

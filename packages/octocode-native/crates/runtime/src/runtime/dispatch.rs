@@ -132,6 +132,7 @@ pub(super) struct Upstream {
 
 /// Execute one local-filesystem row. The caller routes by [`ToolId`]; a tool
 /// outside the local family is a routing bug, not a row error.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn execute_local(
     tool: ToolId,
     query: &Value,
@@ -142,6 +143,7 @@ pub(super) fn execute_local(
     views: &crate::security::scan::SanitizedViewMemo,
     rewrite: &AstRewriteRuntimeOptions,
     cargo: Option<&str>,
+    ranking: Option<&crate::tools::ranking::Runtime>,
 ) -> Result<DomainResult, ExecutionError> {
     // Generated query types carry the meta fields, so every tool parses the
     // validated row as-is through `parse_query`.
@@ -157,14 +159,26 @@ pub(super) fn execute_local(
         ToolId::LocalFetch => {
             let request = parsed!(LocalFetchQuery);
             let scan = crate::security::scan::MemoizedScan::new(security, views);
-            let result = execute_local_fetch(
-                &request,
-                paths,
-                &scan,
-                context,
-                regex,
-                context.response_window,
-            );
+            let result = if let Some(ranking) = ranking {
+                crate::tools::local_fetch::execute_local_fetch_ranked(
+                    &request,
+                    paths,
+                    &scan,
+                    context,
+                    regex,
+                    context.response_window,
+                    Some(ranking),
+                )
+            } else {
+                execute_local_fetch(
+                    &request,
+                    paths,
+                    &scan,
+                    context,
+                    regex,
+                    context.response_window,
+                )
+            };
             let status = match result.status.as_str() {
                 "error" => Some("error"),
                 "empty" => Some("empty"),
@@ -182,14 +196,27 @@ pub(super) fn execute_local(
         }
         ToolId::LocalSearch => {
             let request = parsed!(LocalSearchQuery);
-            match execute_local_search(
-                &request,
-                paths,
-                security,
-                context,
-                context.walk_threads,
-                context.response_window,
-            ) {
+            let result = if let Some(ranking) = ranking {
+                crate::tools::local_search::execute_local_search_ranked(
+                    &request,
+                    paths,
+                    security,
+                    context,
+                    context.walk_threads,
+                    context.response_window,
+                    Some(ranking),
+                )
+            } else {
+                execute_local_search(
+                    &request,
+                    paths,
+                    security,
+                    context,
+                    context.walk_threads,
+                    context.response_window,
+                )
+            };
+            match result {
                 Ok(mut result) => {
                     for file in &mut result.files {
                         file.path = result
@@ -450,6 +477,7 @@ mod provider_failure_tests {
                 &views,
                 &AstRewriteRuntimeOptions::default(),
                 None,
+                None,
             )
             .unwrap_or_else(|_| panic!("{tool} returns a row"));
             assert_eq!(row.status, Some("error"), "{tool}");
@@ -487,6 +515,7 @@ mod provider_failure_tests {
                 &LocalFetchRegex,
                 &crate::security::scan::SanitizedViewMemo::default(),
                 &AstRewriteRuntimeOptions::default(),
+                None,
                 None,
             );
             assert!(

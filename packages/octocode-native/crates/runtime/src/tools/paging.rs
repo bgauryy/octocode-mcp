@@ -23,6 +23,26 @@ pub(crate) fn admitted(
     (next <= crate::contracts::query_schema_max(tool, operation, field)).then_some(next)
 }
 
+/// Clone a continuation query with one admitted cursor advance and any
+/// numeric cursors that must restart when that outer axis advances.
+pub(crate) fn admitted_query(
+    tool: ToolId,
+    operation: Option<&str>,
+    base: &Value,
+    field: &str,
+    current: u32,
+    resets: &[(&str, u64)],
+) -> Option<Value> {
+    let next = admitted(tool, operation, field, current.checked_add(1)? as usize)?;
+    let mut query = base.clone();
+    let row = query.as_object_mut()?;
+    row.insert(field.into(), json!(next));
+    for (field, value) in resets {
+        row.insert((*field).into(), json!(value));
+    }
+    Some(query)
+}
+
 /// The cursor value `next` of `field` when [`admitted`]. Otherwise marks `row` as ending
 /// at a terminal limit, with a warning naming the field and its maximum, and
 /// returns `None`: the caller offers no continuation.

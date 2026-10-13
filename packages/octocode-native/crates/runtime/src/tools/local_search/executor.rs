@@ -56,6 +56,26 @@ pub fn execute_local_search(
     walk_threads: Option<u32>,
     response_window: Option<usize>,
 ) -> Result<LocalSearchResult, ToolError> {
+    execute_local_search_ranked(
+        query,
+        paths,
+        security,
+        cancel,
+        walk_threads,
+        response_window,
+        None,
+    )
+}
+
+pub(crate) fn execute_local_search_ranked(
+    query: &LocalSearchQuery,
+    paths: &PathPolicy,
+    security: &ContentSecurity,
+    cancel: &impl CancellationCheck,
+    walk_threads: Option<u32>,
+    response_window: Option<usize>,
+    ranking: Option<&crate::tools::ranking::Runtime>,
+) -> Result<LocalSearchResult, ToolError> {
     cancel.check().map_err(ToolError::cancelled)?;
     let Scanned {
         validated,
@@ -87,6 +107,7 @@ pub fn execute_local_search(
         redaction,
         unverified,
         outlines,
+        ranking: rank_outcome,
     } = shape_page(
         query,
         paths,
@@ -97,6 +118,8 @@ pub fn execute_local_search(
         stored_redaction.as_ref(),
         security,
         cancel,
+        ranking,
+        &result_identity,
     )?;
     let total_files = parsed.files.len() as u32;
     let empty = total_files == 0;
@@ -113,6 +136,7 @@ pub fn execute_local_search(
         &result_identity,
         reusable,
         policy_key,
+        rank_outcome.as_ref().map(|rank| rank.token.as_str()),
     );
     let octocode_engine::types::TextSearchResult {
         files: scanned,
@@ -208,6 +232,7 @@ pub fn execute_local_search(
         warnings,
         source_snapshot: Some(result_identity),
         source_root: output_root.to_path_buf(),
+        ranking: rank_outcome.map(|rank| rank.receipt),
     })
 }
 
@@ -255,6 +280,7 @@ pub(super) struct Shaped {
     pub(super) unverified: bool,
     /// Outlines parsed from the verified reads (see [`verify_shown`]).
     pub(super) outlines: Outlines,
+    pub(super) ranking: Option<crate::tools::ranking::Outcome>,
 }
 
 /// Redact the scan, order it, cut the page, and verify what it shows.
@@ -275,6 +301,8 @@ pub(super) fn shape_page(
     stored_redaction: Option<&Redaction>,
     security: &ContentSecurity,
     cancel: &impl CancellationCheck,
+    ranking: Option<&crate::tools::ranking::Runtime>,
+    identity: &str,
 ) -> Result<Shaped, ToolError> {
     let (mut redacted, redaction) = redact_scan(
         query,
@@ -287,6 +315,79 @@ pub(super) fn shape_page(
         stored_redaction,
     )?;
     order_files(query, &mut parsed.files);
+    let ranking = if query.goals.is_empty() {
+        if query.ranking.is_some() {
+            return Err(stale_snapshot(query));
+        }
+        None
+    } else {
+        if query.snapshot.is_some() && query.ranking.is_none() {
+            return Err(stale_snapshot(query));
+        }
+        let unsupported =
+            if query.sort != LocalSearchQuerySort::Relevance || query.reverse == Some(true) {
+                Some("explicitSort")
+            } else if matches!(
+                query.result_view,
+                LocalSearchQueryResultView::Files
+                    | LocalSearchQueryResultView::FilesWithout
+                    | LocalSearchQueryResultView::CountLines
+                    | LocalSearchQueryResultView::CountMatches
+            ) {
+                Some("unsupportedView")
+            } else {
+                None
+            };
+        let needs_states = crate::tools::ranking::needs_candidate_states(
+            ranking,
+            query.ranking.as_ref().map(|token| token.as_str()),
+            unsupported,
+            parsed.files.len(),
+        );
+        let candidates = parsed
+            .files
+            .iter()
+            .map(|file| {
+                if needs_states {
+                    let state = json!({"path": file.path, "matches": file.matches.iter().map(|hit| json!({"line":hit.line,"value":hit.value})).collect::<Vec<_>>()});
+                    let evidence_chars = state.to_string().chars().count();
+                    crate::tools::ranking::Candidate { state: Some(state), evidence_chars }
+                } else {
+                    crate::tools::ranking::Candidate { state: None, evidence_chars: 0 }
+                }
+            })
+            .collect::<Vec<_>>();
+        let query_json = normalized_query(query, streamed_layout(query));
+        let outcome = crate::tools::ranking::order(
+            ranking,
+            &query_json,
+            identity,
+            query.ranking.as_ref().map(|s| s.as_str()),
+            &candidates,
+            unsupported,
+        )
+        .map_err(|failure| match failure {
+            crate::tools::ranking::Failure::Stale => stale_snapshot(query),
+            crate::tools::ranking::Failure::Cancelled => {
+                ToolError::cancelled("Ranking was cancelled")
+            }
+        })?;
+        let mut original = std::mem::take(&mut parsed.files)
+            .into_iter()
+            .map(Some)
+            .collect::<Vec<_>>();
+        parsed.files = outcome
+            .order
+            .iter()
+            .map(|&index| {
+                original
+                    .get_mut(index)
+                    .and_then(Option::take)
+                    .ok_or_else(|| stale_snapshot(query))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Some(outcome)
+    };
     let layout = Layout::cut(query, paths, output_root, parsed, page_budget);
     for (index, _) in &layout.shown {
         validate_matched(paths, &output_root.join(&parsed.files[*index].path))?;
@@ -309,6 +410,7 @@ pub(super) fn shape_page(
         redaction,
         unverified,
         outlines,
+        ranking,
     })
 }
 

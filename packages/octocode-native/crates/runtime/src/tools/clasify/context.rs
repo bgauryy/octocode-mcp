@@ -865,8 +865,9 @@ pub(super) fn has_inner_page(receipt: &Value) -> bool {
         .is_some_and(|next| INNER_PAGE_AXES.iter().any(|axis| next.contains_key(*axis)))
 }
 
-/// Select a named same-resource continuation. Hydrated search candidates use
-/// only `nextPage`: `nextMatchPage` revisits files already hydrated and judged.
+/// Select a named same-resource continuation. Hydrated search candidates
+/// advance files; an inner match page only supplies its pinned query when the
+/// public localSearch chain has not reached its outer-page edge yet.
 pub(super) fn continuation_named(receipt: &Value, name: &str) -> Option<Value> {
     let continuation = receipt
         .get("next")

@@ -285,7 +285,7 @@ describe('dead letters', () => {
     const notice = a.sent.find((entry) => String(entry.message.content).includes(`Message #${id}`))!;
     expect(notice.message).toMatchObject({ customType: MESSAGE_TYPE, content: expect.stringContaining('was not read') });
     expect(notice.message.content).toContain('"please check auth.ts"');
-    expect(notice.options).toEqual({ deliverAs: 'steer' });
+    expect(notice.options).toEqual({ triggerTurn: false, deliverAs: 'steer' });
     // Once only.
     const store = open(cwd, db);
     expect(store.deadLetters(a.team.id!)).toEqual([]);

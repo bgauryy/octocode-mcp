@@ -65,8 +65,27 @@ pub fn execute_local_fetch(
     regex: &impl RegexMatch,
     window: Option<usize>,
 ) -> LocalFetchResult {
+    execute_local_fetch_ranked(q, paths, security, cancel, regex, window, None)
+}
+
+pub(crate) fn execute_local_fetch_ranked(
+    q: &LocalFetchQuery,
+    paths: &impl PathAccess,
+    security: &impl ContentScan,
+    cancel: &impl CancellationCheck,
+    regex: &impl RegexMatch,
+    window: Option<usize>,
+    ranking: Option<&crate::tools::ranking::Runtime>,
+) -> LocalFetchResult {
     if let Err(e) = cancel.check() {
         return LocalFetchResult::error(q.path.to_string(), "cancelled", e);
+    }
+    // A complete read is an unsupported first-view for ranking. Its own
+    // bounded continuation clears fullContent, while a caller must not replay
+    // an existing ranked line plan as a new complete read. `unit` is not
+    // bound here: an oversized line may legitimately continue in byte units.
+    if !q.goals.is_empty() && q.ranking.is_some() && q.full_content == Some(true) {
+        return stale_snapshot(q);
     }
     let validated = match paths.validate_read(Path::new(q.path.as_str())) {
         Ok(path) => path,
@@ -133,6 +152,50 @@ pub fn execute_local_fetch(
         );
         if result.status != "error" {
             result.path = q.path.to_string();
+            if !q.goals.is_empty() {
+                if q.snapshot.is_some() && q.ranking.is_none() {
+                    return stale_snapshot(q);
+                }
+                let source = format!(
+                    "{}:{}",
+                    path.display(),
+                    result.source_sha256.as_deref().unwrap_or("")
+                );
+                let mut query_json = serde_json::to_value(q).unwrap_or_default();
+                // Streamed range heads advance their `ranges` selector as
+                // part of pagination. The skipped plan is source-wide.
+                if let Some(query) = query_json.as_object_mut() {
+                    query.remove("ranges");
+                }
+                let outcome = match crate::tools::ranking::order(
+                    ranking,
+                    &query_json,
+                    &source,
+                    q.ranking.as_ref().map(|s| s.as_str()),
+                    &[],
+                    Some("streamingSource"),
+                ) {
+                    Ok(outcome) => outcome,
+                    Err(crate::tools::ranking::Failure::Stale) => return stale_snapshot(q),
+                    Err(crate::tools::ranking::Failure::Cancelled) => {
+                        return LocalFetchResult::error(
+                            q.path.to_string(),
+                            "cancelled",
+                            "Ranking was cancelled".into(),
+                        );
+                    }
+                };
+                if let Some(read) = result
+                    .next
+                    .as_mut()
+                    .and_then(|next| next.continue_window.as_mut())
+                {
+                    read.query.ranking = outcome.token.parse().ok();
+                }
+                result.ranking = Some(outcome.receipt);
+            } else if q.ranking.is_some() {
+                return stale_snapshot(q);
+            }
         }
         return result;
     }
@@ -147,10 +210,11 @@ pub fn execute_local_fetch(
             return LocalFetchResult::error(q.path.to_string(), "fileReadFailed", e.to_string());
         }
     };
-    let mut result = process_fetched_content(
+    let mut result = process_fetched_content_ranked(
         q,
         &bytes,
         &path,
+        &display_path,
         &SourceFacts {
             modified: meta.modified().ok().and_then(system_time_iso),
             window,
@@ -159,6 +223,7 @@ pub fn execute_local_fetch(
         security,
         cancel,
         regex,
+        ranking,
     );
     bind_continuation_to_source(&mut result);
     result
@@ -307,6 +372,34 @@ pub fn process_fetched_content(
     cancel: &impl CancellationCheck,
     regex: &impl RegexMatch,
 ) -> LocalFetchResult {
+    let provider_path = source_path.file_name().map_or_else(
+        || ".".to_owned(),
+        |name| name.to_string_lossy().into_owned(),
+    );
+    process_fetched_content_ranked(
+        q,
+        bytes,
+        source_path,
+        &provider_path,
+        facts,
+        security,
+        cancel,
+        regex,
+        None,
+    )
+}
+
+pub(crate) fn process_fetched_content_ranked(
+    q: &LocalFetchQuery,
+    bytes: &[u8],
+    source_path: &std::path::Path,
+    provider_path: &str,
+    facts: &SourceFacts,
+    security: &impl ContentScan,
+    cancel: &impl CancellationCheck,
+    regex: &impl RegexMatch,
+    ranking: Option<&crate::tools::ranking::Runtime>,
+) -> LocalFetchResult {
     let mut source = match prepare_source(q, bytes, source_path, security, cancel) {
         Ok(source) => source,
         Err(result) => return *result,
@@ -316,9 +409,93 @@ pub fn process_fetched_content(
         Err(error) => return extraction_error(q, error),
     };
     if ext.count == Some(0) {
-        return no_match(q, &source, regex);
+        let mut result = no_match(q, &source, regex);
+        if q.goals.is_empty() {
+            return if q.ranking.is_some() {
+                stale_snapshot(q)
+            } else {
+                result
+            };
+        }
+        let query_json = serde_json::to_value(q).unwrap_or_default();
+        match crate::tools::ranking::order(
+            ranking,
+            &query_json,
+            &format!("{}:{}", source_path.display(), source.sha256),
+            q.ranking.as_ref().map(|token| token.as_str()),
+            &[],
+            None,
+        ) {
+            Ok(outcome) => result.ranking = Some(outcome.receipt),
+            Err(crate::tools::ranking::Failure::Stale) => return stale_snapshot(q),
+            Err(crate::tools::ranking::Failure::Cancelled) => {
+                return LocalFetchResult::error(
+                    q.path.to_string(),
+                    "cancelled",
+                    "Ranking was cancelled".into(),
+                );
+            }
+        }
+        return result;
     }
-    let view = select_view(q, &mut ext);
+    let mut view = select_view(q, &mut ext);
+    let rank_outcome = if q.goals.is_empty() {
+        if q.ranking.is_some() {
+            return stale_snapshot(q);
+        }
+        None
+    } else {
+        if q.offset().is_some_and(|offset| offset > 0) && q.ranking.is_none() {
+            return stale_snapshot(q);
+        }
+        let unsupported = if view.mode != MinifyMode::None
+            || q.full_content == Some(true)
+            || q.unit == Some(WindowUnit::Bytes)
+        {
+            Some("unsupportedView")
+        } else {
+            None
+        };
+        let (candidates, chunks) = super::ranking::chunks(
+            &view.text,
+            ext.source_lines.as_deref(),
+            source_path,
+            provider_path,
+            security,
+            ranking,
+            q.ranking.as_ref().map(|token| token.as_str()),
+            unsupported,
+        );
+        let query_json = serde_json::to_value(q).unwrap_or_default();
+        let outcome = match crate::tools::ranking::order(
+            ranking,
+            &query_json,
+            &format!("{}:{}", source_path.display(), source.sha256),
+            q.ranking.as_ref().map(|s| s.as_str()),
+            &candidates,
+            unsupported,
+        ) {
+            Ok(outcome) => outcome,
+            Err(crate::tools::ranking::Failure::Stale) => return stale_snapshot(q),
+            Err(crate::tools::ranking::Failure::Cancelled) => {
+                return LocalFetchResult::error(
+                    q.path.to_string(),
+                    "cancelled",
+                    "Ranking was cancelled".into(),
+                );
+            }
+        };
+        if matches!(
+            outcome.receipt.status,
+            crate::contracts::tool_types::RankingStatus::Ranked
+                | crate::contracts::tool_types::RankingStatus::Partial
+        ) {
+            let (text, source_lines) = super::ranking::reorder(&view.text, &chunks, &outcome.order);
+            view.text = text;
+            ext.source_lines = Some(source_lines);
+        }
+        Some(outcome)
+    };
     if let Err(e) = cancel.check() {
         return LocalFetchResult::error(q.path.to_string(), "cancelled", e);
     }
@@ -371,6 +548,11 @@ pub fn process_fetched_content(
     warn_unmatchable(q, &source, &ext.matched_lines, &mut warnings);
     let out_of_range = pg.out_of_range;
     let mut next = page_next(q, &pg, head, &mut warnings);
+    if let Some(token) = rank_outcome.as_ref().map(|outcome| outcome.token.as_str())
+        && let Some(read) = next.as_mut().and_then(|next| next.continue_window.as_mut())
+    {
+        read.query.ranking = token.parse().ok();
+    }
     // Follow-ups to data the extraction selected but did not return.
     let follow_ups = std::mem::take(&mut ext.next);
     if !out_of_range && !follow_ups.is_empty() {
@@ -435,6 +617,7 @@ pub fn process_fetched_content(
         .collect(),
         out_of_range,
         next,
+        ranking: rank_outcome.map(|outcome| outcome.receipt),
         ..LocalFetchResult::blank("success")
     }
 }
@@ -1067,6 +1250,7 @@ fn stale_snapshot(q: &LocalFetchQuery) -> LocalFetchResult {
     );
     let mut query = q.clone();
     query.snapshot = None;
+    query.ranking = None;
     query.offset = None;
     result.next = Some(NextCalls {
         continue_window: None,

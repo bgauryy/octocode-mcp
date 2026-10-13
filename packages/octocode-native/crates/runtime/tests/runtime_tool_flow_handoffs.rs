@@ -163,17 +163,76 @@ async fn later_search_handoff_preserves_the_starting_candidate_when_bounded() {
     assert_candidate_walk(31, 2, 16, 15).await;
 }
 
-/// A paged read of a large file without `matchString` offers a clasify locate
-/// of the whole file; targeted reads (match, range) and small files do not.
 #[tokio::test]
-async fn large_paged_local_read_offers_clasify_locate() {
+async fn metadata_handoff_keeps_unseen_file_bodies_out_of_provider_evidence() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/systemone"))
+        .respond_with(CandidateJudgment)
+        .mount(&server)
+        .await;
     let workspace = Workspace::new();
-    let body = (1..=2_500)
-        .map(|line| format!("line {line}: housekeeping detail {line}\n"))
-        .collect::<String>();
-    let file = workspace.write("src/server.c", &body);
-    let small = workspace.write("src/small.c", "one\ntwo\n");
-    let runtime = workspace.runtime(&[("OCTOCODE_CLASSIFICATION_API", "fixture-key".into())]);
+    let body = "retry delay policy\nBODY_ONLY_SENTINEL\n";
+    workspace.write("src/a.txt", body);
+    let file = workspace.write("src/b.txt", body);
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+    ]);
+    let search = runtime
+        .execute(
+            "metadata-search".into(),
+            "localSearch".into(),
+            json!({"queries":[{
+                "mainGoal":"Locate the retry condition", "path":file.parent().unwrap(),
+                "matchString":"retry delay", "resultView":"files", "extras":["hints"]
+            }]}),
+        )
+        .await
+        .expect("metadata search");
+    let matrix =
+        search.structured_content["results"][0]["data"]["hints"]["clasify"]["query"].clone();
+    assert_eq!(
+        matrix["queries"][0]["resources"][0]["candidateEvidence"],
+        "search"
+    );
+    assert!(server.received_requests().await.unwrap().is_empty());
+    let screened = runtime
+        .execute("metadata-classify".into(), "clasify".into(), matrix)
+        .await
+        .expect("metadata handoff replays");
+    octocode_native::contracts::validate_output("clasify", &screened.structured_content)
+        .expect("metadata output contract");
+    let requests = server.received_requests().await.unwrap();
+    assert!(!requests.is_empty());
+    for request in requests {
+        let sent: Value = serde_json::from_slice(&request.body).unwrap();
+        let evidence = sent["state"].to_string();
+        assert!(
+            evidence.contains("a.txt") || evidence.contains("b.txt"),
+            "{evidence}"
+        );
+        assert!(!evidence.contains("BODY_ONLY_SENTINEL"), "{evidence}");
+    }
+    runtime.close().await;
+}
+
+/// An explicit target and unfinished source coverage may offer Locate without
+/// consulting a provider. The original source continuation remains executable.
+#[tokio::test]
+async fn unfinished_local_read_offers_optional_locate_and_preserves_source_coverage() {
+    let server = MockServer::builder().start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(500))
+        .expect(0)
+        .mount(&server)
+        .await;
+    let workspace = Workspace::new();
+    let file = workspace.write("src/server.c", "one\nhousekeeping timer\nthree\n");
+    let runtime = workspace.runtime(&[
+        ("OCTOCODE_CLASSIFICATION_API", "fixture-key".into()),
+        ("OCTOCODE_CLASSIFICATION_API_HOST", server.uri()),
+    ]);
     let read = |query: Value| {
         let runtime = &runtime;
         async move {
@@ -197,7 +256,8 @@ async fn large_paged_local_read_offers_clasify_locate() {
             .extend(extra.as_object().unwrap().clone());
         query
     };
-    let paged = read(brief(json!({}))).await;
+    let paged = read(brief(json!({"unit":"lines","length":1}))).await;
+    assert_eq!(paged["content"], "1\tone\n");
     let offer = &paged["hints"]["clasify"];
     assert_eq!(offer["tool"], "clasify", "{paged}");
     let matrix = &offer["query"]["queries"][0];
@@ -211,10 +271,20 @@ async fn large_paged_local_read_offers_clasify_locate() {
         json!({"queries":[matrix.clone()]}),
     )
     .expect("the offered matrix validates");
+    let next = paged["next"]["continueWindow"]["query"]["queries"][0].clone();
+    assert!(next.is_object(), "{paged}");
+    let second = read(next).await;
+    assert_eq!(second["content"], "2\thousekeeping timer\n");
+    let next = second["next"]["continueWindow"]["query"]["queries"][0].clone();
+    let third = read(next).await;
+    assert_eq!(third["content"], "3\tthree\n");
+    assert!(third["next"].get("continueWindow").is_none(), "{third}");
     for targeted in [
-        read(brief(json!({"matchString":"detail 2400"}))).await,
-        read(brief(json!({"ranges":["1-40"]}))).await,
-        read(json!({"mainGoal":"g","reasoning":"r","path":small})).await,
+        read(brief(json!({"matchString":"housekeeping timer"}))).await,
+        read(brief(json!({"ranges":["1-2"]}))).await,
+        read(brief(json!({"fullContent":true}))).await,
+        read(brief(json!({}))).await,
+        read(json!({"path":file,"length":1,"extras":["hints"]})).await,
     ] {
         assert!(targeted["hints"].get("clasify").is_none(), "{targeted}");
     }

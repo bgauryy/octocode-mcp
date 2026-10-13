@@ -17,6 +17,7 @@ interface HookRun {
 
 /** Runs `hook.command` through the shell with `input` as JSON on stdin. Never rejects. */
 export function runHook(hook: HookCommand, input: Record<string, unknown>, cwd: string, env: NodeJS.ProcessEnv = {}, signal?: AbortSignal): Promise<HookRun> {
+  if (signal?.aborted) return Promise.resolve({ code: null, stdout: '', stderr: '', timedOut: false });
   return new Promise((resolve) => {
     // Detached on POSIX makes the shell a process-group leader, so a timeout can kill everything it started.
     const child = spawn(hook.command, { cwd, shell: true, detached: process.platform !== 'win32', env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });

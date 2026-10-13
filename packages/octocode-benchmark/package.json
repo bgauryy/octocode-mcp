@@ -3,6 +3,9 @@
   "description": "Benchmark suites for Octocode tools and engine behavior.",
   "version": "20.2.0",
   "bugs": "https://github.com/bgauryy/octocode/issues",
+  "devDependencies": {
+    "@octocodeai/config": "workspace:*"
+  },
   "engines": {
     "node": "^24.15.0"
   },
@@ -16,7 +19,7 @@
     "build": "echo 'Source-only benchmark package; no build artifacts required'",
     "lint": "python3 -c \"import ast,sys; [ast.parse(open(f).read(), f) for f in sys.argv[1:]]\" compare/bin/*.py skills/octocode-benchmark/dashboard/*.py && bash -n compare/bin/run_arm.sh && bash -n compare/bin/run_campaign.sh && bash -n compare/bin/judge_pair.sh && bash -n compare/bin/preflight.sh && bash -n compare/bin/ghc && bash -n compare/bin/guard/gh",
     "typecheck": "echo 'No TypeScript sources; see lint'",
-    "test": "python3 compare/bin/test_harness.py",
+    "test": "python3 -m unittest discover -s compare/bin -p 'test_*.py' && node --test compare/bin/*.test.mjs",
     "verify": "yarn lint && yarn typecheck && yarn test"
   },
   "type": "module"
